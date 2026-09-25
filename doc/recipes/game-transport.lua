@@ -400,10 +400,12 @@ local function close_phase(self, phase)
     error("closed phase was not open")
 end
 
--- Drops a connection from every event waiting on it, settling those it was the last of.
+-- Drops a connection from barriers waiting on it. A scheduled collection retains
+-- its sender identity until acceptance or its deadline, including a final reply
+-- delivered together with an announced departure.
 local function forget_connection(self, connection)
     for entry in pairs(self.active) do
-        if entry.pending[connection] then
+        if entry.pending[connection] and not (entry.kind == "request_all" and entry.id) then
             entry.pending[connection] = nil
         end
     end
@@ -660,13 +662,16 @@ function server_meta.__index.subscribe_connection(self, hash, connection)
     set[connection] = true
 end
 
--- The live connections for one subscription, a list of subscriptions, or EVERYONE.
+-- The live connections for one subscription, a list of subscriptions, explicit
+-- connections, or EVERYONE.
 function server_meta.__index.get_subscribers(self, subscriptions)
     if subscriptions == EVERYONE then
         return self:get_players()
     end
     if type(subscriptions) ~= "table" then
         subscriptions = { subscriptions }
+    elseif type(subscriptions[1]) == "table" then
+        return subscriptions
     end
     local seen, list = {}, {}
     for _, hash in ipairs(subscriptions) do
@@ -772,6 +777,21 @@ local function reply_less(a, b)
     return a.order < b.order
 end
 
+-- Project a collection's receipt records into its public array of results.
+local function response_values(replies, deadline)
+    local responses = {}
+    for _, reply in ipairs(replies) do
+        if (not deadline or reply.received_at < deadline) and reply.value ~= nil then
+            responses[#responses + 1] = reply
+        end
+    end
+    table.sort(responses, reply_less)
+    for index, reply in ipairs(responses) do
+        responses[index] = reply.value
+    end
+    return responses
+end
+
 local future_meta = { __index = {} }
 
 -- Closing a future forgets its scheduled response, so a later arrival is stale and ignored, or
@@ -814,14 +834,7 @@ function future_meta.__index:wait(deadline)
         return self.value
     end
     if not self.closed and self.kind == "request_all" then
-        local responses = {}
-        for _, reply in ipairs(self.accepted_replies or self.replies) do
-            if not deadline or reply.received_at < deadline then
-                responses[#responses + 1] = reply
-            end
-        end
-        table.sort(responses, reply_less)
-        return responses
+        return response_values(self.accepted_replies or self.replies, deadline)
     end
 end
 
@@ -853,7 +866,8 @@ end
 
 -- Requests the first valid response without waiting, resolving subscriptions to a fixed audience.
 -- Accepts one subscription, a list of subscriptions, or EVERYONE.
--- Its future owns only this event's responses.
+-- Its future owns only this event's responses. Validators receive
+-- (value, label, connection, received_at), where received_at is a logical block.
 -- An explicit response block sends the request as a control and registers a delayed
 -- response ID. It supplies a clock boundary, not a substitute for the referee's validator.
 function server_meta.__index.request_first_valid(
@@ -906,21 +920,31 @@ function server_meta.__index.request_from_player(self, owner, event, arguments, 
     return future
 end
 
--- Requests every response to an ordinary event without waiting. The future resolves after
--- the block's audience finishes; a timed wait returns the responses received before its deadline.
--- An optional validator returns the accepted value. Errors, nil, and false reject a reply,
--- but its sender still counts as answered for the block barrier.
+-- Collect replies from subscriptions, or from an explicit list of connections.
+-- Subscription requests finish at the ordinary block barrier. Connection requests
+-- accept one valid reply per sender, immediately or scheduled, until the wait deadline.
+-- Validators receive (value, label, connection, received_at). Wait returns an array
+-- of validator results (or reply values without a validator), in sender join order.
 function server_meta.__index.request_all(self, subscriptions, event, event_arguments, accept_response)
+    local direct = type(subscriptions) == "table" and type(subscriptions[1]) == "table" and event.response_schema
+    local conns = self:get_subscribers(subscriptions)
     local future = setmetatable({
         kind = "request_all",
         server = self,
+        event = event,
         response_schema = event.response_schema,
-        line = encode_event(self.protocol, event, event_arguments),
         accept_response = accept_response,
-        accepted_replies = accept_response and {},
+        accepted_replies = (accept_response or direct) and {},
     }, future_meta)
-    register_event(self, future, self:get_subscribers(subscriptions))
-    self.ordinary[#self.ordinary + 1] = future
+    register_event(self, future, conns)
+    if direct then
+        future.id = future.order
+        self.scheduled_responses[future.id] = future
+        queue_control(self, conns, event, event_arguments, future.id, future)
+    else
+        future.line = encode_event(self.protocol, event, event_arguments)
+        self.ordinary[#self.ordinary + 1] = future
+    end
     return future
 end
 
@@ -970,6 +994,7 @@ local function accept_scheduled_response(self, response)
         or future.closed
         or future.value ~= nil
         or (future.owner and response.connection ~= future.owner)
+        or (future.kind == "request_all" and not future.pending[response.connection])
     then
         return
     end
@@ -978,9 +1003,22 @@ local function accept_scheduled_response(self, response)
     if not ok then
         return
     end
-    local accepted, value = pcall(future.accept_response, decoded, response.label)
-    if accepted and value then
-        future.value, future.accepted_at = value, self:get_time()
+    local received_at = response.received_at or self:get_time()
+    local accepted, value = true, decoded
+    if future.accept_response then
+        accepted, value = pcall(future.accept_response, decoded, response.label, response.connection, received_at)
+    end
+    if accepted and (not future.accept_response or value) then
+        if future.kind == "request_all" then
+            future.accepted_replies[#future.accepted_replies + 1] = {
+                value = value,
+                order = response.connection.order,
+                received_at = received_at,
+            }
+            future.pending[response.connection] = nil
+        else
+            future.value, future.accepted_at = value, received_at
+        end
     end
 end
 
@@ -989,8 +1027,12 @@ local function release_results(self)
     for entry in pairs(self.active) do
         if entry.kind == "block" and self:get_time() >= entry.target_block then
             entry.value, entry.accepted_at = true, self:get_time()
-        elseif entry.kind == "request_all" and not entry.subscription_hash and entry.answered then
-            entry.value, entry.accepted_at = entry.accepted_replies or entry.replies, self:get_time()
+        elseif entry.kind == "request_all" and not entry.subscription_hash then
+            if entry.id and not next(entry.pending) then
+                entry.value, entry.accepted_at = response_values(entry.accepted_replies), self:get_time()
+            elseif entry.answered then
+                entry.value, entry.accepted_at = response_values(entry.accepted_replies or entry.replies), self:get_time()
+            end
         end
         if entry.value ~= nil or (entry.cortn and entry.deadline and self:get_time() >= entry.deadline) then
             completed[#completed + 1] = entry
@@ -1018,17 +1060,25 @@ function server_meta.__index.step_time(self)
     for _, control in ipairs(self.controls) do
         local future = control.future
         if future and not future.closed then
+            table.sort(control.replies, reply_less)
             for _, reply in ipairs(control.replies) do
-                if reply.connection == future.owner and reply.id == future.id and type(reply.value) == "table" then
+                local requested = reply.connection == future.owner
+                    or (future.kind == "request_all" and future.pending[reply.connection])
+                if requested and reply.id == future.id and type(reply.value) == "table" then
                     local block = reply.value.scheduled_at
                     if math.type(block) == "integer" and block > self:get_time() then
-                        future.eligible = block
+                        if future.kind == "request_all" then
+                            future.pending[reply.connection] = block
+                        else
+                            future.eligible = block
+                        end
                     elseif reply.value.answer ~= nil then
                         accept_scheduled_response(self, {
                             id = future.id,
                             value = reply.value.answer,
                             connection = reply.connection,
                             label = reply.label,
+                            received_at = reply.received_at,
                         })
                         had_owner_reply = true
                     end
@@ -1085,7 +1135,13 @@ function server_meta.__index.step_time(self)
                     table.sort(entry.replies, reply_less)
                     for _, reply in ipairs(entry.replies) do
                         if entry.value == nil then
-                            local ok, value = pcall(entry.accept_response, reply.value, reply.label)
+                            local ok, value = pcall(
+                                entry.accept_response,
+                                reply.value,
+                                reply.label,
+                                reply.connection,
+                                reply.received_at
+                            )
                             if ok and value then
                                 entry.value, entry.accepted_at = value, self:get_time()
                             end
@@ -1094,12 +1150,16 @@ function server_meta.__index.step_time(self)
                 elseif entry.kind == "request_all" and entry.accept_response and not entry.closed then
                     table.sort(entry.replies, reply_less)
                     for _, reply in ipairs(entry.replies) do
-                        local ok, value = pcall(entry.accept_response, reply.value, reply.label)
+                        local ok, value = pcall(
+                            entry.accept_response,
+                            reply.value,
+                            reply.label,
+                            reply.connection,
+                            reply.received_at
+                        )
                         if ok and value then
                             entry.accepted_replies[#entry.accepted_replies + 1] = {
                                 value = value,
-                                label = reply.label,
-                                connection = reply.connection,
                                 order = reply.order,
                                 received_at = reply.received_at,
                             }
@@ -1141,8 +1201,17 @@ function server_meta.__index.step_time(self)
         end
     end
     for _, future in pairs(self.scheduled_responses) do
-        if not future.resolved and future.eligible then
-            boundaries[#boundaries + 1] = future.eligible
+        if not future.resolved then
+            if future.eligible then
+                boundaries[#boundaries + 1] = future.eligible
+            end
+            if future.kind == "request_all" then
+                for _, block in pairs(future.pending) do
+                    if math.type(block) == "integer" then
+                        boundaries[#boundaries + 1] = block
+                    end
+                end
+            end
         end
     end
     local block = self.clock:next_block(boundaries)

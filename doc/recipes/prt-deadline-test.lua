@@ -181,7 +181,7 @@ return function(run_with_server, new_test_player)
         collection.replies[#collection.replies + 1] = first
         server.clock:advance(2)
         local snapshot = collection:wait(2)
-        assert(#snapshot == 1 and snapshot[1] == first, "expiry discarded responses already received")
+        assert(#snapshot == 1 and snapshot[1] == first.value, "expiry discarded responses already received")
         assert(first_valid:wait(2) == nil, "first-valid expiry returned a collection")
         local at_deadline = { value = "at deadline", order = 2, received_at = server:get_time() }
         collection.replies[#collection.replies + 1] = at_deadline
@@ -190,7 +190,7 @@ return function(run_with_server, new_test_player)
         server.clock:advance(3)
         collection.replies[#collection.replies + 1] = { value = "late", order = 3, received_at = server:get_time() }
         local later = collection:wait(3)
-        assert(#later == 2 and later[2] == at_deadline, "a later wait did not retain earlier replies")
+        assert(#later == 2 and later[2] == at_deadline.value, "a later wait did not retain earlier replies")
         assert(#collection:wait(2) == 1, "a response after the deadline entered the collection")
         local empty <close> = server:request_all({}, prtu.define_event("probe"), {})
         assert(#empty:wait(3) == 0, "expiry without responses did not return an empty list")
@@ -238,7 +238,16 @@ return function(run_with_server, new_test_player)
                 server:subscribe_connection("audience", connection)
             end
             server:subscribe_connection("overlap", server.connections[1])
-            local collection <close> = server:request_all({ "audience", "overlap" }, prtu.define_event("probe"), {})
+            local collection <close> = server:request_all(
+                { "audience", "overlap" },
+                prtu.define_event("probe"),
+                {},
+                function(value, _, connection, received_at)
+                    assert(connection == server.connections[1], "collection lost its sender")
+                    assert(received_at == opening, "collection lost its receipt block")
+                    return value
+                end
+            )
             local cancelled <close> = server:request_all(EVERYONE, prtu.define_event("cancelled_collection"), {})
             cancelled:close()
             assert(server:get_time() == 0, "request_all suspended the caller")
@@ -254,11 +263,9 @@ return function(run_with_server, new_test_player)
             local responses = collection:wait(close_block)
             collected = true
             assert(
-                responses and #responses == 1 and responses[1].value == "answer",
+                responses and #responses == 1 and responses[1] == "answer",
                 "collection lost, duplicated, or broadened its responses"
             )
-            assert(responses[1].connection == server.connections[1], "collection lost its sender")
-            assert(responses[1].received_at == opening, "collection lost its receipt block")
             if not block_first then
                 assert(server:get_time() == opening, "collection waited for the closing block")
                 server:wait_until(close_block)

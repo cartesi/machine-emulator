@@ -31,7 +31,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     assert(received[1] == 42 and received[2] == 42)
     assert(#acknowledgements == 2)
     for _, reply in ipairs(acknowledgements) do
-        assert(reply.value == true)
+        assert(reply == true)
     end
 end)
 
@@ -74,6 +74,115 @@ for _, delay in ipairs({ 0, 2, 5, 6 }) do
         end
     end)
 end
+
+-- All validator variants expose the authenticated connection and logical receipt
+-- time, while validators accepting only the original value still work above.
+for _, kind in ipairs({ "first", "all", "owner", "scheduled" }) do
+    run_with_server(protocol, function(server, run_client, wait_connections)
+        local client = { label = "validator fixture", event_handler = {} }
+        function client.event_handler.move(self)
+            if kind == "scheduled" then
+                return transport.schedule_response(self, 3, function()
+                    return hash
+                end)
+            end
+            return hash
+        end
+        run_client(nil, function(_, line)
+            return transport.answer_event(client, line, protocol)
+        end, true)
+        wait_connections(1)
+        local connection = server:get_players()[1]
+        local function validate(value, label, sender, received_at)
+            assert(label == client.label and sender == connection)
+            assert(received_at == server:get_time())
+            assert(received_at == ({ owner = 0, first = 1, all = 1, scheduled = 3 })[kind])
+            return accept(value)
+        end
+        local future <close> = kind == "first" and server:request_first_valid(nil, event, {}, validate)
+            or kind == "all" and server:request_all(nil, event, {}, validate)
+            or kind == "scheduled" and server:request_first_valid(nil, event, {}, validate, 3)
+            or server:request_from_player(connection, event, {}, validate)
+        local result = future:wait(5)
+        assert((kind == "all" and result[1] or result) == hash)
+    end)
+end
+
+-- A single collection enforces individual deadlines in its validator, preserves
+-- join order, and cannot accept an outsider merely because it copied a label or ID.
+run_with_server(protocol, function(server, run_client, wait_connections)
+    local delays, deadlines = { 3, 2, 1, 5 }, { 4, 2, 3, 5 }
+    local connections, index_by_connection, received = {}, {}, {}
+    for index = 1, 4 do
+        local client = { label = "same label", event_handler = {} }
+        function client.event_handler.move(self)
+            return transport.schedule_response(self, delays[index], function() return hash end)
+        end
+        run_client(nil, function(_, line)
+            return transport.answer_event(client, line, protocol)
+        end, true)
+        wait_connections(index)
+        local connection = server:get_players()[index]
+        connections[index], index_by_connection[connection] = connection, index
+    end
+    local collection
+    local encoded_hash = cartesi.fromjson(cartesi.tojson(hash, -1, "Base64"))
+    run_client(nil, function(wire)
+        if wire.operation == "advance_time" then
+            return { label = "same label", value = { { id = collection.id, value = encoded_hash } } }
+        end
+        return { value = true }
+    end, true)
+    wait_connections(5)
+    local future <close> = server:request_all(connections, event, {}, function(value, label, connection, received_at)
+        local index = assert(index_by_connection[connection], "outsider reached the validator")
+        assert(label == "same label" and value == hash)
+        assert(received_at == delays[index])
+        received[index] = received_at
+        assert(received_at < deadlines[index], "late reply")
+        return index
+    end)
+    collection = future
+    local control = server.controls[#server.controls]
+    control.replies[#control.replies + 1] = {
+        connection = server:get_players()[5],
+        label = "same label",
+        id = future.id,
+        value = { answer = encoded_hash },
+        order = 5,
+    }
+    local replies = future:wait(5)
+    assert(#replies == 2 and replies[1] == 1 and replies[2] == 3)
+    assert(received[1] == 3 and received[3] == 1)
+    assert(received[2] == 2 and received[4] == 5, "deadlines were not checked by the validator")
+end)
+
+-- Rejecting a reply leaves its sender eligible to retry. Acceptance is once per
+-- sender, even if it sends the same valid response again later.
+run_with_server(protocol, function(server, run_client, wait_connections)
+    local client = { event_handler = {} }
+    function client.event_handler.move(self)
+        transport.schedule_response(self, 1, function() return "invalid" end)
+        transport.schedule_response(self, 2, function() return hash end)
+        return transport.schedule_response(self, 3, function() return hash end)
+    end
+    run_client(nil, function(_, line)
+        return transport.answer_event(client, line, protocol)
+    end, true)
+    wait_connections(1)
+    local calls = 0
+    local future <close> = server:request_all(server:get_players(), event, {}, function(value, _, connection, received_at)
+        assert(connection == server:get_players()[1] and received_at == server:get_time())
+        calls = calls + 1
+        return accept(value)
+    end)
+    assert(#future:wait(1) == 0)
+    assert(#future:wait(2) == 0, "collection deadline is not exclusive")
+    local replies = future:wait(5)
+    assert(#replies == 1 and replies[1] == hash)
+    server:wait_until(3)
+    assert(calls == 2, "duplicate reply reached the validator")
+end)
 
 -- A copied label, a valid ID and a valid hash confer no ownership. Both immediate
 -- controls and scheduled batches retain the actual connection. Stale and duplicate

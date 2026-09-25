@@ -50,13 +50,13 @@ local function run(initial_hash, paths, delegate)
         local request_from_player = server.request_from_player
         function server:request_from_player(connection, event, arguments, accept)
             local future = request_from_player(self, connection, event, arguments, accept)
-            if connection == owner and (event == vgu.EVENTS.commit_bisection or event == vgu.EVENTS.commit_log) then
+            if connection == owner and event == vgu.EVENTS.commit_bisection then
                 pending = { future = future, control = self.controls[#self.controls] }
                 if delegate then
                     future.owner = outsider
                 end
-                -- The outsider answers the honest player's requests using the
-                -- forger's history, including any requested transition proof.
+                -- The outsider answers the honest player's midpoint requests
+                -- using the forger's history.
                 local response = fabulist.event_handler[event.name](fabulist, table.unpack(arguments))
                 inject(cartesi.fromjson(cartesi.tojson(response, -1, event.response_schema, vgu.protocol.schemas)))
             end
@@ -70,18 +70,19 @@ local function run(initial_hash, paths, delegate)
     for _, name in ipairs({ "claims", "bisect_input", "bisect_mcycle", "bisect_uarch_cycle", "verdict" }) do
         assert(os.rename(name, string.format("fabulist-%s-%s", delegate and "delegated" or "protected", name)))
     end
-    assert(referee.players[2].final_hash == honest.final_hash)
-    assert(referee.players[1].final_hash == opponent.final_hash)
+    local claims = { opponent.final_hash, honest.final_hash }
+    assert(#referee.players == 1 and referee.players[1] == referee.winner)
     assert(referee.winner.index == (delegate and 1 or 2))
-    return referee
+    assert(referee.final_hash == claims[referee.winner.index])
+    return claims
 end
 
 -- Leaves fabulist-protected-* and fabulist-delegated-* narration files and a labeled summary.
 return function(initial_hash, paths)
-    local protected = run(initial_hash, paths, false)
-    local delegated = run(initial_hash, paths, true)
+    local protected_claims = run(initial_hash, paths, false)
+    local delegated_claims = run(initial_hash, paths, true)
     for index = 1, 2 do
-        assert(protected.players[index].final_hash == delegated.players[index].final_hash, "original claim changed")
+        assert(protected_claims[index] == delegated_claims[index], "original claim changed")
     end
     local transcript <close> = assert(io.open("fabulist-transcript", "w"))
     transcript:write(
@@ -92,8 +93,8 @@ return function(initial_hash, paths)
                 .. "The fabulist submits matching midpoint hashes on behalf of the honest player.\n"
                 .. "The forger proves a transition within that agreed history; its dishonest original claim wins.\n"
                 .. "Both runs retain the same original claims and transition verifier.\n",
-            cartesi.tohex(protected.players[2].final_hash),
-            cartesi.tohex(protected.players[1].final_hash)
+            cartesi.tohex(protected_claims[2]),
+            cartesi.tohex(protected_claims[1])
         )
     )
     print("vg-fabulist-test: both outcomes ok")

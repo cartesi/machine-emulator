@@ -156,7 +156,7 @@ local player_meta = { __index = {} }
 local player_methods = player_meta.__index
 
 function player_methods:close()
-    for _, key in ipairs({ "latest", "agreed", "tentative", "input_boundary" }) do
+    for _, key in ipairs({ "initial", "latest", "agreed", "tentative", "input_boundary" }) do
         if self[key] then
             self[key]:close()
             self[key] = nil
@@ -194,6 +194,17 @@ function player_methods:revert()
     assert(self.tentative, "no bisection snapshot")
     self.tentative:close()
     self.tentative = nil
+end
+
+function player_methods:reset_bisection()
+    for _, key in ipairs({ "agreed", "tentative", "input_boundary" }) do
+        if self[key] then
+            self[key]:close()
+            self[key] = nil
+        end
+    end
+    self.agreed = self.initial:fork()
+    self.lower_bounds = {}
 end
 
 function player_methods:update_lower_bound(level, lo)
@@ -392,6 +403,7 @@ function event_handler:commit_log(input, mcycle_offset, uarch_cycle)
     else
         log = { step_log = machine:log_step_uarch() }
     end
+    self:reset_bisection()
     return log
 end
 
@@ -438,6 +450,7 @@ local function new_player(initial_hash, label, last_output_proof, machine)
     assert(is_yielded_manual(break_reason), "initial machine is not waiting for an input")
     local yield_reason = receive_cmio_request(machine)
     assert(is_rx_accepted(yield_reason), "initial machine did not accept")
+    self.initial = self.agreed:fork()
     self.latest = self.agreed:fork()
     if last_output_proof then
         assert(
@@ -476,28 +489,38 @@ end
 local function accept_hash(hash)
     return type(hash) == "string" and #hash == 32 and hash
 end
--- Only the requested player's clock runs. The budget discounts a successful
--- response's charge, but does not extend its exclusive deadline.
-local function request_move(server, player, event, arguments, accept)
-    local started_at = server:get_time()
-    local future <close> = server:request_from_player(player.connection, event, arguments, accept)
-    local deadline = started_at + player.allowance
-    local value = future:wait(deadline)
-    if value then
-        player.allowance = player.allowance - math.max(0, future.accepted_at - started_at - RESPONSE_BUDGET)
-    else
-        player.allowance, player.forfeited = 0, true
+-- Charge only the time beyond the response budget for an accepted response.
+local function charge_response(player, started_at, accepted_at)
+    player.allowance = player.allowance - math.max(0, accepted_at - started_at - RESPONSE_BUDGET)
+end
+
+local function eliminate_player(players, player)
+    for index, candidate in ipairs(players) do
+        if candidate == player then
+            table.remove(players, index)
+            return
+        end
     end
-    return value
 end
 
 -- Each player answers the same request on its own clock.
 local function request_hashes(server, players, event, arguments)
     local hashes, requests = {}, {}
-    for index, player in ipairs(players) do
-        if not player.forfeited then
-            requests[#requests + 1] = function()
-                hashes[index] = request_move(server, player, event, arguments, accept_hash)
+    for _, player in ipairs(players) do
+        requests[#requests + 1] = function()
+            local started_at = server:get_time()
+            local response <close> = server:request_from_player(player.connection, event, arguments, function(hash, label)
+                if accept_hash(hash) then
+                    player.label = label
+                    return hash
+                end
+            end)
+            local hash = response:wait(started_at + player.allowance)
+            if hash then
+                charge_response(player, started_at, response.accepted_at)
+                hashes[player] = hash
+            else
+                eliminate_player(players, player)
             end
         end
     end
@@ -510,17 +533,15 @@ end
 local function single_claim_remains(players)
     local first
     for _, player in ipairs(players) do
-        if not player.forfeited then
-            if first and player.final_hash ~= first.final_hash then
-                return nil
-            end
-            first = first or player
+        if first and player.final_hash ~= first.final_hash then
+            return nil
         end
+        first = first or player
     end
     return first
 end
 
-local function disagree(hashes)
+local function hashes_disagree(hashes)
     local first
     for _, hash in pairs(hashes) do
         if first and hash ~= first then
@@ -551,70 +572,123 @@ local function bisect_level(server, players, level, hi, bisection)
             return nil, winner
         end
         local mid = midpoint(interval)
-        if disagree(hashes) then
-            interval.hi, bisection.hash_after = mid, hashes[1]
+        if hashes_disagree(hashes) then
+            interval.hi, bisection.hashes_after = mid, hashes
         else
-            interval.lo, bisection.last_agreed_hash = mid, hashes[1]
+            interval.lo, bisection.last_agreed_hash = mid, hashes[next(hashes)]
         end
         eventf("%s interval of disagreement is [0x%x, 0x%x].", level, interval.lo, interval.hi)
     end
     return interval.lo
 end
 
-local function settle_dispute(referee, server, players)
-    local bisection = {
-        last_agreed_hash = referee.initial_hash,
-        hash_after = players[1].final_hash,
-    }
-    local input, winner_input = bisect_level(server, players, "input", INPUTS_PER_EPOCH, bisection)
-    if not input then
-        return winner_input
+-- Every surviving player must prove its own committed endpoint.
+local function request_transition_proofs(referee, server, players, input, mcycle_offset, uarch_cycle, bisection)
+    local connections, by_connection = {}, {}
+    local started_at = server:get_time()
+    local deadline = started_at
+    for _, player in ipairs(players) do
+        connections[#connections + 1] = player.connection
+        by_connection[player.connection] = player
+        deadline = math.max(deadline, started_at + player.allowance)
     end
-    bisection.input = input
-    local mcycle_offset, winner_mcycle = bisect_level(server, players, "mcycle", MCYCLES_PER_INPUT, bisection)
-    if not mcycle_offset then
-        return winner_mcycle
-    end
-    bisection.mcycle_offset = mcycle_offset
-    -- UARCH_CYCLE_MAX names the last cycle. Its outgoing transition includes reset.
-    local uarch_cycle, winner_uarch_cycle =
-        bisect_level(server, players, "uarch_cycle", UARCH_CYCLES_PER_MCYCLE, bisection)
-    if not uarch_cycle then
-        return winner_uarch_cycle
-    end
-    local valid = request_move(
-        server,
-        players[1],
+    local proofs <close> = server:request_all(
+        connections,
         EVENTS.commit_log,
         { input, mcycle_offset, uarch_cycle },
-        function(log)
-            return verify_state_transition(
+        function(log, _label, connection, received_at)
+            local player = assert(by_connection[connection], "proof from a nonparticipant")
+            assert(received_at < started_at + player.allowance, "late transition proof")
+            verify_state_transition(
                 referee,
                 input,
                 mcycle_offset,
                 uarch_cycle,
                 bisection.last_agreed_hash,
                 log,
-                bisection.hash_after
+                bisection.hashes_after[player]
             )
+            charge_response(player, started_at, received_at)
+            eventf("Player %s's transition proof is valid.", player.label or player.index)
+            return player
         end
     )
-    eventf("Player 1's transition proof is %s.", valid and "valid" or "missing or invalid")
-    return players[valid and 1 or 2]
+    return proofs:wait(deadline)
 end
 
--- Output offers are permissionless and have their own bounded demonstration
--- window. Refreshing the audience lets newly connected providers answer too.
--- Empty and invalid offers never consume the opportunity to submit a valid proof.
-local function request_output_proof(server, event, arguments, accept)
-    local deadline = server:get_time() + OUTPUT_WINDOW
-    while server:request_block() < deadline do
-        local until_block = math.min(deadline, server:request_block() + 1)
-        local proof <close> = server:request_first_valid(EVERYONE, event, arguments, accept)
-        local response = proof:wait(until_block)
-        if response then
-            return response
+local function settle_dispute(referee, server, players)
+    while #players > 1 do
+        local winner = single_claim_remains(players)
+        if winner then
+            return winner
         end
+        local bisection = {
+            last_agreed_hash = referee.initial_hash,
+            hashes_after = {},
+        }
+        for _, player in ipairs(players) do
+            bisection.hashes_after[player] = player.final_hash
+        end
+        local input, winner_input = bisect_level(server, players, "input", INPUTS_PER_EPOCH, bisection)
+        if not input then
+            return winner_input
+        end
+        bisection.input = input
+        local mcycle_offset, winner_mcycle = bisect_level(server, players, "mcycle", MCYCLES_PER_INPUT, bisection)
+        if not mcycle_offset then
+            return winner_mcycle
+        end
+        bisection.mcycle_offset = mcycle_offset
+        -- UARCH_CYCLE_MAX names the last cycle. Its outgoing transition includes reset.
+        local uarch_cycle, winner_uarch_cycle =
+            bisect_level(server, players, "uarch_cycle", UARCH_CYCLES_PER_MCYCLE, bisection)
+        if not uarch_cycle then
+            return winner_uarch_cycle
+        end
+        players = request_transition_proofs(referee, server, players, input, mcycle_offset, uarch_cycle, bisection)
+        referee.players = players
+    end
+    return players[1]
+end
+
+-- Output offers are permissionless. Refresh the audience each block so newly
+-- connected providers can answer during each bounded demonstration window.
+local function wait_for_outputs(referee, server, winner)
+    local root
+    local deadline = server:get_time() + OUTPUT_WINDOW
+    while not root and server:request_block() < deadline do
+        local proof <close> = server:request_first_valid(
+            EVERYONE,
+            EVENTS.prove_outputs_merkle_root,
+            { winner.final_hash },
+            function(response)
+                return output_verifier.validate_outputs_merkle_root_response(response, winner.final_hash)
+            end
+        )
+        root = proof:wait(math.min(deadline, server:request_block() + 1))
+    end
+    if not root then
+        eventf("No valid outputs root offered.")
+        return
+    end
+    referee.outputs_root = root
+    local output
+    deadline = server:get_time() + OUTPUT_WINDOW
+    while not output and server:request_block() < deadline do
+        local proof <close> = server:request_first_valid(EVERYONE, EVENTS.prove_output, { root }, function(response)
+            output_verifier.validate_output_response(response, root)
+            return response
+        end)
+        output = proof:wait(math.min(deadline, server:request_block() + 1))
+    end
+    if not output then
+        eventf("No output offered.")
+        return
+    end
+    referee.output = output
+    local ok, decoded = pcall(evmu.decode_calldata, "Notice(bytes payload)", output.output, "raw")
+    if ok then
+        eventf("Result proved against the final state:\n%s", decoded.payload)
     end
 end
 
@@ -626,62 +700,40 @@ function referee_meta.__index:run(server)
     for index, connection in ipairs(connections) do
         players[index] = { connection = connection, index = index, allowance = ALLOWANCE }
     end
-    local function announce(event, arguments)
-        local responses <close> = server:request_all(EVERYONE, event, arguments)
-        responses:wait()
+    do
+        local initial <close> = server:request_all(EVERYONE, EVENTS.initial_state, { self.initial_hash })
+        initial:wait()
     end
-    announce(EVENTS.initial_state, { self.initial_hash })
     for index, path in ipairs(self.input_paths) do
-        announce(EVENTS.input_added, { index - 1, path })
+        local input <close> = server:request_all(EVERYONE, EVENTS.input_added, { index - 1, path })
+        input:wait()
     end
-    announce(EVENTS.epoch_sealed, { #self.inputs })
+    do
+        local sealed <close> = server:request_all(EVERYONE, EVENTS.epoch_sealed, { #self.inputs })
+        sealed:wait()
+    end
     phase("claims")
     local hashes = request_hashes(server, players, EVENTS.commit_final_hash, {})
     if not hashes then
         phase("verdict")
-        eventf("Both players forfeited.")
+        eventf("No players remain.")
         return
     end
-    for index, player in ipairs(players) do
-        player.final_hash = hashes[index]
-        if player.final_hash then
-            eventf("Player %d claimed %s.", index, short_hash(player.final_hash))
-        end
+    for _, player in ipairs(players) do
+        player.final_hash = hashes[player]
+        eventf("Player %s claimed %s.", player.label or player.index, short_hash(player.final_hash))
     end
-    local winner = single_claim_remains(players)
-    if not winner then
-        winner = settle_dispute(self, server, players)
-    end
+    local winner = settle_dispute(self, server, players)
     self.winner = winner
     phase("verdict")
     if not winner then
-        eventf("Both players forfeited.")
+        eventf("No players remain.")
         return
     end
     self.final_hash = winner.final_hash
-    eventf("Player %d wins. Final state hash: %s", winner.index, cartesi.tohex(winner.final_hash))
+    eventf("Player %s wins. Final state hash: %s", winner.label or winner.index, cartesi.tohex(winner.final_hash))
     server:open_players()
-    local root = request_output_proof(server, EVENTS.prove_outputs_merkle_root, { self.final_hash }, function(response)
-        return output_verifier.validate_outputs_merkle_root_response(response, winner.final_hash)
-    end)
-    if not root then
-        eventf("No valid outputs root offered.")
-        return
-    end
-    self.outputs_root = root
-    local output = request_output_proof(server, EVENTS.prove_output, { root }, function(response)
-        output_verifier.validate_output_response(response, root)
-        return response
-    end)
-    if not output then
-        eventf("No output offered.")
-        return
-    end
-    self.output = output
-    local ok, decoded = pcall(evmu.decode_calldata, "Notice(bytes payload)", output.output, "raw")
-    if ok then
-        eventf("Result proved against the final state:\n%s", decoded.payload)
-    end
+    wait_for_outputs(self, server, winner)
 end
 
 local function new_referee(initial_hash, input_paths)

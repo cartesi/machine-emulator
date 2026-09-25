@@ -1590,16 +1590,21 @@ run_with_server(function(server, run_client, wait_connections)
     end
     wait_connections(5)
     local checked = 0
-    local collection <close> = server:request_all(EVERYONE, define_event("claim"), {}, function(response)
-        checked = checked + 1
-        assert(response ~= "error", "invalid claim")
-        if response == "nil" then
-            return nil
-        elseif response == "false" then
-            return false
+    local collection <close> = server:request_all(
+        EVERYONE,
+        define_event("claim"),
+        {},
+        function(response, label, connection, received_at)
+            checked = checked + 1
+            assert(response ~= "error", "invalid claim")
+            if response == "nil" then
+                return nil
+            elseif response == "false" then
+                return false
+            end
+            return { claim = response, label = label, connection = connection, received_at = received_at }
         end
-        return { claim = response }
-    end)
+    )
     local block = server:request_block()
     local early = collection:wait(block)
     assert(#early == 0 and checked == 0, "an expired wait accepted unvalidated replies")
@@ -1609,7 +1614,7 @@ run_with_server(function(server, run_client, wait_connections)
     assert(server:get_time() == block, "rejected replies held up collection")
     local labels = {}
     for _, response in ipairs(responses) do
-        assert(response.value.claim == response.label, "collection lost its validator result or sender label")
+        assert(response.claim == response.label, "collection lost its validator result or sender label")
         assert(response.connection.is_player and not response.connection.dead, "collection lost its sender")
         assert(response.received_at == block, "collection lost the receipt block")
         labels[response.label] = true
@@ -1643,15 +1648,22 @@ run_with_server(function(server, run_client, wait_connections)
     end)
     server:accept_subscribers("initial")
     local close_block = server:request_block() + 1
-    local collection <close> = server:request_all("initial", define_event("commit_mcycle_claim"), {})
+    local collection <close> = server:request_all(
+        "initial",
+        define_event("commit_mcycle_claim"),
+        {},
+        function(claim, _, connection)
+            return { claim = claim, connection = connection }
+        end
+    )
     local responses = collection:wait(close_block)
     server:wait_until(close_block)
     assert(#server.open_phases == 0, "closed phases were retained")
     table.sort(responses, function(x, y)
-        return x.value < y.value
+        return x.claim < y.claim
     end)
     assert(
-        #responses == 2 and responses[1].value == "a" and responses[2].value == "b",
+        #responses == 2 and responses[1].claim == "a" and responses[2].claim == "b",
         "mcycle tournament gathered the wrong claims"
     )
     assert(server.phase_closer and server.phase_closer.is_phase_closer, "the phase closer was not adopted")
@@ -1714,7 +1726,7 @@ run_with_server(function(server, run_client, wait_connections)
     local nested_collection <close> = server:request_all("a", define_event("commit_mcycle_claim"), {})
     local nested = nested_collection:wait(nested_close_block)
     server:wait_until(nested_close_block)
-    assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
+    assert(#nested == 1 and nested[1] == "a", "nested tournament asked the wrong audience")
     assert(#server.open_phases == 0, "closed nested tournament was retained")
 
     -- Every holder answers without proof and the wait expires with connections open.
@@ -1803,7 +1815,7 @@ run_with_server(function(server, run_client, wait_connections)
     local forged_collection <close> = server:request_all("f", define_event("commit_mcycle_claim"), {})
     local t2 = forged_collection:wait(forged_close_block)
     server:wait_until(forged_close_block)
-    assert(#t2 == 1 and t2[1].value == "forger" and not f.dead, "the forged close was not ignored")
+    assert(#t2 == 1 and t2[1] == "forger" and not f.dead, "the forged close was not ignored")
 
     -- A connection announces its role once. Announcing again closes it, and so does a second
     -- phase closer.

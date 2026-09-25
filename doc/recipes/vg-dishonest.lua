@@ -66,7 +66,7 @@ local function new_tamperer(initial_hash, input_index, mcycle_offset)
     local player = vg.new_player(initial_hash, "tamperer")
     player.tampered_index, player.tampered_offset = input_index, mcycle_offset
     player.run_to_stop, player.run_uarch = run_tampered, run_tampered_uarch
-    for _, pair in ipairs({ player.latest, player.agreed }) do
+    for _, pair in ipairs({ player.initial, player.latest, player.agreed }) do
         pair.snapshot, pair.commit, pair.revert = snapshot_tampered, commit_tampered, revert_tampered
     end
     return player

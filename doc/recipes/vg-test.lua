@@ -9,6 +9,11 @@ local paths = { "input-0.bin", "input-1.bin", "input-2.bin" }
 local function run_game(players, input_paths)
     local referee = vg.new_referee(initial_hash, input_paths or paths)
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
+        -- Exercise the settlement loop with more players without changing example admission.
+        local accept_players = server.accept_players
+        function server:accept_players()
+            return accept_players(self, #players)
+        end
         for index, player in ipairs(players) do
             run_client(nil, function(_, line)
                 return vgu.answer_event(player, line)
@@ -55,7 +60,7 @@ for _, late_providers in ipairs({ false, true }) do
             end
             local function offer(_, target, operation)
                 assert(settled.winner.index == 2 and settled.final_hash == first.final_hash)
-                assert(settled.players[1].allowance == 0)
+                assert(#settled.players == 1 and settled.players[1] == settled.winner)
                 assert(target == (operation == "prove_output" and root_offer.tx_buffer_data or first.final_hash))
                 if late_providers and not joined[operation] then
                     joined[operation] = true
@@ -91,20 +96,22 @@ for _, late_providers in ipairs({ false, true }) do
         end
         settled:run(server)
         assert(settled.output and settled.output.output == output_offer.output)
-        assert(settled.players[1].allowance == 0 and settled.players[2].allowance == 4)
+        assert(#settled.players == 1 and settled.winner.allowance == 4)
         assert(#server:get_players() == (late_providers and 4 or 2))
     end)
     vgu.close_narration()
 end
 print("vg-test: permissionless output providers ok")
 
--- The endpoint's proponent must prove its committed hash. A valid log reaching
--- a different hash is rejected, and the proponent loses on timeout.
+-- Every player must prove its committed endpoint. A valid log reaching another
+-- player's endpoint is rejected; if neither endpoint is proved, neither wins.
 for _, case in ipairs({
-    { agree = false, confirms = false },
-    { agree = false, confirms = true },
-    { agree = true, confirms = false },
-    { agree = true, confirms = true },
+    { agree = false, winner = 1 },
+    { agree = false, winner = 2 },
+    { agree = false },
+    { agree = true, winner = 1 },
+    { agree = true, winner = 2 },
+    { agree = true },
 }) do
     local pair <close> = first.agreed:fork()
     if case.agree then
@@ -114,10 +121,11 @@ for _, case in ipairs({
     local log = { step_log = pair.machine:log_step_uarch() }
     local after = pair.machine:get_root_hash()
     local claims = {
-        case.confirms and after or cartesi.keccak256("wrong endpoint"),
-        cartesi.keccak256("second endpoint"),
+        case.winner == 1 and after or cartesi.keccak256("wrong first endpoint"),
+        case.winner == 2 and after or cartesi.keccak256("wrong second endpoint"),
     }
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
+        local proofs = {}
         for index = 1, 2 do
             local client = { event_handler = setmetatable({}, empty_handlers) }
             function client.event_handler.commit_final_hash()
@@ -130,8 +138,8 @@ for _, case in ipairs({
                 return claims[index]
             end
             function client.event_handler:commit_log(input, mcycle_offset, uarch_cycle) -- luacheck: ignore 212 self
-                assert(index == 1)
                 assert(input == 0 and mcycle_offset == 0 and uarch_cycle == (case.agree and 1 or 0))
+                proofs[index] = true
                 return log
             end
             run_client(nil, function(_, line)
@@ -141,13 +149,20 @@ for _, case in ipairs({
         end
         local settled = vg.new_referee(initial_hash, {})
         settled:run(server)
-        assert(settled.winner.index == (case.confirms and 1 or 2))
-        assert(settled.final_hash == claims[settled.winner.index])
-        assert(settled.players[1].allowance == (case.confirms and 4 or 0))
+        assert(proofs[1] and proofs[2], "a surviving player was not asked for its proof")
+        if case.winner then
+            assert(settled.winner.index == case.winner and settled.final_hash == claims[case.winner])
+        else
+            assert(not settled.winner and not settled.final_hash)
+        end
+        assert(#settled.players == (case.winner and 1 or 0))
+        if case.winner then
+            assert(settled.players[1] == settled.winner and settled.winner.allowance == 4)
+        end
     end)
     vgu.close_narration()
 end
-print("vg-test: terminal proof selects the endpoint owner ok")
+print("vg-test: terminal proofs eliminate unsupported endpoints ok")
 
 if arg[1] ~= "execution" then
     local roles = require("vg-dishonest")
@@ -163,6 +178,32 @@ if arg[1] ~= "execution" then
             assert(result.final_hash == honest.final_hash and result.output)
             print("vg-test: honest player " .. honest_index .. " defeats " .. role)
         end
+    end
+
+    -- The early corruption leaves the honest player and the later forger with
+    -- different final claims. Both must replay from the epoch start to settle them.
+    do
+        local tamperer <close> = roles.new_tamperer(initial_hash, 0, 100)
+        local honest <close> = vg.new_player(initial_hash)
+        local forger <close> = roles.new_forger(initial_hash, 2, "forged-input-2.bin")
+        local players = { tamperer, honest, forger }
+        local handlers = setmetatable({}, { __index = vg.event_handler })
+        function handlers:commit_bisection(interval)
+            if interval.level == "input" and interval.lo == 0 and interval.hi == (1 << 16) then
+                self.disputes = self.disputes + 1
+            end
+            return vg.event_handler.commit_bisection(self, interval)
+        end
+        for _, player in ipairs(players) do
+            player.disputes, player.event_handler = 0, handlers
+        end
+        local settled = run_game(players)
+        assert(settled.winner.index == 2 and settled.final_hash == honest.final_hash and settled.output)
+        assert(tamperer.disputes == 1 and honest.disputes == 2 and forger.disputes == 2)
+        assert(#settled.players == 1 and settled.players[1] == settled.winner)
+        assert(honest.agreed.machine:get_root_hash() == initial_hash)
+        assert(not honest.tentative and not honest.input_boundary and not next(honest.lower_bounds))
+        print("vg-test: repeated disputes eliminate distinct dishonest claims ok")
     end
 
     require("vg-fabulist-test")(initial_hash, paths)
@@ -538,7 +579,7 @@ for _, cheat in ipairs({ "no-rollback", "extra-input", "composite" }) do
     end
     local opponent <close> = vg.new_player(initial_hash, cheat, nil, machine)
     if cheat == "no-rollback" then
-        for _, pair in ipairs({ opponent.latest, opponent.agreed }) do
+        for _, pair in ipairs({ opponent.initial, opponent.latest, opponent.agreed }) do
             pair.revert = ignore_rollback
         end
     elseif cheat == "extra-input" then
@@ -614,7 +655,7 @@ do
         end
         vg.event_handler.input_added(player, 0, paths[1])
     end)
-    assert(not ok and not captured.latest and not captured.agreed)
+    assert(not ok and not captured.initial and not captured.latest and not captured.agreed)
 end
 print("vg-test: fixed points, tamperer rollback and cleanup ok")
 

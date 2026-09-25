@@ -201,9 +201,9 @@ end
 local function partition_claims(responses, tournament_id, start_instant, allowance)
     local claims, by_hash = {}, {}
     for _, response in ipairs(responses) do
-        local claim = by_hash[response.value.computation_hash]
+        local claim = by_hash[response.claim.computation_hash]
         if not claim then
-            claim = response.value
+            claim = response.claim
             claim.labels = {}
             claim.allowance = allowance - (response.received_at - start_instant)
             by_hash[claim.computation_hash] = claim
@@ -461,11 +461,11 @@ local function open_uarch_tournament(
         },
         EVENTS.commit_uarch_claim,
         { epoch_input_offset, input_period_offset, next_state_hashes },
-        function(response)
+        function(response, label, connection, received_at)
             local claim = validate_claim_response(response, geometry.uarch_height)
             local final = claim.final_state_hash
             assert(final == next_state_hashes[1] or final == next_state_hashes[2], "final state not contested")
-            return claim
+            return { claim = claim, label = label, connection = connection, received_at = received_at }
         end
     )
     local responses = collection:wait(joining_deadline)
@@ -716,8 +716,13 @@ local function open_mcycle_tournament(dapp_contract)
         dapp_contract.initial_state_hash,
         EVENTS.commit_mcycle_claim,
         {},
-        function(response)
-            return validate_claim_response(response, geometry.mcycle_height)
+        function(response, label, connection, received_at)
+            return {
+                claim = validate_claim_response(response, geometry.mcycle_height),
+                label = label,
+                connection = connection,
+                received_at = received_at,
+            }
         end
     )
     local responses = collection:wait(joining_deadline)

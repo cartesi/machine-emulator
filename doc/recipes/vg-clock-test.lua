@@ -7,8 +7,8 @@ local hash = cartesi.keccak256("clock fixture")
 -- The immediate player never pays for the other player's delay. The delayed
 -- player carries its spent allowance into every subsequent requested move.
 -- Like PRT, the deadline is start + allowance. The response budget discounts the
--- charge for an accepted answer, never extends its deadline. Expiry forfeits the
--- remaining allowance. Delays 2, 2, 0, 2 leave 3, 2, 2, then expire at the deadline.
+-- charge for an accepted answer, never extends its deadline. Expiry eliminates the
+-- player. Delays 2, 2, 0, 2 leave 3, 2, 2, then expire at the deadline.
 for delayed_index = 1, 2 do
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         local players = {}
@@ -16,6 +16,7 @@ for delayed_index = 1, 2 do
             local client = { label = "same label", block = 0, delay = 0, event_handler = {} }
             function client.event_handler:commit_final_hash()
                 self.requested_at = self.block
+                self.requests = (self.requests or 0) + 1
                 if self.delay == 0 then
                     return hash
                 end
@@ -38,12 +39,19 @@ for delayed_index = 1, 2 do
             local replies = vg.request_hashes(server, players, vgu.EVENTS.commit_final_hash, {})
             assert(delayed.client.requested_at == immediate.client.requested_at, "hash requests were serialized")
             assert(
-                replies[3 - delayed_index] == hash and immediate.allowance == 4,
+                replies[immediate] == hash and immediate.allowance == 4,
                 "opponent delay charged immediate player"
             )
-            assert(delayed.allowance == ({ 3, 2, 2, 0 })[round])
-            assert((replies[delayed_index] ~= nil) == (round < 4), "deadline is not exclusive")
+            if round < 4 then
+                assert(delayed.allowance == ({ 3, 2, 2 })[round])
+            else
+                assert(#players == 1 and players[1] == immediate, "expired player was not removed")
+            end
+            assert((replies[delayed] ~= nil) == (round < 4), "deadline is not exclusive")
         end
+        local replies = vg.request_hashes(server, players, vgu.EVENTS.commit_final_hash, {})
+        assert(replies[immediate] == hash and not replies[delayed])
+        assert(delayed.client.requests == 4 and immediate.client.requests == 5)
     end)
 end
 
@@ -67,12 +75,12 @@ for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
         local referee = vg.new_referee(hash, {})
         referee:run(server)
         assert(not referee.winner and not referee.final_hash)
-        assert(referee.players[1].allowance == 0 and referee.players[2].allowance == 0)
+        assert(#referee.players == 0)
     end)
 end
 
 -- Both players receive every midpoint request, including the last midpoint of
--- each coordinate. One or both may forfeit; the final proof belongs to player 1.
+-- each coordinate. Both survivors must then offer their transition proofs.
 local function empty_response()
     return {}
 end
@@ -107,7 +115,7 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                 end
                 function client.event_handler:commit_log(input, mcycle_offset, uarch_cycle)
                     proofs = proofs + 1
-                    assert(rounds[1] == 84 and rounds[2] == 84 and index == 1)
+                    assert(rounds[1] == 84 and rounds[2] == 84)
                     assert(input == 0 and mcycle_offset == 0 and uarch_cycle == 0, "wrong transition coordinates")
                     if failed_round == 85 then
                         return vgu.schedule_response(self, math.maxinteger, empty_response)
@@ -123,16 +131,16 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
             referee:run(server)
             local last = math.min(failed_round, 84)
             assert(rounds[1] == last and rounds[2] == last, "requested another midpoint after settlement")
-            assert(proofs == (failed_round > 84 and 1 or 0))
-            if failed_player == 0 and failed_round <= 84 then
+            assert(proofs == (failed_round > 84 and 2 or 0))
+            if failed_player == 0 then
                 assert(not referee.winner and not referee.final_hash)
-                assert(referee.players[1].allowance == 0 and referee.players[2].allowance == 0)
+                assert(#referee.players == 0)
             else
-                local loser = failed_round > 84 and 1 or failed_player
+                local loser = failed_player
                 local winner = 3 - loser
                 assert(referee.winner.index == winner and referee.final_hash == claims[winner])
-                assert(referee.players[winner].allowance == 4, "charged the immediate player")
-                assert(referee.players[loser].allowance == 0)
+                assert(#referee.players == 1 and referee.players[1] == referee.winner)
+                assert(referee.winner.allowance == 4, "charged the immediate player")
             end
         end)
     end

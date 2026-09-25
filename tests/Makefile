@@ -360,7 +360,7 @@ test-jsonrpc:
 
 # Plain lua test programs, each run as its own process with the "local" machine type.
 LUA_PROGRAMS = htif-console htif-cmio htif-yield log-with-mtime-transition \
-	machine-bind machine-test mcycle-overflow mtime-interrupt tlb-flush pma-scan pma-page-walk soft-float-division soft-float-sqrt
+	machine-bind machine-test mcycle-overflow mtime-interrupt tlb-flush pma-scan pma-page-walk pma-page-walk-branches soft-float-division soft-float-sqrt
 
 # Lester spec suites, each run as its own process so they parallelize. cm-cli and
 # evmu are excluded here because they need the luacov-aware rules below.
@@ -423,7 +423,10 @@ test-fuzz: build-tests-fuzz
 test-uarch-address-range:
 	$(BUILDDIR)/misc/test-uarch-address-range
 
-test-misc: test-c-api test-c-api-remote test-c-jsonrpc-api test-save-and-load test-yield-and-save test-uarch-address-range
+test-uarch-pma-cache:
+	$(BUILDDIR)/misc/test-uarch-pma-cache
+
+test-misc: test-c-api test-c-api-remote test-c-jsonrpc-api test-save-and-load test-yield-and-save test-uarch-address-range test-uarch-pma-cache
 
 test-interactive:
 	echo uname -a | $(LUA) ../src/cartesi-machine.lua --quiet --no-init-splash -it sh | grep -q "riscv64 GNU/Linux"
@@ -448,7 +451,7 @@ test-coverage-uarch:
 # tail steps ordered below.
 PARALLEL_TESTS = test-save-and-load test-machine test-lua test-jsonrpc \
 	test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine \
-	test-uarch-rv64ui test-uarch-rv64ui-replay test-uarch-interpreter test-uarch-address-range \
+	test-uarch-rv64ui test-uarch-rv64ui-replay test-uarch-interpreter test-uarch-address-range test-uarch-pma-cache \
 	test-machine-with-log-step test-coverage-uarch test-computation-hash
 
 test-parallel: $(PARALLEL_TESTS)
@@ -510,7 +513,7 @@ coverage-all: | test-coverage-uarch-pcs
 	$(MAKE) coverage-report
 	$(MAKE) -C ../src swap-uarch-pristine-stock
 
-test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-rv64ui-replay test-uarch-interpreter test-uarch-address-range test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step create-computation-hash-corpus
+test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-rv64ui-replay test-uarch-interpreter test-uarch-address-range test-uarch-pma-cache test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step create-computation-hash-corpus
 
 lint format check-format:
 	@$(MAKE) -C misc $@

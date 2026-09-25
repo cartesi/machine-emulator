@@ -19,21 +19,18 @@
 
 #include "uarch-runtime.hpp" // must be included first, because of assert
 
-#include <array>
-
 #include "compiler-defines.hpp"
 #include "i-accept-scoped-notes.hpp"
 #include "i-prefer-shadow-state.hpp"
 #include "i-state-access.hpp"
 #include "machine-reg.hpp"
-#include "mock-address-range.hpp"
 #include "pmas.hpp"
 #include "riscv-constants.hpp"
 #include "shadow-tlb.hpp"
-#include "uarch-address-range.hpp"
 #include "uarch-constants.hpp"
 #include "uarch-defines.h"
 #include "uarch-ecall.h"
+#include "uarch-pma-cache.hpp"
 #include "uarch-strict-aliasing.hpp"
 
 namespace cartesi {
@@ -54,10 +51,10 @@ class uarch_bridge_state_access :
     public i_prefer_shadow_state<uarch_bridge_state_access> {
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
-    uarch_address_ranges &m_ars;
+    uarch_pma_cache &m_pmas;
 
 public:
-    explicit uarch_bridge_state_access(uarch_address_ranges &ars) : m_ars(ars) {}
+    explicit uarch_bridge_state_access(uarch_pma_cache &pmas) : m_pmas(pmas) {}
     uarch_bridge_state_access(const uarch_bridge_state_access &other) = default;
     uarch_bridge_state_access(uarch_bridge_state_access &&other) = default;
     uarch_bridge_state_access &operator=(const uarch_bridge_state_access &other) = delete;
@@ -73,18 +70,7 @@ public:
 
     template <typename T>
     uarch_address_range &find_pma(uint64_t paddr, uint64_t &index) const {
-        for (index = 0; index < PMA_MAX; ++index) {
-            const uint64_t istart = bridge_read_pma_istart(index);
-            const uint64_t ilength = bridge_read_pma_ilength(index);
-            if (!m_ars[index].is_initialized() && can_skip_mock_memory_range(istart, ilength, paddr, sizeof(T))) {
-                continue;
-            }
-            auto &ar = read_pma_from_entry(index, istart, ilength);
-            if (ar.is_empty() || ar.contains_absolute(paddr, sizeof(T))) {
-                return ar;
-            }
-        }
-        return do_read_pma(index);
+        return m_pmas.find<T>(paddr, index, bridge_read_pma_entry, abort_pma);
     }
 
 private:
@@ -96,12 +82,14 @@ private:
         ua_aliased_aligned_write<uint64_t>(machine_reg_address(reg), val);
     }
 
-    static uint64_t bridge_read_pma_istart(uint64_t i) {
-        return ua_aliased_aligned_read<uint64_t>(pmas_get_abs_addr(i, pmas_what::istart));
+    static pmas_entry bridge_read_pma_entry(uint64_t i) {
+        return {.istart = ua_aliased_aligned_read<uint64_t>(pmas_get_abs_addr(i, pmas_what::istart)),
+            .ilength = ua_aliased_aligned_read<uint64_t>(pmas_get_abs_addr(i, pmas_what::ilength))};
     }
 
-    static uint64_t bridge_read_pma_ilength(uint64_t i) {
-        return ua_aliased_aligned_read<uint64_t>(pmas_get_abs_addr(i, pmas_what::ilength));
+    static void abort_pma(const char * /*err*/) {
+        assert(false && "read_address_range() failed");
+        abort();
     }
 
     static uint64_t bridge_read_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) {
@@ -135,6 +123,7 @@ private:
 
     template <typename T, typename A>
     void do_write_memory_word(uint64_t paddr, uint64_t /* pma_index */, T val) const {
+        m_pmas.invalidate_on_write(paddr);
         ua_aliased_aligned_write<T, A>(paddr, val);
     }
 
@@ -155,23 +144,7 @@ private:
     }
 
     uarch_address_range &do_read_pma(uint64_t index) const {
-        if (index >= PMA_MAX) [[unlikely]] {
-            static uarch_address_range sentinel;
-            return sentinel;
-        }
-        const uint64_t istart = bridge_read_pma_istart(index);
-        const uint64_t ilength = bridge_read_pma_ilength(index);
-        return read_pma_from_entry(index, istart, ilength);
-    }
-
-    uarch_address_range &read_pma_from_entry(uint64_t index, uint64_t istart, uint64_t ilength) const {
-        constexpr const auto throw_abort = [](const char * /*err*/) {
-            assert(false && "read_address_range() failed");
-            abort();
-        };
-        const auto i = static_cast<size_t>(index);
-        m_ars[i].initialize(istart, ilength, throw_abort);
-        return m_ars[i];
+        return m_pmas.read(index, bridge_read_pma_entry, abort_pma);
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

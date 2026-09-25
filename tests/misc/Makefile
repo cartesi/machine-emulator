@@ -100,7 +100,7 @@ ifeq ($(slirp),yes)
 LIBCARTESI_LIBS+=$(SLIRP_LIB)
 endif
 
-all: $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api $(BUILDDIR)/test-uarch-address-range
+all: $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api $(BUILDDIR)/test-uarch-address-range $(BUILDDIR)/test-uarch-pma-cache
 
 ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a:
 	$(info libcartesi.a and/or libcartesi_hash_tree.a were not found! Build them first.)
@@ -119,6 +119,12 @@ test-uarch-address-range.o: CXXFLAGS += -I../../uarch
 test-uarch-address-range.o: ../../uarch/uarch-address-range.hpp ../../src/mock-address-range.hpp
 
 $(BUILDDIR)/test-uarch-address-range: test-uarch-address-range.o ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
+	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
+
+test-uarch-pma-cache.o: CXXFLAGS += -I../../uarch
+test-uarch-pma-cache.o: ../../uarch/uarch-pma-cache.hpp ../../uarch/uarch-address-range.hpp ../../src/mock-address-range.hpp
+
+$(BUILDDIR)/test-uarch-pma-cache: test-uarch-pma-cache.o ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
 
 %.o: %.c
@@ -149,5 +155,6 @@ clean-objs:
 clean: clean-tidy clean-objs
 	@rm -f $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api
 	@rm -f $(BUILDDIR)/test-uarch-address-range
+	@rm -f $(BUILDDIR)/test-uarch-pma-cache
 
 .SUFFIXES:

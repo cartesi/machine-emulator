@@ -7,9 +7,9 @@ local cartesi = require("cartesi")
 local setup = require("cartesi.tests.pma-branches")
 local cases = 0
 for _, mode in ipairs({ 8, 9 }) do
-    for _, clustered in ipairs({ false, true }) do
+    for _, layout in ipairs({ "spread", "clustered", "mixed" }) do
         for _, store_fault in ipairs({ false, true }) do
-            local config, initialize, pc, data = setup(mode, clustered, store_fault)
+            local config, initialize, pc, data = setup(mode, layout == "clustered", store_fault, nil, layout == "mixed")
             local native <close> = cartesi.machine(config)
             local uarch <close> = cartesi.machine(config)
             initialize(native)

@@ -5,7 +5,7 @@ local cartesi = require("cartesi")
 
 -- Split fetch crosses a root-level VPN boundary; data uses a third root entry.
 -- Separate branches exercise cold table pages even with a successful lookup cache.
-return function(mode, clustered, store_fault, guest_image)
+return function(mode, clustered, store_fault, guest_image, spread_flash)
     local config = { ram = { length = 1 << 20 }, flash_drive = {}, nvram = {} }
     if guest_image then
         config.uarch = { ram = { backing_store = { data_filename = guest_image } } }
@@ -20,11 +20,20 @@ return function(mode, clustered, store_fault, guest_image)
     local vdata = 2 * boundary
     local code = cartesi.AR_RAM_START + 4096
     local data = config.nvram[1].start + 0xf000
+    local regions = {}
+    for i = 8, 1, -1 do
+        regions[#regions + 1] = config.nvram[i].start
+    end
+    if spread_flash then
+        for i = 8, 1, -1 do
+            regions[#regions + 1] = config.flash_drive[i].start
+        end
+    end
     local tables = {}
     for i = 1, 1 + 3 * (levels - 1) do
-        local region = clustered and 8 or (8 - ((i - 1) % 8))
-        local page = clustered and (i - 1) or ((i - 1) // 8)
-        tables[i] = config.nvram[region].start + page * 4096
+        local region = clustered and 1 or (1 + (i - 1) % #regions)
+        local page = clustered and (i - 1) or ((i - 1) // #regions)
+        tables[i] = regions[region] + page * 4096
     end
     local function initialize(m)
         local cursor = 1

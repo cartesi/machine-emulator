@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <stdexcept>
+#include <utility>
 
 #include "assert-printf.hpp"
 #include "mock-address-range.hpp"
@@ -178,6 +179,18 @@ void targeted_cases() {
     require(intervals.find<uint64_t>(0x2000) == 0);
     require(intervals.find<uint64_t>(0x5000) == 2);
 
+    // A skipped descriptor becomes frozen when a later lookup actually selects it.
+    differential_cache prefix;
+    prefix.entries[0] = memory(0x1000, 0x1000);
+    prefix.entries[1] = memory(0x4000, 0x1000);
+    prefix.entries[2] = {UINT64_MAX, 1}; // Must remain unreachable.
+    require(prefix.find<uint64_t>(0x4000) == 1);
+    require(prefix.find<uint64_t>(0x1000) == 0);
+    prefix.read(0);
+    prefix.write_entry(0, memory(0x7000, 0x1000));
+    require(prefix.find<uint64_t>(0x1000) == 0);          // The successful lookup froze this descriptor.
+    require(prefix.find<uint64_t>(0x7000) == UINT64_MAX); // Reach the malformed suffix now.
+
     // An uninitialized prefix can change after a prior successful lookup.
     differential_cache mutated;
     mutated.entries[0] = memory(0x9000, 0x1000);
@@ -233,6 +246,26 @@ uint64_t random_word() {
     return random_state;
 }
 
+void random_disjoint_sequences() {
+    for (unsigned trial = 0; trial < 200; ++trial) {
+        differential_cache c;
+        for (uint64_t i = 0; i < PMA_MAX; ++i) {
+            c.entries[i] = memory((i + 1) * AR_PAGE_SIZE, AR_PAGE_SIZE, random_word() & 0xffe);
+        }
+        // Metadata order is deliberately unrelated to physical address order.
+        for (uint64_t i = PMA_MAX - 1; i > 0; --i) {
+            std::swap(c.entries[i], c.entries[random_word() % (i + 1)]);
+        }
+        c.read(PMA_MAX - 1); // An explicit read may freeze a descriptor before any search.
+        for (unsigned query = 0; query < 128; ++query) {
+            const auto address = (random_word() % (PMA_MAX + 2)) * AR_PAGE_SIZE;
+            c.find<uint64_t>(address);
+            c.find<uint64_t>(address + AR_PAGE_SIZE - 4); // Straddles adjacent ranges.
+            c.find<uint8_t>(address + AR_PAGE_SIZE - 1);
+        }
+    }
+}
+
 void random_sequences() {
     for (unsigned trial = 0; trial < 2000; ++trial) {
         differential_cache c;
@@ -273,6 +306,7 @@ void random_sequences() {
 int main() {
     targeted_cases();
     random_sequences();
+    random_disjoint_sequences();
     std::printf("%llu ordered/cache comparisons passed, including %llu matching rejections\n",
         static_cast<unsigned long long>(comparisons), static_cast<unsigned long long>(rejections));
 }

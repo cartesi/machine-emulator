@@ -31,26 +31,31 @@ for delayed_index = 1, 2 do
                 return vgu.answer_event(client, line)
             end, true)
             wait_connections(index)
-            players[index] = { client = client, connection = server:get_players()[index], allowance = 4 }
+            players[server:get_players()[index]] = { client = client, allowance = 4 }
         end
-        local delayed, immediate = players[delayed_index], players[3 - delayed_index]
+        local addresses = vg.addresses(players)
+        local delayed_sender, immediate_sender = addresses[delayed_index], addresses[3 - delayed_index]
+        local delayed, immediate = players[delayed_sender], players[immediate_sender]
         for round, delay in ipairs({ 2, 2, 0, 2 }) do
             delayed.client.delay = delay
             local replies = vg.request_hashes(server, players, vgu.EVENTS.commit_final_hash, {})
             assert(delayed.client.requested_at == immediate.client.requested_at, "hash requests were serialized")
             assert(
-                replies[immediate] == hash and immediate.allowance == 4,
+                replies[immediate_sender] == hash and immediate.allowance == 4,
                 "opponent delay charged immediate player"
             )
             if round < 4 then
                 assert(delayed.allowance == ({ 3, 2, 2 })[round])
             else
-                assert(#players == 1 and players[1] == immediate, "expired player was not removed")
+                assert(
+                    players[delayed_sender] == nil and players[immediate_sender] == immediate,
+                    "expired player was not removed"
+                )
             end
-            assert((replies[delayed] ~= nil) == (round < 4), "deadline is not exclusive")
+            assert((replies[delayed_sender] ~= nil) == (round < 4), "deadline is not exclusive")
         end
         local replies = vg.request_hashes(server, players, vgu.EVENTS.commit_final_hash, {})
-        assert(replies[immediate] == hash and not replies[delayed])
+        assert(replies[immediate_sender] == hash and not replies[delayed_sender])
         assert(delayed.client.requests == 4 and immediate.client.requests == 5)
     end)
 end
@@ -75,7 +80,7 @@ for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
         local referee = vg.new_referee(hash, {})
         referee:run(server)
         assert(not referee.winner and not referee.final_hash)
-        assert(#referee.players == 0)
+        assert(not next(referee.players))
     end)
 end
 
@@ -134,12 +139,13 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
             assert(proofs == (failed_round > 84 and 2 or 0))
             if failed_player == 0 then
                 assert(not referee.winner and not referee.final_hash)
-                assert(#referee.players == 0)
+                assert(not next(referee.players))
             else
                 local loser = failed_player
                 local winner = 3 - loser
                 assert(referee.winner.index == winner and referee.final_hash == claims[winner])
-                assert(#referee.players == 1 and referee.players[1] == referee.winner)
+                assert(#vg.addresses(referee.players) == 1)
+                assert(referee.players[server:get_players()[winner]] == referee.winner)
                 assert(referee.winner.allowance == 4, "charged the immediate player")
             end
         end)

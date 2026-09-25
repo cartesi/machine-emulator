@@ -71,7 +71,7 @@ local function run(initial_hash, paths, delegate)
         assert(os.rename(name, string.format("fabulist-%s-%s", delegate and "delegated" or "protected", name)))
     end
     local claims = { opponent.final_hash, honest.final_hash }
-    assert(#referee.players == 1 and referee.players[1] == referee.winner)
+    assert(#vg.addresses(referee.players) == 1 and referee.players[next(referee.players)] == referee.winner)
     assert(referee.winner.index == (delegate and 1 or 2))
     assert(referee.final_hash == claims[referee.winner.index])
     return claims

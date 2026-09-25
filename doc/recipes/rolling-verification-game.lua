@@ -20,6 +20,43 @@ local RESPONSE_BUDGET, ALLOWANCE = 1, 4
 local OUTPUT_WINDOW = 4
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
 
+-- Enumerate player addresses in admission order.
+local function addresses(players)
+    local result = {}
+    for address in pairs(players) do
+        result[#result + 1] = address
+    end
+    table.sort(result, function(a, b)
+        return a.order < b.order
+    end)
+    return result
+end
+
+-- Transform values while preserving their keys.
+local function map(values, transform)
+    local result = {}
+    for key, value in pairs(values) do
+        result[key] = transform(value)
+    end
+    return result
+end
+
+local function select_keys(values, keys)
+    local result = {}
+    for _, key in ipairs(keys) do
+        result[key] = values[key]
+    end
+    return result
+end
+
+local function fold(values, initial, combine)
+    local result = initial
+    for key, value in pairs(values) do
+        result = combine(result, value, key)
+    end
+    return result
+end
+
 local function usaturating_add(a, b)
     return math.ult(cartesi.MCYCLE_MAX - b, a) and cartesi.MCYCLE_MAX or a + b
 end
@@ -489,27 +526,15 @@ end
 local function accept_hash(hash)
     return type(hash) == "string" and #hash == 32 and hash
 end
--- Charge only the time beyond the response budget for an accepted response.
-local function charge_response(player, started_at, accepted_at)
-    player.allowance = player.allowance - math.max(0, accepted_at - started_at - RESPONSE_BUDGET)
-end
-
-local function eliminate_player(players, player)
-    for index, candidate in ipairs(players) do
-        if candidate == player then
-            table.remove(players, index)
-            return
-        end
-    end
-end
 
 -- Each player answers the same request on its own clock.
 local function request_hashes(server, players, event, arguments)
     local hashes, requests = {}, {}
-    for _, player in ipairs(players) do
+    for _, sender in ipairs(addresses(players)) do
+        local player = players[sender]
         requests[#requests + 1] = function()
             local started_at = server:get_time()
-            local response <close> = server:request_from_player(player.connection, event, arguments, function(hash, label)
+            local response <close> = server:request_from_player(sender, event, arguments, function(hash, label)
                 if accept_hash(hash) then
                     player.label = label
                     return hash
@@ -517,10 +542,11 @@ local function request_hashes(server, players, event, arguments)
             end)
             local hash = response:wait(started_at + player.allowance)
             if hash then
-                charge_response(player, started_at, response.accepted_at)
-                hashes[player] = hash
+                local elapsed = response.accepted_at - started_at
+                player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
+                hashes[sender] = hash
             else
-                eliminate_player(players, player)
+                players[sender] = nil
             end
         end
     end
@@ -532,7 +558,8 @@ end
 -- Return a representative if all surviving players support the same final claim.
 local function single_claim_remains(players)
     local first
-    for _, player in ipairs(players) do
+    for _, sender in ipairs(addresses(players)) do
+        local player = players[sender]
         if first and player.final_hash ~= first.final_hash then
             return nil
         end
@@ -584,20 +611,16 @@ end
 
 -- Every surviving player must prove its own committed endpoint.
 local function request_transition_proofs(referee, server, players, input, mcycle_offset, uarch_cycle, bisection)
-    local connections, by_connection = {}, {}
     local started_at = server:get_time()
-    local deadline = started_at
-    for _, player in ipairs(players) do
-        connections[#connections + 1] = player.connection
-        by_connection[player.connection] = player
-        deadline = math.max(deadline, started_at + player.allowance)
-    end
-    local proofs <close> = server:request_all(
-        connections,
+    local deadline = fold(players, started_at, function(latest, player)
+        return math.max(latest, started_at + player.allowance)
+    end)
+    local survivors <close> = server:request_all(
+        addresses(players),
         EVENTS.commit_log,
         { input, mcycle_offset, uarch_cycle },
-        function(log, _label, connection, received_at)
-            local player = assert(by_connection[connection], "proof from a nonparticipant")
+        function(log, _label, sender, received_at)
+            local player = players[sender]
             assert(received_at < started_at + player.allowance, "late transition proof")
             verify_state_transition(
                 referee,
@@ -606,29 +629,29 @@ local function request_transition_proofs(referee, server, players, input, mcycle
                 uarch_cycle,
                 bisection.last_agreed_hash,
                 log,
-                bisection.hashes_after[player]
+                bisection.hashes_after[sender]
             )
-            charge_response(player, started_at, received_at)
+            local elapsed = received_at - started_at
+            player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
             eventf("Player %s's transition proof is valid.", player.label or player.index)
-            return player
+            return sender
         end
     )
-    return proofs:wait(deadline)
+    return select_keys(players, survivors:wait(deadline))
 end
 
 local function settle_dispute(referee, server, players)
-    while #players > 1 do
+    while next(players) do
         local winner = single_claim_remains(players)
         if winner then
             return winner
         end
         local bisection = {
             last_agreed_hash = referee.initial_hash,
-            hashes_after = {},
+            hashes_after = map(players, function(player)
+                return player.final_hash
+            end),
         }
-        for _, player in ipairs(players) do
-            bisection.hashes_after[player] = player.final_hash
-        end
         local input, winner_input = bisect_level(server, players, "input", INPUTS_PER_EPOCH, bisection)
         if not input then
             return winner_input
@@ -648,7 +671,6 @@ local function settle_dispute(referee, server, players)
         players = request_transition_proofs(referee, server, players, input, mcycle_offset, uarch_cycle, bisection)
         referee.players = players
     end
-    return players[1]
 end
 
 -- Output offers are permissionless. Refresh the audience each block so newly
@@ -694,11 +716,10 @@ end
 
 local referee_meta = { __index = {} }
 function referee_meta.__index:run(server)
-    local connections = server:accept_players(2)
     local players = {}
     self.players = players
-    for index, connection in ipairs(connections) do
-        players[index] = { connection = connection, index = index, allowance = ALLOWANCE }
+    for index, sender in ipairs(server:accept_players(2)) do
+        players[sender] = { index = index, allowance = ALLOWANCE }
     end
     do
         local initial <close> = server:request_all(EVERYONE, EVENTS.initial_state, { self.initial_hash })
@@ -719,8 +740,9 @@ function referee_meta.__index:run(server)
         eventf("No players remain.")
         return
     end
-    for _, player in ipairs(players) do
-        player.final_hash = hashes[player]
+    for _, sender in ipairs(addresses(players)) do
+        local player = players[sender]
+        player.final_hash = hashes[sender]
         eventf("Player %s claimed %s.", player.label or player.index, short_hash(player.final_hash))
     end
     local winner = settle_dispute(self, server, players)
@@ -746,6 +768,7 @@ local function new_referee(initial_hash, input_paths)
 end
 
 local vg = {
+    addresses = addresses,
     new_player = new_player,
     new_referee = new_referee,
     event_handler = event_handler,

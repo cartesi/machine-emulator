@@ -60,7 +60,7 @@ for _, late_providers in ipairs({ false, true }) do
             end
             local function offer(_, target, operation)
                 assert(settled.winner.index == 2 and settled.final_hash == first.final_hash)
-                assert(#settled.players == 1 and settled.players[1] == settled.winner)
+                assert(#vg.addresses(settled.players) == 1 and settled.players[next(settled.players)] == settled.winner)
                 assert(target == (operation == "prove_output" and root_offer.tx_buffer_data or first.final_hash))
                 if late_providers and not joined[operation] then
                     joined[operation] = true
@@ -96,7 +96,7 @@ for _, late_providers in ipairs({ false, true }) do
         end
         settled:run(server)
         assert(settled.output and settled.output.output == output_offer.output)
-        assert(#settled.players == 1 and settled.winner.allowance == 4)
+        assert(#vg.addresses(settled.players) == 1 and settled.winner.allowance == 4)
         assert(#server:get_players() == (late_providers and 4 or 2))
     end)
     vgu.close_narration()
@@ -155,9 +155,10 @@ for _, case in ipairs({
         else
             assert(not settled.winner and not settled.final_hash)
         end
-        assert(#settled.players == (case.winner and 1 or 0))
+        assert(#vg.addresses(settled.players) == (case.winner and 1 or 0))
         if case.winner then
-            assert(settled.players[1] == settled.winner and settled.winner.allowance == 4)
+            assert(settled.players[server:get_players()[case.winner]] == settled.winner)
+            assert(settled.winner.allowance == 4)
         end
     end)
     vgu.close_narration()
@@ -200,7 +201,7 @@ if arg[1] ~= "execution" then
         local settled = run_game(players)
         assert(settled.winner.index == 2 and settled.final_hash == honest.final_hash and settled.output)
         assert(tamperer.disputes == 1 and honest.disputes == 2 and forger.disputes == 2)
-        assert(#settled.players == 1 and settled.players[1] == settled.winner)
+        assert(#vg.addresses(settled.players) == 1 and settled.players[next(settled.players)] == settled.winner)
         assert(honest.agreed.machine:get_root_hash() == initial_hash)
         assert(not honest.tentative and not honest.input_boundary and not next(honest.lower_bounds))
         print("vg-test: repeated disputes eliminate distinct dishonest claims ok")
@@ -604,7 +605,10 @@ for _, failed_offer in ipairs({ "prove_outputs_merkle_root", "prove_output" }) d
     b.event_handler = a.event_handler
     local settled = run_game({ a, b }, {})
     assert(settled.winner.index == 1 and settled.final_hash == initial_hash and not settled.output)
-    assert(settled.players[1].allowance == 4 and settled.players[2].allowance == 4)
+    assert(#vg.addresses(settled.players) == 2)
+    for _, player in pairs(settled.players) do
+        assert(player.allowance == 4)
+    end
 end
 -- Seed terminal states after setup. A halted/overflowed machine has no
 -- pending yield, while an exception keeps its manual yield with a different reason.

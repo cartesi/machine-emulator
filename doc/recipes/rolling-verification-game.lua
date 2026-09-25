@@ -3,6 +3,7 @@
 -- its state hash and receive inputs in events. A claim belongs to its submitting connection.
 --   rolling-verification-game.lua referee <address> <initial-state-hash> [<input> ...]
 --   rolling-verification-game.lua honest <address> <initial-state-hash> [<label>]
+--   rolling-verification-game.lua phase_closer <address> stop
 -- Dishonest roles and the counterfactual ownership attack live in vg-dishonest.lua and vg-test.lua.
 local cartesi = require("cartesi")
 local jsonrpc = require("cartesi.jsonrpc")
@@ -17,7 +18,6 @@ local MCYCLES_PER_INPUT = 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 local UARCH_CYCLES_PER_MCYCLE = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
 local INPUTS_PER_EPOCH = 1 << 16
 local RESPONSE_BUDGET, ALLOWANCE = 1, 4
-local OUTPUT_WINDOW = 4
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
 
 -- Enumerate player addresses in admission order.
@@ -110,6 +110,26 @@ local function midpoint(interval)
     return interval.lo + ((interval.hi - interval.lo) >> 1)
 end
 
+-- A position counts completed inputs, mcycles within the input, and uarch cycles
+-- within the mcycle. Leaf k is reached at position k + 1; its predecessor is at k.
+local function position(interval, offset)
+    return {
+        input = interval.level == "input" and offset or interval.input,
+        mcycle_offset = interval.level == "mcycle" and offset or interval.mcycle_offset or 0,
+        uarch_cycle = interval.level == "uarch_cycle" and offset or 0,
+    }
+end
+
+local function precedes(a, b)
+    if a.input ~= b.input then
+        return a.input < b.input
+    end
+    if a.mcycle_offset ~= b.mcycle_offset then
+        return a.mcycle_offset < b.mcycle_offset
+    end
+    return a.uarch_cycle < b.uarch_cycle
+end
+
 local function fork_machine(machine)
     local clone = assert(machine:fork_server())
     clone:set_cleanup_call(jsonrpc.SHUTDOWN)
@@ -193,7 +213,7 @@ local player_meta = { __index = {} }
 local player_methods = player_meta.__index
 
 function player_methods:close()
-    for _, key in ipairs({ "initial", "latest", "agreed", "tentative", "input_boundary" }) do
+    for _, key in ipairs({ "initial", "latest", "agreed", "tentative" }) do
         if self[key] then
             self[key]:close()
             self[key] = nil
@@ -215,9 +235,11 @@ function player_methods:move()
 end
 
 -- Bisection keeps or discards a whole advancing pair, never an input snapshot.
-function player_methods:snapshot(source)
-    assert(not self.tentative, "previous midpoint has not been resolved")
-    self.tentative = (source or self.agreed):fork()
+function player_methods:snapshot()
+    if self.tentative then
+        self.tentative:close()
+    end
+    self.tentative = self.agreed:fork()
     return self.tentative
 end
 
@@ -227,41 +249,23 @@ function player_methods:commit()
     self.agreed, self.tentative = self.tentative, nil
 end
 
-function player_methods:revert()
-    assert(self.tentative, "no bisection snapshot")
-    self.tentative:close()
-    self.tentative = nil
-end
-
-function player_methods:reset_bisection()
-    for _, key in ipairs({ "agreed", "tentative", "input_boundary" }) do
-        if self[key] then
-            self[key]:close()
-            self[key] = nil
-        end
-    end
-    self.agreed = self.initial:fork()
-    self.lower_bounds = {}
-end
-
-function player_methods:update_lower_bound(level, lo)
-    local previous = self.lower_bounds[level]
-    if previous ~= nil then
-        if lo == previous then
-            self:revert()
-        else
-            self:commit()
-        end
-    end
-    self.lower_bounds[level] = lo
-end
-
--- Automatic yields go to the optional callback. The caller handles manual yields.
+-- Advance a loaded input, settling its checkpoint when it reaches a fixed point.
 function player_methods:run_to_stop(pair, _epoch_input_offset, mcycle_end, on_yield_automatic) -- luacheck: ignore 212 self
     local machine = pair.machine
     while true do
         local break_reason = machine:run(mcycle_end)
-        if is_at_fixed_point(break_reason) or is_target_mcycle(break_reason) then
+        if is_at_fixed_point(break_reason) then
+            local yield_reason, data
+            if is_yielded_manual(break_reason) then
+                yield_reason, data = receive_cmio_request(machine)
+            end
+            if is_rx_rejected(yield_reason) then
+                pair:revert()
+            else
+                pair:commit()
+            end
+            return break_reason, yield_reason, data
+        elseif is_target_mcycle(break_reason) then
             return break_reason
         elseif is_yielded_automatic(break_reason) then
             if on_yield_automatic then
@@ -272,21 +276,21 @@ function player_methods:run_to_stop(pair, _epoch_input_offset, mcycle_end, on_yi
     end
 end
 
--- Crossing an input boundary creates the rejection checkpoint before delivery.
-local function load_cmio_input(pair, data)
-    local machine = pair.machine
-    local revert_root_hash = machine:get_root_hash()
-    pair:snapshot()
+-- Delivers a posted input, recording the root a rejection reverts to.
+local function load_cmio_input(machine, data, revert_root_hash)
     if data ~= nil then
         machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
     end
 end
 
-function player_methods:run_uarch(pair, epoch_input_offset, input_mcycle_offset, target)
-    if input_mcycle_offset == 0 and pair.machine:read_reg("uarch_cycle") == 0 and target > 0 then
-        load_cmio_input(pair, self.inputs[epoch_input_offset + 1])
+function player_methods:run_uarch(pair, epoch_input_offset, input_mcycle_offset, uarch_cycle_end)
+    local machine = pair.machine
+    local uarch_cycle = machine:read_reg("uarch_cycle")
+    assert(uarch_cycle <= uarch_cycle_end, "agreed machine is past desired state")
+    if input_mcycle_offset == 0 and uarch_cycle == 0 and uarch_cycle_end > 0 then
+        self:run_advance_state_input(pair, epoch_input_offset, 0)
     end
-    pair.machine:run_uarch(target)
+    machine:run_uarch(uarch_cycle_end)
 end
 
 -- Retain only accepted outputs and check their cumulative root.
@@ -302,8 +306,6 @@ local function flush_pending_outputs(pending, outputs, outputs_frontier, yield_r
 end
 
 -- Run one input from its virgin boundary to the requested offset, as in PRT.
--- A cycle target keeps the execution snapshot. A fixed point settles it:
--- rejection reverts, while acceptance and other terminal stops commit.
 function player_methods:run_advance_state_input(
     pair,
     epoch_input_offset,
@@ -313,33 +315,19 @@ function player_methods:run_advance_state_input(
 )
     local machine = pair.machine
     local input_mcycle_boundary = machine:read_reg("mcycle")
-    if input_mcycle_offset_end == 0 then
-        local break_reason = machine:run(input_mcycle_boundary)
-        local yield_reason = is_yielded_manual(break_reason) and receive_cmio_request(machine) or nil
-        return break_reason, yield_reason, input_mcycle_boundary
-    end
+    local revert_root_hash = machine:get_root_hash()
+    pair:snapshot()
+    load_cmio_input(machine, self.inputs[epoch_input_offset + 1], revert_root_hash)
+    local mcycle_end = usaturating_add(input_mcycle_boundary, input_mcycle_offset_end)
     local pending = {}
     local function on_yield_automatic(yield_reason, output)
         if outputs and is_tx_output(yield_reason) then
             pending[#pending + 1] = output
         end
     end
-    load_cmio_input(pair, self.inputs[epoch_input_offset + 1])
-    local mcycle_end = usaturating_add(input_mcycle_boundary, input_mcycle_offset_end)
-    local break_reason = self:run_to_stop(pair, epoch_input_offset, mcycle_end, on_yield_automatic)
-    if not is_at_fixed_point(break_reason) then
-        return break_reason, nil, input_mcycle_boundary
-    end
-    local yield_reason, outputs_merkle_root
-    if is_yielded_manual(break_reason) then
-        yield_reason, outputs_merkle_root = receive_cmio_request(machine)
-    end
-    if is_rx_rejected(yield_reason) then
-        pair:revert()
-    else
-        flush_pending_outputs(pending, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
-        pair:commit()
-    end
+    local break_reason, yield_reason, outputs_merkle_root =
+        self:run_to_stop(pair, epoch_input_offset, mcycle_end, on_yield_automatic)
+    flush_pending_outputs(pending, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
     return break_reason, yield_reason, input_mcycle_boundary
 end
 
@@ -351,34 +339,17 @@ function player_methods:run_to_input_boundary(pair, epoch_input_offset_begin, ep
     end
 end
 
-function player_methods:read_input(_index, path) -- luacheck: ignore 212 self
-    return util.read_file(path)
+function player_methods:run_to_mcycle_boundary(pair, epoch_input_offset, mcycle_offset_begin, mcycle_offset_end)
+    if mcycle_offset_begin == 0 then
+        self:run_advance_state_input(pair, epoch_input_offset, mcycle_offset_end)
+    elseif pair.backup then
+        local mcycle_end = usaturating_add(pair.backup:read_reg("mcycle"), mcycle_offset_end)
+        self:run_to_stop(pair, epoch_input_offset, mcycle_end)
+    end
 end
 
--- Mcycle bisection replays from a separately owned input boundary. Settling an
--- execution snapshot must not release that checkpoint or change the agreed state.
-function player_methods:propose_midpoint(interval)
-    local level, target = interval.level, midpoint(interval)
-    local source = self.agreed
-    if level == "input" and target >= #self.inputs then
-        source = self.latest
-    elseif level == "mcycle" then
-        if not self.input_boundary then
-            self.input_boundary = self.agreed:fork()
-        end
-        source = self.input_boundary
-    end
-    local tentative = self:snapshot(source)
-    if level == "input" then
-        if target < #self.inputs then
-            self:run_to_input_boundary(tentative, interval.lo, target)
-        end
-    elseif level == "mcycle" then
-        self:run_advance_state_input(tentative, interval.input, target)
-    else
-        self:run_uarch(tentative, interval.input, interval.mcycle_offset, target)
-    end
-    return tentative.machine:get_root_hash()
+function player_methods:read_input(_index, path) -- luacheck: ignore 212 self
+    return util.read_file(path)
 end
 
 local function get_machine_word(machine, address)
@@ -401,10 +372,7 @@ end
 
 function event_handler:epoch_sealed()
     self.final_hash = self.latest.machine:get_root_hash()
-    local leaves = {}
-    for i, output in ipairs(self.outputs) do
-        leaves[i] = cartesi.keccak256(output)
-    end
+    local leaves = map(self.outputs, cartesi.keccak256)
     self.output_proofs = hash_tree.frontier_next_proofs(self.previous_outputs_frontier, leaves)
     self.previous_outputs_frontier, self.outputs_frontier = self.outputs_frontier, nil
 end
@@ -413,35 +381,46 @@ function event_handler:commit_final_hash()
     return self.final_hash
 end
 
+-- The interval contains resulting states, indexed from zero, with the agreed
+-- predecessor outside it. Each midpoint advances a fork of the agreed pair.
 function event_handler:commit_bisection(interval)
-    if self.lower_bounds[interval.level] == nil then
-        if interval.level == "mcycle" then
-            self:update_lower_bound("input", interval.input)
-        elseif interval.level == "uarch_cycle" then
-            self:update_lower_bound("mcycle", interval.mcycle_offset)
-        end
+    if interval.level == "input" and interval.lo == 0 and interval.hi == INPUTS_PER_EPOCH - 1 then
+        self.agreed:close()
+        self.agreed = self.initial:fork()
+        self.position = { input = 0, mcycle_offset = 0, uarch_cycle = 0 }
     end
-    self:update_lower_bound(interval.level, interval.lo)
-    return self:propose_midpoint(interval)
+    local previous, target = position(interval, interval.lo), position(interval, midpoint(interval) + 1)
+    if precedes(self.position, previous) then
+        self:commit()
+    end
+    self.position = previous
+    local tentative = self:snapshot()
+    if previous.input < target.input then
+        self:run_to_input_boundary(tentative, previous.input, target.input)
+    end
+    if previous.mcycle_offset < target.mcycle_offset then
+        self:run_to_mcycle_boundary(tentative, target.input, previous.mcycle_offset, target.mcycle_offset)
+    end
+    if previous.uarch_cycle < target.uarch_cycle then
+        self:run_uarch(tentative, target.input, target.mcycle_offset, target.uarch_cycle)
+    end
+    return tentative.machine:get_root_hash()
 end
 
 function event_handler:commit_log(input, mcycle_offset, uarch_cycle)
-    self:run_uarch(self.agreed, input, mcycle_offset, uarch_cycle)
-    local machine = self.agreed.machine
+    local pair = self.position.uarch_cycle < uarch_cycle and self.tentative or self.agreed
+    local machine = pair.machine
     local data = self.inputs[input + 1]
-    local log
     if mcycle_offset == 0 and uarch_cycle == 0 and data then
         local before = machine:get_root_hash()
         local send = machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, before)
-        log = { send_cmio_log = send, step_log = machine:log_step_uarch() }
+        return { send_cmio_log = send, step_log = machine:log_step_uarch() }
     elseif uarch_cycle == cartesi.UARCH_CYCLE_MAX then
         local step = machine:log_step_uarch()
-        log = { step_log = step, reset_uarch_log = machine:log_reset_uarch() }
+        return { step_log = step, reset_uarch_log = machine:log_reset_uarch() }
     else
-        log = { step_log = machine:log_step_uarch() }
+        return { step_log = machine:log_step_uarch() }
     end
-    self:reset_bisection()
-    return log
 end
 
 function event_handler:prove_outputs_merkle_root()
@@ -476,7 +455,7 @@ local function new_player(initial_hash, label, last_output_proof, machine)
     local self <close> = setmetatable({
         label = label or "honest",
         agreed = agreed,
-        lower_bounds = {},
+        position = { input = 0, mcycle_offset = 0, uarch_cycle = 0 },
         inputs = {},
         outputs = {},
         event_handler = event_handler,
@@ -579,17 +558,18 @@ local function hashes_disagree(hashes)
     return false
 end
 
--- All players commit a midpoint hash. Any disagreement selects the earlier half.
-local function bisect_level(server, players, level, hi, bisection)
+-- Bisect the inclusive range of resulting-state indices. The agreed predecessor
+-- is not one of its leaves. Any disagreement selects the earlier half.
+local function bisect_level(server, players, level, count, bisection)
     phase("bisect_" .. level)
     local interval = {
         level = level,
         lo = 0,
-        hi = hi,
+        hi = count - 1,
         input = bisection.input,
         mcycle_offset = bisection.mcycle_offset,
     }
-    while interval.hi - interval.lo > 1 do
+    while interval.lo < interval.hi do
         local hashes = request_hashes(server, players, EVENTS.commit_bisection, { interval })
         if not hashes then
             return nil
@@ -602,7 +582,7 @@ local function bisect_level(server, players, level, hi, bisection)
         if hashes_disagree(hashes) then
             interval.hi, bisection.hashes_after = mid, hashes
         else
-            interval.lo, bisection.last_agreed_hash = mid, hashes[next(hashes)]
+            interval.lo, bisection.last_agreed_hash = mid + 1, hashes[next(hashes)]
         end
         eventf("%s interval of disagreement is [0x%x, 0x%x].", level, interval.lo, interval.hi)
     end
@@ -673,44 +653,38 @@ local function settle_dispute(referee, server, players)
     end
 end
 
--- Output offers are permissionless. Refresh the audience each block so newly
--- connected providers can answer during each bounded demonstration window.
+-- Establish the outputs root, then accept distinct player-selected outputs until
+-- the runner stops the game. Output offers are permissionless after settlement.
 local function wait_for_outputs(referee, server, winner)
-    local root
-    local deadline = server:get_time() + OUTPUT_WINDOW
-    while not root and server:request_block() < deadline do
-        local proof <close> = server:request_first_valid(
+    local root_proof <close> = server:request_first_valid(
+        EVERYONE,
+        EVENTS.prove_outputs_merkle_root,
+        { winner.final_hash },
+        function(response)
+            return output_verifier.validate_outputs_merkle_root_response(response, winner.final_hash)
+        end
+    )
+    local outputs_merkle_root = root_proof:wait()
+    referee.outputs_root = outputs_merkle_root
+    local accepted_output_indices = {}
+    while true do
+        local output_proof <close> = server:request_first_valid(
             EVERYONE,
-            EVENTS.prove_outputs_merkle_root,
-            { winner.final_hash },
+            EVENTS.prove_output,
+            { outputs_merkle_root },
             function(response)
-                return output_verifier.validate_outputs_merkle_root_response(response, winner.final_hash)
+                if not accepted_output_indices[response.output_index] then
+                    return output_verifier.validate_output_response(response, outputs_merkle_root) and response
+                end
             end
         )
-        root = proof:wait(math.min(deadline, server:request_block() + 1))
-    end
-    if not root then
-        eventf("No valid outputs root offered.")
-        return
-    end
-    referee.outputs_root = root
-    local output
-    deadline = server:get_time() + OUTPUT_WINDOW
-    while not output and server:request_block() < deadline do
-        local proof <close> = server:request_first_valid(EVERYONE, EVENTS.prove_output, { root }, function(response)
-            output_verifier.validate_output_response(response, root)
-            return response
-        end)
-        output = proof:wait(math.min(deadline, server:request_block() + 1))
-    end
-    if not output then
-        eventf("No output offered.")
-        return
-    end
-    referee.output = output
-    local ok, decoded = pcall(evmu.decode_calldata, "Notice(bytes payload)", output.output, "raw")
-    if ok then
-        eventf("Result proved against the final state:\n%s", decoded.payload)
+        local output = output_proof:wait()
+        accepted_output_indices[output.output_index] = true
+        referee.output = output
+        local ok, decoded = pcall(evmu.decode_calldata, "Notice(bytes payload)", output.output, "raw")
+        if ok then
+            eventf("Result proved against the final state:\n%s", decoded.payload)
+        end
     end
 end
 
@@ -760,10 +734,7 @@ end
 
 local function new_referee(initial_hash, input_paths)
     assert(#initial_hash == 32 and #input_paths <= INPUTS_PER_EPOCH, "invalid epoch")
-    local inputs = {}
-    for index, path in ipairs(input_paths) do
-        inputs[index] = util.read_file(path)
-    end
+    local inputs = map(input_paths, util.read_file)
     return setmetatable({ initial_hash = initial_hash, input_paths = input_paths, inputs = inputs }, referee_meta)
 end
 
@@ -783,6 +754,9 @@ if ... == "rolling-verification-game" then
     return vg
 end
 local role, address = assert(arg[1], "missing role"), assert(arg[2], "missing referee address")
+if role == "phase_closer" then
+    return vgu.run_client(vgu.new_phase_closer(assert(arg[3], "missing stop command")), address)
+end
 local initial_hash = cartesi.fromhex(assert(arg[3], "missing initial state hash"))
 if role == "referee" then
     vgu.run_server(new_referee(initial_hash, { table.unpack(arg, 4) }), address)

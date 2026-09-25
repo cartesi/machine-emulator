@@ -568,7 +568,10 @@ end
 local function announce(self, connection, message)
     if connection.is_player or connection.is_phase_closer then
         close_connection(self, connection)
-    elseif message.role == "phase_closer" and not self.player_limit and not self.admitted then
+    elseif
+        message.role == "phase_closer"
+        and (message.command == "stop" or (not self.player_limit and not self.admitted))
+    then
         announce_phase_closer(self, connection, message.command)
     elseif message.role == "player" then
         announce_player(self, connection)

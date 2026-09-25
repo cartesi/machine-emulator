@@ -1,7 +1,7 @@
 local cartesi = require("cartesi")
 local vg = require("rolling-verification-game")
 local vgu = require("vgu")
-local run_with_server = require("game-test-server")
+local run_with_server = require("vg-test-server")
 local hash = cartesi.keccak256("clock fixture")
 
 -- The immediate player never pays for the other player's delay. The delayed
@@ -61,6 +61,7 @@ for delayed_index = 1, 2 do
 end
 
 for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
+    local referee = vg.new_referee(hash, {})
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         for index = 1, 2 do
             run_client(nil, function(wire)
@@ -77,11 +78,10 @@ for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
             end, true)
             wait_connections(index)
         end
-        local referee = vg.new_referee(hash, {})
         referee:run(server)
-        assert(not referee.winner and not referee.final_hash)
-        assert(not next(referee.players))
     end)
+    assert(not referee.winner and not referee.final_hash)
+    assert(not next(referee.players))
 end
 
 -- Both players receive every midpoint request, including the last midpoint of
@@ -96,9 +96,10 @@ local empty_handlers = {
 }
 for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
     for failed_player = 0, (failed_round <= 84 and 2 or 0) do
-        run_with_server(vgu.protocol, function(server, run_client, wait_connections)
-            local rounds, proofs = { 0, 0 }, 0
-            local claims = { hash, cartesi.keccak256("other claim") }
+        local rounds, proofs = { 0, 0 }, 0
+        local claims = { hash, cartesi.keccak256("other claim") }
+        local referee = vg.new_referee(hash, {})
+        local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections)
             for index = 1, 2 do
                 local client = { event_handler = setmetatable({}, empty_handlers) }
                 function client.event_handler.commit_final_hash()
@@ -110,7 +111,7 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                     assert(round <= 84, "bisection continued past the leaf")
                     local level = round <= 16 and "input" or round <= 64 and "mcycle" or "uarch_cycle"
                     local remaining = (round <= 16 and 16 or round <= 64 and 64 or 84) - round + 1
-                    assert(interval.level == level and interval.lo == 0 and interval.hi == (1 << remaining))
+                    assert(interval.level == level and interval.lo == 0 and interval.hi == (1 << remaining) - 1)
                     assert(interval.input == (round > 16 and 0 or nil))
                     assert(interval.mcycle_offset == (round > 64 and 0 or nil))
                     if round == failed_round and (failed_player == 0 or failed_player == index) then
@@ -132,23 +133,22 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                 end, true)
                 wait_connections(index)
             end
-            local referee = vg.new_referee(hash, {})
             referee:run(server)
-            local last = math.min(failed_round, 84)
-            assert(rounds[1] == last and rounds[2] == last, "requested another midpoint after settlement")
-            assert(proofs == (failed_round > 84 and 2 or 0))
-            if failed_player == 0 then
-                assert(not referee.winner and not referee.final_hash)
-                assert(not next(referee.players))
-            else
-                local loser = failed_player
-                local winner = 3 - loser
-                assert(referee.winner.index == winner and referee.final_hash == claims[winner])
-                assert(#vg.addresses(referee.players) == 1)
-                assert(referee.players[server:get_players()[winner]] == referee.winner)
-                assert(referee.winner.allowance == 4, "charged the immediate player")
-            end
         end)
+        local last = math.min(failed_round, 84)
+        assert(rounds[1] == last and rounds[2] == last, "requested another midpoint after settlement")
+        assert(proofs == (failed_round > 84 and 2 or 0))
+        if failed_player == 0 then
+            assert(not referee.winner and not referee.final_hash)
+            assert(not next(referee.players))
+        else
+            local loser = failed_player
+            local winner = 3 - loser
+            assert(referee.winner.index == winner and referee.final_hash == claims[winner])
+            assert(#vg.addresses(referee.players) == 1)
+            assert(referee.players[server.connections[winner]] == referee.winner)
+            assert(referee.winner.allowance == 4, "charged the immediate player")
+        end
     end
 end
 vgu.close_narration()

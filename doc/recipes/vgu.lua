@@ -21,6 +21,7 @@ local function phase(filename)
         narration:close()
     end
     narration = assert(io.open(filename, "w"))
+    narration:setvbuf("line")
 end
 
 local function eventf(fmt, ...)
@@ -88,6 +89,7 @@ return {
     answer_event = answer_event,
     run_client = run_client,
     run_server = run_server,
+    new_phase_closer = transport.new_phase_closer,
     schedule_response = transport.schedule_response,
     phase = phase,
     eventf = eventf,

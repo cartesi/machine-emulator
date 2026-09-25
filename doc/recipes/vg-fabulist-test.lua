@@ -6,15 +6,16 @@ local cartesi = require("cartesi")
 local vg = require("rolling-verification-game")
 local vgu = require("vgu")
 local roles = require("vg-dishonest")
-local run_with_server = require("game-test-server")
+local run_with_server = require("vg-test-server")
 
 local function run(initial_hash, paths, delegate)
     local honest <close> = vg.new_player(initial_hash)
     local opponent <close> = roles.new_forger(initial_hash, 2, "forged-input-2.bin")
     local fabulist <close> = roles.new_forger(initial_hash, 2, "forged-input-2.bin")
     local referee = vg.new_referee(initial_hash, paths)
+    local outsider
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
-        local pending, outsider
+        local pending
         run_client(nil, function(_, line)
             return vgu.answer_event(opponent, line)
         end, true)
@@ -63,8 +64,8 @@ local function run(initial_hash, paths, delegate)
             return future
         end
         referee:run(server)
-        assert(outsider.dead, "the outsider was admitted as a third claimant")
     end)
+    assert(outsider.dead, "the outsider was admitted as a third claimant")
     vgu.close_narration()
     -- Keep each run's narration apart, so the counterfactual can be quoted from generated output.
     for _, name in ipairs({ "claims", "bisect_input", "bisect_mcycle", "bisect_uarch_cycle", "verdict" }) do

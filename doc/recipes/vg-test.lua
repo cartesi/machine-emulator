@@ -74,10 +74,10 @@ for _, late_providers in ipairs({ false, true }) do
         end
         for index = 1, 2 do
             local client = { event_handler = setmetatable({}, empty_handlers) }
-            function client.event_handler.commit_final_hash()
+            function client.event_handler.commit_claim()
                 return index == 1 and cartesi.keccak256("losing claim") or first.final_hash
             end
-            function client.event_handler.commit_bisection()
+            function client.event_handler.reveal_bisection()
                 return index == 2 and first.final_hash or "malformed"
             end
             local function offer(_, target, operation)
@@ -120,7 +120,7 @@ do
     local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         for index = 1, 2 do
             local client = { event_handler = setmetatable({}, empty_handlers) }
-            function client.event_handler.commit_final_hash()
+            function client.event_handler.commit_claim()
                 return first.final_hash
             end
             function client.event_handler.prove_outputs_merkle_root()
@@ -188,10 +188,10 @@ for _, case in ipairs({
     local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         for index = 1, 2 do
             local client = { event_handler = setmetatable({}, empty_handlers) }
-            function client.event_handler.commit_final_hash()
+            function client.event_handler.commit_claim()
                 return claims[index]
             end
-            function client.event_handler:commit_bisection(interval) -- luacheck: ignore 212 self
+            function client.event_handler:reveal_bisection(interval) -- luacheck: ignore 212 self
                 if case.last then
                     return interval.level == "uarch_cycle" and before or initial_hash
                 end
@@ -200,7 +200,7 @@ for _, case in ipairs({
                 end
                 return claims[index]
             end
-            function client.event_handler:commit_log(input, mcycle_offset, uarch_cycle) -- luacheck: ignore 212 self
+            function client.event_handler.prove_state_transition(_self, input, mcycle_offset, uarch_cycle)
                 if case.last then
                     assert(input == (1 << 16) - 1 and mcycle_offset == (1 << 48) - 1)
                     assert(uarch_cycle == cartesi.UARCH_CYCLE_MAX)
@@ -256,17 +256,17 @@ if arg[1] ~= "execution" then
         local forger <close> = roles.new_forger(initial_hash, 2, "forged-input-2.bin")
         local players = { tamperer, honest, forger }
         local handlers = setmetatable({}, { __index = vg.event_handler })
-        function handlers:commit_bisection(interval)
+        function handlers:reveal_bisection(interval)
             if interval.level == "input" and interval.lo == 0 and interval.hi == (1 << 16) - 1 then
                 local agreed, tentative = self.agreed, self.tentative
                 self.disputes = self.disputes + 1
-                local hash = vg.event_handler.commit_bisection(self, interval)
+                local hash = vg.event_handler.reveal_bisection(self, interval)
                 assert(not agreed.machine and (not tentative or not tentative.machine))
                 assert(self.agreed.machine:get_root_hash() == initial_hash)
                 assert(self.position.input == 0 and self.position.mcycle_offset == 0 and self.position.uarch_cycle == 0)
                 return hash
             end
-            return vg.event_handler.commit_bisection(self, interval)
+            return vg.event_handler.reveal_bisection(self, interval)
         end
         for _, player in ipairs(players) do
             player.disputes, player.event_handler = 0, handlers
@@ -383,12 +383,12 @@ do
     local rejected_at = rejection.machine:read_reg("mcycle") - input_mcycle_boundary
 
     local interval = { level = "mcycle", input = 0, lo = 0, hi = 2 * rejected_at - 1 }
-    assert(vg.event_handler.commit_bisection(player, interval) == initial_hash)
+    assert(vg.event_handler.reveal_bisection(player, interval) == initial_hash)
     local candidate = player.tentative
     assert(candidate.machine ~= player.agreed.machine and not candidate.backup)
 
     interval.hi = rejected_at - 1
-    local inside_hash = vg.event_handler.commit_bisection(player, interval)
+    local inside_hash = vg.event_handler.reveal_bisection(player, interval)
     assert(not candidate.machine)
     assert(player.agreed.machine:get_root_hash() == initial_hash and not player.agreed.backup)
     candidate = player.tentative
@@ -396,18 +396,18 @@ do
     assert(checkpoint:get_root_hash() == initial_hash)
 
     interval.lo = (rejected_at - 1) // 2 + 1
-    vg.event_handler.commit_bisection(player, interval)
+    vg.event_handler.reveal_bisection(player, interval)
     assert(player.agreed == candidate and player.agreed.backup == checkpoint)
     assert(player.agreed.machine:get_root_hash() == inside_hash)
     assert(player.tentative.backup ~= checkpoint and player.tentative.backup:get_root_hash() == initial_hash)
 
     -- Start another dispute and agree on a point past rejection.
-    vg.event_handler.commit_bisection(player, { level = "input", lo = 0, hi = (1 << 16) - 1 })
+    vg.event_handler.reveal_bisection(player, { level = "input", lo = 0, hi = (1 << 16) - 1 })
     interval.lo, interval.hi = 0, 2 * rejected_at - 1
-    assert(vg.event_handler.commit_bisection(player, interval) == initial_hash)
+    assert(vg.event_handler.reveal_bisection(player, interval) == initial_hash)
     candidate = player.tentative
     interval.lo = rejected_at
-    assert(vg.event_handler.commit_bisection(player, interval) == initial_hash)
+    assert(vg.event_handler.reveal_bisection(player, interval) == initial_hash)
     assert(player.agreed == candidate and not player.agreed.backup and not player.tentative.backup)
     assert(player.agreed.machine:read_reg("mcycle") == input_mcycle_boundary)
     assert(player.tentative.machine:read_reg("mcycle") == input_mcycle_boundary)
@@ -425,12 +425,12 @@ for uarch_cycle = 0, 1 do
     vg.event_handler.input_added(player, 0, paths[1])
     local after_input = player.latest.machine:get_root_hash()
     assert(after_input ~= initial_hash)
-    assert(vg.event_handler.commit_bisection(player, { level = "input", lo = 0, hi = 1 }) == after_input)
+    assert(vg.event_handler.reveal_bisection(player, { level = "input", lo = 0, hi = 1 }) == after_input)
 
     local mcycle <close> = player.initial:fork()
     player:run_advance_state_input(mcycle, 0, 1)
     assert(
-        vg.event_handler.commit_bisection(player, { level = "mcycle", input = 0, lo = 0, hi = 1 })
+        vg.event_handler.reveal_bisection(player, { level = "mcycle", input = 0, lo = 0, hi = 1 })
             == mcycle.machine:get_root_hash()
     )
     local uarch <close> = player.initial:fork()
@@ -438,7 +438,7 @@ for uarch_cycle = 0, 1 do
     uarch.machine:log_step_uarch()
     local after_uarch = uarch.machine:get_root_hash()
     assert(
-        vg.event_handler.commit_bisection(
+        vg.event_handler.reveal_bisection(
             player,
             { level = "uarch_cycle", input = 0, mcycle_offset = 0, lo = 0, hi = 1 }
         ) == after_uarch
@@ -452,7 +452,7 @@ for uarch_cycle = 0, 1 do
     local agreed, tentative = player.agreed, player.tentative
     local unused = uarch_cycle == 0 and tentative or agreed
     local unused_hash = unused.machine:get_root_hash()
-    local log = vg.event_handler.commit_log(player, 0, 0, uarch_cycle)
+    local log = vg.event_handler.prove_state_transition(player, 0, 0, uarch_cycle)
     assert(vg.verify_state_transition({ inputs = player.inputs }, 0, 0, uarch_cycle, before, log, after_uarch))
     assert(player.agreed == agreed and player.tentative == tentative)
     assert(unused.machine:get_root_hash() == unused_hash)
@@ -513,7 +513,7 @@ do
     player.agreed:close()
     player.agreed = boundary:move()
     player.position = { input = 0, mcycle_offset = offset, uarch_cycle = cartesi.UARCH_CYCLE_MAX }
-    local log = vg.event_handler.commit_log(player, 0, offset, cartesi.UARCH_CYCLE_MAX)
+    local log = vg.event_handler.prove_state_transition(player, 0, offset, cartesi.UARCH_CYCLE_MAX)
     assert(vg.verify_state_transition(contract, 0, offset, cartesi.UARCH_CYCLE_MAX, before_reset, log, initial_hash))
     local replay <close> = player.initial:fork()
     player:run_advance_state_input(replay, 0, offset + 1)

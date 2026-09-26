@@ -90,7 +90,7 @@ local quitter_events = {
     initial_state = acknowledge,
     input_added = acknowledge,
     epoch_sealed = acknowledge,
-    commit_final_hash = quit,
+    commit_claim = quit,
 }
 local function close_quitter() end
 local quitter_meta = { __close = close_quitter }

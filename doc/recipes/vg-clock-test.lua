@@ -46,7 +46,7 @@ for delayed_index = 1, 2 do
                     return claims[index]
                 end)
             end
-            client.event_handler.commit_final_hash, client.event_handler.commit_bisection = offer, offer
+            client.event_handler.commit_claim, client.event_handler.reveal_bisection = offer, offer
             run_client(nil, function(wire, line)
                 if wire.operation == "advance_time" then
                     client.block = wire.arguments[1]
@@ -76,7 +76,7 @@ for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         for index = 1, 2 do
             run_client(nil, function(wire)
-                if wire.operation == "commit_final_hash" then
+                if wire.operation == "commit_claim" then
                     if behavior == "quit" then
                         return { skip = true, id = wire.id, done = true }, true
                     end
@@ -105,10 +105,10 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
         local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections)
             for index = 1, 2 do
                 local client = { event_handler = setmetatable({}, empty_handlers) }
-                function client.event_handler.commit_final_hash()
+                function client.event_handler.commit_claim()
                     return claims[index]
                 end
-                function client.event_handler:commit_bisection(interval)
+                function client.event_handler:reveal_bisection(interval)
                     rounds[index] = rounds[index] + 1
                     local round = rounds[index]
                     assert(round <= 84, "bisection continued past the leaf")
@@ -122,7 +122,7 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                     end
                     return claims[index]
                 end
-                function client.event_handler:commit_log(input, mcycle_offset, uarch_cycle)
+                function client.event_handler:prove_state_transition(input, mcycle_offset, uarch_cycle)
                     proofs = proofs + 1
                     assert(rounds[1] == 84 and rounds[2] == 84)
                     assert(input == 0 and mcycle_offset == 0 and uarch_cycle == 0, "wrong transition coordinates")

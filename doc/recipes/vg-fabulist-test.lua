@@ -30,7 +30,7 @@ local function run(initial_hash, paths, delegate)
                 vgu.answer_event(fabulist, line)
             end
             local response = vgu.answer_event(honest, line)
-            if delegate and wire.operation == "commit_bisection" then
+            if delegate and wire.operation == "reveal_bisection" then
                 return { id = wire.id, skip = true }
             end
             return response
@@ -56,7 +56,7 @@ local function run(initial_hash, paths, delegate)
         local request_all = server.request_all
         function server:request_all(connections, event, arguments, accept)
             local future = request_all(self, connections, event, arguments, accept)
-            if event == vgu.EVENTS.commit_bisection and future.pending[owner] then
+            if event == vgu.EVENTS.reveal_bisection and future.pending[owner] then
                 pending = { future = future, control = self.controls[#self.controls] }
                 -- The outsider answers the honest player's midpoint requests
                 -- using the forger's history.

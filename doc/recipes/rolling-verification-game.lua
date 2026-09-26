@@ -375,13 +375,13 @@ function event_handler:epoch_sealed()
     self.previous_outputs_frontier, self.outputs_frontier = self.outputs_frontier, nil
 end
 
-function event_handler:commit_final_hash()
+function event_handler:commit_claim()
     return self.final_hash
 end
 
 -- The interval contains resulting states, indexed from zero, with the agreed
 -- predecessor outside it. Each midpoint advances a fork of the agreed pair.
-function event_handler:commit_bisection(interval)
+function event_handler:reveal_bisection(interval)
     if interval.level == "input" and interval.lo == 0 and interval.hi == INPUTS_PER_EPOCH - 1 then
         self.agreed:close()
         self.agreed = self.initial:fork()
@@ -405,7 +405,7 @@ function event_handler:commit_bisection(interval)
     return tentative.machine:get_root_hash()
 end
 
-function event_handler:commit_log(input, mcycle_offset, uarch_cycle)
+function event_handler:prove_state_transition(input, mcycle_offset, uarch_cycle)
     local pair = self.position.uarch_cycle < uarch_cycle and self.tentative or self.agreed
     local machine = pair.machine
     local data = self.inputs[input + 1]
@@ -551,7 +551,7 @@ local function bisect_level(referee, server, level, count, bisection)
         end)
         local survivors <close> = server:request_all(
             addresses(players),
-            EVENTS.commit_bisection,
+            EVENTS.reveal_bisection,
             { interval },
             function(hash, _label, sender, received_at)
                 local player = players[sender]
@@ -595,7 +595,7 @@ local function request_transition_proofs(referee, server, input, mcycle_offset, 
     end)
     local survivors <close> = server:request_all(
         addresses(players),
-        EVENTS.commit_log,
+        EVENTS.prove_state_transition,
         { input, mcycle_offset, uarch_cycle },
         function(log, _label, sender, received_at)
             local player = players[sender]
@@ -712,7 +712,7 @@ function referee_meta.__index:run(server)
         end)
         local survivors <close> = server:request_all(
             addresses(players),
-            EVENTS.commit_final_hash,
+            EVENTS.commit_claim,
             {},
             function(hash, label, sender, received_at)
                 local player = players[sender]

@@ -56,9 +56,9 @@ local events = {
     initial_state = define_event("initial_state", "InitialState"),
     input_added = define_event("input_added", "InputAdded"),
     epoch_sealed = define_event("epoch_sealed", "EpochSealed"),
-    commit_final_hash = define_event("commit_final_hash", "Empty", "Base64"),
-    commit_bisection = define_event("commit_bisection", "Bisection", "Base64"),
-    commit_log = define_event("commit_log", "Transition", "Log"),
+    commit_claim = define_event("commit_claim", "Empty", "Base64"),
+    reveal_bisection = define_event("reveal_bisection", "Bisection", "Base64"),
+    prove_state_transition = define_event("prove_state_transition", "Transition", "Log"),
     prove_outputs_merkle_root = define_event("prove_outputs_merkle_root", "Hash", "OutputsRoot"),
     prove_output = define_event("prove_output", "Hash", "Output"),
 }

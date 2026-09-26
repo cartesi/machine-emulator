@@ -4962,7 +4962,7 @@ The calculator is done with each input within about 50 million mcycles, after wh
 A midpoint past the yield therefore repeats the yielded state, and the bisection ranges over the full ceiling without knowing where the guest yields, exactly as the halt allowed in the verification game.
 The uarch_cycle bisection that follows is unchanged, over the 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch cycles of the disputed instruction.
 A single player operation serves the three levels:
-```{.lua key=rvg_commit_bisection include=rolling-verification-game.lua/commit_bisection title="rolling-verification-game.lua (excerpt)"}
+```{.lua key=rvg_commit_bisection include=rolling-verification-game.lua/reveal_bisection title="rolling-verification-game.lua (excerpt)"}
 ```
 The first round below the input level keeps a fork of the disputed input's boundary.
 A round that finds the guest rejecting the input answers with a fresh fork of that boundary, the recorded revert state.
@@ -4971,7 +4971,7 @@ A fork that still stands at the boundary includes the input before running (at b
 ### Verifying the disputed transition
 
 Once the bisections converge, the mcycle offset and uarch cycle they agreed on determine the form of the disputed transition, and the referee asks player 1 for the matching logs:
-```{.lua key=rvg_commit_log include=rolling-verification-game.lua/commit_log title="rolling-verification-game.lua (excerpt)"}
+```{.lua key=rvg_commit_log include=rolling-verification-game.lua/prove_state_transition title="rolling-verification-game.lua (excerpt)"}
 ```
 A combined transition is committed as its two access logs.
 

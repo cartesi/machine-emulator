@@ -1,8 +1,21 @@
 -- VG event schemas, transport bindings, and narration.
 local cartesi = require("cartesi")
+local evmu = require("cartesi.evmu")
 local transport = require("game-transport")
 -- A nil audience broadcasts to every admitted player.
 local EVERYONE = nil
+
+-- Enumerate player addresses in admission order.
+local function addresses(players)
+    local result = {}
+    for address in pairs(players) do
+        result[#result + 1] = address
+    end
+    table.sort(result, function(a, b)
+        return a.order < b.order
+    end)
+    return result
+end
 
 -- The referee narrates the game, kept apart from the wire trace on stderr so the run reads as a
 -- story whether or not tracing is on. A hash is shown by its first four bytes.
@@ -29,6 +42,46 @@ local function eventf(fmt, ...)
     narration:write(line, "\n")
     if narration ~= io.stdout then
         io.stdout:write(line, "\n")
+    end
+end
+
+-- The referee reports semantic events. The story owns their formatting and
+-- phase files, keeping presentation out of the game algorithm.
+local story = {}
+
+function story.report_claims(players)
+    phase("claims")
+    for _, sender in ipairs(addresses(players)) do
+        local player = players[sender]
+        eventf("Player %s claimed %s.", player.label or player.index, short_hash(player.final_hash))
+    end
+end
+
+function story.report_bisection(interval)
+    phase("bisect_" .. interval.level)
+end
+
+function story.report_bisection_progress(interval)
+    eventf("%s interval of disagreement is [0x%x, 0x%x].", interval.level, interval.lo, interval.hi)
+end
+
+function story.report_state_transition(player)
+    eventf("Player %s's transition proof is valid.", player.label or player.index)
+end
+
+function story.report_winner(winner)
+    phase("verdict")
+    if not winner then
+        eventf("No players remain.")
+        return
+    end
+    eventf("Player %s wins. Final state hash: %s", winner.label or winner.index, cartesi.tohex(winner.final_hash))
+end
+
+function story.report_output(output)
+    local ok, decoded = pcall(evmu.decode_calldata, "Notice(bytes payload)", output.output, "raw")
+    if ok then
+        eventf("Result proved against the final state:\n%s", decoded.payload)
     end
 end
 
@@ -91,8 +144,7 @@ return {
     run_server = run_server,
     new_phase_closer = transport.new_phase_closer,
     schedule_response = transport.schedule_response,
-    phase = phase,
-    eventf = eventf,
-    short_hash = short_hash,
+    addresses = addresses,
+    story = story,
     close_narration = close_narration,
 }

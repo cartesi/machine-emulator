@@ -9,32 +9,18 @@ local cartesi = require("cartesi")
 local jsonrpc = require("cartesi.jsonrpc")
 local hash_tree = require("cartesi.hash-tree")
 local util = require("cartesi.util")
-local evmu = require("cartesi.evmu")
 local vgu = require("vgu")
 local output_verifier = require("game-output")
 local EVENTS = vgu.EVENTS
 local EVERYONE = vgu.EVERYONE
-local phase = vgu.phase
-local eventf = vgu.eventf
-local short_hash = vgu.short_hash
+local story = vgu.story
+local addresses = vgu.addresses
 local MCYCLES_PER_INPUT = 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 local UARCH_CYCLES_PER_MCYCLE = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
 local INPUTS_PER_EPOCH = 1 << 16
 local RESPONSE_BUDGET = 1
 local ALLOWANCE = 4
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
-
--- Enumerate player addresses in admission order.
-local function addresses(players)
-    local result = {}
-    for address in pairs(players) do
-        result[#result + 1] = address
-    end
-    table.sort(result, function(a, b)
-        return a.order < b.order
-    end)
-    return result
-end
 
 -- Transform values while preserving their keys.
 local function map(values, transform)
@@ -281,13 +267,12 @@ local function load_cmio_input(machine, data, revert_root_hash)
 end
 
 function player_methods:run_uarch(pair, epoch_input_offset, input_mcycle_offset, uarch_cycle_end)
-    local machine = pair.machine
-    local uarch_cycle = machine:read_reg("uarch_cycle")
+    local uarch_cycle = pair.machine:read_reg("uarch_cycle")
     assert(uarch_cycle <= uarch_cycle_end, "agreed machine is past desired state")
     if input_mcycle_offset == 0 and uarch_cycle == 0 and uarch_cycle_end > 0 then
         self:run_advance_state_input(pair, epoch_input_offset, 0)
     end
-    machine:run_uarch(uarch_cycle_end)
+    pair.machine:run_uarch(uarch_cycle_end)
 end
 
 -- Retain only accepted outputs and check their cumulative root.
@@ -581,7 +566,6 @@ end
 -- Bisect the inclusive range of resulting-state indices. The agreed predecessor
 -- is not one of its leaves. Any disagreement selects the earlier half.
 local function bisect_level(referee, server, level, count, bisection)
-    phase("bisect_" .. level)
     local interval = {
         level = level,
         lo = 0,
@@ -589,6 +573,7 @@ local function bisect_level(referee, server, level, count, bisection)
         input = bisection.input,
         mcycle_offset = bisection.mcycle_offset,
     }
+    story.report_bisection(interval)
     while interval.lo < interval.hi do
         referee.players = request_bisections(referee, server, interval)
         if no_claim_remains(referee.players) then
@@ -609,7 +594,7 @@ local function bisect_level(referee, server, level, count, bisection)
             interval.lo = mid + 1
             bisection.last_agreed_hash = any_of(hashes)
         end
-        eventf("%s interval of disagreement is [0x%x, 0x%x].", level, interval.lo, interval.hi)
+        story.report_bisection_progress(interval)
     end
     return interval.lo
 end
@@ -638,7 +623,7 @@ local function request_state_transitions(referee, server, input, mcycle_offset, 
             )
             local elapsed = received_at - started_at
             player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
-            eventf("Player %s's transition proof is valid.", player.label or player.index)
+            story.report_state_transition(player)
             return player
         end
     )
@@ -705,10 +690,7 @@ local function wait_for_outputs(referee, server, winner)
         local output = output_proof:wait()
         accepted_output_indices[output.output_index] = true
         referee.output = output
-        local ok, decoded = pcall(evmu.decode_calldata, "Notice(bytes payload)", output.output, "raw")
-        if ok then
-            eventf("Result proved against the final state:\n%s", decoded.payload)
-        end
+        story.report_output(output)
     end
 end
 
@@ -731,7 +713,6 @@ function referee_meta.__index:run(server)
         local sealed <close> = server:request_all(EVERYONE, EVENTS.epoch_sealed, { #self.inputs })
         sealed:wait()
     end
-    phase("claims")
     do
         local started_at = server:get_time()
         local deadline = fold(players, started_at, function(latest, player)
@@ -755,24 +736,14 @@ function referee_meta.__index:run(server)
         players = survivors:wait(deadline)
         self.players = players
     end
-    if no_claim_remains(players) then
-        phase("verdict")
-        eventf("No players remain.")
-        return
-    end
-    for _, sender in ipairs(addresses(players)) do
-        local player = players[sender]
-        eventf("Player %s claimed %s.", player.label or player.index, short_hash(player.final_hash))
-    end
+    story.report_claims(self.players)
     local winner = settle_dispute(self, server)
     self.winner = winner
-    phase("verdict")
+    story.report_winner(winner)
     if not winner then
-        eventf("No players remain.")
         return
     end
     self.final_hash = winner.final_hash
-    eventf("Player %s wins. Final state hash: %s", winner.label or winner.index, cartesi.tohex(winner.final_hash))
     server:open_players()
     wait_for_outputs(self, server, winner)
 end

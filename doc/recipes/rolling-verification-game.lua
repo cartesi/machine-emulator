@@ -22,6 +22,26 @@ local RESPONSE_BUDGET = 1
 local ALLOWANCE = 4
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
 
+local function shallow_copy(values)
+    local result = {}
+    for key, value in pairs(values) do
+        result[key] = value
+    end
+    return result
+end
+
+local function shallow_clear(values)
+    for key in pairs(values) do
+        values[key] = nil
+    end
+end
+
+local function shallow_move(values)
+    local result = shallow_copy(values)
+    shallow_clear(values)
+    return result
+end
+
 -- Transform values while preserving their keys.
 local function map(values, transform)
     local result = {}
@@ -96,18 +116,18 @@ end
 -- within the mcycle. Leaf k is reached at position k + 1; its predecessor is at k.
 local function position(interval, offset)
     return {
-        input = interval.level == "input" and offset or interval.input,
-        mcycle_offset = interval.level == "mcycle" and offset or interval.mcycle_offset or 0,
+        epoch_input_offset = interval.level == "input" and offset or interval.epoch_input_offset,
+        input_mcycle_offset = interval.level == "mcycle" and offset or interval.input_mcycle_offset or 0,
         uarch_cycle = interval.level == "uarch_cycle" and offset or 0,
     }
 end
 
 local function precedes(a, b)
-    if a.input ~= b.input then
-        return a.input < b.input
+    if a.epoch_input_offset ~= b.epoch_input_offset then
+        return a.epoch_input_offset < b.epoch_input_offset
     end
-    if a.mcycle_offset ~= b.mcycle_offset then
-        return a.mcycle_offset < b.mcycle_offset
+    if a.input_mcycle_offset ~= b.input_mcycle_offset then
+        return a.input_mcycle_offset < b.input_mcycle_offset
     end
     return a.uarch_cycle < b.uarch_cycle
 end
@@ -134,23 +154,13 @@ end
 advancing_pair_meta.__close = advancing_pair_methods.close
 
 function advancing_pair_methods:move()
-    local pair = setmetatable({}, advancing_pair_meta)
-    for key, value in pairs(self) do
-        pair[key] = value
-    end
-    for key in pairs(self) do
-        self[key] = nil
-    end
-    return pair
+    return setmetatable(shallow_move(self), advancing_pair_meta)
 end
 
 function advancing_pair_methods:fork()
-    local clone <close> = setmetatable({}, advancing_pair_meta)
-    for key, value in pairs(self) do
-        if key ~= "machine" and key ~= "backup" then
-            clone[key] = value
-        end
-    end
+    local clone <close> = setmetatable(shallow_copy(self), advancing_pair_meta)
+    -- Clear borrowed resources before a failing fork can trigger cleanup.
+    clone.machine, clone.backup = nil, nil
     clone.machine = fork_machine(self.machine)
     if self.backup then
         clone.backup = fork_machine(self.backup)
@@ -195,7 +205,7 @@ local player_meta = { __index = {} }
 local player_methods = player_meta.__index
 
 function player_methods:close()
-    for _, key in ipairs({ "initial", "latest", "agreed", "tentative" }) do
+    for _, key in ipairs({ "initial", "latest", "agreed_machine", "tentative_machine" }) do
         if self[key] then
             self[key]:close()
             self[key] = nil
@@ -206,30 +216,7 @@ player_meta.__close = player_methods.close
 
 -- Transfer construction state out of a <close> local without closing its resources.
 function player_methods:move()
-    local player = setmetatable({}, player_meta)
-    for name, value in pairs(self) do
-        player[name] = value
-    end
-    for name in pairs(self) do
-        self[name] = nil
-    end
-    return player
-end
-
--- Bisection keeps or discards a whole advancing pair, never an input snapshot.
-function player_methods:snapshot()
-    if self.tentative then
-        self.tentative:close()
-    end
-    self.tentative = self.agreed:fork()
-    return self.tentative
-end
-
-function player_methods:commit()
-    assert(self.tentative, "no bisection snapshot")
-    self.agreed:close()
-    self.agreed = self.tentative
-    self.tentative = nil
+    return setmetatable(shallow_move(self), player_meta)
 end
 
 -- Advance a loaded input, settling its checkpoint when it reaches a fixed point.
@@ -321,11 +308,16 @@ function player_methods:run_to_input_boundary(pair, epoch_input_offset_begin, ep
     end
 end
 
-function player_methods:run_to_mcycle_boundary(pair, epoch_input_offset, mcycle_offset_begin, mcycle_offset_end)
-    if mcycle_offset_begin == 0 then
-        self:run_advance_state_input(pair, epoch_input_offset, mcycle_offset_end)
+function player_methods:run_to_mcycle_boundary(
+    pair,
+    epoch_input_offset,
+    input_mcycle_offset_begin,
+    input_mcycle_offset_end
+)
+    if input_mcycle_offset_begin == 0 then
+        self:run_advance_state_input(pair, epoch_input_offset, input_mcycle_offset_end)
     elseif pair.backup then
-        local mcycle_end = usaturating_add(pair.backup:read_reg("mcycle"), mcycle_offset_end)
+        local mcycle_end = usaturating_add(pair.backup:read_reg("mcycle"), input_mcycle_offset_end)
         self:run_to_stop(pair, epoch_input_offset, mcycle_end)
     end
 end
@@ -344,7 +336,10 @@ end
 local event_handler = {}
 
 function event_handler:initial_state(initial_hash)
-    assert(self.agreed.machine:get_root_hash() == initial_hash, "initial machine does not match referee's state hash")
+    assert(
+        self.agreed_machine.machine:get_root_hash() == initial_hash,
+        "initial machine does not match referee's state hash"
+    )
 end
 
 function event_handler:input_added(epoch_input_offset, path)
@@ -370,38 +365,54 @@ function event_handler:commit_claim()
     return self.final_hash
 end
 
--- The interval contains resulting states, indexed from zero, with the agreed
--- predecessor outside it. Each midpoint advances a fork of the agreed pair.
-function event_handler:reveal_bisection(interval)
-    if interval.level == "input" and interval.lo == 0 and interval.hi == INPUTS_PER_EPOCH - 1 then
-        self.agreed:close()
-        self.agreed = self.initial:fork()
-        self.position = { input = 0, mcycle_offset = 0, uarch_cycle = 0 }
-    end
-    local previous = position(interval, interval.lo)
-    local target = position(interval, midpoint(interval) + 1)
-    if precedes(self.position, previous) then
-        self:commit()
-    end
-    self.position = previous
-    local tentative = self:snapshot()
-    if previous.input < target.input then
-        self:run_to_input_boundary(tentative, previous.input, target.input)
-    end
-    if previous.mcycle_offset < target.mcycle_offset then
-        self:run_to_mcycle_boundary(tentative, target.input, previous.mcycle_offset, target.mcycle_offset)
-    end
-    if previous.uarch_cycle < target.uarch_cycle then
-        self:run_uarch(tentative, target.input, target.mcycle_offset, target.uarch_cycle)
-    end
-    return tentative.machine:get_root_hash()
+function event_handler:dispute_started()
+    self.agreed_machine:close()
+    self.agreed_machine = self.initial:fork()
+    self.agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 }
 end
 
-function event_handler:prove_state_transition(input, mcycle_offset, uarch_cycle)
-    local pair = self.position.uarch_cycle < uarch_cycle and self.tentative or self.agreed
-    local machine = pair.machine
-    local data = self.inputs[input + 1]
-    if mcycle_offset == 0 and uarch_cycle == 0 and data then
+function event_handler:reveal_bisection(agreed_position, tentative_position)
+    if precedes(self.agreed_position, agreed_position) then
+        -- The previous midpoint is now the agreed predecessor.
+        self.agreed_machine:close()
+        self.agreed_machine, self.tentative_machine = self.tentative_machine, nil
+    else
+        self.tentative_machine:close()
+    end
+    self.agreed_position = agreed_position
+    -- Replay from a fork of the whole agreed pair, including any pending input snapshot.
+    self.tentative_machine = self.agreed_machine:fork()
+    if agreed_position.epoch_input_offset < tentative_position.epoch_input_offset then
+        self:run_to_input_boundary(
+            self.tentative_machine,
+            agreed_position.epoch_input_offset,
+            tentative_position.epoch_input_offset
+        )
+    end
+    if agreed_position.input_mcycle_offset < tentative_position.input_mcycle_offset then
+        self:run_to_mcycle_boundary(
+            self.tentative_machine,
+            tentative_position.epoch_input_offset,
+            agreed_position.input_mcycle_offset,
+            tentative_position.input_mcycle_offset
+        )
+    end
+    if agreed_position.uarch_cycle < tentative_position.uarch_cycle then
+        self:run_uarch(
+            self.tentative_machine,
+            tentative_position.epoch_input_offset,
+            tentative_position.input_mcycle_offset,
+            tentative_position.uarch_cycle
+        )
+    end
+    return self.tentative_machine.machine:get_root_hash()
+end
+
+function event_handler:prove_state_transition(epoch_input_offset, input_mcycle_offset, uarch_cycle)
+    local machine = self.agreed_position.uarch_cycle < uarch_cycle and self.tentative_machine.machine
+        or self.agreed_machine.machine
+    local data = self.inputs[epoch_input_offset + 1]
+    if input_mcycle_offset == 0 and uarch_cycle == 0 and data then
         local before = machine:get_root_hash()
         local send = machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, before)
         return { send_cmio_log = send, step_log = machine:log_step_uarch() }
@@ -441,23 +452,23 @@ end
 
 -- The optional proof bootstraps output history after a previous epoch.
 local function new_player(initial_hash, label, last_output_proof, machine)
-    local agreed = setmetatable({ machine = machine or new_machine(initial_hash) }, advancing_pair_meta)
     local self <close> = setmetatable({
         label = label or "honest",
-        agreed = agreed,
-        position = { input = 0, mcycle_offset = 0, uarch_cycle = 0 },
+        agreed_machine = setmetatable({ machine = machine or new_machine(initial_hash) }, advancing_pair_meta),
+        agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
         inputs = {},
         outputs = {},
         event_handler = event_handler,
     }, player_meta)
-    machine = agreed.machine
+    machine = self.agreed_machine.machine
     assert(machine:get_root_hash() == initial_hash, "initial machine snapshot hash mismatch")
     local break_reason = machine:run(machine:read_reg("mcycle"))
     assert(is_yielded_manual(break_reason), "initial machine is not waiting for an input")
     local yield_reason = receive_cmio_request(machine)
     assert(is_rx_accepted(yield_reason), "initial machine did not accept")
-    self.initial = self.agreed:fork()
-    self.latest = self.agreed:fork()
+    self.initial = self.agreed_machine:fork()
+    self.latest = self.agreed_machine:fork()
+    self.tentative_machine = self.agreed_machine:fork()
     if last_output_proof then
         assert(
             last_output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT
@@ -473,9 +484,17 @@ end
 
 -- The referee trusts its own input bytes and verifies the log without a machine.
 -- Invalid logs raise an error, which the request's protected validator rejects.
-local function validate_state_transition_response(referee, input, mcycle_offset, uarch_cycle, before, response, after)
-    local data = referee.inputs[input + 1]
-    if mcycle_offset == 0 and uarch_cycle == 0 and data then
+local function validate_state_transition_response(
+    referee,
+    epoch_input_offset,
+    input_mcycle_offset,
+    uarch_cycle,
+    before,
+    response,
+    after
+)
+    local data = referee.inputs[epoch_input_offset + 1]
+    if input_mcycle_offset == 0 and uarch_cycle == 0 and data then
         before = cartesi.machine:verify_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             data,
@@ -541,6 +560,8 @@ local function hashes_disagree(hashes)
     return false
 end
 
+-- The interval contains resulting states, indexed from zero, with the agreed
+-- predecessor outside it. Each midpoint advances a fork of the agreed pair.
 local function request_bisections(referee, server, interval)
     local started_at = server:get_time()
     local deadline = fold(referee.players, started_at, function(latest, player)
@@ -549,7 +570,7 @@ local function request_bisections(referee, server, interval)
     local survivors <close> = server:request_all(
         addresses(referee.players),
         EVENTS.reveal_bisection,
-        { interval },
+        { position(interval, interval.lo), position(interval, midpoint(interval) + 1) },
         function(response, _label, sender, received_at)
             local player = referee.players[sender]
             assert(received_at < started_at + player.allowance, "late midpoint hash")
@@ -570,8 +591,8 @@ local function bisect_level(referee, server, level, count, bisection)
         level = level,
         lo = 0,
         hi = count - 1,
-        input = bisection.input,
-        mcycle_offset = bisection.mcycle_offset,
+        epoch_input_offset = bisection.epoch_input_offset,
+        input_mcycle_offset = bisection.input_mcycle_offset,
     }
     story.report_bisection(interval)
     while interval.lo < interval.hi do
@@ -600,7 +621,14 @@ local function bisect_level(referee, server, level, count, bisection)
 end
 
 -- Every surviving player must prove its own committed endpoint.
-local function request_state_transitions(referee, server, input, mcycle_offset, uarch_cycle, bisection)
+local function request_state_transitions(
+    referee,
+    server,
+    epoch_input_offset,
+    input_mcycle_offset,
+    uarch_cycle,
+    bisection
+)
     local started_at = server:get_time()
     local deadline = fold(referee.players, started_at, function(latest, player)
         return math.max(latest, started_at + player.allowance)
@@ -608,14 +636,14 @@ local function request_state_transitions(referee, server, input, mcycle_offset, 
     local survivors <close> = server:request_all(
         addresses(referee.players),
         EVENTS.prove_state_transition,
-        { input, mcycle_offset, uarch_cycle },
+        { epoch_input_offset, input_mcycle_offset, uarch_cycle },
         function(response, _label, sender, received_at)
             local player = referee.players[sender]
             assert(received_at < started_at + player.allowance, "late transition proof")
             validate_state_transition_response(
                 referee,
-                input,
-                mcycle_offset,
+                epoch_input_offset,
+                input_mcycle_offset,
                 uarch_cycle,
                 bisection.last_agreed_hash,
                 response,
@@ -636,29 +664,32 @@ local function settle_dispute(referee, server)
         if winner then
             return winner
         end
+        local started <close> = server:request_all(addresses(referee.players), EVENTS.dispute_started, {})
+        started:wait()
         local bisection = {
             last_agreed_hash = referee.initial_hash,
             hashes_after = map(referee.players, function(player)
                 return player.final_hash
             end),
         }
-        local input, winner_input = bisect_level(referee, server, "input", INPUTS_PER_EPOCH, bisection)
-        if not input then
+        local epoch_input_offset, winner_input = bisect_level(referee, server, "input", INPUTS_PER_EPOCH, bisection)
+        if not epoch_input_offset then
             return winner_input
         end
-        bisection.input = input
-        local mcycle_offset, winner_mcycle = bisect_level(referee, server, "mcycle", MCYCLES_PER_INPUT, bisection)
-        if not mcycle_offset then
+        bisection.epoch_input_offset = epoch_input_offset
+        local input_mcycle_offset, winner_mcycle = bisect_level(referee, server, "mcycle", MCYCLES_PER_INPUT, bisection)
+        if not input_mcycle_offset then
             return winner_mcycle
         end
-        bisection.mcycle_offset = mcycle_offset
+        bisection.input_mcycle_offset = input_mcycle_offset
         -- UARCH_CYCLE_MAX names the last cycle. Its outgoing transition includes reset.
         local uarch_cycle, winner_uarch_cycle =
             bisect_level(referee, server, "uarch_cycle", UARCH_CYCLES_PER_MCYCLE, bisection)
         if not uarch_cycle then
             return winner_uarch_cycle
         end
-        referee.players = request_state_transitions(referee, server, input, mcycle_offset, uarch_cycle, bisection)
+        referee.players =
+            request_state_transitions(referee, server, epoch_input_offset, input_mcycle_offset, uarch_cycle, bisection)
     end
 end
 
@@ -694,64 +725,63 @@ local function wait_for_outputs(referee, server, winner)
     end
 end
 
-local referee_meta = { __index = {} }
-function referee_meta.__index:run(server)
-    local players = {}
-    self.players = players
+local function request_claims(referee, server)
+    local started_at = server:get_time()
+    local deadline = fold(referee.players, started_at, function(latest, player)
+        return math.max(latest, started_at + player.allowance)
+    end)
+    local survivors <close> = server:request_all(
+        addresses(referee.players),
+        EVENTS.commit_claim,
+        {},
+        function(response, label, sender, received_at)
+            local player = referee.players[sender]
+            assert(received_at < started_at + player.allowance, "late final hash")
+            local hash = validate_claim_response(response)
+            local elapsed = received_at - started_at
+            player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
+            player.label = label
+            player.final_hash = hash
+            return player
+        end
+    )
+    return survivors:wait(deadline)
+end
+
+local function run_referee(referee, server)
+    referee.players = {}
     for index, sender in ipairs(server:accept_players(2)) do
-        players[sender] = { index = index, allowance = ALLOWANCE }
+        referee.players[sender] = { index = index, allowance = ALLOWANCE }
     end
-    do
-        local initial <close> = server:request_all(EVERYONE, EVENTS.initial_state, { self.initial_hash })
-        initial:wait()
-    end
-    for index, path in ipairs(self.input_paths) do
+    local initial <close> = server:request_all(EVERYONE, EVENTS.initial_state, { referee.initial_hash })
+    initial:wait()
+    for index, path in ipairs(referee.input_paths) do
         local input <close> = server:request_all(EVERYONE, EVENTS.input_added, { index - 1, path })
         input:wait()
     end
-    do
-        local sealed <close> = server:request_all(EVERYONE, EVENTS.epoch_sealed, { #self.inputs })
-        sealed:wait()
-    end
-    do
-        local started_at = server:get_time()
-        local deadline = fold(players, started_at, function(latest, player)
-            return math.max(latest, started_at + player.allowance)
-        end)
-        local survivors <close> = server:request_all(
-            addresses(players),
-            EVENTS.commit_claim,
-            {},
-            function(response, label, sender, received_at)
-                local player = players[sender]
-                assert(received_at < started_at + player.allowance, "late final hash")
-                local hash = validate_claim_response(response)
-                local elapsed = received_at - started_at
-                player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
-                player.label = label
-                player.final_hash = hash
-                return player
-            end
-        )
-        players = survivors:wait(deadline)
-        self.players = players
-    end
-    story.report_claims(self.players)
-    local winner = settle_dispute(self, server)
-    self.winner = winner
+    local sealed <close> = server:request_all(EVERYONE, EVENTS.epoch_sealed, { #referee.inputs })
+    sealed:wait()
+    referee.players = request_claims(referee, server)
+    story.report_claims(referee.players)
+    local winner = settle_dispute(referee, server)
+    referee.winner = winner
     story.report_winner(winner)
     if not winner then
         return
     end
-    self.final_hash = winner.final_hash
+    referee.final_hash = winner.final_hash
     server:open_players()
-    wait_for_outputs(self, server, winner)
+    wait_for_outputs(referee, server, winner)
 end
 
 local function new_referee(initial_hash, input_paths)
     assert(#initial_hash == 32 and #input_paths <= INPUTS_PER_EPOCH, "invalid epoch")
-    local inputs = map(input_paths, util.read_file)
-    return setmetatable({ initial_hash = initial_hash, input_paths = input_paths, inputs = inputs }, referee_meta)
+    return {
+        initial_hash = initial_hash,
+        input_paths = input_paths,
+        inputs = map(input_paths, util.read_file),
+        run = run_referee,
+    }
 end
 
 local vg = {

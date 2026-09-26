@@ -4921,6 +4921,7 @@ The uarch reset keeps the place it had in the verification game, sharing the tra
 The inclusion of an input advances no cycle counter either, and shares a transition the same way.
 The transition out of input *i-1* includes input *i* and also performs the first uarch step of the instruction that resumes the machine.
 
+Before each dispute, the referee sends `dispute_started` to the surviving players, whose handlers reset their agreed machine and position to the epoch's initial state.
 The referee runs the three bisections in turn, reusing `bisect_level` unchanged, then verifies the transition out of the position they converged on:
 ```{.lua key=rvg_settle include=rolling-verification-game.lua/settle_dispute title="rolling-verification-game.lua (excerpt)"}
 ```
@@ -4961,7 +4962,8 @@ The input is included by the first of these transitions, so the state at offset 
 The calculator is done with each input within about 50 million mcycles, after which the machine has yielded manual and no longer advances.
 A midpoint past the yield therefore repeats the yielded state, and the bisection ranges over the full ceiling without knowing where the guest yields, exactly as the halt allowed in the verification game.
 The uarch_cycle bisection that follows is unchanged, over the 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch cycles of the disputed instruction.
-A single player operation serves the three levels:
+The referee converts each interval into the agreed predecessor's position and the tentative midpoint's position.
+A single player operation receives these two positions and serves the three levels:
 ```{.lua key=rvg_commit_bisection include=rolling-verification-game.lua/reveal_bisection title="rolling-verification-game.lua (excerpt)"}
 ```
 The first round below the input level keeps a fork of the disputed input's boundary.

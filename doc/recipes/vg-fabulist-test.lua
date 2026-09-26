@@ -26,6 +26,7 @@ local function run(initial_hash, paths, delegate)
                 wire.operation == "initial_state"
                 or wire.operation == "input_added"
                 or wire.operation == "epoch_sealed"
+                or wire.operation == "dispute_started"
             then
                 vgu.answer_event(fabulist, line)
             end

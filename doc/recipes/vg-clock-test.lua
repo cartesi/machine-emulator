@@ -31,11 +31,13 @@ for delayed_index = 1, 2 do
                 block = 0,
                 requested_at = {},
                 allowances = {},
+                disputes = 0,
                 event_handler = setmetatable({}, empty_handlers),
             }
             local function offer(self)
                 local round = #self.requested_at + 1
                 assert(round <= 4, "requested another hash after elimination")
+                assert(round == 1 or self.disputes == 1, "midpoint requested before dispute started")
                 self.requested_at[round] = self.block
                 self.allowances[round] = referee.players[sender].allowance
                 local delay = index == delayed_index and ({ 2, 2, 0, 2 })[round] or 0
@@ -47,6 +49,11 @@ for delayed_index = 1, 2 do
                 end)
             end
             client.event_handler.commit_claim, client.event_handler.reveal_bisection = offer, offer
+            function client.event_handler:dispute_started()
+                assert(#self.requested_at == 1 and self.disputes == 0)
+                assert(referee.players[sender].allowance == (index == delayed_index and 3 or 4))
+                self.disputes = self.disputes + 1
+            end
             run_client(nil, function(wire, line)
                 if wire.operation == "advance_time" then
                     client.block = wire.arguments[1]
@@ -108,24 +115,37 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                 function client.event_handler.commit_claim()
                     return claims[index]
                 end
-                function client.event_handler:reveal_bisection(interval)
+                function client.event_handler:reveal_bisection(agreed_position, tentative_position)
                     rounds[index] = rounds[index] + 1
                     local round = rounds[index]
                     assert(round <= 84, "bisection continued past the leaf")
                     local level = round <= 16 and "input" or round <= 64 and "mcycle" or "uarch_cycle"
                     local remaining = (round <= 16 and 16 or round <= 64 and 64 or 84) - round + 1
-                    assert(interval.level == level and interval.lo == 0 and interval.hi == (1 << remaining) - 1)
-                    assert(interval.input == (round > 16 and 0 or nil))
-                    assert(interval.mcycle_offset == (round > 64 and 0 or nil))
+                    assert(
+                        agreed_position.epoch_input_offset == 0
+                            and agreed_position.input_mcycle_offset == 0
+                            and agreed_position.uarch_cycle == 0
+                    )
+                    local offset = 1 << (remaining - 1)
+                    assert(tentative_position.epoch_input_offset == (level == "input" and offset or 0))
+                    assert(tentative_position.input_mcycle_offset == (level == "mcycle" and offset or 0))
+                    assert(tentative_position.uarch_cycle == (level == "uarch_cycle" and offset or 0))
                     if round == failed_round and (failed_player == 0 or failed_player == index) then
                         return vgu.schedule_response(self, math.maxinteger, empty_response)
                     end
                     return claims[index]
                 end
-                function client.event_handler:prove_state_transition(input, mcycle_offset, uarch_cycle)
+                function client.event_handler:prove_state_transition(
+                    epoch_input_offset,
+                    input_mcycle_offset,
+                    uarch_cycle
+                )
                     proofs = proofs + 1
                     assert(rounds[1] == 84 and rounds[2] == 84)
-                    assert(input == 0 and mcycle_offset == 0 and uarch_cycle == 0, "wrong transition coordinates")
+                    assert(
+                        epoch_input_offset == 0 and input_mcycle_offset == 0 and uarch_cycle == 0,
+                        "wrong transition coordinates"
+                    )
                     if failed_round == 85 then
                         return vgu.schedule_response(self, math.maxinteger, empty_response)
                     end

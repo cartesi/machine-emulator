@@ -799,10 +799,8 @@ local function run_referee(dapp_contract)
         local input <close> = server:request_all(EVERYONE, EVENTS.input_added, { index - 1, path })
         input:wait()
     end
-    do
-        local sealed <close> = server:request_all(EVERYONE, EVENTS.epoch_sealed, { #dapp_contract.inputs })
-        sealed:wait()
-    end
+    local sealed <close> = server:request_all(EVERYONE, EVENTS.epoch_sealed, { #dapp_contract.inputs })
+    sealed:wait()
     local tournament = open_mcycle_tournament(dapp_contract)
     local winner = run_tournament(tournament)
     story.report_winner(winner)

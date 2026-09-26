@@ -822,14 +822,14 @@ function future_meta.__index:close()
 end
 future_meta.__close = future_meta.__index.close
 
--- A deadline bounds this wait only. All-response requests return a sender-keyed map
--- and an ordered sender array for replies received before it; first-valid requests
--- return nil if no result was accepted before it.
--- The future can still be waited on or closed.
+-- Waiting consumes the future, closing it on completion or expiry. All-response
+-- requests return a sender-keyed map and ordered senders for replies received before
+-- the deadline; first-valid requests return nil without an accepted result.
 function future_meta.__index:wait(deadline)
     assert(not self.closed, "future is closed")
     assert(not deadline or math.type(deadline) == "integer", "deadline must be a block number")
     assert(not self.cortn, "future already has a waiter")
+    local cleanup <close> = self -- luacheck: ignore 211
     if not self.resolved and (not deadline or self.server:get_time() < deadline) then
         self.cortn, self.deadline = coroutine.running(), deadline
         coroutine.yield()

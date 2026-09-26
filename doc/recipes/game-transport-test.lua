@@ -28,6 +28,8 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     end
     local replies <close> = server:request_all(nil, notification, { 42 })
     local acknowledgements, order = replies:wait()
+    assert(replies.closed and not server.active[replies])
+    assert(not pcall(replies.wait, replies), "a consumed future accepted another wait")
     assert(received[1] == 42 and received[2] == 42)
     assert(#order == 2)
     for index, sender in ipairs(order) do
@@ -71,10 +73,15 @@ for _, delay in ipairs({ 0, 2, 5, 6 }) do
         local future <close> = server:request_from_player(owner, event, {}, accept)
         local result = future:wait(5)
         assert(result == (delay < 5 and hash or nil))
+        assert(future.closed and not server.active[future] and not server.scheduled_responses[future.id])
         if delay < 5 then
             assert(future.accepted_at == delay, "clock did not stop at the chosen reply block")
         else
             assert(server:get_time() == 5, "acknowledgement extended the deadline")
+        end
+        if delay > 5 then
+            server:wait_until(delay)
+            assert(future.value == nil, "a reply after expiry was accepted")
         end
     end)
 end
@@ -157,15 +164,41 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         value = { answer = encoded_hash },
         order = 5,
     }
-    local early, early_order = future:wait(2)
-    assert(#early_order == 1 and early_order[1] == connections[3] and early[connections[3]] == 3)
     local replies, order = future:wait(5)
     assert(#order == 2 and order[1] == connections[1] and order[2] == connections[3])
     assert(replies[connections[1]] == 1 and replies[connections[3]] == 3)
     assert(not replies[connections[2]] and not replies[connections[4]] and not replies[server:get_players()[5]])
-    assert(#early_order == 1 and not early[connections[1]], "later replies changed an earlier snapshot")
     assert(received[1] == 3 and received[3] == 1)
     assert(received[2] == 2 and received[4] == 5, "deadlines were not checked by the validator")
+end)
+
+-- Expiry returns the accepted prefix and unregisters the remaining replies.
+run_with_server(protocol, function(server, run_client, wait_connections)
+    local delays, validated = { 1, 3, 4 }, {}
+    for index, delay in ipairs(delays) do
+        local client = { event_handler = {} }
+        function client.event_handler.move(self)
+            return transport.schedule_response(self, delay, function()
+                return hash
+            end)
+        end
+        run_client(nil, function(_, line)
+            return transport.answer_event(client, line, protocol)
+        end, true)
+        wait_connections(index)
+    end
+    local connections = server:get_players()
+    local future = server:request_all(connections, event, {}, function(value, _, connection)
+        validated[connection] = true
+        return accept(value)
+    end)
+    local replies, order = future:wait(3)
+    assert(#order == 1 and order[1] == connections[1] and replies[connections[1]] == hash)
+    assert(not replies[connections[2]] and not replies[connections[3]], "collection deadline is not exclusive")
+    assert(future.closed and not server.active[future] and not server.scheduled_responses[future.id])
+    server:wait_until(4)
+    assert(not validated[connections[3]], "a reply after expiry reached the validator")
+    assert(#order == 1 and not replies[connections[3]], "a late reply changed the returned collection")
 end)
 
 -- Rejecting a reply leaves its sender eligible to retry. Acceptance is once per
@@ -198,12 +231,9 @@ run_with_server(protocol, function(server, run_client, wait_connections)
             return accept(value)
         end
     )
-    assert(not next((future:wait(1))))
-    assert(not next((future:wait(2))), "collection deadline is not exclusive")
     local replies, order = future:wait(5)
     assert(#order == 1 and order[1] == server:get_players()[1] and replies[order[1]] == hash)
-    local again, again_order = future:wait()
-    assert(again == replies and again_order == order, "a resolved future did not retain both results")
+    assert(future.closed and not pcall(future.wait, future), "a consumed future accepted another wait")
     server:wait_until(3)
     assert(calls == 2, "duplicate reply reached the validator")
 end)
@@ -246,7 +276,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     server:wait_until(1)
     assert(future.value == nil, "outsider answered the owner's move")
     assert(future:wait(5) == hash and future.accepted_at == 3)
-    future:close()
+    assert(future.closed, "waiting did not close the owner's request")
     local later <close> = server:request_from_player(owner, event, {}, accept)
     assert(later.id ~= future.id)
     -- The owner schedules at an already visited block. It cannot resolve this request.

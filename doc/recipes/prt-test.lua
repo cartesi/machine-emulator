@@ -1484,29 +1484,34 @@ local function define_event(name, response_schema)
     return prtu.define_event(name, nil, response_schema or "Default")
 end
 
--- A group starts every closure before waiting, retains completion for later waits, and
--- does not cancel work when only the wait's deadline expires.
-run_with_server(function(server)
-    local empty <close> = server:run_all({})
-    assert(empty.resolved and empty:wait(), "an empty group did not complete immediately")
-    local started, finished = {}, {}
-    local functions = {}
-    for i = 1, 2 do
-        functions[i] = function()
-            started[#started + 1] = i
-            server:wait_until(i == 1 and 6 or 4)
-            finished[#finished + 1] = i
+-- A group starts its closures concurrently. Waiting closes the group, cancelling
+-- unfinished closures on expiry and preserving independent completion otherwise.
+for _, deadline in ipairs({ 2, 7 }) do
+    run_with_server(function(server)
+        local empty <close> = server:run_all({})
+        assert(empty.resolved and empty:wait(), "an empty group did not complete immediately")
+        local started, finished = {}, {}
+        local functions = {}
+        for i = 1, 2 do
+            functions[i] = function()
+                started[#started + 1] = i
+                server:wait_until(i == 1 and 6 or 4)
+                finished[#finished + 1] = i
+            end
         end
-    end
-    local completed <close> = server:run_all(functions)
-    assert(#started == 0, "run_all suspended its caller")
-    assert(completed:wait(2) == nil, "a group completed before its closures")
-    assert(table.concat(started, ",") == "1,2" and #finished == 0, "closures did not start concurrently in list order")
-    assert(completed:wait() == true, "a timed wait cancelled unfinished closures")
-    assert(table.concat(finished, ",") == "2,1", "closures did not finish independently")
-    assert(completed:wait(6) == nil and completed:wait(7) == true, "completion did not retain its block")
-    assert(not next(server.active), "a completed group remained active")
-end)
+        local completed <close> = server:run_all(functions)
+        assert(#started == 0, "run_all suspended its caller")
+        assert(completed:wait(deadline) == (deadline == 7 and true or nil))
+        assert(table.concat(started, ",") == "1,2", "closures did not start concurrently in list order")
+        assert(completed.closed and not pcall(completed.wait, completed), "a consumed group accepted another wait")
+        server:wait_until(7)
+        assert(
+            table.concat(finished, ",") == (deadline == 7 and "2,1" or ""),
+            "group completion or cancellation failed"
+        )
+        assert(not next(server.active), "a completed group remained active")
+    end)
+end
 
 -- Cancellation before the first dispatcher turn prevents every closure from starting.
 run_with_server(function(server)
@@ -1608,11 +1613,8 @@ run_with_server(function(server, run_client, wait_connections)
         end
     )
     local block = server:request_block()
-    local early = collection:wait(block)
-    assert(not next(early) and checked == 0, "an expired wait accepted unvalidated replies")
     local responses, order = collection:wait(block + 1)
     assert(checked == 5 and #order == 2, "collection did not validate every reply")
-    assert(not next(early), "later replies changed an earlier snapshot")
     assert(server:get_time() == block, "rejected replies held up collection")
     local labels = {}
     for _, sender in ipairs(order) do
@@ -1623,9 +1625,8 @@ run_with_server(function(server, run_client, wait_connections)
         labels[response.label] = true
     end
     assert(labels.a and labels.b, "collection lost an accepted claim")
-    assert(not next((collection:wait(block))), "an expired wait included replies received at its deadline")
-    local again, again_order = collection:wait()
-    assert(again == responses and again_order == order and checked == 5, "another wait revalidated replies")
+    assert(collection.closed and not pcall(collection.wait, collection), "a consumed collection accepted another wait")
+    assert(checked == 5, "another wait revalidated replies")
     local rejected <close> = server:request_all(EVERYONE, define_event("claim"), {}, function()
         error("invalid claim")
     end)

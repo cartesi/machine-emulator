@@ -5508,8 +5508,10 @@ The player schedules its response for that block, and the referee's validator st
 The audience is one subscription hash, a list of hashes, or `EVERYONE` for all live players.
 Each future decodes responses under that event's schema and retains the first result accepted by its validator.
 `future:wait(deadline)` returns that result if accepted before the given block, or `nil` when the deadline is reached.
-The deadline belongs to the wait. A later wait can still obtain the result, and `future:wait()` has no deadline.
-A future declared with `<close>` ends its request when the scope ends, including on an error, and a response that arrives for an ended request is ignored.
+Waiting consumes the future and closes its request on completion, expiry, or error; a second wait is rejected.
+`future:wait()` has no deadline. Responses arriving after the request closes are ignored.
+Store each future in a named `<close>` local, then wait on that local.
+This also closes futures abandoned before waiting, including competing requests that are no longer needed once another request wins.
 The referee emits the reveal, timeout, and elimination requests before waiting for the reveal.
 If that wait expires, it waits for the timeout result until the elimination block, then waits for elimination without a deadline.
 Only computation requests go to holders of the relevant claim.
@@ -5521,7 +5523,7 @@ The optional validator returns the value to retain. An error, `nil`, or `false` 
 Tournament openings use this callback to validate claims before `partition_claims` groups them.
 Its `wait(deadline)` returns the responses received before that block, including an empty list if nobody supplies a value.
 The list retains each response's sender and receipt block. A partial result is a snapshot: later replies do not change it.
-Without a deadline, the wait returns once the audience finishes. A deadline bounds only that wait, so another wait can obtain more responses.
+Without a deadline, the wait returns once the audience finishes. At the deadline, it returns the accepted responses and closes the request.
 `server:wait_until(block)` suspends until that logical block's time barrier, or returns immediately if the block has already been reached.
 Tournament opening waits for responses until the joining deadline, the opening block plus the allowance, then calls `wait_until` on it before partitioning the claims.
 This also keeps the tournament from opening early when all responses arrive before the deadline.
@@ -5529,7 +5531,7 @@ The server handles responses and logical time; the tournament determines when cl
 
 `server:run_all(functions)` starts a list of closures concurrently and returns a future.
 Its `wait()` returns `true` once every closure finishes, immediately for an empty list.
-A timed wait returns `nil` on expiry and leaves the closures running for a later wait.
+A timed wait returns `nil` on expiry and closes the future, cancelling unfinished closures.
 Closing the future cancels unfinished closures and their descendants, running their `<close>` cleanup.
 Errors in a closure still fail the referee.
 `run_matches` uses this method to record each match's winner and wait for the whole round.

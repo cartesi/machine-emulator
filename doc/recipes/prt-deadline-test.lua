@@ -106,7 +106,9 @@ return function(run_with_server, new_test_player)
         server:wait_until(response_block - 1)
         assert(calls == 0, "scheduling ran a callback immediately")
         assert(delayed:wait(response_block) == nil, "wait accepted a response at its exclusive deadline")
-        assert(delayed:wait(response_block + 1) == root and calls == 2, "a scheduled response was lost")
+        assert(delayed.closed and not pcall(delayed.wait, delayed), "expiry left the request open")
+        server:wait_until(response_block + 1)
+        assert(calls == 2, "scheduled callbacks did not run")
         acknowledge_only = true
         response_block = server:request_block() + 1
         local unscheduled <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate, response_block)
@@ -181,24 +183,10 @@ return function(run_with_server, new_test_player)
         local first = { value = "first", connection = senders[1], order = 1, received_at = server:get_time() }
         collection.replies[#collection.replies + 1] = first
         server.clock:advance(2)
-        local snapshot, snapshot_order = collection:wait(2)
-        assert(
-            #snapshot_order == 1 and snapshot_order[1] == senders[1] and snapshot[senders[1]] == first.value,
-            "expiry discarded responses already received"
-        )
         assert(first_valid:wait(2) == nil, "first-valid expiry returned a collection")
         local at_deadline =
             { value = "at deadline", connection = senders[2], order = 2, received_at = server:get_time() }
         collection.replies[#collection.replies + 1] = at_deadline
-        assert(
-            #snapshot_order == 1 and snapshot[senders[2]] == nil,
-            "a late response changed an expired wait's snapshot"
-        )
-        local at_close, at_close_order = collection:wait(2)
-        assert(
-            #at_close_order == 1 and at_close[senders[2]] == nil,
-            "a response at the deadline entered the collection"
-        )
         server.clock:advance(3)
         collection.replies[#collection.replies + 1] = {
             value = "late",
@@ -206,21 +194,17 @@ return function(run_with_server, new_test_player)
             order = 3,
             received_at = server:get_time(),
         }
-        local later, later_order = collection:wait(3)
+        local snapshot, snapshot_order = collection:wait(2)
         assert(
-            #later_order == 2
-                and later_order[1] == senders[1]
-                and later_order[2] == senders[2]
-                and later[senders[1]] == first.value
-                and later[senders[2]] == at_deadline.value
-                and later[senders[3]] == nil,
-            "a later wait did not retain earlier replies"
+            #snapshot_order == 1 and snapshot_order[1] == senders[1] and snapshot[senders[1]] == first.value,
+            "expiry discarded responses already received"
         )
-        at_close, at_close_order = collection:wait(2)
         assert(
-            #at_close_order == 1 and at_close[senders[2]] == nil and at_close[senders[3]] == nil,
-            "a response after the deadline entered the collection"
+            snapshot[senders[2]] == nil and snapshot[senders[3]] == nil,
+            "a response at or after the deadline entered the collection"
         )
+        assert(collection.closed and first_valid.closed and not next(server.active))
+        assert(not pcall(collection.wait, collection), "an expired collection accepted another wait")
         local empty <close> = server:request_all({}, prtu.define_event("probe"), {})
         local missing, missing_order = empty:wait(3)
         assert(
@@ -305,11 +289,9 @@ return function(run_with_server, new_test_player)
                 closed = true
             end
             assert(server:get_time() == close_block)
-            local again, again_order = collection:wait()
-            assert(again == responses and again_order == order, "a collected result was not retained")
+            assert(collection.closed and not pcall(collection.wait, collection), "a consumed collection remained open")
             local empty <close> = server:request_all({}, prtu.define_event("probe"), {})
-            assert(not next((empty:wait(close_block))))
-            local missing, missing_order = empty:wait()
+            local missing, missing_order = empty:wait(close_block)
             assert(
                 not next(missing) and #missing_order == 0,
                 "an empty collection did not resolve to an empty map and order"
@@ -317,7 +299,7 @@ return function(run_with_server, new_test_player)
         end)
     end
 
-    -- Main must not leave an unanswered future behind, even after a timed wait.
+    -- Waiting closes an expired request. An abandoned, unscoped future still fails.
     for _, deadline in ipairs({ false, 1 }) do
         local server = prtu.new_server()
         local ok, err = pcall(server.run, server, function()
@@ -332,9 +314,17 @@ return function(run_with_server, new_test_player)
             )
             if deadline then
                 assert(future:wait(deadline) == nil)
+                assert(future.closed and not next(server.active) and not next(server.scheduled_responses))
             end
         end)
-        assert(not ok and err:find("referee finished with pending requests"), "an unclosed future escaped detection")
+        if deadline then
+            assert(ok, err)
+        else
+            assert(
+                not ok and err:find("referee finished with pending requests"),
+                "an unclosed future escaped detection"
+            )
+        end
     end
 
     -- No scheduled acknowledgement means no elimination, even after the deadline.
@@ -514,10 +504,10 @@ return function(run_with_server, new_test_player)
             end)
             assert(not ok and err:find("close pending futures"))
             assert(reveal:wait(block + 3) == nil and server:get_time() == block + 3)
-            assert(timeout:wait(block + 2) == nil, "wait accepted a result at its exclusive deadline")
             assert(timeout:wait(block + 3) == marker, "an earlier result was lost before its own wait")
             assert(elimination:wait(block + 4) == nil and server:get_time() == block + 4)
-            assert(elimination:wait() == 0 and server:get_time() == block + 5)
+            assert(elimination.closed and not pcall(elimination.wait, elimination), "expiry left elimination open")
+            server:wait_until(block + 5)
             -- The closed future's callback still runs on its block. Its stale response is ignored.
             assert(reveal_calls == 0 and scheduled_calls[block + 4] == 1 and scheduled_calls[block + 5] == 1)
             timeout:close()

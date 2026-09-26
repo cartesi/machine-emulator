@@ -137,7 +137,8 @@ local function advance_bisection(match, response)
         match.turn_parent_node = match.other_right_node
         match.position = match.position + (1 << match.height)
     end
-    match.other_left_node, match.other_right_node = response.turn_next_left_node, response.turn_next_right_node
+    match.other_left_node = response.turn_next_left_node
+    match.other_right_node = response.turn_next_right_node
     match.turn_index = get_other_turn_index(match.turn_index)
 end
 -- docs:end advance_bisection
@@ -199,7 +200,8 @@ end
 -- since the tournament opened.
 -- docs:begin partition_claims
 local function partition_claims(responses, order, tournament_id, start_instant, allowance)
-    local claims, by_hash = {}, {}
+    local claims = {}
+    local by_hash = {}
     for _, sender in ipairs(order) do
         local response = responses[sender]
         local claim = by_hash[response.claim.computation_hash]
@@ -307,7 +309,8 @@ end
 -- docs:end validate_seal_response
 
 local function validate_timeout_win_response(children, computation_hash)
-    local left, right = children.computation_hash_left, children.computation_hash_right
+    local left = children.computation_hash_left
+    local right = children.computation_hash_right
     assert(keccak(left, right) == computation_hash, "wrong children")
 end
 
@@ -350,7 +353,8 @@ end
 local function emit_schedule_match_timeout_win(tournament, match)
     local other_turn_index = get_other_turn_index(match.turn_index)
     local other_claim = match.claims[other_turn_index]
-    local responder_deadline, eliminable_at = match.responder_deadline, match.eliminable_at
+    local responder_deadline = match.responder_deadline
+    local eliminable_at = match.eliminable_at
     return server:request_first_valid(
         subscription_hash(tournament.id, other_claim),
         EVENTS.schedule_match_timeout_win,
@@ -1017,7 +1021,8 @@ function machine_owner_meta.__index:close()
     local machine <close> = self.machine
     local backup <close> = self.backup -- luacheck: ignore 211
     self.cache.owners[machine] = nil
-    self.machine, self.backup = nil, nil
+    self.machine = nil
+    self.backup = nil
 end
 machine_owner_meta.__close = machine_owner_meta.__index.close
 
@@ -1026,7 +1031,8 @@ function machine_owner_meta.__index:move()
     assert(self.machine, "machine owner is closed")
     local owner = setmetatable({ cache = self.cache, machine = self.machine, backup = self.backup }, machine_owner_meta)
     self.cache.owners[self.machine] = owner
-    self.machine, self.backup = nil, nil
+    self.machine = nil
+    self.backup = nil
     return owner
 end
 
@@ -1041,7 +1047,8 @@ function machine_cache_meta.__index:close()
     for _, owner in pairs(self.owners) do
         owner:close()
     end
-    self.checkpoints, self.latest = {}, nil
+    self.checkpoints = {}
+    self.latest = nil
 end
 machine_cache_meta.__close = machine_cache_meta.__index.close
 
@@ -1293,7 +1300,8 @@ local function mcycle_computation_hash_run(builder, machine, mcycle_end)
         )
         mcycle_computation_hash_push_collected(builder, collected)
     until not is_target_mcycle(collected.break_reason) or chunk_end == mcycle_end
-    builder.mcycle_phase, builder.partial_bundle = collected.mcycle_phase, collected.partial_bundle
+    builder.mcycle_phase = collected.mcycle_phase
+    builder.partial_bundle = collected.partial_bundle
     return collected.break_reason
 end
 
@@ -1347,7 +1355,8 @@ end
 
 -- Append execution bundles, halt repetitions, and the reset-ending bundle for one mcycle.
 local function uarch_computation_hash_push_mcycle(builder, frontier, hashes, mcycle_hashes_begin, mcycle_hashes_end)
-    local halt_hash, reset_hash = hashes[mcycle_hashes_end - 2], hashes[mcycle_hashes_end - 1]
+    local halt_hash = hashes[mcycle_hashes_end - 2]
+    local reset_hash = hashes[mcycle_hashes_end - 1]
     local height = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - builder.bundle_height
     local bundles_per_mcycle = 1 << height
     local transient_bundle_count = mcycle_hashes_end - mcycle_hashes_begin - 2
@@ -1864,7 +1873,8 @@ function event_handler.epoch_sealed(self)
         leaves[i] = keccak(output)
     end
     self.output_proofs = hash_tree.frontier_next_proofs(self.previous_outputs_frontier, leaves)
-    self.previous_outputs_frontier, self.outputs_frontier = self.outputs_frontier, nil
+    self.previous_outputs_frontier = self.outputs_frontier
+    self.outputs_frontier = nil
 end
 
 -- docs:begin collect_mcycle_bundle
@@ -1912,8 +1922,8 @@ function player_meta.__index:collect_uarch_cycle_bundle(epoch_input_offset, inpu
     local tail = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0)
     local revert_uarch_tail = tail.hashes
     local bundles_per_mcycle = 1 << (cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - LOG2_BUNDLE_UARCH_CYCLE_COUNT)
-    local period_mcycle_offset, bundle_offset =
-        period_bundle_offset // bundles_per_mcycle, period_bundle_offset % bundles_per_mcycle
+    local period_mcycle_offset = period_bundle_offset // bundles_per_mcycle
+    local bundle_offset = period_bundle_offset % bundles_per_mcycle
     local builder = self:make_null_computation_hash_builder()
     self:run_advance_state_input(
         builder,

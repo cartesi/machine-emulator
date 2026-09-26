@@ -12,12 +12,16 @@ local util = require("cartesi.util")
 local evmu = require("cartesi.evmu")
 local vgu = require("vgu")
 local output_verifier = require("game-output")
-local EVENTS, EVERYONE = vgu.EVENTS, vgu.EVERYONE
-local phase, eventf, short_hash = vgu.phase, vgu.eventf, vgu.short_hash
+local EVENTS = vgu.EVENTS
+local EVERYONE = vgu.EVERYONE
+local phase = vgu.phase
+local eventf = vgu.eventf
+local short_hash = vgu.short_hash
 local MCYCLES_PER_INPUT = 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 local UARCH_CYCLES_PER_MCYCLE = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
 local INPUTS_PER_EPOCH = 1 << 16
-local RESPONSE_BUDGET, ALLOWANCE = 1, 4
+local RESPONSE_BUDGET = 1
+local ALLOWANCE = 4
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
 
 -- Enumerate player addresses in admission order.
@@ -238,7 +242,8 @@ end
 function player_methods:commit()
     assert(self.tentative, "no bisection snapshot")
     self.agreed:close()
-    self.agreed, self.tentative = self.tentative, nil
+    self.agreed = self.tentative
+    self.tentative = nil
 end
 
 -- Advance a loaded input, settling its checkpoint when it reaches a fixed point.
@@ -372,7 +377,8 @@ function event_handler:epoch_sealed()
     self.final_hash = self.latest.machine:get_root_hash()
     local leaves = map(self.outputs, cartesi.keccak256)
     self.output_proofs = hash_tree.frontier_next_proofs(self.previous_outputs_frontier, leaves)
-    self.previous_outputs_frontier, self.outputs_frontier = self.outputs_frontier, nil
+    self.previous_outputs_frontier = self.outputs_frontier
+    self.outputs_frontier = nil
 end
 
 function event_handler:commit_claim()
@@ -387,7 +393,8 @@ function event_handler:reveal_bisection(interval)
         self.agreed = self.initial:fork()
         self.position = { input = 0, mcycle_offset = 0, uarch_cycle = 0 }
     end
-    local previous, target = position(interval, interval.lo), position(interval, midpoint(interval) + 1)
+    local previous = position(interval, interval.lo)
+    local target = position(interval, midpoint(interval) + 1)
     if precedes(self.position, previous) then
         self:commit()
     end
@@ -481,20 +488,20 @@ end
 
 -- The referee trusts its own input bytes and verifies the log without a machine.
 -- Invalid logs raise an error, which the request's protected validator rejects.
-local function verify_state_transition(referee, input, mcycle_offset, uarch_cycle, before, log, after)
+local function validate_state_transition_response(referee, input, mcycle_offset, uarch_cycle, before, response, after)
     local data = referee.inputs[input + 1]
     if mcycle_offset == 0 and uarch_cycle == 0 and data then
         before = cartesi.machine:verify_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             data,
             before,
-            log.send_cmio_log,
+            response.send_cmio_log,
             before
         )
     end
-    before = cartesi.machine:verify_step_uarch(before, log.step_log)
+    before = cartesi.machine:verify_step_uarch(before, response.step_log)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
-        before = cartesi.machine:verify_reset_uarch(before, log.reset_uarch_log)
+        before = cartesi.machine:verify_reset_uarch(before, response.reset_uarch_log)
     end
     assert(before == after, "log does not reach the committed after-hash")
     return true
@@ -503,6 +510,19 @@ end
 local function accept_hash(hash)
     return type(hash) == "string" and #hash == 32 and hash
 end
+
+local function validate_claim_response(response)
+    assert(accept_hash(response), "invalid final hash")
+    return response
+end
+
+local function validate_bisection_response(response)
+    assert(accept_hash(response), "invalid midpoint hash")
+    return response
+end
+
+local validate_outputs_merkle_root_response = output_verifier.validate_outputs_merkle_root_response
+local validate_output_response = output_verifier.validate_output_response
 
 -- Return a representative if all surviving players support the same final claim.
 local function single_claim_remains(players)
@@ -521,6 +541,10 @@ local function no_claim_remains(players)
     return not next(players)
 end
 
+local function any_of(hashes)
+    return hashes[next(hashes)]
+end
+
 local function hashes_disagree(hashes)
     local first
     for _, hash in pairs(hashes) do
@@ -532,11 +556,32 @@ local function hashes_disagree(hashes)
     return false
 end
 
+local function request_bisections(referee, server, interval)
+    local started_at = server:get_time()
+    local deadline = fold(referee.players, started_at, function(latest, player)
+        return math.max(latest, started_at + player.allowance)
+    end)
+    local survivors <close> = server:request_all(
+        addresses(referee.players),
+        EVENTS.reveal_bisection,
+        { interval },
+        function(response, _label, sender, received_at)
+            local player = referee.players[sender]
+            assert(received_at < started_at + player.allowance, "late midpoint hash")
+            local hash = validate_bisection_response(response)
+            local elapsed = received_at - started_at
+            player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
+            player.midpoint_hash = hash
+            return player
+        end
+    )
+    return survivors:wait(deadline)
+end
+
 -- Bisect the inclusive range of resulting-state indices. The agreed predecessor
 -- is not one of its leaves. Any disagreement selects the earlier half.
 local function bisect_level(referee, server, level, count, bisection)
     phase("bisect_" .. level)
-    local players = referee.players
     local interval = {
         level = level,
         lo = 0,
@@ -545,41 +590,24 @@ local function bisect_level(referee, server, level, count, bisection)
         mcycle_offset = bisection.mcycle_offset,
     }
     while interval.lo < interval.hi do
-        local started_at = server:get_time()
-        local deadline = fold(players, started_at, function(latest, player)
-            return math.max(latest, started_at + player.allowance)
-        end)
-        local survivors <close> = server:request_all(
-            addresses(players),
-            EVENTS.reveal_bisection,
-            { interval },
-            function(hash, _label, sender, received_at)
-                local player = players[sender]
-                assert(received_at < started_at + player.allowance, "late midpoint hash")
-                assert(accept_hash(hash), "invalid midpoint hash")
-                local elapsed = received_at - started_at
-                player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
-                player.midpoint_hash = hash
-                return player
-            end
-        )
-        players = survivors:wait(deadline)
-        referee.players = players
-        if no_claim_remains(players) then
+        referee.players = request_bisections(referee, server, interval)
+        if no_claim_remains(referee.players) then
             return nil
         end
-        local winner = single_claim_remains(players)
+        local winner = single_claim_remains(referee.players)
         if winner then
             return nil, winner
         end
-        local hashes = map(players, function(player)
+        local hashes = map(referee.players, function(player)
             return player.midpoint_hash
         end)
         local mid = midpoint(interval)
         if hashes_disagree(hashes) then
-            interval.hi, bisection.hashes_after = mid, hashes
+            interval.hi = mid
+            bisection.hashes_after = hashes
         else
-            interval.lo, bisection.last_agreed_hash = mid + 1, hashes[next(hashes)]
+            interval.lo = mid + 1
+            bisection.last_agreed_hash = any_of(hashes)
         end
         eventf("%s interval of disagreement is [0x%x, 0x%x].", level, interval.lo, interval.hi)
     end
@@ -587,26 +615,25 @@ local function bisect_level(referee, server, level, count, bisection)
 end
 
 -- Every surviving player must prove its own committed endpoint.
-local function request_transition_proofs(referee, server, input, mcycle_offset, uarch_cycle, bisection)
-    local players = referee.players
+local function request_state_transitions(referee, server, input, mcycle_offset, uarch_cycle, bisection)
     local started_at = server:get_time()
-    local deadline = fold(players, started_at, function(latest, player)
+    local deadline = fold(referee.players, started_at, function(latest, player)
         return math.max(latest, started_at + player.allowance)
     end)
     local survivors <close> = server:request_all(
-        addresses(players),
+        addresses(referee.players),
         EVENTS.prove_state_transition,
         { input, mcycle_offset, uarch_cycle },
-        function(log, _label, sender, received_at)
-            local player = players[sender]
+        function(response, _label, sender, received_at)
+            local player = referee.players[sender]
             assert(received_at < started_at + player.allowance, "late transition proof")
-            verify_state_transition(
+            validate_state_transition_response(
                 referee,
                 input,
                 mcycle_offset,
                 uarch_cycle,
                 bisection.last_agreed_hash,
-                log,
+                response,
                 bisection.hashes_after[sender]
             )
             local elapsed = received_at - started_at
@@ -646,7 +673,7 @@ local function settle_dispute(referee, server)
         if not uarch_cycle then
             return winner_uarch_cycle
         end
-        referee.players = request_transition_proofs(referee, server, input, mcycle_offset, uarch_cycle, bisection)
+        referee.players = request_state_transitions(referee, server, input, mcycle_offset, uarch_cycle, bisection)
     end
 end
 
@@ -658,7 +685,7 @@ local function wait_for_outputs(referee, server, winner)
         EVENTS.prove_outputs_merkle_root,
         { winner.final_hash },
         function(response)
-            return output_verifier.validate_outputs_merkle_root_response(response, winner.final_hash)
+            return validate_outputs_merkle_root_response(response, winner.final_hash)
         end
     )
     local outputs_merkle_root = root_proof:wait()
@@ -671,7 +698,7 @@ local function wait_for_outputs(referee, server, winner)
             { outputs_merkle_root },
             function(response)
                 if not accepted_output_indices[response.output_index] then
-                    return output_verifier.validate_output_response(response, outputs_merkle_root) and response
+                    return validate_output_response(response, outputs_merkle_root) and response
                 end
             end
         )
@@ -714,13 +741,14 @@ function referee_meta.__index:run(server)
             addresses(players),
             EVENTS.commit_claim,
             {},
-            function(hash, label, sender, received_at)
+            function(response, label, sender, received_at)
                 local player = players[sender]
                 assert(received_at < started_at + player.allowance, "late final hash")
-                assert(accept_hash(hash), "invalid final hash")
+                local hash = validate_claim_response(response)
                 local elapsed = received_at - started_at
                 player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
-                player.label, player.final_hash = label, hash
+                player.label = label
+                player.final_hash = hash
                 return player
             end
         )
@@ -764,12 +792,13 @@ local vg = {
     advancing_pair_methods = advancing_pair_methods,
     usaturating_add = usaturating_add,
     load_cmio_input = load_cmio_input,
-    verify_state_transition = verify_state_transition,
+    validate_state_transition_response = validate_state_transition_response,
 }
 if ... == "rolling-verification-game" then
     return vg
 end
-local role, address = assert(arg[1], "missing role"), assert(arg[2], "missing referee address")
+local role = assert(arg[1], "missing role")
+local address = assert(arg[2], "missing referee address")
 if role == "phase_closer" then
     return vgu.run_client(vgu.new_phase_closer(assert(arg[3], "missing stop command")), address)
 end

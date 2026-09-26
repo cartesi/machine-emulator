@@ -4976,7 +4976,7 @@ Once the bisections converge, the mcycle offset and uarch cycle they agreed on d
 A combined transition is committed as its two access logs.
 
 The referee verifies the logs on their own, again without ever instantiating a machine, each verification starting from the hash the previous one returned:
-```{.lua key=rvg_verify_transition include=rolling-verification-game.lua/verify_state_transition title="rolling-verification-game.lua (excerpt)"}
+```{.lua key=rvg_verify_transition include=rolling-verification-game.lua/validate_state_transition_response title="rolling-verification-game.lua (excerpt)"}
 ```
 
 For the transition that includes the input, the referee passes the agreed before-hash twice, once as the state the input arrives in and once as the revert state hash the operation must record (the same restriction `machine:send_cmio_response()` imposes).

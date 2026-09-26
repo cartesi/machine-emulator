@@ -453,7 +453,9 @@ for uarch_cycle = 0, 1 do
     local unused = uarch_cycle == 0 and tentative or agreed
     local unused_hash = unused.machine:get_root_hash()
     local log = vg.event_handler.prove_state_transition(player, 0, 0, uarch_cycle)
-    assert(vg.verify_state_transition({ inputs = player.inputs }, 0, 0, uarch_cycle, before, log, after_uarch))
+    assert(
+        vg.validate_state_transition_response({ inputs = player.inputs }, 0, 0, uarch_cycle, before, log, after_uarch)
+    )
     assert(player.agreed == agreed and player.tentative == tentative)
     assert(unused.machine:get_root_hash() == unused_hash)
 end
@@ -485,8 +487,8 @@ do
             logs.reset_uarch_log = machine:log_reset_uarch()
         end
         local after = expected or machine:get_root_hash()
-        assert(vg.verify_state_transition(contract, 0, mcycle_offset, cycle, before, logs, after))
-        assert(not pcall(vg.verify_state_transition, contract, 0, mcycle_offset, cycle, before, {}, after))
+        assert(vg.validate_state_transition_response(contract, 0, mcycle_offset, cycle, before, logs, after))
+        assert(not pcall(vg.validate_state_transition_response, contract, 0, mcycle_offset, cycle, before, {}, after))
     end
     local included <close> = player.agreed:fork()
     local prefix <close> = player.agreed:fork()
@@ -514,7 +516,17 @@ do
     player.agreed = boundary:move()
     player.position = { input = 0, mcycle_offset = offset, uarch_cycle = cartesi.UARCH_CYCLE_MAX }
     local log = vg.event_handler.prove_state_transition(player, 0, offset, cartesi.UARCH_CYCLE_MAX)
-    assert(vg.verify_state_transition(contract, 0, offset, cartesi.UARCH_CYCLE_MAX, before_reset, log, initial_hash))
+    assert(
+        vg.validate_state_transition_response(
+            contract,
+            0,
+            offset,
+            cartesi.UARCH_CYCLE_MAX,
+            before_reset,
+            log,
+            initial_hash
+        )
+    )
     local replay <close> = player.initial:fork()
     player:run_advance_state_input(replay, 0, offset + 1)
     assert(replay.machine:get_root_hash() == initial_hash, "reset did not carry rejection rollback")
@@ -524,7 +536,7 @@ do
     local before = absent.machine:get_root_hash()
     local step = absent.machine:log_step_uarch()
     assert(
-        vg.verify_state_transition(
+        vg.validate_state_transition_response(
             { inputs = {} },
             0,
             0,

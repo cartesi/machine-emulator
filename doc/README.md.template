@@ -5153,7 +5153,7 @@ Dishonest strategies can wrap the player's bundle-collection methods, and the or
 Seen from the referee, the whole game is short.
 It waits for the players' opening claims, reduces them to the one that survives every match, and announces it.
 The mcycle tournament packs what the reduction needs: the agreed initial state hash, the dapp contract that owns the epoch's inputs (deployed as in the rolling verification game), and the way its matches settle.
-Everything hard, the accept loop, the wire, the coroutine scheduling, is hidden in the referee server:
+Local functions provide the blockchain operations used below. The simulation handles connection admission, message delivery, and coroutine scheduling outside the algorithm excerpts:
 ```{.lua key=prt_run_referee include=prt.lua/run_referee title="prt.lua (excerpt)"}
 ```
 Calls to `story` report semantic milestones; their formatting and all presentation-only calculations live outside the algorithm snippets.
@@ -5266,12 +5266,12 @@ Tournament openings use this callback to validate claims before `partition_claim
 Its `wait_at_most(deadline)` returns a map of accepted values keyed by sender and an array of those senders in admission order, empty if nobody supplies a value.
 Validators receive the sender and receipt block and can retain them with the value. A partial result is a snapshot: later replies do not change it.
 Without a deadline, the wait returns once the audience finishes. At the deadline, it returns the accepted responses and closes the request.
-`server:wait_until(block)` suspends until that logical block's time barrier, or returns immediately if the block has already been reached.
+`wait_until(block)` suspends until that logical block's time barrier, or returns immediately if the block has already been reached.
 Tournament opening waits for responses until the joining deadline, the opening block plus the allowance, then calls `wait_until` on it before partitioning the claims.
 This also keeps the tournament from opening early when all responses arrive before the deadline.
 The server handles responses and logical time; the tournament determines when claim collection closes.
 
-`server:run_all(functions)` starts a list of closures concurrently and returns a future.
+`run_all(functions)` starts a list of closures concurrently and returns a future.
 Its `wait_at_most(FOREVER)` returns `true` once every closure finishes, immediately for an empty list.
 A timed wait returns `nil` on expiry and closes the future, cancelling unfinished closures.
 Closing the future cancels unfinished closures and their descendants, running their `<close>` cleanup.

@@ -8715,7 +8715,7 @@ local function settle_dispute(tournament)
         if winner then
             return winner
         end
-        local started <close> = server:request_all(addresses(tournament.players), EVENTS.dispute_started, {})
+        local started <close> = request_all(addresses(tournament.players), EVENTS.dispute_started, {})
         started:wait_at_most(FOREVER)
         local bisection = {
             last_agreed_hash = tournament.dapp_contract.initial_state_hash,
@@ -9025,7 +9025,7 @@ final hash:
 
 ``` lua
 local function wait_for_outputs(winner)
-    local root_proof <close> = server:request_first_valid(
+    local root_proof <close> = request_first_valid(
         EVERYONE,
         EVENTS.prove_outputs_merkle_root,
         { winner.final_hash },
@@ -9036,7 +9036,7 @@ local function wait_for_outputs(winner)
     local outputs_merkle_root = root_proof:wait_at_most(FOREVER)
     local accepted_output_indices = {}
     while true do
-        local output_proof <close> = server:request_first_valid(
+        local output_proof <close> = request_first_valid(
             EVERYONE,
             EVENTS.prove_output,
             { outputs_merkle_root },
@@ -9481,17 +9481,19 @@ players’ opening claims, reduces them to the one that survives every
 match, and announces it. The mcycle tournament packs what the reduction
 needs: the agreed initial state hash, the dapp contract that owns the
 epoch’s inputs (deployed as in the rolling verification game), and the
-way its matches settle. Everything hard, the accept loop, the wire, the
-coroutine scheduling, is hidden in the referee server:
+way its matches settle. Local functions provide the blockchain
+operations used below. The simulation handles connection admission,
+message delivery, and coroutine scheduling outside the algorithm
+excerpts:
 
 ``` lua
 local function run_referee(dapp_contract)
-    server:accept_subscribers(dapp_contract.initial_state_hash)
+    accept_subscribers(dapp_contract.initial_state_hash)
     for index, path in ipairs(dapp_contract.input_paths) do
-        local input <close> = server:request_all(EVERYONE, EVENTS.input_added, { index - 1, path })
+        local input <close> = request_all(EVERYONE, EVENTS.input_added, { index - 1, path })
         input:wait_at_most(FOREVER)
     end
-    local sealed <close> = server:request_all(EVERYONE, EVENTS.epoch_sealed, { #dapp_contract.inputs })
+    local sealed <close> = request_all(EVERYONE, EVENTS.epoch_sealed, { #dapp_contract.inputs })
     sealed:wait_at_most(FOREVER)
     local tournament = open_mcycle_tournament(dapp_contract)
     local winner = run_tournament(tournament)
@@ -9638,7 +9640,7 @@ local function reveal_divergence(tournament, match)
         start_turn_clock(match)
         local timeout <close> = emit_schedule_match_timeout_win(tournament, match)
         local elimination <close> = emit_schedule_match_elimination(match)
-        local reveal <close> = server:request_first_valid(
+        local reveal <close> = request_first_valid(
             subscription_hash(tournament.id, turn_claim),
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
@@ -9667,7 +9669,7 @@ local function seal_divergence(tournament, match)
     start_turn_clock(match)
     local timeout <close> = emit_schedule_match_timeout_win(tournament, match)
     local elimination <close> = emit_schedule_match_elimination(match)
-    local seal <close> = server:request_first_valid(
+    local seal <close> = request_first_valid(
         subscription_hash(tournament.id, turn_claim),
         EVENTS.seal_divergence,
         { turn_claim.computation_hash, match.position, match.other_left_node },
@@ -9834,7 +9836,7 @@ local function settle_uarch_state_hash(
     start_proof_clocks(match)
     local proof_deadline = math.min(match.deadline_one, match.deadline_two)
     local eliminable_at = match.eliminable_at
-    local elimination <close> = server:request_first_valid(
+    local elimination <close> = request_first_valid(
         EVERYONE,
         EVENTS.schedule_match_elimination,
         { eliminable_at },
@@ -9843,7 +9845,7 @@ local function settle_uarch_state_hash(
             return true
         end
     )
-    local proof <close> = server:request_first_valid(
+    local proof <close> = request_first_valid(
         subscriptions,
         EVENTS.prove_state_transition,
         { tournament.epoch_input_offset, tournament.input_period_offset, state_transition_offset },
@@ -9964,23 +9966,23 @@ supplies a value. Validators receive the sender and receipt block and
 can retain them with the value. A partial result is a snapshot: later
 replies do not change it. Without a deadline, the wait returns once the
 audience finishes. At the deadline, it returns the accepted responses
-and closes the request. `server:wait_until(block)` suspends until that
-logical block’s time barrier, or returns immediately if the block has
-already been reached. Tournament opening waits for responses until the
-joining deadline, the opening block plus the allowance, then calls
-`wait_until` on it before partitioning the claims. This also keeps the
-tournament from opening early when all responses arrive before the
-deadline. The server handles responses and logical time; the tournament
-determines when claim collection closes.
+and closes the request. `wait_until(block)` suspends until that logical
+block’s time barrier, or returns immediately if the block has already
+been reached. Tournament opening waits for responses until the joining
+deadline, the opening block plus the allowance, then calls `wait_until`
+on it before partitioning the claims. This also keeps the tournament
+from opening early when all responses arrive before the deadline. The
+server handles responses and logical time; the tournament determines
+when claim collection closes.
 
-`server:run_all(functions)` starts a list of closures concurrently and
-returns a future. Its `wait_at_most(FOREVER)` returns `true` once every
-closure finishes, immediately for an empty list. A timed wait returns
-`nil` on expiry and closes the future, cancelling unfinished closures.
-Closing the future cancels unfinished closures and their descendants,
-running their `<close>` cleanup. Errors in a closure still fail the
-referee. `run_matches` uses this method to record each match’s winner
-and wait for the whole round.
+`run_all(functions)` starts a list of closures concurrently and returns
+a future. Its `wait_at_most(FOREVER)` returns `true` once every closure
+finishes, immediately for an empty list. A timed wait returns `nil` on
+expiry and closes the future, cancelling unfinished closures. Closing
+the future cancels unfinished closures and their descendants, running
+their `<close>` cleanup. Errors in a closure still fail the referee.
+`run_matches` uses this method to record each match’s winner and wait
+for the whole round.
 
 The referee server runs logical blocks. Requests and scheduling
 acknowledgements drain before time advances. Response schedules and wait

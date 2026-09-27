@@ -116,17 +116,45 @@ library StateAccess {
     }
 
     function writePc(StepLog.Context memory ctx, uint64 val) internal pure {
-        StepLog.writeUarchWord(ctx, EmulatorConstants.UARCH_PC_WORD_INDEX, val);
+        if (ctx.uarchShadowPtr == 0) StepLog.loadUarchRegisters(ctx);
+        ctx.uarchRegisters[EmulatorConstants.UARCH_PC_WORD_INDEX] = val;
+        // Inline writeUarchWord twin: retain first-pending-write invalidation.
+        if (!ctx.uarchRegistersDirty) {
+            ctx.uarchRegistersDirty = true;
+            ctx.pageHashes[ctx.uarchShadowPageIndex] = bytes32(0);
+        }
     }
 
     function readX(StepLog.Context memory ctx, uint8 reg) internal pure returns (uint64) {
         if (reg >= EmulatorConstants.UARCH_X_REG_COUNT) revert UarchXRegisterOutOfRange(reg);
-        return StepLog.readUarchWord(ctx, EmulatorConstants.UARCH_X_WORD_INDEX + uint256(reg));
+        if (ctx.uarchShadowPtr == 0) StepLog.loadUarchRegisters(ctx);
+        uint64[35] memory registers = ctx.uarchRegisters;
+        uint256 firstX = EmulatorConstants.UARCH_X_WORD_INDEX;
+        uint64 value;
+        // Inline readUarchWord twin: reg < 32 makes 3 + reg fit the 35-word array.
+        // Keep the warm path here to avoid helper frames on every register access.
+        assembly ("memory-safe") {
+            value := mload(add(registers, shl(5, add(firstX, and(reg, 0xff)))))
+        }
+        return value;
     }
 
     function writeX(StepLog.Context memory ctx, uint8 reg, uint64 val) internal pure {
         if (reg >= EmulatorConstants.UARCH_X_REG_COUNT) revert UarchXRegisterOutOfRange(reg);
-        StepLog.writeUarchWord(ctx, EmulatorConstants.UARCH_X_WORD_INDEX + uint256(reg), val);
+        if (ctx.uarchShadowPtr == 0) StepLog.loadUarchRegisters(ctx);
+        uint64[35] memory registers = ctx.uarchRegisters;
+        uint256 firstX = EmulatorConstants.UARCH_X_WORD_INDEX;
+        // Inline writeUarchWord twin: reg < 32 makes 3 + reg fit the 35-word array.
+        assembly ("memory-safe") {
+            mstore(
+                add(registers, shl(5, add(firstX, and(reg, 0xff)))), and(val, 0xffffffffffffffff)
+            )
+        }
+        // The hash stays invalid while writes are pending; hashing flushes first.
+        if (!ctx.uarchRegistersDirty) {
+            ctx.uarchRegistersDirty = true;
+            ctx.pageHashes[ctx.uarchShadowPageIndex] = bytes32(0);
+        }
     }
 
     /// Returns bool to match the transpiled body's `!readIflagsY(a)` pattern.

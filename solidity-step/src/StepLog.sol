@@ -387,7 +387,8 @@ library StepLog {
 
     // Call only when the cache is empty. Keep the check at the callers so warm
     // register accesses avoid entering this cold loader.
-    function loadUarchRegisters(Context memory ctx) private pure {
+    // Internal for StateAccess's inline accessors; no external ABI is added.
+    function loadUarchRegisters(Context memory ctx) internal pure {
         (ctx.uarchShadowPtr, ctx.uarchShadowPageIndex) =
             locatePage(ctx, EmulatorConstants.UARCH_HALT_ADDR);
         // Check the fixed length against the generated register layout.

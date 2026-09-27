@@ -19,11 +19,11 @@ local function run(initial_hash, paths, delegate)
     run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
         results = observed
         local pending
-        run_client(nil, function(_, line)
+        run_client({ role = "player", label = opponent.label }, function(_, line)
             return vgu.answer_event(opponent, line)
         end, true)
         wait_connections(1)
-        run_client(nil, function(wire, line)
+        run_client({ role = "player", label = honest.label }, function(wire, line)
             if
                 wire.operation == "initial_state"
                 or wire.operation == "input_added"

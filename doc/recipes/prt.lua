@@ -192,9 +192,9 @@ local function subscription_hash(tournament_id, claim)
 end
 
 -- Partitions claim responses by computation hash. The server supplies the join
--- order of their senders, so claims come out in the order their first posters joined, each
--- carrying the labels that posted it, and each sender subscribes to events concerning its
--- claim under the given tournament ID. Pairing in join order is what Dave's dangling slot does,
+-- order of their senders, so claims come out in the order their first posters joined,
+-- and each sender subscribes to its claim under the given tournament ID.
+-- Pairing in join order is what Dave's dangling slot does,
 -- and it makes the bracket a function of the claims and of the order the players joined, which
 -- the recipe fixes. Each claim's clock starts as the tournament's allowance less the blocks
 -- since the tournament opened.
@@ -207,12 +207,10 @@ local function partition_claims(responses, order, tournament_id, start_instant, 
         local claim = by_hash[response.claim.computation_hash]
         if not claim then
             claim = response.claim
-            claim.labels = {}
             claim.allowance = allowance - (response.received_at - start_instant)
             by_hash[claim.computation_hash] = claim
             claims[#claims + 1] = claim
         end
-        claim.labels[#claim.labels + 1] = response.label
         server:subscribe_connection(subscription_hash(tournament_id, claim), response.connection)
     end
     return claims
@@ -374,11 +372,17 @@ end
 
 local function emit_schedule_match_elimination(match)
     local eliminable_at = match.eliminable_at
-    return server:request_first_valid(EVERYONE, EVENTS.schedule_match_elimination, { eliminable_at }, function(_, label)
-        assert(current_time() >= eliminable_at, "early elimination")
-        story.report_match_eliminated(match, label)
-        return 0
-    end, eliminable_at)
+    return server:request_first_valid(
+        EVERYONE,
+        EVENTS.schedule_match_elimination,
+        { eliminable_at },
+        function(_, sender)
+            assert(current_time() >= eliminable_at, "early elimination")
+            story.report_match_eliminated(match, sender.label)
+            return 0
+        end,
+        eliminable_at
+    )
 end
 
 -- Settles a uarch match once the walk isolates the divergent leaf. The referee emits the
@@ -466,11 +470,11 @@ local function open_uarch_tournament(
         },
         EVENTS.commit_uarch_claim,
         { epoch_input_offset, input_period_offset, next_state_hashes },
-        function(response, label, connection, received_at)
+        function(response, connection, received_at)
             local claim = validate_claim_response(response, geometry.uarch_height)
             local final = claim.final_state_hash
             assert(final == next_state_hashes[1] or final == next_state_hashes[2], "final state not contested")
-            return { claim = claim, label = label, connection = connection, received_at = received_at }
+            return { claim = claim, connection = connection, received_at = received_at }
         end
     )
     local responses, order = collection:wait(joining_deadline)
@@ -489,7 +493,7 @@ local function open_uarch_tournament(
         input_period_offset = input_period_offset,
     }
     story.report_uarch_tournament(tournament, mcycle_match, agreed_state_hash)
-    story.report_claims(tournament)
+    story.report_claims(tournament, responses, order)
     return tournament
 end
 -- docs:end open_uarch_tournament
@@ -721,10 +725,9 @@ local function open_mcycle_tournament(dapp_contract)
         dapp_contract.initial_state_hash,
         EVENTS.commit_mcycle_claim,
         {},
-        function(response, label, connection, received_at)
+        function(response, connection, received_at)
             return {
                 claim = validate_claim_response(response, geometry.mcycle_height),
-                label = label,
                 connection = connection,
                 received_at = received_at,
             }
@@ -742,7 +745,7 @@ local function open_mcycle_tournament(dapp_contract)
         settle_state_hash = settle_mcycle_state_hash,
         claims = claims,
     }
-    story.report_claims(tournament)
+    story.report_claims(tournament, responses, order)
     return tournament
 end
 -- docs:end open_mcycle_tournament

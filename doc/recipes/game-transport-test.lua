@@ -21,7 +21,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         function client.event_handler.notice(_, value)
             received[index] = value
         end
-        run_client(nil, function(_, line)
+        run_client({ role = "player", label = client.label }, function(_, line)
             return transport.answer_event(client, line, protocol)
         end, true)
         wait_connections(index)
@@ -65,7 +65,7 @@ for _, delay in ipairs({ 0, 2, 5, 6 }) do
                 return hash
             end)
         end
-        run_client(nil, function(_, line)
+        run_client({ role = "player", label = client.label }, function(_, line)
             return transport.answer_event(client, line, protocol)
         end, true)
         wait_connections(1)
@@ -86,8 +86,8 @@ for _, delay in ipairs({ 0, 2, 5, 6 }) do
     end)
 end
 
--- All validator variants expose the authenticated connection and logical receipt
--- time, while validators accepting only the original value still work above.
+-- All validator variants expose the connection's announced label and logical receipt
+-- time. A response cannot rename its sender, and normal responses omit the label.
 for _, kind in ipairs({ "first", "all", "owner", "scheduled" }) do
     run_with_server(protocol, function(server, run_client, wait_connections)
         local client = { label = "validator fixture", event_handler = {} }
@@ -99,13 +99,19 @@ for _, kind in ipairs({ "first", "all", "owner", "scheduled" }) do
             end
             return hash
         end
-        run_client(nil, function(_, line)
-            return transport.answer_event(client, line, protocol)
+        run_client({ role = "player", label = client.label }, function(_, line)
+            local encoded, done = transport.answer_event(client, line, protocol)
+            local response = cartesi.fromjson(encoded)
+            assert(response.label == nil, "response repeated the sender label")
+            response.label = "forged response label"
+            return response, done
         end, true)
         wait_connections(1)
         local connection = server:get_players()[1]
-        local function validate(value, label, sender, received_at)
-            assert(label == client.label and sender == connection)
+        assert(connection.label == client.label, "announcement lost the sender label")
+        client.label = "changed after announcement"
+        local function validate(value, sender, received_at)
+            assert(sender.label == "validator fixture" and sender == connection)
             assert(received_at == server:get_time())
             assert(received_at == ({ owner = 0, first = 1, all = 1, scheduled = 3 })[kind])
             return accept(value)
@@ -131,7 +137,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
                 return hash
             end)
         end
-        run_client(nil, function(_, line)
+        run_client({ role = "player", label = client.label }, function(_, line)
             return transport.answer_event(client, line, protocol)
         end, true)
         wait_connections(index)
@@ -140,16 +146,16 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     end
     local collection
     local encoded_hash = cartesi.fromjson(cartesi.tojson(hash, -1, "Base64"))
-    run_client(nil, function(wire)
+    run_client({ role = "player", label = "same label" }, function(wire)
         if wire.operation == "advance_time" then
-            return { label = "same label", value = { { id = collection.id, value = encoded_hash } } }
+            return { value = { { id = collection.id, value = encoded_hash } } }
         end
         return { value = true }
     end, true)
     wait_connections(5)
-    local future <close> = server:request_all(connections, event, {}, function(value, label, connection, received_at)
+    local future <close> = server:request_all(connections, event, {}, function(value, connection, received_at)
         local index = assert(index_by_connection[connection], "outsider reached the validator")
-        assert(label == "same label" and value == hash)
+        assert(connection.label == "same label" and value == hash)
         assert(received_at == delays[index])
         received[index] = received_at
         assert(received_at < deadlines[index], "late reply")
@@ -159,7 +165,6 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     local control = server.controls[#server.controls]
     control.replies[#control.replies + 1] = {
         connection = server:get_players()[5],
-        label = "same label",
         id = future.id,
         value = { answer = encoded_hash },
         order = 5,
@@ -182,13 +187,13 @@ run_with_server(protocol, function(server, run_client, wait_connections)
                 return hash
             end)
         end
-        run_client(nil, function(_, line)
+        run_client({ role = "player", label = client.label }, function(_, line)
             return transport.answer_event(client, line, protocol)
         end, true)
         wait_connections(index)
     end
     local connections = server:get_players()
-    local future = server:request_all(connections, event, {}, function(value, _, connection)
+    local future = server:request_all(connections, event, {}, function(value, connection)
         validated[connection] = true
         return accept(value)
     end)
@@ -216,21 +221,16 @@ run_with_server(protocol, function(server, run_client, wait_connections)
             return hash
         end)
     end
-    run_client(nil, function(_, line)
+    run_client({ role = "player", label = client.label }, function(_, line)
         return transport.answer_event(client, line, protocol)
     end, true)
     wait_connections(1)
     local calls = 0
-    local future <close> = server:request_all(
-        server:get_players(),
-        event,
-        {},
-        function(value, _, connection, received_at)
-            assert(connection == server:get_players()[1] and received_at == server:get_time())
-            calls = calls + 1
-            return accept(value)
-        end
-    )
+    local future <close> = server:request_all(server:get_players(), event, {}, function(value, connection, received_at)
+        assert(connection == server:get_players()[1] and received_at == server:get_time())
+        calls = calls + 1
+        return accept(value)
+    end)
     local replies, order = future:wait(5)
     assert(#order == 1 and order[1] == server:get_players()[1] and replies[order[1]] == hash)
     assert(future.closed and not pcall(future.wait, future), "a consumed future accepted another wait")
@@ -248,16 +248,15 @@ run_with_server(protocol, function(server, run_client, wait_connections)
             return hash
         end)
     end
-    run_client(nil, function(_, line)
+    run_client({ role = "player", label = owner_client.label }, function(_, line)
         return transport.answer_event(owner_client, line, protocol)
     end, true)
     wait_connections(1)
     local owner = server:get_players()[1]
     local future <close> = server:request_from_player(owner, event, {}, accept)
-    run_client(nil, function(wire)
+    run_client({ role = "player", label = "honest" }, function(wire)
         if wire.operation == "advance_time" then
             return {
-                label = "honest",
                 value = { { id = future.id, value = cartesi.tojson(hash, -1, "Base64"):sub(2, -2) } },
             }
         end
@@ -289,7 +288,7 @@ for _, count in ipairs({ 0, 1, 3 }) do
     run_with_server(protocol, function(server, run_client, wait_connections)
         run_client({ role = "phase_closer" }, function()
             for _ = 1, count do
-                run_client(nil, function()
+                run_client({ role = "player", label = "same label" }, function()
                     return { value = true }
                 end)
             end
@@ -300,6 +299,7 @@ for _, count in ipairs({ 0, 1, 3 }) do
         assert(#admitted == count and #server.open_phases == 0)
         for index, connection in ipairs(admitted) do
             assert(connection == server.connections[index + 1] and not connection.dead)
+            assert(connection.label == "same label", "admission lost the sender label")
             assert(server.subscriptions[hash][connection], "admitted player was not subscribed")
         end
         run_client(nil, function()
@@ -338,7 +338,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         end,
     } }
     local previous
-    run_client(nil, function(wire, line)
+    run_client({ role = "player", label = client.label }, function(wire, line)
         local reply, done = transport.answer_event(client, line, protocol)
         if wire.operation == "move" then
             local result = (previous and previous .. "\n" or "") .. reply .. "\n" .. reply

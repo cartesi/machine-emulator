@@ -1470,7 +1470,7 @@ end
 local function make_claimer(claim, answer)
     return function(event)
         if event.operation == "commit_mcycle_claim" then
-            return { label = claim, value = claim }
+            return { value = claim }
         end
         return answer(event)
     end
@@ -1591,8 +1591,8 @@ assert(not group_ok and group_error:find("group closure failed"), "a closure err
 
 run_with_server(function(server, run_client, wait_connections)
     for _, label in ipairs({ "a", "b", "nil", "false", "error" }) do
-        run_client(nil, function()
-            return { label = label, value = label }
+        run_client({ role = "player", label = label }, function()
+            return { value = label }
         end)
     end
     wait_connections(5)
@@ -1601,7 +1601,7 @@ run_with_server(function(server, run_client, wait_connections)
         EVERYONE,
         define_event("claim"),
         {},
-        function(response, label, connection, received_at)
+        function(response, connection, received_at)
             checked = checked + 1
             assert(response ~= "error", "invalid claim")
             if response == "nil" then
@@ -1609,7 +1609,7 @@ run_with_server(function(server, run_client, wait_connections)
             elseif response == "false" then
                 return false
             end
-            return { claim = response, label = label, connection = connection, received_at = received_at }
+            return { claim = response, connection = connection, received_at = received_at }
         end
     )
     local block = server:request_block()
@@ -1619,10 +1619,10 @@ run_with_server(function(server, run_client, wait_connections)
     local labels = {}
     for _, sender in ipairs(order) do
         local response = responses[sender]
-        assert(response.claim == response.label, "collection lost its validator result or sender label")
+        assert(response.claim == sender.label, "collection lost its validator result or sender label")
         assert(response.connection == sender and sender.is_player and not sender.dead, "collection lost its sender")
         assert(response.received_at == block, "collection lost the receipt block")
-        labels[response.label] = true
+        labels[sender.label] = true
     end
     assert(labels.a and labels.b, "collection lost an accepted claim")
     assert(collection.closed and not pcall(collection.wait, collection), "a consumed collection accepted another wait")
@@ -1657,7 +1657,7 @@ run_with_server(function(server, run_client, wait_connections)
         "initial",
         define_event("commit_mcycle_claim"),
         {},
-        function(claim, _, connection)
+        function(claim, connection)
             return { claim = claim, connection = connection }
         end
     )

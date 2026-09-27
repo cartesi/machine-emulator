@@ -56,7 +56,7 @@ for delayed_index = 1, 2 do
                 assert(results.players[sender].allowance == (index == delayed_index and 3 or 4))
                 self.disputes = self.disputes + 1
             end
-            run_client(nil, function(wire, line)
+            run_client({ role = "player", label = client.label }, function(wire, line)
                 if wire.operation == "advance_time" then
                     client.block = wire.arguments[1]
                 end
@@ -81,6 +81,7 @@ for delayed_index = 1, 2 do
     assert(#clients[1].requested_at == 4 and #clients[2].requested_at == 4)
     assert(not results.players[delayed] and results.players[immediate] == results.winner, "deadline is not exclusive")
     assert(results.final_hash == claims[3 - delayed_index] and results.winner.allowance == 4)
+    assert(results.winner.label == "same label", "VG lost the admitted player's label")
 end
 
 -- Repeated claims and labels still belong to separate connections. One
@@ -101,7 +102,7 @@ do
                 requested[index] = true
                 return index == 2 and hash or "malformed"
             end
-            run_client(nil, function(_, line)
+            run_client({ role = "player", label = client.label }, function(_, line)
                 return vgu.answer_event(client, line)
             end, true)
             wait_connections(index)
@@ -196,7 +197,7 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                     end
                     return {} -- Rejected; no valid proof arrives before the deadline.
                 end
-                run_client(nil, function(_, line)
+                run_client({ role = "player", label = client.label }, function(_, line)
                     return vgu.answer_event(client, line)
                 end, true)
                 wait_connections(index)

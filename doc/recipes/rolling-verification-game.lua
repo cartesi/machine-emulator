@@ -572,7 +572,7 @@ local function request_bisections(tournament, interval)
         addresses(tournament.players),
         EVENTS.reveal_bisection,
         { position(interval, interval.lo), position(interval, midpoint(interval) + 1) },
-        function(response, _label, sender, received_at)
+        function(response, sender, received_at)
             local player = tournament.players[sender]
             assert(received_at < started_at + player.allowance, "late midpoint hash")
             local hash = validate_bisection_response(response)
@@ -631,7 +631,7 @@ local function request_state_transitions(tournament, epoch_input_offset, input_m
         addresses(tournament.players),
         EVENTS.prove_state_transition,
         { epoch_input_offset, input_mcycle_offset, uarch_cycle },
-        function(response, _label, sender, received_at)
+        function(response, sender, received_at)
             local player = tournament.players[sender]
             assert(received_at < started_at + player.allowance, "late transition proof")
             validate_state_transition_response(
@@ -726,13 +726,12 @@ local function request_claims(tournament)
         addresses(tournament.players),
         EVENTS.commit_claim,
         {},
-        function(response, label, sender, received_at)
+        function(response, sender, received_at)
             local player = tournament.players[sender]
             assert(received_at < started_at + player.allowance, "late final hash")
             local hash = validate_claim_response(response)
             local elapsed = received_at - started_at
             player.allowance = player.allowance - math.max(elapsed - tournament.dapp_contract.response_budget, 0)
-            player.label = label
             player.final_hash = hash
             return player
         end
@@ -743,7 +742,7 @@ end
 local function run_referee(dapp_contract)
     local tournament = { dapp_contract = dapp_contract, players = {} }
     for index, sender in ipairs(server:accept_subscribers(dapp_contract.initial_state_hash)) do
-        tournament.players[sender] = { index = index, allowance = dapp_contract.max_allowance }
+        tournament.players[sender] = { index = index, label = sender.label, allowance = dapp_contract.max_allowance }
     end
     local initial <close> = server:request_all(EVERYONE, EVENTS.initial_state, { dapp_contract.initial_state_hash })
     initial:wait()

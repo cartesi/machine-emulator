@@ -86,7 +86,7 @@ return function(run_with_server, new_test_player)
                 end,
             },
         }
-        run_client(nil, function(_, line)
+        run_client({ role = "player", label = player.label }, function(_, line)
             return prtu.answer_event(player, line)
         end, true)
         wait_connections(1)
@@ -259,7 +259,7 @@ return function(run_with_server, new_test_player)
                 { "audience", "overlap" },
                 prtu.define_event("probe"),
                 {},
-                function(value, _, connection, received_at)
+                function(value, connection, received_at)
                     assert(connection == server.connections[1], "collection lost its sender")
                     assert(received_at == opening, "collection lost its receipt block")
                     return value
@@ -449,7 +449,7 @@ return function(run_with_server, new_test_player)
                 return {}
             end)
         end
-        run_client(nil, function(event, line)
+        run_client({ role = "player", label = player.label }, function(event, line)
             assert(event.operation ~= "cancelled_probe", "a closed ordinary future was dispatched")
             return prtu.answer_event(player, line)
         end, true)
@@ -608,7 +608,7 @@ return function(run_with_server, new_test_player)
         local left, right = tree:get_child_hashes(0, tree.height)
         player.trees[tree:get_root_hash()] = tree
         local accepted, malformed = 0, false
-        run_client(nil, function(event, line)
+        run_client({ role = "player", label = player.label }, function(event, line)
             if event.operation == "probe" then
                 return { skip = true }
             end
@@ -796,22 +796,23 @@ return function(run_with_server, new_test_player)
                         assert(type(response) == "table")
                     end
                     local saved = self.clock.block
+                    local sender = self:get_players()[1]
                     probing = true
                     self.clock.block = block - 1
-                    assert(not pcall(accept, response), "premature scheduled response accepted")
+                    assert(not pcall(accept, response, sender), "premature scheduled response accepted")
                     self.clock.block = block
-                    local ok, value = pcall(accept, response)
+                    local ok, value = pcall(accept, response, sender)
                     assert(ok and value, "eligible scheduled response rejected")
                     if expires then
                         local invalid = copy(response)
                         invalid.computation_hash_left = keccak("wrong children")
-                        assert(not pcall(accept, invalid), "invalid scheduled response accepted")
+                        assert(not pcall(accept, invalid, sender), "invalid scheduled response accepted")
                         self.clock.block = expires
-                        assert(not pcall(accept, response), "scheduled response accepted at expiry")
+                        assert(not pcall(accept, response, sender), "scheduled response accepted at expiry")
                         self.clock.block = expires + 1
-                        assert(not pcall(accept, response), "scheduled response accepted after expiry")
+                        assert(not pcall(accept, response, sender), "scheduled response accepted after expiry")
                     else
-                        assert(pcall(accept), "elimination required response data")
+                        assert(pcall(accept, nil, sender), "elimination required response data")
                     end
                     probing = false
                     self.clock.block = saved
@@ -878,7 +879,7 @@ return function(run_with_server, new_test_player)
                 local index = slot
                 local player = players[index]
                 local committed_uarch = false
-                run_client(nil, function(event, line)
+                run_client({ role = "player", label = player.label }, function(event, line)
                     if event.id then
                         schedules[event.id] = (schedules[event.id] or 0) + 1
                     else

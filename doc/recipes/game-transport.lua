@@ -152,7 +152,7 @@ local function ensure_event_envelope_schema(protocol, schema)
 end
 
 -- The envelope schema for responses under a named value schema, registered on first use, so
--- both sides encode {label, value} with the value's binary fields transformed.
+-- both sides encode {value} with the value's binary fields transformed.
 local function ensure_response_envelope_schema(protocol, schema)
     if not schema then
         return nil
@@ -262,7 +262,7 @@ local function answer_event(client, line, protocol)
         value = { answer = cartesi.fromjson(cartesi.tojson(value, -1, event.response_schema, protocol.schemas)) }
     end
     local done = event == protocol.events.finish or client.done
-    local response = { label = client.label, value = value, id = wire_event.id, done = done or nil }
+    local response = { value = value, id = wire_event.id, done = done or nil }
     local response_schema = wire_event.id and "Default" or event.response_schema
     local encoded =
         cartesi.tojson(response, -1, ensure_response_envelope_schema(protocol, response_schema), protocol.schemas)
@@ -500,7 +500,6 @@ local function deliver(self, entry, connection, line)
     if ok and not decoded.skip then
         entry.replies[#entry.replies + 1] = {
             value = decoded.value,
-            label = decoded.label,
             connection = connection,
             order = connection.order,
             received_at = self:get_time(),
@@ -548,6 +547,7 @@ local function announce(self, connection, message)
         announce_phase_closer(self, connection, message.command)
     elseif message.role == "player" then
         connection.is_player = true
+        connection.label = message.label
     else
         close_connection(self, connection)
     end
@@ -817,7 +817,7 @@ end
 -- Requests the first valid response without waiting, resolving subscriptions to a fixed audience.
 -- Accepts one subscription, a list of subscriptions, or EVERYONE.
 -- Its future owns only this event's responses. Validators receive
--- (value, label, connection, received_at), where received_at is a logical block.
+-- (value, sender, received_at), where received_at is a logical block.
 -- An explicit response block sends the request as a control and registers a delayed
 -- response ID. It supplies a clock boundary, not a substitute for the referee's validator.
 function server_meta.__index.request_first_valid(
@@ -873,7 +873,7 @@ end
 -- Collect replies from subscriptions, or from an explicit list of connections.
 -- Subscription requests finish at the ordinary block barrier. Connection requests
 -- accept one valid reply per sender, immediately or scheduled, until the wait deadline.
--- Validators receive (value, label, connection, received_at). Wait returns a map
+-- Validators receive (value, sender, received_at). Wait returns a map
 -- keyed by sender of validator results (or reply values without a validator),
 -- followed by an array of the accepted senders in admission order.
 function server_meta.__index.request_all(self, subscriptions, event, event_arguments, accept_response)
@@ -911,7 +911,7 @@ function server_meta.__index.wait_until(self, block)
 end
 
 -- Subscribes every player announced before admission closes to the initial computation.
--- The returned connections retain their identity even when claims or labels repeat.
+-- The returned connections carry their announced labels and retain their identity even when labels repeat.
 function server_meta.__index.accept_subscribers(self, initial_state_hash)
     assert(not self.admission_closed and #self.open_phases == 0, "players already admitted")
     local entry = {
@@ -958,7 +958,7 @@ local function accept_scheduled_response(self, response)
     local received_at = response.received_at or self:get_time()
     local accepted, value = true, decoded
     if future.accept_response then
-        accepted, value = pcall(future.accept_response, decoded, response.label, response.connection, received_at)
+        accepted, value = pcall(future.accept_response, decoded, response.connection, received_at)
     end
     if accepted and (not future.accept_response or value) then
         if future.kind == "request_all" then
@@ -1032,7 +1032,6 @@ function server_meta.__index.step_time(self)
                             id = future.id,
                             value = reply.value.answer,
                             connection = reply.connection,
-                            label = reply.label,
                             received_at = reply.received_at,
                         })
                         had_owner_reply = true
@@ -1060,7 +1059,6 @@ function server_meta.__index.step_time(self)
                                 responses[#responses + 1] = {
                                     id = response.id,
                                     value = response.value,
-                                    label = reply.label,
                                     order = reply.order,
                                     connection = reply.connection,
                                 }
@@ -1090,13 +1088,8 @@ function server_meta.__index.step_time(self)
                     table.sort(entry.replies, reply_less)
                     for _, reply in ipairs(entry.replies) do
                         if entry.value == nil then
-                            local ok, value = pcall(
-                                entry.accept_response,
-                                reply.value,
-                                reply.label,
-                                reply.connection,
-                                reply.received_at
-                            )
+                            local ok, value =
+                                pcall(entry.accept_response, reply.value, reply.connection, reply.received_at)
                             if ok and value then
                                 entry.value, entry.accepted_at = value, self:get_time()
                             end
@@ -1105,8 +1098,7 @@ function server_meta.__index.step_time(self)
                 elseif entry.kind == "request_all" and entry.accept_response and not entry.closed then
                     table.sort(entry.replies, reply_less)
                     for _, reply in ipairs(entry.replies) do
-                        local ok, value =
-                            pcall(entry.accept_response, reply.value, reply.label, reply.connection, reply.received_at)
+                        local ok, value = pcall(entry.accept_response, reply.value, reply.connection, reply.received_at)
                         if ok and value then
                             entry.accepted_replies[#entry.accepted_replies + 1] = {
                                 value = value,

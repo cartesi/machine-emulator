@@ -12,7 +12,7 @@ local function run_game(players, input_paths)
     run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
         results = observed
         for index, player in ipairs(players) do
-            run_client(nil, function(_, line)
+            run_client({ role = "player", label = player.label }, function(_, line)
                 return vgu.answer_event(player, line)
             end, true)
             wait_connections(index)
@@ -69,7 +69,7 @@ for _, late_providers in ipairs({ false, true }) do
                                 end,
                             }, empty_handlers),
                         }
-                        run_client(nil, function(_, line)
+                        run_client({ role = "player", label = provider.label }, function(_, line)
                             return vgu.answer_event(provider, line)
                         end, true)
                     end
@@ -101,7 +101,7 @@ for _, late_providers in ipairs({ false, true }) do
             function client.event_handler:prove_output(target)
                 return offer(self, target, "prove_output")
             end
-            run_client(nil, function(_, line)
+            run_client({ role = "player", label = client.label }, function(_, line)
                 return vgu.answer_event(client, line)
             end, true)
             wait_connections(index)
@@ -152,7 +152,7 @@ do
                     output_proof = first.output_proofs[item],
                 }
             end
-            run_client(nil, function(_, line)
+            run_client({ role = "player", label = client.label }, function(_, line)
                 return vgu.answer_event(client, line)
             end, true)
             wait_connections(index)
@@ -233,7 +233,7 @@ for _, case in ipairs({
                 proofs[index] = true
                 return log
             end
-            run_client(nil, function(_, line)
+            run_client({ role = "player", label = client.label }, function(_, line)
                 return vgu.answer_event(client, line)
             end, true)
             wait_connections(index)

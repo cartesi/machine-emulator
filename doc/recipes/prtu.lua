@@ -72,7 +72,13 @@ local function get_match_label(match)
     return (get_match_stream(match):sub(#"match_" + 1):gsub("_", "."))
 end
 
-function story.report_claims(tournament)
+function story.report_claims(tournament, responses, order)
+    local labels = {}
+    for _, sender in ipairs(order) do
+        local hash = responses[sender].claim.computation_hash
+        labels[hash] = labels[hash] or {}
+        table.insert(labels[hash], sender.label)
+    end
     local stream = tournament.level == "mcycle" and "claims" or get_tournament_stream(tournament)
     for _, claim in ipairs(tournament.claims) do
         narrate(
@@ -80,7 +86,7 @@ function story.report_claims(tournament)
             "Claim %s, with final state %s, joined (posted by %s).",
             format_short_hash(claim.computation_hash),
             format_short_hash(claim.final_state_hash),
-            table.concat(claim.labels, ", ")
+            table.concat(labels[claim.computation_hash], ", ")
         )
     end
 end

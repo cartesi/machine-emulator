@@ -430,34 +430,39 @@ library StepLog {
         pure
         returns (uint256 memPtr, uint256 pageIdx)
     {
-        uint64 idx = paddr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
-        uint256 cacheSlot = uint256(idx) % ctx.pageLookupCache.length;
-        uint256 cached = ctx.pageLookupCache[cacheSlot];
-        uint256 lo;
-        if (cached != 0 && cached >> 7 == idx) {
-            lo = (cached & 0x7f) - 1;
-        } else {
-            uint256 hi = ctx.pageIndices.length;
-            while (lo < hi) {
-                uint256 mid = (lo + hi) >> 1;
-                if (ctx.pageIndices[mid] < idx) {
-                    lo = mid + 1;
-                } else {
-                    hi = mid;
+        // decode caps the table at 64 pages; cache entries store a position + 1
+        // in 1..64. Search indices stay in 0..64 and byteOff is below 64 * PAGE_SIZE.
+        // Array bounds checks and missing-page rejection are unchanged.
+        unchecked {
+            uint64 idx = paddr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
+            uint256 cacheSlot = uint256(idx) % ctx.pageLookupCache.length;
+            uint256 cached = ctx.pageLookupCache[cacheSlot];
+            uint256 lo;
+            if (cached != 0 && cached >> 7 == idx) {
+                lo = (cached & 0x7f) - 1;
+            } else {
+                uint256 hi = ctx.pageIndices.length;
+                while (lo < hi) {
+                    uint256 mid = (lo + hi) >> 1;
+                    if (ctx.pageIndices[mid] < idx) {
+                        lo = mid + 1;
+                    } else {
+                        hi = mid;
+                    }
                 }
+                if (lo >= ctx.pageIndices.length || ctx.pageIndices[lo] != idx) {
+                    revert RequiredPageNotFound(idx);
+                }
+                // decode caps page count at 64, so position + 1 fits in seven bits.
+                ctx.pageLookupCache[cacheSlot] = (uint256(idx) << 7) | (lo + 1);
             }
-            if (lo >= ctx.pageIndices.length || ctx.pageIndices[lo] != idx) {
-                revert RequiredPageNotFound(idx);
+            pageIdx = lo;
+            uint256 byteOff = lo * EmulatorConstants.PAGE_SIZE
+                + (uint256(paddr) & uint256(EmulatorConstants.PAGE_OFFSET_MASK));
+            bytes memory pd = ctx.pageData;
+            assembly ("memory-safe") {
+                memPtr := add(add(pd, 32), byteOff)
             }
-            // decode caps page count at 64, so position + 1 fits in seven bits.
-            ctx.pageLookupCache[cacheSlot] = (uint256(idx) << 7) | (lo + 1);
-        }
-        pageIdx = lo;
-        uint256 byteOff = lo * EmulatorConstants.PAGE_SIZE
-            + (uint256(paddr) & uint256(EmulatorConstants.PAGE_OFFSET_MASK));
-        bytes memory pd = ctx.pageData;
-        assembly ("memory-safe") {
-            memPtr := add(add(pd, 32), byteOff)
         }
     }
 

@@ -66,6 +66,9 @@ for delayed_index = 1, 2 do
         end
         local senders = server:get_players()
         delayed, immediate = senders[delayed_index], senders[3 - delayed_index]
+        run_client({ role = "phase_closer" }, function()
+            return { value = true }
+        end)
         referee:run(server)
     end)
     for round = 1, 4 do
@@ -76,6 +79,37 @@ for delayed_index = 1, 2 do
     assert(#clients[1].requested_at == 4 and #clients[2].requested_at == 4)
     assert(not referee.players[delayed] and referee.players[immediate] == referee.winner, "deadline is not exclusive")
     assert(referee.final_hash == claims[3 - delayed_index] and referee.winner.allowance == 4)
+end
+
+-- Repeated claims and labels still belong to separate connections. One
+-- proponent's accepted midpoint cannot save another who fails to defend it.
+do
+    local referee = vg.new_referee(hash, {})
+    local requested = {}
+    local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections)
+        for index = 1, 3 do
+            local client = { label = "same label", event_handler = setmetatable({}, empty_handlers) }
+            function client.event_handler.commit_claim()
+                return index <= 2 and hash or cartesi.keccak256("other claim")
+            end
+            function client.event_handler.reveal_bisection()
+                assert(#vg.addresses(referee.players) == 3, "equal claims were merged")
+                requested[index] = true
+                return index == 2 and hash or "malformed"
+            end
+            run_client(nil, function(_, line)
+                return vgu.answer_event(client, line)
+            end, true)
+            wait_connections(index)
+        end
+        run_client({ role = "phase_closer" }, function()
+            return { value = true }
+        end)
+        referee:run(server)
+    end)
+    assert(requested[1] and requested[2] and requested[3], "a proponent was not asked to defend its claim")
+    assert(#vg.addresses(referee.players) == 1 and referee.players[server.connections[2]] == referee.winner)
+    assert(referee.final_hash == hash and referee.winner.index == 2)
 end
 
 for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
@@ -96,6 +130,9 @@ for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
             end, true)
             wait_connections(index)
         end
+        run_client({ role = "phase_closer" }, function()
+            return { value = true }
+        end)
         referee:run(server)
     end)
     assert(not referee.winner and not referee.final_hash)
@@ -156,6 +193,9 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                 end, true)
                 wait_connections(index)
             end
+            run_client({ role = "phase_closer" }, function()
+                return { value = true }
+            end)
             referee:run(server)
         end)
         local last = math.min(failed_round, 84)

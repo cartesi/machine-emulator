@@ -2,7 +2,7 @@
 local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")
 local transport = require("game-transport")
--- A nil audience broadcasts to every admitted player.
+-- A nil audience broadcasts to every live player connection.
 local EVERYONE = nil
 
 -- Enumerate player addresses in admission order.

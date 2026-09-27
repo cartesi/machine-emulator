@@ -300,7 +300,7 @@ local function run_client(client, server_address, protocol)
 end
 -- docs:end run_client
 
--- The phase closer closes initial subscriptions, or stops the server on a later connection.
+-- The phase closer closes initial admission, or stops the server on a later connection.
 -- Both commands are acknowledged through close_phase. Claim collection uses logical time.
 local function new_phase_closer(command)
     assert(command == nil or command == "stop", "unknown phase closer command")
@@ -325,7 +325,7 @@ end
 -- The referee owns every window and validator. Only an accepted response
 -- resolves a first-valid future, even when all its holders skip or announce departure.
 -- Collections return all replies received before their wait's deadline.
--- Initial subscriptions still need an external close because connections arrive
+-- Initial admission still needs an external close because connections arrive
 -- over wall-clock time. Tournament claim collection closes at a supplied logical block.
 -- The phase closer is trusted orchestration. Its announced role is not authenticated.
 --------------------------------------------------------------------------------
@@ -351,7 +351,7 @@ local function new_server(address, protocol)
         event_order = 0,
         coroutine_order = setmetatable({}, { __mode = "k" }),
         next_coroutine_order = 0,
-        open_phases = {}, -- the initial subscription phase, until its external close
+        open_phases = {}, -- the initial admission phase, until its external close
         phase_closer = nil, -- the phase closer's connection, once it announces itself
         done = false,
     }, server_meta)
@@ -386,10 +386,11 @@ local function complete_event(self, entry)
     end
 end
 
--- Completes initial subscriptions once the trusted close arrives.
+-- Fixes the admitted players once the trusted close arrives.
 local function close_phase(self, phase)
     phase.open = false
-    self.subscriptions_closed = true
+    self.admission_closed = true
+    phase.players = self:get_players()
     for index, open_phase in ipairs(self.open_phases) do
         if open_phase == phase then
             table.remove(self.open_phases, index)
@@ -424,14 +425,7 @@ local function close_connection(self, connection)
         connection.dead = true
         connection.sock:close()
         forget_connection(self, connection)
-        if self.admission then
-            self.dispatcher:schedule(self.admission, "closed")
-            self.admission = nil
-        end
-        assert(
-            connection ~= self.phase_closer or self.subscriptions_closed or self.stopping,
-            "the phase closer went away"
-        )
+        assert(connection ~= self.phase_closer or self.admission_closed or self.stopping, "the phase closer went away")
     end
 end
 
@@ -463,7 +457,7 @@ local function send_event(self, connection, entry, line)
     end
 end
 
--- Only initial subscriptions need a wall-clock orchestration request.
+-- Only initial admission needs a wall-clock orchestration request.
 local function queue_phase_close(self, phase)
     local protocol = self.protocol
     if not self.phase_closer or phase.close_requested then
@@ -515,7 +509,7 @@ local function deliver(self, entry, connection, line)
     end
 end
 
--- Only one connection closes initial subscriptions. A separate invocation can stop the server.
+-- Only one connection closes initial admission. A separate invocation can stop the server.
 -- Neither connection belongs to a tournament's audience.
 local function announce_phase_closer(self, connection, command)
     local protocol = self.protocol
@@ -545,36 +539,15 @@ local function announce_phase_closer(self, connection, command)
     end
 end
 
--- A connection announced itself as a player. While the initial subscription phase is open,
--- connecting subscribes it to the initial hash that phase advertises.
-local function announce_player(self, connection)
-    connection.is_player = true
-    if self.admission then
-        self.dispatcher:schedule(self.admission, "player")
-        self.admission = nil
-    elseif self.admitted and self.player_limit then
-        close_connection(self, connection)
-        return
-    end
-    for _, entry in ipairs(self.open_phases) do
-        if entry.subscription_hash and entry.open then
-            self:subscribe_connection(entry.subscription_hash, connection)
-        end
-    end
-end
-
 -- The first line of a connection announces its role, once. A connection that announces again,
 -- or sends anything else before announcing, is closed.
 local function announce(self, connection, message)
     if connection.is_player or connection.is_phase_closer then
         close_connection(self, connection)
-    elseif
-        message.role == "phase_closer"
-        and (message.command == "stop" or (not self.player_limit and not self.admitted))
-    then
+    elseif message.role == "phase_closer" then
         announce_phase_closer(self, connection, message.command)
     elseif message.role == "player" then
-        announce_player(self, connection)
+        connection.is_player = true
     else
         close_connection(self, connection)
     end
@@ -642,7 +615,7 @@ end
 
 -- Accepts connections, adopting each as it arrives, until the game ends. The referee is never
 -- told how many players to expect: it takes every one that connects until the phase closer closes
--- the initial subscription phase.
+-- initial admission.
 accept_connections = function(self)
     self.listener:settimeout(0)
     self.dispatcher:spawn(function()
@@ -700,37 +673,6 @@ function server_meta.__index.get_players(self)
         end
     end
     return list
-end
-
--- VG admits exactly two stable connections. Labels and claim hashes do not confer ownership.
-function server_meta.__index.accept_players(self, count)
-    assert(not self.admitted, "players already admitted")
-    self.player_limit = count
-    local players, index = {}, 1
-    while #players < count do
-        local connection = self.connections[index]
-        if connection and (connection.is_player or connection.dead) then
-            if connection.is_player and not connection.dead then
-                players[#players + 1] = connection
-            end
-            index = index + 1
-        else
-            self.admission = coroutine.running()
-            coroutine.yield()
-        end
-    end
-    self.admitted = players
-    for extra = index, #self.connections do
-        close_connection(self, self.connections[extra])
-    end
-    return players
-end
-
--- Settlement ends fixed-player admission. The original claimant connections stay
--- stable; additional connections can now offer independently verifiable proofs.
-function server_meta.__index.open_players(self)
-    assert(self.admitted, "no fixed players were admitted")
-    self.player_limit = nil
 end
 
 -- Registers a fixed audience and stable order without suspending the caller.
@@ -968,24 +910,25 @@ function server_meta.__index.wait_until(self, block)
     future:wait()
 end
 
--- Accepts players subscribing to an initial hash until the phase closer closes the phase. A player
--- connection itself expresses interest in the one computation served by this referee.
+-- Subscribes every player announced before admission closes to the initial computation.
+-- The returned connections retain their identity even when claims or labels repeat.
 function server_meta.__index.accept_subscribers(self, initial_state_hash)
+    assert(not self.admission_closed and #self.open_phases == 0, "players already admitted")
     local entry = {
         kind = "request_all",
         replies = {},
         pending = {},
         open = true,
-        subscription_hash = initial_state_hash,
         cortn = coroutine.running(),
     }
     self.active[entry] = true
     self.open_phases[#self.open_phases + 1] = entry
-    for _, connection in ipairs(self:get_players()) do
-        self:subscribe_connection(initial_state_hash, connection)
-    end
     queue_phase_close(self, entry)
     coroutine.yield()
+    for _, connection in ipairs(entry.players) do
+        self:subscribe_connection(initial_state_hash, connection)
+    end
+    return entry.players
 end
 
 local function entry_less(a, b)

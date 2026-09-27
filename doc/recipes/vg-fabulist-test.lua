@@ -1,5 +1,5 @@
--- A counterfactual at the reply-delivery boundary. Production admission already
--- excludes outsiders. Inject replies here in both runs to isolate move ownership.
+-- A counterfactual at the reply-delivery boundary. The outsider joins after
+-- admission closes. Inject replies in both runs to isolate move ownership.
 -- Only the second run attributes the outsider's moves to player 2 and suppresses
 -- player 2's own midpoint replies. Both runs preserve the original claims, the
 -- referee, and all transition proof checks.
@@ -49,13 +49,16 @@ local function run(initial_hash, paths, delegate)
                 value = { answer = value },
             })
         end
-        run_client(nil, function()
-            return { value = true }
-        end)
-        wait_connections(3)
-        outsider = server.connections[3]
         local request_all = server.request_all
         function server:request_all(connections, event, arguments, accept)
+            if event == vgu.EVENTS.initial_state then
+                run_client(nil, function(wire)
+                    assert(wire.operation ~= "commit_claim", "late player was asked for a claim")
+                    return { value = true }
+                end)
+                wait_connections(4)
+                outsider = self.connections[4]
+            end
             local future = request_all(self, connections, event, arguments, accept)
             if event == vgu.EVENTS.reveal_bisection and future.pending[owner] then
                 pending = { future = future, control = self.controls[#self.controls] }
@@ -66,10 +69,13 @@ local function run(initial_hash, paths, delegate)
             end
             return future
         end
+        run_client({ role = "phase_closer" }, function()
+            return { value = true }
+        end)
         referee:run(server)
         assert(not owner.dead, "the honest player disconnected during the counterfactual")
     end)
-    assert(outsider.dead, "the outsider was admitted as a third claimant")
+    assert(not referee.players[outsider], "the outsider was admitted as a claimant")
     vgu.close_narration()
     -- Keep each run's narration apart, so the counterfactual can be quoted from generated output.
     for _, name in ipairs({ "claims", "bisect_input", "bisect_mcycle", "bisect_uarch_cycle", "verdict" }) do

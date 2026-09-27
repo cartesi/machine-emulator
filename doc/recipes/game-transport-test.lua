@@ -283,17 +283,33 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     assert(later:wait(5) == nil)
 end)
 
-run_with_server(protocol, function(server, run_client, wait_connections)
-    for _ = 1, 3 do
+-- Admission closes externally, regardless of player count. Players arriving
+-- during admission are included; later connections cannot enter the fixed list.
+for _, count in ipairs({ 0, 1, 3 }) do
+    run_with_server(protocol, function(server, run_client, wait_connections)
+        run_client({ role = "phase_closer" }, function()
+            for _ = 1, count do
+                run_client(nil, function()
+                    return { value = true }
+                end)
+            end
+            wait_connections(count + 1)
+            return { value = true }
+        end)
+        local admitted = server:accept_subscribers(hash)
+        assert(#admitted == count and #server.open_phases == 0)
+        for index, connection in ipairs(admitted) do
+            assert(connection == server.connections[index + 1] and not connection.dead)
+            assert(server.subscriptions[hash][connection], "admitted player was not subscribed")
+        end
         run_client(nil, function()
             return { value = true }
         end)
-    end
-    wait_connections(3)
-    local admitted = server:accept_players(2)
-    assert(admitted[1] == server.connections[1] and admitted[2] == server.connections[2])
-    assert(server.connections[3].dead)
-end)
+        wait_connections(count + 2)
+        assert(#admitted == count and #server:get_players() == count + 1)
+        assert(#server:get_subscribers(hash) == count, "late player entered the initial subscription")
+    end)
+end
 
 -- Referee errors unwind its suspended resources and close all transport handles.
 do

@@ -9,17 +9,15 @@ local paths = { "input-0.bin", "input-1.bin", "input-2.bin" }
 local function run_game(players, input_paths)
     local referee = vg.new_referee(initial_hash, input_paths or paths)
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
-        -- Exercise the settlement loop with more players without changing example admission.
-        local accept_players = server.accept_players
-        function server:accept_players()
-            return accept_players(self, #players)
-        end
         for index, player in ipairs(players) do
             run_client(nil, function(_, line)
                 return vgu.answer_event(player, line)
             end, true)
             wait_connections(index)
         end
+        run_client({ role = "phase_closer" }, function()
+            return { value = true }
+        end)
         referee:run(server)
     end)
     vgu.close_narration()
@@ -52,26 +50,28 @@ for _, late_providers in ipairs({ false, true }) do
     local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         local offers = { prove_outputs_merkle_root = root_offer, prove_output = output_offer }
         if late_providers then
-            local open_players = server.open_players
-            function server:open_players()
-                open_players(self)
-                -- Join after settlement, before the proof requests fix their audiences.
-                for _, operation in ipairs({ "prove_outputs_merkle_root", "prove_output" }) do
-                    local provider = {
-                        event_handler = setmetatable({
-                            [operation] = function(_, requested)
-                                local expected = operation == "prove_output" and root_offer.tx_buffer_data
-                                    or first.final_hash
-                                assert(requested == expected)
-                                return offers[operation]
-                            end,
-                        }, empty_handlers),
-                    }
-                    run_client(nil, function(_, line)
-                        return vgu.answer_event(provider, line)
-                    end, true)
+            local request_first_valid = server.request_first_valid
+            function server:request_first_valid(audience, event, arguments, accept)
+                if event == vgu.EVENTS.prove_outputs_merkle_root then
+                    -- Join after settlement, before the proof requests fix their audiences.
+                    for _, operation in ipairs({ "prove_outputs_merkle_root", "prove_output" }) do
+                        local provider = {
+                            event_handler = setmetatable({
+                                [operation] = function(_, requested)
+                                    local expected = operation == "prove_output" and root_offer.tx_buffer_data
+                                        or first.final_hash
+                                    assert(requested == expected)
+                                    return offers[operation]
+                                end,
+                            }, empty_handlers),
+                        }
+                        run_client(nil, function(_, line)
+                            return vgu.answer_event(provider, line)
+                        end, true)
+                    end
+                    wait_connections(5)
                 end
-                wait_connections(4)
+                return request_first_valid(self, audience, event, arguments, accept)
             end
         end
         for index = 1, 2 do
@@ -102,11 +102,14 @@ for _, late_providers in ipairs({ false, true }) do
             end, true)
             wait_connections(index)
         end
+        run_client({ role = "phase_closer" }, function()
+            return { value = true }
+        end)
         settled:run(server)
     end)
     assert(settled.output and settled.output.output == output_offer.output)
     assert(#vg.addresses(settled.players) == 1 and settled.winner.allowance == 4)
-    assert(#server.connections == (late_providers and 4 or 2) + 1) -- Includes the runner's stop connection.
+    assert(#server.connections == (late_providers and 4 or 2) + 2) -- Includes admission and stop connections.
     vgu.close_narration()
 end
 print("vg-test: permissionless output providers ok")
@@ -148,6 +151,9 @@ do
             end, true)
             wait_connections(index)
         end
+        run_client({ role = "phase_closer" }, function()
+            return { value = true }
+        end)
         settled:run(server)
         resumed = true
     end)
@@ -224,6 +230,9 @@ for _, case in ipairs({
             end, true)
             wait_connections(index)
         end
+        run_client({ role = "phase_closer" }, function()
+            return { value = true }
+        end)
         settled:run(server)
     end)
     assert(proofs[1] and proofs[2], "a surviving player was not asked for its proof")

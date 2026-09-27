@@ -1,9 +1,9 @@
--- A two-player verification game over an epoch of a Rolling Cartesi Machine.
+-- A verification game over an epoch of a Rolling Cartesi Machine.
 -- Only the referee receives input paths. Players find their initial snapshot under
 -- its state hash and receive inputs in events. A claim belongs to its submitting connection.
 --   rolling-verification-game.lua referee <address> <initial-state-hash> [<input> ...]
 --   rolling-verification-game.lua honest <address> <initial-state-hash> [<label>]
---   rolling-verification-game.lua phase_closer <address> stop
+--   rolling-verification-game.lua phase_closer <address> [stop]
 -- Dishonest roles and the counterfactual ownership attack live in vg-dishonest.lua and vg-test.lua.
 local cartesi = require("cartesi")
 local jsonrpc = require("cartesi.jsonrpc")
@@ -750,7 +750,7 @@ end
 
 local function run_referee(referee, server)
     referee.players = {}
-    for index, sender in ipairs(server:accept_players(2)) do
+    for index, sender in ipairs(server:accept_subscribers(referee.initial_hash)) do
         referee.players[sender] = { index = index, allowance = ALLOWANCE }
     end
     local initial <close> = server:request_all(EVERYONE, EVENTS.initial_state, { referee.initial_hash })
@@ -770,7 +770,6 @@ local function run_referee(referee, server)
         return
     end
     referee.final_hash = winner.final_hash
-    server:open_players()
     wait_for_outputs(referee, server, winner)
 end
 
@@ -801,7 +800,7 @@ end
 local role = assert(arg[1], "missing role")
 local address = assert(arg[2], "missing referee address")
 if role == "phase_closer" then
-    return vgu.run_client(vgu.new_phase_closer(assert(arg[3], "missing stop command")), address)
+    return vgu.run_client(vgu.new_phase_closer(arg[3]), address)
 end
 local initial_hash = cartesi.fromhex(assert(arg[3], "missing initial state hash"))
 if role == "referee" then

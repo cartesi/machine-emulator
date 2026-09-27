@@ -232,6 +232,17 @@ contract StateAccessCacheTest is Test {
         this.readCollidingMissingPage();
     }
 
+    function testUnwitnessedPageZeroRejects() public {
+        vm.expectRevert(abi.encodeWithSelector(StepLog.RequiredPageNotFound.selector, uint64(0)));
+        this.readUnwitnessedPageZero();
+    }
+
+    function readUnwitnessedPageZero() external pure returns (uint64) {
+        StepLog.Context memory ctx = collidingPages();
+        ctx.pageIndices[0] = 1;
+        return StateAccess.readWord(ctx, 0);
+    }
+
     function readCollidingMissingPage() external pure returns (uint64) {
         StepLog.Context memory ctx = collidingPages();
         StateAccess.writeWord(ctx, 61 << 12, 42);

@@ -55,7 +55,7 @@ library StepLog {
         bytes32[] siblings; // hash values for subtrees not covered by pages or nodes; left-to-right order
         bool reverted; // set when uarch reset reverted the state on a rejected input; see Verify.verifyReset
         bytes32 revertedRootHash; // canonical post-state hash when reverted (the recorded revert root hash)
-        uint256[61] pageLookupCache; // page index above 7 bits of (position + 1); zero means uncached
+        uint256[61] pageLookupCache; // (page index + 1) above 6 position bits; zero means uncached
         uint64[35] uarchRegisters; // halt, cycle, PC, and 32 integer registers
         uint256 uarchShadowPtr; // zero when the register cache needs loading
         uint256 uarchShadowPageIndex;
@@ -430,16 +430,18 @@ library StepLog {
         pure
         returns (uint256 memPtr, uint256 pageIdx)
     {
-        // decode caps the table at 64 pages; cache entries store a position + 1
-        // in 1..64. Search indices stay in 0..64 and byteOff is below 64 * PAGE_SIZE.
+        // decode caps the table at 64 pages; cache positions fit in six bits.
+        // Search indices stay in 0..64 and byteOff is below 64 * PAGE_SIZE.
         // Array bounds checks and missing-page rejection are unchanged.
         unchecked {
             uint64 idx = paddr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
             uint256 cacheSlot = uint256(idx) % ctx.pageLookupCache.length;
             uint256 cached = ctx.pageLookupCache[cacheSlot];
             uint256 lo;
-            if (cached != 0 && cached >> 7 == idx) {
-                lo = (cached & 0x7f) - 1;
+            // Physical page indices use 52 bits; adding one safely reserves tag zero.
+            uint256 tag = uint256(idx) + 1;
+            if (cached >> 6 == tag) {
+                lo = cached & 0x3f;
             } else {
                 uint256 hi = ctx.pageIndices.length;
                 while (lo < hi) {
@@ -453,8 +455,8 @@ library StepLog {
                 if (lo >= ctx.pageIndices.length || ctx.pageIndices[lo] != idx) {
                     revert RequiredPageNotFound(idx);
                 }
-                // decode caps page count at 64, so position + 1 fits in seven bits.
-                ctx.pageLookupCache[cacheSlot] = (uint256(idx) << 7) | (lo + 1);
+                // A nonzero tag distinguishes page zero from an empty cache slot.
+                ctx.pageLookupCache[cacheSlot] = (tag << 6) | lo;
             }
             pageIdx = lo;
             uint256 byteOff = lo * EmulatorConstants.PAGE_SIZE

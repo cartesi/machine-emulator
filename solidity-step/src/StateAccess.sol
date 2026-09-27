@@ -243,10 +243,16 @@ library StateAccess {
             + setIndex * EmulatorConstants.SHADOW_TLB_SET_LENGTH
             + slotIndex * EmulatorConstants.SHADOW_TLB_SLOT_SIZE;
 
-        writeWord(ctx, slotAddr + 0, vaddrPage);
-        writeWord(ctx, slotAddr + 8, vpOffset);
-        writeWord(ctx, slotAddr + 16, pmaIndex);
-        writeWord(ctx, slotAddr + 24, 0); // zero_padding_
+        // A 32-byte-aligned slot fits wholly within one witnessed page. Locate
+        // and invalidate it once, then store the three little-endian fields and
+        // eight bytes of zero padding together.
+        uint256 ptr = StepLog.findPageForWrite(ctx, slotAddr);
+        uint256 slot = (uint256(StepLog.swapBytes64(vaddrPage)) << 192)
+            | (uint256(StepLog.swapBytes64(vpOffset)) << 128)
+            | (uint256(StepLog.swapBytes64(pmaIndex)) << 64);
+        assembly ("memory-safe") {
+            mstore(ptr, slot)
+        }
     }
 
     function throwRuntimeError(StepLog.Context memory, string memory message) internal pure {

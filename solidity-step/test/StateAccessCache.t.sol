@@ -51,6 +51,63 @@ contract StateAccessCacheTest is Test {
         }
     }
 
+    function checkTlbSlot(
+        uint64 setIndex,
+        uint64 slotIndex,
+        uint64 vaddrPage,
+        uint64 vpOffset,
+        uint64 pmaIndex
+    ) private pure {
+        uint64 slotAddr = EmulatorConstants.AR_SHADOW_TLB_START
+            + setIndex * EmulatorConstants.SHADOW_TLB_SET_LENGTH
+            + slotIndex * EmulatorConstants.SHADOW_TLB_SLOT_SIZE;
+        StepLog.Context memory ctx;
+        ctx.pageIndices = new uint64[](1);
+        ctx.pageIndices[0] = slotAddr >> 12;
+        ctx.pageData = new bytes(4096);
+        ctx.pageHashes = new bytes32[](1);
+        ctx.pageHashes[0] = bytes32(uint256(1));
+        uint256 offset = slotAddr & 4095;
+        for (uint256 i; i < 64; ++i) {
+            ctx.pageData[(offset & ~uint256(63)) + i] = bytes1(uint8(i + 1));
+        }
+        bytes memory expected = abi.encodePacked(ctx.pageData);
+        uint64[4] memory values = [vaddrPage, vpOffset, pmaIndex, uint64(0)];
+        for (uint256 field; field < 4; ++field) {
+            for (uint256 i; i < 8; ++i) {
+                expected[offset + field * 8 + i] = bytes1(uint8(values[field] >> (i * 8)));
+            }
+        }
+        StateAccess.writeTlbECALL(ctx, setIndex, slotIndex, vaddrPage, vpOffset, pmaIndex);
+        assertEq(keccak256(ctx.pageData), keccak256(expected));
+        assertEq(ctx.pageHashes[0], bytes32(0));
+    }
+
+    function testFuzzTlbSlotSerialization(
+        uint8 setIndex,
+        uint16 slotIndex,
+        uint64 vaddrPage,
+        uint64 vpOffset,
+        uint64 pmaIndex
+    ) public pure {
+        checkTlbSlot(
+            uint64(setIndex) % EmulatorConstants.TLB_SET_COUNT,
+            uint64(slotIndex) % EmulatorConstants.TLB_SET_SIZE,
+            vaddrPage,
+            vpOffset,
+            pmaIndex
+        );
+    }
+
+    function testTlbSlotsAtPageBoundaries() public pure {
+        for (uint64 setIndex; setIndex < EmulatorConstants.TLB_SET_COUNT; ++setIndex) {
+            checkTlbSlot(setIndex, 0, 0x123456789abcdef0, 0xfedcba9876543210, 7);
+            checkTlbSlot(setIndex, 127, type(uint64).max, 0, 0);
+            checkTlbSlot(setIndex, 128, 0, type(uint64).max, type(uint64).max);
+            checkTlbSlot(setIndex, 255, type(uint64).max, 0, 0);
+        }
+    }
+
     function registerContext() private pure returns (StepLog.Context memory ctx) {
         ctx.pageIndices = new uint64[](1);
         ctx.pageIndices[0] = EmulatorConstants.UARCH_HALT_ADDR >> 12;

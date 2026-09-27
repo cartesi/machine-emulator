@@ -252,8 +252,8 @@ library StepLog {
     }
 
     /// Hashes each page lazily into ctx.pageHashes, then folds the tree over its current state.
-    /// A zero pageHashes slot means "needs hashing": slots start zero, and every write zeroes the
-    /// written page's slot (findPageForWrite or writeUarchWord). So decode hashes all pages and the
+    /// A zero pageHashes slot means "needs hashing": writes invalidate the written page's slot
+    /// (findPageForWrite or the first pending writeUarchWord). So decode hashes all pages and the
     /// post-state call rehashes only the pages the operation wrote. Node slots are used as they
     /// stand; replayed bulk writes keep them current.
     function computeRootHash(Context memory ctx) internal pure returns (bytes32) {
@@ -379,8 +379,11 @@ library StepLog {
     function writeUarchWord(Context memory ctx, uint256 wordIndex, uint64 value) internal pure {
         loadUarchRegisters(ctx);
         ctx.uarchRegisters[wordIndex] = value;
-        ctx.uarchRegistersDirty = true;
-        ctx.pageHashes[ctx.uarchShadowPageIndex] = bytes32(0);
+        // The hash stays invalid while writes are pending; hashing first flushes the registers.
+        if (!ctx.uarchRegistersDirty) {
+            ctx.uarchRegistersDirty = true;
+            ctx.pageHashes[ctx.uarchShadowPageIndex] = bytes32(0);
+        }
     }
 
     function loadUarchRegisters(Context memory ctx) private pure {

@@ -134,6 +134,14 @@ library EmulatorConstants {
 
     uint8 internal constant UARCH_X_REG_COUNT = 32;
 
+    // Word indices in the decoded uarch register cache, derived from native addresses.
+    uint256 internal constant UARCH_HALT_WORD_INDEX = 0;
+    uint256 internal constant UARCH_CYCLE_WORD_INDEX = 1;
+    uint256 internal constant UARCH_PC_WORD_INDEX = 2;
+    uint256 internal constant UARCH_X_WORD_INDEX = 3;
+    uint256 internal constant UARCH_REGISTER_WORD_COUNT = 35;
+    uint64 internal constant UARCH_REGISTER_END_ADDR = 0x400118;
+
     // Uarch state geometry.
     uint64 internal constant UARCH_STATE_START_ADDR = AR_SHADOW_UARCH_STATE_START;
 

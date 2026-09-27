@@ -166,6 +166,32 @@ contract StateAccessCacheTest is Test {
         assertEq(StateAccess.readX(ctx, 1), 0x123456789abcdef0);
     }
 
+    function testFuzzRegisterCacheEndPreservesFollowingWord(
+        uint64 registerValue,
+        uint64 followingValue
+    ) public pure {
+        StepLog.Context memory ctx = registerContext();
+        StepLog.Context memory expected = registerContext();
+        uint8 lastReg = EmulatorConstants.UARCH_X_REG_COUNT - 1;
+        uint64 followingAddr =
+            EmulatorConstants.UARCH_X_BASE_ADDR + uint64(EmulatorConstants.UARCH_X_REG_COUNT) * 8;
+
+        StateAccess.writeX(ctx, lastReg, registerValue);
+        // The following word must use page bytes and flush the pending register write.
+        StateAccess.writeWord(ctx, followingAddr, followingValue);
+        assertEq(StateAccess.readX(ctx, lastReg), registerValue);
+        StateAccess.writeX(ctx, lastReg, ~registerValue);
+        assertEq(StateAccess.readWord(ctx, followingAddr), followingValue);
+
+        rawRegisterWrite(expected, lastReg, ~registerValue);
+        uint256 offset = followingAddr - EmulatorConstants.UARCH_HALT_ADDR;
+        for (uint256 i; i < 8; ++i) {
+            expected.pageData[offset + i] = bytes1(uint8(followingValue >> (i * 8)));
+        }
+        assertEq(StepLog.computeRootHash(ctx), StepLog.computeRootHash(expected));
+        assertEq(keccak256(ctx.pageData), keccak256(expected.pageData));
+    }
+
     function testRawPointerWriteInvalidatesRegisters() public pure {
         StepLog.Context memory ctx = registerContext();
         StateAccess.writeX(ctx, 1, 42);

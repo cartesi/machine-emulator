@@ -62,9 +62,8 @@ library StepLog {
         bool uarchRegistersDirty;
     }
 
-    uint256 internal constant UARCH_REGISTER_WORD_COUNT = (
-        EmulatorConstants.UARCH_X_BASE_ADDR - EmulatorConstants.UARCH_HALT_ADDR
-    ) / 8 + EmulatorConstants.UARCH_X_REG_COUNT;
+    uint256 internal constant UARCH_REGISTER_WORD_COUNT =
+        EmulatorConstants.UARCH_REGISTER_WORD_COUNT;
 
     uint256 internal constant HASH_SIZE = 32;
     uint256 internal constant U64_SIZE = 8;

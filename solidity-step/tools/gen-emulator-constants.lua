@@ -16,6 +16,23 @@ local function hex_bytes(s) return cartesi.tohex(s) end
 local function reg_addr(name) return machine:get_reg_address(name) end
 
 local UARCH_X_REG_COUNT         = 32
+-- Cache indices are derived here so Solidity emits literal word offsets.
+local uarch_halt_addr = reg_addr("uarch_halt")
+local function uarch_word_index(name)
+    local offset = reg_addr(name) - uarch_halt_addr
+    assert(offset >= 0 and offset % 8 == 0, "unaligned uarch register: " .. name)
+    return offset // 8
+end
+local uarch_x_word_index = uarch_word_index("uarch_x0")
+for i = 0, UARCH_X_REG_COUNT - 1 do
+    assert(uarch_word_index("uarch_x" .. i) == uarch_x_word_index + i, "noncontiguous uarch x registers")
+end
+local uarch_register_word_count = uarch_x_word_index + UARCH_X_REG_COUNT
+local uarch_register_end_addr = uarch_halt_addr + uarch_register_word_count * 8
+assert(uarch_register_end_addr > uarch_halt_addr, "uarch register span overflows")
+assert(uarch_word_index("uarch_cycle") < uarch_register_word_count, "uarch cycle outside register span")
+assert(uarch_word_index("uarch_pc") < uarch_register_word_count, "uarch PC outside register span")
+
 local SHADOW_TLB_SLOT_LOG2_SIZE = 5
 local TLB_SET_SIZE              = 256
 local TLB_SET_COUNT             = 3
@@ -83,6 +100,14 @@ local tail = {
 "    uint64 internal constant UARCH_X_BASE_ADDR    = " .. hex(reg_addr("uarch_x0"))        .. ";",
 "",
 "    uint8  internal constant UARCH_X_REG_COUNT    = " .. UARCH_X_REG_COUNT .. ";",
+"",
+"    // Word indices in the decoded uarch register cache, derived from native addresses.",
+"    uint256 internal constant UARCH_HALT_WORD_INDEX = " .. uarch_word_index("uarch_halt") .. ";",
+"    uint256 internal constant UARCH_CYCLE_WORD_INDEX = " .. uarch_word_index("uarch_cycle") .. ";",
+"    uint256 internal constant UARCH_PC_WORD_INDEX = " .. uarch_word_index("uarch_pc") .. ";",
+"    uint256 internal constant UARCH_X_WORD_INDEX = " .. uarch_x_word_index .. ";",
+"    uint256 internal constant UARCH_REGISTER_WORD_COUNT = " .. uarch_register_word_count .. ";",
+"    uint64 internal constant UARCH_REGISTER_END_ADDR = " .. hex(uarch_register_end_addr) .. ";",
 "",
 "    // Uarch state geometry.",
 "    uint64 internal constant UARCH_STATE_START_ADDR = AR_SHADOW_UARCH_STATE_START;",

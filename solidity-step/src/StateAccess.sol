@@ -38,7 +38,7 @@ library StateAccess {
         if (paddr & 0x7 != 0) revert UnalignedWordAccess(paddr);
         if (
             paddr >= EmulatorConstants.UARCH_HALT_ADDR
-                && paddr < EmulatorConstants.UARCH_HALT_ADDR + StepLog.UARCH_REGISTER_WORD_COUNT * 8
+                && paddr < EmulatorConstants.UARCH_REGISTER_END_ADDR
         ) {
             return StepLog.readUarchWord(ctx, (paddr - EmulatorConstants.UARCH_HALT_ADDR) / 8);
         }
@@ -54,7 +54,7 @@ library StateAccess {
         if (paddr & 0x7 != 0) revert UnalignedWordAccess(paddr);
         if (
             paddr >= EmulatorConstants.UARCH_HALT_ADDR
-                && paddr < EmulatorConstants.UARCH_HALT_ADDR + StepLog.UARCH_REGISTER_WORD_COUNT * 8
+                && paddr < EmulatorConstants.UARCH_REGISTER_END_ADDR
         ) {
             StepLog.writeUarchWord(ctx, (paddr - EmulatorConstants.UARCH_HALT_ADDR) / 8, val);
             return;
@@ -64,58 +64,37 @@ library StateAccess {
     }
 
     function readHalt(StepLog.Context memory ctx) internal pure returns (uint64) {
-        return StepLog.readUarchWord(
-            ctx, (EmulatorConstants.UARCH_HALT_ADDR - EmulatorConstants.UARCH_HALT_ADDR) / 8
-        );
+        return StepLog.readUarchWord(ctx, EmulatorConstants.UARCH_HALT_WORD_INDEX);
     }
 
     function writeHalt(StepLog.Context memory ctx, uint64 val) internal pure {
-        StepLog.writeUarchWord(
-            ctx, (EmulatorConstants.UARCH_HALT_ADDR - EmulatorConstants.UARCH_HALT_ADDR) / 8, val
-        );
+        StepLog.writeUarchWord(ctx, EmulatorConstants.UARCH_HALT_WORD_INDEX, val);
     }
 
     function readCycle(StepLog.Context memory ctx) internal pure returns (uint64) {
-        return StepLog.readUarchWord(
-            ctx, (EmulatorConstants.UARCH_CYCLE_ADDR - EmulatorConstants.UARCH_HALT_ADDR) / 8
-        );
+        return StepLog.readUarchWord(ctx, EmulatorConstants.UARCH_CYCLE_WORD_INDEX);
     }
 
     function writeCycle(StepLog.Context memory ctx, uint64 val) internal pure {
-        StepLog.writeUarchWord(
-            ctx, (EmulatorConstants.UARCH_CYCLE_ADDR - EmulatorConstants.UARCH_HALT_ADDR) / 8, val
-        );
+        StepLog.writeUarchWord(ctx, EmulatorConstants.UARCH_CYCLE_WORD_INDEX, val);
     }
 
     function readPc(StepLog.Context memory ctx) internal pure returns (uint64) {
-        return StepLog.readUarchWord(
-            ctx, (EmulatorConstants.UARCH_PC_ADDR - EmulatorConstants.UARCH_HALT_ADDR) / 8
-        );
+        return StepLog.readUarchWord(ctx, EmulatorConstants.UARCH_PC_WORD_INDEX);
     }
 
     function writePc(StepLog.Context memory ctx, uint64 val) internal pure {
-        StepLog.writeUarchWord(
-            ctx, (EmulatorConstants.UARCH_PC_ADDR - EmulatorConstants.UARCH_HALT_ADDR) / 8, val
-        );
+        StepLog.writeUarchWord(ctx, EmulatorConstants.UARCH_PC_WORD_INDEX, val);
     }
 
     function readX(StepLog.Context memory ctx, uint8 reg) internal pure returns (uint64) {
         if (reg >= EmulatorConstants.UARCH_X_REG_COUNT) revert UarchXRegisterOutOfRange(reg);
-        return StepLog.readUarchWord(
-            ctx,
-            (EmulatorConstants.UARCH_X_BASE_ADDR - EmulatorConstants.UARCH_HALT_ADDR) / 8
-                + uint256(reg)
-        );
+        return StepLog.readUarchWord(ctx, EmulatorConstants.UARCH_X_WORD_INDEX + uint256(reg));
     }
 
     function writeX(StepLog.Context memory ctx, uint8 reg, uint64 val) internal pure {
         if (reg >= EmulatorConstants.UARCH_X_REG_COUNT) revert UarchXRegisterOutOfRange(reg);
-        StepLog.writeUarchWord(
-            ctx,
-            (EmulatorConstants.UARCH_X_BASE_ADDR - EmulatorConstants.UARCH_HALT_ADDR) / 8
-                + uint256(reg),
-            val
-        );
+        StepLog.writeUarchWord(ctx, EmulatorConstants.UARCH_X_WORD_INDEX + uint256(reg), val);
     }
 
     /// Returns bool to match the transpiled body's `!readIflagsY(a)` pattern.

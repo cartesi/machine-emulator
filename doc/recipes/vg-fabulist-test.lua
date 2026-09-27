@@ -13,9 +13,11 @@ local function run(initial_hash, paths, delegate)
     local honest <close> = vg.new_player(initial_hash)
     local opponent <close> = roles.new_forger(initial_hash, 2, "forged-input-2.bin")
     local fabulist <close> = roles.new_forger(initial_hash, 2, "forged-input-2.bin")
-    local referee = vg.new_referee(initial_hash, paths)
+    local dapp_contract = vg.make_dapp_contract(initial_hash, paths)
+    local results
     local outsider
-    run_with_server(vgu.protocol, function(server, run_client, wait_connections)
+    run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
+        results = observed
         local pending
         run_client(nil, function(_, line)
             return vgu.answer_event(opponent, line)
@@ -72,19 +74,19 @@ local function run(initial_hash, paths, delegate)
         run_client({ role = "phase_closer" }, function()
             return { value = true }
         end)
-        referee:run(server)
+        vg.new_referee(dapp_contract):run(server)
         assert(not owner.dead, "the honest player disconnected during the counterfactual")
     end)
-    assert(not referee.players[outsider], "the outsider was admitted as a claimant")
+    assert(not results.players[outsider], "the outsider was admitted as a claimant")
     vgu.close_narration()
     -- Keep each run's narration apart, so the counterfactual can be quoted from generated output.
     for _, name in ipairs({ "claims", "bisect_input", "bisect_mcycle", "bisect_uarch_cycle", "verdict" }) do
         assert(os.rename(name, string.format("fabulist-%s-%s", delegate and "delegated" or "protected", name)))
     end
     local claims = { opponent.final_hash, honest.final_hash }
-    assert(#vg.addresses(referee.players) == 1 and referee.players[next(referee.players)] == referee.winner)
-    assert(referee.winner.index == (delegate and 1 or 2))
-    assert(referee.final_hash == claims[referee.winner.index])
+    assert(#vg.addresses(results.players) == 1 and results.players[next(results.players)] == results.winner)
+    assert(results.winner.index == (delegate and 1 or 2))
+    assert(results.final_hash == claims[results.winner.index])
     return claims
 end
 

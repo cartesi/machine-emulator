@@ -4891,7 +4891,9 @@ Each claim belongs to its submitting connection, even when several players claim
 Connections arriving after admission closes can still supply output proofs after settlement.
 
 In this demonstration, the epoch under dispute is the calculator's [first epoch](#rolling-cartesi-machines).
-The referee and players receive the epoch's initial state hash and encoded inputs on the command line, standing in for reading the same dapp contract from the blockchain.
+The referee's `dapp_contract` holds the epoch's `initial_state_hash`, input paths and bytes, and clock settings, as in PRT.
+The command line supplies the initial state hash and, for the referee, the input paths; players receive those paths in events.
+The referee starts the run from this contract; player allowances live in the run's local tournament state, and settlement results are reported as they are obtained.
 A player finds its own snapshot of the initial machine in content-addressed local storage and verifies that the machine has the contract's initial state hash before using it.
 
 ```{.lua key=rollup_constants replace=null outputs=log2_max_advance_states_per_epoch,log2_max_mcycles_per_advance_state,log2_max_uarch_cycles_per_mcycle,log2_mcycle_leaves,log2_uarch_leaves}

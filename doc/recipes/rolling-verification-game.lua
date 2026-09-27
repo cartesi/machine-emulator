@@ -18,8 +18,6 @@ local addresses = vgu.addresses
 local MCYCLES_PER_INPUT = 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 local UARCH_CYCLES_PER_MCYCLE = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
 local INPUTS_PER_EPOCH = 1 << 16
-local RESPONSE_BUDGET = 1
-local ALLOWANCE = 4
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
 
 local function shallow_copy(values)
@@ -482,10 +480,13 @@ local function new_player(initial_hash, label, last_output_proof, machine)
     return self:move()
 end
 
+-- The server provides the blockchain execution environment, bound when the referee starts.
+local server
+
 -- The referee trusts its own input bytes and verifies the log without a machine.
 -- Invalid logs raise an error, which the request's protected validator rejects.
 local function validate_state_transition_response(
-    referee,
+    dapp_contract,
     epoch_input_offset,
     input_mcycle_offset,
     uarch_cycle,
@@ -493,7 +494,7 @@ local function validate_state_transition_response(
     response,
     after
 )
-    local data = referee.inputs[epoch_input_offset + 1]
+    local data = dapp_contract.inputs[epoch_input_offset + 1]
     if input_mcycle_offset == 0 and uarch_cycle == 0 and data then
         before = cartesi.machine:verify_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
@@ -562,21 +563,21 @@ end
 
 -- The interval contains resulting states, indexed from zero, with the agreed
 -- predecessor outside it. Each midpoint advances a fork of the agreed pair.
-local function request_bisections(referee, server, interval)
+local function request_bisections(tournament, interval)
     local started_at = server:get_time()
-    local deadline = fold(referee.players, started_at, function(latest, player)
+    local deadline = fold(tournament.players, started_at, function(latest, player)
         return math.max(latest, started_at + player.allowance)
     end)
     local survivors <close> = server:request_all(
-        addresses(referee.players),
+        addresses(tournament.players),
         EVENTS.reveal_bisection,
         { position(interval, interval.lo), position(interval, midpoint(interval) + 1) },
         function(response, _label, sender, received_at)
-            local player = referee.players[sender]
+            local player = tournament.players[sender]
             assert(received_at < started_at + player.allowance, "late midpoint hash")
             local hash = validate_bisection_response(response)
             local elapsed = received_at - started_at
-            player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
+            player.allowance = player.allowance - math.max(elapsed - tournament.dapp_contract.response_budget, 0)
             player.midpoint_hash = hash
             return player
         end
@@ -586,7 +587,7 @@ end
 
 -- Bisect the inclusive range of resulting-state indices. The agreed predecessor
 -- is not one of its leaves. Any disagreement selects the earlier half.
-local function bisect_level(referee, server, level, count, bisection)
+local function bisect_level(tournament, level, count, bisection)
     local interval = {
         level = level,
         lo = 0,
@@ -596,15 +597,15 @@ local function bisect_level(referee, server, level, count, bisection)
     }
     story.report_bisection(interval)
     while interval.lo < interval.hi do
-        referee.players = request_bisections(referee, server, interval)
-        if no_claim_remains(referee.players) then
+        tournament.players = request_bisections(tournament, interval)
+        if no_claim_remains(tournament.players) then
             return nil
         end
-        local winner = single_claim_remains(referee.players)
+        local winner = single_claim_remains(tournament.players)
         if winner then
             return nil, winner
         end
-        local hashes = map(referee.players, function(player)
+        local hashes = map(tournament.players, function(player)
             return player.midpoint_hash
         end)
         local mid = midpoint(interval)
@@ -621,27 +622,20 @@ local function bisect_level(referee, server, level, count, bisection)
 end
 
 -- Every surviving player must prove its own committed endpoint.
-local function request_state_transitions(
-    referee,
-    server,
-    epoch_input_offset,
-    input_mcycle_offset,
-    uarch_cycle,
-    bisection
-)
+local function request_state_transitions(tournament, epoch_input_offset, input_mcycle_offset, uarch_cycle, bisection)
     local started_at = server:get_time()
-    local deadline = fold(referee.players, started_at, function(latest, player)
+    local deadline = fold(tournament.players, started_at, function(latest, player)
         return math.max(latest, started_at + player.allowance)
     end)
     local survivors <close> = server:request_all(
-        addresses(referee.players),
+        addresses(tournament.players),
         EVENTS.prove_state_transition,
         { epoch_input_offset, input_mcycle_offset, uarch_cycle },
         function(response, _label, sender, received_at)
-            local player = referee.players[sender]
+            local player = tournament.players[sender]
             assert(received_at < started_at + player.allowance, "late transition proof")
             validate_state_transition_response(
-                referee,
+                tournament.dapp_contract,
                 epoch_input_offset,
                 input_mcycle_offset,
                 uarch_cycle,
@@ -650,7 +644,7 @@ local function request_state_transitions(
                 bisection.hashes_after[sender]
             )
             local elapsed = received_at - started_at
-            player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
+            player.allowance = player.allowance - math.max(elapsed - tournament.dapp_contract.response_budget, 0)
             story.report_state_transition(player)
             return player
         end
@@ -658,44 +652,44 @@ local function request_state_transitions(
     return survivors:wait(deadline)
 end
 
-local function settle_dispute(referee, server)
-    while not no_claim_remains(referee.players) do
-        local winner = single_claim_remains(referee.players)
+local function settle_dispute(tournament)
+    while not no_claim_remains(tournament.players) do
+        local winner = single_claim_remains(tournament.players)
         if winner then
             return winner
         end
-        local started <close> = server:request_all(addresses(referee.players), EVENTS.dispute_started, {})
+        local started <close> = server:request_all(addresses(tournament.players), EVENTS.dispute_started, {})
         started:wait()
         local bisection = {
-            last_agreed_hash = referee.initial_hash,
-            hashes_after = map(referee.players, function(player)
+            last_agreed_hash = tournament.dapp_contract.initial_state_hash,
+            hashes_after = map(tournament.players, function(player)
                 return player.final_hash
             end),
         }
-        local epoch_input_offset, winner_input = bisect_level(referee, server, "input", INPUTS_PER_EPOCH, bisection)
+        local epoch_input_offset, winner_input = bisect_level(tournament, "input", INPUTS_PER_EPOCH, bisection)
         if not epoch_input_offset then
             return winner_input
         end
         bisection.epoch_input_offset = epoch_input_offset
-        local input_mcycle_offset, winner_mcycle = bisect_level(referee, server, "mcycle", MCYCLES_PER_INPUT, bisection)
+        local input_mcycle_offset, winner_mcycle = bisect_level(tournament, "mcycle", MCYCLES_PER_INPUT, bisection)
         if not input_mcycle_offset then
             return winner_mcycle
         end
         bisection.input_mcycle_offset = input_mcycle_offset
         -- UARCH_CYCLE_MAX names the last cycle. Its outgoing transition includes reset.
         local uarch_cycle, winner_uarch_cycle =
-            bisect_level(referee, server, "uarch_cycle", UARCH_CYCLES_PER_MCYCLE, bisection)
+            bisect_level(tournament, "uarch_cycle", UARCH_CYCLES_PER_MCYCLE, bisection)
         if not uarch_cycle then
             return winner_uarch_cycle
         end
-        referee.players =
-            request_state_transitions(referee, server, epoch_input_offset, input_mcycle_offset, uarch_cycle, bisection)
+        tournament.players =
+            request_state_transitions(tournament, epoch_input_offset, input_mcycle_offset, uarch_cycle, bisection)
     end
 end
 
 -- Establish the outputs root, then accept distinct player-selected outputs until
 -- the runner stops the game. Output offers are permissionless after settlement.
-local function wait_for_outputs(referee, server, winner)
+local function wait_for_outputs(winner)
     local root_proof <close> = server:request_first_valid(
         EVERYONE,
         EVENTS.prove_outputs_merkle_root,
@@ -705,7 +699,6 @@ local function wait_for_outputs(referee, server, winner)
         end
     )
     local outputs_merkle_root = root_proof:wait()
-    referee.outputs_root = outputs_merkle_root
     local accepted_output_indices = {}
     while true do
         local output_proof <close> = server:request_first_valid(
@@ -720,26 +713,25 @@ local function wait_for_outputs(referee, server, winner)
         )
         local output = output_proof:wait()
         accepted_output_indices[output.output_index] = true
-        referee.output = output
         story.report_output(output)
     end
 end
 
-local function request_claims(referee, server)
+local function request_claims(tournament)
     local started_at = server:get_time()
-    local deadline = fold(referee.players, started_at, function(latest, player)
+    local deadline = fold(tournament.players, started_at, function(latest, player)
         return math.max(latest, started_at + player.allowance)
     end)
     local survivors <close> = server:request_all(
-        addresses(referee.players),
+        addresses(tournament.players),
         EVENTS.commit_claim,
         {},
         function(response, label, sender, received_at)
-            local player = referee.players[sender]
+            local player = tournament.players[sender]
             assert(received_at < started_at + player.allowance, "late final hash")
             local hash = validate_claim_response(response)
             local elapsed = received_at - started_at
-            player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
+            player.allowance = player.allowance - math.max(elapsed - tournament.dapp_contract.response_budget, 0)
             player.label = label
             player.final_hash = hash
             return player
@@ -748,38 +740,48 @@ local function request_claims(referee, server)
     return survivors:wait(deadline)
 end
 
-local function run_referee(referee, server)
-    referee.players = {}
-    for index, sender in ipairs(server:accept_subscribers(referee.initial_hash)) do
-        referee.players[sender] = { index = index, allowance = ALLOWANCE }
+local function run_referee(dapp_contract)
+    local tournament = { dapp_contract = dapp_contract, players = {} }
+    for index, sender in ipairs(server:accept_subscribers(dapp_contract.initial_state_hash)) do
+        tournament.players[sender] = { index = index, allowance = dapp_contract.max_allowance }
     end
-    local initial <close> = server:request_all(EVERYONE, EVENTS.initial_state, { referee.initial_hash })
+    local initial <close> = server:request_all(EVERYONE, EVENTS.initial_state, { dapp_contract.initial_state_hash })
     initial:wait()
-    for index, path in ipairs(referee.input_paths) do
+    for index, path in ipairs(dapp_contract.input_paths) do
         local input <close> = server:request_all(EVERYONE, EVENTS.input_added, { index - 1, path })
         input:wait()
     end
-    local sealed <close> = server:request_all(EVERYONE, EVENTS.epoch_sealed, { #referee.inputs })
+    local sealed <close> = server:request_all(EVERYONE, EVENTS.epoch_sealed, { #dapp_contract.inputs })
     sealed:wait()
-    referee.players = request_claims(referee, server)
-    story.report_claims(referee.players)
-    local winner = settle_dispute(referee, server)
-    referee.winner = winner
+    tournament.players = request_claims(tournament)
+    story.report_claims(tournament.players)
+    local winner = settle_dispute(tournament)
     story.report_winner(winner)
-    if not winner then
-        return
+    if winner then
+        wait_for_outputs(winner)
     end
-    referee.final_hash = winner.final_hash
-    wait_for_outputs(referee, server, winner)
 end
 
-local function new_referee(initial_hash, input_paths)
-    assert(#initial_hash == 32 and #input_paths <= INPUTS_PER_EPOCH, "invalid epoch")
+-- The deployed contract fixes the epoch's initial state, inputs, and clock settings.
+-- Input events carry paths; proof verification trusts the contract's own input bytes.
+local function make_dapp_contract(initial_state_hash, input_paths)
+    assert(#initial_state_hash == 32 and #input_paths <= INPUTS_PER_EPOCH, "invalid epoch")
     return {
-        initial_hash = initial_hash,
+        initial_state_hash = initial_state_hash,
         input_paths = input_paths,
         inputs = map(input_paths, util.read_file),
-        run = run_referee,
+        max_allowance = 4,
+        response_budget = 1,
+    }
+end
+
+local function new_referee(dapp_contract)
+    return {
+        dapp_contract = dapp_contract,
+        run = function(self, referee_server)
+            server = referee_server
+            run_referee(self.dapp_contract)
+        end,
     }
 end
 
@@ -787,6 +789,7 @@ local vg = {
     addresses = addresses,
     new_player = new_player,
     new_referee = new_referee,
+    make_dapp_contract = make_dapp_contract,
     event_handler = event_handler,
     player_methods = player_methods,
     advancing_pair_methods = advancing_pair_methods,
@@ -802,12 +805,13 @@ local address = assert(arg[2], "missing referee address")
 if role == "phase_closer" then
     return vgu.run_client(vgu.new_phase_closer(arg[3]), address)
 end
-local initial_hash = cartesi.fromhex(assert(arg[3], "missing initial state hash"))
+local initial_state_hash = cartesi.fromhex(assert(arg[3], "missing initial state hash"))
 if role == "referee" then
-    vgu.run_server(new_referee(initial_hash, { table.unpack(arg, 4) }), address)
+    local dapp_contract = make_dapp_contract(initial_state_hash, { table.unpack(arg, 4) })
+    vgu.run_server(new_referee(dapp_contract), address)
     vgu.close_narration()
 elseif role == "honest" then
-    local player <close> = new_player(initial_hash, arg[4])
+    local player <close> = new_player(initial_state_hash, arg[4])
     vgu.run_client(player, address)
 else
     error("unknown role: " .. role)

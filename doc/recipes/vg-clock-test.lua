@@ -21,9 +21,11 @@ local empty_handlers = {
 for delayed_index = 1, 2 do
     local clients = {}
     local claims = { hash, cartesi.keccak256("other claim") }
-    local referee = vg.new_referee(hash, {})
+    local dapp_contract = vg.make_dapp_contract(hash, {})
+    local results
     local delayed, immediate
-    run_with_server(vgu.protocol, function(server, run_client, wait_connections)
+    run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
+        results = observed
         for index = 1, 2 do
             local sender
             local client = {
@@ -39,7 +41,7 @@ for delayed_index = 1, 2 do
                 assert(round <= 4, "requested another hash after elimination")
                 assert(round == 1 or self.disputes == 1, "midpoint requested before dispute started")
                 self.requested_at[round] = self.block
-                self.allowances[round] = referee.players[sender].allowance
+                self.allowances[round] = round == 1 and dapp_contract.max_allowance or results.players[sender].allowance
                 local delay = index == delayed_index and ({ 2, 2, 0, 2 })[round] or 0
                 if delay == 0 then
                     return claims[index]
@@ -51,7 +53,7 @@ for delayed_index = 1, 2 do
             client.event_handler.commit_claim, client.event_handler.reveal_bisection = offer, offer
             function client.event_handler:dispute_started()
                 assert(#self.requested_at == 1 and self.disputes == 0)
-                assert(referee.players[sender].allowance == (index == delayed_index and 3 or 4))
+                assert(results.players[sender].allowance == (index == delayed_index and 3 or 4))
                 self.disputes = self.disputes + 1
             end
             run_client(nil, function(wire, line)
@@ -69,7 +71,7 @@ for delayed_index = 1, 2 do
         run_client({ role = "phase_closer" }, function()
             return { value = true }
         end)
-        referee:run(server)
+        vg.new_referee(dapp_contract):run(server)
     end)
     for round = 1, 4 do
         assert(clients[1].requested_at[round] == clients[2].requested_at[round], "hash requests were serialized")
@@ -77,23 +79,25 @@ for delayed_index = 1, 2 do
         assert(clients[3 - delayed_index].allowances[round] == 4, "opponent delay charged immediate player")
     end
     assert(#clients[1].requested_at == 4 and #clients[2].requested_at == 4)
-    assert(not referee.players[delayed] and referee.players[immediate] == referee.winner, "deadline is not exclusive")
-    assert(referee.final_hash == claims[3 - delayed_index] and referee.winner.allowance == 4)
+    assert(not results.players[delayed] and results.players[immediate] == results.winner, "deadline is not exclusive")
+    assert(results.final_hash == claims[3 - delayed_index] and results.winner.allowance == 4)
 end
 
 -- Repeated claims and labels still belong to separate connections. One
 -- proponent's accepted midpoint cannot save another who fails to defend it.
 do
-    local referee = vg.new_referee(hash, {})
+    local dapp_contract = vg.make_dapp_contract(hash, {})
+    local results
     local requested = {}
-    local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections)
+    local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
+        results = observed
         for index = 1, 3 do
             local client = { label = "same label", event_handler = setmetatable({}, empty_handlers) }
             function client.event_handler.commit_claim()
                 return index <= 2 and hash or cartesi.keccak256("other claim")
             end
             function client.event_handler.reveal_bisection()
-                assert(#vg.addresses(referee.players) == 3, "equal claims were merged")
+                assert(#vg.addresses(results.players) == 3, "equal claims were merged")
                 requested[index] = true
                 return index == 2 and hash or "malformed"
             end
@@ -105,16 +109,18 @@ do
         run_client({ role = "phase_closer" }, function()
             return { value = true }
         end)
-        referee:run(server)
+        vg.new_referee(dapp_contract):run(server)
     end)
     assert(requested[1] and requested[2] and requested[3], "a proponent was not asked to defend its claim")
-    assert(#vg.addresses(referee.players) == 1 and referee.players[server.connections[2]] == referee.winner)
-    assert(referee.final_hash == hash and referee.winner.index == 2)
+    assert(#vg.addresses(results.players) == 1 and results.players[server.connections[2]] == results.winner)
+    assert(results.final_hash == hash and results.winner.index == 2)
 end
 
 for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
-    local referee = vg.new_referee(hash, {})
-    run_with_server(vgu.protocol, function(server, run_client, wait_connections)
+    local dapp_contract = vg.make_dapp_contract(hash, {})
+    local results
+    run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
+        results = observed
         for index = 1, 2 do
             run_client(nil, function(wire)
                 if wire.operation == "commit_claim" then
@@ -133,10 +139,10 @@ for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
         run_client({ role = "phase_closer" }, function()
             return { value = true }
         end)
-        referee:run(server)
+        vg.new_referee(dapp_contract):run(server)
     end)
-    assert(not referee.winner and not referee.final_hash)
-    assert(not next(referee.players))
+    assert(not results.winner and not results.final_hash)
+    assert(not next(results.players))
 end
 
 -- Both players receive every midpoint request, including the last midpoint of
@@ -145,8 +151,10 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
     for failed_player = 0, (failed_round <= 84 and 2 or 0) do
         local rounds, proofs = { 0, 0 }, 0
         local claims = { hash, cartesi.keccak256("other claim") }
-        local referee = vg.new_referee(hash, {})
-        local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections)
+        local dapp_contract = vg.make_dapp_contract(hash, {})
+        local results
+        local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
+            results = observed
             for index = 1, 2 do
                 local client = { event_handler = setmetatable({}, empty_handlers) }
                 function client.event_handler.commit_claim()
@@ -196,21 +204,21 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
             run_client({ role = "phase_closer" }, function()
                 return { value = true }
             end)
-            referee:run(server)
+            vg.new_referee(dapp_contract):run(server)
         end)
         local last = math.min(failed_round, 84)
         assert(rounds[1] == last and rounds[2] == last, "requested another midpoint after settlement")
         assert(proofs == (failed_round > 84 and 2 or 0))
         if failed_player == 0 then
-            assert(not referee.winner and not referee.final_hash)
-            assert(not next(referee.players))
+            assert(not results.winner and not results.final_hash)
+            assert(not next(results.players))
         else
             local loser = failed_player
             local winner = 3 - loser
-            assert(referee.winner.index == winner and referee.final_hash == claims[winner])
-            assert(#vg.addresses(referee.players) == 1)
-            assert(referee.players[server.connections[winner]] == referee.winner)
-            assert(referee.winner.allowance == 4, "charged the immediate player")
+            assert(results.winner.index == winner and results.final_hash == claims[winner])
+            assert(#vg.addresses(results.players) == 1)
+            assert(results.players[server.connections[winner]] == results.winner)
+            assert(results.winner.allowance == 4, "charged the immediate player")
         end
     end
 end

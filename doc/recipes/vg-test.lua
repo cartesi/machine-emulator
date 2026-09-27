@@ -7,8 +7,10 @@ local run_with_server = require("vg-test-server")
 local initial_hash = cartesi.fromhex(util.read_file("initial-hash"))
 local paths = { "input-0.bin", "input-1.bin", "input-2.bin" }
 local function run_game(players, input_paths)
-    local referee = vg.new_referee(initial_hash, input_paths or paths)
-    run_with_server(vgu.protocol, function(server, run_client, wait_connections)
+    local dapp_contract = vg.make_dapp_contract(initial_hash, input_paths or paths)
+    local results
+    run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
+        results = observed
         for index, player in ipairs(players) do
             run_client(nil, function(_, line)
                 return vgu.answer_event(player, line)
@@ -18,18 +20,18 @@ local function run_game(players, input_paths)
         run_client({ role = "phase_closer" }, function()
             return { value = true }
         end)
-        referee:run(server)
+        vg.new_referee(dapp_contract):run(server)
     end)
     vgu.close_narration()
-    return referee
+    return results
 end
 local first <close> = vg.new_player(initial_hash)
 assert(first.tentative_machine.machine:get_root_hash() == initial_hash)
 assert(first.tentative_machine.machine ~= first.agreed_machine.machine)
 local second <close> = vg.new_player(initial_hash)
-local referee = run_game({ first, second })
-assert(referee.winner.index == 1 and referee.final_hash == first.final_hash)
-assert(referee.output)
+local results = run_game({ first, second })
+assert(results.winner.index == 1 and results.final_hash == first.final_hash)
+assert(results.output)
 print("vg-test: equal claims ok")
 
 -- The losing connection can prove outputs after exhausting its clock. Providers
@@ -44,10 +46,12 @@ local empty_handlers = {
     end,
 }
 for _, late_providers in ipairs({ false, true }) do
-    local settled = vg.new_referee(initial_hash, {})
+    local dapp_contract = vg.make_dapp_contract(initial_hash, {})
+    local settled
     local root_offer = vg.event_handler.prove_outputs_merkle_root(first)
     local output_offer = vg.event_handler.prove_output(first)
-    local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections)
+    local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
+        settled = observed
         local offers = { prove_outputs_merkle_root = root_offer, prove_output = output_offer }
         if late_providers then
             local request_first_valid = server.request_first_valid
@@ -105,7 +109,7 @@ for _, late_providers in ipairs({ false, true }) do
         run_client({ role = "phase_closer" }, function()
             return { value = true }
         end)
-        settled:run(server)
+        vg.new_referee(dapp_contract):run(server)
     end)
     assert(settled.output and settled.output.output == output_offer.output)
     assert(#vg.addresses(settled.players) == 1 and settled.winner.allowance == 4)
@@ -117,12 +121,14 @@ print("vg-test: permissionless output providers ok")
 -- Player-selected outputs need not arrive in index order. Repeating an accepted
 -- output leaves the wait suspended until the runner stops the game.
 do
-    local settled = vg.new_referee(initial_hash, {})
+    local dapp_contract = vg.make_dapp_contract(initial_hash, {})
+    local settled
     local offered, resumed = { 0, 0 }, false
     local last = #first.outputs
     assert(last > 1, "output fixture needs distinct outputs")
     local sequence = { last, 1, last }
-    local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections)
+    local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
+        settled = observed
         for index = 1, 2 do
             local client = { event_handler = setmetatable({}, empty_handlers) }
             function client.event_handler.commit_claim()
@@ -154,7 +160,7 @@ do
         run_client({ role = "phase_closer" }, function()
             return { value = true }
         end)
-        settled:run(server)
+        vg.new_referee(dapp_contract):run(server)
         resumed = true
     end)
     assert(offered[1] == #sequence and offered[2] == #sequence)
@@ -192,8 +198,10 @@ for _, case in ipairs({
         case.winner == 2 and after or cartesi.keccak256("wrong second endpoint"),
     }
     local proofs = {}
-    local settled = vg.new_referee(initial_hash, {})
-    local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections)
+    local dapp_contract = vg.make_dapp_contract(initial_hash, {})
+    local settled
+    local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
+        settled = observed
         for index = 1, 2 do
             local client = { event_handler = setmetatable({}, empty_handlers) }
             function client.event_handler.commit_claim()
@@ -233,7 +241,7 @@ for _, case in ipairs({
         run_client({ role = "phase_closer" }, function()
             return { value = true }
         end)
-        settled:run(server)
+        vg.new_referee(dapp_contract):run(server)
     end)
     assert(proofs[1] and proofs[2], "a surviving player was not asked for its proof")
     if case.winner then

@@ -12,6 +12,7 @@ local prtu = require("prtu")
 local run_with_game_server = require("game-test-server")
 local prt = require("prt")
 local EVERYONE = prtu.EVERYONE
+local FOREVER = nil
 assert(require("prt-time-test"))
 
 local keccak = cartesi.keccak256
@@ -1489,7 +1490,7 @@ end
 for _, deadline in ipairs({ 2, 7 }) do
     run_with_server(function(server)
         local empty <close> = server:run_all({})
-        assert(empty.resolved and empty:wait(), "an empty group did not complete immediately")
+        assert(empty.resolved and empty:wait_at_most(FOREVER), "an empty group did not complete immediately")
         local started, finished = {}, {}
         local functions = {}
         for i = 1, 2 do
@@ -1501,9 +1502,12 @@ for _, deadline in ipairs({ 2, 7 }) do
         end
         local completed <close> = server:run_all(functions)
         assert(#started == 0, "run_all suspended its caller")
-        assert(completed:wait(deadline) == (deadline == 7 and true or nil))
+        assert(completed:wait_at_most(deadline) == (deadline == 7 and true or nil))
         assert(table.concat(started, ",") == "1,2", "closures did not start concurrently in list order")
-        assert(completed.closed and not pcall(completed.wait, completed), "a consumed group accepted another wait")
+        assert(
+            completed.closed and not pcall(completed.wait_at_most, completed),
+            "a consumed group accepted another wait"
+        )
         server:wait_until(7)
         assert(
             table.concat(finished, ",") == (deadline == 7 and "2,1" or ""),
@@ -1540,23 +1544,22 @@ run_with_server(function(server)
         local elimination <close> = server:request_first_valid(
             {},
             prtu.EVENTS.schedule_match_elimination,
-            { server:request_block() + 10 },
+            { server:get_time() + 11 },
             function()
                 return 0
-            end,
-            server:request_block() + 10
+            end
         )
         pending[#pending + 1] = proof
         pending[#pending + 1] = elimination
         started = started + 1
-        proof:wait()
+        proof:wait_at_most(FOREVER)
         resumed = true
     end
     local completed <close> = server:run_all({
         wait_for_proof,
         function()
             local nested <close> = server:run_all({ wait_for_proof })
-            nested:wait()
+            nested:wait_at_most(FOREVER)
             resumed = true
         end,
     })
@@ -1575,7 +1578,7 @@ run_with_server(function(server)
         assert(proof.closed, "cancellation left a proof request open")
     end
     assert(not next(server.scheduled_responses), "cancellation left a scheduled response registered")
-    assert(other:wait() and other_finished, "cancellation stopped another group")
+    assert(other:wait_at_most(FOREVER) and other_finished, "cancellation stopped another group")
     assert(not next(server.active), "cancellation left unfinished work")
 end)
 
@@ -1585,7 +1588,7 @@ local group_ok, group_error = pcall(run_with_server, function(server)
             error("group closure failed")
         end,
     })
-    completed:wait()
+    completed:wait_at_most(FOREVER)
 end)
 assert(not group_ok and group_error:find("group closure failed"), "a closure error did not fail the referee")
 
@@ -1612,8 +1615,8 @@ run_with_server(function(server, run_client, wait_connections)
             return { claim = response, connection = connection, received_at = received_at }
         end
     )
-    local block = server:request_block()
-    local responses, order = collection:wait(block + 1)
+    local block = server:get_time() + 1
+    local responses, order = collection:wait_at_most(block + 1)
     assert(checked == 5 and #order == 2, "collection did not validate every reply")
     assert(server:get_time() == block, "rejected replies held up collection")
     local labels = {}
@@ -1625,12 +1628,15 @@ run_with_server(function(server, run_client, wait_connections)
         labels[sender.label] = true
     end
     assert(labels.a and labels.b, "collection lost an accepted claim")
-    assert(collection.closed and not pcall(collection.wait, collection), "a consumed collection accepted another wait")
+    assert(
+        collection.closed and not pcall(collection.wait_at_most, collection),
+        "a consumed collection accepted another wait"
+    )
     assert(checked == 5, "another wait revalidated replies")
     local rejected <close> = server:request_all(EVERYONE, define_event("claim"), {}, function()
         error("invalid claim")
     end)
-    assert(not next((rejected:wait())), "an all-invalid collection did not resolve empty")
+    assert(not next((rejected:wait_at_most(FOREVER))), "an all-invalid collection did not resolve empty")
     for _, connection in ipairs(server:get_players()) do
         assert(not connection.dead, "an invalid claim closed its sender")
     end
@@ -1652,7 +1658,7 @@ run_with_server(function(server, run_client, wait_connections)
         return { value = true }
     end)
     server:accept_subscribers("initial")
-    local close_block = server:request_block() + 1
+    local close_block = server:get_time() + 2
     local collection <close> = server:request_all(
         "initial",
         define_event("commit_mcycle_claim"),
@@ -1661,7 +1667,7 @@ run_with_server(function(server, run_client, wait_connections)
             return { claim = claim, connection = connection }
         end
     )
-    local responses, order = collection:wait(close_block)
+    local responses, order = collection:wait_at_most(close_block)
     server:wait_until(close_block)
     assert(#server.open_phases == 0, "closed phases were retained")
     table.sort(order, function(x, y)
@@ -1683,7 +1689,7 @@ run_with_server(function(server, run_client, wait_connections)
 
     local function request(subscriptions, event, arguments, accept)
         local future <close> = server:request_first_valid(subscriptions, event, arguments, accept)
-        return future:wait(server:request_block() + 1)
+        return future:wait_at_most(server:get_time() + 2)
     end
 
     -- The first valid response wins and a rejected response leaves its connection open.
@@ -1700,7 +1706,7 @@ run_with_server(function(server, run_client, wait_connections)
     do
         local future <close> = server:request_first_valid("snapshot", define_event("answer"), {}, function() end)
         server:subscribe_connection("snapshot", b)
-        assert(future:wait(server:request_block() + 1) == nil)
+        assert(future:wait_at_most(server:get_time() + 2) == nil)
         assert(#answered == 3, "an emitted event's audience changed with its subscriptions")
     end
     assert(request({ "snapshot" }, define_event("answer"), {}, function() end) == nil)
@@ -1727,9 +1733,9 @@ run_with_server(function(server, run_client, wait_connections)
     assert(not n.dead and not b.dead, "an invalid response closed a connection")
 
     -- A nested tournament asks only its audience, and closes at the next block.
-    local nested_close_block = server:request_block() + 1
+    local nested_close_block = server:get_time() + 2
     local nested_collection <close> = server:request_all("a", define_event("commit_mcycle_claim"), {})
-    local nested, nested_order = nested_collection:wait(nested_close_block)
+    local nested, nested_order = nested_collection:wait_at_most(nested_close_block)
     server:wait_until(nested_close_block)
     assert(
         #nested_order == 1 and nested_order[1] == a and nested[a] == "a",
@@ -1747,7 +1753,7 @@ run_with_server(function(server, run_client, wait_connections)
     end)
     wait_connections(6)
     local labels <close> = server:request_all(EVERYONE, define_event("label"), {})
-    local replies, label_order = labels:wait()
+    local replies, label_order = labels:wait_at_most(FOREVER)
     local d = server.connections[6]
     server:subscribe_connection("d", d)
     assert(d.dead and #label_order == 4 and replies[d] == nil, "the closing client was not dropped from the collection")
@@ -1766,7 +1772,7 @@ run_with_server(function(server, run_client, wait_connections)
     local function run_typed_client(value, schema)
         run_client(nil, function(wire_event)
             if wire_event.operation == "typed" then
-                return cartesi.tojson({ value = value }, -1, schema, prtu.SCHEMA_DICT)
+                return cartesi.fromjson(cartesi.tojson({ value = value }, -1, schema, prtu.SCHEMA_DICT))
             end
             return { value = "valid" }
         end)
@@ -1799,7 +1805,7 @@ run_with_server(function(server, run_client, wait_connections)
     end)
     wait_connections(9)
     local malformed <close> = server:request_all(EVERYONE, define_event("label"), {})
-    malformed:wait()
+    malformed:wait_at_most(FOREVER)
     local dead = 0
     for _, connection in ipairs(server.connections) do
         if connection.dead then
@@ -1812,16 +1818,18 @@ run_with_server(function(server, run_client, wait_connections)
     -- An unsolicited player reply cannot advance logical time or invent another claim.
     run_client(nil, function(wire_event)
         if wire_event.operation == "commit_mcycle_claim" then
-            return cartesi.tojson({ value = "forger" }, -1) .. "\n" .. cartesi.tojson({ value = true }, -1)
+            return cartesi.tojson({ id = wire_event.id, value = { answer = "forger" } }, -1)
+                .. "\n"
+                .. cartesi.tojson({ value = true }, -1)
         end
         return { value = "valid" }
     end)
     wait_connections(10)
     local f = server.connections[10]
     server:subscribe_connection("f", f)
-    local forged_close_block = server:request_block() + 1
+    local forged_close_block = server:get_time() + 2
     local forged_collection <close> = server:request_all("f", define_event("commit_mcycle_claim"), {})
-    local t2, forged_order = forged_collection:wait(forged_close_block)
+    local t2, forged_order = forged_collection:wait_at_most(forged_close_block)
     server:wait_until(forged_close_block)
     assert(
         #forged_order == 1 and forged_order[1] == f and t2[f] == "forger" and not f.dead,
@@ -1836,7 +1844,7 @@ run_with_server(function(server, run_client, wait_connections)
     wait_connections(11)
     server:subscribe_connection("again", server.connections[11])
     local repeated_hello <close> = server:request_all("again", define_event("again"), {})
-    repeated_hello:wait()
+    repeated_hello:wait_at_most(FOREVER)
     assert(server.connections[11].dead, "a repeated role announcement was accepted")
     run_client({ role = "phase_closer" }, function()
         return "close"
@@ -1906,25 +1914,25 @@ for _, stop_during in ipairs({ "root", "output" }) do
             elseif event.operation == "advance_time" then
                 return { value = {} }
             elseif event.operation == "stop_test_root" and stop_during == "output" then
-                return { value = "valid" }
+                return { value = { answer = "valid" }, id = event.id }
             end
             assert(pending.cortn == referee, "proof wait was not suspended")
             local closer = prtu.new_phase_closer("stop")
             run_client(cartesi.fromjson(closer.hello), function(_, line)
                 return prtu.answer_event(closer, line)
             end, true)
-            return { value = {} }
+            return { skip = true, id = event.id }
         end, true)
         wait_connections(1)
         local root <close> = server:request_first_valid(EVERYONE, define_event("stop_test_root"), {}, is_valid)
         pending = root
-        root:wait()
+        root:wait_at_most(FOREVER)
         if stop_during == "root" then
             resumed = true
         end
         local output <close> = server:request_first_valid(EVERYONE, define_event("stop_test_output"), {}, is_valid)
         pending = output
-        output:wait()
+        output:wait_at_most(FOREVER)
         resumed = true
     end)
     assert(closed and finished, "stopping skipped resource cleanup or finish delivery")
@@ -1949,13 +1957,13 @@ do
             local index = offers[next_offer]
             next_offer = next_offer + 1
             if index then
-                return { value = index }
+                return { value = { answer = index }, id = event.id }
             end
             local closer = prtu.new_phase_closer("stop")
             run_client(cartesi.fromjson(closer.hello), function(_, line)
                 return prtu.answer_event(closer, line)
             end, true)
-            return { value = {} }
+            return { skip = true, id = event.id }
         end, true)
         wait_connections(1)
         while true do
@@ -1967,7 +1975,7 @@ do
                     return math.type(value) == "integer" and value
                 end
             )
-            accepted[#accepted + 1] = response:wait()
+            accepted[#accepted + 1] = response:wait_at_most(FOREVER)
         end
     end)
     assert(finished and table.concat(accepted, ",") == "7,2,5", "output loop lost a player-selected response")

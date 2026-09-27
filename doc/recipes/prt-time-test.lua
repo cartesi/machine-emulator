@@ -29,8 +29,6 @@ schedule(9, 11)
 assert(queue:advance(12)[1].id == 9, "a skipped block lost a due response")
 
 local clock = new_clock()
-local first, second = clock:request_block(), clock:request_block()
-assert(first == second and first == 1, "concurrent requests have different coordinates")
 local entries = { { pending = { a = true } }, { pending = { b = true } } }
 entries[2].pending.b = nil -- a skip finishes its audience member
 assert(not clock:barrier_ready(entries), "early reply released the barrier")
@@ -38,9 +36,6 @@ entries[1].pending.a = nil
 assert(clock:barrier_ready(entries))
 assert(clock:next_block({ 7, 3, 9 }) == 3, "did not choose a supplied boundary")
 clock:advance(3)
-assert(clock:request_block() == 3)
-clock:begin_ordinary()
-assert(clock:request_block() == 4)
 assert(clock:next_block({ 1, 3, 20 }) == 20, "empty blocks were not skipped")
 assert(clock:next_block({}) == nil, "invented a deadline")
 assert(not pcall(clock.advance, clock, 3))

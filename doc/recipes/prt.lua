@@ -61,6 +61,7 @@ if arg[1] == "phase_closer" then
 end
 
 local EVERYONE = prtu.EVERYONE
+local FOREVER = nil
 local EVENTS = prtu.EVENTS
 local story = prtu.story
 
@@ -365,8 +366,7 @@ local function emit_schedule_match_timeout_win(tournament, match)
             validate_timeout_win_response(response, other_claim.computation_hash)
             story.report_timeout_win(match)
             return other_turn_index
-        end,
-        responder_deadline
+        end
     )
 end
 
@@ -380,8 +380,7 @@ local function emit_schedule_match_elimination(match)
             assert(current_time() >= eliminable_at, "early elimination")
             story.report_match_eliminated(match, sender.label)
             return 0
-        end,
-        eliminable_at
+        end
     )
 end
 
@@ -412,8 +411,7 @@ local function settle_uarch_state_hash(
         function()
             assert(current_time() >= eliminable_at, "early elimination")
             return true
-        end,
-        eliminable_at
+        end
     )
     local proof <close> = server:request_first_valid(
         subscriptions,
@@ -430,9 +428,9 @@ local function settle_uarch_state_hash(
             )
         end
     )
-    local obtained_state_hash = proof:wait(proof_deadline)
+    local obtained_state_hash = proof:wait_at_most(proof_deadline)
     if not obtained_state_hash then
-        elimination:wait()
+        elimination:wait_at_least(eliminable_at)
     end
     story.report_state_transition(tournament, match, state_transition_offset, obtained_state_hash, next_state_hashes)
     return obtained_state_hash
@@ -477,7 +475,7 @@ local function open_uarch_tournament(
             return { claim = claim, connection = connection, received_at = received_at }
         end
     )
-    local responses, order = collection:wait(joining_deadline)
+    local responses, order = collection:wait_at_most(joining_deadline)
     server:wait_until(joining_deadline)
     local claims = partition_claims(responses, order, tournament_id, start_instant, allowance)
     local tournament = {
@@ -513,7 +511,7 @@ local function propagate_uarch_result(mcycle_match, winner, next_state_hashes)
             function()
                 assert(current_time() >= winner_expires_at)
                 return true
-            end, winner_expires_at
+            end
         )
         local propagation <close> = server:request_first_valid(
             subscription_hash(mcycle_tournament.id, mcycle_claim),
@@ -525,8 +523,8 @@ local function propagate_uarch_result(mcycle_match, winner, next_state_hashes)
                 return winner.final_state_hash
             end
         )
-        if not propagation:wait(winner_expires_at) then
-            elimination:wait()
+        if not propagation:wait_at_most(winner_expires_at) then
+            elimination:wait_at_least(winner_expires_at)
             -- Both mcycle claims are eliminated despite the uarch tournament having a winner.
             -- Report this expiry separately from a uarch tournament that had no winner.
             return nil
@@ -603,9 +601,9 @@ local function reveal_divergence(tournament, match)
                 return validate_bisection_response(match, response)
             end
         )
-        local response = reveal:wait(match.responder_deadline)
+        local response = reveal:wait_at_most(match.responder_deadline)
         if not response then
-            return timeout:wait(match.eliminable_at) or elimination:wait()
+            return timeout:wait_at_most(match.eliminable_at) or elimination:wait_at_least(match.eliminable_at)
         end
         pause_turn_clock(tournament, match)
         advance_bisection(match, response)
@@ -631,9 +629,9 @@ local function seal_divergence(tournament, match)
             return validate_seal_response(tournament, match, response)
         end
     )
-    local divergence = seal:wait(match.responder_deadline)
+    local divergence = seal:wait_at_most(match.responder_deadline)
     if not divergence then
-        return nil, timeout:wait(match.eliminable_at) or elimination:wait()
+        return nil, timeout:wait_at_most(match.eliminable_at) or elimination:wait_at_least(match.eliminable_at)
     end
     pause_turn_clock(tournament, match)
     return divergence
@@ -665,7 +663,7 @@ local function run_matches(tournament, matches)
         end
     end
     local completed <close> = server:run_all(functions)
-    completed:wait()
+    completed:wait_at_most(FOREVER)
 end
 
 -- Pairs the surviving claims two by two into the matches of a round, in bracket order.
@@ -733,7 +731,7 @@ local function open_mcycle_tournament(dapp_contract)
             }
         end
     )
-    local responses, order = collection:wait(joining_deadline)
+    local responses, order = collection:wait_at_most(joining_deadline)
     server:wait_until(joining_deadline)
     local claims = partition_claims(responses, order, tournament_id, start_instant, max_allowance)
     local tournament = {
@@ -769,7 +767,7 @@ local function wait_for_outputs(tournament, winner)
             return validate_outputs_merkle_root_response(response, winner.final_state_hash)
         end
     )
-    local outputs_merkle_root = root_proof:wait()
+    local outputs_merkle_root = root_proof:wait_at_most(FOREVER)
     local accepted_output_indices = {}
     while true do
         local output_proof <close> = server:request_first_valid(
@@ -782,7 +780,7 @@ local function wait_for_outputs(tournament, winner)
                 end
             end
         )
-        local output = output_proof:wait()
+        local output = output_proof:wait_at_most(FOREVER)
         accepted_output_indices[output.output_index] = true
         story.report_output(output)
     end
@@ -800,10 +798,10 @@ local function run_referee(dapp_contract)
     server:accept_subscribers(dapp_contract.initial_state_hash)
     for index, path in ipairs(dapp_contract.input_paths) do
         local input <close> = server:request_all(EVERYONE, EVENTS.input_added, { index - 1, path })
-        input:wait()
+        input:wait_at_most(FOREVER)
     end
     local sealed <close> = server:request_all(EVERYONE, EVENTS.epoch_sealed, { #dapp_contract.inputs })
-    sealed:wait()
+    sealed:wait_at_most(FOREVER)
     local tournament = open_mcycle_tournament(dapp_contract)
     local winner = run_tournament(tournament)
     story.report_winner(winner)

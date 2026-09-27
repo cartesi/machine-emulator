@@ -4711,172 +4711,17 @@ Cartesi is based on *fraud proofs*, a group of approaches through which an hones
 The [verification game](https://doi.org/10.1016/j.ic.2013.03.003) technique, on which our original [whitepaper](https://cartesi.io/cartesi_whitepaper.pdf) builds, is a well-established fraud proof strategy.
 It rests on the assumption that at least one of the two parties is honest.
 
-The `verification-game.lua` script implements this strategy.
-A referee, standing in for the Cartesi contracts deployed on the blockchain, mediates a dispute between two players, each standing in for a Cartesi Node that ran the computation off-chain.
-The three are separate processes that communicate over the network, which here stands in for blockchain transactions.
-The referee never trusts a player.
-The two players run identical code and differ only in the machine they hold.
-One is honest, the other cheats past a chosen point by switching to a machine that ran a different expression.
-
-The game opens with each player committing the final state hash of its machine, obtained by running it until it halts.
-If the two hashes agree there is no dispute and the result can be extracted directly.
-When they disagree the referee settles the dispute before accepting the result.
-```{.lua key=vg_run_referee include=verification-game.lua/run_referee title="verification-game.lua (excerpt)"}
-```
-
-### Settling a dispute
-
-The dispute is settled in two bisections.
-The first ranges over `mcycle` and isolates the disputed main processor instruction.
-The second ranges over `uarch_cycle` and isolates the single uarch step within it.
-```{.lua key=vg_settle include=verification-game.lua/settle_dispute title="verification-game.lua (excerpt)"}
-```
-
-### One bisection level
-
-Each bisection narrows the disagreement to the single transition responsible for it, repeatedly asking both players for the state hash at the midpoint of an interval of cycles and keeping the half where they still disagree.
-```{.lua key=vg_bisect_level include=vgu.lua/bisect_level title="vgu.lua (excerpt)"}
-```
-The main processor has a fixed-point property once the machine halts.
-Running it for more `mcycle`s leaves the state, and therefore the hash, unchanged.
-Likewise, the uarch has a fixed-point property once it halts.
-Running it for more `uarch_cycle`s leaves the state unchanged.
-This is what lets each bisection range over the full cycle ceiling without knowing in advance where either machine halts.
-A midpoint past a halt simply repeats the final hash, and the disagreement is still found at the cycle where the two computations diverge.
-
-### Verifying the state transition
-
-Once a single `uarch_cycle` is in dispute, the referee asks the player on the disagreeing side for the access logs of the transition out of it, and verifies them without ever instantiating a machine.
-This stands for a Cartesi contract that can verify such logs directly on the blockchain.
-The transition is either a single ordinary uarch step or, out of `cartesi.UARCH_CYCLE_MAX - 1` (when the uarch has long since halted), an additional uarch reset that prepares the next main processor instruction.
-Which form applies depends only on the agreed cycle, so the referee always checks the step with `verify_step_uarch`, chaining `verify_reset_uarch` after it for the transition that closes the instruction.
-Each verification starts from a state hash and returns the hash the log provably advances it to.
-This allows the reset verification to start where the step verification ended.
-If the logs prove that the agreed before-hash advances to the player's committed after-hash, that player was honest.
-Otherwise, by assumption, the other one is.
-```{.lua key=vg_verify_transition include=verification-game.lua/verify_state_transition title="verification-game.lua (excerpt)"}
-```
-
-### Verifying the result
-
-Naming the winner settles which final state hash is the true one.
-The referee can then accept the first result that verifies against that hash.
-```{.lua key=vg_wait_for_result include=verification-game.lua/wait_for_result title="verification-game.lua (excerpt)"}
-```
-A posted result verifies (by the same slicing operation shown earlier) only if its bytes hash to the proof's target, the target sits at the output drive's address, and the proof rolls up to the winner's final hash.
-```{.lua key=vg_verify_output include=verification-game.lua/verify_output title="verification-game.lua (excerpt)"}
-```
-A result that does not, from the dishonest player or anyone else, is rejected.
-This keeps the result phase decoupled from the dispute.
-The parties who settle it are not necessarily the parties who later rely on the finalized hash to prove the result.
-
-### Running the game
-
-```{.lua key=vg_dishonest include=dishonest.lua replace=null}
-```
-
-To run the whole game, start the referee.
-This is the server the players connect to:
-```{.bash key=vg_run vars=template->calc_template/calculator-template/path depends=vg_verify_output,vg_bisect_level,vg_dishonest outputs=referee replace=source/server}
-ln -sfn "$template" calculator-template
-ln -sf "$RECIPES_DIR/verification-game.lua" .
-ln -sf "$RECIPES_DIR/vgu.lua" .
-ln -sf "$RECIPES_DIR/dishonest.lua" .
-{
-# docs:begin server
-lua5.4 verification-game.lua referee 127.0.0.1:8087 "6*2^1024 + 3*2^512"
-# docs:end server
-} > /dev/null 2>&1 &
-while ! netstat -ntl 2>&1 | grep '\<8087\>' > /dev/null; do sleep 1; done
-{
-# docs:begin honest
-lua5.4 verification-game.lua honest 127.0.0.1:8087 "6*2^1024 + 3*2^512"
-# docs:end honest
-} > /dev/null 2>&1 &
-# make sure honest player is player 1 and dishonest is player 2
-while ! netstat -nt 2>&1 | grep '\<8087\>' > /dev/null; do sleep 1; done
-{
-# docs:begin dishonest
-lua5.4 verification-game.lua dishonest 127.0.0.1:8087 "6*2^1024 + 3*2^512" 25 7 "2+2"
-# docs:end dishonest
-} > /dev/null 2>&1 &
-wait
-# The referee leaves one file per narration phase. Show the short phases whole and reduce each
-# long bisection to its first and last three rounds.
-{
-cat commitments
-head -n 3 bisect_mcycle
-echo ...
-tail -n 3 bisect_mcycle
-head -n 3 bisect_uarch_cycle
-echo ...
-tail -n 3 bisect_uarch_cycle
-cat verdict
-cat output
-} > referee
-```
-Then start the honest player, which evaluates the public expression:
-```{.bash replace=vg_run/source/honest}
-```
-and the dishonest player, which cheats at an early cycle into a different expression:
-```{.bash replace=vg_run/source/dishonest}
-```
-The referee narrates the dispute from start to finish:
-```{replace=vg_run/referee}
-```
-The bisection converges on the cheat point, the disputed step verifies in the honest player's favor, and the cheater's result is rejected before the true one is accepted.
-
-```{.lua key=vg_uarch_cycle_max replace=null}
-local cartesi = require("cartesi")
-print(cartesi.UARCH_CYCLE_MAX)
-```
-```{.lua key=vg_last_uarch_cycle replace=null}
-local cartesi = require("cartesi")
-print(cartesi.UARCH_CYCLE_MAX-1)
-```
-That dispute resolved on an ordinary uarch step, since the cheat point fell early in the disputed instruction's uarch cycles.
-Cheating instead at the last uarch cycle, `cartesi.UARCH_CYCLE_MAX - 1`, moves the disagreement onto the transition that
-closes the instruction.
-In this case, the referee checks with `verify_step_uarch` followed by `verify_reset_uarch`:
-```{.bash key=vg_run_reset vars=template->calc_template/calculator-template/path,last_uarch_cycle->vg_last_uarch_cycle/stdout depends=vg_verify_output,vg_bisect_level,vg_dishonest outputs=referee replace=source/dishonest}
-ln -sfn "$template" calculator-template
-ln -sf "$RECIPES_DIR/verification-game.lua" .
-ln -sf "$RECIPES_DIR/vgu.lua" .
-ln -sf "$RECIPES_DIR/dishonest.lua" .
-{
-lua5.4 verification-game.lua referee 127.0.0.1:8088 "6*2^1024 + 3*2^512"
-} > /dev/null 2>&1 &
-while ! netstat -ntl 2>&1 | grep '\<8088\>' > /dev/null; do sleep 1; done
-{
-lua5.4 verification-game.lua honest 127.0.0.1:8088 "6*2^1024 + 3*2^512"
-} > /dev/null 2>&1 &
-# make sure honest player is player 1 and dishonest is player 2
-while ! netstat -nt 2>&1 | grep '\<8088\>' > /dev/null; do sleep 1; done
-{
-# docs:begin dishonest
-lua5.4 verification-game.lua dishonest 127.0.0.1:8088 "6*2^1024 + 3*2^512" 25 $last_uarch_cycle "2+2"
-# docs:end dishonest
-} > /dev/null 2>&1 &
-wait
-# Show only what differs from the step run: the uarch bisection climbing to the reset
-# boundary, then the verdict.
-{
-head -n 3 bisect_uarch_cycle
-echo ...
-tail -n 3 bisect_uarch_cycle
-cat verdict
-} > referee
-```
-This time the uarch bisection climbs to the reset boundary and the honest player's step and reset logs verify just the same:
-```{replace=vg_run_reset/referee}
-```
+A referee, standing in for the Cartesi contracts deployed on the blockchain, mediates disputes among players that ran the computation off-chain.
+The referee and players are separate processes. Their requests and responses model blockchain events and transactions.
+Players commit final state hashes, then answer bisection requests that narrow a disagreement to a single state transition.
+Each surviving proponent must prove its own claimed transition from the agreed preceding state.
+The referee verifies those access logs without instantiating a machine, and eliminates claims whose proponents fail to supply valid proofs.
+Once a final state hash is settled, anyone can prove an output against it.
 
 ## Rolling verification game
 
-The verification game above settles the result of a single computation executed inside a Cartesi Machine that runs until it halts.
-We will now show how to settle an entire epoch of a Rolling Cartesi Machine.
-The `rolling-verification-game.lua` script extends the game to this setting.
-The referee, the players, and the network between them stand in for the same parties as before, and the referee still never trusts a player.
+The `rolling-verification-game.lua` script applies this strategy to an entire epoch of a Rolling Cartesi Machine.
+The referee holds the epoch's initial state hash and inputs, while each player owns the machines it uses to execute and replay the epoch.
 
 The state an epoch starts from is settled.
 It is either the stored [template](#rolling-cartesi-machine-templates) at genesis or the settled result of the previous epoch.
@@ -4884,7 +4729,7 @@ All advance-state inputs in an epoch are posted to the blockchain.
 These include not only the payload, but also the other fields in the ABI-encoded `EvmAdvance`, which are set by the blockchain itself.
 The referee therefore knows the agreed initial state hash and the contents of every input in the epoch.
 
-As before, the game opens with each player committing a final state hash, now the hash of the state in which the epoch's last input is done processing.
+The game opens with each player committing the hash of the state in which the epoch's last input is done processing.
 We again assume one of the players is honest.
 Any number of players may join before the runner closes admission with `rolling-verification-game.lua phase_closer <address>`.
 Each claim belongs to its submitting connection, even when several players claim the same hash; each proponent must defend its own claim.
@@ -4917,19 +4762,24 @@ util.write_file(tostring(log2_uarch_leaves), "log2_uarch_leaves")
 The epoch under dispute is settled in three bisections rather than two.
 The first ranges over the epoch's inputs and isolates the input whose processing the players disagree on.
 The second ranges over `mcycle` (counted as an offset from the value it had when the disputed input arrived) and isolates the disputed main processor instruction.
-The third ranges over `uarch_cycle` and isolates the disputed uarch step, as before.
-Just as the verification game limits each main processor instruction to 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch cycles, the rolling verification game limits each input to 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup> mcycles and each epoch to 2<sup>[]{replace=rollup_constants/log2_max_advance_states_per_epoch code=no}</sup> inputs.
+The third ranges over `uarch_cycle` and isolates the disputed uarch step.
+The rolling verification game limits each main processor instruction to 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch cycles, each input to 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup> mcycles and each epoch to 2<sup>[]{replace=rollup_constants/log2_max_advance_states_per_epoch code=no}</sup> inputs.
 Every transition in the epoch is then identified by the input offset within the epoch, the mcycle offset within that input, and the uarch cycle within that instruction.
 Each bisection searches one of them.
 
-The uarch reset keeps the place it had in the verification game, sharing the transition out of `cartesi.UARCH_CYCLE_MAX - 1` with a step of the long-halted uarch.
+The transition out of `cartesi.UARCH_CYCLE_MAX` combines the final uarch step with the reset that prepares the next main processor instruction.
 The inclusion of an input advances no cycle counter either, and shares a transition the same way.
 The transition out of input *i-1* includes input *i* and also performs the first uarch step of the instruction that resumes the machine.
 
 Before each dispute, the referee sends `dispute_started` to the surviving players, whose handlers reset their agreed machine and position to the epoch's initial state.
-The referee runs the three bisections in turn, reusing `bisect_level` unchanged, then verifies the transition out of the position they converged on:
+The referee runs three bisections in turn, then verifies the transition out of the position they converged on:
 ```{.lua key=rvg_settle include=rolling-verification-game.lua/settle_dispute title="rolling-verification-game.lua (excerpt)"}
 ```
+
+Each level uses the same inclusive interval of resulting states, with the agreed predecessor just outside it:
+```{.lua key=vg_bisect_level include=rolling-verification-game.lua/bisect_level title="rolling-verification-game.lua (excerpt)"}
+```
+Responses must arrive before each player's deadline. A player pays for response delays beyond the contract's response budget; invalid or missing replies eliminate that player.
 
 ### Bisecting over inputs
 
@@ -4942,7 +4792,7 @@ A real epoch can take up to 2<sup>[]{replace=rollup_constants/log2_max_advance_s
 This demonstration uses a smaller limit to keep the bisection narration short.
 A boundary past the last input has no input to include, so the transition out of it is the first uarch step alone.
 The uarch runs only far enough to find the machine yielded manual and halts, leaving the main processor untouched, and the reset that ends the instruction returns the uarch to pristine.
-Every `mcycle` boundary past the last input therefore repeats the state in which the last input is done processing, the same way every `mcycle` past the halt repeated the final state in the verification game.
+Every `mcycle` boundary past the last input therefore repeats the state in which the last input is done processing, just as execution beyond a halt repeats the halted state.
 This is also how the state transition Dave deploys behaves when the epoch input offset falls outside the epoch's input box.
 
 Rejected inputs also end at input boundaries.
@@ -4950,23 +4800,23 @@ Recall that `machine:send_cmio_response()` records a revert state hash, and reje
 When the guest rejects an input, the transitions that process it lead back to this recorded revert state, so the boundary that follows a rejected input is the boundary that preceded it.
 No emulator operation moves a machine backwards, however, so producing the reverted state is left to the client code.
 This is why a Cartesi Node keeps a snapshot of the machine while an input is processed, and the players of this game do the same.
-Each player crosses one input with `advance`:
-```{.lua key=rvg_advance include=rolling-verification-game.lua/advance title="rolling-verification-game.lua (excerpt)"}
+Each player crosses one input with `run_advance_state_input`:
+```{.lua key=rvg_advance include=rolling-verification-game.lua/run_advance_state_input title="rolling-verification-game.lua (excerpt)"}
 ```
 The revert itself is a player operation of its own, shared with the bisection rounds we will meet below:
-```{.lua key=rvg_revert include=rolling-verification-game.lua/revert_if_rejected title="rolling-verification-game.lua (excerpt)"}
+```{.lua key=rvg_revert include=rolling-verification-game.lua/revert title="rolling-verification-game.lua (excerpt)"}
 ```
-A machine that rejects its input trades places with a fresh fork of the snapshot taken when the input was fed (a machine standing at the recorded revert state), and the server it abandons is shut down.
+The advancing pair owns both the working machine and its backup. Reverting shuts down the working machine and restores the backup at the recorded revert state.
 Inputs are typically accepted, however, and an accepted input passes through untouched, so a player crosses a whole epoch on the same server while the snapshot beside it comes and goes.
-A dishonest player could override this operation and keep the rejecting machine instead, and we will later see the referee catch one that does.
+The execution regression tests also check a dishonest player that overrides this operation and keeps the rejecting machine.
 
 ### Bisecting within an input
 
 The mcycle bisection ranges over the disputed input's 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup> mcycles.
 The input is included by the first of these transitions, so the state at offset *m* is the input boundary, fed, and run for *m* mcycles.
 The calculator is done with each input within about 50 million mcycles, after which the machine has yielded manual and no longer advances.
-A midpoint past the yield therefore repeats the yielded state, and the bisection ranges over the full ceiling without knowing where the guest yields, exactly as the halt allowed in the verification game.
-The uarch_cycle bisection that follows is unchanged, over the 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch cycles of the disputed instruction.
+A midpoint past the yield therefore repeats the yielded state, and the bisection ranges over the full ceiling without knowing where the guest yields, as it can when execution halts.
+The uarch_cycle bisection that follows ranges over the 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch cycles of the disputed instruction.
 The referee converts each interval into the agreed predecessor's position and the tentative midpoint's position.
 A single player operation receives these two positions and serves the three levels:
 ```{.lua key=rvg_commit_bisection include=rolling-verification-game.lua/reveal_bisection title="rolling-verification-game.lua (excerpt)"}
@@ -4977,7 +4827,7 @@ A fork that still stands at the boundary includes the input before running (at b
 
 ### Verifying the disputed transition
 
-Once the bisections converge, the mcycle offset and uarch cycle they agreed on determine the form of the disputed transition, and the referee asks player 1 for the matching logs:
+Once the bisections converge, the mcycle offset and uarch cycle they agreed on determine the form of the disputed transition, and the referee asks every surviving player for logs proving its own committed endpoint:
 ```{.lua key=rvg_commit_log include=rolling-verification-game.lua/prove_state_transition title="rolling-verification-game.lua (excerpt)"}
 ```
 A combined transition is committed as its two access logs.
@@ -4999,32 +4849,41 @@ Every other transition is a single uarch step, checked with `verify_step_uarch` 
 ### Verifying an epoch result
 
 Naming the winner settles the epoch's final state hash, and with it every output the epoch produced.
-The verification game extracted its result directly from the winner's output drive.
 The outputs of a Rolling Cartesi Machine are verified as in [Output verification](#output-verification) instead, by an outputs Merkle root proof that ties the root of the outputs Merkle tree to the final state hash, and an output proof that places the output's hash among that tree's leaves.
 The honest player collects both proofs while committing, processing the epoch the same way the [output proofs](#output-proofs) script did: it folds each accepted input's outputs into a frontier, checks the resulting root hash against the one the guest reports, saves the tx-buffer word proof from the accepting state, and produces the output proofs once the epoch closes.
 The referee accepts the first result that verifies against the winner's final hash:
-```{.lua key=rvg_verify_result include=rolling-verification-game.lua/verify_result title="rolling-verification-game.lua (excerpt)"}
+```{.lua key=rvg_verify_result include=rolling-verification-game.lua/wait_for_outputs title="rolling-verification-game.lua (excerpt)"}
 ```
 
 ### Running the rolling game
 
-The rolling game runs over `input-0.bin` to `input-2.bin`, the second of which the guest rejects.
-In the verification game, the honest player connected first and the referee verified its logs.
-This time the dishonest player connects first, so that every verdict follows from the failure of the cheater's own logs.
-There are four ways to cheat.
-The first three make the dispute converge on each form the disputed transition can take, and the last claims an input the epoch never received.
+The game uses `input-0.bin` to `input-2.bin` from the calculator's first epoch. The guest rejects input 1.
+A forger substitutes a private input 2 asking for `2^1024` instead of the posted `2^2048`.
+Its logs may describe a real machine execution, but cannot prove that execution against the input held by the referee.
 
-The first dishonest player cheats in the inputs alone.
-It runs the honest code over the wrong inputs, claiming input 2 (the epoch's last) asked for `2^1024` rather than `2^2048`.
-The input it wishes had been posted is fabricated as `fake-input-2.bin`, mirroring the fields of the real input 2 with the cheat payload.
-To run the game, start the referee, giving it the epoch's input files:
-```{.bash key=rvg_run vars=template->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,rolling_calc_run depends=rvg_verify_transition,vg_bisect_level,vg_dishonest outputs=referee replace=source/server}
-rm -f rolling-calculator-template
-ln -sfn "$template" rolling-calculator-template
+```{.lua key=vg_dishonest include=vg-dishonest.lua replace=null}
+```
+```{.lua key=rvg_source include=rolling-verification-game.lua replace=null}
+```
+```{.lua key=rvg_util include=vgu.lua replace=null}
+```
+```{.lua key=game_transport_src include=game-transport.lua replace=null}
+```
+```{.lua key=game_output_src include=game-output.lua replace=null}
+```
+
+The runner stores the initial machine under its state hash. Only the referee receives the input paths; it announces them to players in events.
+Start the referee:
+```{.bash key=rvg_run vars=template->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,rolling_calc_run depends=rvg_source,rvg_util,vg_dishonest,game_transport_src,game_output_src,prt_clock_src,prt_response_queue_src outputs=referee replace=source/server}
 ln -sf $rolling_calc_encode/input-[012].bin .
-ln -sf "$RECIPES_DIR/rolling-verification-game.lua" .
-ln -sf "$RECIPES_DIR/vgu.lua" .
-ln -sf "$RECIPES_DIR/dishonest.lua" .
+ln -sf "$RECIPES_DIR/rolling-verification-game.lua" "$RECIPES_DIR/vg-dishonest.lua" .
+initial_state_hash=$(lua5.4 - "$template" <<'LUA'
+local cartesi = require("cartesi")
+local machine <close> = cartesi.machine(arg[1])
+io.write(cartesi.tohex(machine:get_root_hash()))
+LUA
+)
+ln -sfn "$template" "$initial_state_hash"
 cartesi-rollup-data.lua --utf8-payload encode advance > fake-input-2.bin <<EOF
 {
   "chain_id": 0,
@@ -5037,221 +4896,94 @@ cartesi-rollup-data.lua --utf8-payload encode advance > fake-input-2.bin <<EOF
   "payload": "2^1024\n"
 }
 EOF
+children=()
+cleanup() {
+    status=$?
+    if [ "$status" -ne 0 ]; then cat ./*.stderr >&2; fi
+    for pid in "${children[@]}"; do kill "$pid" 2>/dev/null || true; done
+    wait || true
+}
+trap cleanup EXIT
+check_children() {
+    for pid in "${children[@]}"; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            wait "$pid"
+            echo 'Game process exited before the runner stopped it' >&2
+            exit 1
+        fi
+    done
+}
+await() {
+    until "$@"; do check_children; sleep 1; done
+    check_children
+}
+listening() { netstat -ntl 2>&1 | grep '\<8090\>' > /dev/null; }
+players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8090\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
+proved_output() { grep -q 'Result proved against the final state:' verdict 2>/dev/null; }
 {
 # docs:begin server
-lua5.4 rolling-verification-game.lua referee 127.0.0.1:8090 \
+lua5.4 rolling-verification-game.lua referee 127.0.0.1:8090 "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 # docs:end server
-} > /dev/null 2>&1 &
-while ! netstat -ntl 2>&1 | grep '\<8090\>' > /dev/null; do sleep 1; done
+} > /dev/null 2> referee.stderr &
+children+=("$!")
+await listening
 {
 # docs:begin dishonest
-lua5.4 rolling-verification-game.lua dishonest 127.0.0.1:8090 wrong-input 2 fake-input-2.bin \
-    input-0.bin input-1.bin input-2.bin
+lua5.4 vg-dishonest.lua forger 127.0.0.1:8090 "$initial_state_hash" 2 fake-input-2.bin
 # docs:end dishonest
-} > /dev/null 2>&1 &
-# make sure the dishonest player is player 1 and the honest one player 2
-while ! netstat -nt 2>&1 | grep '\<8090\>' > /dev/null; do sleep 1; done
+} > /dev/null 2> forger.stderr &
+children+=("$!")
+await players_in 1
 {
 # docs:begin honest
-lua5.4 rolling-verification-game.lua honest 127.0.0.1:8090 \
-    input-0.bin input-1.bin input-2.bin
+lua5.4 rolling-verification-game.lua honest 127.0.0.1:8090 "$initial_state_hash"
 # docs:end honest
-} > /dev/null 2>&1 &
-wait
-# The hash the game settles must be the state hash the calculator's first epoch saved.
-grep -q "Final state hash is $(lua5.4 -l cartesi -e 'io.write(cartesi.tohex(io.read(4)))' \
-    < $rolling_calc_run/epoch-0-state-hash.bin)" verdict
-# The referee leaves one file per narration phase. Show the short phases whole and reduce each
-# long bisection to its first and last three rounds.
+} > /dev/null 2> honest.stderr &
+children+=("$!")
+await players_in 2
+# docs:begin close_admission
+lua5.4 rolling-verification-game.lua phase_closer 127.0.0.1:8090
+# docs:end close_admission
+await proved_output
+# docs:begin stop
+lua5.4 rolling-verification-game.lua phase_closer 127.0.0.1:8090 stop
+# docs:end stop
+for pid in "${children[@]}"; do wait "$pid"; done
+children=()
+cat referee.stderr forger.stderr honest.stderr >&2
+expected_hash=$(lua5.4 -l cartesi -e 'io.write(cartesi.tohex(io.read("a")))' < $rolling_calc_run/epoch-0-state-hash.bin)
+grep -q "Final state hash: $expected_hash" verdict
 {
-cat commitments
-head -n 3 bisect_input
-echo ...
-tail -n 3 bisect_input
-head -n 3 bisect_mcycle
-echo ...
-tail -n 3 bisect_mcycle
-head -n 3 bisect_uarch_cycle
-echo ...
-tail -n 3 bisect_uarch_cycle
-cat verdict
-cat output
+    cat claims
+    for level in input mcycle uarch_cycle; do
+        head -n 3 "bisect_$level"
+        echo ...
+        tail -n 3 "bisect_$level"
+    done
+    cat verdict
 } > referee
 ```
-then the dishonest player, which connects first to become player 1:
+Then connect the forger and the honest player:
 ```{.bash replace=rvg_run/source/dishonest}
 ```
-and finally the honest player:
 ```{.bash replace=rvg_run/source/honest}
 ```
-The referee narrates the dispute from start to finish:
+Once both are connected, close admission so the referee can begin:
+```{.bash replace=rvg_run/source/close_admission}
+```
+After an output has been proved, stop the demonstration through the runner:
+```{.bash replace=rvg_run/source/stop}
+```
+The referee narrates the dispute:
 ```{replace=rvg_run/referee}
 ```
-The input bisection converges on input 2.
-It crosses the rejected input 1 undisturbed, both players agreeing that its boundary repeats the one before it.
-The mcycle and uarch_cycle bisections both collapse to zero, since the players disagree on every state past the inclusion of the input.
-The logs player 1 posts are valid (a machine fed `2^1024` indeed transitions this way), but they do not replay against the true input 2, and the referee rejects them.
-The dishonest player's result is rejected just the same, before the honest player's result verifies against the settled hash.
-The settled hash is the one the calculator's run saved as `epoch-0-state-hash.bin`.
-The dispute ends on the same state the direct run produced.
+The input bisection isolates input 2. The lower bisections isolate its inclusion, where the forger's proof cannot verify against the posted input.
+The honest player's proof establishes its claimed transition, and the settled hash matches the calculator's direct run.
+Output offers remain permissionless after settlement; the referee verifies each against the settled hash and accepts each output index once.
 
-The second dishonest player runs the honest code over the true inputs, but keeps the rejecting machine when the guest rejects input 1:
-```{.bash key=rvg_run_no_rollback vars=template->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode depends=rvg_verify_transition,vg_bisect_level,vg_dishonest outputs=referee replace=source/dishonest}
-rm -f rolling-calculator-template
-ln -sfn "$template" rolling-calculator-template
-ln -sf $rolling_calc_encode/input-[012].bin .
-ln -sf "$RECIPES_DIR/rolling-verification-game.lua" .
-ln -sf "$RECIPES_DIR/vgu.lua" .
-ln -sf "$RECIPES_DIR/dishonest.lua" .
-{
-lua5.4 rolling-verification-game.lua referee 127.0.0.1:8091 \
-    input-0.bin input-1.bin input-2.bin
-} > /dev/null 2>&1 &
-while ! netstat -ntl 2>&1 | grep '\<8091\>' > /dev/null; do sleep 1; done
-{
-# docs:begin dishonest
-lua5.4 rolling-verification-game.lua dishonest 127.0.0.1:8091 no-rollback \
-    input-0.bin input-1.bin input-2.bin
-# docs:end dishonest
-} > /dev/null 2>&1 &
-# make sure the dishonest player is player 1 and the honest one player 2
-while ! netstat -nt 2>&1 | grep '\<8091\>' > /dev/null; do sleep 1; done
-{
-lua5.4 rolling-verification-game.lua honest 127.0.0.1:8091 \
-    input-0.bin input-1.bin input-2.bin
-} > /dev/null 2>&1 &
-wait
-# Show only what differs from the first run: the disputed input, the bisections converging on
-# the reset that ends the rejecting instruction, then the verdict.
-{
-tail -n 1 bisect_input
-head -n 3 bisect_mcycle
-echo ...
-tail -n 3 bisect_mcycle
-head -n 3 bisect_uarch_cycle
-echo ...
-tail -n 3 bisect_uarch_cycle
-cat verdict
-} > referee
-```
-The two machines are now identical, and the players differ only in what they post for the states that follow the rejection (the recorded revert state on the honest side, the rejecting machine on the dishonest one).
-The mcycle bisection converges on the instruction in which the guest yields its rejection, and the uarch_cycle bisection climbs to the reset that ends it, the players agreeing on every uarch cycle before it:
-```{replace=rvg_run_no_rollback/referee}
-```
-The uarch step in player 1's logs verifies, but the reset replays to the recorded revert state hash (the value the honest player posted), and the verification rejects the after-hash player 1 committed.
-
-The third dishonest player cheats like the one in the verification game, switching to a machine fed a fabricated `2+2` input in place of input 2, at mcycle offset 25 and uarch cycle 7 of its processing:
-```{.bash key=rvg_run_composite vars=template->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode depends=rvg_verify_transition,vg_bisect_level,vg_dishonest outputs=referee replace=source/dishonest}
-rm -f rolling-calculator-template
-ln -sfn "$template" rolling-calculator-template
-ln -sf $rolling_calc_encode/input-[012].bin .
-ln -sf "$RECIPES_DIR/rolling-verification-game.lua" .
-ln -sf "$RECIPES_DIR/vgu.lua" .
-ln -sf "$RECIPES_DIR/dishonest.lua" .
-cartesi-rollup-data.lua --utf8-payload encode advance > fake-input-2.bin <<EOF
-{
-  "chain_id": 0,
-  "app_contract": "0x0000000000000000000000000000000000000000",
-  "msg_sender": "$(printf '0x%040d' 2)",
-  "block_number": 0,
-  "block_timestamp": 0,
-  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "index": 2,
-  "payload": "2+2\n"
-}
-EOF
-{
-lua5.4 rolling-verification-game.lua referee 127.0.0.1:8092 \
-    input-0.bin input-1.bin input-2.bin
-} > /dev/null 2>&1 &
-while ! netstat -ntl 2>&1 | grep '\<8092\>' > /dev/null; do sleep 1; done
-{
-# docs:begin dishonest
-lua5.4 rolling-verification-game.lua dishonest 127.0.0.1:8092 mid-processing 2 25 7 fake-input-2.bin \
-    input-0.bin input-1.bin input-2.bin
-# docs:end dishonest
-} > /dev/null 2>&1 &
-# make sure the dishonest player is player 1 and the honest one player 2
-while ! netstat -nt 2>&1 | grep '\<8092\>' > /dev/null; do sleep 1; done
-{
-lua5.4 rolling-verification-game.lua honest 127.0.0.1:8092 \
-    input-0.bin input-1.bin input-2.bin
-} > /dev/null 2>&1 &
-wait
-# Show only what differs from the first run: the disputed input, the bisections converging
-# inside the input's processing, then the verdict.
-{
-tail -n 1 bisect_input
-head -n 3 bisect_mcycle
-echo ...
-tail -n 3 bisect_mcycle
-head -n 3 bisect_uarch_cycle
-echo ...
-tail -n 3 bisect_uarch_cycle
-cat verdict
-} > referee
-```
-The dispute crosses the three levels and converges on an ordinary uarch step, and player 1's log fails `verify_step_uarch`:
-```{replace=rvg_run_composite/referee}
-```
-
-The last dishonest player claims the epoch received a fourth input, a fabricated `3*5` request that was never posted:
-```{.bash key=rvg_run_extra_input vars=template->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode depends=rvg_verify_transition,vg_bisect_level,vg_dishonest outputs=referee replace=source/dishonest}
-rm -f rolling-calculator-template
-ln -sfn "$template" rolling-calculator-template
-ln -sf $rolling_calc_encode/input-[012].bin .
-ln -sf "$RECIPES_DIR/rolling-verification-game.lua" .
-ln -sf "$RECIPES_DIR/vgu.lua" .
-ln -sf "$RECIPES_DIR/dishonest.lua" .
-cartesi-rollup-data.lua --utf8-payload encode advance > fake-input-3.bin <<EOF
-{
-  "chain_id": 0,
-  "app_contract": "0x0000000000000000000000000000000000000000",
-  "msg_sender": "$(printf '0x%040d' 3)",
-  "block_number": 0,
-  "block_timestamp": 0,
-  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "index": 3,
-  "payload": "3*5\n"
-}
-EOF
-{
-lua5.4 rolling-verification-game.lua referee 127.0.0.1:8093 \
-    input-0.bin input-1.bin input-2.bin
-} > /dev/null 2>&1 &
-while ! netstat -ntl 2>&1 | grep '\<8093\>' > /dev/null; do sleep 1; done
-{
-# docs:begin dishonest
-lua5.4 rolling-verification-game.lua dishonest 127.0.0.1:8093 extra-input fake-input-3.bin \
-    input-0.bin input-1.bin input-2.bin
-# docs:end dishonest
-} > /dev/null 2>&1 &
-# make sure the dishonest player is player 1 and the honest one player 2
-while ! netstat -nt 2>&1 | grep '\<8093\>' > /dev/null; do sleep 1; done
-{
-lua5.4 rolling-verification-game.lua honest 127.0.0.1:8093 \
-    input-0.bin input-1.bin input-2.bin
-} > /dev/null 2>&1 &
-wait
-# Show only what differs from the first run: the input bisection walking past the epoch's end,
-# then the verdict.
-{
-head -n 3 bisect_input
-echo ...
-tail -n 3 bisect_input
-cat verdict
-} > referee
-```
-The input bisection walks past the epoch's end and isolates input 3.
-The boundaries the honest player posts there all repeat the state in which input 2 is done processing, while the dishonest machine took the extra input, so the two lower bisections collapse to zero as in the first run:
-```{replace=rvg_run_extra_input/referee}
-```
-The dishonest player posts the logs of including its extra input.
-The referee, however, holds no input 3, so the disputed transition is an ordinary uarch step out of the yielded boundary.
-The posted step log, which leaves a machine that just took an input, does not replay from it.
-
-These examples use two players, but the rolling verification game also handles multiple proponents, eliminating unsupported claims through successive disputes.
+The other executable roles in `vg-dishonest.lua` tamper with machine memory or stop defending a claim.
+The `test-vg` and `test-vg-execution` Makefile targets cover these roles, rejected-input rollback, extra-input and composite-machine attacks, and multiple successive disputes.
 The next section introduces a tournament that settles large numbers of claims efficiently and lets anyone defend a claim.
 
 ## Permissionless refereed tournament
@@ -5510,26 +5242,29 @@ It subscribes those connections to the initial computation and returns them in a
 VG keeps the admitted connections as separate proponents, including those with identical claims.
 
 `request_first_valid(subscriptions, event, arguments, validator)` returns a future without suspending the referee.
-An optional fifth argument names the block on which a delayed response is due.
-The player schedules its response for that block, and the referee's validator still enforces the response window.
+The request is delivered immediately in the current block. A prompt response is included in the next block; a player may instead schedule its response for a later block.
+The player takes the scheduled block from the event's arguments when the protocol supplies one. The referee's validator still enforces the response window.
 The audience is one subscription hash, a list of hashes, or `EVERYONE` for all live players.
 Each future decodes responses under that event's schema and retains the first result accepted by its validator.
-`future:wait(deadline)` returns that result if accepted before the given block, or `nil` when the deadline is reached.
+`future:wait_at_most(deadline)` returns that result if accepted before the given block, or `nil` when the deadline is reached.
 Waiting consumes the future and closes its request on completion, expiry, or error; a second wait is rejected.
-`future:wait()` has no deadline. Responses arriving after the request closes are ignored.
+`future:wait_at_most(FOREVER)` has no deadline; both recipes define `local FOREVER = nil`.
+`future:wait_at_least(block)` waits until both that block has been reached and a valid result is available, without an upper deadline.
+An earlier accepted result is retained, and a response at the lower bound is eligible. The validator still rejects premature or invalid responses.
+Both forms consume the future. Responses arriving after the request closes are ignored.
 Store each future in a named `<close>` local, then wait on that local.
 This also closes futures abandoned before waiting, including competing requests that are no longer needed once another request wins.
 The referee emits the reveal, timeout, and elimination requests before waiting for the reveal.
-If that wait expires, it waits for the timeout result until the elimination block, then waits for elimination without a deadline.
+If that wait expires, it waits for the timeout result until the elimination block, then waits for elimination with `elimination:wait_at_least(eliminable_at)`.
 Only computation requests go to holders of the relevant claim.
 Every player receives requests to eliminate inactive matches, including unrelated ones that could keep the tournament open.
 The referee narrates each claim with the labels of the players that posted it. Labels never influence protocol state or ordering.
 
-`request_all(subscriptions, event, arguments, validator)` returns a future for all accepted responses to an ordinary event.
-The optional validator returns the value to retain. An error, `nil`, or `false` rejects the response, but its sender still counts as having answered.
+`request_all(subscriptions, event, arguments, validator)` returns a future collecting responses from a fixed audience, with the same immediate delivery and later response blocks.
+The optional validator returns the value to retain. For subscription audiences, an error, `nil`, or `false` rejects the response, but its sender still counts as having answered. VG uses explicit connections, whose rejected replies may be retried until the deadline.
 Tournament openings use this callback to validate claims before `partition_claims` groups them.
-Its `wait(deadline)` returns the responses received before that block, including an empty list if nobody supplies a value.
-The list retains each response's sender and receipt block. A partial result is a snapshot: later replies do not change it.
+Its `wait_at_most(deadline)` returns a map of accepted values keyed by sender and an array of those senders in admission order, empty if nobody supplies a value.
+Validators receive the sender and receipt block and can retain them with the value. A partial result is a snapshot: later replies do not change it.
 Without a deadline, the wait returns once the audience finishes. At the deadline, it returns the accepted responses and closes the request.
 `server:wait_until(block)` suspends until that logical block's time barrier, or returns immediately if the block has already been reached.
 Tournament opening waits for responses until the joining deadline, the opening block plus the allowance, then calls `wait_until` on it before partitioning the claims.
@@ -5537,14 +5272,16 @@ This also keeps the tournament from opening early when all responses arrive befo
 The server handles responses and logical time; the tournament determines when claim collection closes.
 
 `server:run_all(functions)` starts a list of closures concurrently and returns a future.
-Its `wait()` returns `true` once every closure finishes, immediately for an empty list.
+Its `wait_at_most(FOREVER)` returns `true` once every closure finishes, immediately for an empty list.
 A timed wait returns `nil` on expiry and closes the future, cancelling unfinished closures.
 Closing the future cancels unfinished closures and their descendants, running their `<close>` cleanup.
 Errors in a closure still fail the referee.
 `run_matches` uses this method to record each match's winner and wait for the whole round.
 
 The referee server runs logical blocks.
-Every audience member of a block's requests answers, skips, or disconnects before the block's replies are validated and the protocol resumes, in match creation order, so the transcript never depends on reply order.
+Requests and scheduling acknowledgements drain before time advances. Response schedules and wait bounds across all coroutines determine the next block, skipping blocks with no work.
+Every player acknowledges that block before its responses are validated and the protocol resumes, in match creation order, so the transcript never depends on socket arrival order.
+A request emitted in block B cannot accept a response transaction before B+1. Notification acknowledgements are transport bookkeeping and do not consume a block.
 A connected player that never replies stalls the demonstration, where a blockchain bridge follows chain time regardless.
 
 The referee in `prt.lua` defines and enforces the windows with Dave's clock arithmetic.
@@ -5617,7 +5354,7 @@ To run the tournament, start the referee with the epoch's initial state hash and
 ```{.lua key=prt_time_test depends=prt_time_test_src,prt_response_queue_src,prt_clock_src replace=null}
 assert(require("prt-time-test"))
 ```
-```{.bash key=prt_protocol_test depends=prt_test_src,prt_deadline_test_src,prt_time_test_src,prt_response_queue_src,prt_clock_src,prt_runs_node,prt_build_mcycle_claim,prt_dishonest_src replace=null}
+```{.bash key=prt_protocol_test depends=game_transport_src,game_output_src,prt_test_src,prt_deadline_test_src,prt_time_test_src,prt_response_queue_src,prt_clock_src,prt_runs_node,prt_build_mcycle_claim,prt_dishonest_src replace=null}
 lua5.4 "$RECIPES_DIR/prt-test.lua"
 ```
 ```{.bash key=prt_uch vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode outputs=uch.bin replace=null}
@@ -5626,7 +5363,7 @@ cartesi-machine --no-init-splash --remote-address=127.0.0.1:0 --remote-spawn --r
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
     --uarch-cycle-computation-hash=log2_mcycle_period:10,mcycle_period_index:0,filename:uch.bin
 ```
-```{.bash key=prt_test vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,uch->prt_uch/uch.bin/path depends=prt_test_src,prt_deadline_test_src,prt_time_test_src,prt_response_queue_src,prt_clock_src,prt_runs_node,prt_build_mcycle_claim,prt_dishonest_src replace=null}
+```{.bash key=prt_test vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,uch->prt_uch/uch.bin/path depends=game_transport_src,game_output_src,prt_test_src,prt_deadline_test_src,prt_time_test_src,prt_response_queue_src,prt_clock_src,prt_runs_node,prt_build_mcycle_claim,prt_dishonest_src replace=null}
 initial_state_hash=$(lua5.4 -e 'local cartesi = require("cartesi")
 local machine <close> = cartesi.machine("'"$tmpl"'")
 io.write(cartesi.tohex(machine:get_root_hash()))')

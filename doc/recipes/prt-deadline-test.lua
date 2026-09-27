@@ -5,6 +5,7 @@ local prt = require("prt")
 local prtu = require("prtu")
 local keccak = cartesi.keccak256
 local EVERYONE = prtu.EVERYONE
+local FOREVER = nil
 
 local function copy(value)
     if type(value) ~= "table" then
@@ -95,24 +96,27 @@ return function(run_with_server, new_test_player)
             return root
         end
         local immediate <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate)
-        assert(immediate:wait() == root and calls == 0)
-        response_block = server:request_block() + 2
-        local delayed <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate, response_block)
+        assert(immediate:wait_at_most(FOREVER) == root and calls == 0)
+        response_block = server:get_time() + 3
+        local delayed <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate)
         do
             -- The closed future's response still arrives on its block, stale, and is ignored.
             local closed <close> = -- luacheck: ignore 211
-                server:request_first_valid(EVERYONE, event, { "claim" }, validate, response_block)
+                server:request_first_valid(EVERYONE, event, { "claim" }, validate)
         end
         server:wait_until(response_block - 1)
         assert(calls == 0, "scheduling ran a callback immediately")
-        assert(delayed:wait(response_block) == nil, "wait accepted a response at its exclusive deadline")
-        assert(delayed.closed and not pcall(delayed.wait, delayed), "expiry left the request open")
+        assert(delayed:wait_at_most(response_block) == nil, "wait accepted a response at its exclusive deadline")
+        assert(delayed.closed and not pcall(delayed.wait_at_most, delayed), "expiry left the request open")
         server:wait_until(response_block + 1)
         assert(calls == 2, "scheduled callbacks did not run")
         acknowledge_only = true
-        response_block = server:request_block() + 1
-        local unscheduled <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate, response_block)
-        assert(unscheduled:wait(response_block + 1) == nil and calls == 2, "acknowledgement scheduled a callback")
+        response_block = server:get_time() + 2
+        local unscheduled <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate)
+        assert(
+            unscheduled:wait_at_most(response_block + 1) == nil and calls == 2,
+            "acknowledgement scheduled a callback"
+        )
         assert(
             not pcall(prtu.schedule_response, player, response_block, function() end),
             "finished handler retained routing"
@@ -174,27 +178,32 @@ return function(run_with_server, new_test_player)
     -- future state directly, independently of the documentation's response barrier.
     do
         local server = prtu.new_server()
-        local collection <close> = server:request_all({}, prtu.define_event("probe"), {})
-        local first_valid <close> = server:request_first_valid({}, prtu.define_event("probe"), {}, function(v)
-            return v
-        end)
+        local collection <close> = server:request_all({}, prtu.define_event("probe", nil, "Default"), {})
+        local first_valid <close> = server:request_first_valid(
+            {},
+            prtu.define_event("probe", nil, "Default"),
+            {},
+            function(v)
+                return v
+            end
+        )
         server.clock:advance(1)
         local senders = { {}, {}, {} }
         local first = { value = "first", connection = senders[1], order = 1, received_at = server:get_time() }
-        collection.replies[#collection.replies + 1] = first
+        collection.accepted_replies[#collection.accepted_replies + 1] = first
         server.clock:advance(2)
-        assert(first_valid:wait(2) == nil, "first-valid expiry returned a collection")
+        assert(first_valid:wait_at_most(2) == nil, "first-valid expiry returned a collection")
         local at_deadline =
             { value = "at deadline", connection = senders[2], order = 2, received_at = server:get_time() }
-        collection.replies[#collection.replies + 1] = at_deadline
+        collection.accepted_replies[#collection.accepted_replies + 1] = at_deadline
         server.clock:advance(3)
-        collection.replies[#collection.replies + 1] = {
+        collection.accepted_replies[#collection.accepted_replies + 1] = {
             value = "late",
             connection = senders[3],
             order = 3,
             received_at = server:get_time(),
         }
-        local snapshot, snapshot_order = collection:wait(2)
+        local snapshot, snapshot_order = collection:wait_at_most(2)
         assert(
             #snapshot_order == 1 and snapshot_order[1] == senders[1] and snapshot[senders[1]] == first.value,
             "expiry discarded responses already received"
@@ -204,9 +213,9 @@ return function(run_with_server, new_test_player)
             "a response at or after the deadline entered the collection"
         )
         assert(collection.closed and first_valid.closed and not next(server.active))
-        assert(not pcall(collection.wait, collection), "an expired collection accepted another wait")
-        local empty <close> = server:request_all({}, prtu.define_event("probe"), {})
-        local missing, missing_order = empty:wait(3)
+        assert(not pcall(collection.wait_at_most, collection), "an expired collection accepted another wait")
+        local empty <close> = server:request_all({}, prtu.define_event("probe", nil, "Default"), {})
+        local missing, missing_order = empty:wait_at_most(3)
         assert(
             not next(missing) and #missing_order == 0,
             "expiry without responses did not return an empty map and order"
@@ -218,10 +227,13 @@ return function(run_with_server, new_test_player)
     for _, block_first in ipairs({ false, true }) do
         run_with_server(function(server, run_client, wait_connections)
             local collected, closed = false, false
-            local opening = server:request_block()
+            local opening = server:get_time() + 1
             local close_block = opening + 1
             run_client(nil, function(event)
-                assert(event.operation == "probe", "a cancelled collection was dispatched")
+                if event.operation == "cancelled_collection" then
+                    return { value = true }
+                end
+                assert(event.operation == "probe")
                 return { value = "answer" }
             end)
             run_client(nil, function(event)
@@ -237,17 +249,23 @@ return function(run_with_server, new_test_player)
                     end
                     return { value = {} }
                 end
-                assert(event.operation == "probe", "a cancelled collection was dispatched")
+                if event.operation == "cancelled_collection" then
+                    return { value = true }
+                end
+                assert(event.operation == "probe")
                 for _ = 1, 3 do
                     assert(not collected and not closed, "a future bypassed the collection barrier")
-                    assert(server:get_time() == opening, "time advanced before the audience finished")
+                    assert(server:get_time() == opening - 1, "time advanced before the audience finished")
                     server.dispatcher:schedule(coroutine.running(), "delay")
                     coroutine.yield()
                 end
-                return { skip = true }
+                return { skip = true, id = event.id }
             end, true)
             run_client(nil, function(event)
-                assert(event.operation == "probe", "a cancelled collection was dispatched")
+                if event.operation == "cancelled_collection" then
+                    return { value = true }
+                end
+                assert(event.operation == "probe")
                 return { skip = true, done = true }, true
             end)
             wait_connections(3)
@@ -257,7 +275,7 @@ return function(run_with_server, new_test_player)
             server:subscribe_connection("overlap", server.connections[1])
             local collection <close> = server:request_all(
                 { "audience", "overlap" },
-                prtu.define_event("probe"),
+                prtu.define_event("probe", nil, "Default"),
                 {},
                 function(value, connection, received_at)
                     assert(connection == server.connections[1], "collection lost its sender")
@@ -277,7 +295,7 @@ return function(run_with_server, new_test_player)
                 server:wait_until(close_block)
                 closed = true
             end
-            local responses, order = collection:wait(close_block)
+            local responses, order = collection:wait_at_most(close_block)
             collected = true
             assert(
                 #order == 1 and order[1] == server.connections[1] and responses[order[1]] == "answer",
@@ -289,9 +307,12 @@ return function(run_with_server, new_test_player)
                 closed = true
             end
             assert(server:get_time() == close_block)
-            assert(collection.closed and not pcall(collection.wait, collection), "a consumed collection remained open")
-            local empty <close> = server:request_all({}, prtu.define_event("probe"), {})
-            local missing, missing_order = empty:wait(close_block)
+            assert(
+                collection.closed and not pcall(collection.wait_at_most, collection),
+                "a consumed collection remained open"
+            )
+            local empty <close> = server:request_all({}, prtu.define_event("probe", nil, "Default"), {})
+            local missing, missing_order = empty:wait_at_most(close_block)
             assert(
                 not next(missing) and #missing_order == 0,
                 "an empty collection did not resolve to an empty map and order"
@@ -309,11 +330,10 @@ return function(run_with_server, new_test_player)
                 { 1 },
                 function(response)
                     return response
-                end,
-                1
+                end
             )
             if deadline then
-                assert(future:wait(deadline) == nil)
+                assert(future:wait_at_most(deadline) == nil)
                 assert(future.closed and not next(server.active) and not next(server.scheduled_responses))
             end
         end)
@@ -339,10 +359,9 @@ return function(run_with_server, new_test_player)
                 function()
                     assert(server:get_time() >= 3)
                     return 0
-                end,
-                3
+                end
             )
-            elimination:wait()
+            elimination:wait_at_most(FOREVER)
             resumed = true
         end)
         local ok, err = pcall(function()
@@ -360,13 +379,24 @@ return function(run_with_server, new_test_player)
     do
         local server = prtu.new_server()
         local resumed, checked, ids = {}, {}, {}
+        local sender = { order = 1 }
+        server.dispatcher:spawn(function()
+            server:wait_until(1)
+        end)
         local function schedule(name, block, expires)
-            local future = server:request_first_valid({}, prtu.define_event("probe"), { block }, function(response)
-                checked[#checked + 1] = { name, server:get_time() }
-                assert(server:get_time() >= block and (not expires or server:get_time() < expires))
-                assert(response == true)
-                return 0
-            end, block)
+            local future = server:request_first_valid(
+                {},
+                prtu.define_event("probe", nil, "Default"),
+                { block },
+                function(response)
+                    checked[#checked + 1] = { name, server:get_time() }
+                    assert(server:get_time() >= block and (not expires or server:get_time() < expires))
+                    assert(response == true)
+                    return 0
+                end
+            )
+            future.audience[sender] = true
+            future.pending[sender] = block
             ids[name] = future.id
             return future
         end
@@ -383,12 +413,12 @@ return function(run_with_server, new_test_player)
                             error("another event supplied a reveal response")
                         end
                     )
-                    assert(reveal:wait(2) == nil)
-                    assert(timeout:wait(4) == nil)
-                    assert(elimination:wait() == 0)
+                    assert(reveal:wait_at_most(2) == nil)
+                    assert(timeout:wait_at_most(4) == nil)
+                    assert(elimination:wait_at_most(FOREVER) == 0)
                 else
                     local unrelated <close> = schedule("unrelated", 6)
-                    assert(unrelated:wait() == 0)
+                    assert(unrelated:wait_at_most(FOREVER) == 0)
                 end
                 assert(not resumed[index])
                 resumed[index] = server:get_time()
@@ -397,7 +427,7 @@ return function(run_with_server, new_test_player)
         local injected = {}
         while not resumed[2] do
             local block = server:get_time()
-            if server.batch_kind == "time" and server.batch and not injected[block] then
+            if server.batch and not injected[block] then
                 injected[block] = true
                 local responses = {}
                 local function offer(name, value)
@@ -420,7 +450,7 @@ return function(run_with_server, new_test_player)
                     offer("unrelated", true)
                     offer("unrelated", true)
                 end
-                server.batch[1].replies = { { value = responses, order = 1 } }
+                server.batch[1].replies = { { value = responses, order = 1, connection = sender } }
             end
             if server.dispatcher.ready_first <= server.dispatcher.ready_last or not server:step_time() then
                 server.dispatcher:step()
@@ -450,7 +480,9 @@ return function(run_with_server, new_test_player)
             end)
         end
         run_client({ role = "player", label = player.label }, function(event, line)
-            assert(event.operation ~= "cancelled_probe", "a closed ordinary future was dispatched")
+            if event.operation == "cancelled_probe" then
+                return { id = event.id, skip = true }
+            end
             return prtu.answer_event(player, line)
         end, true)
         wait_connections(1)
@@ -464,8 +496,7 @@ return function(run_with_server, new_test_player)
                 function(response)
                     assert(response.computation_hash_left == left and response.computation_hash_right == right)
                     return marker
-                end,
-                block + 2
+                end
             )
             local reveal <close> = server:request_first_valid(
                 {},
@@ -482,8 +513,7 @@ return function(run_with_server, new_test_player)
                 function()
                     assert(server:get_time() >= block + 5)
                     return 0
-                end,
-                block + 5
+                end
             )
             assert(server:get_time() == block, "request_first_valid suspended its caller")
             local ok, err = pcall(function()
@@ -491,8 +521,7 @@ return function(run_with_server, new_test_player)
                     EVERYONE,
                     prtu.EVENTS.schedule_match_elimination,
                     { block + 4 },
-                    function() end,
-                    block + 4
+                    function() end
                 )
                 local ordinary <close> = server:request_first_valid( -- luacheck: ignore 211
                     EVERYONE,
@@ -503,16 +532,19 @@ return function(run_with_server, new_test_player)
                 error("close pending futures")
             end)
             assert(not ok and err:find("close pending futures"))
-            assert(reveal:wait(block + 3) == nil and server:get_time() == block + 3)
-            assert(timeout:wait(block + 3) == marker, "an earlier result was lost before its own wait")
-            assert(elimination:wait(block + 4) == nil and server:get_time() == block + 4)
-            assert(elimination.closed and not pcall(elimination.wait, elimination), "expiry left elimination open")
+            assert(reveal:wait_at_most(block + 3) == nil and server:get_time() == block + 3)
+            assert(timeout:wait_at_most(block + 3) == marker, "an earlier result was lost before its own wait")
+            assert(elimination:wait_at_most(block + 4) == nil and server:get_time() == block + 4)
+            assert(
+                elimination.closed and not pcall(elimination.wait_at_most, elimination),
+                "expiry left elimination open"
+            )
             server:wait_until(block + 5)
             -- The closed future's callback still runs on its block. Its stale response is ignored.
             assert(reveal_calls == 0 and scheduled_calls[block + 4] == 1 and scheduled_calls[block + 5] == 1)
             timeout:close()
             timeout:close()
-            assert(not pcall(timeout.wait, timeout), "a closed future accepted a wait")
+            assert(not pcall(timeout.wait_at_most, timeout), "a closed future accepted a wait")
         end
         assert(not next(server.active) and not next(server.scheduled_responses), "closed futures retained pending work")
     end)
@@ -537,12 +569,17 @@ return function(run_with_server, new_test_player)
         for index = 1, 2 do
             server.dispatcher:spawn(function()
                 server:subscribe_connection(index, server.connections[index])
-                blocks[index] = server:request_block()
-                local future <close> = server:request_first_valid({ index }, prtu.define_event("probe"), {}, function(v)
-                    assert(seen == 1 and server:get_time() == blocks[index])
-                    return v
-                end)
-                local value = future:wait(blocks[index] + 1)
+                blocks[index] = server:get_time() + 1
+                local future <close> = server:request_first_valid(
+                    { index },
+                    prtu.define_event("probe", nil, "Default"),
+                    {},
+                    function(v)
+                        assert(seen == 1 and server:get_time() == blocks[index])
+                        return v
+                    end
+                )
+                local value = future:wait_at_most(blocks[index] + 1)
                 assert((index == 1 and value == true) or (index == 2 and value == nil))
                 resumed = resumed + 1
                 if resumed == 2 then
@@ -560,7 +597,7 @@ return function(run_with_server, new_test_player)
     run_with_server(function(server, run_client, wait_connections)
         local nested_done, scheduled = false, false
         local parent = coroutine.running()
-        local probe = prtu.define_event("probe")
+        local probe = prtu.define_event("probe", nil, "Default")
         run_client(nil, function(event)
             if event.operation == "advance_time" then
                 return { value = {} }
@@ -573,29 +610,28 @@ return function(run_with_server, new_test_player)
                     local elimination <close> = server:request_first_valid( -- luacheck: ignore 211
                         { "probe" },
                         prtu.EVENTS.schedule_match_elimination,
-                        { server:request_block() + 10 },
-                        function() end,
-                        server:request_block() + 10
+                        { server:get_time() + 11 },
+                        function() end
                     )
                     local future <close> = server:request_first_valid({ "probe" }, probe, {}, function(v)
                         return v
                     end)
-                    assert(future:wait())
+                    assert(future:wait_at_most(FOREVER))
                     nested_done = true
                     server.dispatcher:schedule(parent, "nested_done")
                 end)
                 server.dispatcher:schedule(coroutine.running(), "reply")
                 coroutine.yield()
-                assert(connection.current_event and #connection.events == 1)
+                assert(connection.current_event and #connection.events == 2)
             end
-            return { value = true }
+            return { value = event.id and { answer = true } or true, id = event.id }
         end, true)
         wait_connections(1)
         local first <close> = server:request_first_valid(EVERYONE, probe, {}, function(v)
             assert(scheduled, "scheduling did not drain before continuing")
             return v
         end)
-        assert(first:wait())
+        assert(first:wait_at_most(FOREVER))
         while not nested_done do
             coroutine.yield()
         end
@@ -634,7 +670,7 @@ return function(run_with_server, new_test_player)
         local parent, completed = coroutine.running(), 0
         for index = 1, 2 do
             server.dispatcher:spawn(function()
-                local block = server:request_block() + 1
+                local block = server:get_time() + 2
                 if index == 1 then
                     local timeout <close> = server:request_first_valid(
                         EVERYONE,
@@ -645,10 +681,9 @@ return function(run_with_server, new_test_player)
                             assert(response.output == "!", "an unrelated response schema decoded the value")
                             accepted = accepted + 1
                             return true
-                        end,
-                        block
+                        end
                     )
-                    assert(timeout:wait(block + 1))
+                    assert(timeout:wait_at_most(block + 1))
                 else
                     local elimination <close> = server:request_first_valid(
                         EVERYONE,
@@ -658,10 +693,9 @@ return function(run_with_server, new_test_player)
                             assert(server:get_time() >= block)
                             accepted = accepted + 1
                             return true
-                        end,
-                        block
+                        end
                     )
-                    assert(elimination:wait())
+                    assert(elimination:wait_at_most(FOREVER))
                 end
                 completed = completed + 1
                 if completed == 2 then
@@ -762,9 +796,12 @@ return function(run_with_server, new_test_player)
         run_with_server(function(server, run_client, wait_connections)
             current_server = server
             local request_first_valid = server.request_first_valid
-            server.request_first_valid = function(self, subscriptions, event, arguments, accept, response_block)
-                if response_block then
-                    local block = response_block
+            server.request_first_valid = function(self, subscriptions, event, arguments, accept)
+                if
+                    event == prtu.EVENTS.schedule_match_timeout_win
+                    or event == prtu.EVENTS.schedule_match_elimination
+                then
+                    local block = arguments[1]
                     local timeout_win = event == prtu.EVENTS.schedule_match_timeout_win
                     local delay = block - self:get_time()
                     local expires
@@ -821,7 +858,7 @@ return function(run_with_server, new_test_player)
                     or event == prtu.EVENTS.seal_divergence
                     or event == prtu.EVENTS.prove_state_transition
                 then
-                    local block = self:request_block()
+                    local block = self:get_time() + 1
                     local request = event.name
                     if request == "reveal_bisection" and arguments[3] == 3 then
                         opening_blocks[#opening_blocks + 1] = block
@@ -873,14 +910,17 @@ return function(run_with_server, new_test_player)
                         return prtu.answer_event(closer, line)
                     end, true)
                 end
-                return request_first_valid(self, subscriptions, event, arguments, accept, response_block)
+                return request_first_valid(self, subscriptions, event, arguments, accept)
             end
             for slot = 1, #players do
                 local index = slot
                 local player = players[index]
                 local committed_uarch = false
                 run_client({ role = "player", label = player.label }, function(event, line)
-                    if event.id then
+                    if
+                        event.operation == "schedule_match_timeout_win"
+                        or event.operation == "schedule_match_elimination"
+                    then
                         schedules[event.id] = (schedules[event.id] or 0) + 1
                     else
                         local request = event.operation
@@ -906,7 +946,7 @@ return function(run_with_server, new_test_player)
                             or (mode == "leaf_expiry" and request == "prove_state_transition")
                             or (mode == "uarch_inactive" and index >= 3 and opening and committed_uarch)
                         then
-                            return cartesi.tojson({ skip = true }, -1)
+                            return cartesi.tojson({ skip = true, id = event.id }, -1)
                         end
                         if
                             request == "commit_uarch_claim"
@@ -915,7 +955,7 @@ return function(run_with_server, new_test_player)
                                 or ((mode == "uarch" or mode == "uarch_without_holder") and index == 2)
                             )
                         then
-                            return cartesi.tojson({ skip = true }, -1)
+                            return cartesi.tojson({ skip = true, id = event.id }, -1)
                         end
                     end
                     if mode == "uarch_without_holder" and index == 1 and event.operation == "commit_uarch_claim" then

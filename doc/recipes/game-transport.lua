@@ -1,12 +1,13 @@
 -- Coroutine transport shared by the demonstration games. It owns the socket dispatcher, the
--- logical block barrier, and the one permission it can judge on its own, that a reply to an
--- owner request came over the owner's connection. Game schemas, reply validity, and narration
--- remain with each game.
+-- logical block barrier, and routing within each request's fixed audience. A reply to an
+-- owner request must come over the owner's connection. Game schemas, reply validity, and
+-- narration remain with each game.
 local cartesi = require("cartesi")
 local socket = require("socket")
 local new_clock = require("prt-clock")
 local new_response_queue = require("prt-response-queue")
 local EVERYONE = nil
+local FOREVER = nil
 
 local function trace_wire(protocol, direction, name, line)
     if protocol.tracing then
@@ -24,11 +25,10 @@ local function new_protocol(events, schemas, trace_env)
     schemas.ClosePhaseEvent = { items = {} }
     schemas.ClosePhaseResponse = "Default"
     schemas.FinishEvent = { items = {} }
-    schemas.FinishResponse = "Default"
     schemas.AdvanceTimeEvent = { items = { "Default" } }
     schemas.Responses = { items = "Default" }
     events.close_phase = define_event("close_phase", "ClosePhaseEvent", "ClosePhaseResponse")
-    events.finish = define_event("finish", "FinishEvent", "FinishResponse")
+    events.finish = define_event("finish", "FinishEvent")
     events.advance_time = define_event("advance_time", "AdvanceTimeEvent", "Responses")
     return { events = events, schemas = schemas, tracing = trace_env and os.getenv(trace_env) ~= nil }
 end
@@ -214,11 +214,12 @@ local function schedule_response(client, block, respond)
     assert(request.response_schema, "notification has no response to schedule")
     assert(request.id, "request does not support a delayed response")
     assert(type(respond) == "function", "schedule expects a response callback")
+    assert(math.type(block) == "integer" and block > request.block, "response must follow its event block")
     client_queues[client]:schedule(request.id, block, function()
         -- Encode each response with its own event schema before batching.
         return cartesi.fromjson(cartesi.tojson(respond(), -1, request.response_schema, request.protocol.schemas))
     end)
-    return request.owner and { scheduled_at = block } or true
+    return { scheduled_at = block }
 end
 
 -- Dispatches one wire event. Finish is transport cleanup rather than a client handler, so it
@@ -244,7 +245,7 @@ local function answer_event(client, line, protocol)
             id = wire_event.id,
             response_schema = event.response_schema,
             protocol = protocol,
-            owner = wire_event.owner,
+            block = wire_event.block,
         }
         local ok
         ok, value = pcall(handler, client, table.unpack(wire_event.arguments or {}))
@@ -258,7 +259,7 @@ local function answer_event(client, line, protocol)
     else
         value = true -- Transport acknowledgement, not a handler result.
     end
-    if wire_event.owner and not (type(value) == "table" and value.scheduled_at) then
+    if wire_event.id and not (type(value) == "table" and value.scheduled_at) then
         value = { answer = cartesi.fromjson(cartesi.tojson(value, -1, event.response_schema, protocol.schemas)) }
     end
     local done = event == protocol.events.finish or client.done
@@ -320,8 +321,8 @@ end
 --------------------------------------------------------------------------------
 -- Referee server
 --
--- Players answer one queued request at a time. Ordinary responses share a logical
--- block barrier. Schedule controls drain before the next time request.
+-- Players receive requests immediately and answer in a later logical block.
+-- Request acknowledgements drain before the next time notification.
 -- The referee owns every window and validator. Only an accepted response
 -- resolves a first-valid future, even when all its holders skip or announce departure.
 -- Collections return all replies received before their wait's deadline.
@@ -345,8 +346,8 @@ local function new_server(address, protocol)
         subscriptions = {}, -- subscription hash -> set of interested connections
         active = {}, -- set of pending requests, block waits, and closure groups
         clock = new_clock(),
-        ordinary = {}, -- requests for the next ordinary block
-        controls = {}, -- schedule requests awaiting their replies
+        controls = {}, -- delivered requests awaiting acknowledgements
+        queued_responses = {}, -- prompt answers awaiting inclusion in the next block
         scheduled_responses = {}, -- scheduled response ID -> future
         event_order = 0,
         coroutine_order = setmetatable({}, { __mode = "k" }),
@@ -378,6 +379,9 @@ local queue_control
 
 -- Releases a completed request or block wait.
 local function complete_event(self, entry)
+    if entry.not_before and self:get_time() < entry.not_before then
+        return
+    end
     entry.resolved = true
     self.active[entry] = nil
     if entry.cortn then
@@ -430,9 +434,9 @@ local function close_connection(self, connection)
 end
 
 -- Encodes an event and its Lua argument tuple under its event schema.
-local function encode_event(protocol, event, arguments, id, owner)
+local function encode_event(protocol, event, arguments, id, block)
     local wire_event = { operation = event.name, arguments = arguments }
-    wire_event.id, wire_event.owner = id, owner
+    wire_event.id, wire_event.block = id, block
     return cartesi.tojson(wire_event, -1, ensure_event_envelope_schema(protocol, event.event_schema), protocol.schemas)
         .. "\n"
 end
@@ -586,14 +590,15 @@ function server_meta.__index.adopt(self, sock)
                 announce(self, connection, message)
             else
                 local entry = connection.current_event
-                -- Every reply to an owner request names the request, a skip included. A reply
+                -- Every reply to a response-bearing request names it, a skip included. A reply
                 -- that does not is malformed and forfeits the connection.
-                if entry and entry.future and math.type(message.id) ~= "integer" then
+                if entry and entry.future and entry.future.id and math.type(message.id) ~= "integer" then
                     close_connection(self, connection)
                     return
                 end
-                -- An old owner reply must not consume a newer request on the same socket.
-                if not entry or not entry.future or message.id == entry.future.id then
+                -- An old reply must not consume a newer request or time notification.
+                local expected_id = entry and entry.future and entry.future.id
+                if message.id == expected_id then
                     connection.current_event = nil
                     if entry then
                         deliver(self, entry, connection, line)
@@ -685,7 +690,7 @@ local function register_event(self, entry, conns)
     self.event_order = self.event_order + 1
     entry.order = self.event_order
     entry.match_order = self.coroutine_order[cortn]
-    entry.block = self:request_block()
+    entry.block = self:get_time()
     entry.pending, entry.replies = {}, {}
     self.active[entry] = true
     for _, connection in ipairs(conns) do
@@ -699,15 +704,11 @@ function server_meta.__index.get_time(self)
     return self.clock.block
 end
 
-function server_meta.__index.request_block(self)
-    return self.clock:request_block()
-end
-
 queue_control = function(self, conns, event, arguments, id, future)
     local entry = { pending = {}, replies = {}, response_schema = id and "Default" or event.response_schema }
     self.controls[#self.controls + 1] = entry
     entry.future = future
-    local line = encode_event(self.protocol, event, arguments, id, future and true)
+    local line = encode_event(self.protocol, event, arguments, id, self:get_time())
     for _, connection in ipairs(conns) do
         if not connection.dead then
             entry.pending[connection] = true
@@ -751,6 +752,11 @@ function future_meta.__index:close()
     server.active[self] = nil
     if self.id then
         server.scheduled_responses[self.id] = nil
+        for index = #server.queued_responses, 1, -1 do
+            if server.queued_responses[index].id == self.id then
+                table.remove(server.queued_responses, index)
+            end
+        end
     end
     if self.tasks then
         for _, cortn in ipairs(self.tasks) do
@@ -767,11 +773,7 @@ future_meta.__close = future_meta.__index.close
 -- Waiting consumes the future, closing it on completion or expiry. All-response
 -- requests return a sender-keyed map and ordered senders for replies received before
 -- the deadline; first-valid requests return nil without an accepted result.
-function future_meta.__index:wait(deadline)
-    assert(not self.closed, "future is closed")
-    assert(not deadline or math.type(deadline) == "integer", "deadline must be a block number")
-    assert(not self.cortn, "future already has a waiter")
-    local cleanup <close> = self -- luacheck: ignore 211
+local function wait_for_result(self, deadline)
     if not self.resolved and (not deadline or self.server:get_time() < deadline) then
         self.cortn, self.deadline = coroutine.running(), deadline
         coroutine.yield()
@@ -784,8 +786,38 @@ function future_meta.__index:wait(deadline)
         return self.value
     end
     if not self.closed and self.kind == "request_all" then
-        return response_values(self.accepted_replies or self.replies, deadline)
+        return response_values(self.accepted_replies, deadline)
     end
+end
+
+local function begin_wait(self)
+    assert(not self.closed, "future is closed")
+    assert(not self.waiting, "future already has a waiter")
+    self.waiting = true
+end
+
+function future_meta.__index:wait_at_most(deadline)
+    assert(
+        deadline == FOREVER or (math.type(deadline) == "integer" and deadline >= 0),
+        "deadline must be a nonnegative block"
+    )
+    begin_wait(self)
+    local cleanup <close> = self -- luacheck: ignore 211
+    return wait_for_result(self, deadline)
+end
+
+-- A lower bound delays consumption, not validation. The request remains live
+-- until a result is available and the shared clock has reached the given block.
+function future_meta.__index:wait_at_least(block)
+    assert(math.type(block) == "integer" and block >= 0, "block must be a nonnegative block number")
+    begin_wait(self)
+    local cleanup <close> = self -- luacheck: ignore 211
+    self.not_before = block
+    if self.resolved and self.server:get_time() < block then
+        self.resolved = false
+        self.server.active[self] = true
+    end
+    return wait_for_result(self, FOREVER)
 end
 
 -- Starts the closures concurrently, in list order. The future resolves to true when all
@@ -814,89 +846,61 @@ function server_meta.__index.run_all(self, functions)
     return future
 end
 
--- Requests the first valid response without waiting, resolving subscriptions to a fixed audience.
--- Accepts one subscription, a list of subscriptions, or EVERYONE.
--- Its future owns only this event's responses. Validators receive
--- (value, sender, received_at), where received_at is a logical block.
--- An explicit response block sends the request as a control and registers a delayed
--- response ID. It supplies a clock boundary, not a substitute for the referee's validator.
-function server_meta.__index.request_first_valid(
-    self,
-    subscriptions,
-    event,
-    event_arguments,
-    accept_response,
-    response_block
-)
-    assert(
-        not response_block or (math.type(response_block) == "integer" and response_block > self:get_time()),
-        "response block must be a later block"
-    )
-    local conns = self:get_subscribers(subscriptions)
+-- Requests are delivered in the current block without suspending the referee.
+-- A player can answer promptly (included in the next block) or schedule a later
+-- response. The fixed audience, response IDs, and validators apply to both forms.
+local function dispatch_request(self, future, conns, arguments)
+    register_event(self, future, conns)
+    future.audience = {}
+    for _, connection in ipairs(conns) do
+        future.audience[connection] = true
+    end
+    if future.kind == "request_first_valid" or future.event.response_schema then
+        future.id = future.order
+        self.scheduled_responses[future.id] = future
+    end
+    queue_control(self, conns, future.event, arguments, future.id, future)
+    return future
+end
+
+function server_meta.__index.request_first_valid(self, subscriptions, event, event_arguments, accept_response)
     local future = setmetatable({
         kind = "request_first_valid",
         server = self,
         event = event,
-        response_schema = event.response_schema,
         accept_response = accept_response,
     }, future_meta)
-    register_event(self, future, conns)
-    if response_block then
-        future.id, future.eligible = future.order, response_block
-        self.scheduled_responses[future.id] = future
-        queue_control(self, conns, event, event_arguments, future.id)
-    else
-        future.line = encode_event(self.protocol, event, event_arguments)
-        self.ordinary[#self.ordinary + 1] = future
-    end
-    return future
+    return dispatch_request(self, future, self:get_subscribers(subscriptions), event_arguments)
 end
 
 -- A VG move belongs to one admitted connection. Its ID also protects later
--- controls from stale replies on that same connection. Correctness is the game's concern.
+-- requests from stale replies on that same connection. Validity belongs to the game.
 function server_meta.__index.request_from_player(self, owner, event, arguments, accept_response)
     local future = setmetatable({
         kind = "request_first_valid",
         server = self,
         owner = owner,
         event = event,
-        response_schema = event.response_schema,
         accept_response = accept_response,
     }, future_meta)
-    register_event(self, future, {})
-    future.id = future.order
-    self.scheduled_responses[future.id] = future
-    queue_control(self, { owner }, event, arguments, future.id, future)
-    return future
+    return dispatch_request(self, future, { owner }, arguments)
 end
 
 -- Collect replies from subscriptions, or from an explicit list of connections.
--- Subscription requests finish at the ordinary block barrier. Connection requests
--- accept one valid reply per sender, immediately or scheduled, until the wait deadline.
--- Validators receive (value, sender, received_at). Wait returns a map
--- keyed by sender of validator results (or reply values without a validator),
--- followed by an array of the accepted senders in admission order.
+-- Subscription requests finish once each sender answers, including rejected replies.
+-- Explicit connections may retry rejected replies until the wait deadline.
+-- Validators receive (value, sender, received_at), with time measured in blocks.
 function server_meta.__index.request_all(self, subscriptions, event, event_arguments, accept_response)
     local direct = type(subscriptions) == "table" and type(subscriptions[1]) == "table" and event.response_schema
-    local conns = self:get_subscribers(subscriptions)
     local future = setmetatable({
         kind = "request_all",
         server = self,
         event = event,
-        response_schema = event.response_schema,
         accept_response = accept_response,
-        accepted_replies = (accept_response or direct) and {},
+        accepted_replies = {},
+        retry_rejected = direct,
     }, future_meta)
-    register_event(self, future, conns)
-    if direct then
-        future.id = future.order
-        self.scheduled_responses[future.id] = future
-        queue_control(self, conns, event, event_arguments, future.id, future)
-    else
-        future.line = encode_event(self.protocol, event, event_arguments)
-        self.ordinary[#self.ordinary + 1] = future
-    end
-    return future
+    return dispatch_request(self, future, self:get_subscribers(subscriptions), event_arguments)
 end
 
 -- Waits for a logical block's time barrier, or returns immediately if it has already been reached.
@@ -907,7 +911,7 @@ function server_meta.__index.wait_until(self, block)
     end
     local future <close> = setmetatable({ kind = "block", server = self, target_block = block }, future_meta)
     register_event(self, future, {})
-    future:wait()
+    future:wait_at_most(FOREVER)
 end
 
 -- Subscribes every player announced before admission closes to the initial computation.
@@ -945,7 +949,9 @@ local function accept_scheduled_response(self, response)
         or future.resolved
         or future.closed
         or future.value ~= nil
+        or not future.audience[response.connection]
         or (future.owner and response.connection ~= future.owner)
+        or self:get_time() <= future.block
         or (future.kind == "request_all" and not future.pending[response.connection])
     then
         return
@@ -953,9 +959,12 @@ local function accept_scheduled_response(self, response)
     local ok, decoded =
         pcall(cartesi.fromjson, cartesi.tojson(response.value, -1), future.event.response_schema, protocol.schemas)
     if not ok then
+        if future.kind == "request_all" and not future.retry_rejected then
+            future.pending[response.connection] = nil
+        end
         return
     end
-    local received_at = response.received_at or self:get_time()
+    local received_at = self:get_time()
     local accepted, value = true, decoded
     if future.accept_response then
         accepted, value = pcall(future.accept_response, decoded, response.connection, received_at)
@@ -973,6 +982,17 @@ local function accept_scheduled_response(self, response)
             future.value, future.accepted_at = value, received_at
         end
     end
+    if future.kind == "request_all" and not future.retry_rejected then
+        future.pending[response.connection] = nil
+    elseif
+        future.pending[response.connection]
+        and (
+            math.type(future.pending[response.connection]) ~= "integer"
+            or future.pending[response.connection] <= self:get_time()
+        )
+    then
+        future.pending[response.connection] = true
+    end
 end
 
 local function release_results(self)
@@ -980,14 +1000,14 @@ local function release_results(self)
     for entry in pairs(self.active) do
         if entry.kind == "block" and self:get_time() >= entry.target_block then
             entry.value, entry.accepted_at = true, self:get_time()
-        elseif entry.kind == "request_all" and not entry.subscription_hash then
-            if entry.id and not next(entry.pending) then
-                entry.value, entry.response_order = response_values(entry.accepted_replies)
-                entry.accepted_at = self:get_time()
-            elseif entry.answered then
-                entry.value, entry.response_order = response_values(entry.accepted_replies or entry.replies)
-                entry.accepted_at = self:get_time()
-            end
+        elseif
+            entry.kind == "request_all"
+            and entry.accepted_replies
+            and not next(entry.pending)
+            and entry.value == nil
+        then
+            entry.value, entry.response_order = response_values(entry.accepted_replies)
+            entry.accepted_at = self:get_time()
         end
         if entry.value ~= nil or (entry.cortn and entry.deadline and self:get_time() >= entry.deadline) then
             completed[#completed + 1] = entry
@@ -1011,37 +1031,48 @@ function server_meta.__index.step_time(self)
     if not self.clock:barrier_ready(self.controls) then
         return
     end
-    local had_owner_reply = false
+    local had_controls = #self.controls > 0
     for _, control in ipairs(self.controls) do
         local future = control.future
         if future and not future.closed then
             table.sort(control.replies, reply_less)
             for _, reply in ipairs(control.replies) do
-                local requested = reply.connection == future.owner
-                    or (future.kind == "request_all" and future.pending[reply.connection])
-                if requested and reply.id == future.id and type(reply.value) == "table" then
-                    local block = reply.value.scheduled_at
-                    if math.type(block) == "integer" and block > self:get_time() then
-                        if future.kind == "request_all" then
+                if future.audience[reply.connection] then
+                    if not future.id then
+                        future.accepted_replies[#future.accepted_replies + 1] = reply
+                        future.pending[reply.connection] = nil
+                    elseif reply.id == future.id and type(reply.value) == "table" then
+                        local block = reply.value.scheduled_at
+                        if math.type(block) == "integer" and block > future.block then
                             future.pending[reply.connection] = block
-                        else
-                            future.eligible = block
+                        elseif reply.value.answer ~= nil then
+                            local included_at = future.block + 1
+                            future.pending[reply.connection] = included_at
+                            self.queued_responses[#self.queued_responses + 1] = {
+                                id = future.id,
+                                value = reply.value.answer,
+                                connection = reply.connection,
+                                order = reply.order,
+                                block = included_at,
+                                sequence = 0,
+                            }
                         end
-                    elseif reply.value.answer ~= nil then
-                        accept_scheduled_response(self, {
-                            id = future.id,
-                            value = reply.value.answer,
-                            connection = reply.connection,
-                            received_at = reply.received_at,
-                        })
-                        had_owner_reply = true
+                    end
+                end
+            end
+            if not future.id then
+                future.pending = {}
+            elseif future.kind == "request_all" and not future.retry_rejected then
+                for connection, block in pairs(future.pending) do
+                    if block == true then
+                        future.pending[connection] = nil
                     end
                 end
             end
         end
     end
     self.controls = {}
-    if had_owner_reply then
+    if had_controls then
         release_results(self)
         return true
     end
@@ -1049,95 +1080,55 @@ function server_meta.__index.step_time(self)
         if not self.clock:barrier_ready(self.batch) then
             return
         end
-        if self.batch_kind == "time" then
-            local responses = {}
-            for _, entry in ipairs(self.batch) do
-                for _, reply in ipairs(entry.replies) do
-                    if type(reply.value) == "table" then
-                        for _, response in ipairs(reply.value) do
-                            if type(response) == "table" and math.type(response.id) == "integer" then
-                                responses[#responses + 1] = {
-                                    id = response.id,
-                                    value = response.value,
-                                    order = reply.order,
-                                    connection = reply.connection,
-                                }
-                            end
-                        end
-                    end
-                end
+        local responses, remaining = {}, {}
+        for _, response in ipairs(self.queued_responses) do
+            if response.block <= self:get_time() then
+                responses[#responses + 1] = response
+            else
+                remaining[#remaining + 1] = response
             end
-            table.sort(responses, function(a, b)
-                local af, bf = self.scheduled_responses[a.id], self.scheduled_responses[b.id]
-                local ae, be = af and af.eligible or 0, bf and bf.eligible or 0
-                if ae ~= be then
-                    return ae < be
-                elseif a.id ~= b.id then
-                    return a.id < b.id
-                end
-                return reply_less(a, b)
-            end)
-            for _, response in ipairs(responses) do
-                accept_scheduled_response(self, response)
-            end
-        else
-            table.sort(self.batch, entry_less)
-            for _, entry in ipairs(self.batch) do
-                entry.answered = true
-                if entry.kind == "request_first_valid" and not entry.closed then
-                    table.sort(entry.replies, reply_less)
-                    for _, reply in ipairs(entry.replies) do
-                        if entry.value == nil then
-                            local ok, value =
-                                pcall(entry.accept_response, reply.value, reply.connection, reply.received_at)
-                            if ok and value then
-                                entry.value, entry.accepted_at = value, self:get_time()
-                            end
-                        end
-                    end
-                elseif entry.kind == "request_all" and entry.accept_response and not entry.closed then
-                    table.sort(entry.replies, reply_less)
-                    for _, reply in ipairs(entry.replies) do
-                        local ok, value = pcall(entry.accept_response, reply.value, reply.connection, reply.received_at)
-                        if ok and value then
-                            entry.accepted_replies[#entry.accepted_replies + 1] = {
-                                value = value,
-                                connection = reply.connection,
+        end
+        self.queued_responses = remaining
+        for _, entry in ipairs(self.batch) do
+            for _, reply in ipairs(entry.replies) do
+                if type(reply.value) == "table" then
+                    for sequence, response in ipairs(reply.value) do
+                        if type(response) == "table" and math.type(response.id) == "integer" then
+                            responses[#responses + 1] = {
+                                id = response.id,
+                                value = response.value,
                                 order = reply.order,
-                                received_at = reply.received_at,
+                                connection = reply.connection,
+                                sequence = sequence,
                             }
                         end
                     end
                 end
             end
         end
+        table.sort(responses, function(a, b)
+            if a.id ~= b.id then
+                return a.id < b.id
+            end
+            if a.order ~= b.order then
+                return reply_less(a, b)
+            end
+            return a.sequence < b.sequence
+        end)
+        for _, response in ipairs(responses) do
+            accept_scheduled_response(self, response)
+        end
         self.batch = nil
         release_results(self)
         return true
     end
-    if self.clock.before_ordinary then
-        self.clock:begin_ordinary()
-        self.batch, self.ordinary = self.ordinary, {}
-        self.batch_kind = "ordinary"
-        for _, entry in ipairs(self.batch) do
-            assert(entry.block == self:get_time(), "ordinary request missed its block")
-            if entry.closed then
-                entry.pending = {}
-            else
-                for connection in pairs(entry.pending) do
-                    send_event(self, connection, entry, entry.line)
-                end
-            end
-        end
-        return true
-    end
     local boundaries = {}
-    for _, entry in ipairs(self.ordinary) do
-        boundaries[#boundaries + 1] = entry.block
-    end
     for entry in pairs(self.active) do
         if entry.target_block then
             boundaries[#boundaries + 1] = entry.target_block
+        end
+        if entry.not_before then
+            boundaries[#boundaries + 1] = entry.not_before
         end
         if entry.deadline then
             boundaries[#boundaries + 1] = entry.deadline
@@ -1145,14 +1136,9 @@ function server_meta.__index.step_time(self)
     end
     for _, future in pairs(self.scheduled_responses) do
         if not future.resolved then
-            if future.eligible then
-                boundaries[#boundaries + 1] = future.eligible
-            end
-            if future.kind == "request_all" then
-                for _, block in pairs(future.pending) do
-                    if math.type(block) == "integer" then
-                        boundaries[#boundaries + 1] = block
-                    end
+            for _, block in pairs(future.pending) do
+                if math.type(block) == "integer" then
+                    boundaries[#boundaries + 1] = block
                 end
             end
         end
@@ -1161,7 +1147,7 @@ function server_meta.__index.step_time(self)
     if block then
         self.clock:advance(block)
         local entry = { pending = {}, replies = {}, response_schema = "Responses" }
-        self.batch, self.batch_kind = { entry }, "time"
+        self.batch = { entry }
         local line = encode_event(protocol, protocol.events.advance_time, { block })
         for _, connection in ipairs(self:get_players()) do
             entry.pending[connection] = true
@@ -1232,7 +1218,7 @@ function server_meta.__index.run(self, main)
             end
             self.dispatcher:spawn(function()
                 local finished <close> = self:request_all(EVERYONE, protocol.events.finish, {})
-                finished:wait()
+                finished:wait_at_most(FOREVER)
                 self.done = true
             end)
         end

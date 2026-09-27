@@ -31,8 +31,6 @@ local function run_with_server(protocol, scenario)
                         reply, done = handler(wire_event, line)
                     elseif wire_event.operation == "finish" then
                         reply, done = { value = true }, true
-                    elseif wire_event.id then
-                        reply = { value = true }
                     elseif wire_event.operation == "advance_time" then
                         reply = { value = {} }
                     else
@@ -42,6 +40,12 @@ local function run_with_server(protocol, scenario)
                         sock:close()
                         return
                     elseif type(reply) == "table" then
+                        if not typed and wire_event.id then
+                            reply.id = wire_event.id
+                            if reply.value ~= nil then
+                                reply.value = { answer = reply.value }
+                            end
+                        end
                         reply.done = done or reply.done
                         reply = cartesi.tojson(reply, -1)
                     end

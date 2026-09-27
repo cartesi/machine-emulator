@@ -13,6 +13,7 @@ local vgu = require("vgu")
 local output_verifier = require("game-output")
 local EVENTS = vgu.EVENTS
 local EVERYONE = vgu.EVERYONE
+local FOREVER = nil
 local story = vgu.story
 local addresses = vgu.addresses
 local MCYCLES_PER_INPUT = 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
@@ -179,11 +180,13 @@ function advancing_pair_methods:commit()
     self.backup = nil
 end
 
+-- docs:begin revert
 function advancing_pair_methods:revert()
     assert(self.backup, "input has no snapshot")
     self.machine:swap(self.backup)
     self:commit()
 end
+-- docs:end revert
 
 local function new_machine(initial_hash)
     local machine = assert(jsonrpc.spawn_server("127.0.0.1:0"))
@@ -273,6 +276,7 @@ local function flush_pending_outputs(pending, outputs, outputs_frontier, yield_r
 end
 
 -- Run one input from its virgin boundary to the requested offset, as in PRT.
+-- docs:begin run_advance_state_input
 function player_methods:run_advance_state_input(
     pair,
     epoch_input_offset,
@@ -297,6 +301,7 @@ function player_methods:run_advance_state_input(
     flush_pending_outputs(pending, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
     return break_reason, yield_reason, input_mcycle_boundary
 end
+-- docs:end run_advance_state_input
 
 -- Replay to an input boundary without collecting outputs. Unposted inputs
 -- repeat the final state and need no execution.
@@ -369,6 +374,7 @@ function event_handler:dispute_started()
     self.agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 }
 end
 
+-- docs:begin reveal_bisection
 function event_handler:reveal_bisection(agreed_position, tentative_position)
     if precedes(self.agreed_position, agreed_position) then
         -- The previous midpoint is now the agreed predecessor.
@@ -405,7 +411,9 @@ function event_handler:reveal_bisection(agreed_position, tentative_position)
     end
     return self.tentative_machine.machine:get_root_hash()
 end
+-- docs:end reveal_bisection
 
+-- docs:begin prove_state_transition
 function event_handler:prove_state_transition(epoch_input_offset, input_mcycle_offset, uarch_cycle)
     local machine = self.agreed_position.uarch_cycle < uarch_cycle and self.tentative_machine.machine
         or self.agreed_machine.machine
@@ -421,6 +429,7 @@ function event_handler:prove_state_transition(epoch_input_offset, input_mcycle_o
         return { step_log = machine:log_step_uarch() }
     end
 end
+-- docs:end prove_state_transition
 
 function event_handler:prove_outputs_merkle_root()
     local machine = self.latest.machine
@@ -485,6 +494,7 @@ local server
 
 -- The referee trusts its own input bytes and verifies the log without a machine.
 -- Invalid logs raise an error, which the request's protected validator rejects.
+-- docs:begin validate_state_transition_response
 local function validate_state_transition_response(
     dapp_contract,
     epoch_input_offset,
@@ -511,6 +521,7 @@ local function validate_state_transition_response(
     assert(before == after, "log does not reach the committed after-hash")
     return true
 end
+-- docs:end validate_state_transition_response
 
 local function accept_hash(hash)
     return type(hash) == "string" and #hash == 32 and hash
@@ -582,11 +593,12 @@ local function request_bisections(tournament, interval)
             return player
         end
     )
-    return survivors:wait(deadline)
+    return survivors:wait_at_most(deadline)
 end
 
 -- Bisect the inclusive range of resulting-state indices. The agreed predecessor
 -- is not one of its leaves. Any disagreement selects the earlier half.
+-- docs:begin bisect_level
 local function bisect_level(tournament, level, count, bisection)
     local interval = {
         level = level,
@@ -620,6 +632,7 @@ local function bisect_level(tournament, level, count, bisection)
     end
     return interval.lo
 end
+-- docs:end bisect_level
 
 -- Every surviving player must prove its own committed endpoint.
 local function request_state_transitions(tournament, epoch_input_offset, input_mcycle_offset, uarch_cycle, bisection)
@@ -649,9 +662,10 @@ local function request_state_transitions(tournament, epoch_input_offset, input_m
             return player
         end
     )
-    return survivors:wait(deadline)
+    return survivors:wait_at_most(deadline)
 end
 
+-- docs:begin settle_dispute
 local function settle_dispute(tournament)
     while not no_claim_remains(tournament.players) do
         local winner = single_claim_remains(tournament.players)
@@ -659,7 +673,7 @@ local function settle_dispute(tournament)
             return winner
         end
         local started <close> = server:request_all(addresses(tournament.players), EVENTS.dispute_started, {})
-        started:wait()
+        started:wait_at_most(FOREVER)
         local bisection = {
             last_agreed_hash = tournament.dapp_contract.initial_state_hash,
             hashes_after = map(tournament.players, function(player)
@@ -686,9 +700,11 @@ local function settle_dispute(tournament)
             request_state_transitions(tournament, epoch_input_offset, input_mcycle_offset, uarch_cycle, bisection)
     end
 end
+-- docs:end settle_dispute
 
 -- Establish the outputs root, then accept distinct player-selected outputs until
 -- the runner stops the game. Output offers are permissionless after settlement.
+-- docs:begin wait_for_outputs
 local function wait_for_outputs(winner)
     local root_proof <close> = server:request_first_valid(
         EVERYONE,
@@ -698,7 +714,7 @@ local function wait_for_outputs(winner)
             return validate_outputs_merkle_root_response(response, winner.final_hash)
         end
     )
-    local outputs_merkle_root = root_proof:wait()
+    local outputs_merkle_root = root_proof:wait_at_most(FOREVER)
     local accepted_output_indices = {}
     while true do
         local output_proof <close> = server:request_first_valid(
@@ -711,11 +727,12 @@ local function wait_for_outputs(winner)
                 end
             end
         )
-        local output = output_proof:wait()
+        local output = output_proof:wait_at_most(FOREVER)
         accepted_output_indices[output.output_index] = true
         story.report_output(output)
     end
 end
+-- docs:end wait_for_outputs
 
 local function request_claims(tournament)
     local started_at = server:get_time()
@@ -736,7 +753,7 @@ local function request_claims(tournament)
             return player
         end
     )
-    return survivors:wait(deadline)
+    return survivors:wait_at_most(deadline)
 end
 
 local function run_referee(dapp_contract)
@@ -745,13 +762,13 @@ local function run_referee(dapp_contract)
         tournament.players[sender] = { index = index, label = sender.label, allowance = dapp_contract.max_allowance }
     end
     local initial <close> = server:request_all(EVERYONE, EVENTS.initial_state, { dapp_contract.initial_state_hash })
-    initial:wait()
+    initial:wait_at_most(FOREVER)
     for index, path in ipairs(dapp_contract.input_paths) do
         local input <close> = server:request_all(EVERYONE, EVENTS.input_added, { index - 1, path })
-        input:wait()
+        input:wait_at_most(FOREVER)
     end
     local sealed <close> = server:request_all(EVERYONE, EVENTS.epoch_sealed, { #dapp_contract.inputs })
-    sealed:wait()
+    sealed:wait_at_most(FOREVER)
     tournament.players = request_claims(tournament)
     story.report_claims(tournament.players)
     local winner = settle_dispute(tournament)

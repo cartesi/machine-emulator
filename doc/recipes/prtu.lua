@@ -269,7 +269,6 @@ local SCHEMA_DICT = {
     ClosePhaseEvent = { items = {} },
     ClosePhaseResponse = "Default",
     FinishEvent = { items = {} },
-    FinishResponse = "Default",
     InputAddedEvent = { items = { "Default", "Default" } },
     EpochSealedEvent = { items = { "Default" } },
     Claim = {
@@ -331,7 +330,7 @@ end
 
 local EVENTS = {
     close_phase = define_event("close_phase", "ClosePhaseEvent", "ClosePhaseResponse"),
-    finish = define_event("finish", "FinishEvent", "FinishResponse"),
+    finish = define_event("finish", "FinishEvent"),
     input_added = define_event("input_added", "InputAddedEvent"),
     epoch_sealed = define_event("epoch_sealed", "EpochSealedEvent"),
     commit_mcycle_claim = define_event("commit_mcycle_claim", "CommitMcycleClaimEvent", "CommitMcycleClaimResponse"),

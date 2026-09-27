@@ -1,6 +1,7 @@
 local cartesi = require("cartesi")
 local transport = require("game-transport")
 local run_with_server = require("game-test-server")
+local FOREVER = nil
 local event = transport.define_event("move", "Move", "Base64")
 local notification = transport.define_event("notice", "Notice")
 local protocol = transport.new_protocol(
@@ -27,9 +28,9 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         wait_connections(index)
     end
     local replies <close> = server:request_all(nil, notification, { 42 })
-    local acknowledgements, order = replies:wait()
+    local acknowledgements, order = replies:wait_at_most(FOREVER)
     assert(replies.closed and not server.active[replies])
-    assert(not pcall(replies.wait, replies), "a consumed future accepted another wait")
+    assert(not pcall(replies.wait_at_most, replies), "a consumed future accepted another wait")
     assert(received[1] == 42 and received[2] == 42)
     assert(#order == 2)
     for index, sender in ipairs(order) do
@@ -71,11 +72,11 @@ for _, delay in ipairs({ 0, 2, 5, 6 }) do
         wait_connections(1)
         local owner = server:get_players()[1]
         local future <close> = server:request_from_player(owner, event, {}, accept)
-        local result = future:wait(5)
+        local result = future:wait_at_most(5)
         assert(result == (delay < 5 and hash or nil))
         assert(future.closed and not server.active[future] and not server.scheduled_responses[future.id])
         if delay < 5 then
-            assert(future.accepted_at == delay, "clock did not stop at the chosen reply block")
+            assert(future.accepted_at == math.max(delay, 1), "clock did not stop at the chosen reply block")
         else
             assert(server:get_time() == 5, "acknowledgement extended the deadline")
         end
@@ -113,14 +114,14 @@ for _, kind in ipairs({ "first", "all", "owner", "scheduled" }) do
         local function validate(value, sender, received_at)
             assert(sender.label == "validator fixture" and sender == connection)
             assert(received_at == server:get_time())
-            assert(received_at == ({ owner = 0, first = 1, all = 1, scheduled = 3 })[kind])
+            assert(received_at == ({ owner = 1, first = 1, all = 1, scheduled = 3 })[kind])
             return accept(value)
         end
         local future <close> = kind == "first" and server:request_first_valid(nil, event, {}, validate)
             or kind == "all" and server:request_all(nil, event, {}, validate)
-            or kind == "scheduled" and server:request_first_valid(nil, event, {}, validate, 3)
+            or kind == "scheduled" and server:request_first_valid(nil, event, {}, validate)
             or server:request_from_player(connection, event, {}, validate)
-        local result = future:wait(5)
+        local result = future:wait_at_most(5)
         assert((kind == "all" and result[connection] or result) == hash)
     end)
 end
@@ -169,7 +170,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         value = { answer = encoded_hash },
         order = 5,
     }
-    local replies, order = future:wait(5)
+    local replies, order = future:wait_at_most(5)
     assert(#order == 2 and order[1] == connections[1] and order[2] == connections[3])
     assert(replies[connections[1]] == 1 and replies[connections[3]] == 3)
     assert(not replies[connections[2]] and not replies[connections[4]] and not replies[server:get_players()[5]])
@@ -197,7 +198,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         validated[connection] = true
         return accept(value)
     end)
-    local replies, order = future:wait(3)
+    local replies, order = future:wait_at_most(3)
     assert(#order == 1 and order[1] == connections[1] and replies[connections[1]] == hash)
     assert(not replies[connections[2]] and not replies[connections[3]], "collection deadline is not exclusive")
     assert(future.closed and not server.active[future] and not server.scheduled_responses[future.id])
@@ -231,9 +232,9 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         calls = calls + 1
         return accept(value)
     end)
-    local replies, order = future:wait(5)
+    local replies, order = future:wait_at_most(5)
     assert(#order == 1 and order[1] == server:get_players()[1] and replies[order[1]] == hash)
-    assert(future.closed and not pcall(future.wait, future), "a consumed future accepted another wait")
+    assert(future.closed and not pcall(future.wait_at_most, future), "a consumed future accepted another wait")
     server:wait_until(3)
     assert(calls == 2, "duplicate reply reached the validator")
 end)
@@ -244,6 +245,12 @@ end)
 run_with_server(protocol, function(server, run_client, wait_connections)
     local owner_client = { label = "honest", event_handler = {} }
     function owner_client.event_handler.move(self)
+        if server:get_time() >= 3 then
+            assert(not pcall(transport.schedule_response, self, 3, function()
+                return hash
+            end))
+            return "invalid"
+        end
         return transport.schedule_response(self, 3, function()
             return hash
         end)
@@ -274,12 +281,12 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     }
     server:wait_until(1)
     assert(future.value == nil, "outsider answered the owner's move")
-    assert(future:wait(5) == hash and future.accepted_at == 3)
+    assert(future:wait_at_most(5) == hash and future.accepted_at == 3)
     assert(future.closed, "waiting did not close the owner's request")
     local later <close> = server:request_from_player(owner, event, {}, accept)
     assert(later.id ~= future.id)
-    -- The owner schedules at an already visited block. It cannot resolve this request.
-    assert(later:wait(5) == nil)
+    -- The old response ID cannot resolve this later request.
+    assert(later:wait_at_most(5) == nil)
 end)
 
 -- Admission closes externally, regardless of player count. Players arriving
@@ -321,7 +328,7 @@ do
                 closed = true
             end,
         })
-        future = s:request_first_valid({}, event, {}, accept, 3)
+        future = s:request_first_valid({}, event, {}, accept)
         error("deliberate referee error")
     end)
     assert(not ok and err:find("deliberate referee error", 1, true))
@@ -350,7 +357,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     wait_connections(1)
     for _ = 1, 2 do
         local future <close> = server:request_from_player(server:get_players()[1], event, {}, accept)
-        assert(future:wait(server:get_time() + 5) == hash)
+        assert(future:wait_at_most(server:get_time() + 5) == hash)
     end
 end)
 -- An unannounced EOF is a failed simulation, not a player's timeout. Both an
@@ -366,10 +373,131 @@ for _, owned in ipairs({ false, true }) do
         local pending <close> = owned and s:request_from_player(s:get_players()[1], event, {}, accept)
             or s:request_first_valid(nil, event, {}, accept)
         future = pending
-        pending:wait(5)
+        pending:wait_at_most(5)
         error("connection loss was treated as a timeout")
     end)
     assert(not ok and err:find("unexpected connection loss", 1, true))
     assert(future.closed and not next(server.active) and not server.listener:getsockname())
 end
+-- A lower-bound wait owns both its result and its clock boundary. Early results
+-- remain valid, a result at the boundary is accepted, and later results keep it waiting.
+for _, response_block in ipairs({ 1, 3, 5 }) do
+    for _, already_received in ipairs({ false, true }) do
+        run_with_server(protocol, function(server, run_client, wait_connections)
+            local client = { event_handler = {} }
+            function client.event_handler.move(self)
+                assert(server:get_time() == 0, "event delivery advanced the clock")
+                if response_block == 1 then
+                    return hash
+                end
+                return transport.schedule_response(self, response_block, function()
+                    return hash
+                end)
+            end
+            run_client(nil, function(_, line)
+                return transport.answer_event(client, line, protocol)
+            end, true)
+            wait_connections(1)
+            local future <close> = server:request_first_valid(nil, event, {}, accept)
+            if already_received then
+                server:wait_until(response_block)
+                assert(future.resolved and future.accepted_at == response_block)
+            end
+            assert(future:wait_at_least(3) == hash)
+            assert(server:get_time() == math.max(3, response_block))
+            assert(future.accepted_at == response_block, "lower bound changed the receipt block")
+            assert(future.closed and not pcall(future.wait_at_most, future, FOREVER))
+            assert(not pcall(future.wait_at_least, future, 3))
+        end)
+    end
+end
+
+-- Different lower bounds share the clock, including results collected before any
+-- bound is reached. Collections retain both return values; groups retain true.
+run_with_server(protocol, function(server, run_client, wait_connections)
+    local client = { event_handler = {
+        move = function()
+            return hash
+        end,
+    } }
+    run_client(nil, function(_, line)
+        return transport.answer_event(client, line, protocol)
+    end, true)
+    wait_connections(1)
+    local order = {}
+    local function wait_for(block)
+        local future <close> = server:request_first_valid(nil, event, {}, accept)
+        assert(future:wait_at_least(block) == hash)
+        order[#order + 1] = server:get_time()
+    end
+    local group <close> = server:run_all({
+        function()
+            wait_for(8)
+        end,
+        function()
+            wait_for(3)
+        end,
+        function()
+            wait_for(5)
+        end,
+    })
+    assert(group:wait_at_least(9))
+    assert(table.concat(order, ",") == "3,5,8" and server:get_time() == 9)
+    local collection <close> = server:request_all(nil, event, {}, accept)
+    local values, senders = collection:wait_at_least(12)
+    assert(#senders == 1 and values[senders[1]] == hash and server:get_time() == 12)
+    assert(collection.accepted_at == 10, "lower bound changed collection completion time")
+end)
+
+-- The proof deadline may precede elimination, as with unequal uarch clocks.
+-- No unrelated coroutine is needed to reach the later elimination block.
+run_with_server(protocol, function(server, run_client, wait_connections)
+    local client = { event_handler = {} }
+    function client.event_handler.move(self)
+        return transport.schedule_response(self, 5, function()
+            return hash
+        end)
+    end
+    run_client(nil, function(_, line)
+        return transport.answer_event(client, line, protocol)
+    end, true)
+    wait_connections(1)
+    local elimination <close> = server:request_first_valid(nil, event, {}, function(value)
+        assert(server:get_time() >= 5, "early elimination")
+        return accept(value)
+    end)
+    local proof <close> = server:request_first_valid({}, event, {}, accept)
+    assert(proof:wait_at_most(2) == nil and server:get_time() == 2)
+    assert(elimination:wait_at_least(5) == hash and server:get_time() == 5)
+end)
+
+-- Closing a lower-bound wait releases its coroutine and removes its clock boundary.
+run_with_server(protocol, function(server)
+    local future, resumed
+    local group <close> = server:run_all({
+        function()
+            future = server:request_first_valid({}, event, {}, accept)
+            assert(future:wait_at_least(10) == nil)
+            resumed = server:get_time()
+        end,
+    })
+    server:wait_until(2)
+    assert(not pcall(future.wait_at_most, future, FOREVER), "a second waiter was accepted")
+    assert(not pcall(future.wait_at_least, future, 3), "a second lower-bound waiter was accepted")
+    future:close()
+    assert(group:wait_at_most(FOREVER) and resumed == 2)
+    assert(not next(server.active) and not next(server.scheduled_responses))
+end)
+
+-- Bounds are block numbers; FOREVER is valid only as an upper bound.
+run_with_server(protocol, function(server)
+    local future <close> = server:run_all({})
+    for _, invalid in ipairs({ false, -1, 1.5, "3" }) do
+        assert(not pcall(future.wait_at_most, future, invalid))
+        assert(not pcall(future.wait_at_least, future, invalid))
+    end
+    assert(not pcall(future.wait_at_least, future, FOREVER))
+    assert(future:wait_at_least(0))
+end)
+
 print("game-transport-test: ok")

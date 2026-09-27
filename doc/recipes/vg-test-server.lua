@@ -7,8 +7,8 @@ local run_with_server = require("game-test-server")
 
 -- Observe the same results consumed by the referee without exposing its local tournament state.
 local function observe_result(future, results, field)
-    local wait = future.wait
-    function future:wait(deadline)
+    local wait = future.wait_at_most
+    function future:wait_at_most(deadline)
         local value, order = wait(self, deadline)
         results[field] = value
         return value, order
@@ -55,14 +55,11 @@ return function(protocol, scenario)
         local step_time, stop_requested = server.step_time, false
         function server:step_time()
             local progressed = step_time(self)
-            if not progressed and not stop_requested then
+            if not progressed and not stop_requested and not self.batch and #self.controls == 0 then
                 for future in pairs(self.active) do
                     if
-                        future.answered
-                        and (
-                            future.event == vgu.EVENTS.prove_outputs_merkle_root
-                            or future.event == vgu.EVENTS.prove_output
-                        )
+                        future.event == vgu.EVENTS.prove_outputs_merkle_root
+                        or future.event == vgu.EVENTS.prove_output
                     then
                         assert(future.cortn and not future.deadline, "output wait is not indefinite")
                         stop_requested = true

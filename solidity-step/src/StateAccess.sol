@@ -42,12 +42,44 @@ library StateAccess {
         ) {
             return StepLog.readUarchWord(ctx, (paddr - EmulatorConstants.UARCH_HALT_ADDR) / 8);
         }
-        uint256 ptr = StepLog.findPage(ctx, paddr);
-        bytes32 word32;
-        assembly ("memory-safe") {
-            word32 := mload(ptr)
+        if (
+            (paddr & ~EmulatorConstants.PAGE_OFFSET_MASK)
+                == EmulatorConstants.AR_SHADOW_UARCH_STATE_START
+        ) {
+            StepLog.flushUarchRegisters(ctx);
         }
-        return StepLog.swapBytes64(uint64(bytes8(word32)));
+        // Inline twin of locatePage's hit path: avoid helper call frames on every
+        // instruction fetch/load. Misses still use the shared checked search.
+        uint256[61] memory cache = ctx.pageLookupCache;
+        uint64 idx = paddr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
+        uint256 cacheSlot = uint256(idx) % cache.length;
+        uint256 cached;
+        // Modulo the fixed array length guarantees cacheSlot is in 0..60.
+        assembly ("memory-safe") {
+            cached := mload(add(cache, shl(5, cacheSlot)))
+        }
+        uint256 lo;
+        unchecked {
+            if (cached >> 6 == uint256(idx) + 1) {
+                lo = cached & 0x3f;
+            } else {
+                lo = StepLog.resolvePageMiss(ctx, idx, cacheSlot);
+            }
+        }
+        bytes memory pd = ctx.pageData;
+        uint256 pageSize = EmulatorConstants.PAGE_SIZE;
+        uint256 pageMask = EmulatorConstants.PAGE_OFFSET_MASK;
+        uint64 value;
+        // Inline swapBytes64 twin: its callee size exceeds solc's hot-path inlining budget.
+        // Decoded cache positions are in 0..63; the aligned word fits its page.
+        assembly ("memory-safe") {
+            let ptr := add(add(pd, 32), add(mul(lo, pageSize), and(paddr, pageMask)))
+            let v := shr(192, mload(ptr))
+            v := or(and(shr(8, v), 0x00ff00ff00ff00ff), and(shl(8, v), 0xff00ff00ff00ff00))
+            v := or(and(shr(16, v), 0x0000ffff0000ffff), and(shl(16, v), 0xffff0000ffff0000))
+            value := and(or(shr(32, v), shl(32, v)), 0xffffffffffffffff)
+        }
+        return value;
     }
 
     function writeWord(StepLog.Context memory ctx, uint64 paddr, uint64 val) internal pure {

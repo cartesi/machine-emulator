@@ -403,7 +403,7 @@ library StepLog {
     }
 
     /// Materialize pending register writes before hashing or exposing the page bytes.
-    function flushUarchRegisters(Context memory ctx) private pure {
+    function flushUarchRegisters(Context memory ctx) internal pure {
         if (!ctx.uarchRegistersDirty) return;
         for (uint256 i; i < UARCH_REGISTER_WORD_COUNT; ++i) {
             writeLE64Memory(ctx.uarchShadowPtr + i * 8, ctx.uarchRegisters[i]);
@@ -443,20 +443,7 @@ library StepLog {
             if (cached >> 6 == tag) {
                 lo = cached & 0x3f;
             } else {
-                uint256 hi = ctx.pageIndices.length;
-                while (lo < hi) {
-                    uint256 mid = (lo + hi) >> 1;
-                    if (ctx.pageIndices[mid] < idx) {
-                        lo = mid + 1;
-                    } else {
-                        hi = mid;
-                    }
-                }
-                if (lo >= ctx.pageIndices.length || ctx.pageIndices[lo] != idx) {
-                    revert RequiredPageNotFound(idx);
-                }
-                // A nonzero tag distinguishes page zero from an empty cache slot.
-                ctx.pageLookupCache[cacheSlot] = (tag << 6) | lo;
+                lo = resolvePageMiss(ctx, idx, cacheSlot);
             }
             pageIdx = lo;
             uint256 byteOff = lo * EmulatorConstants.PAGE_SIZE
@@ -465,6 +452,33 @@ library StepLog {
             assembly ("memory-safe") {
                 memPtr := add(add(pd, 32), byteOff)
             }
+        }
+    }
+
+    // Shared cold path for locatePage and StateAccess.readWord's inline cache hit.
+    // Callers pass idx % pageLookupCache.length as cacheSlot.
+    // Internal for the StateAccess caller; this adds no external ABI.
+    function resolvePageMiss(Context memory ctx, uint64 idx, uint256 cacheSlot)
+        internal
+        pure
+        returns (uint256 lo)
+    {
+        // decode caps the table at 64 pages; search endpoints stay in 0..64.
+        unchecked {
+            uint256 hi = ctx.pageIndices.length;
+            while (lo < hi) {
+                uint256 mid = (lo + hi) >> 1;
+                if (ctx.pageIndices[mid] < idx) {
+                    lo = mid + 1;
+                } else {
+                    hi = mid;
+                }
+            }
+            if (lo >= ctx.pageIndices.length || ctx.pageIndices[lo] != idx) {
+                revert RequiredPageNotFound(idx);
+            }
+            // A nonzero tag distinguishes page zero from an empty cache slot.
+            ctx.pageLookupCache[cacheSlot] = ((uint256(idx) + 1) << 6) | lo;
         }
     }
 

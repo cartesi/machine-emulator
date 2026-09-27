@@ -372,12 +372,12 @@ library StepLog {
     }
 
     function readUarchWord(Context memory ctx, uint256 wordIndex) internal pure returns (uint64) {
-        loadUarchRegisters(ctx);
+        if (ctx.uarchShadowPtr == 0) loadUarchRegisters(ctx);
         return ctx.uarchRegisters[wordIndex];
     }
 
     function writeUarchWord(Context memory ctx, uint256 wordIndex, uint64 value) internal pure {
-        loadUarchRegisters(ctx);
+        if (ctx.uarchShadowPtr == 0) loadUarchRegisters(ctx);
         ctx.uarchRegisters[wordIndex] = value;
         // The hash stays invalid while writes are pending; hashing first flushes the registers.
         if (!ctx.uarchRegistersDirty) {
@@ -386,8 +386,9 @@ library StepLog {
         }
     }
 
+    // Call only when the cache is empty. Keep the check at the callers so warm
+    // register accesses avoid entering this cold loader.
     function loadUarchRegisters(Context memory ctx) private pure {
-        if (ctx.uarchShadowPtr != 0) return;
         (ctx.uarchShadowPtr, ctx.uarchShadowPageIndex) =
             locatePage(ctx, EmulatorConstants.UARCH_HALT_ADDR);
         // Check the fixed length against the generated register layout.

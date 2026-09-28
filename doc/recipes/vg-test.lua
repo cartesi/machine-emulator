@@ -405,7 +405,7 @@ do
 end
 
 -- Bisection commits or discards the entire tentative pair. A pending input keeps
--- its rejection checkpoint; after rejection, later midpoints repeat the reverted hash.
+-- its rejection checkpoint; after rejection, later tentative positions repeat the reverted hash.
 do
     local player <close> = vg.new_player(initial_hash)
     vg.event_handler.initial_state(player, initial_hash)

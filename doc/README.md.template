@@ -4777,10 +4777,10 @@ The referee narrows the search to one transition, then verifies the transition o
 ```
 
 A bisection table holds the agreed start position, a log count for each coordinate, the agreed hash, and each player's hash at the end of the remaining range. The counts begin at the epoch's input limit, the mcycle limit per input, and the uarch cycle limit per instruction.
-The midpoint advances the first coordinate with a nonzero log count by half its count. The other coordinates remain unchanged:
-```{.lua key=vg_midpoint include=rolling-verification-game.lua/midpoint title="rolling-verification-game.lua (excerpt)"}
+`narrow_bisection` decrements the first nonzero log count and returns a tentative position advanced by the new count in that coordinate. The agreed position and other counts remain unchanged:
+```{.lua key=vg_midpoint include=rolling-verification-game.lua/narrow_bisection title="rolling-verification-game.lua (excerpt)"}
 ```
-Each round decrements that coordinate's log count. Agreement advances the start and updates the agreed hash; disagreement keeps the start and updates the endpoint hashes. When all three log counts are zero, one uarch transition remains. The loop checks that condition separately from computing the midpoint:
+Agreement advances the start and updates the agreed hash; disagreement keeps the start and updates the endpoint hashes. When all three log counts are zero, one uarch transition remains. The loop checks that condition before narrowing again:
 ```{.lua key=vg_bisect_level include=rolling-verification-game.lua/bisect title="rolling-verification-game.lua (excerpt)"}
 ```
 Responses must arrive before each player's deadline. A player pays for response delays beyond the contract's response budget; invalid or missing replies eliminate that player.
@@ -4819,9 +4819,9 @@ The execution regression tests also check a dishonest player that overrides this
 The mcycle bisection ranges over the disputed input's 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup> mcycles.
 Offset zero is the boundary before input delivery. The input is included by the first transition, so the state at a positive offset *m* is the input boundary, fed, and run for *m* mcycles.
 The calculator is done with each input within about 50 million mcycles, after which the machine has yielded manual and no longer advances.
-A midpoint past the yield therefore repeats the yielded state, and the bisection ranges over the full ceiling without knowing where the guest yields, as it can when execution halts.
+A tentative position past the yield therefore repeats the yielded state, and the bisection ranges over the full ceiling without knowing where the guest yields, as it can when execution halts.
 The search then narrows the 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch cycles of the disputed instruction.
-The referee sends the agreed position and the tentative midpoint position directly.
+The referee sends the agreed position and the tentative position directly.
 A single player operation receives these two positions and serves the three levels:
 ```{.lua key=rvg_commit_bisection include=rolling-verification-game.lua/reveal_bisection title="rolling-verification-game.lua (excerpt)"}
 ```

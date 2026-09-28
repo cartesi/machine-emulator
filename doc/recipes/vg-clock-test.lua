@@ -39,7 +39,7 @@ for delayed_index = 1, 2 do
             local function offer(self)
                 local round = #self.requested_at + 1
                 assert(round <= 4, "requested another hash after elimination")
-                assert(round == 1 or self.disputes == 1, "midpoint requested before dispute started")
+                assert(round == 1 or self.disputes == 1, "tentative position requested before dispute started")
                 self.requested_at[round] = self.block
                 self.allowances[round] = round == 1 and dapp_contract.max_allowance or results.players[sender].allowance
                 local delay = index == delayed_index and ({ 2, 2, 0, 2 })[round] or 0
@@ -85,7 +85,7 @@ for delayed_index = 1, 2 do
 end
 
 -- Repeated claims and labels still belong to separate connections. One
--- proponent's accepted midpoint cannot save another who fails to defend it.
+-- proponent's accepted tentative hash cannot save another who fails to defend it.
 do
     local dapp_contract = vg.make_dapp_contract(hash, {})
     local results
@@ -146,7 +146,7 @@ for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
     assert(not next(results.players))
 end
 
--- Both players receive every midpoint request, including the last midpoint of
+-- Both players receive every bisection request, including the last tentative position of
 -- each coordinate. Both survivors must then offer their transition proofs.
 -- Proof-time failures also exercise the last transition and alternating halves.
 for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
@@ -176,7 +176,7 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                         or "uarch_cycle"
                     local remaining = (round <= 16 and 16 or round <= 64 and 64 or 84) - round + 1
                     local lo = (target[coordinate] >> remaining) << remaining
-                    local mid = lo + (1 << (remaining - 1))
+                    local tentative_offset = lo + (1 << (remaining - 1))
                     local expected = {
                         epoch_input_offset = round <= 16 and lo or target.epoch_input_offset,
                         input_mcycle_offset = round <= 16 and 0 or round <= 64 and lo or target.input_mcycle_offset,
@@ -184,12 +184,15 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                     }
                     for field, offset in pairs(expected) do
                         assert(agreed_position[field] == offset, "wrong agreed position")
-                        assert(tentative_position[field] == (field == coordinate and mid or offset), "wrong midpoint")
+                        assert(
+                            tentative_position[field] == (field == coordinate and tentative_offset or offset),
+                            "wrong tentative position"
+                        )
                     end
                     if round == failed_round and (failed_player == 0 or failed_player == index) then
                         return vgu.schedule_response(self, math.maxinteger, empty_response)
                     end
-                    return target[coordinate] >= mid and hash or claims[index]
+                    return target[coordinate] >= tentative_offset and hash or claims[index]
                 end
                 function client.event_handler:prove_state_transition(
                     epoch_input_offset,
@@ -220,7 +223,7 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
             vg.new_referee(dapp_contract):run(server)
         end)
         local last = math.min(failed_round, 84)
-        assert(rounds[1] == last and rounds[2] == last, "requested another midpoint after settlement")
+        assert(rounds[1] == last and rounds[2] == last, "requested another tentative position after settlement")
         assert(proofs == (failed_round > 84 and 2 or 0))
         if failed_player == 0 then
             assert(not results.winner and not results.final_hash)

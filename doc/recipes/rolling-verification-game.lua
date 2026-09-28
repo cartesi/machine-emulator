@@ -113,20 +113,23 @@ local function one_uarch_cycle_remains(bisection)
         and bisection.log2_uarch_cycle_count == 0
 end
 
--- Advance halfway through the first coordinate whose count exceeds one.
--- docs:begin midpoint
-local function midpoint(bisection)
+-- Halve the first non-unit count and return the tentative position halfway through the range.
+-- docs:begin narrow_bisection
+local function narrow_bisection(bisection)
     local position = shallow_copy(bisection.agreed_position)
     if bisection.log2_input_count > 0 then
-        position.epoch_input_offset = position.epoch_input_offset + (1 << (bisection.log2_input_count - 1))
+        bisection.log2_input_count = bisection.log2_input_count - 1
+        position.epoch_input_offset = position.epoch_input_offset + (1 << bisection.log2_input_count)
     elseif bisection.log2_mcycle_count > 0 then
-        position.input_mcycle_offset = position.input_mcycle_offset + (1 << (bisection.log2_mcycle_count - 1))
+        bisection.log2_mcycle_count = bisection.log2_mcycle_count - 1
+        position.input_mcycle_offset = position.input_mcycle_offset + (1 << bisection.log2_mcycle_count)
     elseif bisection.log2_uarch_cycle_count > 0 then
-        position.uarch_cycle = position.uarch_cycle + (1 << (bisection.log2_uarch_cycle_count - 1))
+        bisection.log2_uarch_cycle_count = bisection.log2_uarch_cycle_count - 1
+        position.uarch_cycle = position.uarch_cycle + (1 << bisection.log2_uarch_cycle_count)
     end
     return position
 end
--- docs:end midpoint
+-- docs:end narrow_bisection
 
 local function precedes(a, b)
     if a.epoch_input_offset ~= b.epoch_input_offset then
@@ -391,7 +394,7 @@ end
 -- docs:begin reveal_bisection
 function event_handler:reveal_bisection(agreed_position, tentative_position)
     if precedes(self.agreed_position, agreed_position) then
-        -- The previous midpoint is now the agreed predecessor.
+        -- The previous tentative position is now the agreed predecessor.
         self.agreed_machine:close()
         self.agreed_machine, self.tentative_machine = self.tentative_machine, nil
     else
@@ -569,7 +572,7 @@ local function validate_claim_response(response)
 end
 
 local function validate_bisection_response(response)
-    assert(accept_hash(response), "invalid midpoint hash")
+    assert(accept_hash(response), "invalid tentative hash")
     return response
 end
 
@@ -608,7 +611,7 @@ local function hashes_disagree(hashes)
     return false
 end
 
--- Each midpoint advances a fork of the agreed pair.
+-- Each tentative position advances a fork of the agreed pair.
 local function request_bisections(tournament, agreed_position, tentative_position)
     local started_at = current_time()
     local deadline = fold(tournament.players, started_at, function(latest, player)
@@ -620,11 +623,11 @@ local function request_bisections(tournament, agreed_position, tentative_positio
         { agreed_position, tentative_position },
         function(response, sender, received_at)
             local player = tournament.players[sender]
-            assert(received_at < started_at + player.allowance, "late midpoint hash")
+            assert(received_at < started_at + player.allowance, "late tentative hash")
             local hash = validate_bisection_response(response)
             local elapsed = received_at - started_at
             player.allowance = player.allowance - math.max(elapsed - tournament.dapp_contract.response_budget, 0)
-            player.midpoint_hash = hash
+            player.tentative_hash = hash
             return player
         end
     )
@@ -635,27 +638,20 @@ end
 -- docs:begin bisect
 local function bisect(tournament, bisection)
     while not one_uarch_cycle_remains(bisection) do
-        local tentative_position = midpoint(bisection)
+        local tentative_position = narrow_bisection(bisection)
         story.report_bisection(bisection.agreed_position, tentative_position)
         tournament.players = request_bisections(tournament, bisection.agreed_position, tentative_position)
         if at_most_one_claim_remains(tournament.players) then
             break
         end
         local hashes = map(tournament.players, function(player)
-            return player.midpoint_hash
+            return player.tentative_hash
         end)
         if hashes_disagree(hashes) then
             bisection.hashes_after = hashes
         else
             bisection.agreed_position = tentative_position
             bisection.last_agreed_hash = any_of(hashes)
-        end
-        if bisection.log2_input_count > 0 then
-            bisection.log2_input_count = bisection.log2_input_count - 1
-        elseif bisection.log2_mcycle_count > 0 then
-            bisection.log2_mcycle_count = bisection.log2_mcycle_count - 1
-        else
-            bisection.log2_uarch_cycle_count = bisection.log2_uarch_cycle_count - 1
         end
         story.report_bisection_progress(bisection)
     end

@@ -1,7 +1,7 @@
 -- A counterfactual at the reply-delivery boundary. The outsider joins after
 -- admission closes. Inject replies in both runs to isolate move ownership.
 -- Only the second run attributes the outsider's moves to player 2 and suppresses
--- player 2's own midpoint replies. Both runs preserve the original claims, the
+-- player 2's own tentative hashes. Both runs preserve the original claims, the
 -- referee, and all transition proof checks.
 local cartesi = require("cartesi")
 local vg = require("rolling-verification-game")
@@ -64,7 +64,7 @@ local function run(initial_hash, paths, delegate)
             local future = request_all(self, connections, event, arguments, accept)
             if event == vgu.EVENTS.reveal_bisection and future.pending[owner] then
                 pending = { future = future, control = self.controls[#self.controls] }
-                -- The outsider answers the honest player's midpoint requests
+                -- The outsider answers the honest player's bisection requests
                 -- using the forger's history.
                 local response = fabulist.event_handler[event.name](fabulist, table.unpack(arguments))
                 inject(cartesi.fromjson(cartesi.tojson(response, -1, event.response_schema, vgu.protocol.schemas)))
@@ -104,7 +104,7 @@ return function(initial_hash, paths)
             "Honest original claim: %s\nDishonest original claim: %s\n"
                 .. "Ownership enforced: outsider replies rejected, honest claim wins.\n"
                 .. "Broken assumption: an outsider may defend player 2's claim.\n"
-                .. "The fabulist submits matching midpoint hashes on behalf of the honest player.\n"
+                .. "The fabulist submits matching tentative hashes on behalf of the honest player.\n"
                 .. "The forger proves a transition within that agreed history; its dishonest original claim wins.\n"
                 .. "Both runs retain the same original claims and transition verifier.\n",
             cartesi.tohex(protected_claims[2]),

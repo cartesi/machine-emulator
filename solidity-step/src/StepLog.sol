@@ -265,7 +265,7 @@ library StepLog {
             }
         }
         TreeWalkCursors memory c;
-        bytes32 root = computeSubtreeHash(
+        bytes32 root = computeSubtreeHashAsm(
             ctx,
             c,
             0, // start page index
@@ -294,7 +294,7 @@ library StepLog {
         TreeWalkCursors memory c,
         uint64 pageIndex,
         uint8 log2PageCount
-    ) private pure returns (bytes32) {
+    ) internal pure returns (bytes32) {
         uint256 subtreeStartAddr = uint256(pageIndex) << EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
         uint8 subtreeLog2Size = log2PageCount + EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
         uint64 subtreeEndPageIndex = pageIndex + (uint64(1) << log2PageCount);
@@ -337,6 +337,98 @@ library StepLog {
         }
         // Leaf: must be a page (nodes have log2Size > HASH_TREE_LOG2_PAGE_SIZE).
         return ctx.pageHashes[c.nextPage++];
+    }
+
+    /// Assembly twin of computeSubtreeHash, over the same validated, disjoint entries.
+    /// The root walk spans page indices [0, 2^52); recursion only halves that range.
+    /// Array reads are guarded by their cursors. At a leaf, pageIn implies a valid
+    /// page hash because decode allocates pageIndices and pageHashes with equal length.
+    function computeSubtreeHashAsm(
+        Context memory ctx,
+        TreeWalkCursors memory c,
+        uint64 pageIndex,
+        uint8 log2PageCount
+    ) internal pure returns (bytes32 result) {
+        // Pin the page shift and maximum depth used below; both assertions fold away.
+        assert(EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE == 12);
+        assert(EmulatorConstants.HASH_TREE_LOG2_ROOT_SIZE == 64);
+        uint64[] memory pageIndices = ctx.pageIndices;
+        NodeEntry[] memory nodes = ctx.nodes;
+        bytes32[] memory siblings = ctx.siblings;
+        bytes32[] memory pageHashes = ctx.pageHashes;
+        // Allocated walk state: three cursors, then pageIndices, nodes, siblings,
+        // and pageHashes pointers, at offsets 0x00 through 0xc0. No Context offsets.
+        uint256[7] memory w;
+        assembly ("memory-safe") {
+            function walk(w_, pageIndex_, log2PageCount_) -> h {
+                let endPageIndex := add(pageIndex_, shl(log2PageCount_, 1))
+                let pageIn := 0
+                {
+                    let pages := mload(add(w_, 0x60))
+                    let np := mload(w_)
+                    if lt(np, mload(pages)) {
+                        pageIn := lt(mload(add(pages, add(0x20, shl(5, np)))), endPageIndex)
+                    }
+                }
+                let nodeIn := 0
+                let nptr := 0
+                {
+                    let nodes_ := mload(add(w_, 0x80))
+                    let nn := mload(add(w_, 0x20))
+                    if lt(nn, mload(nodes_)) {
+                        // A memory array of structs contains pointers to the structs.
+                        nptr := mload(add(nodes_, add(0x20, shl(5, nn))))
+                        nodeIn := lt(shr(12, mload(nptr)), endPageIndex)
+                    }
+                }
+                if iszero(or(pageIn, nodeIn)) {
+                    let sibs := mload(add(w_, 0xa0))
+                    let ns := mload(add(w_, 0x40))
+                    if iszero(lt(ns, mload(sibs))) {
+                        mstore(0x00, shl(224, 0x245a1128)) // TooFewSiblings()
+                        revert(0x00, 0x04)
+                    }
+                    h := mload(add(sibs, add(0x20, shl(5, ns))))
+                    mstore(add(w_, 0x40), add(ns, 1))
+                    leave
+                }
+                if nodeIn {
+                    // Current NodeEntry: addr, log2Size, one current hash.
+                    if and(
+                        eq(mload(nptr), shl(12, pageIndex_)),
+                        eq(mload(add(nptr, 0x20)), add(log2PageCount_, 12))
+                    ) {
+                        mstore(add(w_, 0x20), add(mload(add(w_, 0x20)), 1))
+                        h := mload(add(nptr, 0x40))
+                        leave
+                    }
+                }
+                if log2PageCount_ {
+                    let halfLog2 := sub(log2PageCount_, 1)
+                    let left := walk(w_, pageIndex_, halfLog2)
+                    let right := walk(w_, add(pageIndex_, shl(halfLog2, 1)), halfLog2)
+                    // Only the EVM scratch area is used for the parent hash.
+                    mstore(0x00, left)
+                    mstore(0x20, right)
+                    h := keccak256(0x00, 0x40)
+                    leave
+                }
+                let np := mload(w_)
+                h := mload(add(mload(add(w_, 0xc0)), add(0x20, shl(5, np))))
+                mstore(w_, add(np, 1))
+            }
+            mstore(w, mload(c))
+            mstore(add(w, 0x20), mload(add(c, 0x20)))
+            mstore(add(w, 0x40), mload(add(c, 0x40)))
+            mstore(add(w, 0x60), pageIndices)
+            mstore(add(w, 0x80), nodes)
+            mstore(add(w, 0xa0), siblings)
+            mstore(add(w, 0xc0), pageHashes)
+            result := walk(w, and(pageIndex, 0xffffffffffffffff), and(log2PageCount, 0xff))
+            mstore(c, mload(w))
+            mstore(add(c, 0x20), mload(add(w, 0x20)))
+            mstore(add(c, 0x40), mload(add(w, 0x40)))
+        }
     }
 
     /// Returns a raw memory pointer to byte `paddr` inside ctx.pageData. Callers consume the pointer

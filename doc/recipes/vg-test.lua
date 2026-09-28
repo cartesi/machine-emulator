@@ -280,8 +280,8 @@ if arg[1] ~= "execution" then
         end
     end
 
-    -- The early corruption leaves the honest player and the later forger with
-    -- different final claims. Both must replay from the epoch start to settle them.
+    -- One dispute spans both proof rounds. The early corruption leaves the honest
+    -- player and later forger with different claims; proof completion resets their replay.
     do
         local tamperer <close> = roles.new_tamperer(initial_hash, 0, 100)
         local honest <close> = vg.new_player(initial_hash)
@@ -289,9 +289,15 @@ if arg[1] ~= "execution" then
         local players = { tamperer, honest, forger }
         local handlers = setmetatable({}, { __index = vg.event_handler })
         function handlers:dispute_started()
-            local agreed_machine = self.agreed_machine
-            self.disputes = self.disputes + 1
+            self.dispute_starts = self.dispute_starts + 1
+            assert(self.dispute_starts == 1, "dispute restarted between proof rounds")
             vg.event_handler.dispute_started(self)
+        end
+        function handlers:prove_state_transition(epoch_input_offset, input_mcycle_offset, uarch_cycle)
+            local agreed_machine = self.agreed_machine
+            local proof =
+                vg.event_handler.prove_state_transition(self, epoch_input_offset, input_mcycle_offset, uarch_cycle)
+            self.proofs = self.proofs + 1
             assert(not agreed_machine.machine)
             assert(self.agreed_machine.machine:get_root_hash() == initial_hash)
             assert(
@@ -299,9 +305,10 @@ if arg[1] ~= "execution" then
                     and self.agreed_position.input_mcycle_offset == 0
                     and self.agreed_position.uarch_cycle == 0
             )
+            return proof
         end
         for _, player in ipairs(players) do
-            player.disputes, player.event_handler = 0, handlers
+            player.dispute_starts, player.proofs, player.event_handler = 0, 0, handlers
         end
         local settled, server = run_game(players)
         assert(
@@ -309,11 +316,12 @@ if arg[1] ~= "execution" then
                 and settled.final_hash == honest.final_hash
                 and settled.output
         )
-        assert(tamperer.disputes == 1 and honest.disputes == 2 and forger.disputes == 2)
+        assert(tamperer.dispute_starts == 1 and honest.dispute_starts == 1 and forger.dispute_starts == 1)
+        assert(tamperer.proofs == 1 and honest.proofs == 2 and forger.proofs == 2)
         assert(#vg.addresses(settled.players) == 1 and settled.players[next(settled.players)] == settled.winner)
         assert(honest.initial.machine:get_root_hash() == initial_hash)
         assert(honest.agreed_machine.machine and honest.agreed_position)
-        print("vg-test: repeated disputes eliminate distinct dishonest claims ok")
+        print("vg-test: repeated proof rounds eliminate distinct dishonest claims ok")
     end
 
     require("vg-fabulist-test")(initial_hash, paths)
@@ -559,14 +567,23 @@ for uarch_cycle = 0, 1 do
         after_uarch = uarch.machine:get_root_hash()
     end
     local agreed, tentative = player.agreed_machine, player.tentative_machine
-    local unused = uarch_cycle == 0 and tentative or agreed
-    local unused_hash = unused.machine:get_root_hash()
+    local tentative_hash = tentative.machine:get_root_hash()
     local log = vg.event_handler.prove_state_transition(player, 0, 0, uarch_cycle)
     assert(
         vg.validate_state_transition_response({ inputs = player.inputs }, 0, 0, uarch_cycle, before, log, after_uarch)
     )
-    assert(player.agreed_machine == agreed and player.tentative_machine == tentative)
-    assert(unused.machine:get_root_hash() == unused_hash)
+    assert(not agreed.machine and not agreed.backup)
+    assert(player.agreed_machine.machine:get_root_hash() == initial_hash)
+    assert(
+        player.agreed_position.epoch_input_offset == 0
+            and player.agreed_position.input_mcycle_offset == 0
+            and player.agreed_position.uarch_cycle == 0
+    )
+    assert(player.tentative_machine == tentative)
+    if uarch_cycle == 0 then
+        assert(tentative.machine:get_root_hash() == tentative_hash)
+    end
+    assert(player.latest.machine:get_root_hash() == after_input)
 end
 
 -- Empty epochs finish after establishing the root, without inventing an output.

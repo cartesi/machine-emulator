@@ -331,6 +331,12 @@ function player_methods:read_input(_index, path) -- luacheck: ignore 212 self
     return util.read_file(path)
 end
 
+function player_methods:reset_bisection()
+    self.agreed_machine:close()
+    self.agreed_machine = self.initial:fork()
+    self.agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 }
+end
+
 local function get_machine_word(machine, address)
     address = address & ~(WORD_SIZE - 1)
     return machine:read_memory(address, WORD_SIZE), machine:get_proof(address, cartesi.HASH_TREE_LOG2_WORD_SIZE)
@@ -372,9 +378,7 @@ function event_handler:commit_claim()
 end
 
 function event_handler:dispute_started()
-    self.agreed_machine:close()
-    self.agreed_machine = self.initial:fork()
-    self.agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 }
+    self:reset_bisection()
 end
 
 -- docs:begin reveal_bisection
@@ -423,16 +427,19 @@ function event_handler:prove_state_transition(epoch_input_offset, input_mcycle_o
     local machine = self.agreed_position.uarch_cycle < uarch_cycle and self.tentative_machine.machine
         or self.agreed_machine.machine
     local data = self.inputs[epoch_input_offset + 1]
+    local proof
     if input_mcycle_offset == 0 and uarch_cycle == 0 and data then
         local before = machine:get_root_hash()
         local send = machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, before)
-        return { send_cmio_log = send, step_log = machine:log_step_uarch() }
+        proof = { send_cmio_log = send, step_log = machine:log_step_uarch() }
     elseif uarch_cycle == cartesi.UARCH_CYCLE_MAX then
         local step = machine:log_step_uarch()
-        return { step_log = step, reset_uarch_log = machine:log_reset_uarch() }
+        proof = { step_log = step, reset_uarch_log = machine:log_reset_uarch() }
     else
-        return { step_log = machine:log_step_uarch() }
+        proof = { step_log = machine:log_step_uarch() }
     end
+    self:reset_bisection()
+    return proof
 end
 -- docs:end prove_state_transition
 
@@ -689,12 +696,12 @@ end
 
 -- docs:begin settle_dispute
 local function settle_dispute(tournament)
+    local _ <close> = request_all(addresses(tournament.players), EVENTS.dispute_started, {})
     while not no_claim_remains(tournament.players) do
         local winner = single_claim_remains(tournament.players)
         if winner then
             return winner
         end
-        local _ <close> = request_all(addresses(tournament.players), EVENTS.dispute_started, {})
         local bisection = {
             last_agreed_hash = tournament.dapp_contract.initial_state_hash,
             hashes_after = map(tournament.players, function(player)

@@ -4771,8 +4771,8 @@ The transition out of `cartesi.UARCH_CYCLE_MAX` combines the final uarch step wi
 The inclusion of an input advances no cycle counter either, and shares a transition the same way.
 The transition out of input *i-1* includes input *i* and also performs the first uarch step of the instruction that resumes the machine.
 
-Before each dispute, the referee sends `dispute_started` to the surviving players, whose handlers reset their agreed machine and position to the epoch's initial state.
-The referee runs three bisections in turn, then verifies the transition out of the position they converged on:
+The referee sends `dispute_started` once, and each player initializes its agreed machine and position to the epoch's initial state.
+The referee runs three bisections in turn, then verifies the transition out of the position they converged on. After constructing its complete transition proof, each player resets its agreed machine and position for another bisection. The referee repeats while different final claims remain:
 ```{.lua key=rvg_settle include=rolling-verification-game.lua/settle_dispute title="rolling-verification-game.lua (excerpt)"}
 ```
 
@@ -4983,13 +4983,13 @@ The honest player's proof establishes its claimed transition, and the settled ha
 Output offers remain permissionless after settlement; the referee verifies each against the settled hash and accepts each output index once.
 
 The other executable roles in `vg-dishonest.lua` tamper with machine memory or stop defending a claim.
-The `test-vg` and `test-vg-execution` Makefile targets cover these roles, rejected-input rollback, extra-input and composite-machine attacks, and multiple successive disputes.
+The `test-vg` and `test-vg-execution` Makefile targets cover these roles, rejected-input rollback, extra-input and composite-machine attacks, and multiple proof rounds within one dispute.
 The next section introduces a tournament that settles large numbers of claims efficiently and lets anyone defend a claim.
 
 ## Permissionless refereed tournament
 
 On a public blockchain, anyone can post a claim, so a dispute may involve many parties, most of them dishonest or simply absent.
-Settling successive disputes lets adversaries buy delay in proportion to their number.
+Settling successive proof rounds lets adversaries buy delay in proportion to their number.
 The [Permissionless Refereed Tournaments](https://arxiv.org/abs/2212.12439) algorithm resolves a dispute among N parties in time logarithmic in N, and [Dave](https://doi.org/10.1145/3734698) improves further on it.
 The `prt.lua` script implements a model of the [PRT contracts](https://github.com/cartesi/dave/tree/main/prt/contracts) Dave deploys, and we use it to settle the same epoch the rolling verification game settled.
 

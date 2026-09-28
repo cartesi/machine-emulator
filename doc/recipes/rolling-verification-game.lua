@@ -757,28 +757,24 @@ end
 -- docs:end wait_for_outputs
 
 local function request_claims(dapp_contract, subscribers)
-    local players = {}
+    local indices = {}
     for index, sender in ipairs(subscribers) do
-        players[sender] = { index = index, label = sender.label, allowance = dapp_contract.max_allowance }
+        indices[sender] = index
     end
     local started_at = current_time()
-    local deadline = fold(players, started_at, function(latest, player)
-        return math.max(latest, started_at + player.allowance)
+    local max_allowance = dapp_contract.max_allowance
+    local deadline = started_at + max_allowance
+    local survivors <close> = request_all(subscribers, EVENTS.commit_claim, {}, function(response, sender, received_at)
+        assert(received_at < deadline, "late final hash")
+        local hash = validate_claim_response(response)
+        local elapsed = received_at - started_at
+        return {
+            index = indices[sender],
+            label = sender.label,
+            allowance = max_allowance - math.max(elapsed - dapp_contract.response_budget, 0),
+            final_hash = hash,
+        }
     end)
-    local survivors <close> = request_all(
-        addresses(players),
-        EVENTS.commit_claim,
-        {},
-        function(response, sender, received_at)
-            local player = players[sender]
-            assert(received_at < started_at + player.allowance, "late final hash")
-            local hash = validate_claim_response(response)
-            local elapsed = received_at - started_at
-            player.allowance = player.allowance - math.max(elapsed - dapp_contract.response_budget, 0)
-            player.final_hash = hash
-            return player
-        end
-    )
     return {
         dapp_contract = dapp_contract,
         players = survivors:wait_at_most(deadline),

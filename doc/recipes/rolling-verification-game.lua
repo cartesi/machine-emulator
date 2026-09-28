@@ -107,17 +107,15 @@ local function receive_cmio_request(machine)
     return reason, data
 end
 
-local function midpoint(interval)
-    return interval.lo + ((interval.hi - interval.lo) >> 1)
-end
-
--- A position counts completed inputs, mcycles within the input, and uarch cycles
--- within the mcycle. Leaf k is reached at position k + 1; its predecessor is at k.
-local function position(interval, offset)
+-- Positions bound a half-open range of transitions and differ in one coordinate.
+local function midpoint(agreed_position, disputed_position)
     return {
-        epoch_input_offset = interval.level == "input" and offset or interval.epoch_input_offset,
-        input_mcycle_offset = interval.level == "mcycle" and offset or interval.input_mcycle_offset or 0,
-        uarch_cycle = interval.level == "uarch_cycle" and offset or 0,
+        epoch_input_offset = agreed_position.epoch_input_offset
+            + ((disputed_position.epoch_input_offset - agreed_position.epoch_input_offset) >> 1),
+        input_mcycle_offset = agreed_position.input_mcycle_offset
+            + ((disputed_position.input_mcycle_offset - agreed_position.input_mcycle_offset) >> 1),
+        uarch_cycle = agreed_position.uarch_cycle
+            + ((disputed_position.uarch_cycle - agreed_position.uarch_cycle) >> 1),
     }
 end
 
@@ -601,9 +599,8 @@ local function hashes_disagree(hashes)
     return false
 end
 
--- The interval contains resulting states, indexed from zero, with the agreed
--- predecessor outside it. Each midpoint advances a fork of the agreed pair.
-local function request_bisections(tournament, interval)
+-- Each midpoint advances a fork of the agreed pair.
+local function request_bisections(tournament, agreed_position, tentative_position)
     local started_at = current_time()
     local deadline = fold(tournament.players, started_at, function(latest, player)
         return math.max(latest, started_at + player.allowance)
@@ -611,7 +608,7 @@ local function request_bisections(tournament, interval)
     local survivors <close> = request_all(
         addresses(tournament.players),
         EVENTS.reveal_bisection,
-        { position(interval, interval.lo), position(interval, midpoint(interval) + 1) },
+        { agreed_position, tentative_position },
         function(response, sender, received_at)
             local player = tournament.players[sender]
             assert(received_at < started_at + player.allowance, "late midpoint hash")
@@ -625,46 +622,40 @@ local function request_bisections(tournament, interval)
     return survivors:wait_at_most(deadline)
 end
 
--- Bisect the inclusive range of resulting-state indices. The agreed predecessor
--- is not one of its leaves. Any disagreement selects the earlier half.
+-- Narrow the two boundaries to one transition. Any disagreement selects the earlier half.
 -- docs:begin bisect_level
-local function bisect_level(tournament, level, count, bisection)
-    local interval = {
-        level = level,
-        lo = 0,
-        hi = count - 1,
-        epoch_input_offset = bisection.epoch_input_offset,
-        input_mcycle_offset = bisection.input_mcycle_offset,
-    }
-    story.report_bisection(interval)
-    while interval.lo < interval.hi do
-        tournament.players = request_bisections(tournament, interval)
+local function bisect_level(tournament, bisection)
+    story.report_bisection(bisection.agreed_position, bisection.disputed_position)
+    local tentative_position = midpoint(bisection.agreed_position, bisection.disputed_position)
+    while precedes(bisection.agreed_position, tentative_position) do
+        tournament.players = request_bisections(tournament, bisection.agreed_position, tentative_position)
         if no_claim_remains(tournament.players) then
-            return nil
+            return false
         end
         local winner = single_claim_remains(tournament.players)
         if winner then
-            return nil, winner
+            return false, winner
         end
         local hashes = map(tournament.players, function(player)
             return player.midpoint_hash
         end)
-        local mid = midpoint(interval)
         if hashes_disagree(hashes) then
-            interval.hi = mid
+            bisection.disputed_position = tentative_position
             bisection.hashes_after = hashes
         else
-            interval.lo = mid + 1
+            bisection.agreed_position = tentative_position
             bisection.last_agreed_hash = any_of(hashes)
         end
-        story.report_bisection_progress(interval)
+        story.report_bisection_progress(bisection.agreed_position, bisection.disputed_position)
+        tentative_position = midpoint(bisection.agreed_position, bisection.disputed_position)
     end
-    return interval.lo
+    return true
 end
 -- docs:end bisect_level
 
 -- Every surviving player must prove its own committed endpoint.
-local function request_state_transitions(tournament, epoch_input_offset, input_mcycle_offset, uarch_cycle, bisection)
+local function request_state_transitions(tournament, bisection)
+    local agreed_position = bisection.agreed_position
     local started_at = current_time()
     local deadline = fold(tournament.players, started_at, function(latest, player)
         return math.max(latest, started_at + player.allowance)
@@ -672,15 +663,15 @@ local function request_state_transitions(tournament, epoch_input_offset, input_m
     local survivors <close> = request_all(
         addresses(tournament.players),
         EVENTS.prove_state_transition,
-        { epoch_input_offset, input_mcycle_offset, uarch_cycle },
+        { agreed_position.epoch_input_offset, agreed_position.input_mcycle_offset, agreed_position.uarch_cycle },
         function(response, sender, received_at)
             local player = tournament.players[sender]
             assert(received_at < started_at + player.allowance, "late transition proof")
             validate_state_transition_response(
                 tournament.dapp_contract,
-                epoch_input_offset,
-                input_mcycle_offset,
-                uarch_cycle,
+                agreed_position.epoch_input_offset,
+                agreed_position.input_mcycle_offset,
+                agreed_position.uarch_cycle,
                 bisection.last_agreed_hash,
                 response,
                 bisection.hashes_after[sender]
@@ -703,29 +694,39 @@ local function settle_dispute(tournament)
             return winner
         end
         local bisection = {
+            agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
+            disputed_position = { epoch_input_offset = INPUTS_PER_EPOCH, input_mcycle_offset = 0, uarch_cycle = 0 },
             last_agreed_hash = tournament.dapp_contract.initial_state_hash,
             hashes_after = map(tournament.players, function(player)
                 return player.final_hash
             end),
         }
-        local epoch_input_offset, winner_input = bisect_level(tournament, "input", INPUTS_PER_EPOCH, bisection)
-        if not epoch_input_offset then
-            return winner_input
+        local complete
+        complete, winner = bisect_level(tournament, bisection)
+        if not complete then
+            return winner
         end
-        bisection.epoch_input_offset = epoch_input_offset
-        local input_mcycle_offset, winner_mcycle = bisect_level(tournament, "mcycle", MCYCLES_PER_INPUT, bisection)
-        if not input_mcycle_offset then
-            return winner_mcycle
+        -- The next input boundary is also the end of this input's mcycle range.
+        bisection.disputed_position = {
+            epoch_input_offset = bisection.agreed_position.epoch_input_offset,
+            input_mcycle_offset = MCYCLES_PER_INPUT,
+            uarch_cycle = 0,
+        }
+        complete, winner = bisect_level(tournament, bisection)
+        if not complete then
+            return winner
         end
-        bisection.input_mcycle_offset = input_mcycle_offset
         -- UARCH_CYCLE_MAX names the last cycle. Its outgoing transition includes reset.
-        local uarch_cycle, winner_uarch_cycle =
-            bisect_level(tournament, "uarch_cycle", UARCH_CYCLES_PER_MCYCLE, bisection)
-        if not uarch_cycle then
-            return winner_uarch_cycle
+        bisection.disputed_position = {
+            epoch_input_offset = bisection.agreed_position.epoch_input_offset,
+            input_mcycle_offset = bisection.agreed_position.input_mcycle_offset,
+            uarch_cycle = UARCH_CYCLES_PER_MCYCLE,
+        }
+        complete, winner = bisect_level(tournament, bisection)
+        if not complete then
+            return winner
         end
-        tournament.players =
-            request_state_transitions(tournament, epoch_input_offset, input_mcycle_offset, uarch_cycle, bisection)
+        tournament.players = request_state_transitions(tournament, bisection)
     end
 end
 -- docs:end settle_dispute

@@ -148,9 +148,15 @@ end
 
 -- Both players receive every midpoint request, including the last midpoint of
 -- each coordinate. Both survivors must then offer their transition proofs.
+-- Proof-time failures also exercise the last transition and alternating halves.
 for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
     for failed_player = 0, (failed_round <= 84 and 2 or 0) do
         local rounds, proofs = { 0, 0 }, 0
+        local target = {
+            epoch_input_offset = failed_round == 85 and (1 << 16) - 1 or failed_round == 86 and 0xa55a or 0,
+            input_mcycle_offset = failed_round == 85 and (1 << 48) - 1 or failed_round == 86 and 0xa55aa55aa55a or 0,
+            uarch_cycle = failed_round == 85 and (1 << 20) - 1 or failed_round == 86 and 0xa55aa or 0,
+        }
         local claims = { hash, cartesi.keccak256("other claim") }
         local dapp_contract = vg.make_dapp_contract(hash, {})
         local results
@@ -165,21 +171,25 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                     rounds[index] = rounds[index] + 1
                     local round = rounds[index]
                     assert(round <= 84, "bisection continued past the leaf")
-                    local level = round <= 16 and "input" or round <= 64 and "mcycle" or "uarch_cycle"
+                    local coordinate = round <= 16 and "epoch_input_offset"
+                        or round <= 64 and "input_mcycle_offset"
+                        or "uarch_cycle"
                     local remaining = (round <= 16 and 16 or round <= 64 and 64 or 84) - round + 1
-                    assert(
-                        agreed_position.epoch_input_offset == 0
-                            and agreed_position.input_mcycle_offset == 0
-                            and agreed_position.uarch_cycle == 0
-                    )
-                    local offset = 1 << (remaining - 1)
-                    assert(tentative_position.epoch_input_offset == (level == "input" and offset or 0))
-                    assert(tentative_position.input_mcycle_offset == (level == "mcycle" and offset or 0))
-                    assert(tentative_position.uarch_cycle == (level == "uarch_cycle" and offset or 0))
+                    local lo = (target[coordinate] >> remaining) << remaining
+                    local mid = lo + (1 << (remaining - 1))
+                    local expected = {
+                        epoch_input_offset = round <= 16 and lo or target.epoch_input_offset,
+                        input_mcycle_offset = round <= 16 and 0 or round <= 64 and lo or target.input_mcycle_offset,
+                        uarch_cycle = round <= 64 and 0 or lo,
+                    }
+                    for field, offset in pairs(expected) do
+                        assert(agreed_position[field] == offset, "wrong agreed position")
+                        assert(tentative_position[field] == (field == coordinate and mid or offset), "wrong midpoint")
+                    end
                     if round == failed_round and (failed_player == 0 or failed_player == index) then
                         return vgu.schedule_response(self, math.maxinteger, empty_response)
                     end
-                    return claims[index]
+                    return target[coordinate] >= mid and hash or claims[index]
                 end
                 function client.event_handler:prove_state_transition(
                     epoch_input_offset,
@@ -189,7 +199,9 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                     proofs = proofs + 1
                     assert(rounds[1] == 84 and rounds[2] == 84)
                     assert(
-                        epoch_input_offset == 0 and input_mcycle_offset == 0 and uarch_cycle == 0,
+                        epoch_input_offset == target.epoch_input_offset
+                            and input_mcycle_offset == target.input_mcycle_offset
+                            and uarch_cycle == target.uarch_cycle,
                         "wrong transition coordinates"
                     )
                     if failed_round == 85 then

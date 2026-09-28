@@ -57,12 +57,23 @@ function story.report_claims(players)
     end
 end
 
-function story.report_bisection(interval)
-    phase("bisect_" .. interval.level)
+local function bisection_bounds(agreed_position, disputed_position)
+    if agreed_position.epoch_input_offset ~= disputed_position.epoch_input_offset then
+        return "input", agreed_position.epoch_input_offset, disputed_position.epoch_input_offset
+    elseif agreed_position.input_mcycle_offset ~= disputed_position.input_mcycle_offset then
+        return "mcycle", agreed_position.input_mcycle_offset, disputed_position.input_mcycle_offset
+    end
+    return "uarch_cycle", agreed_position.uarch_cycle, disputed_position.uarch_cycle
 end
 
-function story.report_bisection_progress(interval)
-    eventf("%s interval of disagreement is [0x%x, 0x%x].", interval.level, interval.lo, interval.hi)
+function story.report_bisection(agreed_position, disputed_position)
+    local level = bisection_bounds(agreed_position, disputed_position)
+    phase("bisect_" .. level)
+end
+
+function story.report_bisection_progress(agreed_position, disputed_position)
+    local level, lo, hi = bisection_bounds(agreed_position, disputed_position)
+    eventf("%s interval of disagreement is [0x%x, 0x%x).", level, lo, hi)
 end
 
 function story.report_state_transition(player)

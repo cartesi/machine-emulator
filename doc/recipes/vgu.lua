@@ -29,11 +29,16 @@ end
 -- phase() the narration goes to stdout. Once a phase file is open eventf() echoes to stdout as
 -- well, so a live run still shows the story even though its lines are being filed away.
 local narration = io.stdout
+local narration_phase
 local function phase(filename)
+    if narration_phase == filename then
+        return
+    end
     if narration ~= io.stdout then
         narration:close()
     end
     narration = assert(io.open(filename, "w"))
+    narration_phase = filename
     narration:setvbuf("line")
 end
 
@@ -57,23 +62,26 @@ function story.report_claims(players)
     end
 end
 
-local function bisection_bounds(agreed_position, disputed_position)
-    if agreed_position.epoch_input_offset ~= disputed_position.epoch_input_offset then
-        return "input", agreed_position.epoch_input_offset, disputed_position.epoch_input_offset
-    elseif agreed_position.input_mcycle_offset ~= disputed_position.input_mcycle_offset then
-        return "mcycle", agreed_position.input_mcycle_offset, disputed_position.input_mcycle_offset
+function story.report_bisection(agreed_position, tentative_position)
+    if agreed_position.epoch_input_offset ~= tentative_position.epoch_input_offset then
+        phase("bisect_input")
+    elseif agreed_position.input_mcycle_offset ~= tentative_position.input_mcycle_offset then
+        phase("bisect_mcycle")
+    else
+        phase("bisect_uarch_cycle")
     end
-    return "uarch_cycle", agreed_position.uarch_cycle, disputed_position.uarch_cycle
-end
-
-function story.report_bisection(agreed_position, disputed_position)
-    local level = bisection_bounds(agreed_position, disputed_position)
-    phase("bisect_" .. level)
 end
 
 function story.report_bisection_progress(agreed_position, disputed_position)
-    local level, lo, hi = bisection_bounds(agreed_position, disputed_position)
-    eventf("%s interval of disagreement is [0x%x, 0x%x).", level, lo, hi)
+    eventf(
+        "Positions bound the disagreement: [(0x%x, 0x%x, 0x%x), (0x%x, 0x%x, 0x%x)).",
+        agreed_position.epoch_input_offset,
+        agreed_position.input_mcycle_offset,
+        agreed_position.uarch_cycle,
+        disputed_position.epoch_input_offset,
+        disputed_position.input_mcycle_offset,
+        disputed_position.uarch_cycle
+    )
 end
 
 function story.report_state_transition(player)
@@ -145,6 +153,7 @@ local function close_narration()
         narration:close()
     end
     narration = io.stdout
+    narration_phase = nil
 end
 return {
     EVERYONE = EVERYONE,

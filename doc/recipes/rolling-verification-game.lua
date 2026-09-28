@@ -107,17 +107,35 @@ local function receive_cmio_request(machine)
     return reason, data
 end
 
--- Positions bound a half-open range of transitions and differ in one coordinate.
+-- Split the first coordinate with an interior boundary. When the upper boundary
+-- belongs to the next input or mcycle, the finer coordinate spans its full range.
+-- The epoch's padded endpoint repeats its final state, including the uarch reset.
+-- docs:begin midpoint
 local function midpoint(agreed_position, disputed_position)
-    return {
-        epoch_input_offset = agreed_position.epoch_input_offset
-            + ((disputed_position.epoch_input_offset - agreed_position.epoch_input_offset) >> 1),
-        input_mcycle_offset = agreed_position.input_mcycle_offset
-            + ((disputed_position.input_mcycle_offset - agreed_position.input_mcycle_offset) >> 1),
-        uarch_cycle = agreed_position.uarch_cycle
-            + ((disputed_position.uarch_cycle - agreed_position.uarch_cycle) >> 1),
-    }
+    local position = shallow_copy(agreed_position)
+    local input_hi = disputed_position.epoch_input_offset
+    if input_hi - position.epoch_input_offset > 1 then
+        position.epoch_input_offset = position.epoch_input_offset + ((input_hi - position.epoch_input_offset) >> 1)
+        return position
+    end
+    local mcycle_hi = agreed_position.epoch_input_offset < input_hi and MCYCLES_PER_INPUT
+        or disputed_position.input_mcycle_offset
+    if mcycle_hi - position.input_mcycle_offset > 1 then
+        position.input_mcycle_offset = position.input_mcycle_offset + ((mcycle_hi - position.input_mcycle_offset) >> 1)
+        return position
+    end
+    local uarch_hi = (
+        agreed_position.epoch_input_offset < input_hi
+        or agreed_position.input_mcycle_offset < disputed_position.input_mcycle_offset
+    )
+            and UARCH_CYCLES_PER_MCYCLE
+        or disputed_position.uarch_cycle
+    if uarch_hi - position.uarch_cycle > 1 then
+        position.uarch_cycle = position.uarch_cycle + ((uarch_hi - position.uarch_cycle) >> 1)
+        return position
+    end
 end
+-- docs:end midpoint
 
 local function precedes(a, b)
     if a.epoch_input_offset ~= b.epoch_input_offset then
@@ -623,11 +641,11 @@ local function request_bisections(tournament, agreed_position, tentative_positio
 end
 
 -- Narrow the two boundaries to one transition. Any disagreement selects the earlier half.
--- docs:begin bisect_level
-local function bisect_level(tournament, bisection)
-    story.report_bisection(bisection.agreed_position, bisection.disputed_position)
+-- docs:begin bisect
+local function bisect(tournament, bisection)
     local tentative_position = midpoint(bisection.agreed_position, bisection.disputed_position)
-    while precedes(bisection.agreed_position, tentative_position) do
+    while tentative_position do
+        story.report_bisection(bisection.agreed_position, tentative_position)
         tournament.players = request_bisections(tournament, bisection.agreed_position, tentative_position)
         if at_most_one_claim_remains(tournament.players) then
             break
@@ -646,7 +664,7 @@ local function bisect_level(tournament, bisection)
         tentative_position = midpoint(bisection.agreed_position, bisection.disputed_position)
     end
 end
--- docs:end bisect_level
+-- docs:end bisect
 
 -- Every surviving player must prove its own committed endpoint.
 local function request_state_transitions(tournament, bisection)
@@ -686,33 +704,17 @@ local function settle_dispute(tournament)
     while not at_most_one_claim_remains(tournament.players) do
         local bisection = {
             agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
-            disputed_position = { epoch_input_offset = INPUTS_PER_EPOCH, input_mcycle_offset = 0, uarch_cycle = 0 },
+            disputed_position = {
+                epoch_input_offset = INPUTS_PER_EPOCH,
+                input_mcycle_offset = MCYCLES_PER_INPUT,
+                uarch_cycle = UARCH_CYCLES_PER_MCYCLE,
+            },
             last_agreed_hash = tournament.dapp_contract.initial_state_hash,
             hashes_after = map(tournament.players, function(player)
                 return player.final_hash
             end),
         }
-        bisect_level(tournament, bisection)
-        if at_most_one_claim_remains(tournament.players) then
-            break
-        end
-        -- The next input boundary is also the end of this input's mcycle range.
-        bisection.disputed_position = {
-            epoch_input_offset = bisection.agreed_position.epoch_input_offset,
-            input_mcycle_offset = MCYCLES_PER_INPUT,
-            uarch_cycle = 0,
-        }
-        bisect_level(tournament, bisection)
-        if at_most_one_claim_remains(tournament.players) then
-            break
-        end
-        -- UARCH_CYCLE_MAX names the last cycle. Its outgoing transition includes reset.
-        bisection.disputed_position = {
-            epoch_input_offset = bisection.agreed_position.epoch_input_offset,
-            input_mcycle_offset = bisection.agreed_position.input_mcycle_offset,
-            uarch_cycle = UARCH_CYCLES_PER_MCYCLE,
-        }
-        bisect_level(tournament, bisection)
+        bisect(tournament, bisection)
         if at_most_one_claim_remains(tournament.players) then
             break
         end

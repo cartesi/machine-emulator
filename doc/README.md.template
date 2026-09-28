@@ -4759,25 +4759,29 @@ util.write_file(tostring(log2_uarch_leaves), "log2_uarch_leaves")
 
 ### Settling a dispute
 
-The epoch under dispute is settled in three bisections rather than two.
-The first ranges over the epoch's inputs and isolates the input whose processing the players disagree on.
-The second ranges over `mcycle` (counted as an offset from the value it had when the disputed input arrived) and isolates the disputed main processor instruction.
-The third ranges over `uarch_cycle` and isolates the disputed uarch step.
+The epoch under dispute is settled by bisecting three coordinate ranges in order.
+The first range covers the epoch's inputs and isolates the input whose processing the players disagree on.
+The second covers `mcycle` (counted as an offset from the value it had when the disputed input arrived) and isolates the disputed main processor instruction.
+The third covers `uarch_cycle` and isolates the disputed uarch step.
 The rolling verification game limits each main processor instruction to 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch cycles, each input to 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup> mcycles and each epoch to 2<sup>[]{replace=rollup_constants/log2_max_advance_states_per_epoch code=no}</sup> inputs.
 Every transition in the epoch is then identified by the input offset within the epoch, the mcycle offset within that input, and the uarch cycle within that instruction.
-Each bisection searches one of them.
+One bisection loop narrows these coordinates from most to least significant.
 
 The transition out of `cartesi.UARCH_CYCLE_MAX` combines the final uarch step with the reset that prepares the next main processor instruction.
 The inclusion of an input advances no cycle counter either, and shares a transition the same way.
 The transition out of input *i-1* includes input *i* and also performs the first uarch step of the instruction that resumes the machine.
 
 The referee sends `dispute_started` once, and each player initializes its agreed machine and position to the epoch's initial state.
-The referee runs three bisections in turn, then verifies the transition out of the position they converged on. After constructing its complete transition proof, each player resets its agreed machine and position for another bisection. The referee repeats while different final claims remain:
+The referee bisects the positions, then verifies the transition out of the agreed position. After constructing its complete transition proof, each player resets its agreed machine and position for another bisection. The referee repeats while different final claims remain:
 ```{.lua key=rvg_settle include=rolling-verification-game.lua/settle_dispute title="rolling-verification-game.lua (excerpt)"}
 ```
 
-Each level keeps an agreed position and a disputed position, differing only in the coordinate being bisected. They bound a half-open range of transitions: the state at the lower boundary is agreed, and the state at the upper boundary is disputed. A bisection table holds these positions, the agreed hash, and each player's disputed hash. Each midpoint replaces one boundary and its hashes until a single transition remains:
-```{.lua key=vg_bisect_level include=rolling-verification-game.lua/bisect_level title="rolling-verification-game.lua (excerpt)"}
+The agreed and disputed positions bound a half-open range of transitions. A bisection table holds these positions, the agreed hash, and each player's disputed hash. The initial disputed position sets all three coordinates to their limits: padding at the final fixed point preserves the final hash, including the reset at the end of the uarch span.
+The midpoint splits the first coordinate with an interior boundary. When only one input or instruction remains, it uses that input's mcycle range or that instruction's uarch range. It returns no position when only one uarch transition remains:
+```{.lua key=vg_midpoint include=rolling-verification-game.lua/midpoint title="rolling-verification-game.lua (excerpt)"}
+```
+Each reply moves one boundary and its hashes. The same loop continues across coordinate ranges:
+```{.lua key=vg_bisect_level include=rolling-verification-game.lua/bisect title="rolling-verification-game.lua (excerpt)"}
 ```
 Responses must arrive before each player's deadline. A player pays for response delays beyond the contract's response budget; invalid or missing replies eliminate that player.
 
@@ -4816,7 +4820,7 @@ The mcycle bisection ranges over the disputed input's 2<sup>[]{replace=rollup_co
 Offset zero is the boundary before input delivery. The input is included by the first transition, so the state at a positive offset *m* is the input boundary, fed, and run for *m* mcycles.
 The calculator is done with each input within about 50 million mcycles, after which the machine has yielded manual and no longer advances.
 A midpoint past the yield therefore repeats the yielded state, and the bisection ranges over the full ceiling without knowing where the guest yields, as it can when execution halts.
-The uarch_cycle bisection that follows ranges over the 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch cycles of the disputed instruction.
+The search then narrows the 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch cycles of the disputed instruction.
 The referee sends the agreed position and the tentative midpoint position directly.
 A single player operation receives these two positions and serves the three levels:
 ```{.lua key=rvg_commit_bisection include=rolling-verification-game.lua/reveal_bisection title="rolling-verification-game.lua (excerpt)"}
@@ -4827,7 +4831,7 @@ A fork that still stands at the boundary includes the input before running (at b
 
 ### Verifying the disputed transition
 
-Once the bisections converge, the mcycle offset and uarch cycle they agreed on determine the form of the disputed transition, and the referee asks every surviving player for logs proving its own committed endpoint:
+Once the bisection converges, the mcycle offset and uarch cycle they agreed on determine the form of the disputed transition, and the referee asks every surviving player for logs proving its own committed endpoint:
 ```{.lua key=rvg_commit_log include=rolling-verification-game.lua/prove_state_transition title="rolling-verification-game.lua (excerpt)"}
 ```
 A combined transition is committed as its two access logs.

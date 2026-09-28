@@ -46,6 +46,41 @@ library HashTree {
         }
     }
 
+    /// Page-sized twin of merkleTreeHash; the readable recursion remains the reference.
+    /// Callers provide a complete PAGE_SIZE region starting at `start` in `data`.
+    function merkleTreeHashAsm(bytes memory data, uint256 start)
+        internal
+        pure
+        returns (bytes32 result)
+    {
+        uint256 pageSize = EmulatorConstants.PAGE_SIZE;
+        uint256 leafSize = EmulatorConstants.LEAF_SIZE;
+        // The generated layout has 128 32-byte leaves per page; each hash is 32 bytes.
+        // PAGE_SIZE / LEAF_SIZE is a power of two, so every combine level has pairs.
+        assert(leafSize == 32);
+        assembly ("memory-safe") {
+            // Temporary space above the free pointer: no allocation or inner calls,
+            // and no live input overlaps it. Reuse it for every page without moving 0x40.
+            let scratch := mload(0x40)
+            let input := add(add(data, 32), start)
+            let count := div(pageSize, leafSize)
+            for { let i := 0 } lt(i, count) { i := add(i, 1) } {
+                mstore(add(scratch, shl(5, i)), keccak256(add(input, mul(i, leafSize)), leafSize))
+            }
+            // Reduce adjacent hashes in place. Outputs trail the input cursor, so
+            // overwriting a consumed pair cannot change a later unread pair.
+            for { let width := shl(5, count) } gt(width, 32) { width := shr(1, width) } {
+                let end := add(scratch, width)
+                let output := scratch
+                for { let pair := scratch } lt(pair, end) { pair := add(pair, 64) } {
+                    mstore(output, keccak256(pair, 64))
+                    output := add(output, 32)
+                }
+            }
+            result := mload(scratch)
+        }
+    }
+
     /// Merkle root of `data` zero-padded to 2^totalLog2Size bytes. Subtrees entirely
     /// beyond `data.length` collapse to a precomputed pristine hash; subtrees entirely
     /// within fall through to `merkleTreeHash`. Only the boundary subtree at each level

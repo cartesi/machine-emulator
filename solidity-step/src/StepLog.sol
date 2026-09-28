@@ -260,9 +260,8 @@ library StepLog {
         uint256 pageCnt = ctx.pageIndices.length;
         for (uint256 i = 0; i < pageCnt; i++) {
             if (ctx.pageHashes[i] == bytes32(0)) {
-                ctx.pageHashes[i] = HashTree.merkleTreeHash(
-                    ctx.pageData, i * EmulatorConstants.PAGE_SIZE, EmulatorConstants.PAGE_SIZE
-                );
+                ctx.pageHashes[i] =
+                    HashTree.merkleTreeHashAsm(ctx.pageData, i * EmulatorConstants.PAGE_SIZE);
             }
         }
         TreeWalkCursors memory c;

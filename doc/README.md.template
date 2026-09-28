@@ -5266,6 +5266,10 @@ Only computation requests go to holders of the relevant claim.
 Every player receives requests to eliminate inactive matches, including unrelated ones that could keep the tournament open.
 The referee narrates each claim with the labels of the players that posted it. Labels never influence protocol state or ordering.
 
+`notify_all(subscriptions, event, arguments)` delivers a notification with no response schema, waits for the handlers' transport acknowledgements without a deadline, and returns no value.
+Both recipes use it to publish inputs and the epoch seal; VG also uses it for the initial state and dispute start.
+These acknowledgements preserve delivery order and do not advance logical time.
+
 `request_all(subscriptions, event, arguments, validator)` returns a future collecting responses from a fixed audience, with the same immediate delivery and later response blocks.
 The optional validator returns the value to retain. For subscription audiences, an error, `nil`, or `false` rejects the response, but its sender still counts as having answered. VG uses explicit connections, whose rejected replies may be retried until the deadline.
 Tournament openings use this callback to validate claims before `partition_claims` groups them.

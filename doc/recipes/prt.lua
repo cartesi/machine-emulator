@@ -160,6 +160,10 @@ end
 local server
 
 -- Blockchain operations; the simulation transport stays outside the algorithm excerpts.
+local function notify_all(subscriptions, event, arguments)
+    server:notify_all(subscriptions, event, arguments)
+end
+
 local function request_all(subscriptions, event, arguments, validator)
     return server:request_all(subscriptions, event, arguments, validator)
 end
@@ -784,11 +788,9 @@ end
 -- Simulate blockchain publication, waiting for each event's handlers before proceeding.
 local function run_epoch(dapp_contract, subscribers)
     for index, path in ipairs(dapp_contract.input_paths) do
-        local input <close> = request_all(subscribers, EVENTS.input_added, { index - 1, path })
-        input:wait_at_most(FOREVER)
+        notify_all(subscribers, EVENTS.input_added, { index - 1, path })
     end
-    local sealed <close> = request_all(subscribers, EVENTS.epoch_sealed, { #dapp_contract.inputs })
-    sealed:wait_at_most(FOREVER)
+    notify_all(subscribers, EVENTS.epoch_sealed, { #dapp_contract.inputs })
 end
 
 -- Seen from the referee, the whole game is short. It opens the mcycle tournament, reduces the

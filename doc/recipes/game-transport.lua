@@ -903,6 +903,13 @@ function server_meta.__index.request_all(self, subscriptions, event, event_argum
     return dispatch_request(self, future, self:get_subscribers(subscriptions), event_arguments)
 end
 
+-- Notifications return no value. Wait for their handlers' acknowledgements without a deadline.
+function server_meta.__index.notify_all(self, subscriptions, event, event_arguments)
+    assert(not event.response_schema, "notification must not declare a response")
+    local notification <close> = self:request_all(subscriptions, event, event_arguments)
+    notification:wait_at_most(FOREVER)
+end
+
 -- Waits for a logical block's time barrier, or returns immediately if it has already been reached.
 function server_meta.__index.wait_until(self, block)
     assert(math.type(block) == "integer" and block >= 0, "block must be a nonnegative block number")

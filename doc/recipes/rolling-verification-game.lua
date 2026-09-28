@@ -107,7 +107,7 @@ local function receive_cmio_request(machine)
     return reason, data
 end
 
-local function one_uarch_cycle_remains(bisection)
+local function is_single_uarch_cycle(bisection)
     return bisection.log2_input_count == 0
         and bisection.log2_mcycle_count == 0
         and bisection.log2_uarch_cycle_count == 0
@@ -131,7 +131,7 @@ local function narrow_bisection(bisection)
 end
 -- docs:end narrow_bisection
 
-local function same_position(a, b)
+local function is_same_position(a, b)
     return a.epoch_input_offset == b.epoch_input_offset
         and a.input_mcycle_offset == b.input_mcycle_offset
         and a.uarch_cycle == b.uarch_cycle
@@ -389,7 +389,7 @@ end
 
 -- docs:begin reveal_bisection
 function event_handler:reveal_bisection(agreed_position, tentative_position)
-    if same_position(self.agreed_position, agreed_position) then
+    if is_same_position(self.agreed_position, agreed_position) then
         self.tentative_machine:close()
     else
         -- The previous tentative position is now the agreed predecessor.
@@ -515,6 +515,10 @@ local function current_time()
     return server:get_time()
 end
 
+local function notify_all(subscriptions, event, arguments)
+    server:notify_all(subscriptions, event, arguments)
+end
+
 local function request_all(subscriptions, event, arguments, validator)
     return server:request_all(subscriptions, event, arguments, validator)
 end
@@ -557,17 +561,17 @@ local function validate_state_transition_response(
 end
 -- docs:end validate_state_transition_response
 
-local function accept_hash(hash)
-    return type(hash) == "string" and #hash == 32 and hash
+local function is_valid_hash(hash)
+    return type(hash) == "string" and #hash == 32
 end
 
 local function validate_claim_response(response)
-    assert(accept_hash(response), "invalid final hash")
+    assert(is_valid_hash(response), "invalid final hash")
     return response
 end
 
 local function validate_bisection_response(response)
-    assert(accept_hash(response), "invalid tentative hash")
+    assert(is_valid_hash(response), "invalid tentative hash")
     return response
 end
 
@@ -575,7 +579,7 @@ local validate_outputs_merkle_root_response = output_verifier.validate_outputs_m
 local validate_output_response = output_verifier.validate_output_response
 
 -- Return a representative if all surviving players support the same final claim.
-local function single_claim_remains(players)
+local function get_winner(players)
     local first
     for _, sender in ipairs(addresses(players)) do
         local player = players[sender]
@@ -587,23 +591,23 @@ local function single_claim_remains(players)
     return first
 end
 
-local function at_most_one_claim_remains(players)
-    return not next(players) or single_claim_remains(players) ~= nil
+local function is_there_at_most_one_claim(players)
+    return not next(players) or get_winner(players) ~= nil
 end
 
 local function any_of(hashes)
     return hashes[next(hashes)]
 end
 
-local function hashes_disagree(hashes)
+local function is_unanimous(hashes)
     local first
     for _, hash in pairs(hashes) do
         if first and hash ~= first then
-            return true
+            return false
         end
         first = hash
     end
-    return false
+    return true
 end
 
 -- Each tentative position advances a fork of the agreed pair.
@@ -632,21 +636,21 @@ end
 -- Halve the first non-unit count. Any disagreement selects the earlier half.
 -- docs:begin bisect
 local function bisect(tournament, bisection)
-    while not one_uarch_cycle_remains(bisection) do
+    while not is_single_uarch_cycle(bisection) do
         local tentative_position = narrow_bisection(bisection)
         story.report_bisection(bisection.agreed_position, tentative_position)
         tournament.players = request_bisections(tournament, bisection.agreed_position, tentative_position)
-        if at_most_one_claim_remains(tournament.players) then
+        if is_there_at_most_one_claim(tournament.players) then
             break
         end
         local hashes = map(tournament.players, function(player)
             return player.tentative_hash
         end)
-        if hashes_disagree(hashes) then
-            bisection.hashes_after = hashes
-        else
+        if is_unanimous(hashes) then
             bisection.agreed_position = tentative_position
             bisection.last_agreed_hash = any_of(hashes)
+        else
+            bisection.hashes_after = hashes
         end
         story.report_bisection_progress(bisection)
     end
@@ -687,8 +691,8 @@ end
 
 -- docs:begin settle_dispute
 local function settle_dispute(tournament)
-    local _ <close> = request_all(addresses(tournament.players), EVENTS.dispute_started, {})
-    while not at_most_one_claim_remains(tournament.players) do
+    notify_all(addresses(tournament.players), EVENTS.dispute_started, {})
+    while not is_there_at_most_one_claim(tournament.players) do
         local bisection = {
             agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
             log2_input_count = LOG2_INPUTS_PER_EPOCH,
@@ -700,12 +704,12 @@ local function settle_dispute(tournament)
             end),
         }
         bisect(tournament, bisection)
-        if at_most_one_claim_remains(tournament.players) then
+        if is_there_at_most_one_claim(tournament.players) then
             break
         end
         tournament.players = request_state_transitions(tournament, bisection)
     end
-    return single_claim_remains(tournament.players)
+    return get_winner(tournament.players)
 end
 -- docs:end settle_dispute
 
@@ -745,7 +749,7 @@ local function request_claims(dapp_contract, subscribers)
     local started_at = current_time()
     local max_allowance = dapp_contract.max_allowance
     local deadline = started_at + max_allowance
-    local survivors <close> = request_all(subscribers, EVENTS.commit_claim, {}, function(response, sender, received_at)
+    local claims <close> = request_all(subscribers, EVENTS.commit_claim, {}, function(response, sender, received_at)
         assert(received_at < deadline, "late final hash")
         local hash = validate_claim_response(response)
         local elapsed = received_at - started_at
@@ -755,22 +759,20 @@ local function request_claims(dapp_contract, subscribers)
             final_hash = hash,
         }
     end)
+    local players = claims:wait_at_most(deadline)
     return {
         dapp_contract = dapp_contract,
-        players = survivors:wait_at_most(deadline),
+        players = players,
     }
 end
 
 -- Simulate blockchain publication, waiting for each event's handlers before proceeding.
 local function run_epoch(dapp_contract, subscribers)
-    local initial <close> = request_all(subscribers, EVENTS.initial_state, { dapp_contract.initial_state_hash })
-    initial:wait_at_most(FOREVER)
+    notify_all(subscribers, EVENTS.initial_state, { dapp_contract.initial_state_hash })
     for index, path in ipairs(dapp_contract.input_paths) do
-        local input <close> = request_all(subscribers, EVENTS.input_added, { index - 1, path })
-        input:wait_at_most(FOREVER)
+        notify_all(subscribers, EVENTS.input_added, { index - 1, path })
     end
-    local sealed <close> = request_all(subscribers, EVENTS.epoch_sealed, { #dapp_contract.inputs })
-    sealed:wait_at_most(FOREVER)
+    notify_all(subscribers, EVENTS.epoch_sealed, { #dapp_contract.inputs })
 end
 
 local function run_referee(dapp_contract, subscribers)

@@ -36,6 +36,12 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     for index, sender in ipairs(order) do
         assert(sender == server:get_players()[index] and acknowledgements[sender] == true)
     end
+    local block = server:get_time()
+    assert(select("#", server:notify_all(nil, notification, { 43 })) == 0)
+    assert(received[1] == 43 and received[2] == 43, "notification returned before its handlers completed")
+    assert(server:get_time() == block, "notification advanced logical time")
+    assert(not next(server.active), "notification left an active future")
+    assert(not pcall(server.notify_all, server, nil, event, {}), "notification accepted a response-bearing event")
 end)
 
 do

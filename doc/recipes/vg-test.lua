@@ -9,7 +9,7 @@ local paths = { "input-0.bin", "input-1.bin", "input-2.bin" }
 local function run_game(players, input_paths)
     local dapp_contract = vg.make_dapp_contract(initial_hash, input_paths or paths)
     local results
-    run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
+    local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
         results = observed
         for index, player in ipairs(players) do
             run_client({ role = "player", label = player.label }, function(_, line)
@@ -23,14 +23,14 @@ local function run_game(players, input_paths)
         vg.new_referee(dapp_contract):run(server)
     end)
     vgu.close_narration()
-    return results
+    return results, server
 end
-local first <close> = vg.new_player(initial_hash)
+local first <close> = vg.new_player(initial_hash, "honest 1")
 assert(first.tentative_machine.machine:get_root_hash() == initial_hash)
 assert(first.tentative_machine.machine ~= first.agreed_machine.machine)
-local second <close> = vg.new_player(initial_hash)
-local results = run_game({ first, second })
-assert(results.winner.index == 1 and results.final_hash == first.final_hash)
+local second <close> = vg.new_player(initial_hash, "honest 2")
+local results, first_server = run_game({ first, second })
+assert(results.players[first_server.connections[1]] == results.winner and results.final_hash == first.final_hash)
 assert(results.output)
 print("vg-test: equal claims ok")
 
@@ -60,6 +60,7 @@ for _, late_providers in ipairs({ false, true }) do
                     -- Join after settlement, before the proof requests fix their audiences.
                     for _, operation in ipairs({ "prove_outputs_merkle_root", "prove_output" }) do
                         local provider = {
+                            label = "provider " .. operation,
                             event_handler = setmetatable({
                                 [operation] = function(_, requested)
                                     local expected = operation == "prove_output" and root_offer.tx_buffer_data
@@ -79,7 +80,7 @@ for _, late_providers in ipairs({ false, true }) do
             end
         end
         for index = 1, 2 do
-            local client = { event_handler = setmetatable({}, empty_handlers) }
+            local client = { label = "player " .. index, event_handler = setmetatable({}, empty_handlers) }
             function client.event_handler.commit_claim()
                 return index == 1 and cartesi.keccak256("losing claim") or first.final_hash
             end
@@ -87,7 +88,9 @@ for _, late_providers in ipairs({ false, true }) do
                 return index == 2 and first.final_hash or "malformed"
             end
             local function offer(_, target, operation)
-                assert(settled.winner.index == 2 and settled.final_hash == first.final_hash)
+                assert(
+                    settled.players[server.connections[2]] == settled.winner and settled.final_hash == first.final_hash
+                )
                 assert(#vg.addresses(settled.players) == 1 and settled.players[next(settled.players)] == settled.winner)
                 assert(target == (operation == "prove_output" and root_offer.tx_buffer_data or first.final_hash))
                 if index == 1 and not late_providers then
@@ -130,7 +133,7 @@ do
     local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
         settled = observed
         for index = 1, 2 do
-            local client = { event_handler = setmetatable({}, empty_handlers) }
+            local client = { label = "player " .. index, event_handler = setmetatable({}, empty_handlers) }
             function client.event_handler.commit_claim()
                 return first.final_hash
             end
@@ -203,7 +206,7 @@ for _, case in ipairs({
     local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
         settled = observed
         for index = 1, 2 do
-            local client = { event_handler = setmetatable({}, empty_handlers) }
+            local client = { label = "player " .. index, event_handler = setmetatable({}, empty_handlers) }
             function client.event_handler.commit_claim()
                 return claims[index]
             end
@@ -245,7 +248,7 @@ for _, case in ipairs({
     end)
     assert(proofs[1] and proofs[2], "a surviving player was not asked for its proof")
     if case.winner then
-        assert(settled.winner.index == case.winner and settled.final_hash == claims[case.winner])
+        assert(settled.final_hash == claims[case.winner])
     else
         assert(not settled.winner and not settled.final_hash)
     end
@@ -267,8 +270,11 @@ if arg[1] ~= "execution" then
                 or role == "tamperer" and roles.new_tamperer(initial_hash, 0, 100)
                 or roles.new_quitter()
             local players = honest_index == 1 and { honest, opponent } or { opponent, honest }
-            local result = run_game(players)
-            assert(result.winner.index == honest_index, role .. " defeated the honest player")
+            local result, server = run_game(players)
+            assert(
+                result.players[server.connections[honest_index]] == result.winner,
+                role .. " defeated the honest player"
+            )
             assert(result.final_hash == honest.final_hash and result.output)
             print("vg-test: honest player " .. honest_index .. " defeats " .. role)
         end
@@ -297,8 +303,12 @@ if arg[1] ~= "execution" then
         for _, player in ipairs(players) do
             player.disputes, player.event_handler = 0, handlers
         end
-        local settled = run_game(players)
-        assert(settled.winner.index == 2 and settled.final_hash == honest.final_hash and settled.output)
+        local settled, server = run_game(players)
+        assert(
+            settled.players[server.connections[2]] == settled.winner
+                and settled.final_hash == honest.final_hash
+                and settled.output
+        )
         assert(tamperer.disputes == 1 and honest.disputes == 2 and forger.disputes == 2)
         assert(#vg.addresses(settled.players) == 1 and settled.players[next(settled.players)] == settled.winner)
         assert(honest.initial.machine:get_root_hash() == initial_hash)
@@ -561,8 +571,8 @@ end
 
 -- Empty epochs finish after establishing the root, without inventing an output.
 do
-    local a <close> = vg.new_player(initial_hash)
-    local b <close> = vg.new_player(initial_hash)
+    local a <close> = vg.new_player(initial_hash, "honest 1")
+    local b <close> = vg.new_player(initial_hash, "honest 2")
     local empty = run_game({ a, b }, {})
     assert(empty.final_hash == initial_hash and empty.outputs_root and not empty.output)
 end
@@ -841,23 +851,30 @@ for _, cheat in ipairs({ "no-rollback", "extra-input", "composite" }) do
             pair.snapshot = snapshot_composite
         end
     end
-    local result = run_game({ opponent, honest })
-    assert(result.winner.index == 2 and result.final_hash == honest.final_hash, cheat .. " defeated honest")
+    local result, server = run_game({ opponent, honest })
+    assert(
+        result.players[server.connections[2]] == result.winner and result.final_hash == honest.final_hash,
+        cheat .. " defeated honest"
+    )
     print("vg-test: legacy " .. cheat .. " rejected")
 end
 
 -- Invalid or absent offers leave the settled hash and both player clocks intact.
 for _, failed_offer in ipairs({ "prove_outputs_merkle_root", "prove_output" }) do
-    local a <close> = vg.new_player(initial_hash)
-    local b <close> = vg.new_player(initial_hash)
+    local a <close> = vg.new_player(initial_hash, "honest 1")
+    local b <close> = vg.new_player(initial_hash, "honest 2")
     a.event_handler = setmetatable({
         [failed_offer] = function()
             return { invalid = true }
         end,
     }, { __index = vg.event_handler })
     b.event_handler = a.event_handler
-    local settled = run_game({ a, b }, {})
-    assert(settled.winner.index == 1 and settled.final_hash == initial_hash and not settled.output)
+    local settled, server = run_game({ a, b }, {})
+    assert(
+        settled.players[server.connections[1]] == settled.winner
+            and settled.final_hash == initial_hash
+            and not settled.output
+    )
     assert(#vg.addresses(settled.players) == 2)
     for _, player in pairs(settled.players) do
         assert(player.allowance == 4)

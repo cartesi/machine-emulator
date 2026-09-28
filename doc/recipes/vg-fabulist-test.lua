@@ -16,7 +16,7 @@ local function run(initial_hash, paths, delegate)
     local dapp_contract = vg.make_dapp_contract(initial_hash, paths)
     local results
     local outsider
-    run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
+    local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
         results = observed
         local pending
         run_client({ role = "player", label = opponent.label }, function(_, line)
@@ -54,7 +54,7 @@ local function run(initial_hash, paths, delegate)
         local request_all = server.request_all
         function server:request_all(connections, event, arguments, accept)
             if event == vgu.EVENTS.initial_state then
-                run_client(nil, function(wire)
+                run_client({ role = "player", label = "fabulist" }, function(wire)
                     assert(wire.operation ~= "commit_claim", "late player was asked for a claim")
                     return { value = true }
                 end)
@@ -85,8 +85,9 @@ local function run(initial_hash, paths, delegate)
     end
     local claims = { opponent.final_hash, honest.final_hash }
     assert(#vg.addresses(results.players) == 1 and results.players[next(results.players)] == results.winner)
-    assert(results.winner.index == (delegate and 1 or 2))
-    assert(results.final_hash == claims[results.winner.index])
+    local winner = delegate and 1 or 2
+    assert(results.players[server.connections[winner]] == results.winner)
+    assert(results.final_hash == claims[winner])
     return claims
 end
 

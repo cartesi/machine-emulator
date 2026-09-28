@@ -694,8 +694,7 @@ local function settle_dispute(tournament)
         if winner then
             return winner
         end
-        local started <close> = request_all(addresses(tournament.players), EVENTS.dispute_started, {})
-        started:wait_at_most(FOREVER)
+        local _ <close> = request_all(addresses(tournament.players), EVENTS.dispute_started, {})
         local bisection = {
             last_agreed_hash = tournament.dapp_contract.initial_state_hash,
             hashes_after = map(tournament.players, function(player)
@@ -757,10 +756,6 @@ end
 -- docs:end wait_for_outputs
 
 local function request_claims(dapp_contract, subscribers)
-    local indices = {}
-    for index, sender in ipairs(subscribers) do
-        indices[sender] = index
-    end
     local started_at = current_time()
     local max_allowance = dapp_contract.max_allowance
     local deadline = started_at + max_allowance
@@ -769,7 +764,6 @@ local function request_claims(dapp_contract, subscribers)
         local hash = validate_claim_response(response)
         local elapsed = received_at - started_at
         return {
-            index = indices[sender],
             label = sender.label,
             allowance = max_allowance - math.max(elapsed - dapp_contract.response_budget, 0),
             final_hash = hash,

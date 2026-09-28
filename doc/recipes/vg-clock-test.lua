@@ -29,7 +29,7 @@ for delayed_index = 1, 2 do
         for index = 1, 2 do
             local sender
             local client = {
-                label = "same label",
+                label = "player " .. index,
                 block = 0,
                 requested_at = {},
                 allowances = {},
@@ -81,7 +81,7 @@ for delayed_index = 1, 2 do
     assert(#clients[1].requested_at == 4 and #clients[2].requested_at == 4)
     assert(not results.players[delayed] and results.players[immediate] == results.winner, "deadline is not exclusive")
     assert(results.final_hash == claims[3 - delayed_index] and results.winner.allowance == 4)
-    assert(results.winner.label == "same label", "VG lost the admitted player's label")
+    assert(results.winner.label == clients[3 - delayed_index].label, "VG lost the admitted player's label")
 end
 
 -- Repeated claims and labels still belong to separate connections. One
@@ -114,7 +114,7 @@ do
     end)
     assert(requested[1] and requested[2] and requested[3], "a proponent was not asked to defend its claim")
     assert(#vg.addresses(results.players) == 1 and results.players[server.connections[2]] == results.winner)
-    assert(results.final_hash == hash and results.winner.index == 2)
+    assert(results.final_hash == hash)
 end
 
 for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
@@ -123,7 +123,7 @@ for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
     run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
         results = observed
         for index = 1, 2 do
-            run_client(nil, function(wire)
+            run_client({ role = "player", label = behavior .. " " .. index }, function(wire)
                 if wire.operation == "commit_claim" then
                     if behavior == "quit" then
                         return { skip = true, id = wire.id, done = true }, true
@@ -157,7 +157,7 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
         local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
             results = observed
             for index = 1, 2 do
-                local client = { event_handler = setmetatable({}, empty_handlers) }
+                local client = { label = "player " .. index, event_handler = setmetatable({}, empty_handlers) }
                 function client.event_handler.commit_claim()
                     return claims[index]
                 end
@@ -216,7 +216,7 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
         else
             local loser = failed_player
             local winner = 3 - loser
-            assert(results.winner.index == winner and results.final_hash == claims[winner])
+            assert(results.final_hash == claims[winner])
             assert(#vg.addresses(results.players) == 1)
             assert(results.players[server.connections[winner]] == results.winner)
             assert(results.winner.allowance == 4, "charged the immediate player")

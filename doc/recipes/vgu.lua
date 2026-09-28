@@ -53,7 +53,7 @@ function story.report_claims(players)
     phase("claims")
     for _, sender in ipairs(addresses(players)) do
         local player = players[sender]
-        eventf("Player %s claimed %s.", player.label or player.index, short_hash(player.final_hash))
+        eventf("Player %s claimed %s.", player.label, short_hash(player.final_hash))
     end
 end
 
@@ -66,7 +66,7 @@ function story.report_bisection_progress(interval)
 end
 
 function story.report_state_transition(player)
-    eventf("Player %s's transition proof is valid.", player.label or player.index)
+    eventf("Player %s's transition proof is valid.", player.label)
 end
 
 function story.report_winner(winner)
@@ -75,7 +75,7 @@ function story.report_winner(winner)
         eventf("No players remain.")
         return
     end
-    eventf("Player %s wins. Final state hash: %s", winner.label or winner.index, cartesi.tohex(winner.final_hash))
+    eventf("Player %s wins. Final state hash: %s", winner.label, cartesi.tohex(winner.final_hash))
 end
 
 function story.report_output(output)

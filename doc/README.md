@@ -9637,23 +9637,25 @@ timeout-win or elimination response.
 local function reveal_divergence(tournament, match)
     while match.height > 1 do
         local turn_claim = match.claims[match.turn_index]
-        start_turn_clock(match)
-        local timeout <close> = emit_schedule_match_timeout_win(tournament, match)
-        local elimination <close> = emit_schedule_match_elimination(match)
+        local start_instant = current_time()
+        local responder_deadline = start_instant + turn_claim.allowance
+        local eliminable_at = responder_deadline + match.claims[get_other_turn_index(match.turn_index)].allowance
+        local timeout <close> = emit_schedule_match_timeout_win(tournament, match, responder_deadline, eliminable_at)
+        local elimination <close> = emit_schedule_match_elimination(match, eliminable_at)
         local reveal <close> = request_first_valid(
             subscription_hash(tournament.id, turn_claim),
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
             function(response)
-                assert(current_time() < match.responder_deadline, "late bisection")
+                assert(current_time() < responder_deadline, "late bisection")
                 return validate_bisection_response(match, response)
             end
         )
-        local response = reveal:wait_at_most(match.responder_deadline)
+        local response = reveal:wait_at_most(responder_deadline)
         if not response then
-            return timeout:wait_at_most(match.eliminable_at) or elimination:wait_at_least(match.eliminable_at)
+            return timeout:wait_at_most(eliminable_at) or elimination:wait_at_least(eliminable_at)
         end
-        pause_turn_clock(tournament, match)
+        charge_turn_time(tournament, match, start_instant)
         advance_bisection(match, response)
         story.report_match_progress(match)
     end
@@ -9666,23 +9668,25 @@ agreed state before them.
 ``` lua
 local function seal_divergence(tournament, match)
     local turn_claim = match.claims[match.turn_index]
-    start_turn_clock(match)
-    local timeout <close> = emit_schedule_match_timeout_win(tournament, match)
-    local elimination <close> = emit_schedule_match_elimination(match)
+    local start_instant = current_time()
+    local responder_deadline = start_instant + turn_claim.allowance
+    local eliminable_at = responder_deadline + match.claims[get_other_turn_index(match.turn_index)].allowance
+    local timeout <close> = emit_schedule_match_timeout_win(tournament, match, responder_deadline, eliminable_at)
+    local elimination <close> = emit_schedule_match_elimination(match, eliminable_at)
     local seal <close> = request_first_valid(
         subscription_hash(tournament.id, turn_claim),
         EVENTS.seal_divergence,
         { turn_claim.computation_hash, match.position, match.other_left_node },
         function(response)
-            assert(current_time() < match.responder_deadline, "late seal")
+            assert(current_time() < responder_deadline, "late seal")
             return validate_seal_response(tournament, match, response)
         end
     )
-    local divergence = seal:wait_at_most(match.responder_deadline)
+    local divergence = seal:wait_at_most(responder_deadline)
     if not divergence then
-        return nil, timeout:wait_at_most(match.eliminable_at) or elimination:wait_at_least(match.eliminable_at)
+        return nil, timeout:wait_at_most(eliminable_at) or elimination:wait_at_least(eliminable_at)
     end
-    pause_turn_clock(tournament, match)
+    charge_turn_time(tournament, match, start_instant)
     return divergence
 end
 ```
@@ -9833,9 +9837,11 @@ local function settle_uarch_state_hash(
         subscription_hash(tournament.id, match.claims[1]),
         subscription_hash(tournament.id, match.claims[2]),
     }
-    start_proof_clocks(match)
-    local proof_deadline = math.min(match.deadline_one, match.deadline_two)
-    local eliminable_at = match.eliminable_at
+    local start_instant = current_time()
+    local deadline_one = start_instant + match.claims[1].allowance
+    local deadline_two = start_instant + match.claims[2].allowance
+    local proof_deadline = math.min(deadline_one, deadline_two)
+    local eliminable_at = math.max(deadline_one, deadline_two)
     local elimination <close> = request_first_valid(
         EVERYONE,
         EVENTS.schedule_match_elimination,
@@ -10009,46 +10015,28 @@ claim’s clock, its opening is valid before b + c, a holder of the
 waiting claim may respond to claim a timeout win in \[b + c, b + c + w),
 and anyone may eliminate both claims from b + c + w. The two clocks of a
 match are equal here, three blocks in an mcycle match and two in a uarch
-match.
+match. A valid opening ends the scope of its timeout and elimination
+futures, whose late responses are ignored. The next opening emits new
+requests. A valid response is charged the blocks it took beyond the
+response budget, which equals the allowance, so no clock ever runs down.
 
 ``` lua
--- Starts the on-turn claim's clock. The match is eliminable once the waiting claim's clock runs out too.
-local function start_turn_clock(match)
+-- Charges the on-turn claim for blocks beyond the response budget after a valid response.
+local function charge_turn_time(tournament, match, start_instant)
     local turn_claim = match.claims[match.turn_index]
-    local other_claim = match.claims[get_other_turn_index(match.turn_index)]
-    match.start_instant = current_time()
-    match.responder_deadline = match.start_instant + turn_claim.allowance
-    match.eliminable_at = match.responder_deadline + other_claim.allowance
-end
-
--- Pauses the on-turn claim's clock after a valid response, charging the blocks beyond the response budget.
-local function pause_turn_clock(tournament, match)
-    local turn_claim = match.claims[match.turn_index]
-    local elapsed = current_time() - match.start_instant
+    local elapsed = current_time() - start_instant
     turn_claim.allowance = turn_claim.allowance - math.max(elapsed - tournament.dapp_contract.response_budget, 0)
-end
-
--- Starts both clocks at the seal for the proof. Equal allowances leave no timeout-win window.
-local function start_proof_clocks(match)
-    local start_instant = current_time()
-    match.deadline_one = start_instant + match.claims[1].allowance
-    match.deadline_two = start_instant + match.claims[2].allowance
-    match.eliminable_at = math.max(match.deadline_one, match.deadline_two)
 end
 ```
 
-A valid opening ends the scope of its timeout and elimination futures,
-whose late responses are ignored. The next opening emits new requests. A
-valid response is charged the blocks it took beyond the response budget,
-which equals the allowance, so no clock ever runs down. At a sealed
-uarch leaf both clocks run from the seal, and either side may prove the
-transition before the earlier deadline. Equal allowances leave no
-timeout-win window, so anyone may eliminate both from that deadline.
-Every validator checks authoritative server time, arguments, and proofs.
-Scheduling a response does not make it valid, and expiry alone never
-eliminates a claim. Timeout winners supply the winning claim’s root
-children from the player’s local tree, which the referee verifies
-against that claim.
+At a sealed uarch leaf both clocks run from the seal, and either side
+may prove the transition before the earlier deadline. Equal allowances
+leave no timeout-win window, so anyone may eliminate both from that
+deadline. Every validator checks authoritative server time, arguments,
+and proofs. Scheduling a response does not make it valid, and expiry
+alone never eliminates a claim. Timeout winners supply the winning
+claim’s root children from the player’s local tree, which the referee
+verifies against that claim.
 
 An mcycle match has no local timeout while its uarch tournament runs.
 After claim collection closes and all uarch matches resolve,

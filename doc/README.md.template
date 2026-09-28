@@ -5291,10 +5291,10 @@ A deadline is the first block at which a clock has timed out, so two is the leas
 The on-turn claim's clock runs from the block b that gave it the turn.
 With c blocks on it and w on the waiting claim's clock, its opening is valid before b + c, a holder of the waiting claim may respond to claim a timeout win in [b + c, b + c + w), and anyone may eliminate both claims from b + c + w.
 The two clocks of a match are equal here, three blocks in an mcycle match and two in a uarch match.
-```{.lua key=prt_match_clocks include=prt.lua/match_clocks title="prt.lua (excerpt)"}
-```
 A valid opening ends the scope of its timeout and elimination futures, whose late responses are ignored. The next opening emits new requests.
 A valid response is charged the blocks it took beyond the response budget, which equals the allowance, so no clock ever runs down.
+```{.lua key=prt_match_clocks include=prt.lua/match_clocks title="prt.lua (excerpt)"}
+```
 At a sealed uarch leaf both clocks run from the seal, and either side may prove the transition before the earlier deadline.
 Equal allowances leave no timeout-win window, so anyone may eliminate both from that deadline.
 Every validator checks authoritative server time, arguments, and proofs.

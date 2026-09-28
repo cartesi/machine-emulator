@@ -547,7 +547,7 @@ library StepLog {
         }
     }
 
-    // Shared cold path for locatePage and StateAccess.readWord's inline cache hit.
+    // Shared cold path for locatePage and StateAccess's inline read/write cache hits.
     // Callers pass idx % pageLookupCache.length as cacheSlot.
     // Internal for the StateAccess caller; this adds no external ABI.
     function resolvePageMiss(Context memory ctx, uint64 idx, uint256 cacheSlot)

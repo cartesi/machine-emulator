@@ -91,7 +91,42 @@ library StateAccess {
             StepLog.writeUarchWord(ctx, (paddr - EmulatorConstants.UARCH_HALT_ADDR) / 8, val);
             return;
         }
-        uint256 ptr = StepLog.findPageForWrite(ctx, paddr);
+        if (
+            (paddr & ~EmulatorConstants.PAGE_OFFSET_MASK)
+                == EmulatorConstants.AR_SHADOW_UARCH_STATE_START
+        ) {
+            StepLog.flushUarchRegisters(ctx);
+            ctx.uarchShadowPtr = 0;
+        }
+        // Inline twin of findPageForWrite's cache hit and hash invalidation.
+        // Keep the readable helper as a reference; misses use the same checked search.
+        uint256[61] memory cache = ctx.pageLookupCache;
+        uint64 idx = paddr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
+        uint256 cacheSlot = uint256(idx) % cache.length;
+        uint256 cached;
+        // Modulo the fixed array length guarantees cacheSlot is in 0..60.
+        assembly ("memory-safe") {
+            cached := mload(add(cache, shl(5, cacheSlot)))
+        }
+        uint256 lo;
+        unchecked {
+            if (cached >> 6 == uint256(idx) + 1) {
+                lo = cached & 0x3f;
+            } else {
+                lo = StepLog.resolvePageMiss(ctx, idx, cacheSlot);
+            }
+        }
+        bytes memory pd = ctx.pageData;
+        bytes32[] memory hashes = ctx.pageHashes;
+        uint256 pageSize = EmulatorConstants.PAGE_SIZE;
+        uint256 pageMask = EmulatorConstants.PAGE_OFFSET_MASK;
+        uint256 ptr;
+        // A matching tag or successful miss resolves an existing page. decode
+        // caps positions at 63 and sizes both arrays equally; the aligned word fits.
+        assembly ("memory-safe") {
+            mstore(add(add(hashes, 32), shl(5, lo)), 0)
+            ptr := add(add(pd, 32), add(mul(lo, pageSize), and(paddr, pageMask)))
+        }
         StepLog.writeLE64Memory(ptr, val);
     }
 
@@ -278,14 +313,54 @@ library StateAccess {
         uint64 vpOffset,
         uint64 pmaIndex
     ) internal pure {
-        uint64 slotAddr = EmulatorConstants.AR_SHADOW_TLB_START
-            + setIndex * EmulatorConstants.SHADOW_TLB_SET_LENGTH
-            + slotIndex * EmulatorConstants.SHADOW_TLB_SLOT_SIZE;
+        uint64 slotAddr;
+        // Both generated ECALL handlers bound setIndex < 3 and slotIndex < 256.
+        // Slot addresses are 0x1000..0x6fe0, so no uint64 operation can overflow.
+        unchecked {
+            slotAddr = EmulatorConstants.AR_SHADOW_TLB_START
+                + setIndex * EmulatorConstants.SHADOW_TLB_SET_LENGTH
+                + slotIndex * EmulatorConstants.SHADOW_TLB_SLOT_SIZE;
+        }
 
         // A 32-byte-aligned slot fits wholly within one witnessed page. Locate
         // and invalidate it once, then store the three little-endian fields and
         // eight bytes of zero padding together.
-        uint256 ptr = StepLog.findPageForWrite(ctx, slotAddr);
+        if (
+            (slotAddr & ~EmulatorConstants.PAGE_OFFSET_MASK)
+                == EmulatorConstants.AR_SHADOW_UARCH_STATE_START
+        ) {
+            StepLog.flushUarchRegisters(ctx);
+            ctx.uarchShadowPtr = 0;
+        }
+        // Inline twin of findPageForWrite, as in writeWord. Validated TLB slots
+        // never alias the uarch shadow page; keep the helper's flush/drop semantics.
+        uint256[61] memory cache = ctx.pageLookupCache;
+        uint64 idx = slotAddr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
+        uint256 cacheSlot = uint256(idx) % cache.length;
+        uint256 cached;
+        // Modulo the fixed array length guarantees cacheSlot is in 0..60.
+        assembly ("memory-safe") {
+            cached := mload(add(cache, shl(5, cacheSlot)))
+        }
+        uint256 lo;
+        unchecked {
+            if (cached >> 6 == uint256(idx) + 1) {
+                lo = cached & 0x3f;
+            } else {
+                lo = StepLog.resolvePageMiss(ctx, idx, cacheSlot);
+            }
+        }
+        bytes memory pd = ctx.pageData;
+        bytes32[] memory hashes = ctx.pageHashes;
+        uint256 pageSize = EmulatorConstants.PAGE_SIZE;
+        uint256 pageMask = EmulatorConstants.PAGE_OFFSET_MASK;
+        uint256 ptr;
+        // A cache hit/miss resolves an existing position in both decoded arrays;
+        // positions fit six bits and the aligned 32-byte slot stays within its page.
+        assembly ("memory-safe") {
+            mstore(add(add(hashes, 32), shl(5, lo)), 0)
+            ptr := add(add(pd, 32), add(mul(lo, pageSize), and(slotAddr, pageMask)))
+        }
         uint256 slot = (uint256(StepLog.swapBytes64(vaddrPage)) << 192)
             | (uint256(StepLog.swapBytes64(vpOffset)) << 128)
             | (uint256(StepLog.swapBytes64(pmaIndex)) << 64);

@@ -580,8 +580,8 @@ local function single_claim_remains(players)
     return first
 end
 
-local function no_claim_remains(players)
-    return not next(players)
+local function at_most_one_claim_remains(players)
+    return not next(players) or single_claim_remains(players) ~= nil
 end
 
 local function any_of(hashes)
@@ -629,12 +629,8 @@ local function bisect_level(tournament, bisection)
     local tentative_position = midpoint(bisection.agreed_position, bisection.disputed_position)
     while precedes(bisection.agreed_position, tentative_position) do
         tournament.players = request_bisections(tournament, bisection.agreed_position, tentative_position)
-        if no_claim_remains(tournament.players) then
-            return false
-        end
-        local winner = single_claim_remains(tournament.players)
-        if winner then
-            return false, winner
+        if at_most_one_claim_remains(tournament.players) then
+            break
         end
         local hashes = map(tournament.players, function(player)
             return player.midpoint_hash
@@ -649,7 +645,6 @@ local function bisect_level(tournament, bisection)
         story.report_bisection_progress(bisection.agreed_position, bisection.disputed_position)
         tentative_position = midpoint(bisection.agreed_position, bisection.disputed_position)
     end
-    return true
 end
 -- docs:end bisect_level
 
@@ -688,11 +683,7 @@ end
 -- docs:begin settle_dispute
 local function settle_dispute(tournament)
     local _ <close> = request_all(addresses(tournament.players), EVENTS.dispute_started, {})
-    while not no_claim_remains(tournament.players) do
-        local winner = single_claim_remains(tournament.players)
-        if winner then
-            return winner
-        end
+    while not at_most_one_claim_remains(tournament.players) do
         local bisection = {
             agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
             disputed_position = { epoch_input_offset = INPUTS_PER_EPOCH, input_mcycle_offset = 0, uarch_cycle = 0 },
@@ -701,10 +692,9 @@ local function settle_dispute(tournament)
                 return player.final_hash
             end),
         }
-        local complete
-        complete, winner = bisect_level(tournament, bisection)
-        if not complete then
-            return winner
+        bisect_level(tournament, bisection)
+        if at_most_one_claim_remains(tournament.players) then
+            break
         end
         -- The next input boundary is also the end of this input's mcycle range.
         bisection.disputed_position = {
@@ -712,9 +702,9 @@ local function settle_dispute(tournament)
             input_mcycle_offset = MCYCLES_PER_INPUT,
             uarch_cycle = 0,
         }
-        complete, winner = bisect_level(tournament, bisection)
-        if not complete then
-            return winner
+        bisect_level(tournament, bisection)
+        if at_most_one_claim_remains(tournament.players) then
+            break
         end
         -- UARCH_CYCLE_MAX names the last cycle. Its outgoing transition includes reset.
         bisection.disputed_position = {
@@ -722,12 +712,13 @@ local function settle_dispute(tournament)
             input_mcycle_offset = bisection.agreed_position.input_mcycle_offset,
             uarch_cycle = UARCH_CYCLES_PER_MCYCLE,
         }
-        complete, winner = bisect_level(tournament, bisection)
-        if not complete then
-            return winner
+        bisect_level(tournament, bisection)
+        if at_most_one_claim_remains(tournament.players) then
+            break
         end
         tournament.players = request_state_transitions(tournament, bisection)
     end
+    return single_claim_remains(tournament.players)
 end
 -- docs:end settle_dispute
 

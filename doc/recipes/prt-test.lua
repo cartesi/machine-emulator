@@ -2003,6 +2003,104 @@ if arg[1] then
         geometry = prt.new_geometry(10),
     }
 
+    -- The same input driver serves whole and split mcycle runs. Zero-length
+    -- requests retain the virgin boundary, and fixed-point continuations do not
+    -- repeat builder finalization or publish outputs twice.
+    do
+        local input_data, cache <close> = new_test_cache(dapp_contract)
+        local player = new_test_player(dapp_contract.geometry, cache)
+        for _, data in ipairs(input_data) do
+            local whole, whole_owner <close> = player:clone_at_input_boundary(0) -- luacheck: ignore 211
+            local split, split_owner <close> = player:clone_at_input_boundary(0) -- luacheck: ignore 211
+            local whole_builder = player:make_null_computation_hash_builder()
+            local split_builder = player:make_null_computation_hash_builder()
+            local whole_outputs, split_outputs = {}, {}
+            local whole_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+            local split_frontier = hash_tree.frontier_copy(whole_frontier)
+            player:run_to_mcycle(split_builder, split, 0, data, 0, 0, initial_state_hash)
+            player:run_to_uarch_cycle(split_builder, split, 0, data, 0, 0, 0, initial_state_hash)
+            assert(split:get_root_hash() == initial_state_hash and not split_owner.backup)
+            local span = 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+            player:run_to_mcycle(
+                whole_builder,
+                whole,
+                0,
+                data,
+                0,
+                span,
+                initial_state_hash,
+                whole_outputs,
+                whole_frontier
+            )
+            player:run_to_mcycle(split_builder, split, 0, data, 0, 1, initial_state_hash, split_outputs, split_frontier)
+            assert(split_owner.backup and split:get_root_hash() ~= initial_state_hash)
+            player:run_to_mcycle(
+                split_builder,
+                split,
+                0,
+                data,
+                1,
+                span - 1,
+                initial_state_hash,
+                split_outputs,
+                split_frontier
+            )
+            local settled_hash = split:get_root_hash()
+            player:run_to_mcycle(
+                split_builder,
+                split,
+                0,
+                data,
+                span - 1,
+                span,
+                initial_state_hash,
+                split_outputs,
+                split_frontier
+            )
+            assert(split:get_root_hash() == settled_hash and settled_hash == whole:get_root_hash())
+            assert(table.concat(split_outputs) == table.concat(whole_outputs))
+            assert(hash_tree.frontier_get_root_hash(split_frontier) == hash_tree.frontier_get_root_hash(whole_frontier))
+        end
+
+        -- Entering at the uarch level delivers exactly once, including when the
+        -- agreed state is inside the first mcycle rather than at its boundary.
+        local whole, whole_owner <close> = player:clone_at_input_boundary(0) -- luacheck: ignore 211
+        local split, split_owner <close> = player:clone_at_input_boundary(0) -- luacheck: ignore 211
+        local whole_builder = player:make_null_computation_hash_builder()
+        local split_builder = player:make_null_computation_hash_builder()
+        player:run_to_uarch_cycle(whole_builder, whole, 0, input_data[1], 0, 0, 2, initial_state_hash)
+        player:run_to_uarch_cycle(split_builder, split, 0, input_data[1], 0, 0, 1, initial_state_hash)
+        player:run_to_uarch_cycle(split_builder, split, 0, input_data[1], 0, 1, 2, initial_state_hash)
+        assert(split:get_root_hash() == whole:get_root_hash())
+
+        -- Splitting sampled execution must retain the partial bundle as well as
+        -- the machine state. Compare the entire epoch against the CLI reference.
+        local sampled, sampled_owner <close> = player:clone_at_input_boundary(0) -- luacheck: ignore 211
+        local builder = player:make_mcycle_computation_hash_builder()
+        builder:begin_epoch(sampled)
+        local revert_root_hash = initial_state_hash
+        for index, data in ipairs(input_data) do
+            player:run_to_mcycle(builder, sampled, index - 1, data, 0, 1, revert_root_hash)
+            local _, yield_reason = player:run_to_mcycle(
+                builder,
+                sampled,
+                index - 1,
+                data,
+                1,
+                1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE,
+                revert_root_hash
+            )
+            if yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+                revert_root_hash = sampled:get_root_hash()
+            end
+        end
+        local forest = builder:end_epoch()
+        assert(
+            hash_tree.frontier_forest_get_root_hash(forest) == util.read_file(assert(arg[5])),
+            "split execution changed the CLI computation hash"
+        )
+    end
+
     -- A tamperer corrupts its machine at a fixed point of the first input. Replay from a cached
     -- boundary must apply the same corruption again, so bundle collection matches an uncached build.
     local tamperer_inputs, tamperer_cache <close> = new_test_cache(dapp_contract, 64, 1)
@@ -2362,12 +2460,12 @@ if arg[1] then
     chain_cache.checkpoints, chain_cache.latest = all_checkpoints, saved_latest
 
     -- Final-machine proofs come from the retained boundary without replaying inputs.
-    local run_input = honest.run_advance_state_input
-    honest.run_advance_state_input = function()
+    local run_input = honest.run_to_mcycle
+    honest.run_to_mcycle = function()
         error("final-machine proof replayed an input")
     end
     local result = honest.event_handler.prove_outputs_merkle_root(honest)
-    honest.run_advance_state_input = run_input
+    honest.run_to_mcycle = run_input
     local final_leaf = (1 << dapp_contract.geometry.mcycle_height) - 1
     assert(
         result.iflags_y_proof.root_hash == honest_tree:get_node_hash(final_leaf, 0),
@@ -2528,31 +2626,50 @@ if arg[1] then
             inputs = terminal == "empty" and {} or inputs,
         }
         local counts = { outer = 0, bundles = 0, uarch = 0 }
-        local function observe_inputs(builder)
-            local run = builder.run
-            builder.run = function(self, machine, target)
-                force_terminal(machine, terminal)
-                return run(self, machine, target)
-            end
-            return builder
-        end
         local terminal_inputs = { table.unpack(contract.inputs) }
         local terminal_cache <close> = prt.new_machine_cache(make_terminal_template())
         local player = new_test_player(contract.geometry, terminal_cache)
         seed_input_paths(player, terminal_inputs)
+        -- Force the stop at delivery itself, including native bundle collection
+        -- that does not execute a preliminary zero-length builder run.
+        local machine_meta = {
+            __index = function(self, name)
+                return util.forward_method(self, self.machine, name)
+            end,
+        }
+        local function send_cmio_response(self, ...)
+            self.machine:send_cmio_response(...)
+            force_terminal(self.machine, terminal)
+        end
+        local function wrap_machine(machine)
+            return setmetatable({ machine = machine, send_cmio_response = send_cmio_response }, machine_meta)
+        end
+        local clone = terminal_cache.clone_at_input_boundary
+        terminal_cache.clone_at_input_boundary = function(self, epoch_input_offset, replay)
+            local wrapped
+            local _, owner <close> = clone(self, epoch_input_offset, function(machine, first, last)
+                wrapped = wrap_machine(machine)
+                return replay(wrapped, first, last)
+            end)
+            return wrapped, owner:move()
+        end
+        for _, method in ipairs({ "snapshot", "commit", "revert" }) do
+            local original = terminal_cache[method]
+            terminal_cache[method] = function(self, machine)
+                return original(self, machine.machine)
+            end
+        end
+        local consider = terminal_cache.consider
+        terminal_cache.consider = function(self, epoch_input_offset, machine)
+            return consider(self, epoch_input_offset, machine.machine)
+        end
         counts.outer = counts.outer + 1
-        player.epoch_builder = observe_inputs(player.epoch_builder)
         function player:make_uarch_cycle_computation_hash_builder(epoch_period_offset)
             counts.uarch = counts.uarch + 1
-            return observe_inputs(
-                prt.make_uarch_cycle_computation_hash_builder(
-                    self.geometry.log2_mcycles_per_period,
-                    epoch_period_offset
-                )
+            return prt.make_uarch_cycle_computation_hash_builder(
+                self.geometry.log2_mcycles_per_period,
+                epoch_period_offset
             )
-        end
-        function player.make_null_computation_hash_builder()
-            return observe_inputs(prt.make_null_computation_hash_builder())
         end
         local collect_mcycle_bundle = player.collect_mcycle_bundle
         player.collect_mcycle_bundle = function(self, epoch_input_offset, input_bundle_offset)

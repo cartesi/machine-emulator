@@ -137,9 +137,9 @@ local function fork_machine(machine)
     return clone
 end
 
--- An advancing pair owns only the working machine and its pre-input snapshot.
--- The execution context supplies logical coordinates. The execution snapshot
--- lasts until the input reaches a fixed point; bisection owns its replay checkpoint.
+-- An advancing pair owns the working machine, its pre-input snapshot, and pending outputs.
+-- The execution context supplies logical coordinates. The pre-input snapshot
+-- survives fixed points; bisection forks the entire pair at any agreed position.
 local advancing_pair_meta = { __index = {} }
 local advancing_pair_methods = advancing_pair_meta.__index
 function advancing_pair_methods:close()
@@ -161,32 +161,34 @@ function advancing_pair_methods:fork()
     -- Clear borrowed resources before a failing fork can trigger cleanup.
     clone.machine, clone.backup = nil, nil
     clone.machine = fork_machine(self.machine)
-    if self.backup then
-        clone.backup = fork_machine(self.backup)
-    end
+    clone.backup = fork_machine(self.backup)
+    clone.pending_outputs = shallow_copy(self.pending_outputs)
     return clone:move()
 end
 
--- These operations settle input execution only. Bisection snapshots the entire
--- pair independently, including a pending input snapshot.
+-- Refresh the input boundary only when entering a new input. Acceptance leaves
+-- it intact, so later logical mcycle offsets still have the same absolute origin.
 function advancing_pair_methods:snapshot()
-    assert(not self.backup, "input already has a snapshot")
-    self.backup = fork_machine(self.machine)
-end
-
-function advancing_pair_methods:commit()
-    assert(self.backup, "input has no snapshot")
-    self.backup:shutdown_server()
-    self.backup = nil
+    local backup = fork_machine(self.machine)
+    if self.backup then
+        self.backup:shutdown_server()
+    end
+    self.backup = backup
+    self.pending_outputs = {}
 end
 
 -- docs:begin revert
 function advancing_pair_methods:revert()
-    assert(self.backup, "input has no snapshot")
-    self.machine:swap(self.backup)
-    self:commit()
+    local restored <close> = setmetatable({ machine = fork_machine(self.backup) }, advancing_pair_meta)
+    self.machine:swap(restored.machine)
 end
 -- docs:end revert
+
+local function new_advancing_pair(machine)
+    local pair <close> = setmetatable({ machine = machine }, advancing_pair_meta)
+    pair:snapshot()
+    return pair:move()
+end
 
 local function new_machine(initial_hash)
     local machine = assert(jsonrpc.spawn_server("127.0.0.1:0"))
@@ -220,29 +222,15 @@ function player_methods:move()
     return setmetatable(shallow_move(self), player_meta)
 end
 
--- Advance a loaded input, settling its checkpoint when it reaches a fixed point.
-function player_methods:run_to_stop(pair, _epoch_input_offset, mcycle_end, on_yield_automatic) -- luacheck: ignore self
-    local machine = pair.machine
+-- The inner execution loop leaves terminal handling to the input driver, as in PRT.
+local function run_to_stop(machine, mcycle_end, on_yield_automatic)
     while true do
         local break_reason = machine:run(mcycle_end)
-        if is_at_fixed_point(break_reason) then
-            local yield_reason, data
-            if is_yielded_manual(break_reason) then
-                yield_reason, data = receive_cmio_request(machine)
-            end
-            if is_rx_rejected(yield_reason) then
-                pair:revert()
-            else
-                pair:commit()
-            end
-            return break_reason, yield_reason, data
-        elseif is_target_mcycle(break_reason) then
+        if is_at_fixed_point(break_reason) or is_target_mcycle(break_reason) then
             return break_reason
-        elseif is_yielded_automatic(break_reason) then
-            if on_yield_automatic then
-                local yield_reason, data = receive_cmio_request(machine)
-                on_yield_automatic(yield_reason, data)
-            end
+        elseif is_yielded_automatic(break_reason) and on_yield_automatic then
+            local yield_reason, data = receive_cmio_request(machine)
+            on_yield_automatic(yield_reason, data)
         end
     end
 end
@@ -254,13 +242,24 @@ local function load_cmio_input(machine, data, revert_root_hash)
     end
 end
 
-function player_methods:run_uarch(pair, epoch_input_offset, input_mcycle_offset, uarch_cycle_end)
-    local uarch_cycle = pair.machine:read_reg("uarch_cycle")
-    assert(uarch_cycle <= uarch_cycle_end, "agreed machine is past desired state")
-    if input_mcycle_offset == 0 and uarch_cycle == 0 and uarch_cycle_end > 0 then
-        self:run_advance_state_input(pair, epoch_input_offset, 0)
+-- Shared by the two execution granularities when leaving a virgin input boundary.
+local function begin_input(pair, input_data)
+    local revert_root_hash = pair.machine:get_root_hash()
+    pair:snapshot()
+    load_cmio_input(pair.machine, input_data, revert_root_hash)
+end
+
+-- luacheck: push ignore self
+function player_methods:run_to_uarch_cycle(pair, input_data, input_mcycle_offset, uarch_cycle_begin, uarch_cycle_end)
+    assert(uarch_cycle_begin <= uarch_cycle_end, "agreed machine is past desired state")
+    assert(pair.machine:read_reg("uarch_cycle") <= uarch_cycle_end, "agreed machine is past desired state")
+    if uarch_cycle_begin == uarch_cycle_end then
+        return
     end
-    pair.machine:run_uarch(uarch_cycle_end)
+    if input_mcycle_offset == 0 and uarch_cycle_begin == 0 then
+        begin_input(pair, input_data)
+    end
+    return pair.machine:run_uarch(uarch_cycle_end)
 end
 
 -- Retain only accepted outputs and check their cumulative root.
@@ -275,53 +274,56 @@ local function flush_pending_outputs(pending, outputs, outputs_frontier, yield_r
     assert(hash_tree.frontier_get_root_hash(outputs_frontier) == outputs_merkle_root, "outputs Merkle root mismatch")
 end
 
--- Run one input from its virgin boundary to the requested offset, as in PRT.
--- docs:begin run_advance_state_input
-function player_methods:run_advance_state_input(
+-- Complete logical mcycles within one input. Offset zero is before delivery;
+-- the unchanged pre-input backup supplies the absolute origin even after rollback.
+-- docs:begin run_to_mcycle
+function player_methods:run_to_mcycle(
     pair,
-    epoch_input_offset,
+    input_data,
+    input_mcycle_offset_begin,
     input_mcycle_offset_end,
     outputs,
     outputs_frontier
 )
+    assert(input_mcycle_offset_begin <= input_mcycle_offset_end, "agreed machine is past desired state")
+    if input_mcycle_offset_begin == input_mcycle_offset_end then
+        return
+    end
+    if input_mcycle_offset_begin == 0 then
+        begin_input(pair, input_data)
+    end
     local machine = pair.machine
-    local input_mcycle_boundary = machine:read_reg("mcycle")
-    local revert_root_hash = machine:get_root_hash()
-    pair:snapshot()
-    load_cmio_input(machine, self.inputs[epoch_input_offset + 1], revert_root_hash)
+    local input_mcycle_boundary = pair.backup:read_reg("mcycle")
     local mcycle_end = usaturating_add(input_mcycle_boundary, input_mcycle_offset_end)
-    local pending = {}
     local function on_yield_automatic(yield_reason, output)
         if outputs and is_tx_output(yield_reason) then
-            pending[#pending + 1] = output
+            pair.pending_outputs[#pair.pending_outputs + 1] = output
         end
     end
-    local break_reason, yield_reason, outputs_merkle_root =
-        self:run_to_stop(pair, epoch_input_offset, mcycle_end, on_yield_automatic)
-    flush_pending_outputs(pending, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
+    local break_reason = run_to_stop(machine, mcycle_end, on_yield_automatic)
+    if not is_at_fixed_point(break_reason) then
+        return break_reason, nil, input_mcycle_boundary
+    end
+    local yield_reason, outputs_merkle_root
+    if is_yielded_manual(break_reason) then
+        yield_reason, outputs_merkle_root = receive_cmio_request(machine)
+    end
+    if is_rx_rejected(yield_reason) then
+        pair:revert()
+    else
+        flush_pending_outputs(pair.pending_outputs, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
+    end
+    pair.pending_outputs = {}
     return break_reason, yield_reason, input_mcycle_boundary
 end
--- docs:end run_advance_state_input
+-- docs:end run_to_mcycle
+-- luacheck: pop
 
--- Replay to an input boundary without collecting outputs. Unposted inputs
+-- Replay completed inputs, leaving the next input undelivered. Unposted inputs
 -- repeat the final state and need no execution.
-function player_methods:run_to_input_boundary(pair, epoch_input_offset_begin, epoch_input_offset_end)
-    for epoch_input_offset = epoch_input_offset_begin, math.min(epoch_input_offset_end, #self.inputs) - 1 do
-        self:run_advance_state_input(pair, epoch_input_offset, MCYCLES_PER_INPUT)
-    end
-end
-
-function player_methods:run_to_mcycle_boundary(
-    pair,
-    epoch_input_offset,
-    input_mcycle_offset_begin,
-    input_mcycle_offset_end
-)
-    if input_mcycle_offset_begin == 0 then
-        self:run_advance_state_input(pair, epoch_input_offset, input_mcycle_offset_end)
-    elseif pair.backup then
-        local mcycle_end = usaturating_add(pair.backup:read_reg("mcycle"), input_mcycle_offset_end)
-        self:run_to_stop(pair, epoch_input_offset, mcycle_end)
+function player_methods:run_to_input_boundary(pair, inputs, epoch_input_offset_begin, epoch_input_offset_end)
+    for epoch_input_offset = epoch_input_offset_begin, math.min(epoch_input_offset_end, #inputs) - 1 do
+        self:run_to_mcycle(pair, inputs[epoch_input_offset + 1], 0, MCYCLES_PER_INPUT)
     end
 end
 
@@ -347,9 +349,10 @@ end
 
 function event_handler:input_added(epoch_input_offset, path)
     self.inputs[epoch_input_offset + 1] = self:read_input(epoch_input_offset, path)
-    self:run_advance_state_input(
+    self:run_to_mcycle(
         self.latest,
-        epoch_input_offset,
+        self.inputs[epoch_input_offset + 1],
+        0,
         MCYCLES_PER_INPUT,
         self.outputs,
         self.outputs_frontier
@@ -384,28 +387,30 @@ function event_handler:reveal_bisection(agreed_position, tentative_position)
         self.tentative_machine:close()
     end
     self.agreed_position = agreed_position
-    -- Replay from a fork of the whole agreed pair, including any pending input snapshot.
+    -- Replay from a fork of the whole agreed pair, including its pre-input snapshot.
     self.tentative_machine = self.agreed_machine:fork()
     if agreed_position.epoch_input_offset < tentative_position.epoch_input_offset then
         self:run_to_input_boundary(
             self.tentative_machine,
+            self.inputs,
             agreed_position.epoch_input_offset,
             tentative_position.epoch_input_offset
         )
     end
     if agreed_position.input_mcycle_offset < tentative_position.input_mcycle_offset then
-        self:run_to_mcycle_boundary(
+        self:run_to_mcycle(
             self.tentative_machine,
-            tentative_position.epoch_input_offset,
+            self.inputs[tentative_position.epoch_input_offset + 1],
             agreed_position.input_mcycle_offset,
             tentative_position.input_mcycle_offset
         )
     end
     if agreed_position.uarch_cycle < tentative_position.uarch_cycle then
-        self:run_uarch(
+        self:run_to_uarch_cycle(
             self.tentative_machine,
-            tentative_position.epoch_input_offset,
+            self.inputs[tentative_position.epoch_input_offset + 1],
             tentative_position.input_mcycle_offset,
+            agreed_position.uarch_cycle,
             tentative_position.uarch_cycle
         )
     end
@@ -461,7 +466,7 @@ end
 local function new_player(initial_hash, label, last_output_proof, machine)
     local self <close> = setmetatable({
         label = label or "honest",
-        agreed_machine = setmetatable({ machine = machine or new_machine(initial_hash) }, advancing_pair_meta),
+        agreed_machine = new_advancing_pair(machine or new_machine(initial_hash)),
         agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
         inputs = {},
         outputs = {},

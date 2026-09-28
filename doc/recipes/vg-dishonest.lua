@@ -22,61 +22,85 @@ local function corrupt(machine)
     local config = machine:get_initial_config()
     machine:write_memory(cartesi.AR_RAM_START + config.ram.length - 8, "CORRUPT!")
 end
-local function run_tampered(self, pair, epoch_input_offset, mcycle_end, on_yield_automatic)
-    if epoch_input_offset == self.tampered_index and not pair.tampered then
-        local point = vg.usaturating_add(pair.backup:read_reg("mcycle"), self.tampered_offset)
+-- Execution overrides live on the dishonest machine, leaving the shared input
+-- lifecycle intact. Forking preserves the strategy; rollback restores corruption
+-- state while the logical input index continues past the rejected input.
+local tampered_machine_meta_methods = {}
+local tampered_machine_meta = {
+    __index = function(self, name)
+        return tampered_machine_meta_methods[name] or util.forward_method(self, self.machine, name)
+    end,
+}
+
+function tampered_machine_meta_methods:shutdown_server()
+    self.machine:shutdown_server()
+end
+tampered_machine_meta.__close = tampered_machine_meta_methods.shutdown_server
+
+function tampered_machine_meta_methods:fork_server()
+    return setmetatable({
+        machine = assert(self.machine:fork_server()),
+        epoch_input_offset = self.epoch_input_offset,
+        input_mcycle_boundary = self.input_mcycle_boundary,
+        tampered_index = self.tampered_index,
+        tampered_offset = self.tampered_offset,
+        tampered = self.tampered,
+    }, tampered_machine_meta)
+end
+
+function tampered_machine_meta_methods:swap(other)
+    self.machine:swap(other.machine)
+    self.tampered, other.tampered = other.tampered, self.tampered
+end
+
+function tampered_machine_meta_methods:send_cmio_response(reason, data, revert_root_hash)
+    self.epoch_input_offset = self.epoch_input_offset + 1
+    self.input_mcycle_boundary = self.machine:read_reg("mcycle")
+    return self.machine:send_cmio_response(reason, data, revert_root_hash)
+end
+
+function tampered_machine_meta_methods:run(mcycle_end)
+    if self.epoch_input_offset == self.tampered_index and not self.tampered then
+        local point = vg.usaturating_add(self.input_mcycle_boundary, self.tampered_offset)
         if math.ult(point, mcycle_end) then
-            local break_reason, yield_reason, data =
-                vg.player_methods.run_to_stop(self, pair, epoch_input_offset, point, on_yield_automatic)
+            local break_reason = self.machine:run(point)
             if break_reason ~= cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE then
-                return break_reason, yield_reason, data
+                return break_reason
             end
-            if pair.machine:read_reg("mcycle") == point then
-                corrupt(pair.machine)
-                pair.tampered = true
+            if self.machine:read_reg("mcycle") == point then
+                corrupt(self.machine)
+                self.tampered = true
             end
         end
     end
-    return vg.player_methods.run_to_stop(self, pair, epoch_input_offset, mcycle_end, on_yield_automatic)
+    return self.machine:run(mcycle_end)
 end
-local function run_tampered_uarch(self, pair, epoch_input_offset, input_mcycle_offset, target)
-    local machine = pair.machine
-    local cycle = machine:read_reg("uarch_cycle")
-    if input_mcycle_offset == 0 and cycle == 0 and target > 0 then
-        self:run_advance_state_input(pair, epoch_input_offset, 0)
-    end
+
+function tampered_machine_meta_methods:run_uarch(uarch_cycle_end)
     if
-        epoch_input_offset == self.tampered_index
-        and input_mcycle_offset == self.tampered_offset
-        and cycle == 0
-        and target > 0
+        self.epoch_input_offset == self.tampered_index
+        and self.machine:read_reg("mcycle") == vg.usaturating_add(self.input_mcycle_boundary, self.tampered_offset)
+        and self.machine:read_reg("uarch_cycle") == 0
+        and uarch_cycle_end > 0
+        and not self.tampered
     then
-        corrupt(machine)
-        pair.tampered = true
+        corrupt(self.machine)
+        self.tampered = true
     end
-    return machine:run_uarch(target)
+    return self.machine:run_uarch(uarch_cycle_end)
 end
--- Only the dishonest role knows how to snapshot and restore its bookkeeping.
--- Forking the pair carries these scalar fields and shared methods with it.
-local function snapshot_tampered(pair)
-    vg.advancing_pair_methods.snapshot(pair)
-    pair.tampered_before_input = pair.tampered
-end
-local function commit_tampered(pair)
-    vg.advancing_pair_methods.commit(pair)
-    pair.tampered_before_input = nil
-end
-local function revert_tampered(pair)
-    local tampered = pair.tampered_before_input
-    vg.advancing_pair_methods.revert(pair)
-    pair.tampered = tampered
-end
+
 local function new_tamperer(initial_hash, input_index, input_mcycle_offset)
     local player = vg.new_player(initial_hash, "tamperer")
-    player.tampered_index, player.tampered_offset = input_index, input_mcycle_offset
-    player.run_to_stop, player.run_uarch = run_tampered, run_tampered_uarch
-    for _, pair in ipairs({ player.initial, player.latest, player.agreed_machine }) do
-        pair.snapshot, pair.commit, pair.revert = snapshot_tampered, commit_tampered, revert_tampered
+    for _, pair in ipairs({ player.initial, player.latest, player.agreed_machine, player.tentative_machine }) do
+        for _, key in ipairs({ "machine", "backup" }) do
+            pair[key] = setmetatable({
+                machine = pair[key],
+                epoch_input_offset = -1,
+                tampered_index = input_index,
+                tampered_offset = input_mcycle_offset,
+            }, tampered_machine_meta)
+        end
     end
     return player
 end

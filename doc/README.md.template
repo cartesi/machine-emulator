@@ -4800,20 +4800,20 @@ Recall that `machine:send_cmio_response()` records a revert state hash, and reje
 When the guest rejects an input, the transitions that process it lead back to this recorded revert state, so the boundary that follows a rejected input is the boundary that preceded it.
 No emulator operation moves a machine backwards, however, so producing the reverted state is left to the client code.
 This is why a Cartesi Node keeps a snapshot of the machine while an input is processed, and the players of this game do the same.
-Each player crosses one input with `run_advance_state_input`:
-```{.lua key=rvg_advance include=rolling-verification-game.lua/run_advance_state_input title="rolling-verification-game.lua (excerpt)"}
+Each player advances within one input with `run_to_mcycle`. Mcycle offsets are relative to its pre-delivery boundary; offset zero remains undelivered until execution advances:
+```{.lua key=rvg_advance include=rolling-verification-game.lua/run_to_mcycle title="rolling-verification-game.lua (excerpt)"}
 ```
 The revert itself is a player operation of its own, shared with the bisection rounds we will meet below:
 ```{.lua key=rvg_revert include=rolling-verification-game.lua/revert title="rolling-verification-game.lua (excerpt)"}
 ```
-The advancing pair owns both the working machine and its backup. Reverting shuts down the working machine and restores the backup at the recorded revert state.
-Inputs are typically accepted, however, and an accepted input passes through untouched, so a player crosses a whole epoch on the same server while the snapshot beside it comes and goes.
+The advancing pair owns both the working machine and its pre-input backup. Reverting replaces the working state with a fork of the backup, preserving the backup itself.
+Acceptance also retains the backup: its `mcycle` remains the origin for offsets throughout the logical span of the input, including repetitions past a fixed point. The next input refreshes it before delivery.
 The execution regression tests also check a dishonest player that overrides this operation and keeps the rejecting machine.
 
 ### Bisecting within an input
 
 The mcycle bisection ranges over the disputed input's 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup> mcycles.
-The input is included by the first of these transitions, so the state at offset *m* is the input boundary, fed, and run for *m* mcycles.
+Offset zero is the boundary before input delivery. The input is included by the first transition, so the state at a positive offset *m* is the input boundary, fed, and run for *m* mcycles.
 The calculator is done with each input within about 50 million mcycles, after which the machine has yielded manual and no longer advances.
 A midpoint past the yield therefore repeats the yielded state, and the bisection ranges over the full ceiling without knowing where the guest yields, as it can when execution halts.
 The uarch_cycle bisection that follows ranges over the 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch cycles of the disputed instruction.
@@ -5125,7 +5125,7 @@ The uarch build (`build_uarch_claim`) expands one period, instruction by instruc
 Both computation-hash builders implement `begin_epoch`, `begin_input`, `run`, `end_input`, and `end_epoch`.
 Bundle collection replays to the selected range with a null builder, then asks the machine for the bundle's state hashes and stores them in a local forest. `machine:collect_mcycle_bundle()` advances from the input boundary to the selected bundle of periods and samples it, and `machine:collect_uarch_cycle_bundle()` expands the selected bundle of uarch cycles of the current mcycle. Both pad with the fixed-point state hash when the machine stops before the selected range.
 Uarch bundle collection captures the rejection tail before input delivery. If replay rejects before the selected mcycle, the input driver restores the boundary machine before collection; if the collected instruction rejects, the machine collector uses the saved tail.
-Both input events and dispute replay delegate delivery, automatic yields, acceptance, and rollback to `run_advance_state_input`. Forward execution collects computation hashes and accepted outputs together, avoiding a second epoch execution for output proofs.
+Both input events and dispute replay delegate delivery, automatic yields, acceptance, and rollback to `run_to_mcycle`. Its mcycle offsets are relative to the pre-delivery input boundary, and a zero-length run leaves that boundary untouched. `run_to_uarch_cycle` also delivers the input when advancing directly into its first mcycle. Forward execution collects computation hashes and accepted outputs together, avoiding a second epoch execution for output proofs.
 Both paths use the CLI's break- and yield-reason predicates, such as `is_yielded_manual` and `is_rx_accepted`.
 At construction, the player checks that the template is waiting on an rx-accepted manual yield, using the yield flag and header registers without reading an output payload.
 `load_cmio_input` skips absent inputs and otherwise sends the input with the pre-delivery `revert_root_hash`. Forward execution and disputes use the same loader.

@@ -8818,31 +8818,48 @@ input is the boundary that preceded it. No emulator operation moves a
 machine backwards, however, so producing the reverted state is left to
 the client code. This is why a Cartesi Node keeps a snapshot of the
 machine while an input is processed, and the players of this game do the
-same. Each player crosses one input with `run_advance_state_input`:
+same. Each player advances within one input with `run_to_mcycle`. Mcycle
+offsets are relative to its pre-delivery boundary; offset zero remains
+undelivered until execution advances:
 
 ``` lua
-function player_methods:run_advance_state_input(
+function player_methods:run_to_mcycle(
     pair,
-    epoch_input_offset,
+    input_data,
+    input_mcycle_offset_begin,
     input_mcycle_offset_end,
     outputs,
     outputs_frontier
 )
+    assert(input_mcycle_offset_begin <= input_mcycle_offset_end, "agreed machine is past desired state")
+    if input_mcycle_offset_begin == input_mcycle_offset_end then
+        return
+    end
+    if input_mcycle_offset_begin == 0 then
+        begin_input(pair, input_data)
+    end
     local machine = pair.machine
-    local input_mcycle_boundary = machine:read_reg("mcycle")
-    local revert_root_hash = machine:get_root_hash()
-    pair:snapshot()
-    load_cmio_input(machine, self.inputs[epoch_input_offset + 1], revert_root_hash)
+    local input_mcycle_boundary = pair.backup:read_reg("mcycle")
     local mcycle_end = usaturating_add(input_mcycle_boundary, input_mcycle_offset_end)
-    local pending = {}
     local function on_yield_automatic(yield_reason, output)
         if outputs and is_tx_output(yield_reason) then
-            pending[#pending + 1] = output
+            pair.pending_outputs[#pair.pending_outputs + 1] = output
         end
     end
-    local break_reason, yield_reason, outputs_merkle_root =
-        self:run_to_stop(pair, epoch_input_offset, mcycle_end, on_yield_automatic)
-    flush_pending_outputs(pending, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
+    local break_reason = run_to_stop(machine, mcycle_end, on_yield_automatic)
+    if not is_at_fixed_point(break_reason) then
+        return break_reason, nil, input_mcycle_boundary
+    end
+    local yield_reason, outputs_merkle_root
+    if is_yielded_manual(break_reason) then
+        yield_reason, outputs_merkle_root = receive_cmio_request(machine)
+    end
+    if is_rx_rejected(yield_reason) then
+        pair:revert()
+    else
+        flush_pending_outputs(pair.pending_outputs, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
+    end
+    pair.pending_outputs = {}
     return break_reason, yield_reason, input_mcycle_boundary
 end
 ```
@@ -8852,35 +8869,35 @@ bisection rounds we will meet below:
 
 ``` lua
 function advancing_pair_methods:revert()
-    assert(self.backup, "input has no snapshot")
-    self.machine:swap(self.backup)
-    self:commit()
+    local restored <close> = setmetatable({ machine = fork_machine(self.backup) }, advancing_pair_meta)
+    self.machine:swap(restored.machine)
 end
 ```
 
-The advancing pair owns both the working machine and its backup.
-Reverting shuts down the working machine and restores the backup at the
-recorded revert state. Inputs are typically accepted, however, and an
-accepted input passes through untouched, so a player crosses a whole
-epoch on the same server while the snapshot beside it comes and goes.
-The execution regression tests also check a dishonest player that
-overrides this operation and keeps the rejecting machine.
+The advancing pair owns both the working machine and its pre-input
+backup. Reverting replaces the working state with a fork of the backup,
+preserving the backup itself. Acceptance also retains the backup: its
+`mcycle` remains the origin for offsets throughout the logical span of
+the input, including repetitions past a fixed point. The next input
+refreshes it before delivery. The execution regression tests also check
+a dishonest player that overrides this operation and keeps the rejecting
+machine.
 
 ### Bisecting within an input
 
 The mcycle bisection ranges over the disputed input’s 2<sup>48</sup>
-mcycles. The input is included by the first of these transitions, so the
-state at offset *m* is the input boundary, fed, and run for *m* mcycles.
-The calculator is done with each input within about 50 million mcycles,
-after which the machine has yielded manual and no longer advances. A
-midpoint past the yield therefore repeats the yielded state, and the
-bisection ranges over the full ceiling without knowing where the guest
-yields, as it can when execution halts. The uarch_cycle bisection that
-follows ranges over the 2<sup>20</sup> uarch cycles of the disputed
-instruction. The referee converts each interval into the agreed
-predecessor’s position and the tentative midpoint’s position. A single
-player operation receives these two positions and serves the three
-levels:
+mcycles. Offset zero is the boundary before input delivery. The input is
+included by the first transition, so the state at a positive offset *m*
+is the input boundary, fed, and run for *m* mcycles. The calculator is
+done with each input within about 50 million mcycles, after which the
+machine has yielded manual and no longer advances. A midpoint past the
+yield therefore repeats the yielded state, and the bisection ranges over
+the full ceiling without knowing where the guest yields, as it can when
+execution halts. The uarch_cycle bisection that follows ranges over the
+2<sup>20</sup> uarch cycles of the disputed instruction. The referee
+converts each interval into the agreed predecessor’s position and the
+tentative midpoint’s position. A single player operation receives these
+two positions and serves the three levels:
 
 ``` lua
 function event_handler:reveal_bisection(agreed_position, tentative_position)
@@ -8892,28 +8909,30 @@ function event_handler:reveal_bisection(agreed_position, tentative_position)
         self.tentative_machine:close()
     end
     self.agreed_position = agreed_position
-    -- Replay from a fork of the whole agreed pair, including any pending input snapshot.
+    -- Replay from a fork of the whole agreed pair, including its pre-input snapshot.
     self.tentative_machine = self.agreed_machine:fork()
     if agreed_position.epoch_input_offset < tentative_position.epoch_input_offset then
         self:run_to_input_boundary(
             self.tentative_machine,
+            self.inputs,
             agreed_position.epoch_input_offset,
             tentative_position.epoch_input_offset
         )
     end
     if agreed_position.input_mcycle_offset < tentative_position.input_mcycle_offset then
-        self:run_to_mcycle_boundary(
+        self:run_to_mcycle(
             self.tentative_machine,
-            tentative_position.epoch_input_offset,
+            self.inputs[tentative_position.epoch_input_offset + 1],
             agreed_position.input_mcycle_offset,
             tentative_position.input_mcycle_offset
         )
     end
     if agreed_position.uarch_cycle < tentative_position.uarch_cycle then
-        self:run_uarch(
+        self:run_to_uarch_cycle(
             self.tentative_machine,
-            tentative_position.epoch_input_offset,
+            self.inputs[tentative_position.epoch_input_offset + 1],
             tentative_position.input_mcycle_offset,
+            agreed_position.uarch_cycle,
             tentative_position.uarch_cycle
         )
     end
@@ -9406,22 +9425,25 @@ rejects before the selected mcycle, the input driver restores the
 boundary machine before collection; if the collected instruction
 rejects, the machine collector uses the saved tail. Both input events
 and dispute replay delegate delivery, automatic yields, acceptance, and
-rollback to `run_advance_state_input`. Forward execution collects
-computation hashes and accepted outputs together, avoiding a second
-epoch execution for output proofs. Both paths use the CLI’s break- and
-yield-reason predicates, such as `is_yielded_manual` and
-`is_rx_accepted`. At construction, the player checks that the template
-is waiting on an rx-accepted manual yield, using the yield flag and
-header registers without reading an output payload. `load_cmio_input`
-skips absent inputs and otherwise sends the input with the pre-delivery
-`revert_root_hash`. Forward execution and disputes use the same loader.
-The player retains the expected boundary hash between input events and
-across rejection and updates it only after acceptance. Input delivery
-checks this expected hash, and rollback must restore it. The machine
-sender and logged transition both treat an inapplicable delivery as a
-no-op. At a terminal boundary the slot idles and the builders pad it
-from there; a transition proof with a posted input logs the same no-op
-through `log_send_cmio_response`. The player constructor is
+rollback to `run_to_mcycle`. Its mcycle offsets are relative to the
+pre-delivery input boundary, and a zero-length run leaves that boundary
+untouched. `run_to_uarch_cycle` also delivers the input when advancing
+directly into its first mcycle. Forward execution collects computation
+hashes and accepted outputs together, avoiding a second epoch execution
+for output proofs. Both paths use the CLI’s break- and yield-reason
+predicates, such as `is_yielded_manual` and `is_rx_accepted`. At
+construction, the player checks that the template is waiting on an
+rx-accepted manual yield, using the yield flag and header registers
+without reading an output payload. `load_cmio_input` skips absent inputs
+and otherwise sends the input with the pre-delivery `revert_root_hash`.
+Forward execution and disputes use the same loader. The player retains
+the expected boundary hash between input events and across rejection and
+updates it only after acceptance. Input delivery checks this expected
+hash, and rollback must restore it. The machine sender and logged
+transition both treat an inapplicable delivery as a no-op. At a terminal
+boundary the slot idles and the builders pad it from there; a transition
+proof with a posted input logs the same no-op through
+`log_send_cmio_response`. The player constructor is
 `prt.new_player(dapp_contract, label)`. The player retains the dapp
 contract, reads its geometry, and initializes its own empty
 `input_paths` table, machine cache, and open epoch computation. Input
@@ -9884,22 +9906,27 @@ function event_handler.prove_state_transition(self, epoch_input_offset, input_pe
     local machine, _ <close> = self:clone_at_input_boundary(epoch_input_offset)
     local revert_root_hash = machine:get_root_hash()
     local path = self.input_paths[epoch_input_offset + 1]
+    local input_data = path and util.read_file(path)
     if state_transition_offset == 0 and input_period_offset == 0 and path then
-        local data = util.read_file(path)
         -- Logging never fails. A machine that is not waiting for the input logs the no-op delivery.
         local send_cmio_log =
-            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
+            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input_data, revert_root_hash)
         return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
     end
     local builder = self:make_null_computation_hash_builder()
-    self:run_advance_state_input(
+    local input_mcycle_offset =
+        combine_input_mcycle_offset(self.geometry.mcycles_per_period, input_period_offset, period_mcycle_offset)
+    self:run_to_mcycle(builder, machine, epoch_input_offset, input_data, 0, input_mcycle_offset, revert_root_hash)
+    self:run_to_uarch_cycle(
         builder,
         machine,
         epoch_input_offset,
-        combine_input_mcycle_offset(self.geometry.mcycles_per_period, input_period_offset, period_mcycle_offset),
+        input_data,
+        input_mcycle_offset,
+        0,
+        uarch_cycle,
         revert_root_hash
     )
-    machine:run_uarch(uarch_cycle)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
         local step_log = machine:log_step_uarch()
         return { step_log = step_log, reset_uarch_log = machine:log_reset_uarch() }

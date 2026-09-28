@@ -72,15 +72,16 @@ function story.report_bisection(agreed_position, tentative_position)
     end
 end
 
-function story.report_bisection_progress(agreed_position, disputed_position)
+function story.report_bisection_progress(bisection)
+    local position = bisection.agreed_position
     eventf(
-        "Positions bound the disagreement: [(0x%x, 0x%x, 0x%x), (0x%x, 0x%x, 0x%x)).",
-        agreed_position.epoch_input_offset,
-        agreed_position.input_mcycle_offset,
-        agreed_position.uarch_cycle,
-        disputed_position.epoch_input_offset,
-        disputed_position.input_mcycle_offset,
-        disputed_position.uarch_cycle
+        "Disagreement starts at (0x%x, 0x%x, 0x%x); counts are (0x%x, 0x%x, 0x%x).",
+        position.epoch_input_offset,
+        position.input_mcycle_offset,
+        position.uarch_cycle,
+        1 << bisection.log2_input_count,
+        1 << bisection.log2_mcycle_count,
+        1 << bisection.log2_uarch_cycle_count
     )
 end
 

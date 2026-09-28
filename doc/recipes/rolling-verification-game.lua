@@ -17,8 +17,8 @@ local FOREVER = nil
 local story = vgu.story
 local addresses = vgu.addresses
 local MCYCLES_PER_INPUT = 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
-local UARCH_CYCLES_PER_MCYCLE = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-local INPUTS_PER_EPOCH = 1 << 16
+local LOG2_INPUTS_PER_EPOCH = 16
+local INPUTS_PER_EPOCH = 1 << LOG2_INPUTS_PER_EPOCH
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
 
 local function shallow_copy(values)
@@ -107,33 +107,24 @@ local function receive_cmio_request(machine)
     return reason, data
 end
 
--- Split the first coordinate with an interior boundary. When the upper boundary
--- belongs to the next input or mcycle, the finer coordinate spans its full range.
--- The epoch's padded endpoint repeats its final state, including the uarch reset.
+local function one_uarch_cycle_remains(bisection)
+    return bisection.log2_input_count == 0
+        and bisection.log2_mcycle_count == 0
+        and bisection.log2_uarch_cycle_count == 0
+end
+
+-- Advance halfway through the first coordinate whose count exceeds one.
 -- docs:begin midpoint
-local function midpoint(agreed_position, disputed_position)
-    local position = shallow_copy(agreed_position)
-    local input_hi = disputed_position.epoch_input_offset
-    if input_hi - position.epoch_input_offset > 1 then
-        position.epoch_input_offset = position.epoch_input_offset + ((input_hi - position.epoch_input_offset) >> 1)
-        return position
+local function midpoint(bisection)
+    local position = shallow_copy(bisection.agreed_position)
+    if bisection.log2_input_count > 0 then
+        position.epoch_input_offset = position.epoch_input_offset + (1 << (bisection.log2_input_count - 1))
+    elseif bisection.log2_mcycle_count > 0 then
+        position.input_mcycle_offset = position.input_mcycle_offset + (1 << (bisection.log2_mcycle_count - 1))
+    elseif bisection.log2_uarch_cycle_count > 0 then
+        position.uarch_cycle = position.uarch_cycle + (1 << (bisection.log2_uarch_cycle_count - 1))
     end
-    local mcycle_hi = agreed_position.epoch_input_offset < input_hi and MCYCLES_PER_INPUT
-        or disputed_position.input_mcycle_offset
-    if mcycle_hi - position.input_mcycle_offset > 1 then
-        position.input_mcycle_offset = position.input_mcycle_offset + ((mcycle_hi - position.input_mcycle_offset) >> 1)
-        return position
-    end
-    local uarch_hi = (
-        agreed_position.epoch_input_offset < input_hi
-        or agreed_position.input_mcycle_offset < disputed_position.input_mcycle_offset
-    )
-            and UARCH_CYCLES_PER_MCYCLE
-        or disputed_position.uarch_cycle
-    if uarch_hi - position.uarch_cycle > 1 then
-        position.uarch_cycle = position.uarch_cycle + ((uarch_hi - position.uarch_cycle) >> 1)
-        return position
-    end
+    return position
 end
 -- docs:end midpoint
 
@@ -640,11 +631,11 @@ local function request_bisections(tournament, agreed_position, tentative_positio
     return survivors:wait_at_most(deadline)
 end
 
--- Narrow the two boundaries to one transition. Any disagreement selects the earlier half.
+-- Halve the first non-unit count. Any disagreement selects the earlier half.
 -- docs:begin bisect
 local function bisect(tournament, bisection)
-    local tentative_position = midpoint(bisection.agreed_position, bisection.disputed_position)
-    while tentative_position do
+    while not one_uarch_cycle_remains(bisection) do
+        local tentative_position = midpoint(bisection)
         story.report_bisection(bisection.agreed_position, tentative_position)
         tournament.players = request_bisections(tournament, bisection.agreed_position, tentative_position)
         if at_most_one_claim_remains(tournament.players) then
@@ -654,14 +645,19 @@ local function bisect(tournament, bisection)
             return player.midpoint_hash
         end)
         if hashes_disagree(hashes) then
-            bisection.disputed_position = tentative_position
             bisection.hashes_after = hashes
         else
             bisection.agreed_position = tentative_position
             bisection.last_agreed_hash = any_of(hashes)
         end
-        story.report_bisection_progress(bisection.agreed_position, bisection.disputed_position)
-        tentative_position = midpoint(bisection.agreed_position, bisection.disputed_position)
+        if bisection.log2_input_count > 0 then
+            bisection.log2_input_count = bisection.log2_input_count - 1
+        elseif bisection.log2_mcycle_count > 0 then
+            bisection.log2_mcycle_count = bisection.log2_mcycle_count - 1
+        else
+            bisection.log2_uarch_cycle_count = bisection.log2_uarch_cycle_count - 1
+        end
+        story.report_bisection_progress(bisection)
     end
 end
 -- docs:end bisect
@@ -704,11 +700,9 @@ local function settle_dispute(tournament)
     while not at_most_one_claim_remains(tournament.players) do
         local bisection = {
             agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
-            disputed_position = {
-                epoch_input_offset = INPUTS_PER_EPOCH,
-                input_mcycle_offset = MCYCLES_PER_INPUT,
-                uarch_cycle = UARCH_CYCLES_PER_MCYCLE,
-            },
+            log2_input_count = LOG2_INPUTS_PER_EPOCH,
+            log2_mcycle_count = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE,
+            log2_uarch_cycle_count = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
             last_agreed_hash = tournament.dapp_contract.initial_state_hash,
             hashes_after = map(tournament.players, function(player)
                 return player.final_hash

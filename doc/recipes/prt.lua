@@ -18,8 +18,8 @@
 -- verification games.
 --
 -- Roles, selected by the first argument. Every game role takes the referee address and the
--- epoch's initial state hash. Only the referee takes input files: it delivers their filenames
--- in order through input_added events and emits epoch_sealed before opening the tournament.
+-- epoch's initial state hash. Only the referee role's runner takes input files: it simulates
+-- blockchain input_added and epoch_sealed events before running the tournament referee.
 -- A machine-holding player finds its own initial snapshot stored under that hash name. The
 -- referee is never told how many players to expect: it accepts subscribers until a
 -- phase-closer connection closes that phase, then emits the tournament event to those
@@ -789,6 +789,16 @@ local function wait_for_outputs(tournament, winner)
 end
 -- docs:end wait_for_outputs
 
+-- Simulate blockchain publication, waiting for each event's handlers before proceeding.
+local function run_epoch(dapp_contract, subscribers)
+    for index, path in ipairs(dapp_contract.input_paths) do
+        local input <close> = request_all(subscribers, EVENTS.input_added, { index - 1, path })
+        input:wait_at_most(FOREVER)
+    end
+    local sealed <close> = request_all(subscribers, EVENTS.epoch_sealed, { #dapp_contract.inputs })
+    sealed:wait_at_most(FOREVER)
+end
+
 -- Seen from the referee, the whole game is short. It opens the mcycle tournament, reduces the
 -- claims it opened with, and, if one survives every match, settles the epoch on its result.
 -- The mcycle tournament packs what the reduction needs: the agreed initial state hash,
@@ -797,13 +807,6 @@ end
 -- the referee server this is handed to.
 -- docs:begin run_referee
 local function run_referee(dapp_contract)
-    accept_subscribers(dapp_contract.initial_state_hash)
-    for index, path in ipairs(dapp_contract.input_paths) do
-        local input <close> = request_all(EVERYONE, EVENTS.input_added, { index - 1, path })
-        input:wait_at_most(FOREVER)
-    end
-    local sealed <close> = request_all(EVERYONE, EVENTS.epoch_sealed, { #dapp_contract.inputs })
-    sealed:wait_at_most(FOREVER)
     local tournament = open_mcycle_tournament(dapp_contract)
     local winner = run_tournament(tournament)
     story.report_winner(winner)
@@ -858,13 +861,15 @@ local function make_dapp_contract(initial_state_hash, input_paths)
     }
 end
 
--- The referee, standing in for the Dave contracts. Like a player constructor, this binds the
--- role's game logic to the deployed dapp contract without creating or running its transport.
+-- The role's runner simulates the epoch before starting its tournament referee.
+-- Construction binds the deployed dapp contract without creating or running the transport.
 local function new_referee(dapp_contract)
     return {
         dapp_contract = dapp_contract,
         run = function(self, referee_server)
             server = referee_server
+            local subscribers = accept_subscribers(self.dapp_contract.initial_state_hash)
+            run_epoch(self.dapp_contract, subscribers)
             run_referee(self.dapp_contract)
         end,
     }

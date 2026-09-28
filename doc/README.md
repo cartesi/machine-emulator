@@ -9080,9 +9080,10 @@ asking for `2^1024` instead of the posted `2^2048`. Its logs may
 describe a real machine execution, but cannot prove that execution
 against the input held by the referee.
 
-The runner stores the initial machine under its state hash. Only the
-referee receives the input paths; it announces them to players in
-events. Start the referee:
+The runner stores the initial machine under its state hash. The referee
+role’s runner receives the input paths and simulates blockchain events
+with `run_epoch` before calling `run_referee`. Players learn the inputs
+and epoch bounds from those events. Start the referee:
 
 ``` bash
 lua5.4 rolling-verification-game.lua referee 127.0.0.1:8090 "$initial_state_hash" \
@@ -9339,35 +9340,38 @@ fills the segment’s remaining positions. The only different sink is
 PRT’s frontier forest, which retains the nodes needed to answer later
 tournament queries. The forest owns the total leaf count. Omitting the
 count in `frontier_forest_pad_back` fills its remaining capacity,
-preserving the descendants of any repeated subtree. The referee emits
-`input_added(epoch_input_offset, filename)` for each input in order,
-followed by `epoch_sealed(input_count)`. The player initializes its
-computation at construction using a temporary clone. The cache already
-owns boundary zero. Each input event acquires a scoped working clone of
-the latest boundary. Each input event reads the named file and advances
-that input immediately, pushing its bundle roots into the claim forest
-at their logical heights, padding its span with the fixed point where
-its guest stopped, and offering the completed input boundary to the
-cache after output checks and any rollback. At `epoch_sealed`, the
-player checks the input count, pads the unoccupied epoch suffix, freezes
-its checkpoints, and builds inclusion proofs for all accepted outputs
-using `frontier_next_proofs`. The player retains every accepted output
-and its proof for later client requests. The `prove_outputs_merkle_root`
-handler obtains final-machine proofs from a scoped clone of the cached
-final boundary, without replay. `commit_mcycle_claim` uses the completed
-forest. Processing therefore begins while the epoch is still open. The
-default policy keeps a bounded, progressively thinned set of historical
-checkpoints, indexed by epoch input offset. Offset zero always retains
-the initial machine template. A separate latest boundary is always
-retained, independently of thinning, so the next input needs no replay.
-This uses at most one additional retained machine.
-`consider(epoch_input_offset, machine)` handles every completed
-boundary. It compares the state with the latest cached state. An
-unchanged state reuses that machine and advances only the epoch input
-offset. Changed states replace the latest snapshot. Every offer then
-runs the historical checkpoint policy, including when the state is
-unchanged. Latest and historical boundaries own independent snapshots,
-so either can be replaced or evicted without shared-ownership
+preserving the descendants of any repeated subtree. The runner’s
+`run_epoch(dapp_contract, subscribers)` simulates blockchain
+publication: it emits `input_added(epoch_input_offset, filename)` for
+each input in order, followed by `epoch_sealed(input_count)`. It waits
+for the subscribers to finish handling each event before proceeding.
+After `run_epoch` returns, the runner calls `run_referee` to arbitrate
+the sealed epoch. The player initializes its computation at construction
+using a temporary clone. The cache already owns boundary zero. Each
+input event acquires a scoped working clone of the latest boundary. Each
+input event reads the named file and advances that input immediately,
+pushing its bundle roots into the claim forest at their logical heights,
+padding its span with the fixed point where its guest stopped, and
+offering the completed input boundary to the cache after output checks
+and any rollback. At `epoch_sealed`, the player checks the input count,
+pads the unoccupied epoch suffix, freezes its checkpoints, and builds
+inclusion proofs for all accepted outputs using `frontier_next_proofs`.
+The player retains every accepted output and its proof for later client
+requests. The `prove_outputs_merkle_root` handler obtains final-machine
+proofs from a scoped clone of the cached final boundary, without replay.
+`commit_mcycle_claim` uses the completed forest. Processing therefore
+begins while the epoch is still open. The default policy keeps a
+bounded, progressively thinned set of historical checkpoints, indexed by
+epoch input offset. Offset zero always retains the initial machine
+template. A separate latest boundary is always retained, independently
+of thinning, so the next input needs no replay. This uses at most one
+additional retained machine. `consider(epoch_input_offset, machine)`
+handles every completed boundary. It compares the state with the latest
+cached state. An unchanged state reuses that machine and advances only
+the epoch input offset. Changed states replace the latest snapshot.
+Every offer then runs the historical checkpoint policy, including when
+the state is unchanged. Latest and historical boundaries own independent
+snapshots, so either can be replaced or evicted without shared-ownership
 bookkeeping. Rejected inputs are offered after rollback. Terminal inputs
 use the same cache operation. Bundle collection
 (`collect_mcycle_bundle`) asks the cache for the target input’s
@@ -9510,13 +9514,6 @@ excerpts:
 
 ``` lua
 local function run_referee(dapp_contract)
-    accept_subscribers(dapp_contract.initial_state_hash)
-    for index, path in ipairs(dapp_contract.input_paths) do
-        local input <close> = request_all(EVERYONE, EVENTS.input_added, { index - 1, path })
-        input:wait_at_most(FOREVER)
-    end
-    local sealed <close> = request_all(EVERYONE, EVENTS.epoch_sealed, { #dapp_contract.inputs })
-    sealed:wait_at_most(FOREVER)
     local tournament = open_mcycle_tournament(dapp_contract)
     local winner = run_tournament(tournament)
     story.report_winner(winner)
@@ -10124,10 +10121,11 @@ its lied-about period contradicts the leaf itself. Two fabulists run,
 lying about different samples, so they dispute each other too.
 
 To run the tournament, start the referee with the epoch’s initial state
-hash and input files. The referee sends the filenames to the players;
-these paths must be readable from each player’s working directory. The
-files must remain readable and unchanged while the example runs,
-including during disputes.
+hash and input files. The role’s runner publishes the filenames through
+`run_epoch` before starting the tournament referee; these paths must be
+readable from each player’s working directory. The files must remain
+readable and unchanged while the example runs, including during
+disputes.
 
 ``` bash
 lua5.4 prt.lua referee 127.0.0.1:8096 "$initial_state_hash" \

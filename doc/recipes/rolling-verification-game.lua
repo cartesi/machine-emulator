@@ -1,6 +1,6 @@
 -- A verification game over an epoch of a Rolling Cartesi Machine.
--- Only the referee receives input paths. Players find their initial snapshot under
--- its state hash and receive inputs in events. A claim belongs to its submitting connection.
+-- The referee role's runner simulates blockchain input and epoch events before the dispute.
+-- Players find their initial snapshot under its state hash. A claim belongs to its submitting connection.
 --   rolling-verification-game.lua referee <address> <initial-state-hash> [<input> ...]
 --   rolling-verification-game.lua honest <address> <initial-state-hash> [<label>]
 --   rolling-verification-game.lua phase_closer <address> [stop]
@@ -778,19 +778,23 @@ local function request_claims(tournament)
     return survivors:wait_at_most(deadline)
 end
 
-local function run_referee(dapp_contract)
-    local tournament = { dapp_contract = dapp_contract, players = {} }
-    for index, sender in ipairs(accept_subscribers(dapp_contract.initial_state_hash)) do
-        tournament.players[sender] = { index = index, label = sender.label, allowance = dapp_contract.max_allowance }
-    end
-    local initial <close> = request_all(EVERYONE, EVENTS.initial_state, { dapp_contract.initial_state_hash })
+-- Simulate blockchain publication, waiting for each event's handlers before proceeding.
+local function run_epoch(dapp_contract, subscribers)
+    local initial <close> = request_all(subscribers, EVENTS.initial_state, { dapp_contract.initial_state_hash })
     initial:wait_at_most(FOREVER)
     for index, path in ipairs(dapp_contract.input_paths) do
-        local input <close> = request_all(EVERYONE, EVENTS.input_added, { index - 1, path })
+        local input <close> = request_all(subscribers, EVENTS.input_added, { index - 1, path })
         input:wait_at_most(FOREVER)
     end
-    local sealed <close> = request_all(EVERYONE, EVENTS.epoch_sealed, { #dapp_contract.inputs })
+    local sealed <close> = request_all(subscribers, EVENTS.epoch_sealed, { #dapp_contract.inputs })
     sealed:wait_at_most(FOREVER)
+end
+
+local function run_referee(dapp_contract, subscribers)
+    local tournament = { dapp_contract = dapp_contract, players = {} }
+    for index, sender in ipairs(subscribers) do
+        tournament.players[sender] = { index = index, label = sender.label, allowance = dapp_contract.max_allowance }
+    end
     tournament.players = request_claims(tournament)
     story.report_claims(tournament.players)
     local winner = settle_dispute(tournament)
@@ -818,7 +822,9 @@ local function new_referee(dapp_contract)
         dapp_contract = dapp_contract,
         run = function(self, referee_server)
             server = referee_server
-            run_referee(self.dapp_contract)
+            local subscribers = accept_subscribers(self.dapp_contract.initial_state_hash)
+            run_epoch(self.dapp_contract, subscribers)
+            run_referee(self.dapp_contract, subscribers)
         end,
     }
 end

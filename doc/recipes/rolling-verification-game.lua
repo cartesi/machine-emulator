@@ -131,14 +131,10 @@ local function narrow_bisection(bisection)
 end
 -- docs:end narrow_bisection
 
-local function precedes(a, b)
-    if a.epoch_input_offset ~= b.epoch_input_offset then
-        return a.epoch_input_offset < b.epoch_input_offset
-    end
-    if a.input_mcycle_offset ~= b.input_mcycle_offset then
-        return a.input_mcycle_offset < b.input_mcycle_offset
-    end
-    return a.uarch_cycle < b.uarch_cycle
+local function same_position(a, b)
+    return a.epoch_input_offset == b.epoch_input_offset
+        and a.input_mcycle_offset == b.input_mcycle_offset
+        and a.uarch_cycle == b.uarch_cycle
 end
 
 local function fork_machine(machine)
@@ -393,12 +389,12 @@ end
 
 -- docs:begin reveal_bisection
 function event_handler:reveal_bisection(agreed_position, tentative_position)
-    if precedes(self.agreed_position, agreed_position) then
+    if same_position(self.agreed_position, agreed_position) then
+        self.tentative_machine:close()
+    else
         -- The previous tentative position is now the agreed predecessor.
         self.agreed_machine:close()
         self.agreed_machine, self.tentative_machine = self.tentative_machine, nil
-    else
-        self.tentative_machine:close()
     end
     self.agreed_position = agreed_position
     -- Replay from a fork of the whole agreed pair, including its pre-input snapshot.

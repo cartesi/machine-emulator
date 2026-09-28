@@ -756,21 +756,25 @@ local function wait_for_outputs(winner)
 end
 -- docs:end wait_for_outputs
 
-local function request_claims(tournament)
+local function request_claims(dapp_contract, subscribers)
+    local players = {}
+    for index, sender in ipairs(subscribers) do
+        players[sender] = { index = index, label = sender.label, allowance = dapp_contract.max_allowance }
+    end
     local started_at = current_time()
-    local deadline = fold(tournament.players, started_at, function(latest, player)
+    local deadline = fold(players, started_at, function(latest, player)
         return math.max(latest, started_at + player.allowance)
     end)
     local survivors <close> = request_all(
-        addresses(tournament.players),
+        addresses(players),
         EVENTS.commit_claim,
         {},
         function(response, sender, received_at)
-            local player = tournament.players[sender]
+            local player = players[sender]
             assert(received_at < started_at + player.allowance, "late final hash")
             local hash = validate_claim_response(response)
             local elapsed = received_at - started_at
-            player.allowance = player.allowance - math.max(elapsed - tournament.dapp_contract.response_budget, 0)
+            player.allowance = player.allowance - math.max(elapsed - dapp_contract.response_budget, 0)
             player.final_hash = hash
             return player
         end
@@ -791,11 +795,10 @@ local function run_epoch(dapp_contract, subscribers)
 end
 
 local function run_referee(dapp_contract, subscribers)
-    local tournament = { dapp_contract = dapp_contract, players = {} }
-    for index, sender in ipairs(subscribers) do
-        tournament.players[sender] = { index = index, label = sender.label, allowance = dapp_contract.max_allowance }
-    end
-    tournament.players = request_claims(tournament)
+    local tournament = {
+        dapp_contract = dapp_contract,
+        players = request_claims(dapp_contract, subscribers),
+    }
     story.report_claims(tournament.players)
     local winner = settle_dispute(tournament)
     story.report_winner(winner)

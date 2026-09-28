@@ -435,8 +435,8 @@ function event_handler:prove_state_transition(epoch_input_offset, input_mcycle_o
     local data = self.inputs[epoch_input_offset + 1]
     local proof
     if input_mcycle_offset == 0 and uarch_cycle == 0 and data then
-        local before = machine:get_root_hash()
-        local send = machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, before)
+        local revert_root_hash = machine:get_root_hash()
+        local send = machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
         proof = { send_cmio_log = send, step_log = machine:log_step_uarch() }
     elseif uarch_cycle == cartesi.UARCH_CYCLE_MAX then
         local step = machine:log_step_uarch()
@@ -476,16 +476,16 @@ function event_handler:prove_output()
 end
 
 -- The optional proof bootstraps output history after a previous epoch.
-local function new_player(initial_hash, label, last_output_proof, machine)
+local function new_player(initial_hash, label, last_output_proof, test_machine)
     local self <close> = setmetatable({
         label = label or "honest",
-        agreed_machine = new_advancing_pair(machine or new_machine(initial_hash)),
+        agreed_machine = new_advancing_pair(test_machine or new_machine(initial_hash)),
         agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
         inputs = {},
         outputs = {},
         event_handler = event_handler,
     }, player_meta)
-    machine = self.agreed_machine.machine
+    local machine = self.agreed_machine.machine
     assert(machine:get_root_hash() == initial_hash, "initial machine snapshot hash mismatch")
     local break_reason = machine:run(machine:read_reg("mcycle"))
     assert(is_yielded_manual(break_reason), "initial machine is not waiting for an input")
@@ -527,34 +527,33 @@ local function accept_subscribers(initial_state_hash)
     return server:accept_subscribers(initial_state_hash)
 end
 
--- The referee trusts its own input bytes and verifies the log without a machine.
--- Invalid logs raise an error, which the request's protected validator rejects.
+-- The referee trusts its own input bytes and verifies the logs without a machine.
+-- Return the root hash they reach; invalid logs raise an error for the protected validator.
 -- docs:begin validate_state_transition_response
 local function validate_state_transition_response(
     dapp_contract,
+    root_hash_before,
     epoch_input_offset,
     input_mcycle_offset,
     uarch_cycle,
-    before,
-    response,
-    after
+    response
 )
+    local obtained_root_hash = root_hash_before
     local data = dapp_contract.inputs[epoch_input_offset + 1]
     if input_mcycle_offset == 0 and uarch_cycle == 0 and data then
-        before = cartesi.machine:verify_send_cmio_response(
+        obtained_root_hash = cartesi.machine:verify_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             data,
-            before,
+            root_hash_before,
             response.send_cmio_log,
-            before
+            root_hash_before
         )
     end
-    before = cartesi.machine:verify_step_uarch(before, response.step_log)
+    obtained_root_hash = cartesi.machine:verify_step_uarch(obtained_root_hash, response.step_log)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
-        before = cartesi.machine:verify_reset_uarch(before, response.reset_uarch_log)
+        obtained_root_hash = cartesi.machine:verify_reset_uarch(obtained_root_hash, response.reset_uarch_log)
     end
-    assert(before == after, "log does not reach the committed after-hash")
-    return true
+    return obtained_root_hash
 end
 -- docs:end validate_state_transition_response
 
@@ -668,15 +667,15 @@ local function request_state_transitions(tournament, bisection)
         function(response, sender, received_at)
             local player = tournament.players[sender]
             assert(received_at < started_at + player.allowance, "late transition proof")
-            validate_state_transition_response(
+            local obtained_root_hash = validate_state_transition_response(
                 tournament.dapp_contract,
+                bisection.last_agreed_hash,
                 agreed_position.epoch_input_offset,
                 agreed_position.input_mcycle_offset,
                 agreed_position.uarch_cycle,
-                bisection.last_agreed_hash,
-                response,
-                bisection.hashes_after[sender]
+                response
             )
+            assert(obtained_root_hash == bisection.hashes_after[sender], "log does not reach the committed after-hash")
             local elapsed = received_at - started_at
             player.allowance = player.allowance - math.max(elapsed - tournament.dapp_contract.response_budget, 0)
             story.report_state_transition(player)

@@ -4840,6 +4840,8 @@ The referee verifies the logs on their own, again without ever instantiating a m
 ```{.lua key=rvg_verify_transition include=rolling-verification-game.lua/validate_state_transition_response title="rolling-verification-game.lua (excerpt)"}
 ```
 
+The validator returns the root hash reached by the logs. The request handler keeps a player only if this equals that player's committed endpoint hash.
+
 For the transition that includes the input, the referee passes the agreed before-hash twice, once as the state the input arrives in and once as the revert state hash the operation must record (the same restriction `machine:send_cmio_response()` imposes).
 The disputed input is named by its index and taken from the dapp contract, which owns its own encoding of the epoch's inputs, just as the blockchain does.
 A dishonest player can post a valid log of a machine including some other input, but no such log replays against the input the blockchain knows.

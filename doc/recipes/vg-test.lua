@@ -190,15 +190,15 @@ for _, case in ipairs({
     elseif case.agree then
         pair.machine:log_step_uarch()
     end
-    local before = pair.machine:get_root_hash()
+    local root_hash_before = pair.machine:get_root_hash()
     local log = { step_log = pair.machine:log_step_uarch() }
     if case.last then
         log.reset_uarch_log = pair.machine:log_reset_uarch()
     end
-    local after = pair.machine:get_root_hash()
+    local root_hash_after = pair.machine:get_root_hash()
     local claims = {
-        case.winner == 1 and after or cartesi.keccak256("wrong first endpoint"),
-        case.winner == 2 and after or cartesi.keccak256("wrong second endpoint"),
+        case.winner == 1 and root_hash_after or cartesi.keccak256("wrong first endpoint"),
+        case.winner == 2 and root_hash_after or cartesi.keccak256("wrong second endpoint"),
     }
     local proofs = {}
     local dapp_contract = vg.make_dapp_contract(initial_hash, {})
@@ -212,10 +212,10 @@ for _, case in ipairs({
             end
             function client.event_handler.reveal_bisection(_self, _agreed_position, tentative_position)
                 if case.last then
-                    return tentative_position.uarch_cycle > 0 and before or initial_hash
+                    return tentative_position.uarch_cycle > 0 and root_hash_before or initial_hash
                 end
                 if case.agree and tentative_position.uarch_cycle == 1 then
-                    return before
+                    return root_hash_before
                 end
                 return claims[index]
             end
@@ -560,9 +560,9 @@ for uarch_cycle = 0, 1 do
             { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 1 }
         ) == after_uarch
     )
-    local before = initial_hash
+    local root_hash_before = initial_hash
     if uarch_cycle == 1 then
-        before = after_uarch
+        root_hash_before = after_uarch
         uarch.machine:log_step_uarch()
         after_uarch = uarch.machine:get_root_hash()
     end
@@ -570,7 +570,8 @@ for uarch_cycle = 0, 1 do
     local tentative_hash = tentative.machine:get_root_hash()
     local log = vg.event_handler.prove_state_transition(player, 0, 0, uarch_cycle)
     assert(
-        vg.validate_state_transition_response({ inputs = player.inputs }, 0, 0, uarch_cycle, before, log, after_uarch)
+        vg.validate_state_transition_response({ inputs = player.inputs }, root_hash_before, 0, 0, uarch_cycle, log)
+            == after_uarch
     )
     assert(not agreed.machine and not agreed.backup)
     assert(player.agreed_machine.machine:get_root_hash() == initial_hash)
@@ -603,19 +604,31 @@ do
     vg.event_handler.epoch_sealed(player, 1)
     local contract = { inputs = { util.read_file(paths[2]) } }
     local function verify(machine, input_mcycle_offset, cycle, input, expected)
-        local before = machine:get_root_hash()
+        local root_hash_before = machine:get_root_hash()
         local logs = {}
         if input then
-            logs.send_cmio_log = machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input, before)
+            logs.send_cmio_log =
+                machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input, root_hash_before)
         end
         logs.step_log = machine:log_step_uarch()
         if cycle == cartesi.UARCH_CYCLE_MAX then
             logs.reset_uarch_log = machine:log_reset_uarch()
         end
-        local after = expected or machine:get_root_hash()
-        assert(vg.validate_state_transition_response(contract, 0, input_mcycle_offset, cycle, before, logs, after))
+        local root_hash_after = expected or machine:get_root_hash()
         assert(
-            not pcall(vg.validate_state_transition_response, contract, 0, input_mcycle_offset, cycle, before, {}, after)
+            vg.validate_state_transition_response(contract, root_hash_before, 0, input_mcycle_offset, cycle, logs)
+                == root_hash_after
+        )
+        assert(
+            not pcall(
+                vg.validate_state_transition_response,
+                contract,
+                root_hash_before,
+                0,
+                input_mcycle_offset,
+                cycle,
+                {}
+            )
         )
     end
     local included <close> = player.agreed_machine:fork()
@@ -646,15 +659,8 @@ do
         { epoch_input_offset = 0, input_mcycle_offset = offset, uarch_cycle = cartesi.UARCH_CYCLE_MAX }
     local log = vg.event_handler.prove_state_transition(player, 0, offset, cartesi.UARCH_CYCLE_MAX)
     assert(
-        vg.validate_state_transition_response(
-            contract,
-            0,
-            offset,
-            cartesi.UARCH_CYCLE_MAX,
-            before_reset,
-            log,
-            initial_hash
-        )
+        vg.validate_state_transition_response(contract, before_reset, 0, offset, cartesi.UARCH_CYCLE_MAX, log)
+            == initial_hash
     )
     local replay <close> = player.initial:fork()
     player:run_to_mcycle(replay, player.inputs[1], 0, offset + 1)
@@ -662,18 +668,11 @@ do
     -- With no posted input, verification requires no inclusion log. A uarch
     -- period still has its halted tail and reset, even at a fixed mcycle state.
     local absent <close> = player.initial:fork()
-    local before = absent.machine:get_root_hash()
+    local root_hash_before = absent.machine:get_root_hash()
     local step = absent.machine:log_step_uarch()
     assert(
-        vg.validate_state_transition_response(
-            { inputs = {} },
-            0,
-            0,
-            0,
-            before,
-            { step_log = step },
-            absent.machine:get_root_hash()
-        )
+        vg.validate_state_transition_response({ inputs = {} }, root_hash_before, 0, 0, 0, { step_log = step })
+            == absent.machine:get_root_hash()
     )
 end
 

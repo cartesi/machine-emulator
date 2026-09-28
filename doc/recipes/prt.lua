@@ -255,32 +255,30 @@ end
 -- docs:begin validate_state_transition_response
 local function validate_state_transition_response(
     dapp_contract,
-    current_state_hash,
+    root_hash_before,
     epoch_period_offset,
     state_transition_offset,
-    logs
+    response
 )
     local periods_per_input = dapp_contract.geometry.periods_per_input
     local epoch_input_offset, input_period_offset = split_epoch_period_offset(periods_per_input, epoch_period_offset)
     local _, uarch_cycle = split_state_transition_offset(state_transition_offset)
-    local obtained_state_hash = current_state_hash
+    local obtained_root_hash = root_hash_before
     local data = dapp_contract.inputs[epoch_input_offset + 1]
     if state_transition_offset == 0 and input_period_offset == 0 and data then
-        local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-        local revert_root_hash = current_state_hash
-        obtained_state_hash = cartesi.machine:verify_send_cmio_response(
-            reason,
+        obtained_root_hash = cartesi.machine:verify_send_cmio_response(
+            cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             data,
-            revert_root_hash,
-            logs.send_cmio_log,
-            current_state_hash
+            root_hash_before,
+            response.send_cmio_log,
+            root_hash_before
         )
     end
-    obtained_state_hash = cartesi.machine:verify_step_uarch(obtained_state_hash, logs.step_log)
+    obtained_root_hash = cartesi.machine:verify_step_uarch(obtained_root_hash, response.step_log)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
-        obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, logs.reset_uarch_log)
+        obtained_root_hash = cartesi.machine:verify_reset_uarch(obtained_root_hash, response.reset_uarch_log)
     end
-    return obtained_state_hash
+    return obtained_root_hash
 end
 -- docs:end validate_state_transition_response
 
@@ -391,13 +389,7 @@ end
 -- that verifies reaches the one true next state hash. Returns that hash, or nil when nobody
 -- proves a transition.
 -- docs:begin settle_uarch_state_hash
-local function settle_uarch_state_hash(
-    tournament,
-    match,
-    state_transition_offset,
-    current_state_hash,
-    next_state_hashes
-)
+local function settle_uarch_state_hash(tournament, match, state_transition_offset, root_hash_before, next_state_hashes)
     local subscriptions = {
         subscription_hash(tournament.id, match.claims[1]),
         subscription_hash(tournament.id, match.claims[2]),
@@ -424,19 +416,19 @@ local function settle_uarch_state_hash(
             assert(current_time() < proof_deadline, "late state transition proof")
             return validate_state_transition_response(
                 tournament.dapp_contract,
-                current_state_hash,
+                root_hash_before,
                 tournament.epoch_period_offset,
                 state_transition_offset,
                 response
             )
         end
     )
-    local obtained_state_hash = proof:wait_at_most(proof_deadline)
-    if not obtained_state_hash then
+    local obtained_root_hash = proof:wait_at_most(proof_deadline)
+    if not obtained_root_hash then
         elimination:wait_at_least(eliminable_at)
     end
-    story.report_state_transition(tournament, match, state_transition_offset, obtained_state_hash, next_state_hashes)
-    return obtained_state_hash
+    story.report_state_transition(tournament, match, state_transition_offset, obtained_root_hash, next_state_hashes)
+    return obtained_root_hash
 end
 -- docs:end settle_uarch_state_hash
 

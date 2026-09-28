@@ -779,7 +779,10 @@ local function request_claims(dapp_contract, subscribers)
             return player
         end
     )
-    return survivors:wait_at_most(deadline)
+    return {
+        dapp_contract = dapp_contract,
+        players = survivors:wait_at_most(deadline),
+    }
 end
 
 -- Simulate blockchain publication, waiting for each event's handlers before proceeding.
@@ -795,10 +798,7 @@ local function run_epoch(dapp_contract, subscribers)
 end
 
 local function run_referee(dapp_contract, subscribers)
-    local tournament = {
-        dapp_contract = dapp_contract,
-        players = request_claims(dapp_contract, subscribers),
-    }
+    local tournament = request_claims(dapp_contract, subscribers)
     story.report_claims(tournament.players)
     local winner = settle_dispute(tournament)
     story.report_winner(winner)

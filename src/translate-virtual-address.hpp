@@ -58,10 +58,9 @@ namespace cartesi {
 /// \param paddr Physical address of word.
 /// \param val Value to write.
 /// \returns True if succeeded, false otherwise.
-template <typename STATE_ACCESS>
-static inline bool write_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t val) {
-    uint64_t pma_index = 0;
-    auto &ar = find_pma<uint64_t>(a, paddr, pma_index);
+template <typename STATE_ACCESS, typename ADDRESS_RANGE>
+static inline bool write_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t val, const ADDRESS_RANGE &ar,
+    uint64_t pma_index) {
     if (!ar.is_memory() || !ar.is_writeable()) [[unlikely]] {
         return false;
     }
@@ -82,10 +81,9 @@ static inline bool write_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t val
 /// \param paddr Physical address of word.
 /// \param pval Pointer to word.
 /// \returns True if succeeded, false otherwise.
-template <typename STATE_ACCESS>
-static inline bool read_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t *pval) {
-    uint64_t pma_index = 0;
-    auto &ar = find_pma<uint64_t>(a, paddr, pma_index);
+template <typename STATE_ACCESS, typename ADDRESS_RANGE>
+static inline bool read_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t *pval, const ADDRESS_RANGE &ar,
+    uint64_t pma_index) {
     if (!ar.is_memory() || !ar.is_readable()) [[unlikely]] {
         return false;
     }
@@ -168,7 +166,9 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr
         pte_addr += vpn << LOG2_PTE_SIZE; //??D we can probably save this shift here
         // Read page table entry from physical memory
         uint64_t pte = 0;
-        if (!read_ram_uint64(a, pte_addr, &pte)) [[unlikely]] {
+        uint64_t pma_index = 0;
+        auto &pte_ar = find_pma<uint64_t>(a, pte_addr, pma_index);
+        if (!read_ram_uint64(a, pte_addr, &pte, pte_ar, pma_index)) [[unlikely]] {
             return false;
         }
         // The OS can mark page table entries as invalid,
@@ -237,7 +237,9 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr
                     update_pte |= PTE_D_MASK; // Set dirty bit
                 }
                 if (pte != update_pte) {
-                    write_ram_uint64(a, pte_addr, update_pte); // Can't fail since read succeeded earlier
+                    // No intervening write changes the PMA lookup. Preserve the permission
+                    // check and ignored result: read-only PTE storage skips the A/D update.
+                    write_ram_uint64(a, pte_addr, update_pte, pte_ar, pma_index);
                 }
             }
             // Add page offset in vaddr to ppn to form physical address

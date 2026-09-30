@@ -386,22 +386,89 @@ do
     assert(closed[initial])
 end
 
+-- Snapshot ownership is consumed by commit or revert; retired servers close immediately.
+do
+    local player <close> = vg.new_player(initial_hash)
+    local pair = player.latest
+    pair:snapshot()
+    local committed = pair.backup
+    assert(not pcall(pair.snapshot, pair) and pair.backup == committed)
+    pair.machine:write_reg("x1", ~pair.machine:read_reg("x1"))
+    local committed_hash = pair.machine:get_root_hash()
+    pair:commit()
+    assert(not pair.backup and pair.machine:get_root_hash() == committed_hash)
+    assert(not pcall(committed.get_root_hash, committed), "commit left the backup server running")
+    pair:commit()
+    pair.revert_root_hash = committed_hash
+    pair:snapshot()
+    local reverted = pair.backup
+    local address = pair.machine:get_server_address()
+    pair.machine:write_reg("x1", ~pair.machine:read_reg("x1"))
+    pair:revert()
+    assert(not pair.backup and pair.machine:get_root_hash() == committed_hash)
+    assert(pair.machine:get_server_address() == address, "revert changed the working server address")
+    assert(not pcall(reverted.get_root_hash, reverted), "revert left the displaced server running")
+    assert(not pcall(pair.revert, pair))
+    assert(pair.machine:get_root_hash() == committed_hash)
+end
+
 -- Rejections, including consecutive rejections, restore the full boundary state.
 do
     local player <close> = vg.new_player(initial_hash)
+    assert(player.latest.revert_root_hash == initial_hash)
+    assert(not player.initial.backup and not player.latest.backup and not player.agreed_machine.backup)
     vg.event_handler.initial_state(player, initial_hash)
+    local working = player.latest.machine
+    local address = working:get_server_address()
     vg.event_handler.input_added(player, 0, paths[1])
+    assert(player.latest.machine == working and working:get_server_address() == address)
     local accepted = player.latest.machine:get_root_hash()
+    assert(player.latest.revert_root_hash == accepted)
     local prefix <close> = player.agreed_machine:fork()
     local _, yield_reason = player:run_to_mcycle(prefix, player.inputs[1], 0, (1 << 48) - 1)
     assert(yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
-    assert(prefix.backup:get_root_hash() == initial_hash and prefix.machine:get_root_hash() == accepted)
+    assert(not prefix.backup and prefix.machine:get_root_hash() == accepted)
+    assert(prefix.input_mcycle_boundary == player.initial.machine:read_reg("mcycle"))
     vg.event_handler.input_added(player, 1, paths[2])
+    assert(player.latest.machine == working and working:get_server_address() == address)
     assert(player.latest.machine:get_root_hash() == accepted)
+    assert(player.latest.revert_root_hash == accepted)
+    assert(not player.latest.backup)
     vg.event_handler.input_added(player, 2, paths[2])
+    assert(player.latest.machine == working and working:get_server_address() == address)
     assert(player.latest.machine:get_root_hash() == accepted)
+    assert(player.latest.revert_root_hash == accepted)
+    assert(not player.latest.backup)
     assert(#player.outputs == 1)
     vg.event_handler.epoch_sealed(player, 3)
+end
+
+-- Delivery checks the expected boundary, not a fresh hash of an altered machine.
+for _, granularity in ipairs({ "mcycle", "uarch" }) do
+    local player <close> = vg.new_player(initial_hash)
+    local pair = player.latest
+    pair.machine:write_reg("x1", ~pair.machine:read_reg("x1"))
+    local input = util.read_file(paths[1])
+    local ok, err
+    if granularity == "mcycle" then
+        ok, err = pcall(player.run_to_mcycle, player, pair, input, 0, 1)
+    else
+        ok, err = pcall(player.run_to_uarch_cycle, player, pair, input, 0, 0, 1)
+    end
+    assert(not ok and tostring(err):find("revert root hash does not match the machine root hash", 1, true))
+    assert(pair.revert_root_hash == initial_hash)
+end
+
+-- A damaged checkpoint cannot silently establish a different rollback boundary.
+do
+    local player <close> = vg.new_player(initial_hash)
+    local pair = player.latest
+    pair:snapshot()
+    pair.backup:write_reg("x1", ~pair.backup:read_reg("x1"))
+    local ok, err = pcall(pair.revert, pair)
+    assert(not ok and tostring(err):find("rollback did not restore the input boundary", 1, true))
+    assert(pair.revert_root_hash == initial_hash)
+    assert(not pair.backup)
 end
 
 -- Bisection commits or discards the entire tentative pair. A pending input keeps
@@ -417,7 +484,7 @@ do
     local input_mcycle_boundary = loaded.machine:read_reg("mcycle")
     player:run_to_mcycle(loaded, player.inputs[1], 0, 0)
     player:run_to_uarch_cycle(loaded, player.inputs[1], 0, 0, 0)
-    assert(loaded.machine:get_root_hash() == initial_hash and loaded.backup:get_root_hash() == initial_hash)
+    assert(loaded.machine:get_root_hash() == initial_hash and not loaded.backup)
     player:run_to_uarch_cycle(loaded, player.inputs[1], 0, 0, 1)
     assert(loaded.machine:get_root_hash() ~= initial_hash and loaded.backup:get_root_hash() == initial_hash)
     local break_reason
@@ -434,15 +501,12 @@ do
     vg.event_handler.dispute_started(player)
     assert(vg.event_handler.reveal_bisection(player, agreed_position, tentative_position) == initial_hash)
     local candidate = player.tentative_machine
-    assert(candidate.machine ~= player.agreed_machine.machine and candidate.backup:get_root_hash() == initial_hash)
+    assert(candidate.machine ~= player.agreed_machine.machine and not candidate.backup)
 
     tentative_position = { epoch_input_offset = 0, input_mcycle_offset = (rejected_at + 1) // 2, uarch_cycle = 0 }
     local inside_hash = vg.event_handler.reveal_bisection(player, agreed_position, tentative_position)
     assert(not candidate.machine)
-    assert(
-        player.agreed_machine.machine:get_root_hash() == initial_hash
-            and player.agreed_machine.backup:get_root_hash() == initial_hash
-    )
+    assert(player.agreed_machine.machine:get_root_hash() == initial_hash and not player.agreed_machine.backup)
     candidate = player.tentative_machine
     local checkpoint = candidate.backup
     assert(checkpoint:get_root_hash() == initial_hash)
@@ -471,17 +535,26 @@ do
     tentative_position = { epoch_input_offset = 0, input_mcycle_offset = (3 * rejected_at + 1) // 2, uarch_cycle = 0 }
     assert(vg.event_handler.reveal_bisection(player, agreed_position, tentative_position) == initial_hash)
     assert(
-        player.agreed_machine == candidate
-            and player.agreed_machine.backup:get_root_hash() == initial_hash
-            and player.tentative_machine.backup:get_root_hash() == initial_hash
+        player.agreed_machine == candidate and not player.agreed_machine.backup and not player.tentative_machine.backup
     )
+    assert(player.tentative_machine.input_mcycle_boundary == input_mcycle_boundary)
     assert(player.agreed_machine.machine:read_reg("mcycle") == input_mcycle_boundary)
     assert(player.tentative_machine.machine:read_reg("mcycle") == input_mcycle_boundary)
+    -- Later offsets observe the restored accept yield, without finalizing the rejected input again.
+    local reason, yield_reason, boundary = player:run_to_mcycle(
+        player.tentative_machine,
+        player.inputs[1],
+        tentative_position.input_mcycle_offset,
+        tentative_position.input_mcycle_offset + 1
+    )
+    assert(reason == cartesi.BREAK_REASON_YIELDED_MANUALLY)
+    assert(yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED and boundary == input_mcycle_boundary)
+    assert(not player.tentative_machine.backup and player.tentative_machine.machine:get_root_hash() == initial_hash)
 
     -- Finishing an input and advancing to the next one uses the same driver.
     local replay <close> = player.initial:fork()
     player:run_to_input_boundary(replay, player.inputs, 0, 2)
-    assert(replay.backup:get_root_hash() == initial_hash and replay.machine:get_root_hash() == player.final_hash)
+    assert(not replay.backup and replay.machine:get_root_hash() == player.final_hash)
 end
 
 -- Split execution preserves buffered outputs across both continuation and a
@@ -508,7 +581,10 @@ do
     local reason = player:run_to_mcycle(split, input_data, 0, output_offset, outputs, frontier)
     assert(reason == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
     assert(#outputs == 0 and #split.pending_outputs == 1)
+    assert(split.revert_root_hash == initial_hash)
     local fork <close> = split:fork()
+    assert(fork.revert_root_hash == initial_hash)
+    assert(split.backup ~= fork.backup and fork.backup:get_root_hash() == initial_hash)
     assert(fork.pending_outputs ~= split.pending_outputs and fork.pending_outputs[1] == split.pending_outputs[1])
     local fork_outputs, fork_frontier = {}, hash_tree.frontier_copy(frontier)
     player:run_to_mcycle(split, input_data, output_offset, (1 << 48) - 1, outputs, frontier)
@@ -516,10 +592,16 @@ do
     assert(split.machine:get_root_hash() == fork.machine:get_root_hash())
     assert(#outputs == 1 and outputs[1] == fork_outputs[1])
     assert(hash_tree.frontier_get_root_hash(frontier) == hash_tree.frontier_get_root_hash(fork_frontier))
-    assert(split.backup:get_root_hash() == initial_hash and fork.backup:get_root_hash() == initial_hash)
+    assert(not split.backup and not fork.backup)
+    assert(split.input_mcycle_boundary == input_mcycle_boundary and fork.input_mcycle_boundary == input_mcycle_boundary)
     local settled_hash = split.machine:get_root_hash()
+    assert(split.revert_root_hash == settled_hash and fork.revert_root_hash == settled_hash)
     player:run_to_mcycle(split, input_data, (1 << 48) - 1, 1 << 48, outputs, frontier)
     assert(split.machine:get_root_hash() == settled_hash and #outputs == 1)
+    local completed <close> = split:fork()
+    local _, yield_reason, boundary = player:run_to_mcycle(completed, input_data, (1 << 48) - 1, 1 << 48)
+    assert(yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED and boundary == input_mcycle_boundary)
+    assert(not completed.backup and completed.machine:get_root_hash() == settled_hash)
     vg.event_handler.input_added(player, 0, paths[1])
     assert(player.latest.machine:get_root_hash() == settled_hash and player.outputs[1] == outputs[1])
 end
@@ -732,6 +814,7 @@ do
     end
     local function new_pair()
         local pair = {
+            revert_root_hash = initial_hash,
             machine = {
                 read_reg = function()
                     return 0
@@ -764,15 +847,18 @@ do
                 end,
             },
             snapshot = function(pair)
+                assert(not pair.backup)
                 pair.backup = { read_reg = pair.machine.read_reg, batch = pair.machine.batch }
-                pair.pending_outputs = {}
+            end,
+            commit = function(pair)
+                pair.backup = nil
             end,
             revert = function(pair)
                 pair.machine.batch = pair.backup.batch
                 pair.machine.output_index = #pair.machine.batch + 1
+                pair.backup = nil
             end,
         }
-        pair:snapshot()
         return pair
     end
     local player = setmetatable({
@@ -830,7 +916,9 @@ print("vg-test: lifecycle, rollback, terminal proofs and outputs ok")
 
 -- Keep the earlier counterexamples as executable regressions rather than extra
 -- chapter walkthroughs. Each changes execution, never transition verification.
-local function ignore_rollback() end
+local function ignore_rollback(pair)
+    pair:commit()
+end
 local function seal_with_extra_input(self, count)
     vg.event_handler.input_added(self, count, "forged-input-2.bin")
     vg.event_handler.epoch_sealed(self, count + 1)
@@ -911,14 +999,29 @@ for _, terminal in ipairs({ "halt", "overflow", "exception" }) do
     end
     local hash = machine:get_root_hash()
     local prefix <close> = player.latest:fork()
-    player:run_to_mcycle(prefix, player.inputs[1], 0, 1)
-    assert(prefix.backup:get_root_hash() == hash and prefix.machine:get_root_hash() == hash)
+    local expected_break, expected_yield = player:run_to_mcycle(prefix, player.inputs[1], 0, 1)
+    assert(not prefix.backup and prefix.machine:get_root_hash() == hash)
+    local break_reason, yield_reason, boundary = player:run_to_mcycle(prefix, nil, 1, 2)
+    assert(break_reason == expected_break and yield_reason == expected_yield)
+    assert(boundary == machine:read_reg("mcycle") and prefix.machine:get_root_hash() == hash)
     for index, path in ipairs(paths) do
         vg.event_handler.input_added(player, index - 1, path)
         assert(player.latest.machine:get_root_hash() == hash)
+        assert(player.latest.revert_root_hash == initial_hash)
+        assert(not player.latest.backup)
     end
     vg.event_handler.epoch_sealed(player, #paths)
     assert(player.final_hash == hash)
+    -- Proofs of later no-op deliveries also use the retained, older boundary hash.
+    local prefix_uarch <close> = player.latest:fork()
+    player:run_to_uarch_cycle(prefix_uarch, player.inputs[1], 0, 0, 1)
+    player.agreed_machine:close()
+    player.agreed_machine = player.latest:fork()
+    local proof = vg.event_handler.prove_state_transition(player, 0, 0, 0)
+    assert(
+        vg.validate_state_transition_response({ inputs = player.inputs }, hash, 0, 0, 0, proof)
+            == prefix_uarch.machine:get_root_hash()
+    )
 end
 
 -- The tamperer's bookkeeping follows a fork and is restored with a rejected input.

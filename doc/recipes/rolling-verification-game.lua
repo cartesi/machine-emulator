@@ -16,9 +16,11 @@ local EVERYONE = vgu.EVERYONE
 local FOREVER = nil
 local story = vgu.story
 local addresses = vgu.addresses
-local MCYCLES_PER_INPUT = 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 local LOG2_INPUTS_PER_EPOCH = 16
+local LOG2_MCYCLES_PER_INPUT = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+local LOG2_UARCH_CYCLES_PER_MCYCLE = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
 local INPUTS_PER_EPOCH = 1 << LOG2_INPUTS_PER_EPOCH
+local MCYCLES_PER_INPUT = 1 << LOG2_MCYCLES_PER_INPUT
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
 
 local function shallow_copy(values)
@@ -143,9 +145,9 @@ local function fork_machine(machine)
     return clone
 end
 
--- An advancing pair owns the working machine, its pre-input snapshot, and pending outputs.
--- The execution context supplies logical coordinates. The pre-input snapshot
--- survives fixed points; bisection forks the entire pair at any agreed position.
+-- An advancing pair owns the working machine and its snapshot while an input is
+-- pending. The input boundary, expected revert root hash, and
+-- pending outputs travel with the pair when bisection forks it.
 local advancing_pair_meta = { __index = {} }
 local advancing_pair_methods = advancing_pair_meta.__index
 function advancing_pair_methods:close()
@@ -167,33 +169,42 @@ function advancing_pair_methods:fork()
     -- Clear borrowed resources before a failing fork can trigger cleanup.
     clone.machine, clone.backup = nil, nil
     clone.machine = fork_machine(self.machine)
-    clone.backup = fork_machine(self.backup)
+    if self.backup then
+        clone.backup = fork_machine(self.backup)
+    end
     clone.pending_outputs = shallow_copy(self.pending_outputs)
     return clone:move()
 end
 
--- Refresh the input boundary only when entering a new input. Acceptance leaves
--- it intact, so later logical mcycle offsets still have the same absolute origin.
 function advancing_pair_methods:snapshot()
-    local backup = fork_machine(self.machine)
+    assert(not self.backup, "machine already has a snapshot")
+    self.backup = fork_machine(self.machine)
+end
+
+function advancing_pair_methods:commit()
     if self.backup then
         self.backup:shutdown_server()
+        self.backup = nil
     end
-    self.backup = backup
-    self.pending_outputs = {}
 end
 
 -- docs:begin revert
 function advancing_pair_methods:revert()
-    local restored <close> = setmetatable({ machine = fork_machine(self.backup) }, advancing_pair_meta)
-    self.machine:swap(restored.machine)
+    local backup = assert(self.backup, "no snapshot to revert to")
+    local address = self.machine:get_server_address()
+    self.machine:shutdown_server()
+    self.machine:swap(backup)
+    self.backup = nil
+    self.machine:rebind_server(address)
+    assert(self.machine:get_root_hash() == self.revert_root_hash, "rollback did not restore the input boundary")
 end
 -- docs:end revert
 
-local function new_advancing_pair(machine)
-    local pair <close> = setmetatable({ machine = machine }, advancing_pair_meta)
-    pair:snapshot()
-    return pair:move()
+local function new_advancing_pair(machine, initial_hash)
+    return setmetatable(
+        { machine = machine, revert_root_hash = initial_hash, pending_outputs = {} },
+        advancing_pair_meta
+    )
 end
 
 local function new_machine(initial_hash)
@@ -248,13 +259,6 @@ local function load_cmio_input(machine, data, revert_root_hash)
     end
 end
 
--- Shared by the two execution granularities when leaving a virgin input boundary.
-local function begin_input(pair, input_data)
-    local revert_root_hash = pair.machine:get_root_hash()
-    pair:snapshot()
-    load_cmio_input(pair.machine, input_data, revert_root_hash)
-end
-
 -- luacheck: push ignore self
 function player_methods:run_to_uarch_cycle(pair, input_data, input_mcycle_offset, uarch_cycle_begin, uarch_cycle_end)
     assert(uarch_cycle_begin <= uarch_cycle_end, "agreed machine is past desired state")
@@ -263,7 +267,10 @@ function player_methods:run_to_uarch_cycle(pair, input_data, input_mcycle_offset
         return
     end
     if input_mcycle_offset == 0 and uarch_cycle_begin == 0 then
-        begin_input(pair, input_data)
+        pair.input_mcycle_boundary = pair.machine:read_reg("mcycle")
+        pair.pending_outputs = {}
+        pair:snapshot()
+        load_cmio_input(pair.machine, input_data, pair.revert_root_hash)
     end
     return pair.machine:run_uarch(uarch_cycle_end)
 end
@@ -281,7 +288,7 @@ local function flush_pending_outputs(pending, outputs, outputs_frontier, yield_r
 end
 
 -- Complete logical mcycles within one input. Offset zero is before delivery;
--- the unchanged pre-input backup supplies the absolute origin even after rollback.
+-- the recorded boundary supplies the absolute origin even after rollback.
 -- docs:begin run_to_mcycle
 function player_methods:run_to_mcycle(
     pair,
@@ -296,10 +303,13 @@ function player_methods:run_to_mcycle(
         return
     end
     if input_mcycle_offset_begin == 0 then
-        begin_input(pair, input_data)
+        pair.input_mcycle_boundary = pair.machine:read_reg("mcycle")
+        pair.pending_outputs = {}
+        pair:snapshot()
+        load_cmio_input(pair.machine, input_data, pair.revert_root_hash)
     end
     local machine = pair.machine
-    local input_mcycle_boundary = pair.backup:read_reg("mcycle")
+    local input_mcycle_boundary = pair.input_mcycle_boundary
     local mcycle_end = usaturating_add(input_mcycle_boundary, input_mcycle_offset_end)
     local function on_yield_automatic(yield_reason, output)
         if outputs and is_tx_output(yield_reason) then
@@ -314,12 +324,18 @@ function player_methods:run_to_mcycle(
     if is_yielded_manual(break_reason) then
         yield_reason, outputs_merkle_root = receive_cmio_request(machine)
     end
-    if is_rx_rejected(yield_reason) then
-        pair:revert()
-    else
-        flush_pending_outputs(pair.pending_outputs, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
+    if pair.backup then
+        if is_rx_rejected(yield_reason) then
+            pair:revert()
+        else
+            flush_pending_outputs(pair.pending_outputs, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
+            if is_rx_accepted(yield_reason) then
+                pair.revert_root_hash = machine:get_root_hash()
+            end
+            pair:commit()
+        end
+        pair.pending_outputs = {}
     end
-    pair.pending_outputs = {}
     return break_reason, yield_reason, input_mcycle_boundary
 end
 -- docs:end run_to_mcycle
@@ -397,7 +413,7 @@ function event_handler:reveal_bisection(agreed_position, tentative_position)
         self.agreed_machine, self.tentative_machine = self.tentative_machine, nil
     end
     self.agreed_position = agreed_position
-    -- Replay from a fork of the whole agreed pair, including its pre-input snapshot.
+    -- Replay from a fork of the whole agreed pair, including any pending snapshot.
     self.tentative_machine = self.agreed_machine:fork()
     if agreed_position.epoch_input_offset < tentative_position.epoch_input_offset then
         self:run_to_input_boundary(
@@ -430,13 +446,13 @@ end
 
 -- docs:begin prove_state_transition
 function event_handler:prove_state_transition(epoch_input_offset, input_mcycle_offset, uarch_cycle)
-    local machine = self.agreed_position.uarch_cycle < uarch_cycle and self.tentative_machine.machine
-        or self.agreed_machine.machine
+    local pair = self.agreed_position.uarch_cycle < uarch_cycle and self.tentative_machine or self.agreed_machine
+    local machine = pair.machine
     local data = self.inputs[epoch_input_offset + 1]
     local proof
     if input_mcycle_offset == 0 and uarch_cycle == 0 and data then
-        local revert_root_hash = machine:get_root_hash()
-        local send = machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
+        local send =
+            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, pair.revert_root_hash)
         proof = { send_cmio_log = send, step_log = machine:log_step_uarch() }
     elseif uarch_cycle == cartesi.UARCH_CYCLE_MAX then
         local step = machine:log_step_uarch()
@@ -479,7 +495,7 @@ end
 local function new_player(initial_hash, label, last_output_proof, test_machine)
     local self <close> = setmetatable({
         label = label or "honest",
-        agreed_machine = new_advancing_pair(test_machine or new_machine(initial_hash)),
+        agreed_machine = new_advancing_pair(test_machine or new_machine(initial_hash), initial_hash),
         agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
         inputs = {},
         outputs = {},
@@ -611,21 +627,21 @@ local function is_unanimous(hashes)
 end
 
 -- Each tentative position advances a fork of the agreed pair.
-local function request_bisections(tournament, agreed_position, tentative_position)
+local function request_bisections(dapp_contract, players, agreed_position, tentative_position)
     local started_at = current_time()
-    local deadline = fold(tournament.players, started_at, function(latest, player)
+    local deadline = fold(players, started_at, function(latest, player)
         return math.max(latest, started_at + player.allowance)
     end)
     local survivors <close> = request_all(
-        addresses(tournament.players),
+        addresses(players),
         EVENTS.reveal_bisection,
         { agreed_position, tentative_position },
         function(response, sender, received_at)
-            local player = tournament.players[sender]
+            local player = players[sender]
             assert(received_at < started_at + player.allowance, "late tentative hash")
             local hash = validate_bisection_response(response)
             local elapsed = received_at - started_at
-            player.allowance = player.allowance - math.max(elapsed - tournament.dapp_contract.response_budget, 0)
+            player.allowance = player.allowance - math.max(elapsed - dapp_contract.response_budget, 0)
             player.tentative_hash = hash
             return player
         end
@@ -636,14 +652,15 @@ end
 -- Halve the first non-unit count. Any disagreement selects the earlier half.
 -- docs:begin bisect
 local function bisect(tournament, bisection)
+    local players = tournament.players
     while not is_single_uarch_cycle(bisection) do
         local tentative_position = narrow_bisection(bisection)
         story.report_bisection(bisection.agreed_position, tentative_position)
-        tournament.players = request_bisections(tournament, bisection.agreed_position, tentative_position)
-        if is_there_at_most_one_claim(tournament.players) then
+        players = request_bisections(tournament.dapp_contract, players, bisection.agreed_position, tentative_position)
+        if is_there_at_most_one_claim(players) then
             break
         end
-        local hashes = map(tournament.players, function(player)
+        local hashes = map(players, function(player)
             return player.tentative_hash
         end)
         if is_unanimous(hashes) then
@@ -654,6 +671,7 @@ local function bisect(tournament, bisection)
         end
         story.report_bisection_progress(bisection)
     end
+    return players
 end
 -- docs:end bisect
 
@@ -696,14 +714,14 @@ local function settle_dispute(tournament)
         local bisection = {
             agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
             log2_input_count = LOG2_INPUTS_PER_EPOCH,
-            log2_mcycle_count = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE,
-            log2_uarch_cycle_count = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
+            log2_mcycle_count = LOG2_MCYCLES_PER_INPUT,
+            log2_uarch_cycle_count = LOG2_UARCH_CYCLES_PER_MCYCLE,
             last_agreed_hash = tournament.dapp_contract.initial_state_hash,
             hashes_after = map(tournament.players, function(player)
                 return player.final_hash
             end),
         }
-        bisect(tournament, bisection)
+        tournament.players = bisect(tournament, bisection)
         if is_there_at_most_one_claim(tournament.players) then
             break
         end

@@ -93,14 +93,12 @@ end
 local function new_tamperer(initial_hash, input_index, input_mcycle_offset)
     local player = vg.new_player(initial_hash, "tamperer")
     for _, pair in ipairs({ player.initial, player.latest, player.agreed_machine, player.tentative_machine }) do
-        for _, key in ipairs({ "machine", "backup" }) do
-            pair[key] = setmetatable({
-                machine = pair[key],
-                epoch_input_offset = -1,
-                tampered_index = input_index,
-                tampered_offset = input_mcycle_offset,
-            }, tampered_machine_meta)
-        end
+        pair.machine = setmetatable({
+            machine = pair.machine,
+            epoch_input_offset = -1,
+            tampered_index = input_index,
+            tampered_offset = input_mcycle_offset,
+        }, tampered_machine_meta)
     end
     return player
 end

@@ -1252,7 +1252,8 @@ The server shell shows the execution of both sessions:
 
 Remote Cartesi Machines have one ability that local Cartesi Machines lack: they can be _forked_, producing a copy that runs forward independently in a child server while the original is preserved in the parent.
 Inspect-state requests and rejected advance-state requests require that changes to the state of the Rolling Cartesi Machine be reverted.
-One way to implement this is for the host to run the inspect or advance against a fork, then discard it.
+One way to implement this is for the host to fork the machine before each request and keep the fork as a backup.
+If the changes must be reverted, the host replaces the machine with the backup. Otherwise, it discards the backup.
 
 ### Rolling Cartesi Machines
 
@@ -4174,9 +4175,9 @@ Reports, inspect queries, and exceptions travel as raw bytes.
 
 In the host, the loop is as follows:
 ```
-Save fresh fork of machine as a snapshot
 Repeat
     Obtain the next request from an external source
+    Save fresh fork of machine as a snapshot
     If advance-state request
         Write the current state hash to the state at AR_SHADOW_REVERT_ROOT_HASH_START
         Write ABI-encoded EvmAdvance(...) to CMIO RX buffer and its length to `length`
@@ -4197,12 +4198,12 @@ Repeat
         End
         If register `iflags_Y` is not 0 (machine yielded manual)
             If `REASON` in `tohost` is HTIF_YIELD_MANUAL_REASON_RX_REJECTED
-                Replace machine with fresh fork of snapshot
+                Replace machine with snapshot
             End
             If `REASON` in `tohost` is HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
                 `length` = `DATA` from `tohost` (length of hash)
                 Read outputs Merkle root from CMIO TX buffer using `length`
-                Replace snapshot with fresh fork of machine
+                Discard snapshot
             End
             If `REASON` in `tohost` is HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION
                 `length` = `DATA` from `tohost`
@@ -4227,7 +4228,7 @@ Repeat
                 End
             End
         End
-        Replace machine with fresh fork of snapshot
+        Replace machine with snapshot
     End
 End
 ```
@@ -4235,7 +4236,7 @@ The host controls the emulator via the C, Lua, or JSON-RPC APIs.
 It loops obtaining requests from an external source.
 Processing requests modifies the state of the machine.
 However, at the end of a request, the host may have to revert these changes.
-Therefore, the host keeps a snapshot of the state of the machine before any request is processed.
+Therefore, before delivering each request, the host saves a snapshot of the machine.
 
 For an advance-state request, the host sends the request with `machine:send_cmio_response()`, passing the current state hash for the machine to record.
 (This, of course, changes the state so its hash is not what has just been written, but this is expected.)
@@ -4243,12 +4244,12 @@ The call also writes the request to the CMIO RX buffer and its type and length t
 The machine is now ready to be resumed.
 The host loops resuming the machine and collecting its outputs or reports every time it yields automatic.
 The guest application is eventually done with the input.
-If it rejects the input, the host drops the current machine and replaces it with a copy of the snapshot.
-If it accepts the input, the host replaces the snapshot with a copy of the current machine, and collects the new outputs Merkle root.
+If it rejects the input, the host drops the current machine and replaces it with the snapshot.
+If it accepts the input, the host collects the new outputs Merkle root and discards the snapshot.
 If it threw an exception or halted, the host aborts.
 
 For an inspect-state request, the loop is very similar.
-The differences are that only reports are collected (outputs are ignored), and that the machine is always reverted back to a copy of its snapshot.
+The differences are that only reports are collected (outputs are ignored), and that the machine is always replaced by its snapshot.
 
 #### Address ranges
 
@@ -4804,14 +4805,14 @@ Recall that `machine:send_cmio_response()` records a revert state hash, and reje
 When the guest rejects an input, the transitions that process it lead back to this recorded revert state, so the boundary that follows a rejected input is the boundary that preceded it.
 No emulator operation moves a machine backwards, however, so producing the reverted state is left to the client code.
 This is why a Cartesi Node keeps a snapshot of the machine while an input is processed, and the players of this game do the same.
-Each player advances within one input with `run_to_mcycle`. Mcycle offsets are relative to its pre-delivery boundary; offset zero remains undelivered until execution advances:
+Each player advances within one input with `run_to_mcycle`. Mcycle offsets are relative to its pre-delivery boundary. Offset zero remains undelivered until execution advances:
 ```{.lua key=rvg_advance include=rolling-verification-game.lua/run_to_mcycle title="rolling-verification-game.lua (excerpt)"}
 ```
 The revert itself is a player operation of its own, shared with the bisection rounds we will meet below:
 ```{.lua key=rvg_revert include=rolling-verification-game.lua/revert title="rolling-verification-game.lua (excerpt)"}
 ```
-The advancing pair owns both the working machine and its pre-input backup. Reverting replaces the working state with a fork of the backup, preserving the backup itself.
-Acceptance also retains the backup: its `mcycle` remains the origin for offsets throughout the logical span of the input, including repetitions past a fixed point. The next input refreshes it before delivery.
+The advancing pair owns the working machine and a pre-input backup while the input is pending. Reverting consumes the backup and replaces the working state, preserving its server address as in the CLI. Committing keeps the working state and releases the backup, as in the CLI and PRT.
+The pair stores `input_mcycle_boundary` separately, so later logical offsets repeat the completed input's state without retaining a machine snapshot. Only a pair with a pending snapshot processes input completion: acceptance and other fixed points commit, rejection reverts, and partial execution keeps its snapshot. The next input records a new boundary before delivery.
 The execution regression tests also check a dishonest player that overrides this operation and keeps the rejecting machine.
 
 ### Bisecting within an input
@@ -4826,7 +4827,7 @@ A single player operation receives these two positions and serves the three leve
 ```{.lua key=rvg_commit_bisection include=rolling-verification-game.lua/reveal_bisection title="rolling-verification-game.lua (excerpt)"}
 ```
 The first round below the input level keeps a fork of the disputed input's boundary.
-A round that finds the guest rejecting the input answers with a fresh fork of that boundary, the recorded revert state.
+A round that finds the guest rejecting the input restores that boundary from its snapshot, the recorded revert state.
 A fork that still stands at the boundary includes the input before running (at both lower levels), and the offset promoted along with each fork guarantees the input is included exactly once.
 
 ### Verifying the disputed transition
@@ -5115,13 +5116,14 @@ The forest owns the total leaf count.
 Omitting the count in `frontier_forest_pad_back` fills its remaining capacity, preserving the descendants of any repeated subtree.
 The runner's `run_epoch(dapp_contract, subscribers)` simulates blockchain publication: it emits `input_added(epoch_input_offset, filename)` for each input in order, followed by `epoch_sealed(input_count)`. It waits for the subscribers to finish handling each event before proceeding. After `run_epoch` returns, the runner calls `run_referee` to arbitrate the sealed epoch. The player initializes its computation at construction using a temporary clone. The cache already owns boundary zero. Each input event acquires a scoped working clone of the latest boundary. Each input event reads the named file and advances that input immediately, pushing its bundle roots into the claim forest at their logical heights, padding its span with the fixed point where its guest stopped, and offering the completed input boundary to the cache after output checks and any rollback.
 At `epoch_sealed`, the player checks the input count, pads the unoccupied epoch suffix, freezes its checkpoints, and builds inclusion proofs for all accepted outputs using `frontier_next_proofs`. The player retains every accepted output and its proof for later client requests. The `prove_outputs_merkle_root` handler obtains final-machine proofs from a scoped clone of the cached final boundary, without replay. `commit_mcycle_claim` uses the completed forest. Processing therefore begins while the epoch is still open.
-The default policy keeps a bounded, progressively thinned set of historical checkpoints, indexed by epoch input offset. Offset zero always retains the initial machine template. A separate latest boundary is always retained, independently of thinning, so the next input needs no replay. This uses at most one additional retained machine. `consider(epoch_input_offset, machine)` handles every completed boundary. It compares the state with the latest cached state. An unchanged state reuses that machine and advances only the epoch input offset. Changed states replace the latest snapshot. Every offer then runs the historical checkpoint policy, including when the state is unchanged. Latest and historical boundaries own independent snapshots, so either can be replaced or evicted without shared-ownership bookkeeping. Rejected inputs are offered after rollback. Terminal inputs use the same cache operation.
+The default policy keeps a bounded, progressively thinned set of historical checkpoints, indexed by epoch input offset. Offset zero always retains the initial machine template. A separate latest boundary is always retained, independently of thinning, so the next input needs no replay. This uses at most one additional retained machine. `consider(epoch_input_offset, machine)` handles every completed boundary. It compares the state with the latest cached state. An unchanged state reuses that machine and advances only the epoch input offset. Changed states replace the latest checkpoint. Every offer then runs the historical checkpoint policy, including when the state is unchanged. Latest and historical checkpoints are independent machines, so either can be replaced or evicted without shared-ownership bookkeeping. Rejected inputs are offered after rollback. Terminal inputs use the same cache operation.
 Bundle collection (`collect_mcycle_bundle`) asks the cache for the target input's boundary, then advances that input to recover one bundle's samples.
 The cache's `clone_at_input_boundary(epoch_input_offset, run_to_input_boundary)` selects and clones the nearest eligible historical or latest boundary, then calls `run_to_input_boundary` with the machine and the intervening input range.
 The player's `run_to_input_boundary` method replays only the intervening input range with the null builder.
 It returns an independent machine and a separate owner kept in a `<close>` local; closing the owner releases the working machine and any outstanding backup immediately, including on errors.
 Uarch collection and transition proofs request their boundaries through the same operation. Forward execution starts by cloning boundary zero and collects results along the way; checkpoint selection stays private to the cache.
 The input driver calls the cache's `snapshot(machine)`, `commit(machine)`, and `revert(machine)` operations, following the CLI: acceptance and sticky stops commit, rejection reverts, and a run that stops at a target inside the input keeps its snapshot until the owner releases the clone.
+This backup is separate from the cache's checkpoints, which serve only replay.
 Backups are keyed by working machine inside the cache, so nested bundle collection cannot replace the outer run's snapshot.
 The uarch builder captures its rejection-padding tail from the running virgin machine before snapshot and delivery, without accessing the backup.
 Eviction releases the retained checkpoint's owner. The caller keeps the player in a `<close>` local for as long as its claim trees can replay. The player's `__close` method closes its cache, releasing all checkpoints, working machines, and rollback snapshots without waiting for garbage collection.
@@ -5367,21 +5369,7 @@ assert(require("prt-time-test"))
 ```{.bash key=prt_protocol_test depends=game_transport_src,game_output_src,prt_test_src,prt_deadline_test_src,prt_time_test_src,prt_response_queue_src,prt_clock_src,prt_runs_node,prt_build_mcycle_claim,prt_dishonest_src replace=null}
 lua5.4 "$RECIPES_DIR/prt-test.lua"
 ```
-```{.bash key=prt_uch vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode outputs=uch.bin replace=null}
-ln -sf $rolling_calc_encode/input-[012].bin .
-cartesi-machine --no-init-splash --remote-address=127.0.0.1:0 --remote-spawn --remote-shutdown --load="$tmpl" \
-    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
-    --uarch-cycle-computation-hash=log2_mcycle_period:10,mcycle_period_index:0,filename:uch.bin
-```
-```{.bash key=prt_test vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,uch->prt_uch/uch.bin/path depends=game_transport_src,game_output_src,prt_test_src,prt_deadline_test_src,prt_time_test_src,prt_response_queue_src,prt_clock_src,prt_runs_node,prt_build_mcycle_claim,prt_dishonest_src replace=null}
-initial_state_hash=$(lua5.4 -e 'local cartesi = require("cartesi")
-local machine <close> = cartesi.machine("'"$tmpl"'")
-io.write(cartesi.tohex(machine:get_root_hash()))')
-rm -f "$initial_state_hash"
-ln -sf "$tmpl" "$initial_state_hash"
-lua5.4 "$RECIPES_DIR/prt-test.lua" "$initial_state_hash" $rolling_calc_encode/input-[012].bin "$mch" "$uch"
-```
-```{.bash key=prt_run vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_dishonest_src,prt_runs_node,prt_story,prt_build_mcycle_claim,prt_run_match,prt_test outputs=forged-input-2.bin,claims,match_4,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_5_elided,match_5_1_elided,match_6_elided,match_6_1_elided replace=source/referee}
+```{.bash key=prt_run vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_dishonest_src,prt_runs_node,prt_story,prt_build_mcycle_claim,prt_run_match outputs=forged-input-2.bin,claims,match_4,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_5_elided,match_5_1_elided,match_6_elided,match_6_1_elided replace=source/referee}
 # The chain publishes the initial state hash; a player finds its machine snapshot stored
 # under that name
 initial_state_hash=$(lua5.4 -e 'local cartesi = require("cartesi")

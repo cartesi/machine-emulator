@@ -1833,8 +1833,10 @@ lack: they can be *forked*, producing a copy that runs forward
 independently in a child server while the original is preserved in the
 parent. Inspect-state requests and rejected advance-state requests
 require that changes to the state of the Rolling Cartesi Machine be
-reverted. One way to implement this is for the host to run the inspect
-or advance against a fork, then discard it.
+reverted. One way to implement this is for the host to fork the machine
+before each request and keep the fork as a backup. If the changes must
+be reverted, the host replaces the machine with the backup. Otherwise,
+it discards the backup.
 
 ### Rolling Cartesi Machines
 
@@ -4738,19 +4740,19 @@ with responses (or exceptions) is obtained from the machine in the
 ranges directly. The call
 `machine:send_cmio_response(<reason>, <data>[, <revert_root_hash>])`
 writes `<data>` into `cmio.rx_buffer`, records the reason and length in
-`htif_fromhost`, and clears `iflags_Y` so the machine can resume.
-For `<reason>` equal to `cartesi.HTIF_YIELD_REASON_ADVANCE_STATE`, the
+`htif_fromhost`, and clears `iflags_Y` so the machine can resume. For
+`<reason>` equal to `cartesi.HTIF_YIELD_REASON_ADVANCE_STATE`, the
 optional last argument `<revert_root_hash>` is required to match the
 machine root hash when an rx-accepted manual yield is pending, and is
-ignored otherwise. All other response reasons refuse this argument. It is
-recorded in the machine state only for advance-state delivery. Validation
-happens before delivery, including when the input exceeds the receive
-buffer; validation errors leave the machine unchanged. After validation,
-sending is a no-op if no manual yield is pending, the input exceeds the
-receive buffer, or an advance-state response finds a yield other than
-rx-accepted, matching the logged transition. Conversely, the *data*
-value returned by `machine:receive_cmio_request()` is the contents of
-`cmio.tx_buffer` at the yield.
+ignored otherwise. All other response reasons refuse this argument. It
+is recorded in the machine state only for advance-state delivery.
+Validation happens before delivery, including when the input exceeds the
+receive buffer; validation errors leave the machine unchanged. After
+validation, sending is a no-op if no manual yield is pending, the input
+exceeds the receive buffer, or an advance-state response finds a yield
+other than rx-accepted, matching the logged transition. Conversely, the
+*data* value returned by `machine:receive_cmio_request()` is the
+contents of `cmio.tx_buffer` at the yield.
 
 Advance-state inputs are passed as ABI-encoded
 `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)`
@@ -7471,9 +7473,9 @@ exceptions travel as raw bytes.
 
 In the host, the loop is as follows:
 
-    Save fresh fork of machine as a snapshot
     Repeat
         Obtain the next request from an external source
+        Save fresh fork of machine as a snapshot
         If advance-state request
             Write the current state hash to the state at AR_SHADOW_REVERT_ROOT_HASH_START
             Write ABI-encoded EvmAdvance(...) to CMIO RX buffer and its length to `length`
@@ -7494,12 +7496,12 @@ In the host, the loop is as follows:
             End
             If register `iflags_Y` is not 0 (machine yielded manual)
                 If `REASON` in `tohost` is HTIF_YIELD_MANUAL_REASON_RX_REJECTED
-                    Replace machine with fresh fork of snapshot
+                    Replace machine with snapshot
                 End
                 If `REASON` in `tohost` is HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
                     `length` = `DATA` from `tohost` (length of hash)
                     Read outputs Merkle root from CMIO TX buffer using `length`
-                    Replace snapshot with fresh fork of machine
+                    Discard snapshot
                 End
                 If `REASON` in `tohost` is HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION
                     `length` = `DATA` from `tohost`
@@ -7524,15 +7526,15 @@ In the host, the loop is as follows:
                     End
                 End
             End
-            Replace machine with fresh fork of snapshot
+            Replace machine with snapshot
         End
     End
 
 The host controls the emulator via the C, Lua, or JSON-RPC APIs. It
 loops obtaining requests from an external source. Processing requests
 modifies the state of the machine. However, at the end of a request, the
-host may have to revert these changes. Therefore, the host keeps a
-snapshot of the state of the machine before any request is processed.
+host may have to revert these changes. Therefore, before delivering each
+request, the host saves a snapshot of the machine.
 
 For an advance-state request, the host sends the request with
 `machine:send_cmio_response()`, passing the current state hash for the
@@ -7544,14 +7546,13 @@ HTIF register `fromhost`, and unblocks the machine by clearing its
 loops resuming the machine and collecting its outputs or reports every
 time it yields automatic. The guest application is eventually done with
 the input. If it rejects the input, the host drops the current machine
-and replaces it with a copy of the snapshot. If it accepts the input,
-the host replaces the snapshot with a copy of the current machine, and
-collects the new outputs Merkle root. If it threw an exception or
-halted, the host aborts.
+and replaces it with the snapshot. If it accepts the input, the host
+collects the new outputs Merkle root and discards the snapshot. If it
+threw an exception or halted, the host aborts.
 
 For an inspect-state request, the loop is very similar. The differences
 are that only reports are collected (outputs are ignored), and that the
-machine is always reverted back to a copy of its snapshot.
+machine is always replaced by its snapshot.
 
 #### Address ranges
 
@@ -8682,18 +8683,18 @@ machine has the contract’s initial state hash before using it.
 
 ### Settling a dispute
 
-The epoch under dispute is settled in three bisections rather than two.
-The first ranges over the epoch’s inputs and isolates the input whose
-processing the players disagree on. The second ranges over `mcycle`
-(counted as an offset from the value it had when the disputed input
-arrived) and isolates the disputed main processor instruction. The third
-ranges over `uarch_cycle` and isolates the disputed uarch step. The
+The epoch under dispute is settled by bisecting three coordinate ranges
+in order. The first range covers the epoch’s inputs and isolates the
+input whose processing the players disagree on. The second covers
+`mcycle` (counted as an offset from the value it had when the disputed
+input arrived) and isolates the disputed main processor instruction. The
+third covers `uarch_cycle` and isolates the disputed uarch step. The
 rolling verification game limits each main processor instruction to
 2<sup>20</sup> uarch cycles, each input to 2<sup>48</sup> mcycles and
 each epoch to 2<sup>24</sup> inputs. Every transition in the epoch is
 then identified by the input offset within the epoch, the mcycle offset
-within that input, and the uarch cycle within that instruction. Each
-bisection searches one of them.
+within that input, and the uarch cycle within that instruction. One
+bisection loop narrows these coordinates from most to least significant.
 
 The transition out of `cartesi.UARCH_CYCLE_MAX` combines the final uarch
 step with the reset that prepares the next main processor instruction.
@@ -8702,85 +8703,90 @@ transition the same way. The transition out of input *i-1* includes
 input *i* and also performs the first uarch step of the instruction that
 resumes the machine.
 
-Before each dispute, the referee sends `dispute_started` to the
-surviving players, whose handlers reset their agreed machine and
-position to the epoch’s initial state. The referee runs three bisections
-in turn, then verifies the transition out of the position they converged
-on:
+The referee sends `dispute_started` once, and each player initializes
+its agreed machine and position to the epoch’s initial state. The
+referee narrows the search to one transition, then verifies the
+transition out of the agreed position. After constructing its complete
+transition proof, each player resets its agreed machine and position for
+another bisection. The referee repeats while different final claims
+remain:
 
 ``` lua
 local function settle_dispute(tournament)
-    while not no_claim_remains(tournament.players) do
-        local winner = single_claim_remains(tournament.players)
-        if winner then
-            return winner
-        end
-        local started <close> = request_all(addresses(tournament.players), EVENTS.dispute_started, {})
-        started:wait_at_most(FOREVER)
+    notify_all(addresses(tournament.players), EVENTS.dispute_started, {})
+    while not is_there_at_most_one_claim(tournament.players) do
         local bisection = {
+            agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
+            log2_input_count = LOG2_INPUTS_PER_EPOCH,
+            log2_mcycle_count = LOG2_MCYCLES_PER_INPUT,
+            log2_uarch_cycle_count = LOG2_UARCH_CYCLES_PER_MCYCLE,
             last_agreed_hash = tournament.dapp_contract.initial_state_hash,
             hashes_after = map(tournament.players, function(player)
                 return player.final_hash
             end),
         }
-        local epoch_input_offset, winner_input = bisect_level(tournament, "input", INPUTS_PER_EPOCH, bisection)
-        if not epoch_input_offset then
-            return winner_input
+        tournament.players = bisect(tournament, bisection)
+        if is_there_at_most_one_claim(tournament.players) then
+            break
         end
-        bisection.epoch_input_offset = epoch_input_offset
-        local input_mcycle_offset, winner_mcycle = bisect_level(tournament, "mcycle", MCYCLES_PER_INPUT, bisection)
-        if not input_mcycle_offset then
-            return winner_mcycle
-        end
-        bisection.input_mcycle_offset = input_mcycle_offset
-        -- UARCH_CYCLE_MAX names the last cycle. Its outgoing transition includes reset.
-        local uarch_cycle, winner_uarch_cycle =
-            bisect_level(tournament, "uarch_cycle", UARCH_CYCLES_PER_MCYCLE, bisection)
-        if not uarch_cycle then
-            return winner_uarch_cycle
-        end
-        tournament.players =
-            request_state_transitions(tournament, epoch_input_offset, input_mcycle_offset, uarch_cycle, bisection)
+        tournament.players = request_state_transitions(tournament, bisection)
     end
+    return get_winner(tournament.players)
 end
 ```
 
-Each level uses the same inclusive interval of resulting states, with
-the agreed predecessor just outside it:
+A bisection table holds the agreed start position, a log count for each
+coordinate, the agreed hash, and each player’s hash at the end of the
+remaining range. The counts begin at the epoch’s input limit, the mcycle
+limit per input, and the uarch cycle limit per instruction.
+`narrow_bisection` decrements the first nonzero log count and returns a
+tentative position advanced by the new count in that coordinate. The
+agreed position and other counts remain unchanged:
 
 ``` lua
-local function bisect_level(tournament, level, count, bisection)
-    local interval = {
-        level = level,
-        lo = 0,
-        hi = count - 1,
-        epoch_input_offset = bisection.epoch_input_offset,
-        input_mcycle_offset = bisection.input_mcycle_offset,
-    }
-    story.report_bisection(interval)
-    while interval.lo < interval.hi do
-        tournament.players = request_bisections(tournament, interval)
-        if no_claim_remains(tournament.players) then
-            return nil
-        end
-        local winner = single_claim_remains(tournament.players)
-        if winner then
-            return nil, winner
-        end
-        local hashes = map(tournament.players, function(player)
-            return player.midpoint_hash
-        end)
-        local mid = midpoint(interval)
-        if hashes_disagree(hashes) then
-            interval.hi = mid
-            bisection.hashes_after = hashes
-        else
-            interval.lo = mid + 1
-            bisection.last_agreed_hash = any_of(hashes)
-        end
-        story.report_bisection_progress(interval)
+local function narrow_bisection(bisection)
+    local position = shallow_copy(bisection.agreed_position)
+    if bisection.log2_input_count > 0 then
+        bisection.log2_input_count = bisection.log2_input_count - 1
+        position.epoch_input_offset = position.epoch_input_offset + (1 << bisection.log2_input_count)
+    elseif bisection.log2_mcycle_count > 0 then
+        bisection.log2_mcycle_count = bisection.log2_mcycle_count - 1
+        position.input_mcycle_offset = position.input_mcycle_offset + (1 << bisection.log2_mcycle_count)
+    elseif bisection.log2_uarch_cycle_count > 0 then
+        bisection.log2_uarch_cycle_count = bisection.log2_uarch_cycle_count - 1
+        position.uarch_cycle = position.uarch_cycle + (1 << bisection.log2_uarch_cycle_count)
     end
-    return interval.lo
+    return position
+end
+```
+
+Agreement advances the start and updates the agreed hash; disagreement
+keeps the start and updates the endpoint hashes. When all three log
+counts are zero, one uarch transition remains. The loop checks that
+condition before narrowing again:
+
+``` lua
+local function bisect(tournament, bisection)
+    local players = tournament.players
+    while not is_single_uarch_cycle(bisection) do
+        local tentative_position = narrow_bisection(bisection)
+        story.report_bisection(bisection.agreed_position, tentative_position)
+        players = request_bisections(tournament.dapp_contract, players, bisection.agreed_position, tentative_position)
+        if is_there_at_most_one_claim(players) then
+            break
+        end
+        local hashes = map(players, function(player)
+            return player.tentative_hash
+        end)
+        if is_unanimous(hashes) then
+            bisection.agreed_position = tentative_position
+            bisection.last_agreed_hash = any_of(hashes)
+        else
+            bisection.hashes_after = hashes
+        end
+        story.report_bisection_progress(bisection)
+    end
+    return players
 end
 ```
 
@@ -8819,7 +8825,7 @@ machine backwards, however, so producing the reverted state is left to
 the client code. This is why a Cartesi Node keeps a snapshot of the
 machine while an input is processed, and the players of this game do the
 same. Each player advances within one input with `run_to_mcycle`. Mcycle
-offsets are relative to its pre-delivery boundary; offset zero remains
+offsets are relative to its pre-delivery boundary. Offset zero remains
 undelivered until execution advances:
 
 ``` lua
@@ -8836,10 +8842,13 @@ function player_methods:run_to_mcycle(
         return
     end
     if input_mcycle_offset_begin == 0 then
-        begin_input(pair, input_data)
+        pair.input_mcycle_boundary = pair.machine:read_reg("mcycle")
+        pair.pending_outputs = {}
+        pair:snapshot()
+        load_cmio_input(pair.machine, input_data, pair.revert_root_hash)
     end
     local machine = pair.machine
-    local input_mcycle_boundary = pair.backup:read_reg("mcycle")
+    local input_mcycle_boundary = pair.input_mcycle_boundary
     local mcycle_end = usaturating_add(input_mcycle_boundary, input_mcycle_offset_end)
     local function on_yield_automatic(yield_reason, output)
         if outputs and is_tx_output(yield_reason) then
@@ -8854,12 +8863,18 @@ function player_methods:run_to_mcycle(
     if is_yielded_manual(break_reason) then
         yield_reason, outputs_merkle_root = receive_cmio_request(machine)
     end
-    if is_rx_rejected(yield_reason) then
-        pair:revert()
-    else
-        flush_pending_outputs(pair.pending_outputs, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
+    if pair.backup then
+        if is_rx_rejected(yield_reason) then
+            pair:revert()
+        else
+            flush_pending_outputs(pair.pending_outputs, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
+            if is_rx_accepted(yield_reason) then
+                pair.revert_root_hash = machine:get_root_hash()
+            end
+            pair:commit()
+        end
+        pair.pending_outputs = {}
     end
-    pair.pending_outputs = {}
     return break_reason, yield_reason, input_mcycle_boundary
 end
 ```
@@ -8869,18 +8884,27 @@ bisection rounds we will meet below:
 
 ``` lua
 function advancing_pair_methods:revert()
-    local restored <close> = setmetatable({ machine = fork_machine(self.backup) }, advancing_pair_meta)
-    self.machine:swap(restored.machine)
+    local backup = assert(self.backup, "no snapshot to revert to")
+    local address = self.machine:get_server_address()
+    self.machine:shutdown_server()
+    self.machine:swap(backup)
+    self.backup = nil
+    self.machine:rebind_server(address)
+    assert(self.machine:get_root_hash() == self.revert_root_hash, "rollback did not restore the input boundary")
 end
 ```
 
-The advancing pair owns both the working machine and its pre-input
-backup. Reverting replaces the working state with a fork of the backup,
-preserving the backup itself. Acceptance also retains the backup: its
-`mcycle` remains the origin for offsets throughout the logical span of
-the input, including repetitions past a fixed point. The next input
-refreshes it before delivery. The execution regression tests also check
-a dishonest player that overrides this operation and keeps the rejecting
+The advancing pair owns the working machine and a pre-input backup while
+the input is pending. Reverting consumes the backup and replaces the
+working state, preserving its server address as in the CLI. Committing
+keeps the working state and releases the backup, as in the CLI and PRT.
+The pair stores `input_mcycle_boundary` separately, so later logical
+offsets repeat the completed input’s state without retaining a machine
+snapshot. Only a pair with a pending snapshot processes input
+completion: acceptance and other fixed points commit, rejection reverts,
+and partial execution keeps its snapshot. The next input records a new
+boundary before delivery. The execution regression tests also check a
+dishonest player that overrides this operation and keeps the rejecting
 machine.
 
 ### Bisecting within an input
@@ -8890,26 +8914,25 @@ mcycles. Offset zero is the boundary before input delivery. The input is
 included by the first transition, so the state at a positive offset *m*
 is the input boundary, fed, and run for *m* mcycles. The calculator is
 done with each input within about 50 million mcycles, after which the
-machine has yielded manual and no longer advances. A midpoint past the
-yield therefore repeats the yielded state, and the bisection ranges over
-the full ceiling without knowing where the guest yields, as it can when
-execution halts. The uarch_cycle bisection that follows ranges over the
-2<sup>20</sup> uarch cycles of the disputed instruction. The referee
-converts each interval into the agreed predecessor’s position and the
-tentative midpoint’s position. A single player operation receives these
-two positions and serves the three levels:
+machine has yielded manual and no longer advances. A tentative position
+past the yield therefore repeats the yielded state, and the bisection
+ranges over the full ceiling without knowing where the guest yields, as
+it can when execution halts. The search then narrows the 2<sup>20</sup>
+uarch cycles of the disputed instruction. The referee sends the agreed
+position and the tentative position directly. A single player operation
+receives these two positions and serves the three levels:
 
 ``` lua
 function event_handler:reveal_bisection(agreed_position, tentative_position)
-    if precedes(self.agreed_position, agreed_position) then
-        -- The previous midpoint is now the agreed predecessor.
+    if is_same_position(self.agreed_position, agreed_position) then
+        self.tentative_machine:close()
+    else
+        -- The previous tentative position is now the agreed predecessor.
         self.agreed_machine:close()
         self.agreed_machine, self.tentative_machine = self.tentative_machine, nil
-    else
-        self.tentative_machine:close()
     end
     self.agreed_position = agreed_position
-    -- Replay from a fork of the whole agreed pair, including its pre-input snapshot.
+    -- Replay from a fork of the whole agreed pair, including any pending snapshot.
     self.tentative_machine = self.agreed_machine:fork()
     if agreed_position.epoch_input_offset < tentative_position.epoch_input_offset then
         self:run_to_input_boundary(
@@ -8942,32 +8965,35 @@ end
 
 The first round below the input level keeps a fork of the disputed
 input’s boundary. A round that finds the guest rejecting the input
-answers with a fresh fork of that boundary, the recorded revert state. A
+restores that boundary from its snapshot, the recorded revert state. A
 fork that still stands at the boundary includes the input before running
 (at both lower levels), and the offset promoted along with each fork
 guarantees the input is included exactly once.
 
 ### Verifying the disputed transition
 
-Once the bisections converge, the mcycle offset and uarch cycle they
+Once the bisection converges, the mcycle offset and uarch cycle they
 agreed on determine the form of the disputed transition, and the referee
 asks every surviving player for logs proving its own committed endpoint:
 
 ``` lua
 function event_handler:prove_state_transition(epoch_input_offset, input_mcycle_offset, uarch_cycle)
-    local machine = self.agreed_position.uarch_cycle < uarch_cycle and self.tentative_machine.machine
-        or self.agreed_machine.machine
+    local pair = self.agreed_position.uarch_cycle < uarch_cycle and self.tentative_machine or self.agreed_machine
+    local machine = pair.machine
     local data = self.inputs[epoch_input_offset + 1]
+    local proof
     if input_mcycle_offset == 0 and uarch_cycle == 0 and data then
-        local before = machine:get_root_hash()
-        local send = machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, before)
-        return { send_cmio_log = send, step_log = machine:log_step_uarch() }
+        local send =
+            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, pair.revert_root_hash)
+        proof = { send_cmio_log = send, step_log = machine:log_step_uarch() }
     elseif uarch_cycle == cartesi.UARCH_CYCLE_MAX then
         local step = machine:log_step_uarch()
-        return { step_log = step, reset_uarch_log = machine:log_reset_uarch() }
+        proof = { step_log = step, reset_uarch_log = machine:log_reset_uarch() }
     else
-        return { step_log = machine:log_step_uarch() }
+        proof = { step_log = machine:log_step_uarch() }
     end
+    self:reset_bisection()
+    return proof
 end
 ```
 
@@ -8980,31 +9006,34 @@ previous one returned:
 ``` lua
 local function validate_state_transition_response(
     dapp_contract,
+    root_hash_before,
     epoch_input_offset,
     input_mcycle_offset,
     uarch_cycle,
-    before,
-    response,
-    after
+    response
 )
+    local obtained_root_hash = root_hash_before
     local data = dapp_contract.inputs[epoch_input_offset + 1]
     if input_mcycle_offset == 0 and uarch_cycle == 0 and data then
-        before = cartesi.machine:verify_send_cmio_response(
+        obtained_root_hash = cartesi.machine:verify_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             data,
-            before,
+            root_hash_before,
             response.send_cmio_log,
-            before
+            root_hash_before
         )
     end
-    before = cartesi.machine:verify_step_uarch(before, response.step_log)
+    obtained_root_hash = cartesi.machine:verify_step_uarch(obtained_root_hash, response.step_log)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
-        before = cartesi.machine:verify_reset_uarch(before, response.reset_uarch_log)
+        obtained_root_hash = cartesi.machine:verify_reset_uarch(obtained_root_hash, response.reset_uarch_log)
     end
-    assert(before == after, "log does not reach the committed after-hash")
-    return true
+    return obtained_root_hash
 end
 ```
+
+The validator returns the root hash reached by the logs. The request
+handler keeps a player only if this equals that player’s committed
+endpoint hash.
 
 For the transition that includes the input, the referee passes the
 agreed before-hash twice, once as the state the input arrives in and
@@ -9118,26 +9147,26 @@ The referee narrates the dispute:
 ``` text
 Player forger claimed 0x3dc31afe....
 Player honest claimed 0x5d4ca486....
-input interval of disagreement is [0x0, 0x7fff].
-input interval of disagreement is [0x0, 0x3fff].
-input interval of disagreement is [0x0, 0x1fff].
+Disagreement starts at (0x0, 0x0, 0x0); counts are (0x8000, 0x1000000000000, 0x100000).
+Disagreement starts at (0x0, 0x0, 0x0); counts are (0x4000, 0x1000000000000, 0x100000).
+Disagreement starts at (0x0, 0x0, 0x0); counts are (0x2000, 0x1000000000000, 0x100000).
 ...
-input interval of disagreement is [0x0, 0x3].
-input interval of disagreement is [0x2, 0x3].
-input interval of disagreement is [0x2, 0x2].
-mcycle interval of disagreement is [0x0, 0x7fffffffffff].
-mcycle interval of disagreement is [0x0, 0x3fffffffffff].
-mcycle interval of disagreement is [0x0, 0x1fffffffffff].
+Disagreement starts at (0x0, 0x0, 0x0); counts are (0x4, 0x1000000000000, 0x100000).
+Disagreement starts at (0x2, 0x0, 0x0); counts are (0x2, 0x1000000000000, 0x100000).
+Disagreement starts at (0x2, 0x0, 0x0); counts are (0x1, 0x1000000000000, 0x100000).
+Disagreement starts at (0x2, 0x0, 0x0); counts are (0x1, 0x800000000000, 0x100000).
+Disagreement starts at (0x2, 0x0, 0x0); counts are (0x1, 0x400000000000, 0x100000).
+Disagreement starts at (0x2, 0x0, 0x0); counts are (0x1, 0x200000000000, 0x100000).
 ...
-mcycle interval of disagreement is [0x0, 0x3].
-mcycle interval of disagreement is [0x0, 0x1].
-mcycle interval of disagreement is [0x0, 0x0].
-uarch_cycle interval of disagreement is [0x0, 0x7ffff].
-uarch_cycle interval of disagreement is [0x0, 0x3ffff].
-uarch_cycle interval of disagreement is [0x0, 0x1ffff].
+Disagreement starts at (0x2, 0x0, 0x0); counts are (0x1, 0x4, 0x100000).
+Disagreement starts at (0x2, 0x0, 0x0); counts are (0x1, 0x2, 0x100000).
+Disagreement starts at (0x2, 0x0, 0x0); counts are (0x1, 0x1, 0x100000).
+Disagreement starts at (0x2, 0x0, 0x0); counts are (0x1, 0x1, 0x80000).
+Disagreement starts at (0x2, 0x0, 0x0); counts are (0x1, 0x1, 0x40000).
+Disagreement starts at (0x2, 0x0, 0x0); counts are (0x1, 0x1, 0x20000).
 ...
-uarch_cycle interval of disagreement is [0x0, 0x1].
-uarch_cycle interval of disagreement is [0x0, 0x0].
+Disagreement starts at (0x2, 0x0, 0x0); counts are (0x1, 0x1, 0x2).
+Disagreement starts at (0x2, 0x0, 0x0); counts are (0x1, 0x1, 0x1).
 Player honest's transition proof is valid.
 Player honest wins. Final state hash: 0x5d4ca486a943799b75423a1763daf881fa064e2115309f98ab22096cbcb3ec7c
 Result proved against the final state:
@@ -9154,16 +9183,16 @@ against the settled hash and accepts each output index once.
 The other executable roles in `vg-dishonest.lua` tamper with machine
 memory or stop defending a claim. The `test-vg` and `test-vg-execution`
 Makefile targets cover these roles, rejected-input rollback, extra-input
-and composite-machine attacks, and multiple successive disputes. The
-next section introduces a tournament that settles large numbers of
-claims efficiently and lets anyone defend a claim.
+and composite-machine attacks, and multiple proof rounds within one
+dispute. The next section introduces a tournament that settles large
+numbers of claims efficiently and lets anyone defend a claim.
 
 ## Permissionless refereed tournament
 
 On a public blockchain, anyone can post a claim, so a dispute may
 involve many parties, most of them dishonest or simply absent. Settling
-successive disputes lets adversaries buy delay in proportion to their
-number. The [Permissionless Refereed
+successive proof rounds lets adversaries buy delay in proportion to
+their number. The [Permissionless Refereed
 Tournaments](https://arxiv.org/abs/2212.12439) algorithm resolves a
 dispute among N parties in time logarithmic in N, and
 [Dave](https://doi.org/10.1145/3734698) improves further on it. The
@@ -9368,15 +9397,15 @@ of thinning, so the next input needs no replay. This uses at most one
 additional retained machine. `consider(epoch_input_offset, machine)`
 handles every completed boundary. It compares the state with the latest
 cached state. An unchanged state reuses that machine and advances only
-the epoch input offset. Changed states replace the latest snapshot.
+the epoch input offset. Changed states replace the latest checkpoint.
 Every offer then runs the historical checkpoint policy, including when
-the state is unchanged. Latest and historical boundaries own independent
-snapshots, so either can be replaced or evicted without shared-ownership
-bookkeeping. Rejected inputs are offered after rollback. Terminal inputs
-use the same cache operation. Bundle collection
-(`collect_mcycle_bundle`) asks the cache for the target input’s
-boundary, then advances that input to recover one bundle’s samples. The
-cache’s
+the state is unchanged. Latest and historical checkpoints are
+independent machines, so either can be replaced or evicted without
+shared-ownership bookkeeping. Rejected inputs are offered after
+rollback. Terminal inputs use the same cache operation. Bundle
+collection (`collect_mcycle_bundle`) asks the cache for the target
+input’s boundary, then advances that input to recover one bundle’s
+samples. The cache’s
 `clone_at_input_boundary(epoch_input_offset, run_to_input_boundary)`
 selects and clones the nearest eligible historical or latest boundary,
 then calls `run_to_input_boundary` with the machine and the intervening
@@ -9391,17 +9420,18 @@ way; checkpoint selection stays private to the cache. The input driver
 calls the cache’s `snapshot(machine)`, `commit(machine)`, and
 `revert(machine)` operations, following the CLI: acceptance and sticky
 stops commit, rejection reverts, and a run that stops at a target inside
-the input keeps its snapshot until the owner releases the clone. Backups
-are keyed by working machine inside the cache, so nested bundle
-collection cannot replace the outer run’s snapshot. The uarch builder
-captures its rejection-padding tail from the running virgin machine
-before snapshot and delivery, without accessing the backup. Eviction
-releases the retained checkpoint’s owner. The caller keeps the player in
-a `<close>` local for as long as its claim trees can replay. The
-player’s `__close` method closes its cache, releasing all checkpoints,
-working machines, and rollback snapshots without waiting for garbage
-collection. The player loads the initial machine from the contract’s
-initial state hash and passes it to
+the input keeps its snapshot until the owner releases the clone. This
+backup is separate from the cache’s checkpoints, which serve only
+replay. Backups are keyed by working machine inside the cache, so nested
+bundle collection cannot replace the outer run’s snapshot. The uarch
+builder captures its rejection-padding tail from the running virgin
+machine before snapshot and delivery, without accessing the backup.
+Eviction releases the retained checkpoint’s owner. The caller keeps the
+player in a `<close>` local for as long as its claim trees can replay.
+The player’s `__close` method closes its cache, releasing all
+checkpoints, working machines, and rollback snapshots without waiting
+for garbage collection. The player loads the initial machine from the
+contract’s initial state hash and passes it to
 `new_machine_cache(initial_machine, capacity, initial_input_gap)`, which
 takes ownership. The default cache uses forks. Tests can substitute the
 module’s machine and cache factories to exercise other cache policies
@@ -9808,32 +9838,30 @@ other transition is an ordinary uarch step:
 ``` lua
 local function validate_state_transition_response(
     dapp_contract,
-    current_state_hash,
+    root_hash_before,
     epoch_period_offset,
     state_transition_offset,
-    logs
+    response
 )
     local periods_per_input = dapp_contract.geometry.periods_per_input
     local epoch_input_offset, input_period_offset = split_epoch_period_offset(periods_per_input, epoch_period_offset)
     local _, uarch_cycle = split_state_transition_offset(state_transition_offset)
-    local obtained_state_hash = current_state_hash
+    local obtained_root_hash = root_hash_before
     local data = dapp_contract.inputs[epoch_input_offset + 1]
     if state_transition_offset == 0 and input_period_offset == 0 and data then
-        local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-        local revert_root_hash = current_state_hash
-        obtained_state_hash = cartesi.machine:verify_send_cmio_response(
-            reason,
+        obtained_root_hash = cartesi.machine:verify_send_cmio_response(
+            cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             data,
-            revert_root_hash,
-            logs.send_cmio_log,
-            current_state_hash
+            root_hash_before,
+            response.send_cmio_log,
+            root_hash_before
         )
     end
-    obtained_state_hash = cartesi.machine:verify_step_uarch(obtained_state_hash, logs.step_log)
+    obtained_root_hash = cartesi.machine:verify_step_uarch(obtained_root_hash, response.step_log)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
-        obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, logs.reset_uarch_log)
+        obtained_root_hash = cartesi.machine:verify_reset_uarch(obtained_root_hash, response.reset_uarch_log)
     end
-    return obtained_state_hash
+    return obtained_root_hash
 end
 ```
 
@@ -9845,13 +9873,7 @@ true hash wins the match; a claim that committed to anything else loses,
 whoever ends up supplying the winning log:
 
 ``` lua
-local function settle_uarch_state_hash(
-    tournament,
-    match,
-    state_transition_offset,
-    current_state_hash,
-    next_state_hashes
-)
+local function settle_uarch_state_hash(tournament, match, state_transition_offset, root_hash_before, next_state_hashes)
     local subscriptions = {
         subscription_hash(tournament.id, match.claims[1]),
         subscription_hash(tournament.id, match.claims[2]),
@@ -9878,19 +9900,19 @@ local function settle_uarch_state_hash(
             assert(current_time() < proof_deadline, "late state transition proof")
             return validate_state_transition_response(
                 tournament.dapp_contract,
-                current_state_hash,
+                root_hash_before,
                 tournament.epoch_period_offset,
                 state_transition_offset,
                 response
             )
         end
     )
-    local obtained_state_hash = proof:wait_at_most(proof_deadline)
-    if not obtained_state_hash then
+    local obtained_root_hash = proof:wait_at_most(proof_deadline)
+    if not obtained_root_hash then
         elimination:wait_at_least(eliminable_at)
     end
-    story.report_state_transition(tournament, match, state_transition_offset, obtained_state_hash, next_state_hashes)
-    return obtained_state_hash
+    story.report_state_transition(tournament, match, state_transition_offset, obtained_root_hash, next_state_hashes)
+    return obtained_root_hash
 end
 ```
 
@@ -9981,6 +10003,13 @@ eliminate inactive matches, including unrelated ones that could keep the
 tournament open. The referee narrates each claim with the labels of the
 players that posted it. Labels never influence protocol state or
 ordering.
+
+`notify_all(subscriptions, event, arguments)` delivers a notification
+with no response schema, waits for the handlers’ transport
+acknowledgements without a deadline, and returns no value. Both recipes
+use it to publish inputs and the epoch seal; VG also uses it for the
+initial state and dispute start. These acknowledgements preserve
+delivery order and do not advance logical time.
 
 `request_all(subscriptions, event, arguments, validator)` returns a
 future collecting responses from a fixed audience, with the same

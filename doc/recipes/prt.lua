@@ -65,13 +65,13 @@ local FOREVER = nil
 local EVENTS = prtu.EVENTS
 local story = prtu.story
 
--- Reads one epoch input from each command-line filename.
-local function read_inputs(...)
-    local inputs = {}
-    for index, path in ipairs({ ... }) do
-        inputs[index] = util.read_file(path)
+-- Transform values while preserving their keys.
+local function map(values, transform)
+    local result = {}
+    for key, value in pairs(values) do
+        result[key] = transform(value)
     end
-    return inputs
+    return result
 end
 
 -- Protocol offsets are zero-based and scoped to their epoch, input, or period.
@@ -847,7 +847,7 @@ local function make_dapp_contract(initial_state_hash, input_paths)
     local max_allowance = 4
     return {
         initial_state_hash = initial_state_hash,
-        inputs = read_inputs(table.unpack(input_paths)),
+        inputs = map(input_paths, util.read_file),
         input_paths = input_paths,
         geometry = new_geometry(10),
         max_allowance = max_allowance,
@@ -1918,10 +1918,7 @@ function event_handler.epoch_sealed(self)
     local builder = self.epoch_builder
     self.epoch_builder = nil
     self.mcycle_forest = builder:end_epoch()
-    local leaves = {}
-    for i, output in ipairs(self.outputs) do
-        leaves[i] = keccak(output)
-    end
+    local leaves = map(self.outputs, keccak)
     self.output_proofs = hash_tree.frontier_next_proofs(self.previous_outputs_frontier, leaves)
     self.previous_outputs_frontier = self.outputs_frontier
     self.outputs_frontier = nil

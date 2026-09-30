@@ -31,6 +31,26 @@ local function assertf(value, fmt, ...)
     error(string.format(fmt, ...), 2)
 end
 
+local function shallow_copy(values)
+    local result = {}
+    for key, value in pairs(values) do
+        result[key] = value
+    end
+    return result
+end
+
+local function shallow_clear(values)
+    for key in pairs(values) do
+        values[key] = nil
+    end
+end
+
+local function shallow_move(values)
+    local result = shallow_copy(values)
+    shallow_clear(values)
+    return result
+end
+
 -- Unsigned minimum. Cycle counters are unsigned 64-bit integers, which math.min compares as signed.
 local function umin(a, b)
     if math.ult(a, b) then return a end
@@ -2910,9 +2930,6 @@ end
 check_computation_hash_selection()
 if cmdline.cmio_advance then check_epoch_options(cmdline.cmio_advance) end
 
-local stored_machine_dir = cmdline.load_dir or cmdline.create_dir
-local stored_backup_dir = stored_machine_dir and (stored_machine_dir .. ".revert")
-
 local main_machine = new_machine()
 if cmdline.load_dir then
     stderr("Loading machine: please wait\n")
@@ -3615,83 +3632,113 @@ end
 dump_value_proofs(machine, cmdline.initial_proof, initial_config)
 local exit_code = 0
 
--- Select the snapshot implementation once. Callers do not need to know which mode is active.
-local snapshot = function() end
+local revert_none = {
+    __index = {
+        snapshot = function() end,
+        commit = function() end,
+        revert = function() end,
+        has_snapshot = function() return false end,
+    },
+    __close = function() end,
+}
 
-local commit = function() end
+local function make_revert_none() return setmetatable({}, revert_none) end
 
-local revert = function() end
+local revert_fork = { __index = {} }
 
-local has_snapshot = function() return false end
-
-if cmdline.revert_mode == "fork" then
-    local backup_machine = nil
-    snapshot = function(m)
-        if backup_machine then backup_machine:shutdown_server() end
-        backup_machine = m:fork_server()
-    end
-
-    commit = function()
-        if backup_machine then
-            backup_machine:shutdown_server()
-            backup_machine = nil
-        end
-    end
-
-    revert = function(m)
-        assert(backup_machine, "no snapshot to revert to")
-        local address = m:get_server_address()
-        m:shutdown_server()
-        m:swap(backup_machine)
-        m:rebind_server(address)
-        backup_machine = nil
-    end
-
-    has_snapshot = function() return backup_machine ~= nil end
-elseif cmdline.revert_mode == "stored" then
-    local stored_backup = false
-
-    snapshot = function(m)
-        m:destroy()
-        m:clone_stored(stored_machine_dir, stored_backup_dir)
-        m:sync_stored(stored_backup_dir)
-        m:load(stored_machine_dir, runtime_config, cartesi.SHARING_ALL)
-        stored_backup = true
-    end
-
-    commit = function(m)
-        m:sync_stored(stored_machine_dir)
-        if stored_backup then
-            m:remove_stored(stored_backup_dir)
-            stored_backup = false
-        end
-    end
-
-    revert = function(m)
-        assert(stored_backup, "no stored snapshot to revert to")
-        m:destroy()
-        m:remove_stored(stored_machine_dir)
-        m:rename_stored(stored_backup_dir, stored_machine_dir)
-        m:load(stored_machine_dir, runtime_config, cartesi.SHARING_ALL)
-        stored_backup = false
-    end
-
-    has_snapshot = function() return stored_backup end
-
-    -- Cloning fails without overwriting anything if the backup directory already exists.
-    snapshot(machine)
-    commit(machine)
+function revert_fork.__index:snapshot()
+    assert(not self.backup_machine, "snapshot already exists")
+    self.backup_machine = self.machine:fork_server()
 end
 
--- Make sure an error does not leave a fork or an incomplete stored transaction behind.
--- luacheck: push ignore 211
-local backup_closer <close> = setmetatable({}, {
-    __close = function()
-        -- If we have a backup on exit, we probably raised an error, so we revert
-        if has_snapshot() then revert(machine) end
-    end,
-})
--- luacheck: pop
+function revert_fork.__index:commit()
+    if self.backup_machine then
+        self.backup_machine:shutdown_server()
+        self.backup_machine = nil
+    end
+end
+
+function revert_fork.__index:revert()
+    assert(self.backup_machine, "no snapshot to revert to")
+    local m = self.machine
+    local address = m:get_server_address()
+    m:shutdown_server()
+    m:swap(self.backup_machine)
+    self.backup_machine = nil
+    m:rebind_server(address)
+end
+
+function revert_fork.__index:has_snapshot() return self.backup_machine ~= nil end
+
+function revert_fork:__close(err)
+    if err ~= nil and self:has_snapshot() then self:revert() end
+end
+
+local function make_revert_fork(m) return setmetatable({ machine = m }, revert_fork) end
+
+local revert_stored = { __index = {} }
+
+function revert_stored.__index:snapshot()
+    assert(not self.backup_directory, "snapshot already exists")
+    local m = self.machine
+    local backup_directory = self.machine_directory .. ".revert"
+    m:destroy()
+    m:clone_stored(self.machine_directory, backup_directory)
+    -- Take ownership only after cloning succeeds, so cleanup leaves pre-existing backups untouched.
+    self.backup_directory = backup_directory
+    m:sync_stored(backup_directory)
+    m:load(self.machine_directory, self.runtime_config, cartesi.SHARING_ALL)
+end
+
+function revert_stored.__index:commit()
+    local m = self.machine
+    m:sync_stored(self.machine_directory)
+    if self.backup_directory then
+        m:remove_stored(self.backup_directory)
+        self.backup_directory = nil
+    end
+end
+
+function revert_stored.__index:revert()
+    assert(self.backup_directory, "no stored snapshot to revert to")
+    local m = self.machine
+    m:destroy()
+    m:remove_stored(self.machine_directory)
+    m:rename_stored(self.backup_directory, self.machine_directory)
+    self.backup_directory = nil
+    m:load(self.machine_directory, self.runtime_config, cartesi.SHARING_ALL)
+end
+
+function revert_stored.__index:has_snapshot() return self.backup_directory ~= nil end
+
+function revert_stored:__close(err)
+    if err ~= nil and self:has_snapshot() then self:revert() end
+end
+
+function revert_stored.__index:move() return setmetatable(shallow_move(self), revert_stored) end
+
+local function make_revert_stored(m, machine_directory, runtime)
+    local backup <close> = setmetatable({
+        machine = m,
+        machine_directory = machine_directory,
+        runtime_config = runtime,
+    }, revert_stored)
+    -- Cloning fails without overwriting anything if the backup directory already exists.
+    backup:snapshot()
+    backup:commit()
+    return backup:move()
+end
+
+-- Select the snapshot implementation once. The object also reverts an outstanding snapshot on errors.
+local backup
+if cmdline.revert_mode == "fork" then
+    backup = make_revert_fork(machine)
+elseif cmdline.revert_mode == "stored" then
+    backup = make_revert_stored(machine, cmdline.load_dir or cmdline.create_dir, runtime_config)
+else
+    backup = make_revert_none()
+end
+local _ <close> = backup
 
 -- run_to_stop resumes the machine through a "runner" that overrides execution methods and
 -- forwards other machine methods, caching them on first use. The machine
@@ -4364,10 +4411,10 @@ local function run_inspect_state_query(m, runner)
     -- Announce the yield we advanced to reach (after an epoch it is the epoch's already-announced
     -- accept yield, at the same mcycle, so skip it).
     if m:read_reg("mcycle") ~= mcycle then get_and_print_yield(m) end
-    commit(m)
+    backup:commit()
     stderr("\nBefore query\n")
     if cmdline.cmio_inspect.print_query_state_hashes then print_root_hash(m) end
-    snapshot(m)
+    backup:snapshot()
     load_cmio_query(m, cmdline.cmio_inspect)
     if cmdline.cmio_inspect.print_query_state_hashes then print_root_hash(m) end
     cmdline.cmio_inspect.report_index = 0
@@ -4380,7 +4427,7 @@ local function run_inspect_state_query(m, runner)
     break_reason = run_to_stop(make_null_computation_hash_builder(), runner, cmdline.max_mcycle, on_yield_automatic)
     report_stop(m, break_reason)
     stderr("\nAfter query\n")
-    revert(m)
+    backup:revert()
     cmdline.cmio_inspect = nil
 end
 
@@ -4405,7 +4452,7 @@ local function run_advance_state_input(builder, runner, input_file_index, revert
     -- Open and snapshot the input boundary. Builder setup must preserve its expected
     -- root, which delivery checks. A rejection must restore this same boundary.
     builder:begin_input(runner)
-    snapshot(runner)
+    backup:snapshot()
     if advance.print_input_state_hashes then print_root_hash(runner) end
     load_cmio_input(runner, advance, input_file_index, revert_root_hash)
     if advance.print_input_state_hashes then print_root_hash(runner) end
@@ -4417,13 +4464,13 @@ local function run_advance_state_input(builder, runner, input_file_index, revert
         yield_reason, data = get_and_print_yield(runner)
     end
     if is_rx_rejected(yield_reason) then
-        revert(runner)
+        backup:revert()
         builder:check_revert(revert_root_hash, runner:get_root_hash())
         flush_pending_outputs(runner, advance, yield_reason, data)
     else
         flush_pending_outputs(runner, advance, yield_reason, data)
         -- acceptance and sticky stops retain the running machine
-        commit(runner)
+        backup:commit()
     end
     builder:end_input(runner)
     return break_reason, yield_reason, data
@@ -4436,7 +4483,7 @@ local function initialize_advance_state_epoch(builder, runner)
     local break_reason =
         run_to_stop(make_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
     assert(is_at_fixed_point(break_reason), "advance-state epoch initialization did not reach a fixed point")
-    commit(runner)
+    backup:commit()
     local yield_reason, yield_data
     if is_yielded_manual(break_reason) then
         yield_reason, yield_data = get_and_print_yield(runner)
@@ -4616,7 +4663,7 @@ dump_value_proofs(machine, cmdline.final_proof, initial_config)
 if saved_machine_hash then
     -- An interrupted input stays uncommitted. Finish snapshot cleanup before exporting
     -- the machine that matches the last completed epoch state.
-    if has_snapshot() then revert(machine) end
+    if backup:has_snapshot() then backup:revert() end
     assert(machine:get_root_hash() == saved_machine_hash, "machine changed after the epoch state boundary")
 end
 if cmdline.store_dir then store_machine(machine, initial_config, cmdline.store_dir, cmdline.store_sharing) end
@@ -4628,5 +4675,6 @@ if cmdline.assert_rolling_template then
     local cmd, yield_reason = machine:receive_cmio_request()
     if not (cmd == cartesi.HTIF_YIELD_CMD_MANUAL and is_rx_accepted(yield_reason)) then exit_code = 2 end
 end
+if backup:has_snapshot() then backup:revert() end
 if not cmdline.remote_address or cmdline.remote_destroy then machine:destroy() end
 os.exit(exit_code, true)

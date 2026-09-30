@@ -1569,6 +1569,37 @@ describe("cartesi-machine CLI", function()
         run_fail({ "--revert-mode=stored" }, "requires")
     end)
 
+    it("stored mode rejects a stale backup before boot", function()
+        local _ <close>, machine_dir = scope_stored_dirname()
+        local backup_dir = machine_dir .. ".revert"
+        local _ <close> = tests_util.scope_exit(function()
+            cartesi.machine:remove_stored(backup_dir)
+        end)
+        run_ok({
+            "--store=" .. machine_dir,
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop",
+        })
+        cartesi.machine:clone_stored(machine_dir, backup_dir)
+        local backup <close> = cartesi.machine(backup_dir)
+        local initial_hash = backup:get_root_hash()
+        run_fail({
+            "--load=" .. machine_dir .. ",sharing:all",
+            "--revert-mode=stored",
+            "--cmio-advance-state=input_file_index_end:0",
+            "--max-mcycle=2000000000",
+            "--quiet",
+        }, "unable to create directory")
+        local current <close> = cartesi.machine(machine_dir)
+        expect.equal(current:read_reg("mcycle"), 0)
+        expect.equal(current:get_root_hash(), initial_hash)
+        local unchanged <close> = cartesi.machine(backup_dir)
+        expect.equal(unchanged:get_root_hash(), initial_hash)
+    end)
+
     -- -------------------------------------------------------------------------
     -- Remote / JSON-RPC options
     --
@@ -2481,7 +2512,7 @@ describe("cartesi-machine CLI", function()
 
     -- A cycle limit inside an input leaves the interrupted machine to the outputs requested at
     -- that cycle, the final hash and the exported machine, without padding the unfinished
-    -- computation hash. The exit handler then rolls the working directory back to the boundary.
+    -- computation hash. Cleanup restores the boundary before any requested machine destruction.
     it("advance state reverts an input interrupted by the cycle limit", function()
         local _ <close>, template_dir = scope_stored_dirname()
         local _ <close>, input = filesystem.write_scope_temp_file(encode_advance(0, "partial"))
@@ -2538,6 +2569,29 @@ describe("cartesi-machine CLI", function()
             expect.equal(restored:read_reg("mcycle"), boundary_mcycle)
             expect.equal(restored:get_root_hash(), boundary)
             expect.falsy(os.rename(machine_dir .. ".revert", machine_dir .. ".revert"))
+        end
+        local jsonrpc = require("cartesi.jsonrpc")
+        for _, destroy in ipairs({ false, true }) do
+            local server <close>, address = jsonrpc.spawn_server()
+            local _ <close>, final_hash = scope_temp_pathname()
+            local flags = {
+                "--remote-address=" .. address,
+                "--load=" .. template_dir,
+                "--revert-mode=fork",
+                "--cmio-advance-state=input:" .. input .. ",input_file_index_end:1",
+                "--max-mcycle=" .. target,
+                "--final-hash=" .. final_hash,
+                "--no-init-splash",
+            }
+            if not destroy then
+                flags[#flags + 1] = "--no-remote-destroy"
+            end
+            run_ok(flags)
+            expect.equal(filesystem.read_file(final_hash), interrupted)
+            expect.equal(server:is_empty(), destroy)
+            if not destroy then
+                expect.equal(server:get_root_hash(), boundary)
+            end
         end
     end)
 

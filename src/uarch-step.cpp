@@ -118,15 +118,15 @@ static inline void writeUint8(const UarchState a, uint64 paddr, uint8 val) {
 // Instruction operand decoders
 
 static inline uint8 operandRd(uint32 insn) {
-    return uint8(uint32ShiftRight(uint32ShiftLeft(insn, 20), 27));
+    return uint8(uint32ShiftRight(insn, 7) & uint32(31));
 }
 
 static inline uint8 operandRs1(uint32 insn) {
-    return uint8(uint32ShiftRight(uint32ShiftLeft(insn, 12), 27));
+    return uint8(uint32ShiftRight(insn, 15) & uint32(31));
 }
 
 static inline uint8 operandRs2(uint32 insn) {
-    return uint8(uint32ShiftRight(uint32ShiftLeft(insn, 7), 27));
+    return uint8(uint32ShiftRight(insn, 20) & uint32(31));
 }
 
 static inline int32 operandImm12(uint32 insn) {

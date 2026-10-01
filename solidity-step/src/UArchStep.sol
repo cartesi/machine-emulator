@@ -112,15 +112,15 @@ library UArchStep {
     // Instruction operand decoders
 
     function operandRd(uint32 insn) private pure returns (uint8) {
-        return uint8(StateAccess.uint32ShiftRight(StateAccess.uint32ShiftLeft(insn, 20), 27));
+        return uint8(StateAccess.uint32ShiftRight(insn, 7) & uint32(31));
     }
 
     function operandRs1(uint32 insn) private pure returns (uint8) {
-        return uint8(StateAccess.uint32ShiftRight(StateAccess.uint32ShiftLeft(insn, 12), 27));
+        return uint8(StateAccess.uint32ShiftRight(insn, 15) & uint32(31));
     }
 
     function operandRs2(uint32 insn) private pure returns (uint8) {
-        return uint8(StateAccess.uint32ShiftRight(StateAccess.uint32ShiftLeft(insn, 7), 27));
+        return uint8(StateAccess.uint32ShiftRight(insn, 20) & uint32(31));
     }
 
     function operandImm12(uint32 insn) private pure returns (int32) {

@@ -307,8 +307,8 @@ end
 
 -- Complete logical mcycles within one input. Offset zero is before delivery;
 -- the recorded boundary supplies the absolute origin even after rollback.
--- docs:begin run_to_mcycle
-function player_methods:run_to_mcycle(
+-- docs:begin run_to_input_mcycle_offset
+function player_methods:run_to_input_mcycle_offset(
     pair,
     input_data,
     input_mcycle_offset_begin,
@@ -329,9 +329,12 @@ function player_methods:run_to_mcycle(
     local machine = pair.machine
     local input_mcycle_boundary = pair.input_mcycle_boundary
     local mcycle_end = usaturating_add(input_mcycle_boundary, input_mcycle_offset_end)
-    local function on_yield_automatic(yield_reason, output)
-        if outputs and is_tx_output(yield_reason) then
-            pair.pending_outputs[#pair.pending_outputs + 1] = output
+    local on_yield_automatic
+    if outputs then
+        function on_yield_automatic(yield_reason, output_data)
+            if is_tx_output(yield_reason) then
+                pair.pending_outputs[#pair.pending_outputs + 1] = output_data
+            end
         end
     end
     local break_reason = run_to_stop(machine, mcycle_end, on_yield_automatic)
@@ -342,28 +345,26 @@ function player_methods:run_to_mcycle(
     if is_yielded_manual(break_reason) then
         yield_reason, outputs_merkle_root = receive_cmio_request(machine)
     end
-    if pair.backup_machine then
-        if is_rx_rejected(yield_reason) then
-            pair:revert()
-        else
-            flush_pending_outputs(pair.pending_outputs, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
-            if is_rx_accepted(yield_reason) then
-                pair.revert_root_hash = machine:get_root_hash()
-            end
-            pair:commit()
+    if is_rx_rejected(yield_reason) then
+        pair:revert()
+    else
+        flush_pending_outputs(pair.pending_outputs, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
+        if is_rx_accepted(yield_reason) then
+            pair.revert_root_hash = machine:get_root_hash()
         end
-        pair.pending_outputs = {}
+        pair:commit()
     end
+    pair.pending_outputs = {}
     return break_reason, yield_reason, input_mcycle_boundary
 end
--- docs:end run_to_mcycle
+-- docs:end run_to_input_mcycle_offset
 -- luacheck: pop
 
 -- Replay completed inputs, leaving the next input undelivered. Unposted inputs
 -- repeat the final state and need no execution.
-function player_methods:run_to_input_boundary(pair, inputs, epoch_input_offset_begin, epoch_input_offset_end)
+function player_methods:run_to_epoch_input_offset(pair, inputs, epoch_input_offset_begin, epoch_input_offset_end)
     for epoch_input_offset = epoch_input_offset_begin, math.min(epoch_input_offset_end, #inputs) - 1 do
-        self:run_to_mcycle(pair, inputs[epoch_input_offset + 1], 0, MCYCLES_PER_INPUT)
+        self:run_to_input_mcycle_offset(pair, inputs[epoch_input_offset + 1], 0, MCYCLES_PER_INPUT)
     end
 end
 
@@ -408,7 +409,7 @@ local event_handler = {}
 -- docs:begin input_added
 function event_handler:input_added(epoch_input_offset, path)
     self.inputs[epoch_input_offset + 1] = self:read_input(epoch_input_offset, path)
-    self:run_to_mcycle(
+    self:run_to_input_mcycle_offset(
         self.epoch_pair,
         self.inputs[epoch_input_offset + 1],
         0,
@@ -457,7 +458,7 @@ function event_handler:reveal_bisection(agreed_position, tentative_position)
     -- Replay from a fork of the whole agreed pair, including any pending snapshot.
     self.tentative_pair = self.agreed_pair:fork()
     if agreed_position.epoch_input_offset < tentative_position.epoch_input_offset then
-        self:run_to_input_boundary(
+        self:run_to_epoch_input_offset(
             self.tentative_pair,
             self.inputs,
             agreed_position.epoch_input_offset,
@@ -465,7 +466,7 @@ function event_handler:reveal_bisection(agreed_position, tentative_position)
         )
     end
     if agreed_position.input_mcycle_offset < tentative_position.input_mcycle_offset then
-        self:run_to_mcycle(
+        self:run_to_input_mcycle_offset(
             self.tentative_pair,
             self.inputs[tentative_position.epoch_input_offset + 1],
             agreed_position.input_mcycle_offset,

@@ -1147,7 +1147,7 @@ end
 
 -- Selection is private: callers always receive the requested virgin boundary, not merely the
 -- closest retained one. The owner closes the clone if replay fails before it can be returned.
-function machine_cache_meta.__index:clone_at_input_boundary(epoch_input_offset, run_to_input_boundary)
+function machine_cache_meta.__index:clone_at_epoch_input_offset(epoch_input_offset, run_to_epoch_input_offset)
     assert(not self.closed, "machine cache is closed")
     local closest = self.checkpoints[1]
     for i = 2, #self.checkpoints do
@@ -1163,7 +1163,7 @@ function machine_cache_meta.__index:clone_at_input_boundary(epoch_input_offset, 
         closest = self.latest
     end
     local machine, owner <close> = new_machine_owner(self, fork_server(closest.machine))
-    run_to_input_boundary(machine, closest.epoch_input_offset, epoch_input_offset)
+    run_to_epoch_input_offset(machine, closest.epoch_input_offset, epoch_input_offset)
     return machine, owner:move()
 end
 
@@ -1678,7 +1678,7 @@ end
 -- docs:begin prove_state_transition
 function event_handler.prove_state_transition(self, epoch_input_offset, input_period_offset, state_transition_offset)
     local period_mcycle_offset, uarch_cycle = split_state_transition_offset(state_transition_offset)
-    local machine, _ <close> = self:clone_at_input_boundary(epoch_input_offset)
+    local machine, _ <close> = self:clone_at_epoch_input_offset(epoch_input_offset)
     local revert_root_hash = machine:get_root_hash()
     local path = self.input_paths[epoch_input_offset + 1]
     local input_data = path and util.read_file(path)
@@ -1691,7 +1691,15 @@ function event_handler.prove_state_transition(self, epoch_input_offset, input_pe
     local builder = self:make_null_computation_hash_builder()
     local input_mcycle_offset =
         combine_input_mcycle_offset(self.geometry.mcycles_per_period, input_period_offset, period_mcycle_offset)
-    self:run_to_mcycle(builder, machine, epoch_input_offset, input_data, 0, input_mcycle_offset, revert_root_hash)
+    self:run_to_input_mcycle_offset(
+        builder,
+        machine,
+        epoch_input_offset,
+        input_data,
+        0,
+        input_mcycle_offset,
+        revert_root_hash
+    )
     self:run_to_uarch_cycle(
         builder,
         machine,
@@ -1737,7 +1745,7 @@ local function get_outputs_merkle_root_proof(machine)
 end
 
 function event_handler.prove_outputs_merkle_root(self)
-    local machine, owner <close> = self:clone_at_input_boundary(#self.input_paths) -- luacheck: ignore 211
+    local machine, owner <close> = self:clone_at_epoch_input_offset(#self.input_paths) -- luacheck: ignore 211
     return get_outputs_merkle_root_proof(machine)
 end
 -- docs:end prove_outputs_merkle_root
@@ -1783,16 +1791,16 @@ function player_meta.__index:make_null_computation_hash_builder() -- luacheck: i
 end
 
 -- Bind the player for the cache's replay callback.
-function player_meta.__index:clone_at_input_boundary(epoch_input_offset)
-    return self.machine_cache:clone_at_input_boundary(epoch_input_offset, function(machine, first, last)
-        return self:run_to_input_boundary(machine, first, last)
+function player_meta.__index:clone_at_epoch_input_offset(epoch_input_offset)
+    return self.machine_cache:clone_at_epoch_input_offset(epoch_input_offset, function(machine, first, last)
+        return self:run_to_epoch_input_offset(machine, first, last)
     end)
 end
 
 -- Complete logical mcycles within an input, starting it only when leaving
 -- offset zero. The builder retains the absolute origin, pending outputs, and
 -- terminal result so split runs neither redeliver nor finalize an input twice.
-function player_meta.__index:run_to_mcycle(
+function player_meta.__index:run_to_input_mcycle_offset(
     builder,
     machine,
     epoch_input_offset,
@@ -1814,9 +1822,12 @@ function player_meta.__index:run_to_mcycle(
     if builder.input_result then
         return builder.input_result.break_reason, builder.input_result.yield_reason, input_mcycle_boundary
     end
-    local function on_yield_automatic(yield_reason, output)
-        if outputs and is_tx_output(yield_reason) then
-            builder.pending_outputs[#builder.pending_outputs + 1] = output
+    local on_yield_automatic
+    if outputs then
+        function on_yield_automatic(yield_reason, output_data)
+            if is_tx_output(yield_reason) then
+                builder.pending_outputs[#builder.pending_outputs + 1] = output_data
+            end
         end
     end
     local mcycle_end = usaturating_add(input_mcycle_boundary, input_mcycle_offset_end)
@@ -1864,7 +1875,7 @@ end
 
 -- Replay only the inputs needed to reach a dispute boundary. Forward execution is driven
 -- by input events; this range loop never builds a claim or collects outputs.
-function player_meta.__index:run_to_input_boundary(machine, epoch_input_offset_begin, epoch_input_offset_end)
+function player_meta.__index:run_to_epoch_input_offset(machine, epoch_input_offset_begin, epoch_input_offset_end)
     local builder = self:make_null_computation_hash_builder()
     epoch_input_offset_end = math.min(epoch_input_offset_end, #self.input_paths)
     -- Keep the expected boundary across rejections. Only acceptance establishes a new one.
@@ -1872,7 +1883,7 @@ function player_meta.__index:run_to_input_boundary(machine, epoch_input_offset_b
     builder:begin_epoch(machine)
     for epoch_input_offset = epoch_input_offset_begin, epoch_input_offset_end - 1 do
         local input_data = util.read_file(self.input_paths[epoch_input_offset + 1])
-        local break_reason, yield_reason = self:run_to_mcycle(
+        local break_reason, yield_reason = self:run_to_input_mcycle_offset(
             builder,
             machine,
             epoch_input_offset,
@@ -1897,9 +1908,9 @@ function event_handler.input_added(self, epoch_input_offset, path)
     local builder = self.epoch_builder
     self.epoch_builder = nil
     self.input_paths[epoch_input_offset + 1] = path
-    local machine, owner <close> = self:clone_at_input_boundary(epoch_input_offset) -- luacheck: ignore 211
+    local machine, owner <close> = self:clone_at_epoch_input_offset(epoch_input_offset) -- luacheck: ignore 211
     if not self.epoch_stopped then
-        local break_reason, yield_reason = self:run_to_mcycle(
+        local break_reason, yield_reason = self:run_to_input_mcycle_offset(
             builder,
             machine,
             epoch_input_offset,
@@ -1937,7 +1948,7 @@ end
 
 -- docs:begin collect_mcycle_bundle
 function player_meta.__index:collect_mcycle_bundle(epoch_input_offset, input_bundle_offset)
-    local machine, _ <close> = self:clone_at_input_boundary(epoch_input_offset)
+    local machine, _ <close> = self:clone_at_epoch_input_offset(epoch_input_offset)
     local revert_root_hash = machine:get_root_hash()
     local builder = self:make_null_computation_hash_builder()
     -- Deliver the input and stay at its boundary. The machine advances to the bundle and pads it
@@ -1957,14 +1968,14 @@ end
 
 -- docs:begin build_uarch_claim
 function player_meta.__index:build_uarch_claim(epoch_input_offset, input_period_offset)
-    local machine, _ <close> = self:clone_at_input_boundary(epoch_input_offset)
+    local machine, _ <close> = self:clone_at_epoch_input_offset(epoch_input_offset)
     local revert_root_hash = machine:get_root_hash()
     local builder = self:make_uarch_cycle_computation_hash_builder(
         combine_epoch_period_offset(self.geometry.periods_per_input, epoch_input_offset, input_period_offset)
     )
     builder:begin_epoch(machine)
     local path = self.input_paths[epoch_input_offset + 1]
-    self:run_to_mcycle(
+    self:run_to_input_mcycle_offset(
         builder,
         machine,
         epoch_input_offset,
@@ -1979,7 +1990,7 @@ end
 
 -- docs:begin collect_uarch_cycle_bundle
 function player_meta.__index:collect_uarch_cycle_bundle(epoch_input_offset, input_period_offset, period_bundle_offset)
-    local machine, _ <close> = self:clone_at_input_boundary(epoch_input_offset)
+    local machine, _ <close> = self:clone_at_epoch_input_offset(epoch_input_offset)
     local revert_root_hash = machine:get_root_hash()
     local tail = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0)
     local revert_uarch_tail = tail.hashes
@@ -1994,7 +2005,15 @@ function player_meta.__index:collect_uarch_cycle_bundle(epoch_input_offset, inpu
     if input_mcycle_offset == 0 then
         begin_input(self, builder, machine, epoch_input_offset, input_data, revert_root_hash)
     else
-        self:run_to_mcycle(builder, machine, epoch_input_offset, input_data, 0, input_mcycle_offset, revert_root_hash)
+        self:run_to_input_mcycle_offset(
+            builder,
+            machine,
+            epoch_input_offset,
+            input_data,
+            0,
+            input_mcycle_offset,
+            revert_root_hash
+        )
     end
     -- Replay may already have rolled back a rejected input. Its restored boundary
     -- supplies the same uarch history as the tail captured before delivery.
@@ -2064,7 +2083,7 @@ local function new_player(dapp_contract, label, last_output_proof)
         trees = {},
     }, player_meta)
     self.machine_cache = prt.new_machine_cache(prt.new_machine(dapp_contract.initial_state_hash))
-    local machine, owner <close> = self:clone_at_input_boundary(0) -- luacheck: ignore 211
+    local machine, owner <close> = self:clone_at_epoch_input_offset(0) -- luacheck: ignore 211
     assert(machine:get_root_hash() == self.dapp_contract.initial_state_hash, "epoch initial state hash mismatch")
     assert_rolling_template(machine)
     self.revert_root_hash = machine:get_root_hash()

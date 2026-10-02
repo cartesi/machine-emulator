@@ -9221,10 +9221,10 @@ rollback. Terminal inputs use the same cache operation. Bundle
 collection (`collect_mcycle_bundle`) asks the cache for the target
 input’s boundary, then advances that input to recover one bundle’s
 samples. The cache’s
-`clone_at_input_boundary(epoch_input_offset, run_to_input_boundary)`
+`clone_at_epoch_input_offset(epoch_input_offset, run_to_epoch_input_offset)`
 selects and clones the nearest eligible historical or latest boundary,
-then calls `run_to_input_boundary` with the machine and the intervening
-input range. The player’s `run_to_input_boundary` method replays only
+then calls `run_to_epoch_input_offset` with the machine and the intervening
+input range. The player’s `run_to_epoch_input_offset` method replays only
 the intervening input range with the null builder. It returns an
 independent machine and a separate owner kept in a `<close>` local;
 closing the owner releases the working machine and any outstanding
@@ -9274,7 +9274,7 @@ rejects before the selected mcycle, the input driver restores the
 boundary machine before collection; if the collected instruction
 rejects, the machine collector uses the saved tail. Both input events
 and dispute replay delegate delivery, automatic yields, acceptance, and
-rollback to `run_to_mcycle`. Its mcycle offsets are relative to the
+rollback to `run_to_input_mcycle_offset`. Its mcycle offsets are relative to the
 pre-delivery input boundary, and a zero-length run leaves that boundary
 untouched. `run_to_uarch_cycle` also delivers the input when advancing
 directly into its first mcycle. Forward execution collects computation
@@ -9736,7 +9736,7 @@ fresh fork at the transition and logging it:
 ``` lua
 function event_handler.prove_state_transition(self, epoch_input_offset, input_period_offset, state_transition_offset)
     local period_mcycle_offset, uarch_cycle = split_state_transition_offset(state_transition_offset)
-    local machine, _ <close> = self:clone_at_input_boundary(epoch_input_offset)
+    local machine, _ <close> = self:clone_at_epoch_input_offset(epoch_input_offset)
     local revert_root_hash = machine:get_root_hash()
     local path = self.input_paths[epoch_input_offset + 1]
     local input_data = path and util.read_file(path)
@@ -9749,7 +9749,15 @@ function event_handler.prove_state_transition(self, epoch_input_offset, input_pe
     local builder = self:make_null_computation_hash_builder()
     local input_mcycle_offset =
         combine_input_mcycle_offset(self.geometry.mcycles_per_period, input_period_offset, period_mcycle_offset)
-    self:run_to_mcycle(builder, machine, epoch_input_offset, input_data, 0, input_mcycle_offset, revert_root_hash)
+    self:run_to_input_mcycle_offset(
+        builder,
+        machine,
+        epoch_input_offset,
+        input_data,
+        0,
+        input_mcycle_offset,
+        revert_root_hash
+    )
     self:run_to_uarch_cycle(
         builder,
         machine,

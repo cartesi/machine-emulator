@@ -74,12 +74,12 @@ end
 local function use_machine(player, overrides)
     player.epoch_builder = observe_input(player.epoch_builder)
     local cache = player.machine_cache
-    local clone = cache.clone_at_input_boundary
-    cache.clone_at_input_boundary = function(self, epoch_input_offset, run_to_input_boundary)
+    local clone = cache.clone_at_epoch_input_offset
+    cache.clone_at_epoch_input_offset = function(self, epoch_input_offset, run_to_epoch_input_offset)
         local wrapped
         local _, owner <close> = clone(self, epoch_input_offset, function(machine, first, last)
             wrapped = wrap_machine(machine, overrides)
-            return run_to_input_boundary(wrapped, first, last)
+            return run_to_epoch_input_offset(wrapped, first, last)
         end)
         return wrapped, owner:move()
     end

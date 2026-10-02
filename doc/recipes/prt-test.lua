@@ -331,7 +331,7 @@ local function new_bundle_player(machine)
             return cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
         end
     local cache = {}
-    function cache.clone_at_input_boundary(_, epoch_input_offset)
+    function cache.clone_at_epoch_input_offset(_, epoch_input_offset)
         assert(epoch_input_offset == 0)
         return machine
     end
@@ -381,7 +381,7 @@ for _, stop in ipairs({
         local player = dishonest.new_tamperer(nil, nil, 0, 1)
         local log2_period = player.geometry.log2_mcycles_per_period
         local bundle_span = 1 << (log2_period + LOG2_BUNDLE_MCYCLE_COUNT)
-        local machine, owner <close> = player:clone_at_input_boundary(0) -- luacheck: ignore 211
+        local machine, owner <close> = player:clone_at_epoch_input_offset(0) -- luacheck: ignore 211
         player:make_null_computation_hash_builder():begin_input(machine, 0, 0)
         local native = machine.machine
         local reached = stop == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
@@ -577,10 +577,10 @@ do
         local path, file <close> = new_input_file(data) -- luacheck: ignore 211
         player.event_handler.input_added(player, 0, path)
         player.event_handler.input_added(player, 1, fixture_input(keccak("second input")))
-        local machine, execution <close> = player:clone_at_input_boundary(1) -- luacheck: ignore 211
+        local machine, execution <close> = player:clone_at_epoch_input_offset(1) -- luacheck: ignore 211
         assert(machine:get_root_hash() == data, "replay did not read the input file")
     end
-    local ok = pcall(player.clone_at_input_boundary, player, 1)
+    local ok = pcall(player.clone_at_epoch_input_offset, player, 1)
     assert(not ok, "replay retained bytes from a removed file")
     assert(
         not pcall(player.event_handler.prove_state_transition, player, 0, 0, 0),
@@ -599,7 +599,7 @@ for _, phase in ipairs({ "constructed", "input", "snapshot", "sealed" }) do
             player.event_handler.input_added(player, 0, fixture_input(keccak("input")))
         end
         if phase == "snapshot" then
-            local machine = player:clone_at_input_boundary(#player.input_paths)
+            local machine = player:clone_at_epoch_input_offset(#player.input_paths)
             cache:snapshot(machine) -- Leave the scoped execution to the player's cleanup.
         elseif phase == "sealed" then
             player.event_handler.epoch_sealed(player, 1)
@@ -673,8 +673,8 @@ for _, previous_count in ipairs({ 0, 3 }) do
     assert(hash_tree.frontier_get_leaf_count(player.outputs_frontier) == previous_count + #outputs)
     local expected_root = hash_tree.frontier_get_root_hash(player.outputs_frontier)
     local completed_frontier = player.outputs_frontier
-    local clone = player.clone_at_input_boundary
-    player.clone_at_input_boundary = function()
+    local clone = player.clone_at_epoch_input_offset
+    player.clone_at_epoch_input_offset = function()
         error("output proof acquired a machine")
     end
     player.event_handler.epoch_sealed(player, 0)
@@ -694,7 +694,7 @@ for _, previous_count in ipairs({ 0, 3 }) do
         next(player:prove_output(previous_count + 3)) == nil and next(player:prove_output(previous_count - 1)) == nil
     )
     assert(not pcall(player.prove_output, player, 0.5), "noninteger output index was accepted")
-    player.clone_at_input_boundary = clone
+    player.clone_at_epoch_input_offset = clone
 end
 
 -- All completed inputs go through consider. Unchanged states reuse the latest machine,
@@ -720,8 +720,8 @@ do
     local cache <close> = prt.new_machine_cache(initial, 1)
     local player = new_test_player(prt.new_geometry(10), cache)
     local acquisitions, offers = 0, 0
-    local replay, consider = player.run_to_input_boundary, cache.consider
-    function player:run_to_input_boundary(machine, first, last)
+    local replay, consider = player.run_to_epoch_input_offset, cache.consider
+    function player:run_to_epoch_input_offset(machine, first, last)
         assert(first == last, "forward execution replayed a discarded boundary")
         acquisitions = acquisitions + 1
         return replay(self, machine, first, last)
@@ -750,7 +750,7 @@ do
     assert(initial.counts.live == 2, "sealing retained its working clone")
     local latest = cache.latest
     do
-        local machine, owner <close> = player:clone_at_input_boundary(6) -- luacheck: ignore 211
+        local machine, owner <close> = player:clone_at_epoch_input_offset(6) -- luacheck: ignore 211
         assert(machine:get_root_hash() == terminal, "frozen cache lost its latest boundary")
         cache:consider(7, machine)
     end
@@ -919,7 +919,7 @@ do
         retained[0] and retained[2] and retained[4] and retained[6] and retained[8],
         "cache did not thin its checkpoints"
     )
-    local machine, owner <close> = cache:clone_at_input_boundary(7, noop) -- luacheck: ignore 211
+    local machine, owner <close> = cache:clone_at_epoch_input_offset(7, noop) -- luacheck: ignore 211
     assert(machine:get_root_hash() == "6")
     assert(not pcall(cache.consider, cache, 8, new_fake_machine("8")), "cache accepted an out-of-order checkpoint")
     cache:freeze()
@@ -937,7 +937,7 @@ do
         assert(cache.checkpoints[i] == checkpoint, "frozen cache replaced a checkpoint")
     end
     assert(cache.input_gap == input_gap and cache.replace_cursor == replace_cursor, "frozen cache changed its policy")
-    local replay, replay_owner <close> = cache:clone_at_input_boundary(7, noop) -- luacheck: ignore 211
+    local replay, replay_owner <close> = cache:clone_at_epoch_input_offset(7, noop) -- luacheck: ignore 211
     assert(replay:get_root_hash() == "6", "frozen cache cannot replay from a retained checkpoint")
 end
 
@@ -961,7 +961,7 @@ do
     cache:consider(1, machine)
     local saved = cache.checkpoints[2]
     machine.root_hash = "changed"
-    local fork, owner <close> = cache:clone_at_input_boundary(1, noop)
+    local fork, owner <close> = cache:clone_at_epoch_input_offset(1, noop)
     assert(fork:get_root_hash() == "boundary" and fork:read_reg("mcycle") == 100)
     fork.root_hash = "working"
     assert(saved.machine:get_root_hash() == "boundary", "working fork shares the saved machine")
@@ -981,14 +981,14 @@ do
     local initial = new_fake_machine("initial")
     local counts = initial.counts
     local cache <close> = prt.new_machine_cache(initial, 4, 1)
-    local outer, outer_owner <close> = cache:clone_at_input_boundary(0, noop)
+    local outer, outer_owner <close> = cache:clone_at_epoch_input_offset(0, noop)
     cache:snapshot(outer)
     outer.root_hash = "outer"
     assert(counts.live == 4, "snapshot did not retain an independent backup")
     assert(not pcall(cache.snapshot, cache, outer), "second unresolved snapshot was accepted")
     assert(not pcall(cache.consider, cache, 1, outer), "unfinished input was cached as a boundary")
     do
-        local inner, inner_owner <close> = cache:clone_at_input_boundary(0, noop) -- luacheck: ignore 211
+        local inner, inner_owner <close> = cache:clone_at_epoch_input_offset(0, noop) -- luacheck: ignore 211
         assert(inner.root_hash == "initial", "clone shared the outer working state")
         cache:snapshot(inner)
         inner.root_hash = "inner"
@@ -1006,7 +1006,7 @@ do
 
     local moved
     do
-        local machine, owner <close> = cache:clone_at_input_boundary(0, noop)
+        local machine, owner <close> = cache:clone_at_epoch_input_offset(0, noop)
         cache:snapshot(machine)
         moved = owner:move()
     end
@@ -1014,13 +1014,13 @@ do
     moved:close()
     assert(counts.live == 2, "transferred owner leaked its snapshot")
 
-    local machine, owner = cache:clone_at_input_boundary(0, noop)
+    local machine, owner = cache:clone_at_epoch_input_offset(0, noop)
     cache:snapshot(machine)
     cache:close()
     assert(counts.live == 0 and not next(cache.owners), "cache shutdown left owned machines alive")
     owner:close()
     cache:close()
-    assert(not pcall(cache.clone_at_input_boundary, cache, 0, noop), "closed cache allowed acquisition")
+    assert(not pcall(cache.clone_at_epoch_input_offset, cache, 0, noop), "closed cache allowed acquisition")
 end
 
 -- Failed acquisition or replay must leave only the retained checkpoint alive, whether the
@@ -1042,7 +1042,7 @@ for _, phase in ipairs({ "factory", "begin_epoch", "begin_input", "run", "end_in
     assert(not ok and err:find("injected " .. phase .. " failure"), "replay did not propagate the original error")
     assert(initial.counts.live == (#cache.checkpoints + 1), phase .. " failure leaked a working machine or backup")
     cache.latest.machine.fail_clone = true
-    assert(not pcall(cache.clone_at_input_boundary, cache, 0, noop), "failed clone was returned")
+    assert(not pcall(cache.clone_at_epoch_input_offset, cache, 0, noop), "failed clone was returned")
     local offered <close> = new_fake_machine("new boundary")
     offered.fail_clone = true
     assert(not pcall(cache.consider, cache, 1, offered), "failed checkpoint clone was retained")
@@ -1164,6 +1164,7 @@ end
 
 -- Acceptance establishes the next boundary. Rejection must restore that same hash, including
 -- when it is the last input replayed before returning a machine to the caller.
+-- Replay skips automatic yields without reading their output payloads.
 for _, corrupt in ipairs({ false, true }) do
     local initial = new_fake_machine("initial")
     local cache <close> = prt.new_machine_cache(initial)
@@ -1183,12 +1184,17 @@ for _, corrupt in ipairs({ false, true }) do
         builder.begin_input = function(_, machine, index)
             epoch_input_offset = index
             machine.receive_cmio_request = function()
+                assert(machine.root_hash ~= "automatic", "replay read an automatic yield")
                 local reason = machine.root_hash == "rejected" and cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED
                     or cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
                 return cartesi.HTIF_YIELD_CMD_MANUAL, reason, ""
             end
         end
         builder.run = function(_, machine)
+            if machine.root_hash ~= "automatic" then
+                machine.root_hash = "automatic"
+                return cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY
+            end
             machine.root_hash = epoch_input_offset == 0 and "accepted" or "rejected"
             return cartesi.BREAK_REASON_YIELDED_MANUALLY
         end
@@ -1208,7 +1214,7 @@ end
 do
     local cache <close> = prt.new_machine_cache(new_fake_machine("initial"))
     dishonest.new_tamperer(prt.new_geometry(10), cache, 0, 100)
-    local machine, owner <close> = cache:clone_at_input_boundary(0, noop) -- luacheck: ignore 211
+    local machine, owner <close> = cache:clone_at_epoch_input_offset(0, noop) -- luacheck: ignore 211
     machine.state.epoch_input_offset = 0
     cache:snapshot(machine)
     machine.state.epoch_input_offset = 1
@@ -2010,18 +2016,18 @@ if arg[1] then
         local input_data, cache <close> = new_test_cache(dapp_contract)
         local player = new_test_player(dapp_contract.geometry, cache)
         for _, data in ipairs(input_data) do
-            local whole, whole_owner <close> = player:clone_at_input_boundary(0) -- luacheck: ignore 211
-            local split, split_owner <close> = player:clone_at_input_boundary(0) -- luacheck: ignore 211
+            local whole, whole_owner <close> = player:clone_at_epoch_input_offset(0) -- luacheck: ignore 211
+            local split, split_owner <close> = player:clone_at_epoch_input_offset(0) -- luacheck: ignore 211
             local whole_builder = player:make_null_computation_hash_builder()
             local split_builder = player:make_null_computation_hash_builder()
             local whole_outputs, split_outputs = {}, {}
             local whole_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
             local split_frontier = hash_tree.frontier_copy(whole_frontier)
-            player:run_to_mcycle(split_builder, split, 0, data, 0, 0, initial_state_hash)
+            player:run_to_input_mcycle_offset(split_builder, split, 0, data, 0, 0, initial_state_hash)
             player:run_to_uarch_cycle(split_builder, split, 0, data, 0, 0, 0, initial_state_hash)
             assert(split:get_root_hash() == initial_state_hash and not split_owner.backup)
             local span = 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
-            player:run_to_mcycle(
+            player:run_to_input_mcycle_offset(
                 whole_builder,
                 whole,
                 0,
@@ -2032,9 +2038,19 @@ if arg[1] then
                 whole_outputs,
                 whole_frontier
             )
-            player:run_to_mcycle(split_builder, split, 0, data, 0, 1, initial_state_hash, split_outputs, split_frontier)
+            player:run_to_input_mcycle_offset(
+                split_builder,
+                split,
+                0,
+                data,
+                0,
+                1,
+                initial_state_hash,
+                split_outputs,
+                split_frontier
+            )
             assert(split_owner.backup and split:get_root_hash() ~= initial_state_hash)
-            player:run_to_mcycle(
+            player:run_to_input_mcycle_offset(
                 split_builder,
                 split,
                 0,
@@ -2046,7 +2062,7 @@ if arg[1] then
                 split_frontier
             )
             local settled_hash = split:get_root_hash()
-            player:run_to_mcycle(
+            player:run_to_input_mcycle_offset(
                 split_builder,
                 split,
                 0,
@@ -2064,8 +2080,8 @@ if arg[1] then
 
         -- Entering at the uarch level delivers exactly once, including when the
         -- agreed state is inside the first mcycle rather than at its boundary.
-        local whole, whole_owner <close> = player:clone_at_input_boundary(0) -- luacheck: ignore 211
-        local split, split_owner <close> = player:clone_at_input_boundary(0) -- luacheck: ignore 211
+        local whole, whole_owner <close> = player:clone_at_epoch_input_offset(0) -- luacheck: ignore 211
+        local split, split_owner <close> = player:clone_at_epoch_input_offset(0) -- luacheck: ignore 211
         local whole_builder = player:make_null_computation_hash_builder()
         local split_builder = player:make_null_computation_hash_builder()
         player:run_to_uarch_cycle(whole_builder, whole, 0, input_data[1], 0, 0, 2, initial_state_hash)
@@ -2075,13 +2091,13 @@ if arg[1] then
 
         -- Splitting sampled execution must retain the partial bundle as well as
         -- the machine state. Compare the entire epoch against the CLI reference.
-        local sampled, sampled_owner <close> = player:clone_at_input_boundary(0) -- luacheck: ignore 211
+        local sampled, sampled_owner <close> = player:clone_at_epoch_input_offset(0) -- luacheck: ignore 211
         local builder = player:make_mcycle_computation_hash_builder()
         builder:begin_epoch(sampled)
         local revert_root_hash = initial_state_hash
         for index, data in ipairs(input_data) do
-            player:run_to_mcycle(builder, sampled, index - 1, data, 0, 1, revert_root_hash)
-            local _, yield_reason = player:run_to_mcycle(
+            player:run_to_input_mcycle_offset(builder, sampled, index - 1, data, 0, 1, revert_root_hash)
+            local _, yield_reason = player:run_to_input_mcycle_offset(
                 builder,
                 sampled,
                 index - 1,
@@ -2368,11 +2384,11 @@ if arg[1] then
     chain_cache.checkpoints = { chain_boundaries[0], chain_boundaries[1], chain_boundaries[4] }
     -- The cache API resolves the requested boundary, including an uncached boundary after
     -- rejection and positions past the last posted input. The target input remains undelivered.
-    local clone_boundary = chain_cache.clone_at_input_boundary
+    local clone_boundary = chain_cache.clone_at_epoch_input_offset
     for _, target in ipairs({ 0, 1, 3, 4, 5 }) do
         local observed = false
-        chain_cache.clone_at_input_boundary = function(self, index, run_to_input_boundary)
-            local resolved, owner = clone_boundary(self, index, run_to_input_boundary)
+        chain_cache.clone_at_epoch_input_offset = function(self, index, run_to_epoch_input_offset)
+            local resolved, owner = clone_boundary(self, index, run_to_epoch_input_offset)
             local saved = chain_boundaries[target == 3 and 1 or math.min(target, 4)]
             assert(
                 index == target and resolved:get_root_hash() == saved.machine:get_root_hash(),
@@ -2384,14 +2400,14 @@ if arg[1] then
         chain:make_uarch_tree(target, 0)
         assert(observed, "player did not request its input boundary")
     end
-    chain_cache.clone_at_input_boundary = clone_boundary
+    chain_cache.clone_at_epoch_input_offset = clone_boundary
     local lookups = 0
     input_runs = {}
     replay_begins, replay_ends = 0, 0
-    local clone_at_input_boundary = chain_cache.clone_at_input_boundary
-    chain_cache.clone_at_input_boundary = function(self, target, run_to_input_boundary)
+    local clone_at_epoch_input_offset = chain_cache.clone_at_epoch_input_offset
+    chain_cache.clone_at_epoch_input_offset = function(self, target, run_to_epoch_input_offset)
         lookups = lookups + 1
-        return clone_at_input_boundary(self, target, run_to_input_boundary)
+        return clone_at_epoch_input_offset(self, target, run_to_epoch_input_offset)
     end
     local last_period = dapp_contract.geometry.periods_per_input - 1
     local chain_bundle_index = (2 * dapp_contract.geometry.periods_per_input + last_period) >> LOG2_BUNDLE_MCYCLE_COUNT
@@ -2460,12 +2476,12 @@ if arg[1] then
     chain_cache.checkpoints, chain_cache.latest = all_checkpoints, saved_latest
 
     -- Final-machine proofs come from the retained boundary without replaying inputs.
-    local run_input = honest.run_to_mcycle
-    honest.run_to_mcycle = function()
+    local run_input = honest.run_to_input_mcycle_offset
+    honest.run_to_input_mcycle_offset = function()
         error("final-machine proof replayed an input")
     end
     local result = honest.event_handler.prove_outputs_merkle_root(honest)
-    honest.run_to_mcycle = run_input
+    honest.run_to_input_mcycle_offset = run_input
     local final_leaf = (1 << dapp_contract.geometry.mcycle_height) - 1
     assert(
         result.iflags_y_proof.root_hash == honest_tree:get_node_hash(final_leaf, 0),
@@ -2525,8 +2541,8 @@ if arg[1] then
     )
     assert(cartesi.machine:verify_step_uarch(forged_state, forged_logs.step_log), "forged execution proof is malformed")
     do
-        local machine, owner <close> = tamperer_cache:clone_at_input_boundary(0, noop) -- luacheck: ignore 211
-        local other, other_owner <close> = tamperer_cache:clone_at_input_boundary(0, noop) -- luacheck: ignore 211
+        local machine, owner <close> = tamperer_cache:clone_at_epoch_input_offset(0, noop) -- luacheck: ignore 211
+        local other, other_owner <close> = tamperer_cache:clone_at_epoch_input_offset(0, noop) -- luacheck: ignore 211
         local read_reg = machine.read_reg
         assert(rawget(machine, "read_reg") == read_reg, "machine forwarder was not cached")
         assert(read_reg ~= other.read_reg, "bound machine forwarders are shared across receivers")
@@ -2644,8 +2660,8 @@ if arg[1] then
         local function wrap_machine(machine)
             return setmetatable({ machine = machine, send_cmio_response = send_cmio_response }, machine_meta)
         end
-        local clone = terminal_cache.clone_at_input_boundary
-        terminal_cache.clone_at_input_boundary = function(self, epoch_input_offset, replay)
+        local clone = terminal_cache.clone_at_epoch_input_offset
+        terminal_cache.clone_at_epoch_input_offset = function(self, epoch_input_offset, replay)
             local wrapped
             local _, owner <close> = clone(self, epoch_input_offset, function(machine, first, last)
                 wrapped = wrap_machine(machine)

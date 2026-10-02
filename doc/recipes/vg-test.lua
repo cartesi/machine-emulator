@@ -433,7 +433,7 @@ do
     assert(player.epoch_pair.revert_root_hash == accepted)
     local prefix <close> = player:new_advancing_pair()
     local initial_mcycle = prefix.machine:read_reg("mcycle")
-    local _, yield_reason = player:run_to_mcycle(prefix, player.inputs[1], 0, (1 << 48) - 1)
+    local _, yield_reason = player:run_to_input_mcycle_offset(prefix, player.inputs[1], 0, (1 << 48) - 1)
     assert(yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
     assert(not prefix.backup_machine and prefix.machine:get_root_hash() == accepted)
     assert(prefix.input_mcycle_boundary == initial_mcycle)
@@ -459,7 +459,7 @@ for _, granularity in ipairs({ "mcycle", "uarch" }) do
     local input = util.read_file(paths[1])
     local ok, err
     if granularity == "mcycle" then
-        ok, err = pcall(player.run_to_mcycle, player, pair, input, 0, 1)
+        ok, err = pcall(player.run_to_input_mcycle_offset, player, pair, input, 0, 1)
     else
         ok, err = pcall(player.run_to_uarch_cycle, player, pair, input, 0, 0, 1)
     end
@@ -489,7 +489,7 @@ do
 
     local loaded <close> = player:new_advancing_pair()
     local input_mcycle_boundary = loaded.machine:read_reg("mcycle")
-    player:run_to_mcycle(loaded, player.inputs[1], 0, 0)
+    player:run_to_input_mcycle_offset(loaded, player.inputs[1], 0, 0)
     player:run_to_uarch_cycle(loaded, player.inputs[1], 0, 0, 0)
     assert(loaded.machine:get_root_hash() == initial_hash and not loaded.backup_machine)
     player:run_to_uarch_cycle(loaded, player.inputs[1], 0, 0, 1)
@@ -550,7 +550,7 @@ do
     assert(player.agreed_pair.machine:read_reg("mcycle") == input_mcycle_boundary)
     assert(player.tentative_pair.machine:read_reg("mcycle") == input_mcycle_boundary)
     -- Later offsets observe the restored accept yield, without finalizing the rejected input again.
-    local reason, yield_reason, boundary = player:run_to_mcycle(
+    local reason, yield_reason, boundary = player:run_to_input_mcycle_offset(
         player.tentative_pair,
         player.inputs[1],
         tentative_position.input_mcycle_offset,
@@ -562,7 +562,7 @@ do
 
     -- Finishing an input and advancing to the next one uses the same driver.
     local replay <close> = player:new_advancing_pair()
-    player:run_to_input_boundary(replay, player.inputs, 0, 2)
+    player:run_to_epoch_input_offset(replay, player.inputs, 0, 2)
     assert(not replay.backup_machine and replay.machine:get_root_hash() == player.final_state_hash)
 end
 
@@ -587,7 +587,7 @@ do
     local split <close> = player:new_advancing_pair()
     local outputs = {}
     local frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
-    local reason = player:run_to_mcycle(split, input_data, 0, output_offset, outputs, frontier)
+    local reason = player:run_to_input_mcycle_offset(split, input_data, 0, output_offset, outputs, frontier)
     assert(reason == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
     assert(#outputs == 0 and #split.pending_outputs == 1)
     assert(split.revert_root_hash == initial_hash)
@@ -596,8 +596,8 @@ do
     assert(split.backup_machine ~= fork.backup_machine and fork.backup_machine:get_root_hash() == initial_hash)
     assert(fork.pending_outputs ~= split.pending_outputs and fork.pending_outputs[1] == split.pending_outputs[1])
     local fork_outputs, fork_frontier = {}, hash_tree.frontier_copy(frontier)
-    player:run_to_mcycle(split, input_data, output_offset, (1 << 48) - 1, outputs, frontier)
-    player:run_to_mcycle(fork, input_data, output_offset, (1 << 48) - 1, fork_outputs, fork_frontier)
+    player:run_to_input_mcycle_offset(split, input_data, output_offset, (1 << 48) - 1, outputs, frontier)
+    player:run_to_input_mcycle_offset(fork, input_data, output_offset, (1 << 48) - 1, fork_outputs, fork_frontier)
     assert(split.machine:get_root_hash() == fork.machine:get_root_hash())
     assert(#outputs == 1 and outputs[1] == fork_outputs[1])
     assert(hash_tree.frontier_get_root_hash(frontier) == hash_tree.frontier_get_root_hash(fork_frontier))
@@ -605,10 +605,10 @@ do
     assert(split.input_mcycle_boundary == input_mcycle_boundary and fork.input_mcycle_boundary == input_mcycle_boundary)
     local settled_hash = split.machine:get_root_hash()
     assert(split.revert_root_hash == settled_hash and fork.revert_root_hash == settled_hash)
-    player:run_to_mcycle(split, input_data, (1 << 48) - 1, 1 << 48, outputs, frontier)
+    player:run_to_input_mcycle_offset(split, input_data, (1 << 48) - 1, 1 << 48)
     assert(split.machine:get_root_hash() == settled_hash and #outputs == 1)
     local completed <close> = split:fork()
-    local _, yield_reason, boundary = player:run_to_mcycle(completed, input_data, (1 << 48) - 1, 1 << 48)
+    local _, yield_reason, boundary = player:run_to_input_mcycle_offset(completed, input_data, (1 << 48) - 1, 1 << 48)
     assert(yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED and boundary == input_mcycle_boundary)
     assert(not completed.backup_machine and completed.machine:get_root_hash() == settled_hash)
     vg.event_handler.input_added(player, 0, paths[1])
@@ -632,7 +632,7 @@ for uarch_cycle = 0, 1 do
     )
 
     local mcycle <close> = player:new_advancing_pair()
-    player:run_to_mcycle(mcycle, player.inputs[1], 0, 1)
+    player:run_to_input_mcycle_offset(mcycle, player.inputs[1], 0, 1)
     assert(
         vg.event_handler.reveal_bisection(
             player,
@@ -736,7 +736,7 @@ do
     -- Replay to the instruction that performs the rejecting yield, before its reset.
     local offset = rejected.machine:read_reg("mcycle") - rejected.backup_machine:read_reg("mcycle") - 1
     local boundary <close> = player:new_advancing_pair()
-    player:run_to_mcycle(boundary, player.inputs[1], 0, offset)
+    player:run_to_input_mcycle_offset(boundary, player.inputs[1], 0, offset)
     player:run_to_uarch_cycle(boundary, player.inputs[1], offset, 0, cartesi.UARCH_CYCLE_MAX)
     local before_reset = boundary.machine:get_root_hash()
     player.agreed_pair = boundary:move()
@@ -748,7 +748,7 @@ do
             == initial_hash
     )
     local replay <close> = player:new_advancing_pair()
-    player:run_to_mcycle(replay, player.inputs[1], 0, offset + 1)
+    player:run_to_input_mcycle_offset(replay, player.inputs[1], 0, offset + 1)
     assert(replay.machine:get_root_hash() == initial_hash, "reset did not carry rejection rollback")
     -- With no posted input, verification requires no inclusion log. A uarch
     -- period still has its halted tail and reset, even at a fixed mcycle state.
@@ -895,7 +895,13 @@ do
     assert(require("game-output").validate_output_response(offer, hash_tree.frontier_get_root_hash(expected)))
     local proofs = player.output_proofs
     local replay = new_pair()
-    player:run_to_input_boundary(replay, player.inputs, 0, #batches)
+    -- Replay ignores automatic yields without reading their output payloads.
+    local receive_cmio_request = replay.machine.receive_cmio_request
+    function replay.machine:receive_cmio_request()
+        assert(self.output_index > #self.batch, "replay read an automatic yield")
+        return receive_cmio_request(self)
+    end
+    player:run_to_epoch_input_offset(replay, player.inputs, 0, #batches)
     assert(#player.outputs == 4 and player.output_proofs == proofs and not player.outputs_frontier)
     assert(require("game-output").validate_output_response(vg.event_handler.prove_output(player), root))
 
@@ -904,7 +910,7 @@ do
     unfinished.machine.run = function()
         return cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
     end
-    local break_reason = player:run_to_mcycle(unfinished, player.inputs[1], 0, 1 << 48)
+    local break_reason = player:run_to_input_mcycle_offset(unfinished, player.inputs[1], 0, 1 << 48)
     assert(break_reason == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE and unfinished.backup_machine)
 end
 
@@ -1014,9 +1020,9 @@ for _, terminal in ipairs({ "halt", "overflow", "exception" }) do
     end
     local hash = machine:get_root_hash()
     local prefix <close> = player.epoch_pair:fork()
-    local expected_break, expected_yield = player:run_to_mcycle(prefix, player.inputs[1], 0, 1)
+    local expected_break, expected_yield = player:run_to_input_mcycle_offset(prefix, player.inputs[1], 0, 1)
     assert(not prefix.backup_machine and prefix.machine:get_root_hash() == hash)
-    local break_reason, yield_reason, boundary = player:run_to_mcycle(prefix, nil, 1, 2)
+    local break_reason, yield_reason, boundary = player:run_to_input_mcycle_offset(prefix, nil, 1, 2)
     assert(break_reason == expected_break and yield_reason == expected_yield)
     assert(boundary == machine:read_reg("mcycle") and prefix.machine:get_root_hash() == hash)
     for index, path in ipairs(paths) do
@@ -1048,7 +1054,7 @@ do
     assert(not player.epoch_pair.machine.tampered)
     local loaded <close> = player:new_advancing_pair()
     local replay <close> = loaded:fork()
-    player:run_to_input_boundary(replay, player.inputs, 0, 1)
+    player:run_to_epoch_input_offset(replay, player.inputs, 0, 1)
     assert(replay.machine:get_root_hash() == initial_hash and not replay.machine.tampered)
 end
 

@@ -139,6 +139,18 @@ local function is_same_position(a, b)
         and a.uarch_cycle == b.uarch_cycle
 end
 
+-- Bisection between different inputs compares recorded input base hashes.
+local function is_input_bisection(agreed_position, tentative_position)
+    return agreed_position.epoch_input_offset ~= tentative_position.epoch_input_offset
+end
+
+-- At or past its input's fixed point, a position holds the next input's base until a uarch cycle runs.
+local function is_past_fixed_point(position, fixed_point_mcycle_offset)
+    return position.uarch_cycle == 0
+        and fixed_point_mcycle_offset ~= nil
+        and position.input_mcycle_offset >= fixed_point_mcycle_offset
+end
+
 local function fork_machine(machine)
     local clone = assert(machine:fork_server())
     clone:set_cleanup_call(jsonrpc.SHUTDOWN)
@@ -479,8 +491,7 @@ end
 -- docs:begin reveal_bisection
 function event_handler:reveal_bisection(agreed_position, tentative_position)
     local epoch_input_offset = tentative_position.epoch_input_offset
-    -- Above the mcycle level, the tentative state is a recorded input base.
-    if agreed_position.epoch_input_offset ~= epoch_input_offset then
+    if is_input_bisection(agreed_position, tentative_position) then
         return self.input_base_hashes[math.min(epoch_input_offset, #self.inputs)]
     end
     if is_same_position(self.agreed_position, agreed_position) then
@@ -497,13 +508,7 @@ function event_handler:reveal_bisection(agreed_position, tentative_position)
         self:run_to_position(self.agreed_pair, self.agreed_position, agreed_position)
     end
     self.agreed_position, self.tentative_pair = agreed_position, nil
-    -- Past the input's fixed point, the tentative state is the next input base.
-    local fixed_point_mcycle_offset = self.fixed_point_mcycle_offsets[epoch_input_offset + 1]
-    if
-        tentative_position.uarch_cycle == 0
-        and fixed_point_mcycle_offset
-        and tentative_position.input_mcycle_offset >= fixed_point_mcycle_offset
-    then
+    if is_past_fixed_point(tentative_position, self.fixed_point_mcycle_offsets[epoch_input_offset + 1]) then
         return self.input_base_hashes[epoch_input_offset + 1]
     end
     -- Replay from a fork of the whole agreed pair, including any pending snapshot.
@@ -900,6 +905,8 @@ local vg = {
     player_methods = player_methods,
     advancing_pair_methods = advancing_pair_methods,
     usaturating_add = usaturating_add,
+    is_input_bisection = is_input_bisection,
+    is_past_fixed_point = is_past_fixed_point,
     load_cmio_input = load_cmio_input,
     validate_state_transition_response = validate_state_transition_response,
 }

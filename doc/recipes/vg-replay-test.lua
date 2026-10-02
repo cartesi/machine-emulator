@@ -66,13 +66,12 @@ function measured_events:reveal_bisection(agreed, tentative)
     local counts = self.replay_counts
     local before = { counts.loads, counts.forks, counts.prefix, counts.replay }
     local hash = vg.event_handler.reveal_bisection(self, agreed, tentative)
-    local index = tentative.epoch_input_offset
-    local fixed = self.fixed_point_mcycle_offsets[index + 1]
-    if agreed.epoch_input_offset ~= index then
+    local fixed = self.fixed_point_mcycle_offsets[tentative.epoch_input_offset + 1]
+    if vg.is_input_bisection(agreed, tentative) then
         assert(counts.loads == before[1] and counts.forks == before[2], "input-level reveal loaded or forked a machine")
         assert(counts.prefix == before[3] and counts.replay == before[4], "input-level reveal executed mcycles")
         assert(not self.tentative_pair)
-    elseif tentative.uarch_cycle == 0 and fixed and tentative.input_mcycle_offset >= fixed then
+    elseif vg.is_past_fixed_point(tentative, fixed) then
         assert(counts.loads == before[1] and not self.tentative_pair, "fixed-point reveal created a tentative pair")
     end
     return hash

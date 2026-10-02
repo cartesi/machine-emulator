@@ -300,7 +300,7 @@ local SCHEMA_DICT = {
         step_log = "AccessLog",
         reset_uarch_log = "AccessLog",
     },
-    ProveOutputsMerkleRootEvent = { items = {} },
+    ProveOutputsMerkleRootEvent = { items = { "Base64" } },
     ProveOutputsMerkleRootResponse = {
         iflags_y_data = "Base64",
         iflags_y_proof = "Proof",
@@ -309,7 +309,7 @@ local SCHEMA_DICT = {
         tx_buffer_data = "Base64",
         tx_buffer_proof = "Proof",
     },
-    ProveOutputEvent = { items = {} },
+    ProveOutputEvent = { items = { "Base64" } },
     ProveOutputResponse = {
         output_index = "Default",
         output = "Base64",

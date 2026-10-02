@@ -98,7 +98,15 @@ return function(run_with_server, new_test_player)
         local immediate <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate)
         assert(immediate:wait_at_most(FOREVER) == root and calls == 0)
         response_block = server:get_time() + 3
-        local delayed <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate)
+        local delayed <close> = server:request_first_valid(
+            EVERYONE,
+            event,
+            { "claim" },
+            function(response, _, received_at)
+                assert(received_at < response_block, "late response")
+                return validate(response)
+            end
+        )
         do
             -- The closed future's response still arrives on its block, stale, and is ignored.
             local closed <close> = -- luacheck: ignore 211
@@ -106,7 +114,7 @@ return function(run_with_server, new_test_player)
         end
         server:wait_until(response_block - 1)
         assert(calls == 0, "scheduling ran a callback immediately")
-        assert(delayed:wait_at_most(response_block) == nil, "wait accepted a response at its exclusive deadline")
+        assert(delayed:wait_at_most(response_block) == nil, "wait returned a response its validator rejected")
         assert(delayed.closed and not pcall(delayed.wait_at_most, delayed), "expiry left the request open")
         server:wait_until(response_block + 1)
         assert(calls == 2, "scheduled callbacks did not run")
@@ -189,28 +197,29 @@ return function(run_with_server, new_test_player)
         )
         server.clock:advance(1)
         local senders = { {}, {}, {} }
-        local first = { value = "first", connection = senders[1], order = 1, received_at = server:get_time() }
-        collection.accepted_replies[#collection.accepted_replies + 1] = first
+        -- Validators decide acceptance, so expiry returns every accepted reply, whatever its block.
+        local third = { value = "third", connection = senders[3], order = 3 }
+        collection.accepted_replies[#collection.accepted_replies + 1] = third
         server.clock:advance(2)
         assert(first_valid:wait_at_most(2) == nil, "first-valid expiry returned a collection")
-        local at_deadline =
-            { value = "at deadline", connection = senders[2], order = 2, received_at = server:get_time() }
-        collection.accepted_replies[#collection.accepted_replies + 1] = at_deadline
+        local first = { value = "first", connection = senders[1], order = 1 }
+        collection.accepted_replies[#collection.accepted_replies + 1] = first
         server.clock:advance(3)
-        collection.accepted_replies[#collection.accepted_replies + 1] = {
-            value = "late",
-            connection = senders[3],
-            order = 3,
-            received_at = server:get_time(),
-        }
+        local second = { value = "second", connection = senders[2], order = 2 }
+        collection.accepted_replies[#collection.accepted_replies + 1] = second
         local snapshot, snapshot_order = collection:wait_at_most(2)
         assert(
-            #snapshot_order == 1 and snapshot_order[1] == senders[1] and snapshot[senders[1]] == first.value,
-            "expiry discarded responses already received"
+            #snapshot_order == 3
+                and snapshot_order[1] == senders[1]
+                and snapshot_order[2] == senders[2]
+                and snapshot_order[3] == senders[3],
+            "expiry did not return accepted replies in admission order"
         )
         assert(
-            snapshot[senders[2]] == nil and snapshot[senders[3]] == nil,
-            "a response at or after the deadline entered the collection"
+            snapshot[senders[1]] == first.value
+                and snapshot[senders[2]] == second.value
+                and snapshot[senders[3]] == third.value,
+            "expiry discarded accepted replies"
         )
         assert(collection.closed and first_valid.closed and not next(server.active))
         assert(not pcall(collection.wait_at_most, collection), "an expired collection accepted another wait")
@@ -797,6 +806,10 @@ return function(run_with_server, new_test_player)
             current_server = server
             local request_first_valid = server.request_first_valid
             server.request_first_valid = function(self, subscriptions, event, arguments, accept)
+                -- Validators take the receipt block as an argument, so probes pass the simulated block.
+                local function probe(value, sender)
+                    return pcall(accept, value, sender, self.clock.block)
+                end
                 if
                     event == prtu.EVENTS.schedule_match_timeout_win
                     or event == prtu.EVENTS.schedule_match_elimination
@@ -836,20 +849,20 @@ return function(run_with_server, new_test_player)
                     local sender = self:get_players()[1]
                     probing = true
                     self.clock.block = block - 1
-                    assert(not pcall(accept, response, sender), "premature scheduled response accepted")
+                    assert(not probe(response, sender), "premature scheduled response accepted")
                     self.clock.block = block
-                    local ok, value = pcall(accept, response, sender)
+                    local ok, value = probe(response, sender)
                     assert(ok and value, "eligible scheduled response rejected")
                     if expires then
                         local invalid = copy(response)
                         invalid.computation_hash_left = keccak("wrong children")
-                        assert(not pcall(accept, invalid, sender), "invalid scheduled response accepted")
+                        assert(not probe(invalid, sender), "invalid scheduled response accepted")
                         self.clock.block = expires
-                        assert(not pcall(accept, response, sender), "scheduled response accepted at expiry")
+                        assert(not probe(response, sender), "scheduled response accepted at expiry")
                         self.clock.block = expires + 1
-                        assert(not pcall(accept, response, sender), "scheduled response accepted after expiry")
+                        assert(not probe(response, sender), "scheduled response accepted after expiry")
                     else
-                        assert(pcall(accept, nil, sender), "elimination required response data")
+                        assert(probe(nil, sender), "elimination required response data")
                     end
                     probing = false
                     self.clock.block = saved
@@ -885,16 +898,16 @@ return function(run_with_server, new_test_player)
                         local saved = self.clock.block
                         self.clock.block = deadline
                         probing = true
-                        assert(not pcall(accept, response), "ordinary response accepted at expiry")
+                        assert(not probe(response), "ordinary response accepted at expiry")
                         self.clock.block = deadline + 1
-                        assert(not pcall(accept, response), "ordinary response accepted after expiry")
+                        assert(not probe(response), "ordinary response accepted after expiry")
                         self.clock.block = block
-                        local ok, value = pcall(accept, response)
+                        local ok, value = probe(response)
                         assert(ok and value, "valid response rejected before expiry")
                         if request == "prove_state_transition" then
                             proof_checks = proof_checks + 1
                             local invalid = {}
-                            local valid, result = pcall(accept, invalid)
+                            local valid, result = probe(invalid)
                             assert(not valid, "invalid transition proof did not raise an error")
                             assert(result, "invalid transition proof has no error")
                         end

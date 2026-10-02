@@ -54,7 +54,7 @@ local function past_cheat(data, mcycle, uarch_cycle)
     return uarch_cycle > data.cheat_uarch_cycle
 end
 
--- The composite for rolling-verification-game.lua, cheating at an (mcycle offset, uarch_cycle)
+-- The composite for vg.lua, cheating at an (mcycle offset, uarch_cycle)
 -- point of the input at cheat_input_index. Both machines start at the same input
 -- boundary.
 local function new_rolling_composite_machine(

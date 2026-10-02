@@ -4,7 +4,7 @@
 -- player 2's own tentative hashes. Both runs preserve the original claims, the
 -- referee, and all transition proof checks.
 local cartesi = require("cartesi")
-local vg = require("rolling-verification-game")
+local vg = require("vg")
 local vgu = require("vgu")
 local roles = require("vg-dishonest")
 local run_with_server = require("vg-test-server")
@@ -25,8 +25,7 @@ local function run(initial_hash, paths, delegate)
         wait_connections(1)
         run_client({ role = "player", label = honest.label }, function(wire, line)
             if
-                wire.operation == "initial_state"
-                or wire.operation == "input_added"
+                wire.operation == "input_added"
                 or wire.operation == "epoch_sealed"
                 or wire.operation == "dispute_started"
             then
@@ -53,7 +52,7 @@ local function run(initial_hash, paths, delegate)
         end
         local request_all = server.request_all
         function server:request_all(connections, event, arguments, accept)
-            if event == vgu.EVENTS.initial_state then
+            if not outsider then
                 run_client({ role = "player", label = "fabulist" }, function(wire)
                     assert(wire.operation ~= "commit_claim", "late player was asked for a claim")
                     return { value = true }
@@ -83,11 +82,11 @@ local function run(initial_hash, paths, delegate)
     for _, name in ipairs({ "claims", "bisect_input", "bisect_mcycle", "bisect_uarch_cycle", "verdict" }) do
         assert(os.rename(name, string.format("fabulist-%s-%s", delegate and "delegated" or "protected", name)))
     end
-    local claims = { opponent.final_hash, honest.final_hash }
+    local claims = { opponent.final_state_hash, honest.final_state_hash }
     assert(#vg.addresses(results.players) == 1 and results.players[next(results.players)] == results.winner)
     local winner = delegate and 1 or 2
     assert(results.players[server.connections[winner]] == results.winner)
-    assert(results.final_hash == claims[winner])
+    assert(results.final_state_hash == claims[winner])
     return claims
 end
 

@@ -1,4 +1,4 @@
--- Final-state and output checks shared by the rolling games.
+-- Final-state and output checks shared by the verification game and PRT.
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
 local keccak = cartesi.keccak256
@@ -57,7 +57,7 @@ local function validate_output_response(output, outputs_merkle_root)
     assert(output_proof.root_hash == outputs_merkle_root, "output proof root mismatch")
     assert(keccak(output.output) == output_proof.target_hash, "output hash mismatch")
     hash_tree.verify_slice(output_proof)
-    return true
+    return output
 end
 
 return {

@@ -367,11 +367,8 @@ local function emit_schedule_match_timeout_win(tournament, match, responder_dead
         subscription_hash(tournament.id, other_claim),
         EVENTS.schedule_match_timeout_win,
         { responder_deadline, other_claim.computation_hash },
-        function(response)
-            assert(
-                current_time() >= responder_deadline and current_time() < eliminable_at,
-                "timeout win outside its window"
-            )
+        function(response, _, received_at)
+            assert(received_at >= responder_deadline and received_at < eliminable_at, "timeout win outside its window")
             validate_timeout_win_response(response, other_claim.computation_hash)
             story.report_timeout_win(match)
             return other_turn_index
@@ -380,11 +377,16 @@ local function emit_schedule_match_timeout_win(tournament, match, responder_dead
 end
 
 local function emit_schedule_match_elimination(match, eliminable_at)
-    return request_first_valid(EVERYONE, EVENTS.schedule_match_elimination, { eliminable_at }, function(_, sender)
-        assert(current_time() >= eliminable_at, "early elimination")
-        story.report_match_eliminated(match, sender.label)
-        return 0
-    end)
+    return request_first_valid(
+        EVERYONE,
+        EVENTS.schedule_match_elimination,
+        { eliminable_at },
+        function(_, sender, received_at)
+            assert(received_at >= eliminable_at, "early elimination")
+            story.report_match_eliminated(match, sender.label)
+            return 0
+        end
+    )
 end
 
 -- Settles a uarch match once the walk isolates the divergent leaf. The referee emits the
@@ -407,8 +409,8 @@ local function settle_uarch_state_hash(tournament, match, state_transition_offse
         EVERYONE,
         EVENTS.schedule_match_elimination,
         { eliminable_at },
-        function()
-            assert(current_time() >= eliminable_at, "early elimination")
+        function(_, _, received_at)
+            assert(received_at >= eliminable_at, "early elimination")
             return true
         end
     )
@@ -416,8 +418,8 @@ local function settle_uarch_state_hash(tournament, match, state_transition_offse
         subscriptions,
         EVENTS.prove_state_transition,
         { tournament.epoch_input_offset, tournament.input_period_offset, state_transition_offset },
-        function(response)
-            assert(current_time() < proof_deadline, "late state transition proof")
+        function(response, _, received_at)
+            assert(received_at < proof_deadline, "late state transition proof")
             return validate_state_transition_response(
                 tournament.dapp_contract,
                 root_hash_before,
@@ -507,16 +509,16 @@ local function propagate_uarch_result(mcycle_match, winner, next_state_hashes)
         local mcycle_claim = mcycle_match.claims[claim_index]
         local elimination <close> = request_first_valid(
             EVERYONE, EVENTS.schedule_uarch_result_elimination, { winner_expires_at },
-            function()
-                assert(current_time() >= winner_expires_at)
+            function(_, _, received_at)
+                assert(received_at >= winner_expires_at)
                 return true
             end
         )
         local propagation <close> = request_first_valid(
             subscription_hash(mcycle_tournament.id, mcycle_claim),
             EVENTS.propagate_uarch_result, { mcycle_claim.computation_hash },
-            function(response)
-                assert(current_time() < winner_expires_at)
+            function(response, _, received_at)
+                assert(received_at < winner_expires_at)
                 assert(keccak(response.computation_hash_left, response.computation_hash_right)
                     == mcycle_claim.computation_hash)
                 return winner.final_state_hash
@@ -597,8 +599,8 @@ local function reveal_divergence(tournament, match)
             subscription_hash(tournament.id, turn_claim),
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
-            function(response)
-                assert(current_time() < responder_deadline, "late bisection")
+            function(response, _, received_at)
+                assert(received_at < responder_deadline, "late bisection")
                 return validate_bisection_response(match, response)
             end
         )
@@ -627,8 +629,8 @@ local function seal_divergence(tournament, match)
         subscription_hash(tournament.id, turn_claim),
         EVENTS.seal_divergence,
         { turn_claim.computation_hash, match.position, match.other_left_node },
-        function(response)
-            assert(current_time() < responder_deadline, "late seal")
+        function(response, _, received_at)
+            assert(received_at < responder_deadline, "late seal")
             return validate_seal_response(tournament, match, response)
         end
     )
@@ -755,29 +757,34 @@ local output_verifier = require("game-output")
 local validate_outputs_merkle_root_response = output_verifier.validate_outputs_merkle_root_response
 local validate_output_response = output_verifier.validate_output_response
 
--- Waits on the settled claim, the one the tournament leaves standing. It first establishes the
--- outputs Merkle root committed by the winning final state, then repeatedly asks for an output
--- and checks each offer against that root. The player chooses which output to offer.
--- An epoch with no output therefore still settles its outputs root without inventing an output.
+-- Waits on the settled final state hash. It first establishes the outputs Merkle root committed
+-- by that state, then repeatedly asks for an output and checks each offer against that root.
+-- Offers are validated against the settled hash, so anyone may answer. The player chooses which
+-- output to offer. An epoch with no output therefore still settles its outputs root without
+-- inventing an output.
 -- docs:begin wait_for_outputs
-local function wait_for_outputs(tournament, winner)
-    local subscription = subscription_hash(tournament.id, winner)
+local function wait_for_outputs(final_state_hash)
     local root_proof <close> = request_first_valid(
-        subscription,
+        EVERYONE,
         EVENTS.prove_outputs_merkle_root,
-        {},
+        { final_state_hash },
         function(response)
-            return validate_outputs_merkle_root_response(response, winner.final_state_hash)
+            return validate_outputs_merkle_root_response(response, final_state_hash)
         end
     )
     local outputs_merkle_root = root_proof:wait_at_most(FOREVER)
     local accepted_output_indices = {}
     while true do
-        local output_proof <close> = request_first_valid(subscription, EVENTS.prove_output, {}, function(response)
-            if not accepted_output_indices[response.output_index] then
-                return validate_output_response(response, outputs_merkle_root) and response
+        local output_proof <close> = request_first_valid(
+            EVERYONE,
+            EVENTS.prove_output,
+            { outputs_merkle_root },
+            function(response)
+                if not accepted_output_indices[response.output_index] then
+                    return validate_output_response(response, outputs_merkle_root)
+                end
             end
-        end)
+        )
         local output = output_proof:wait_at_most(FOREVER)
         accepted_output_indices[output.output_index] = true
         story.report_output(output)
@@ -805,7 +812,7 @@ local function run_referee(dapp_contract)
     local winner = run_tournament(tournament)
     story.report_winner(winner)
     if winner then
-        wait_for_outputs(tournament, winner)
+        wait_for_outputs(winner.final_state_hash)
     end
 end
 -- docs:end run_referee
@@ -877,7 +884,7 @@ end
 -- Geometry
 --
 -- The epoch spans 2^24 inputs of 2^48 mcycles each, and every mcycle expands into 2^20
--- uarch transitions, the same three coordinates as the rolling verification game. The mcycle
+-- uarch transitions, the same three coordinates as the verification game. The mcycle
 -- claim samples the epoch every 2^LOG2_MCYCLES_PER_PERIOD mcycles. The uarch claim expands one mcycle
 -- period into its uarch transitions. Each claim is stored bundled: the machine delivers one
 -- subtree root per 2^bundle_height leaves, stored at its logical height, and queries
@@ -1715,8 +1722,7 @@ end
 -- Proves that the settled final state is yielded manually with RX_ACCEPTED and authenticates
 -- the word whose data is the outputs Merkle root.
 -- docs:begin prove_outputs_merkle_root
-function event_handler.prove_outputs_merkle_root(self)
-    local machine, owner <close> = self:clone_at_input_boundary(#self.input_paths) -- luacheck: ignore 211
+local function get_outputs_merkle_root_proof(machine)
     local iflags_y_data, iflags_y_proof = get_machine_leaf(machine, IFLAGS_Y_ADDRESS)
     local htif_tohost_data, htif_tohost_proof = get_machine_leaf(machine, HTIF_TOHOST_ADDRESS)
     local tx_buffer_data, tx_buffer_proof = get_machine_leaf(machine, CMIO_TX_BUFFER_ADDRESS)
@@ -1728,6 +1734,11 @@ function event_handler.prove_outputs_merkle_root(self)
         tx_buffer_data = tx_buffer_data,
         tx_buffer_proof = tx_buffer_proof,
     }
+end
+
+function event_handler.prove_outputs_merkle_root(self)
+    local machine, owner <close> = self:clone_at_input_boundary(#self.input_paths) -- luacheck: ignore 211
+    return get_outputs_merkle_root_proof(machine)
 end
 -- docs:end prove_outputs_merkle_root
 

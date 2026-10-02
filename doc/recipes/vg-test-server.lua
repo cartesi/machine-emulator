@@ -24,7 +24,7 @@ return function(protocol, scenario)
     })
     function vgu.story.report_winner(winner)
         results.winner = winner
-        results.final_hash = winner and winner.final_hash
+        results.final_state_hash = winner and winner.final_state_hash
         narration.report_winner(winner)
     end
     local stopped_server

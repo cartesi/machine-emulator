@@ -1,5 +1,5 @@
 local cartesi = require("cartesi")
-local vg = require("rolling-verification-game")
+local vg = require("vg")
 local vgu = require("vgu")
 local run_with_server = require("vg-test-server")
 local hash = cartesi.keccak256("clock fixture")
@@ -15,13 +15,15 @@ local empty_handlers = {
 
 -- The immediate player never pays for the other player's delay. The delayed
 -- player carries its spent allowance into every subsequent requested move.
--- Like PRT, the deadline is start + allowance. The response budget discounts the
--- charge for an accepted answer, never extends its deadline. Expiry eliminates the
--- player. Delays 2, 2, 0, 2 leave 3, 2, 2, then expire at the deadline.
+-- Like PRT, the deadline is start + allowance. Joining is charged in full. The
+-- response budget discounts the charge for an accepted bisection answer, never
+-- extends its deadline. Expiry eliminates the player. With an allowance of 5,
+-- delays 2, 2, 0, 2 leave 3, 2, 2, then expire at the deadline.
 for delayed_index = 1, 2 do
     local clients = {}
     local claims = { hash, cartesi.keccak256("other claim") }
     local dapp_contract = vg.make_dapp_contract(hash, {})
+    dapp_contract.max_allowance = 5
     local results
     local delayed, immediate
     run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
@@ -75,12 +77,15 @@ for delayed_index = 1, 2 do
     end)
     for round = 1, 4 do
         assert(clients[1].requested_at[round] == clients[2].requested_at[round], "hash requests were serialized")
-        assert(clients[delayed_index].allowances[round] == ({ 4, 3, 2, 2 })[round])
-        assert(clients[3 - delayed_index].allowances[round] == 4, "opponent delay charged immediate player")
+        assert(clients[delayed_index].allowances[round] == ({ 5, 3, 2, 2 })[round])
+        assert(
+            clients[3 - delayed_index].allowances[round] == (round == 1 and 5 or 4),
+            "opponent delay charged immediate player"
+        )
     end
     assert(#clients[1].requested_at == 4 and #clients[2].requested_at == 4)
     assert(not results.players[delayed] and results.players[immediate] == results.winner, "deadline is not exclusive")
-    assert(results.final_hash == claims[3 - delayed_index] and results.winner.allowance == 4)
+    assert(results.final_state_hash == claims[3 - delayed_index] and results.winner.allowance == 4)
     assert(results.winner.label == clients[3 - delayed_index].label, "VG lost the admitted player's label")
 end
 
@@ -114,7 +119,7 @@ do
     end)
     assert(requested[1] and requested[2] and requested[3], "a proponent was not asked to defend its claim")
     assert(#vg.addresses(results.players) == 1 and results.players[server.connections[2]] == results.winner)
-    assert(results.final_hash == hash)
+    assert(results.final_state_hash == hash)
 end
 
 for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
@@ -142,7 +147,7 @@ for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
         end)
         vg.new_referee(dapp_contract):run(server)
     end)
-    assert(not results.winner and not results.final_hash)
+    assert(not results.winner and not results.final_state_hash)
     assert(not next(results.players))
 end
 
@@ -226,15 +231,15 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
         assert(rounds[1] == last and rounds[2] == last, "requested another tentative position after settlement")
         assert(proofs == (failed_round > 84 and 2 or 0))
         if failed_player == 0 then
-            assert(not results.winner and not results.final_hash)
+            assert(not results.winner and not results.final_state_hash)
             assert(not next(results.players))
         else
             local loser = failed_player
             local winner = 3 - loser
-            assert(results.final_hash == claims[winner])
+            assert(results.final_state_hash == claims[winner])
             assert(#vg.addresses(results.players) == 1)
             assert(results.players[server.connections[winner]] == results.winner)
-            assert(results.winner.allowance == 4, "charged the immediate player")
+            assert(results.winner.allowance == 3, "charged the immediate player beyond its join")
         end
     end
 end

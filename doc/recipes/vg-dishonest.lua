@@ -5,7 +5,7 @@
 --   vg-dishonest.lua quitter <address> <initial-hash>
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
-local vg = require("rolling-verification-game")
+local vg = require("vg")
 local vgu = require("vgu")
 
 local function read_forged_input(self, index, path)
@@ -91,16 +91,15 @@ function tampered_machine_meta_methods:run_uarch(uarch_cycle_end)
 end
 
 local function new_tamperer(initial_hash, input_index, input_mcycle_offset)
-    local player = vg.new_player(initial_hash, "tamperer")
-    for _, pair in ipairs({ player.initial, player.latest, player.agreed_machine, player.tentative_machine }) do
-        pair.machine = setmetatable({
-            machine = pair.machine,
+    local function new_tampered_machine(self)
+        return setmetatable({
+            machine = vg.player_methods.new_machine(self),
             epoch_input_offset = -1,
             tampered_index = input_index,
             tampered_offset = input_mcycle_offset,
         }, tampered_machine_meta)
     end
-    return player
+    return vg.new_player(initial_hash, "tamperer", nil, { new_machine = new_tampered_machine })
 end
 
 local function acknowledge() end
@@ -109,7 +108,6 @@ local function quit(self)
     return cartesi.keccak256("a fabricated final state")
 end
 local quitter_events = {
-    initial_state = acknowledge,
     input_added = acknowledge,
     epoch_sealed = acknowledge,
     commit_claim = quit,

@@ -1136,13 +1136,14 @@ local function collect_codeblock(b)
         end
         include_abs = RECIPES_DIR .. "/" .. file_path
         local file_content = read_file(include_abs, "key=" .. key .. " include=" .. include)
+        file_content = strip_null_regions(file_content, "key=" .. key .. " include=" .. include)
         if region then
             -- A single region becomes the body (markers already stripped by extract_region).
             body = extract_region(file_content, region, "key=" .. key .. " include=" .. include)
         else
             -- Whole file: keep the infrastructure markers so replace=K/source/<region> can pick
             -- named regions. They are stripped when cache/<K>/both is written (see define_script).
-            body = strip_null_regions(file_content, "key=" .. key .. " include=" .. include)
+            body = file_content
         end
     end
     local seq = parse_sequential(b.attr.attributes.sequential)

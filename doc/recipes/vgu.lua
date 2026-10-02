@@ -2,8 +2,6 @@
 local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")
 local transport = require("game-transport")
--- A nil audience broadcasts to every live player connection.
-local EVERYONE = nil
 
 -- Enumerate player addresses in admission order.
 local function addresses(players)
@@ -58,7 +56,7 @@ function story.report_claims(players)
     phase("claims")
     for _, sender in ipairs(addresses(players)) do
         local player = players[sender]
-        eventf("Player %s claimed %s.", player.label, short_hash(player.final_hash))
+        eventf("Player %s claimed %s.", player.label, short_hash(player.final_state_hash))
     end
 end
 
@@ -72,16 +70,17 @@ function story.report_bisection(agreed_position, tentative_position)
     end
 end
 
-function story.report_bisection_progress(bisection)
-    local position = bisection.agreed_position
+function story.report_bisection_progress(interval)
+    local position = interval.agreed_position
+    local extent = interval.extent
     eventf(
         "Disagreement starts at (0x%x, 0x%x, 0x%x); counts are (0x%x, 0x%x, 0x%x).",
         position.epoch_input_offset,
         position.input_mcycle_offset,
         position.uarch_cycle,
-        1 << bisection.log2_input_count,
-        1 << bisection.log2_mcycle_count,
-        1 << bisection.log2_uarch_cycle_count
+        1 << extent.log2_input_count,
+        1 << extent.log2_mcycle_count,
+        1 << extent.log2_uarch_cycle_count
     )
 end
 
@@ -95,7 +94,7 @@ function story.report_winner(winner)
         eventf("No players remain.")
         return
     end
-    eventf("Player %s wins. Final state hash: %s", winner.label, cartesi.tohex(winner.final_hash))
+    eventf("Player %s wins. Final state hash: %s", winner.label, cartesi.tohex(winner.final_state_hash))
 end
 
 function story.report_output(output)
@@ -107,7 +106,6 @@ end
 
 local schemas = {
     Empty = { items = {} },
-    InitialState = { items = { "Base64" } },
     InputAdded = { items = { "Default", "Default" } },
     EpochSealed = { items = { "Default" } },
     Bisection = { items = { "Default", "Default" } },
@@ -126,7 +124,6 @@ local schemas = {
 }
 local define_event = transport.define_event
 local events = {
-    initial_state = define_event("initial_state", "InitialState"),
     input_added = define_event("input_added", "InputAdded"),
     epoch_sealed = define_event("epoch_sealed", "EpochSealed"),
     commit_claim = define_event("commit_claim", "Empty", "Base64"),
@@ -157,7 +154,6 @@ local function close_narration()
     narration_phase = nil
 end
 return {
-    EVERYONE = EVERYONE,
     protocol = protocol,
     EVENTS = events,
     new_server = new_server,

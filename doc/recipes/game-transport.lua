@@ -724,10 +724,10 @@ local function reply_less(a, b)
 end
 
 -- Return results keyed by sender, with the senders in deterministic admission order.
-local function response_values(replies, deadline)
+local function response_values(replies)
     local responses, order = {}, {}
     for _, reply in ipairs(replies) do
-        if (not deadline or reply.received_at < deadline) and reply.value ~= nil then
+        if reply.value ~= nil then
             order[#order + 1] = reply
         end
     end
@@ -770,23 +770,24 @@ function future_meta.__index:close()
 end
 future_meta.__close = future_meta.__index.close
 
--- Waiting consumes the future, closing it on completion or expiry. All-response
--- requests return a sender-keyed map and ordered senders for replies received before
--- the deadline; first-valid requests return nil without an accepted result.
+-- Waiting consumes the future, closing it on completion or expiry. Validators alone
+-- decide acceptance, and the deadline only limits how long the waiter stays suspended.
+-- All-response requests return a sender-keyed map and ordered senders for accepted
+-- replies. First-valid requests return nil if no result was accepted.
 local function wait_for_result(self, deadline)
     if not self.resolved and (not deadline or self.server:get_time() < deadline) then
         self.cortn, self.deadline = coroutine.running(), deadline
         coroutine.yield()
         self.deadline = nil
     end
-    if not self.closed and self.resolved and (not deadline or self.accepted_at < deadline) then
+    if not self.closed and self.resolved then
         if self.kind == "request_all" then
             return self.value, self.response_order
         end
         return self.value
     end
     if not self.closed and self.kind == "request_all" then
-        return response_values(self.accepted_replies, deadline)
+        return response_values(self.accepted_replies)
     end
 end
 
@@ -982,7 +983,6 @@ local function accept_scheduled_response(self, response)
                 value = value,
                 connection = response.connection,
                 order = response.connection.order,
-                received_at = received_at,
             }
             future.pending[response.connection] = nil
         else

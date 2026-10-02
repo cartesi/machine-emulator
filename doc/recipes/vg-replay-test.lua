@@ -60,16 +60,20 @@ function measured_events:input_added(index, path)
     counts.phase = "replay"
 end
 
+-- Input-level reveals cost nothing. Reveals past a fixed point create no
+-- tentative pair, although the agreed pair may run forward.
 function measured_events:reveal_bisection(agreed, tentative)
     local counts = self.replay_counts
-    local recorded = self:recorded_position_hash(tentative)
     local before = { counts.loads, counts.forks, counts.prefix, counts.replay }
     local hash = vg.event_handler.reveal_bisection(self, agreed, tentative)
-    if recorded then
-        assert(hash == recorded)
-        assert(counts.loads == before[1] and counts.forks == before[2], "recorded reveal loaded or forked a machine")
-        assert(counts.prefix == before[3] and counts.replay == before[4], "recorded reveal executed mcycles")
-        assert(not self.tentative_pair and not self.tentative_pair_position)
+    local index = tentative.epoch_input_offset
+    local fixed = self.fixed_point_mcycle_offsets[index + 1]
+    if agreed.epoch_input_offset ~= index then
+        assert(counts.loads == before[1] and counts.forks == before[2], "input-level reveal loaded or forked a machine")
+        assert(counts.prefix == before[3] and counts.replay == before[4], "input-level reveal executed mcycles")
+        assert(not self.tentative_pair)
+    elseif tentative.uarch_cycle == 0 and fixed and tentative.input_mcycle_offset >= fixed then
+        assert(counts.loads == before[1] and not self.tentative_pair, "fixed-point reveal created a tentative pair")
     end
     return hash
 end
@@ -144,22 +148,15 @@ local function run(initial_hash, paths)
     local origin = position(0)
     player.event_handler.dispute_started(player)
     local agreed = origin
-    -- Successive agreements, including the final boundary and unposted padding,
-    -- must not materialize either pair.
-    for _, index in ipairs({ 0, 1, 2, #paths, #paths + 1, (1 << 16) - 1 }) do
+    -- Successive agreements, including the final base and unposted padding,
+    -- answer from input base hashes without a tentative pair.
+    for _, index in ipairs({ 1, 2, #paths, #paths + 1, (1 << 16) - 1 }) do
         local tentative = position(index)
         local expected = player.input_base_hashes[math.min(index, #paths)]
         assert(player.event_handler.reveal_bisection(player, agreed, tentative) == expected)
-        assert(not player.agreed_pair and not player.tentative_pair)
+        assert(not player.tentative_pair)
         agreed = tentative
     end
-    assert(not pcall(vg.event_handler.prove_state_transition, player, agreed.epoch_input_offset, 0, 0))
-    assert(not player:recorded_position_hash(position(#paths, 0, 1)))
-    assert(not pcall(player.recorded_position_hash, player, position(0, 1 << 48)))
-    local base_hash = player.input_base_hashes[1]
-    player.input_base_hashes[1] = nil
-    assert(not pcall(player.recorded_position_hash, player, position(1)))
-    player.input_base_hashes[1] = base_hash
 
     -- Compare all recorded posted boundaries with the ordinary input driver.
     local replay <close> = player:new_advancing_pair()
@@ -179,12 +176,12 @@ local function run(initial_hash, paths)
             local probe <close> = boundary:fork()
             player:run_to_input_mcycle_offset(probe, player.inputs[index + 1], 0, offset)
             player:reset_bisection()
-            local hash = player.event_handler.reveal_bisection(player, origin, position(index, offset))
+            local hash = player.event_handler.reveal_bisection(player, position(index), position(index, offset))
             assert(hash == probe.machine:get_root_hash())
             if offset < fixed then
                 assert(player.tentative_pair and player.tentative_pair.backup_machine)
             else
-                assert(not player.agreed_pair and not player.tentative_pair)
+                assert(not player.tentative_pair)
             end
         end
         player:run_to_epoch_input_offset(boundary, player.inputs, index, index + 1)
@@ -209,8 +206,8 @@ local function run(initial_hash, paths)
         assert(counts.prefix == expected_prefix and player.agreed_pair == materialized)
     end
 
-    -- Agree on active work and then on a recorded fixed point. Materialization
-    -- must retain the active prefix, including when completion rolls it back.
+    -- Agree on active work and then on a recorded fixed point. Running the agreed
+    -- pair forward must retain the active prefix, including when completion rolls it back.
     for index = 0, 1 do
         player:reset_bisection()
         counts.prefix, counts.replay = 0, 0
@@ -218,7 +215,7 @@ local function run(initial_hash, paths)
         local fixed = player.fixed_point_mcycle_offsets[index + 1]
         local active = position(index, fixed // 2)
         local completed = position(index, fixed)
-        player.event_handler.reveal_bisection(player, origin, active)
+        player.event_handler.reveal_bisection(player, position(index), active)
         local candidate = player.tentative_pair
         player.event_handler.reveal_bisection(player, active, completed)
         assert(player.agreed_pair == candidate and candidate.backup_machine and not player.tentative_pair)
@@ -226,7 +223,7 @@ local function run(initial_hash, paths)
         local after = player.event_handler.reveal_bisection(player, completed, position(index, fixed, 1))
         assert(player.agreed_pair == candidate and not candidate.backup_machine)
         assert(candidate.machine:get_root_hash() == player.input_base_hashes[index + 1])
-        assert(counts.replay == fixed, "fixed-point materialization repeated active work")
+        assert(counts.replay == fixed, "agreement on a recorded fixed point repeated active work")
         local proof = player.event_handler.prove_state_transition(player, index, fixed, 0)
         assert(
             vg.validate_state_transition_response(
@@ -245,13 +242,13 @@ local function run(initial_hash, paths)
     local empty <close> = measure(vg.new_player(initial_hash))
     empty.event_handler.epoch_sealed(empty)
     empty.event_handler.dispute_started(empty)
-    for _, index in ipairs({ 0, 1, (1 << 16) - 1 }) do
+    for _, index in ipairs({ 1, (1 << 16) - 1 }) do
         assert(empty.event_handler.reveal_bisection(empty, origin, position(index)) == initial_hash)
-        assert(not empty.agreed_pair and not empty.tentative_pair)
+        assert(not empty.tentative_pair)
     end
     empty.event_handler.reveal_bisection(empty, origin, position(0, 0, 1))
     assert(empty.agreed_pair and empty.tentative_pair)
-    print("vg-test: recorded boundaries, fixed points and lazy reconstruction ok")
+    print("vg-test: recorded bases, fixed points and prefix reconstruction ok")
 end
 
 return { measure = measure, run = run }

@@ -231,7 +231,6 @@ function player_methods:close()
             self[key] = nil
         end
     end
-    self.agreed_pair_position, self.tentative_pair_position = nil, nil
     if self.initial_machine then
         self.initial_machine:shutdown_server()
         self.initial_machine = nil
@@ -375,26 +374,6 @@ function player_methods:read_input(_index, path) -- luacheck: ignore 212 self
     return util.read_file(path)
 end
 
--- Recorded hashes are authoritative only at input boundaries and big-machine
--- fixed points. Even there, a nonzero uarch cycle requires execution.
-function player_methods:recorded_position_hash(position)
-    assert(position.input_mcycle_offset < MAX_MCYCLES_PER_ADVANCE_STATE, "mcycle offset outside input span")
-    if position.uarch_cycle > 0 then
-        return nil
-    end
-    local index = position.epoch_input_offset
-    if index >= #self.inputs then
-        return assert(self.final_state_hash, "epoch is not sealed")
-    end
-    if position.input_mcycle_offset == 0 then
-        return assert(self.input_base_hashes[index], "missing input base hash")
-    end
-    local fixed_point = self.fixed_point_mcycle_offsets[index + 1]
-    if fixed_point and position.input_mcycle_offset >= fixed_point then
-        return assert(self.input_base_hashes[index + 1], "missing input base hash")
-    end
-end
-
 function player_methods:run_to_position(pair, position_begin, position_end)
     if position_begin.epoch_input_offset < position_end.epoch_input_offset then
         self:run_to_epoch_input_offset(
@@ -423,15 +402,6 @@ function player_methods:run_to_position(pair, position_begin, position_end)
     end
 end
 
-function player_methods:materialize_agreed_pair()
-    if not self.agreed_pair then
-        self.agreed_pair = self:new_advancing_pair()
-        self.agreed_pair_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 }
-    end
-    self:run_to_position(self.agreed_pair, self.agreed_pair_position, self.agreed_position)
-    self.agreed_pair_position = self.agreed_position
-end
-
 function player_methods:reset_bisection()
     for _, key in ipairs({ "agreed_pair", "tentative_pair" }) do
         if self[key] then
@@ -439,7 +409,7 @@ function player_methods:reset_bisection()
             self[key] = nil
         end
     end
-    self.agreed_pair_position, self.tentative_pair_position = nil, nil
+    self.agreed_pair = self:new_advancing_pair()
     self.agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 }
 end
 
@@ -508,47 +478,44 @@ end
 
 -- docs:begin reveal_bisection
 function event_handler:reveal_bisection(agreed_position, tentative_position)
-    if self.tentative_pair and is_same_position(self.tentative_pair_position, agreed_position) then
-        -- The previous tentative position is now the agreed predecessor.
-        if self.agreed_pair then
-            self.agreed_pair:close()
+    local epoch_input_offset = tentative_position.epoch_input_offset
+    -- Above the mcycle level, the tentative state is a recorded input base.
+    if agreed_position.epoch_input_offset ~= epoch_input_offset then
+        return self.input_base_hashes[math.min(epoch_input_offset, #self.inputs)]
+    end
+    if is_same_position(self.agreed_position, agreed_position) then
+        -- The previous tentative position was disputed (a recorded answer left no pair).
+        if self.tentative_pair then
+            self.tentative_pair:close()
         end
-        self.agreed_pair, self.tentative_pair = self.tentative_pair, nil
-        self.agreed_pair_position = self.tentative_pair_position
     elseif self.tentative_pair then
-        self.tentative_pair:close()
-        self.tentative_pair = nil
+        -- The previous tentative position is now the agreed predecessor.
+        self.agreed_pair:close()
+        self.agreed_pair = self.tentative_pair
+    else
+        -- No pair reached the agreed position (input bisection or a recorded answer), so run forward.
+        self:run_to_position(self.agreed_pair, self.agreed_position, agreed_position)
     end
-    self.tentative_pair_position = nil
-    self.agreed_position = agreed_position
-    local recorded_hash = self:recorded_position_hash(tentative_position)
-    if recorded_hash then
-        return recorded_hash
+    self.agreed_position, self.tentative_pair = agreed_position, nil
+    -- Past the input's fixed point, the tentative state is the next input base.
+    local fixed_point_mcycle_offset = self.fixed_point_mcycle_offsets[epoch_input_offset + 1]
+    if
+        tentative_position.uarch_cycle == 0
+        and fixed_point_mcycle_offset
+        and tentative_position.input_mcycle_offset >= fixed_point_mcycle_offset
+    then
+        return self.input_base_hashes[epoch_input_offset + 1]
     end
-    self:materialize_agreed_pair()
     -- Replay from a fork of the whole agreed pair, including any pending snapshot.
     self.tentative_pair = self.agreed_pair:fork()
     self:run_to_position(self.tentative_pair, agreed_position, tentative_position)
-    self.tentative_pair_position = tentative_position
     return self.tentative_pair.machine:get_root_hash()
 end
 -- docs:end reveal_bisection
 
 -- docs:begin prove_state_transition
 function event_handler:prove_state_transition(epoch_input_offset, input_mcycle_offset, uarch_cycle)
-    local pair, position = self.agreed_pair, self.agreed_pair_position
-    if self.agreed_position.uarch_cycle ~= uarch_cycle then
-        pair, position = self.tentative_pair, self.tentative_pair_position
-    end
-    assert(pair and position, "missing proof pair")
-    assert(
-        is_same_position(position, {
-            epoch_input_offset = epoch_input_offset,
-            input_mcycle_offset = input_mcycle_offset,
-            uarch_cycle = uarch_cycle,
-        }),
-        "proof pair is not at the requested position"
-    )
+    local pair = self.agreed_position.uarch_cycle ~= uarch_cycle and self.tentative_pair or self.agreed_pair
     local machine = pair.machine
     local input_data = self.inputs[epoch_input_offset + 1]
     local proof

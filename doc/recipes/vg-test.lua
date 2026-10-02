@@ -312,7 +312,7 @@ if arg[1] ~= "execution" then
                 vg.event_handler.prove_state_transition(self, epoch_input_offset, input_mcycle_offset, uarch_cycle)
             self.proofs = self.proofs + 1
             assert(not agreed_pair.machine)
-            assert(not self.agreed_pair and not self.agreed_pair_position and not self.tentative_pair_position)
+            assert(self.agreed_pair.machine:get_root_hash() == initial_hash and not self.tentative_pair)
             assert(
                 self.agreed_position.epoch_input_offset == 0
                     and self.agreed_position.input_mcycle_offset == 0
@@ -333,7 +333,7 @@ if arg[1] ~= "execution" then
         assert(tamperer.proofs == 1 and honest.proofs == 2 and forger.proofs == 2)
         assert(#vg.addresses(settled.players) == 1 and settled.players[next(settled.players)] == settled.winner)
         assert(not honest.epoch_pair)
-        assert(not honest.agreed_pair and honest.agreed_position)
+        assert(honest.agreed_pair.machine and honest.agreed_position)
         print("vg-test: repeated proof rounds eliminate distinct dishonest claims ok")
     end
 
@@ -524,7 +524,7 @@ do
     local tentative_position = { epoch_input_offset = 0, input_mcycle_offset = rejected_at, uarch_cycle = 0 }
     vg.event_handler.dispute_started(player)
     assert(vg.event_handler.reveal_bisection(player, agreed_position, tentative_position) == initial_hash)
-    assert(not player.agreed_pair and not player.tentative_pair)
+    assert(player.agreed_pair.machine:get_root_hash() == initial_hash and not player.tentative_pair)
     assert(player.fixed_point_mcycle_offsets[1] == rejected_at)
 
     tentative_position = { epoch_input_offset = 0, input_mcycle_offset = (rejected_at + 1) // 2, uarch_cycle = 0 }
@@ -557,15 +557,15 @@ do
     agreed_position = tentative_position
     tentative_position = { epoch_input_offset = 0, input_mcycle_offset = (3 * rejected_at + 1) // 2, uarch_cycle = 0 }
     assert(vg.event_handler.reveal_bisection(player, agreed_position, tentative_position) == initial_hash)
-    assert(player.agreed_pair == candidate and candidate.backup_machine and not player.tentative_pair)
-    assert(not pcall(vg.event_handler.prove_state_transition, player, 0, rejected_at, 0))
-    -- A nonzero uarch reveal materializes the cached agreement by finishing the
-    -- existing pair, including rollback, without reconstructing the prefix again.
-    tentative_position = { epoch_input_offset = 0, input_mcycle_offset = rejected_at, uarch_cycle = 1 }
-    vg.event_handler.reveal_bisection(player, agreed_position, tentative_position)
-    assert(player.agreed_pair == candidate and not candidate.backup_machine)
+    -- Agreement on the recorded point finishes the existing pair, including
+    -- rollback, without reconstructing the prefix again.
+    assert(player.agreed_pair == candidate and not candidate.backup_machine and not player.tentative_pair)
     assert(player.agreed_pair.input_mcycle_base == input_mcycle_base)
     assert(player.agreed_pair.machine:read_reg("mcycle") == input_mcycle_base)
+    -- A nonzero uarch cycle past the fixed point still executes from a fork.
+    tentative_position = { epoch_input_offset = 0, input_mcycle_offset = rejected_at, uarch_cycle = 1 }
+    vg.event_handler.reveal_bisection(player, agreed_position, tentative_position)
+    assert(player.agreed_pair == candidate and player.tentative_pair)
     -- Later offsets observe the restored accept yield, without finalizing the rejected input again.
     local reason, yield_reason, base = player:run_to_input_mcycle_offset(
         player.agreed_pair,
@@ -682,7 +682,7 @@ for uarch_cycle = 0, 1 do
             == after_uarch
     )
     assert(not agreed.machine and not agreed.backup_machine)
-    assert(not player.agreed_pair and not player.agreed_pair_position and not player.tentative_pair_position)
+    assert(player.agreed_pair.machine:get_root_hash() == initial_hash)
     assert(
         player.agreed_position.epoch_input_offset == 0
             and player.agreed_position.input_mcycle_offset == 0
@@ -760,7 +760,6 @@ do
     player.agreed_pair = boundary:move()
     player.agreed_position =
         { epoch_input_offset = 0, input_mcycle_offset = offset, uarch_cycle = cartesi.UARCH_CYCLE_MAX }
-    player.agreed_pair_position = player.agreed_position
     local log = vg.event_handler.prove_state_transition(player, 0, offset, cartesi.UARCH_CYCLE_MAX)
     assert(
         vg.validate_state_transition_response(contract, before_reset, 0, offset, cartesi.UARCH_CYCLE_MAX, log)
@@ -1064,17 +1063,20 @@ for _, terminal in ipairs({ "halt", "overflow", "exception" }) do
     local prefix_uarch <close> = player.epoch_pair:fork()
     player.agreed_pair = player.epoch_pair:fork()
     player.agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 }
-    player.agreed_pair_position = player.agreed_position
     vg.event_handler.epoch_sealed(player, #paths)
     assert(player.final_state_hash == hash)
     for index = 0, #paths - 1 do
         assert(player.fixed_point_mcycle_offsets[index + 1] == 0)
         assert(player.input_base_hashes[index + 1] == hash)
-        local position = { epoch_input_offset = index, input_mcycle_offset = 1, uarch_cycle = 0 }
-        assert(player:recorded_position_hash(position) == hash)
-        position.uarch_cycle = 1
-        assert(not player:recorded_position_hash(position))
     end
+    -- Past the fixed point, a reveal answers from the records, but a nonzero uarch cycle executes.
+    local agreed_position = player.agreed_position
+    local tentative_position = { epoch_input_offset = 0, input_mcycle_offset = 1, uarch_cycle = 0 }
+    assert(vg.event_handler.reveal_bisection(player, agreed_position, tentative_position) == hash)
+    assert(not player.tentative_pair)
+    tentative_position.uarch_cycle = 1
+    vg.event_handler.reveal_bisection(player, agreed_position, tentative_position)
+    assert(player.tentative_pair)
     player:run_to_uarch_cycle(prefix_uarch, player.inputs[1], 0, 0, 1)
     local proof = vg.event_handler.prove_state_transition(player, 0, 0, 0)
     assert(

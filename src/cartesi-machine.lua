@@ -4177,10 +4177,10 @@ end
 -- Other inputs need no uarch collection.
 local function uarch_cycle_computation_hash_begin_input(builder, runner)
     if builder.next_input_offset ~= builder.target_epoch_input_offset then return end
-    local input_mcycle_boundary = runner:read_reg("mcycle")
-    builder.input_mcycle_end = usaturating_add(input_mcycle_boundary, 1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
+    local input_mcycle_base = runner:read_reg("mcycle")
+    builder.input_mcycle_end = usaturating_add(input_mcycle_base, 1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
     builder.collection_mcycle_begin = usaturating_add(
-        input_mcycle_boundary,
+        input_mcycle_base,
         builder.input_period_offset * builder.mcycles_per_period,
         builder.input_mcycle_end
     )

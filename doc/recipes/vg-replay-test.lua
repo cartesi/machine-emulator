@@ -148,7 +148,7 @@ local function run(initial_hash, paths)
     -- must not materialize either pair.
     for _, index in ipairs({ 0, 1, 2, #paths, #paths + 1, (1 << 16) - 1 }) do
         local tentative = position(index)
-        local expected = player.input_boundary_hashes[math.min(index, #paths)]
+        local expected = player.input_base_hashes[math.min(index, #paths)]
         assert(player.event_handler.reveal_bisection(player, agreed, tentative) == expected)
         assert(not player.agreed_pair and not player.tentative_pair)
         agreed = tentative
@@ -156,17 +156,17 @@ local function run(initial_hash, paths)
     assert(not pcall(vg.event_handler.prove_state_transition, player, agreed.epoch_input_offset, 0, 0))
     assert(not player:recorded_position_hash(position(#paths, 0, 1)))
     assert(not pcall(player.recorded_position_hash, player, position(0, 1 << 48)))
-    local boundary_hash = player.input_boundary_hashes[1]
-    player.input_boundary_hashes[1] = nil
+    local base_hash = player.input_base_hashes[1]
+    player.input_base_hashes[1] = nil
     assert(not pcall(player.recorded_position_hash, player, position(1)))
-    player.input_boundary_hashes[1] = boundary_hash
+    player.input_base_hashes[1] = base_hash
 
     -- Compare all recorded posted boundaries with the ordinary input driver.
     local replay <close> = player:new_advancing_pair()
     for index = 0, #paths - 1 do
-        assert(replay.machine:get_root_hash() == player.input_boundary_hashes[index])
+        assert(replay.machine:get_root_hash() == player.input_base_hashes[index])
         player:run_to_epoch_input_offset(replay, player.inputs, index, index + 1)
-        assert(replay.machine:get_root_hash() == player.input_boundary_hashes[index + 1])
+        assert(replay.machine:get_root_hash() == player.input_base_hashes[index + 1])
     end
 
     -- Check both accepted and rejected fixed points immediately before, at, and
@@ -225,13 +225,13 @@ local function run(initial_hash, paths)
         assert(counts.replay == fixed // 2)
         local after = player.event_handler.reveal_bisection(player, completed, position(index, fixed, 1))
         assert(player.agreed_pair == candidate and not candidate.backup_machine)
-        assert(candidate.machine:get_root_hash() == player.input_boundary_hashes[index + 1])
+        assert(candidate.machine:get_root_hash() == player.input_base_hashes[index + 1])
         assert(counts.replay == fixed, "fixed-point materialization repeated active work")
         local proof = player.event_handler.prove_state_transition(player, index, fixed, 0)
         assert(
             vg.validate_state_transition_response(
                 { inputs = player.inputs },
-                player.input_boundary_hashes[index + 1],
+                player.input_base_hashes[index + 1],
                 index,
                 fixed,
                 0,

@@ -51,20 +51,20 @@ local function clone_handlers(player)
     player.event_handler = handlers
 end
 
-local function begin_input(machine, epoch_input_offset, input_mcycle_boundary)
+local function begin_input(machine, epoch_input_offset, input_mcycle_base)
     if
         machine.state.epoch_input_offset ~= epoch_input_offset
-        or machine.state.input_mcycle_boundary ~= input_mcycle_boundary
+        or machine.state.input_mcycle_base ~= input_mcycle_base
     then
-        machine.state = { epoch_input_offset = epoch_input_offset, input_mcycle_boundary = input_mcycle_boundary }
+        machine.state = { epoch_input_offset = epoch_input_offset, input_mcycle_base = input_mcycle_base }
     end
 end
 
 local function observe_input(builder)
     return wrap_computation_hash(builder, {
-        begin_input = function(self, machine, epoch_input_offset, input_mcycle_boundary)
-            begin_input(machine, epoch_input_offset, input_mcycle_boundary)
-            return builder.begin_input(self, machine, epoch_input_offset, input_mcycle_boundary)
+        begin_input = function(self, machine, epoch_input_offset, input_mcycle_base)
+            begin_input(machine, epoch_input_offset, input_mcycle_base)
+            return builder.begin_input(self, machine, epoch_input_offset, input_mcycle_base)
         end,
     })
 end
@@ -142,10 +142,10 @@ local function new_tamperer(dapp_contract, epoch_input_offset, tamper_bundle_off
         if context.epoch_input_offset ~= epoch_input_offset or context.tampered then
             return nil
         end
-        if math.ult(cartesi.MCYCLE_MAX - context.input_mcycle_boundary, offset) then
+        if math.ult(cartesi.MCYCLE_MAX - context.input_mcycle_base, offset) then
             return nil
         end
-        return context.input_mcycle_boundary + offset
+        return context.input_mcycle_base + offset
     end
     local function apply(machine)
         local point = tamper_point(machine)

@@ -41,7 +41,7 @@ function tampered_machine_meta_methods:fork_server()
     return setmetatable({
         machine = assert(self.machine:fork_server()),
         epoch_input_offset = self.epoch_input_offset,
-        input_mcycle_boundary = self.input_mcycle_boundary,
+        input_mcycle_base = self.input_mcycle_base,
         tampered_index = self.tampered_index,
         tampered_offset = self.tampered_offset,
         tampered = self.tampered,
@@ -55,13 +55,13 @@ end
 
 function tampered_machine_meta_methods:send_cmio_response(reason, data, revert_root_hash)
     self.epoch_input_offset = self.epoch_input_offset + 1
-    self.input_mcycle_boundary = self.machine:read_reg("mcycle")
+    self.input_mcycle_base = self.machine:read_reg("mcycle")
     return self.machine:send_cmio_response(reason, data, revert_root_hash)
 end
 
 function tampered_machine_meta_methods:run(mcycle_end)
     if self.epoch_input_offset == self.tampered_index and not self.tampered then
-        local point = vg.usaturating_add(self.input_mcycle_boundary, self.tampered_offset)
+        local point = vg.usaturating_add(self.input_mcycle_base, self.tampered_offset)
         if math.ult(point, mcycle_end) then
             local break_reason = self.machine:run(point)
             if break_reason ~= cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE then
@@ -79,7 +79,7 @@ end
 function tampered_machine_meta_methods:run_uarch(uarch_cycle_end)
     if
         self.epoch_input_offset == self.tampered_index
-        and self.machine:read_reg("mcycle") == vg.usaturating_add(self.input_mcycle_boundary, self.tampered_offset)
+        and self.machine:read_reg("mcycle") == vg.usaturating_add(self.input_mcycle_base, self.tampered_offset)
         and self.machine:read_reg("uarch_cycle") == 0
         and uarch_cycle_end > 0
         and not self.tampered

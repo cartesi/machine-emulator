@@ -1232,11 +1232,11 @@ end
 -- Input preparation is shared by mcycle replay, uarch replay, and native bundle
 -- collection. The builder retains progress across partial mcycle runs.
 local function begin_input(player, builder, machine, epoch_input_offset, input_data, revert_root_hash)
-    local input_mcycle_boundary = machine:read_reg("mcycle")
-    builder.input_mcycle_boundary = input_mcycle_boundary
+    local input_mcycle_base = machine:read_reg("mcycle")
+    builder.input_mcycle_base = input_mcycle_base
     builder.pending_outputs = {}
     builder.input_result = nil
-    builder:begin_input(machine, epoch_input_offset, input_mcycle_boundary)
+    builder:begin_input(machine, epoch_input_offset, input_mcycle_base)
     player.machine_cache:snapshot(machine)
     load_cmio_input(machine, input_data, revert_root_hash)
 end
@@ -1431,19 +1431,19 @@ local function uarch_computation_hash_push_collected(builder, collected)
     builder.mcycle_count = builder.mcycles_per_period
 end
 
-local function uarch_computation_hash_begin_input(builder, machine, epoch_input_offset, input_mcycle_boundary)
+local function uarch_computation_hash_begin_input(builder, machine, epoch_input_offset, input_mcycle_base)
     builder.epoch_input_offset = epoch_input_offset
-    builder.input_mcycle_boundary = input_mcycle_boundary
+    builder.input_mcycle_base = input_mcycle_base
     local collected = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0)
     builder.revert_uarch_tail = collected.hashes
     builder.collection_mcycle_begin = usaturating_add(
-        builder.input_mcycle_boundary,
+        builder.input_mcycle_base,
         combine_input_mcycle_offset(builder.mcycles_per_period, builder.input_period_offset, 0)
     )
     builder.collection_mcycle_end = usaturating_add(
         builder.collection_mcycle_begin,
         builder.mcycles_per_period,
-        usaturating_add(builder.input_mcycle_boundary, MAX_MCYCLES_PER_ADVANCE_STATE)
+        usaturating_add(builder.input_mcycle_base, MAX_MCYCLES_PER_ADVANCE_STATE)
     )
 end
 
@@ -1822,9 +1822,9 @@ function player_meta.__index:run_to_input_mcycle_offset(
     if input_mcycle_offset_begin == 0 then
         begin_input(self, builder, machine, epoch_input_offset, input_data, revert_root_hash)
     end
-    local input_mcycle_boundary = builder.input_mcycle_boundary
+    local input_mcycle_base = builder.input_mcycle_base
     if builder.input_result then
-        return builder.input_result.break_reason, builder.input_result.yield_reason, input_mcycle_boundary
+        return builder.input_result.break_reason, builder.input_result.yield_reason, input_mcycle_base
     end
     local on_yield_automatic
     if outputs then
@@ -1834,10 +1834,10 @@ function player_meta.__index:run_to_input_mcycle_offset(
             end
         end
     end
-    local mcycle_end = usaturating_add(input_mcycle_boundary, input_mcycle_offset_end)
+    local mcycle_end = usaturating_add(input_mcycle_base, input_mcycle_offset_end)
     local break_reason = run_to_stop(builder, machine, mcycle_end, on_yield_automatic)
     if not is_at_fixed_point(break_reason) then
-        return break_reason, nil, input_mcycle_boundary
+        return break_reason, nil, input_mcycle_base
     end
     local yield_reason, outputs_merkle_root
     if is_yielded_manual(break_reason) then
@@ -1853,7 +1853,7 @@ function player_meta.__index:run_to_input_mcycle_offset(
     builder.pending_outputs = {}
     builder:end_input(machine)
     builder.input_result = { break_reason = break_reason, yield_reason = yield_reason }
-    return break_reason, yield_reason, input_mcycle_boundary
+    return break_reason, yield_reason, input_mcycle_base
 end
 
 function player_meta.__index:run_to_uarch_cycle(

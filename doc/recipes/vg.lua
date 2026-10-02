@@ -290,7 +290,7 @@ function player_methods:run_to_uarch_cycle(pair, input_data, input_mcycle_offset
         return
     end
     if input_mcycle_offset == 0 and uarch_cycle_begin == 0 then
-        pair.input_mcycle_boundary = pair.machine:read_reg("mcycle")
+        pair.input_mcycle_base = pair.machine:read_reg("mcycle")
         pair.pending_outputs = {}
         pair:snapshot()
         load_cmio_input(pair.machine, input_data, pair.revert_root_hash)
@@ -311,7 +311,7 @@ local function flush_pending_outputs(pending, outputs, outputs_frontier, yield_r
 end
 
 -- Complete logical mcycles within one input. Offset zero is before delivery;
--- the recorded boundary supplies the absolute origin even after rollback.
+-- the recorded base supplies the absolute origin even after rollback.
 -- docs:begin run_to_input_mcycle_offset
 function player_methods:run_to_input_mcycle_offset(
     pair,
@@ -326,27 +326,24 @@ function player_methods:run_to_input_mcycle_offset(
         return
     end
     if input_mcycle_offset_begin == 0 then
-        pair.input_mcycle_boundary = pair.machine:read_reg("mcycle")
+        pair.input_mcycle_base = pair.machine:read_reg("mcycle")
         pair.pending_outputs = {}
         pair:snapshot()
         load_cmio_input(pair.machine, input_data, pair.revert_root_hash)
     end
     local machine = pair.machine
-    local input_mcycle_boundary = pair.input_mcycle_boundary
-    local mcycle_end = usaturating_add(input_mcycle_boundary, input_mcycle_offset_end)
-    local on_yield_automatic
-    if outputs then
-        function on_yield_automatic(yield_reason, output_data)
-            if is_tx_output(yield_reason) then
-                pair.pending_outputs[#pair.pending_outputs + 1] = output_data
-            end
+    local input_mcycle_base = pair.input_mcycle_base
+    local mcycle_end = usaturating_add(input_mcycle_base, input_mcycle_offset_end)
+    local on_yield_automatic = outputs and function(yield_reason, output_data)
+        if is_tx_output(yield_reason) then
+            pair.pending_outputs[#pair.pending_outputs + 1] = output_data
         end
     end
     local break_reason = run_to_stop(machine, mcycle_end, on_yield_automatic)
     if not is_at_fixed_point(break_reason) then
-        return break_reason, nil, input_mcycle_boundary
+        return break_reason, nil, input_mcycle_base
     end
-    local fixed_point_mcycle_offset = machine:read_reg("mcycle") - input_mcycle_boundary
+    local fixed_point_mcycle_offset = machine:read_reg("mcycle") - input_mcycle_base
     local yield_reason, outputs_merkle_root
     if is_yielded_manual(break_reason) then
         yield_reason, outputs_merkle_root = receive_cmio_request(machine)
@@ -361,7 +358,7 @@ function player_methods:run_to_input_mcycle_offset(
         pair:commit()
     end
     pair.pending_outputs = {}
-    return break_reason, yield_reason, input_mcycle_boundary, fixed_point_mcycle_offset
+    return break_reason, yield_reason, input_mcycle_base, fixed_point_mcycle_offset
 end
 -- docs:end run_to_input_mcycle_offset
 -- luacheck: pop
@@ -390,11 +387,11 @@ function player_methods:recorded_position_hash(position)
         return assert(self.final_state_hash, "epoch is not sealed")
     end
     if position.input_mcycle_offset == 0 then
-        return assert(self.input_boundary_hashes[index], "missing input boundary hash")
+        return assert(self.input_base_hashes[index], "missing input base hash")
     end
     local fixed_point = self.fixed_point_mcycle_offsets[index + 1]
     if fixed_point and position.input_mcycle_offset >= fixed_point then
-        return assert(self.input_boundary_hashes[index + 1], "missing input boundary hash")
+        return assert(self.input_base_hashes[index + 1], "missing input base hash")
     end
 end
 
@@ -480,7 +477,7 @@ function event_handler:input_added(epoch_input_offset, path)
         self.outputs,
         self.outputs_frontier
     )
-    self.input_boundary_hashes[epoch_input_offset + 1] = self.epoch_pair.machine:get_root_hash()
+    self.input_base_hashes[epoch_input_offset + 1] = self.epoch_pair.machine:get_root_hash()
     self.fixed_point_mcycle_offsets[epoch_input_offset + 1] = fixed_point_mcycle_offset
 end
 -- docs:end input_added
@@ -490,7 +487,7 @@ end
 function event_handler:epoch_sealed()
     assert(not self.epoch_pair.backup_machine, "cannot seal an unfinished input")
     self.final_state_hash = self.epoch_pair.machine:get_root_hash()
-    assert(self.input_boundary_hashes[#self.inputs] == self.final_state_hash, "final input boundary hash mismatch")
+    assert(self.input_base_hashes[#self.inputs] == self.final_state_hash, "final input base hash mismatch")
     self.outputs_merkle_root_proof = get_outputs_merkle_root_proof(self.epoch_pair.machine)
     self.epoch_pair:close()
     self.epoch_pair = nil
@@ -539,12 +536,9 @@ end
 
 -- docs:begin prove_state_transition
 function event_handler:prove_state_transition(epoch_input_offset, input_mcycle_offset, uarch_cycle)
-    local use_tentative = self.agreed_position.uarch_cycle < uarch_cycle
-    local pair, position
-    if use_tentative then
+    local pair, position = self.agreed_pair, self.agreed_pair_position
+    if self.agreed_position.uarch_cycle ~= uarch_cycle then
         pair, position = self.tentative_pair, self.tentative_pair_position
-    else
-        pair, position = self.agreed_pair, self.agreed_pair_position
     end
     assert(pair and position, "missing proof pair")
     assert(
@@ -595,7 +589,7 @@ local function new_player(initial_state_hash, label, last_output_proof, override
         label = label or "honest",
         initial_state_hash = initial_state_hash,
         inputs = {},
-        input_boundary_hashes = { [0] = initial_state_hash },
+        input_base_hashes = { [0] = initial_state_hash },
         fixed_point_mcycle_offsets = {},
         outputs = {},
         event_handler = event_handler,

@@ -815,17 +815,17 @@ library UArchStep {
         }
         if (fn == EmulatorConstants.UARCH_ECALL_FN_FLUSH_TLB_BATCH) {
             uint64 set_index = StateAccess.readX(a, 10);
-            uint64 slot_index = StateAccess.readX(a, 11);
+            uint64 start_slot_index = StateAccess.readX(a, 11);
             if (
                 set_index >= EmulatorConstants.TLB_SET_COUNT
-                    || slot_index
+                    || start_slot_index
                         > EmulatorConstants.TLB_SET_SIZE - EmulatorConstants.UARCH_TLB_FLUSH_BATCH_SIZE
-                    || slot_index % EmulatorConstants.UARCH_TLB_FLUSH_BATCH_SIZE != 0
+                    || start_slot_index % EmulatorConstants.UARCH_TLB_FLUSH_BATCH_SIZE != 0
             ) {
                 StateAccess.throwRuntimeError(a, "TLB batch index out of range or unaligned");
             }
-            uint64 end = slot_index + EmulatorConstants.UARCH_TLB_FLUSH_BATCH_SIZE;
-            for (; slot_index < end; ++slot_index) {
+            uint64 end = start_slot_index + EmulatorConstants.UARCH_TLB_FLUSH_BATCH_SIZE;
+            for (uint64 slot_index = start_slot_index; slot_index < end; ++slot_index) {
                 StateAccess.writeTlbECALL(
                     a, set_index, slot_index, type(uint64).max, 0, type(uint64).max
                 );

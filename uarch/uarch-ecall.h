@@ -49,10 +49,10 @@ static inline void ua_write_tlb_ECALL(uint64_t use, uint64_t slot_index, uint64_
     __asm__ volatile("ecall" : : "r"(a7), "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(a4) : "memory");
 }
 
-static inline void ua_flush_tlb_batch_ECALL(uint64_t set_index, uint64_t slot_index) {
+static inline void ua_flush_tlb_batch_ECALL(uint64_t set_index, uint64_t start_slot_index) {
     register uint64_t a7 __asm__("a7") = UARCH_ECALL_FN_FLUSH_TLB_BATCH_DEF;
     register uint64_t a0 __asm__("a0") = set_index;
-    register uint64_t a1 __asm__("a1") = slot_index;
+    register uint64_t a1 __asm__("a1") = start_slot_index;
     __asm__ volatile("ecall" : : "r"(a7), "r"(a0), "r"(a1) : "memory");
 }
 

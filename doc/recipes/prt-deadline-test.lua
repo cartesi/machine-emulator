@@ -663,7 +663,7 @@ return function(run_with_server, new_test_player)
                 if #response.value > 0 then
                     assert(#response.value == 2)
                     local valid = response.value[1]
-                    valid.value.output = "!"
+                    valid.value.output_data = "!"
                     local elimination = response.value[2].value
                     assert(type(elimination) == "table" and not next(elimination), "elimination response is not empty")
                     valid.request = "prove_output"
@@ -687,7 +687,7 @@ return function(run_with_server, new_test_player)
                         { block, keccak(left, right) },
                         function(response)
                             assert(response.computation_hash_left == left and response.computation_hash_right == right)
-                            assert(response.output == "!", "an unrelated response schema decoded the value")
+                            assert(response.output_data == "!", "an unrelated response schema decoded the value")
                             accepted = accepted + 1
                             return true
                         end

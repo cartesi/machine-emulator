@@ -52,6 +52,11 @@ local WORD_MASK = WORD_SIZE - 1
 local IFLAGS_Y_ADDRESS = cartesi.machine:get_reg_address("iflags_Y")
 local HTIF_TOHOST_ADDRESS = cartesi.machine:get_reg_address("htif_tohost")
 local CMIO_TX_BUFFER_ADDRESS = cartesi.AR_CMIO_TX_BUFFER_START
+local LOG2_MAX_ADVANCE_STATES_PER_EPOCH = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+local LOG2_MAX_MCYCLES_PER_ADVANCE_STATE = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+local LOG2_MAX_UARCH_CYCLES_PER_MCYCLE = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+local UARCH_CYCLE_MAX = cartesi.UARCH_CYCLE_MAX
+local HTIF_YIELD_REASON_ADVANCE_STATE = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
 
 -- The phase closer carries no dispute. It closes the initial subscription phase once the last
 -- player has connected. Tournament claim collection then uses logical time. It needs none
@@ -86,8 +91,7 @@ local function combine_epoch_period_offset(periods_per_input, epoch_input_offset
 end
 
 local function split_state_transition_offset(state_transition_offset)
-    return state_transition_offset >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
-        state_transition_offset & cartesi.UARCH_CYCLE_MAX
+    return state_transition_offset >> LOG2_MAX_UARCH_CYCLES_PER_MCYCLE, state_transition_offset & UARCH_CYCLE_MAX
 end
 
 local function combine_input_mcycle_offset(mcycles_per_period, input_period_offset, period_mcycle_offset)
@@ -268,18 +272,18 @@ local function validate_state_transition_response(
     local epoch_input_offset, input_period_offset = split_epoch_period_offset(periods_per_input, epoch_period_offset)
     local _, uarch_cycle = split_state_transition_offset(state_transition_offset)
     local obtained_root_hash = root_hash_before
-    local data = dapp_contract.inputs[epoch_input_offset + 1]
-    if state_transition_offset == 0 and input_period_offset == 0 and data then
+    local input_data = dapp_contract.inputs[epoch_input_offset + 1]
+    if state_transition_offset == 0 and input_period_offset == 0 and input_data then
         obtained_root_hash = cartesi.machine:verify_send_cmio_response(
-            cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-            data,
+            HTIF_YIELD_REASON_ADVANCE_STATE,
+            input_data,
             root_hash_before,
             response.send_cmio_log,
             root_hash_before
         )
     end
     obtained_root_hash = cartesi.machine:verify_step_uarch(obtained_root_hash, response.step_log)
-    if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
+    if uarch_cycle == UARCH_CYCLE_MAX then
         obtained_root_hash = cartesi.machine:verify_reset_uarch(obtained_root_hash, response.reset_uarch_log)
     end
     return obtained_root_hash
@@ -823,17 +827,17 @@ end
 -- geometry.
 -- docs:begin new_geometry
 local function new_geometry(log2_mcycles_per_period)
-    local mcycle_height = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
-        + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+    local mcycle_height = LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+        + LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
         - log2_mcycles_per_period
-    local uarch_height = log2_mcycles_per_period + cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    local uarch_height = log2_mcycles_per_period + LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     assert(mcycle_height < 63 and uarch_height < 63, "claim leaf counts must fit in signed 64-bit integers")
     return {
         log2_mcycles_per_period = log2_mcycles_per_period,
         mcycles_per_period = 1 << log2_mcycles_per_period,
         mcycle_height = mcycle_height,
         uarch_height = uarch_height,
-        periods_per_input = 1 << (cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period),
+        periods_per_input = 1 << (LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period),
     }
 end
 -- docs:end new_geometry
@@ -895,7 +899,7 @@ local LOG2_BUNDLE_MCYCLE_COUNT = 4
 local LOG2_BUNDLE_UARCH_CYCLE_COUNT = 16
 local LOG2_HASHES_PER_COLLECTION = 8
 local LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE = 10 -- assume about 1024 uarch cycles per mcycle
-local MAX_MCYCLES_PER_ADVANCE_STATE = 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+local MAX_MCYCLES_PER_ADVANCE_STATE = 1 << LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 local DEFAULT_MACHINE_CACHE_CAPACITY = 8
 local DEFAULT_MACHINE_CACHE_INPUT_GAP = 1
 
@@ -1210,18 +1214,18 @@ local function flush_pending_outputs(pending, outputs, outputs_frontier, yield_r
     if not outputs or not is_rx_accepted(yield_reason) then
         return
     end
-    for _, output in ipairs(pending) do
-        outputs[#outputs + 1] = output
-        hash_tree.frontier_push_back(outputs_frontier, keccak(output))
+    for _, output_data in ipairs(pending) do
+        outputs[#outputs + 1] = output_data
+        hash_tree.frontier_push_back(outputs_frontier, keccak(output_data))
     end
     assert(hash_tree.frontier_get_root_hash(outputs_frontier) == outputs_merkle_root, "outputs Merkle root mismatch")
 end
 
 -- Delivers a posted input, recording the root a rejection reverts to. The machine and
 -- logged transition both leave inapplicable deliveries unchanged.
-local function load_cmio_input(machine, data, revert_root_hash)
-    if data ~= nil then
-        machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
+local function load_cmio_input(machine, input_data, revert_root_hash)
+    if input_data ~= nil then
+        machine:send_cmio_response(HTIF_YIELD_REASON_ADVANCE_STATE, input_data, revert_root_hash)
     end
 end
 
@@ -1340,8 +1344,8 @@ end
 -- Per-input counts measure bundles at bundle_height.
 -- The forest owns total coverage.
 local function make_mcycle_computation_hash_builder(log2_mcycles_per_period, machine_cache)
-    local log2_periods_per_input = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period
-    local height = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH + log2_periods_per_input
+    local log2_periods_per_input = LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period
+    local height = LOG2_MAX_ADVANCE_STATES_PER_EPOCH + log2_periods_per_input
     return {
         periods_per_input = 1 << log2_periods_per_input,
         machine_cache = machine_cache,
@@ -1376,7 +1380,7 @@ end
 local function uarch_computation_hash_push_mcycle(builder, frontier, hashes, mcycle_hashes_begin, mcycle_hashes_end)
     local halt_hash = hashes[mcycle_hashes_end - 2]
     local reset_hash = hashes[mcycle_hashes_end - 1]
-    local height = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - builder.bundle_height
+    local height = LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - builder.bundle_height
     local bundles_per_mcycle = 1 << height
     local transient_bundle_count = mcycle_hashes_end - mcycle_hashes_begin - 2
     hash_tree.frontier_forest_append(
@@ -1400,7 +1404,7 @@ end
 local function uarch_computation_hash_push_collected(builder, collected)
     local offsets = collected.mcycle_hash_offsets
     local available = #offsets - 1
-    local log2_cycles = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    local log2_cycles = LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local remaining = builder.mcycles_per_period - builder.mcycle_count
     local count = available
     local at_fixed_point = is_at_fixed_point(collected.break_reason)
@@ -1483,9 +1487,9 @@ end
 -- collects roots of bundles of 2^LOG2_BUNDLE_UARCH_CYCLE_COUNT transitions.
 -- A fixed point before the selected period supplies its history without reaching the target.
 local function make_uarch_cycle_computation_hash_builder(log2_mcycles_per_period, epoch_period_offset)
-    local periods_per_input = 1 << (cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period)
+    local periods_per_input = 1 << (LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period)
     local _, input_period_offset = split_epoch_period_offset(periods_per_input, epoch_period_offset)
-    local height = log2_mcycles_per_period + cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    local height = log2_mcycles_per_period + LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     return {
         mcycles_per_period = 1 << log2_mcycles_per_period,
         height = height,
@@ -1685,7 +1689,7 @@ function event_handler.prove_state_transition(self, epoch_input_offset, input_pe
     if state_transition_offset == 0 and input_period_offset == 0 and path then
         -- Logging never fails. A machine that is not waiting for the input logs the no-op delivery.
         local send_cmio_log =
-            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input_data, revert_root_hash)
+            machine:log_send_cmio_response(HTIF_YIELD_REASON_ADVANCE_STATE, input_data, revert_root_hash)
         return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
     end
     local builder = self:make_null_computation_hash_builder()
@@ -1710,7 +1714,7 @@ function event_handler.prove_state_transition(self, epoch_input_offset, input_pe
         uarch_cycle,
         revert_root_hash
     )
-    if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
+    if uarch_cycle == UARCH_CYCLE_MAX then
         local step_log = machine:log_step_uarch()
         return { step_log = step_log, reset_uarch_log = machine:log_reset_uarch() }
     end
@@ -1994,7 +1998,7 @@ function player_meta.__index:collect_uarch_cycle_bundle(epoch_input_offset, inpu
     local revert_root_hash = machine:get_root_hash()
     local tail = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0)
     local revert_uarch_tail = tail.hashes
-    local bundles_per_mcycle = 1 << (cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - LOG2_BUNDLE_UARCH_CYCLE_COUNT)
+    local bundles_per_mcycle = 1 << (LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - LOG2_BUNDLE_UARCH_CYCLE_COUNT)
     local period_mcycle_offset = period_bundle_offset // bundles_per_mcycle
     local bundle_offset = period_bundle_offset % bundles_per_mcycle
     local builder = self:make_null_computation_hash_builder()
@@ -2034,7 +2038,7 @@ function player_meta.__index:prove_output(output_index)
     end
     return {
         output_index = output_index,
-        output = self.outputs[index],
+        output_data = self.outputs[index],
         output_proof = self.output_proofs[index],
     }
 end

@@ -73,6 +73,7 @@
     - [The outputs Merkle tree](#the-outputs-merkle-tree)
     - [Output verification](#output-verification)
   - [Verification game](#verification-game)
+    - [The state transition function](#the-state-transition-function)
     - [The referee](#the-referee)
     - [The player](#the-player)
     - [Running the game](#running-the-game)
@@ -4825,25 +4826,25 @@ stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
 local machine = cartesi_jsonrpc_machine("rolling-calculator-template")
 
 -- Snapshot via fork: the backup server keeps the pre-input state
-local backup
+local backup_machine
 local function snapshot(m)
-    backup = m:fork_server()
+    backup_machine = m:fork_server()
 end
 
 local function commit(_)
-    if backup then
-        backup:shutdown_server()
+    if backup_machine then
+        backup_machine:shutdown_server()
     end
-    backup = nil
+    backup_machine = nil
 end
 
-local function rollback(m)
-    assert(backup, "no snapshot to rollback to")
+local function revert(m)
+    assert(backup_machine, "no snapshot to revert to")
     local address = m:get_server_address()
     m:shutdown_server()
-    m:swap(backup)
+    m:swap(backup_machine)
     m:rebind_server(address)
-    backup = nil
+    backup_machine = nil
 end
 
 -- Run the machine until it halts or the expressions run out
@@ -4871,7 +4872,8 @@ repeat
             i = i + 1
         elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             stderr("input rejected\n")
-            rollback(machine)
+            revert(machine)
+            assert(machine:get_root_hash() == revert_root_hash, "revert did not restore the pre-input state")
         else
             stderr("machine initialization failed\n")
             break
@@ -4912,8 +4914,9 @@ is one, it creates a new snapshot, ABI-encodes the expression as
 `EvmAdvance` calldata with `cartesi.evmu`, and feeds the encoded input
 through
 `machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, ..., revert_root_hash)`.
-If, however, the reason was anything else, the script rolls back the
-machine and continues with the next loop iteration.
+If the reason was `cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED`, the
+script reverts the machine and continues with the next loop iteration.
+Any other manual yield ends the loop.
 
 > [!NOTE]
 >
@@ -4921,8 +4924,8 @@ machine and continues with the next loop iteration.
 > recorded into the machine state as the state hash to revert to in case
 > the guest application rejects the input. The script collects it
 > whenever the guest accepts, and a rejection keeps it as it was, since
-> the rollback restores the machine to that same state. This is required
-> for dispute resolution to operate properly.
+> the revert restores the machine to that same state (which the script
+> asserts). This is required for dispute resolution to operate properly.
 
 If the machine yielded automatic, the script once again checks for the
 yield reason. If the reason was
@@ -5097,23 +5100,25 @@ stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
 local machine = cartesi_jsonrpc_machine("rolling-calculator-template")
 
 -- Snapshot via fork: the backup server keeps the pre-input state
-local backup
-local function snapshot()
-    backup = machine:fork_server()
+local backup_machine
+local function snapshot(m)
+    backup_machine = m:fork_server()
 end
-local function commit()
-    if backup then
-        backup:shutdown_server()
+
+local function commit(_)
+    if backup_machine then
+        backup_machine:shutdown_server()
     end
-    backup = nil
+    backup_machine = nil
 end
-local function rollback()
-    assert(backup, "no snapshot to rollback to")
-    local address = machine:get_server_address()
-    machine:shutdown_server()
-    machine:swap(backup)
-    machine:rebind_server(address)
-    backup = nil
+
+local function revert(m)
+    assert(backup_machine, "no snapshot to revert to")
+    local address = m:get_server_address()
+    m:shutdown_server()
+    m:swap(backup_machine)
+    m:rebind_server(address)
+    backup_machine = nil
 end
 
 -- Seed frontier builds the end-of-epoch proofs, a running copy checks each input's root
@@ -5149,7 +5154,7 @@ repeat
     if break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY then
         local _, yield_reason, data = machine:receive_cmio_request()
         if yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-            commit()
+            commit(machine)
             revert_root_hash = machine:get_root_hash()
             -- the just-run input was accepted, so close it out before feeding the next one
             if i > 0 then
@@ -5161,7 +5166,7 @@ repeat
             end
             local expr = assert(input:read("l"), string.format("empty expression file: expression-%d.txt", i))
             stderr("feeding expression %d\n%s\n", i, expr)
-            snapshot()
+            snapshot(machine)
             machine:send_cmio_response(
                 cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
                 encode_advance(expr, i),
@@ -5171,7 +5176,8 @@ repeat
         elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             stderr("input rejected\n")
             pending_outputs = {} -- discard the rejected input's outputs; the tree is left untouched
-            rollback()
+            revert(machine)
+            assert(machine:get_root_hash() == revert_root_hash, "revert did not restore the pre-input state")
         else
             stderr("machine initialization failed\n")
             break
@@ -5185,7 +5191,7 @@ repeat
         end
     end
 until break_reason == cartesi.BREAK_REASON_HALTED
-commit()
+commit(machine)
 
 -- Build, verify, and save one per-output proof against the final root
 local proofs = hash_tree.frontier_next_proofs(seed_frontier, output_hashes)
@@ -5265,7 +5271,7 @@ without holding a loaded instance. These functions are the basis for the
 
 The disk-based driver is the calculator driver from the Rolling Cartesi
 Machine [example](#rolling-cartesi-machines-1), with the fork-based
-`snapshot`, `commit`, and `rollback` reimplemented over stored machines,
+`snapshot`, `commit`, and `revert` reimplemented over stored machines,
 feeding the same expressions the command-line example processed so the
 resulting state hashes can be compared. The helpers and the main loop
 are unchanged, and the script ends by syncing the final on-disk state
@@ -5277,31 +5283,31 @@ part
 cartesi.machine:clone_stored("rolling-calculator-template", "machine")
 local machine = cartesi.machine("machine", nil, cartesi.SHARING_ALL)
 
--- Snapshot via storage: backup_machine keeps a copy of the pre-input state.
-local backup
+-- Snapshot via storage: machine.revert keeps a copy of the pre-input state.
+local backup_directory
 local function snapshot(m)
     m:destroy()
-    m:clone_stored("machine", "backup_machine")
-    m:sync_stored("backup_machine")
+    m:clone_stored("machine", "machine.revert")
+    backup_directory = "machine.revert"
+    m:sync_stored(backup_directory)
     m:load("machine", nil, cartesi.SHARING_ALL)
-    backup = true
 end
 
 local function commit(m)
     m:sync_stored("machine")
-    if backup then
-        m:remove_stored("backup_machine")
+    if backup_directory then
+        m:remove_stored(backup_directory)
     end
-    backup = nil
+    backup_directory = nil
 end
 
-local function rollback(m)
-    assert(backup, "no snapshot to rollback to")
+local function revert(m)
+    assert(backup_directory, "no snapshot to revert to")
     m:destroy()
     m:remove_stored("machine")
-    m:rename_stored("backup_machine", "machine")
+    m:rename_stored(backup_directory, "machine")
     m:load("machine", nil, cartesi.SHARING_ALL)
-    backup = nil
+    backup_directory = nil
 end
 ```
 
@@ -5310,13 +5316,13 @@ The live machine is loaded from a clone of the template with
 constructor), so every modification lands directly on the backing stores
 of `machine` and there is no store step. `commit` syncs `machine` at
 every accepted boundary, including the initial boundary, so `snapshot`
-can clone the already-durable directory to `backup_machine` and sync the
+can clone the already-durable directory to `machine.revert` and sync the
 clone before execution modifies `machine`. The backing stores of a
 loaded directory are locked, so the machine is closed around the clone
 and reloaded afterward, a cheap operation that copies nothing. When a
 backup exists, `commit` removes it after syncing the accepted machine.
-`rollback` discards the rejected state with `remove_stored`, durably
-renames `backup_machine` as `machine`, and reloads it. The script still
+`revert` discards the rejected state with `remove_stored`, durably
+renames `machine.revert` as `machine`, and reloads it. The script still
 records `revert_root_hash` when feeding each input, as every
 advance-state request requires, even though a rejection here is undone
 at the filesystem level.
@@ -8637,28 +8643,27 @@ that ends when all surviving parties agree on the same state hash after.
 The dispute proceeds in rounds. In each round, the referee progressively
 bisects the computation until it isolates a state transition that is not
 unanimous. The bisection starts by considering an interval that covers
-the entire computation. At each iteration, all surviving players must
+an entire computation. At each iteration, all surviving players must
 send to the referee a tentative midpoint state hash for the current
 interval. If the midpoint state hash is not unanimous, the referee
 narrows the interval to its first half. If it is unanimous, it narrows
-it to its second half. In this way, the interval eventually consists of
-a single state transition. At this point, all players agree on the state
-hash before the transition, and there are at least two differing
-opinions on the state hash after. All players must now send proofs that
-the state transitions to their chosen state hash after. By construction,
-there can be only one valid proof that starts from the agreed state
-hash. Therefore, the referee eliminates at least one player per round.
-When all remaining players agree on the state hash after the
+it to its second half. In this way, the interval always starts in an
+unanymous state, and ends at a state for which there is at least one
+differing opinion. Bisection eventually leads to an interval that
+consists of a single state transition. All players must now send proofs
+that the state transitions to their chosen state hash after. By
+construction, there can be only one valid proof that starts from the
+agreed state hash. Therefore, the referee eliminates at least one player
+per round. When all remaining players agree on the state hash after the
 computation, the dispute ends.
 
 The `vg.lua` script applies this strategy to an entire epoch of a
-Rolling Cartesi Machine. Its referee standing in for the Cartesi
-contracts deployed on the blockchain. It mediates the dispute over the
-result players obtained feeding the epoch’s inputs to the machine
-off-chain. The referee and players are run in separate processes, and
-communicate via the network. The referee requests and the players’
-responses through the wire model blockchain events and transactions,
-respectively.
+Rolling Cartesi Machine. Its referee stands in for Cartesi contracts
+deployed to the blockchain. It mediates the dispute over the result
+players obtained feeding the epoch’s inputs to the machine off-chain.
+The referee and players are run in separate processes, and communicate
+via the network. The referee requests and the players’ responses through
+the wire model blockchain events and transactions, respectively.
 
 The state an epoch starts from is settled. It is either the stored
 [template](#rolling-cartesi-machine-templates) at genesis or the settled
@@ -8680,6 +8685,66 @@ end
 The function `notify_all(<subscribers>, <event>, <arguements>)` notifies
 all `<subscribers>` (i.e., the interested parties) of a given `<event>`
 with associated `<arguments>`.
+
+### The state transition function
+
+The state transition function is designed to simplify the process of
+bisection. Recall bisection maintains an interval that specifies the
+“agreed position” and the “extent” of the disagreement. An epoch covers
+a number of advance state requests (inputs), each of which take a number
+of main processor cycles (mcycles) to complete, each of which take a
+number of microarchitecture cycles (uarch cycles) to complete. The state
+transition happens at the level of a single uarch cycle. The interval’s
+position and extent, therefore, represent all these three levels
+separately: inputs, mcycles, and uarch cycles. Even though the number of
+inputs in any especific epoch, the number of mcyles in any specific
+input, and the number of uarch cycles in any mcycle are all variable, we
+can greatly simplify bisection by assuming they are always the same. To
+do so, we pick a maximum for each of them, and ensure the state of the
+machine is well defined for all positions, even those that go past what
+was actually used in a particular instance of a level. Within the
+maximum number of inputs per epoch (2<sup>24</sup>), attempting to add
+an input past the last existing input to a machine will be defined as
+leaving the machine unchanged. Likewise, within the maximum number of
+mcycles per input (2<sup>48</sup>), attempting to advance the main
+processor past a fixed point (yielded manual, halted, or mcycle
+overflow) also leaves the machine unchanged. Finally, within the maximum
+number of uarch cycles per mcycle (2<sup>20</sup>), attempting to
+advance the uarch processor past a fixed point (halted or uarch cycle
+overflow) leaves the machine unchanged. The transition out of the last
+uarch cycle is special: it resets the microarchitecture so the machine
+is ready for the execution of the next main processor instruction.
+
+With this in mind, here is the function the blockchain uses to validate
+a state transition:
+
+``` lua
+local function validate_state_transition_response(
+    dapp_contract,
+    root_hash_before,
+    epoch_input_offset,
+    input_mcycle_offset,
+    uarch_cycle,
+    response
+)
+    local obtained_root_hash = root_hash_before
+    local input_data = dapp_contract.inputs[epoch_input_offset + 1]
+    if input_mcycle_offset == 0 and uarch_cycle == 0 and input_data then
+        obtained_root_hash = cartesi.machine:verify_send_cmio_response(
+            cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+            input_data,
+            root_hash_before,
+            response.send_cmio_log,
+            root_hash_before
+        )
+    end
+    obtained_root_hash = cartesi.machine:verify_step_uarch(obtained_root_hash, response.step_log)
+    if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
+        obtained_root_hash = cartesi.machine:verify_reset_uarch(obtained_root_hash, response.reset_uarch_log)
+    end
+    return obtained_root_hash
+end
+```
 
 ### The referee
 
@@ -8750,8 +8815,8 @@ local function settle_dispute(tournament)
             agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
             extent = {
                 log2_input_count = LOG2_INPUTS_PER_EPOCH,
-                log2_mcycle_count = LOG2_MCYCLES_PER_INPUT,
-                log2_uarch_cycle_count = LOG2_UARCH_CYCLES_PER_MCYCLE,
+                log2_mcycle_count = LOG2_MAX_MCYCLES_PER_ADVANCE_STATE,
+                log2_uarch_cycle_count = LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
             },
             last_agreed_hash = tournament.dapp_contract.initial_state_hash,
             hashes_after = map(tournament.players, function(player)
@@ -8913,8 +8978,12 @@ proofs that allow it to validate given outputs.
 
 The player must be able to respond timely to each of the referee’s
 requests. In `vg.lua`, the player registers a handler for each of the
-associated events. The first 2 events pertain to the normal execution of
-an epoch.
+associated events. There are two main stages. In the first stage, the
+player saves and processing inputs as they become avaiable. This allows
+it to quickly post its claim and defends it against the adversaries in
+the second stage.
+
+STILL WORKING ON THIS
 
 ### Running the game
 
@@ -9223,30 +9292,31 @@ input’s boundary, then advances that input to recover one bundle’s
 samples. The cache’s
 `clone_at_epoch_input_offset(epoch_input_offset, run_to_epoch_input_offset)`
 selects and clones the nearest eligible historical or latest boundary,
-then calls `run_to_epoch_input_offset` with the machine and the intervening
-input range. The player’s `run_to_epoch_input_offset` method replays only
-the intervening input range with the null builder. It returns an
-independent machine and a separate owner kept in a `<close>` local;
-closing the owner releases the working machine and any outstanding
-backup immediately, including on errors. Uarch collection and transition
-proofs request their boundaries through the same operation. Forward
-execution starts by cloning boundary zero and collects results along the
-way; checkpoint selection stays private to the cache. The input driver
-calls the cache’s `snapshot(machine)`, `commit(machine)`, and
-`revert(machine)` operations, following the CLI: acceptance and sticky
-stops commit, rejection reverts, and a run that stops at a target inside
-the input keeps its snapshot until the owner releases the clone. This
-backup is separate from the cache’s checkpoints, which serve only
-replay. Backups are keyed by working machine inside the cache, so nested
-bundle collection cannot replace the outer run’s snapshot. The uarch
-builder captures its rejection-padding tail from the running virgin
-machine before snapshot and delivery, without accessing the backup.
-Eviction releases the retained checkpoint’s owner. The caller keeps the
-player in a `<close>` local for as long as its claim trees can replay.
-The player’s `__close` method closes its cache, releasing all
-checkpoints, working machines, and rollback snapshots without waiting
-for garbage collection. The player loads the initial machine from the
-contract’s initial state hash and passes it to
+then calls `run_to_epoch_input_offset` with the machine and the
+intervening input range. The player’s `run_to_epoch_input_offset` method
+replays only the intervening input range with the null builder. It
+returns an independent machine and a separate owner kept in a `<close>`
+local; closing the owner releases the working machine and any
+outstanding backup immediately, including on errors. Uarch collection
+and transition proofs request their boundaries through the same
+operation. Forward execution starts by cloning boundary zero and
+collects results along the way; checkpoint selection stays private to
+the cache. The input driver calls the cache’s `snapshot(machine)`,
+`commit(machine)`, and `revert(machine)` operations, following the CLI:
+acceptance and sticky stops commit, rejection reverts, and a run that
+stops at a target inside the input keeps its snapshot until the owner
+releases the clone. This backup is separate from the cache’s
+checkpoints, which serve only replay. Backups are keyed by working
+machine inside the cache, so nested bundle collection cannot replace the
+outer run’s snapshot. The uarch builder captures its rejection-padding
+tail from the running virgin machine before snapshot and delivery,
+without accessing the backup. Eviction releases the retained
+checkpoint’s owner. The caller keeps the player in a `<close>` local for
+as long as its claim trees can replay. The player’s `__close` method
+closes its cache, releasing all checkpoints, working machines, and
+rollback snapshots without waiting for garbage collection. The player
+loads the initial machine from the contract’s initial state hash and
+passes it to
 `new_machine_cache(initial_machine, capacity, initial_input_gap)`, which
 takes ownership. The default cache uses forks. Tests can substitute the
 module’s machine and cache factories to exercise other cache policies
@@ -9274,25 +9344,25 @@ rejects before the selected mcycle, the input driver restores the
 boundary machine before collection; if the collected instruction
 rejects, the machine collector uses the saved tail. Both input events
 and dispute replay delegate delivery, automatic yields, acceptance, and
-rollback to `run_to_input_mcycle_offset`. Its mcycle offsets are relative to the
-pre-delivery input boundary, and a zero-length run leaves that boundary
-untouched. `run_to_uarch_cycle` also delivers the input when advancing
-directly into its first mcycle. Forward execution collects computation
-hashes and accepted outputs together, avoiding a second epoch execution
-for output proofs. Both paths use the CLI’s break- and yield-reason
-predicates, such as `is_yielded_manual` and `is_rx_accepted`. At
-construction, the player checks that the template is waiting on an
-rx-accepted manual yield, using the yield flag and header registers
-without reading an output payload. `load_cmio_input` skips absent inputs
-and otherwise sends the input with the pre-delivery `revert_root_hash`.
-Forward execution and disputes use the same loader. The player retains
-the expected boundary hash between input events and across rejection and
-updates it only after acceptance. Input delivery checks this expected
-hash, and rollback must restore it. The machine sender and logged
-transition both treat an inapplicable delivery as a no-op. At a terminal
-boundary the slot idles and the builders pad it from there; a transition
-proof with a posted input logs the same no-op through
-`log_send_cmio_response`. The player constructor is
+rollback to `run_to_input_mcycle_offset`. Its mcycle offsets are
+relative to the pre-delivery input boundary, and a zero-length run
+leaves that boundary untouched. `run_to_uarch_cycle` also delivers the
+input when advancing directly into its first mcycle. Forward execution
+collects computation hashes and accepted outputs together, avoiding a
+second epoch execution for output proofs. Both paths use the CLI’s
+break- and yield-reason predicates, such as `is_yielded_manual` and
+`is_rx_accepted`. At construction, the player checks that the template
+is waiting on an rx-accepted manual yield, using the yield flag and
+header registers without reading an output payload. `load_cmio_input`
+skips absent inputs and otherwise sends the input with the pre-delivery
+`revert_root_hash`. Forward execution and disputes use the same loader.
+The player retains the expected boundary hash between input events and
+across rejection and updates it only after acceptance. Input delivery
+checks this expected hash, and rollback must restore it. The machine
+sender and logged transition both treat an inapplicable delivery as a
+no-op. At a terminal boundary the slot idles and the builders pad it
+from there; a transition proof with a posted input logs the same no-op
+through `log_send_cmio_response`. The player constructor is
 `prt.new_player(dapp_contract, label)`. The player retains the dapp
 contract, reads its geometry, and initializes its own empty
 `input_paths` table, machine cache, and open epoch computation. Input
@@ -9661,18 +9731,18 @@ local function validate_state_transition_response(
     local epoch_input_offset, input_period_offset = split_epoch_period_offset(periods_per_input, epoch_period_offset)
     local _, uarch_cycle = split_state_transition_offset(state_transition_offset)
     local obtained_root_hash = root_hash_before
-    local data = dapp_contract.inputs[epoch_input_offset + 1]
-    if state_transition_offset == 0 and input_period_offset == 0 and data then
+    local input_data = dapp_contract.inputs[epoch_input_offset + 1]
+    if state_transition_offset == 0 and input_period_offset == 0 and input_data then
         obtained_root_hash = cartesi.machine:verify_send_cmio_response(
-            cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-            data,
+            HTIF_YIELD_REASON_ADVANCE_STATE,
+            input_data,
             root_hash_before,
             response.send_cmio_log,
             root_hash_before
         )
     end
     obtained_root_hash = cartesi.machine:verify_step_uarch(obtained_root_hash, response.step_log)
-    if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
+    if uarch_cycle == UARCH_CYCLE_MAX then
         obtained_root_hash = cartesi.machine:verify_reset_uarch(obtained_root_hash, response.reset_uarch_log)
     end
     return obtained_root_hash
@@ -9743,7 +9813,7 @@ function event_handler.prove_state_transition(self, epoch_input_offset, input_pe
     if state_transition_offset == 0 and input_period_offset == 0 and path then
         -- Logging never fails. A machine that is not waiting for the input logs the no-op delivery.
         local send_cmio_log =
-            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input_data, revert_root_hash)
+            machine:log_send_cmio_response(HTIF_YIELD_REASON_ADVANCE_STATE, input_data, revert_root_hash)
         return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
     end
     local builder = self:make_null_computation_hash_builder()
@@ -9768,7 +9838,7 @@ function event_handler.prove_state_transition(self, epoch_input_offset, input_pe
         uarch_cycle,
         revert_root_hash
     )
-    if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
+    if uarch_cycle == UARCH_CYCLE_MAX then
         local step_log = machine:log_step_uarch()
         return { step_log = step_log, reset_uarch_log = machine:log_reset_uarch() }
     end

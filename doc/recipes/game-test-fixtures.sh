@@ -9,7 +9,8 @@ chmod +x calc/calc.sh
 tar --sort=name --mtime=2022-01-01 --owner=1000 --group=1000 --numeric-owner -cf calc.tar --directory=calc .
 xgenext2fs -fzB 4096 -i 4096 -a calc.tar calc.ext2
 rm -rf rolling-calculator-template
-cartesi-machine --no-init-splash --assert-rolling-template \
+# --final-hash builds the hash tree before --store, so loading the template never rebuilds it.
+cartesi-machine --no-init-splash --assert-rolling-template --final-hash \
     --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
     --store=rolling-calculator-template -- /mnt/calc/calc.sh > template.log 2>&1
 initial_hash=$(lua5.4 -e 'local c = require("cartesi"); local m <close> = c.machine("rolling-calculator-template"); io.write(c.tohex(m:get_root_hash()))')

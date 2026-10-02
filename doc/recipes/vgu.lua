@@ -98,7 +98,7 @@ function story.report_winner(winner)
 end
 
 function story.report_output(output)
-    local ok, decoded = pcall(evmu.decode_calldata, "Notice(bytes payload)", output.output, "raw")
+    local ok, decoded = pcall(evmu.decode_calldata, "Notice(bytes payload)", output.output_data, "raw")
     if ok then
         eventf("Result proved against the final state:\n%s", decoded.payload)
     end
@@ -120,7 +120,7 @@ local schemas = {
         tx_buffer_data = "Base64",
         tx_buffer_proof = "Proof",
     },
-    Output = { output_index = "Default", output = "Base64", output_proof = "Proof" },
+    Output = { output_index = "Default", output_data = "Base64", output_proof = "Proof" },
 }
 local define_event = transport.define_event
 local events = {

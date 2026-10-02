@@ -681,8 +681,8 @@ for _, previous_count in ipairs({ 0, 3 }) do
     assert(player.previous_outputs_frontier == completed_frontier and not player.outputs_frontier)
     for _, index in ipairs({ 2, 0, 1, 2, 0 }) do
         local response = player:prove_output(previous_count + index)
-        assert(response.output_index == previous_count + index and response.output == outputs[index + 1])
-        assert(response.output_proof.target_hash == keccak(response.output))
+        assert(response.output_index == previous_count + index and response.output_data == outputs[index + 1])
+        assert(response.output_proof.target_hash == keccak(response.output_data))
         assert(response.output_proof.root_hash == expected_root, "output proof changed the epoch root")
         hash_tree.verify_slice(response.output_proof)
     end
@@ -2488,17 +2488,17 @@ if arg[1] then
         "result replay differs from the claim's final state"
     )
     local latest = honest.event_handler.prove_output(honest)
-    assert(latest.output and latest.output_index == 1, "accepted output was lost during replay")
+    assert(latest.output_data and latest.output_index == 1, "accepted output was lost during replay")
     local earlier = honest:prove_output(0)
-    assert(earlier.output and earlier.output_index == 0, "the player cannot prove an earlier output")
+    assert(earlier.output_data and earlier.output_index == 0, "the player cannot prove an earlier output")
     local again = honest.event_handler.prove_output(honest)
     assert(
-        again.output_index == latest.output_index and again.output == latest.output,
+        again.output_index == latest.output_index and again.output_data == latest.output_data,
         "client changed the offered output"
     )
     for _, output in ipairs({ latest, earlier, again }) do
         assert(output.output_proof.root_hash == result.tx_buffer_data, "output proof used the wrong root")
-        assert(output.output_proof.target_hash == keccak(output.output), "output proof used the wrong payload")
+        assert(output.output_proof.target_hash == keccak(output.output_data), "output proof used the wrong payload")
         hash_tree.verify_slice(output.output_proof)
     end
     assert(next(honest:prove_output(2)) == nil, "the player invented an output at a missing index")

@@ -18,10 +18,10 @@ local FOREVER = nil
 local story = vgu.story
 local addresses = vgu.addresses
 local LOG2_INPUTS_PER_EPOCH = 16
-local LOG2_MCYCLES_PER_INPUT = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
-local LOG2_UARCH_CYCLES_PER_MCYCLE = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+local LOG2_MAX_MCYCLES_PER_ADVANCE_STATE = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+local LOG2_MAX_UARCH_CYCLES_PER_MCYCLE = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
 local INPUTS_PER_EPOCH = 1 << LOG2_INPUTS_PER_EPOCH
-local MCYCLES_PER_INPUT = 1 << LOG2_MCYCLES_PER_INPUT
+local MAX_MCYCLES_PER_ADVANCE_STATE = 1 << LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
 
 local function shallow_copy(values)
@@ -231,6 +231,11 @@ function player_methods:close()
             self[key] = nil
         end
     end
+    self.agreed_pair_position, self.tentative_pair_position = nil, nil
+    if self.initial_machine then
+        self.initial_machine:shutdown_server()
+        self.initial_machine = nil
+    end
 end
 player_meta.__close = player_methods.close
 
@@ -240,9 +245,9 @@ function player_methods:new_machine()
     return new_machine(self.initial_state_hash)
 end
 
--- Every advancing pair starts from a freshly loaded initial machine waiting for the first input.
+-- Keep the initial machine pristine and fork it for each advancing pair.
 function player_methods:new_advancing_pair()
-    local pair <close> = new_advancing_pair(self:new_machine(), self.initial_state_hash)
+    local pair <close> = new_advancing_pair(fork_machine(self.initial_machine), self.initial_state_hash)
     local machine = pair.machine
     assert(machine:get_root_hash() == self.initial_state_hash, "initial machine snapshot hash mismatch")
     local break_reason = machine:run(machine:read_reg("mcycle"))
@@ -271,9 +276,9 @@ local function run_to_stop(machine, mcycle_end, on_yield_automatic)
 end
 
 -- Delivers a posted input, recording the root a rejection reverts to.
-local function load_cmio_input(machine, data, revert_root_hash)
-    if data ~= nil then
-        machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
+local function load_cmio_input(machine, input_data, revert_root_hash)
+    if input_data ~= nil then
+        machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input_data, revert_root_hash)
     end
 end
 
@@ -298,9 +303,9 @@ local function flush_pending_outputs(pending, outputs, outputs_frontier, yield_r
     if not outputs or not is_rx_accepted(yield_reason) then
         return
     end
-    for _, output in ipairs(pending) do
-        outputs[#outputs + 1] = output
-        hash_tree.frontier_push_back(outputs_frontier, cartesi.keccak256(output))
+    for _, output_data in ipairs(pending) do
+        outputs[#outputs + 1] = output_data
+        hash_tree.frontier_push_back(outputs_frontier, cartesi.keccak256(output_data))
     end
     assert(hash_tree.frontier_get_root_hash(outputs_frontier) == outputs_merkle_root, "outputs Merkle root mismatch")
 end
@@ -341,6 +346,7 @@ function player_methods:run_to_input_mcycle_offset(
     if not is_at_fixed_point(break_reason) then
         return break_reason, nil, input_mcycle_boundary
     end
+    local fixed_point_mcycle_offset = machine:read_reg("mcycle") - input_mcycle_boundary
     local yield_reason, outputs_merkle_root
     if is_yielded_manual(break_reason) then
         yield_reason, outputs_merkle_root = receive_cmio_request(machine)
@@ -355,7 +361,7 @@ function player_methods:run_to_input_mcycle_offset(
         pair:commit()
     end
     pair.pending_outputs = {}
-    return break_reason, yield_reason, input_mcycle_boundary
+    return break_reason, yield_reason, input_mcycle_boundary, fixed_point_mcycle_offset
 end
 -- docs:end run_to_input_mcycle_offset
 -- luacheck: pop
@@ -364,12 +370,69 @@ end
 -- repeat the final state and need no execution.
 function player_methods:run_to_epoch_input_offset(pair, inputs, epoch_input_offset_begin, epoch_input_offset_end)
     for epoch_input_offset = epoch_input_offset_begin, math.min(epoch_input_offset_end, #inputs) - 1 do
-        self:run_to_input_mcycle_offset(pair, inputs[epoch_input_offset + 1], 0, MCYCLES_PER_INPUT)
+        self:run_to_input_mcycle_offset(pair, inputs[epoch_input_offset + 1], 0, MAX_MCYCLES_PER_ADVANCE_STATE)
     end
 end
 
 function player_methods:read_input(_index, path) -- luacheck: ignore 212 self
     return util.read_file(path)
+end
+
+-- Recorded hashes are authoritative only at input boundaries and big-machine
+-- fixed points. Even there, a nonzero uarch cycle requires execution.
+function player_methods:recorded_position_hash(position)
+    assert(position.input_mcycle_offset < MAX_MCYCLES_PER_ADVANCE_STATE, "mcycle offset outside input span")
+    if position.uarch_cycle > 0 then
+        return nil
+    end
+    local index = position.epoch_input_offset
+    if index >= #self.inputs then
+        return assert(self.final_state_hash, "epoch is not sealed")
+    end
+    if position.input_mcycle_offset == 0 then
+        return assert(self.input_boundary_hashes[index], "missing input boundary hash")
+    end
+    local fixed_point = self.fixed_point_mcycle_offsets[index + 1]
+    if fixed_point and position.input_mcycle_offset >= fixed_point then
+        return assert(self.input_boundary_hashes[index + 1], "missing input boundary hash")
+    end
+end
+
+function player_methods:run_to_position(pair, position_begin, position_end)
+    if position_begin.epoch_input_offset < position_end.epoch_input_offset then
+        self:run_to_epoch_input_offset(
+            pair,
+            self.inputs,
+            position_begin.epoch_input_offset,
+            position_end.epoch_input_offset
+        )
+    end
+    if position_begin.input_mcycle_offset < position_end.input_mcycle_offset then
+        self:run_to_input_mcycle_offset(
+            pair,
+            self.inputs[position_end.epoch_input_offset + 1],
+            position_begin.input_mcycle_offset,
+            position_end.input_mcycle_offset
+        )
+    end
+    if position_begin.uarch_cycle < position_end.uarch_cycle then
+        self:run_to_uarch_cycle(
+            pair,
+            self.inputs[position_end.epoch_input_offset + 1],
+            position_end.input_mcycle_offset,
+            position_begin.uarch_cycle,
+            position_end.uarch_cycle
+        )
+    end
+end
+
+function player_methods:materialize_agreed_pair()
+    if not self.agreed_pair then
+        self.agreed_pair = self:new_advancing_pair()
+        self.agreed_pair_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 }
+    end
+    self:run_to_position(self.agreed_pair, self.agreed_pair_position, self.agreed_position)
+    self.agreed_pair_position = self.agreed_position
 end
 
 function player_methods:reset_bisection()
@@ -379,7 +442,7 @@ function player_methods:reset_bisection()
             self[key] = nil
         end
     end
-    self.agreed_pair = self:new_advancing_pair()
+    self.agreed_pair_position, self.tentative_pair_position = nil, nil
     self.agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 }
 end
 
@@ -409,21 +472,25 @@ local event_handler = {}
 -- docs:begin input_added
 function event_handler:input_added(epoch_input_offset, path)
     self.inputs[epoch_input_offset + 1] = self:read_input(epoch_input_offset, path)
-    self:run_to_input_mcycle_offset(
+    local _, _, _, fixed_point_mcycle_offset = self:run_to_input_mcycle_offset(
         self.epoch_pair,
         self.inputs[epoch_input_offset + 1],
         0,
-        MCYCLES_PER_INPUT,
+        MAX_MCYCLES_PER_ADVANCE_STATE,
         self.outputs,
         self.outputs_frontier
     )
+    self.input_boundary_hashes[epoch_input_offset + 1] = self.epoch_pair.machine:get_root_hash()
+    self.fixed_point_mcycle_offsets[epoch_input_offset + 1] = fixed_point_mcycle_offset
 end
 -- docs:end input_added
 
--- The final state is never executed again, so keep only its hash and outputs root proof.
+-- Retain the recorded hashes and output proofs after closing the epoch pair.
 -- docs:begin epoch_sealed
 function event_handler:epoch_sealed()
+    assert(not self.epoch_pair.backup_machine, "cannot seal an unfinished input")
     self.final_state_hash = self.epoch_pair.machine:get_root_hash()
+    assert(self.input_boundary_hashes[#self.inputs] == self.final_state_hash, "final input boundary hash mismatch")
     self.outputs_merkle_root_proof = get_outputs_merkle_root_proof(self.epoch_pair.machine)
     self.epoch_pair:close()
     self.epoch_pair = nil
@@ -444,57 +511,56 @@ end
 
 -- docs:begin reveal_bisection
 function event_handler:reveal_bisection(agreed_position, tentative_position)
-    if is_same_position(self.agreed_position, agreed_position) then
-        -- A round's first request finds no tentative pair.
-        if self.tentative_pair then
-            self.tentative_pair:close()
-        end
-    else
+    if self.tentative_pair and is_same_position(self.tentative_pair_position, agreed_position) then
         -- The previous tentative position is now the agreed predecessor.
-        self.agreed_pair:close()
+        if self.agreed_pair then
+            self.agreed_pair:close()
+        end
         self.agreed_pair, self.tentative_pair = self.tentative_pair, nil
+        self.agreed_pair_position = self.tentative_pair_position
+    elseif self.tentative_pair then
+        self.tentative_pair:close()
+        self.tentative_pair = nil
     end
+    self.tentative_pair_position = nil
     self.agreed_position = agreed_position
+    local recorded_hash = self:recorded_position_hash(tentative_position)
+    if recorded_hash then
+        return recorded_hash
+    end
+    self:materialize_agreed_pair()
     -- Replay from a fork of the whole agreed pair, including any pending snapshot.
     self.tentative_pair = self.agreed_pair:fork()
-    if agreed_position.epoch_input_offset < tentative_position.epoch_input_offset then
-        self:run_to_epoch_input_offset(
-            self.tentative_pair,
-            self.inputs,
-            agreed_position.epoch_input_offset,
-            tentative_position.epoch_input_offset
-        )
-    end
-    if agreed_position.input_mcycle_offset < tentative_position.input_mcycle_offset then
-        self:run_to_input_mcycle_offset(
-            self.tentative_pair,
-            self.inputs[tentative_position.epoch_input_offset + 1],
-            agreed_position.input_mcycle_offset,
-            tentative_position.input_mcycle_offset
-        )
-    end
-    if agreed_position.uarch_cycle < tentative_position.uarch_cycle then
-        self:run_to_uarch_cycle(
-            self.tentative_pair,
-            self.inputs[tentative_position.epoch_input_offset + 1],
-            tentative_position.input_mcycle_offset,
-            agreed_position.uarch_cycle,
-            tentative_position.uarch_cycle
-        )
-    end
+    self:run_to_position(self.tentative_pair, agreed_position, tentative_position)
+    self.tentative_pair_position = tentative_position
     return self.tentative_pair.machine:get_root_hash()
 end
 -- docs:end reveal_bisection
 
 -- docs:begin prove_state_transition
 function event_handler:prove_state_transition(epoch_input_offset, input_mcycle_offset, uarch_cycle)
-    local pair = self.agreed_position.uarch_cycle < uarch_cycle and self.tentative_pair or self.agreed_pair
+    local use_tentative = self.agreed_position.uarch_cycle < uarch_cycle
+    local pair, position
+    if use_tentative then
+        pair, position = self.tentative_pair, self.tentative_pair_position
+    else
+        pair, position = self.agreed_pair, self.agreed_pair_position
+    end
+    assert(pair and position, "missing proof pair")
+    assert(
+        is_same_position(position, {
+            epoch_input_offset = epoch_input_offset,
+            input_mcycle_offset = input_mcycle_offset,
+            uarch_cycle = uarch_cycle,
+        }),
+        "proof pair is not at the requested position"
+    )
     local machine = pair.machine
-    local data = self.inputs[epoch_input_offset + 1]
+    local input_data = self.inputs[epoch_input_offset + 1]
     local proof
-    if input_mcycle_offset == 0 and uarch_cycle == 0 and data then
+    if input_mcycle_offset == 0 and uarch_cycle == 0 and input_data then
         local send =
-            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, pair.revert_root_hash)
+            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input_data, pair.revert_root_hash)
         proof = { send_cmio_log = send, step_log = machine:log_step_uarch() }
     elseif uarch_cycle == cartesi.UARCH_CYCLE_MAX then
         local step = machine:log_step_uarch()
@@ -517,7 +583,7 @@ function event_handler:prove_output()
     end
     return {
         output_index = self.output_proofs[#self.outputs].target_address,
-        output = self.outputs[#self.outputs],
+        output_data = self.outputs[#self.outputs],
         output_proof = self.output_proofs[#self.outputs],
     }
 end
@@ -529,12 +595,15 @@ local function new_player(initial_state_hash, label, last_output_proof, override
         label = label or "honest",
         initial_state_hash = initial_state_hash,
         inputs = {},
+        input_boundary_hashes = { [0] = initial_state_hash },
+        fixed_point_mcycle_offsets = {},
         outputs = {},
         event_handler = event_handler,
     }, player_meta)
     for name, method in pairs(overrides or {}) do
         self[name] = method
     end
+    self.initial_machine = self:new_machine()
     self.epoch_pair = self:new_advancing_pair()
     if last_output_proof then
         assert(
@@ -586,11 +655,11 @@ local function validate_state_transition_response(
     response
 )
     local obtained_root_hash = root_hash_before
-    local data = dapp_contract.inputs[epoch_input_offset + 1]
-    if input_mcycle_offset == 0 and uarch_cycle == 0 and data then
+    local input_data = dapp_contract.inputs[epoch_input_offset + 1]
+    if input_mcycle_offset == 0 and uarch_cycle == 0 and input_data then
         obtained_root_hash = cartesi.machine:verify_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-            data,
+            input_data,
             root_hash_before,
             response.send_cmio_log,
             root_hash_before
@@ -644,7 +713,7 @@ local function is_unanimous(hashes)
     return true
 end
 
--- Each tentative position advances a fork of the agreed pair.
+-- Ask each player for the hash at the tentative position.
 -- docs:begin request_bisections
 local function request_bisections(dapp_contract, players, agreed_position, tentative_position)
     local started_at = current_time()
@@ -743,8 +812,8 @@ local function settle_dispute(tournament)
             agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
             extent = {
                 log2_input_count = LOG2_INPUTS_PER_EPOCH,
-                log2_mcycle_count = LOG2_MCYCLES_PER_INPUT,
-                log2_uarch_cycle_count = LOG2_UARCH_CYCLES_PER_MCYCLE,
+                log2_mcycle_count = LOG2_MAX_MCYCLES_PER_ADVANCE_STATE,
+                log2_uarch_cycle_count = LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
             },
             last_agreed_hash = tournament.dapp_contract.initial_state_hash,
             hashes_after = map(tournament.players, function(player)

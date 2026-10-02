@@ -4,6 +4,7 @@ local util = require("cartesi.util")
 local vg = require("vg")
 local vgu = require("vgu")
 local run_with_server = require("vg-test-server")
+local replay_test = require("vg-replay-test")
 local initial_hash = cartesi.fromhex(util.read_file("initial-hash"))
 local paths = { "input-0.bin", "input-1.bin", "input-2.bin" }
 local function run_game(players, input_paths)
@@ -119,7 +120,7 @@ for _, late_providers in ipairs({ false, true }) do
         end)
         vg.new_referee(dapp_contract):run(server)
     end)
-    assert(settled.output and settled.output.output == output_offer.output)
+    assert(settled.output and settled.output.output_data == output_offer.output_data)
     assert(#vg.addresses(settled.players) == 1 and settled.winner.allowance == 3)
     assert(#server.connections == (late_providers and 4 or 2) + 2) -- Includes admission and stop connections.
     vgu.close_narration()
@@ -156,7 +157,7 @@ do
                 local item = sequence[round]
                 return {
                     output_index = first.output_proofs[item].target_address,
-                    output = first.outputs[item],
+                    output_data = first.outputs[item],
                     output_proof = first.output_proofs[item],
                 }
             end
@@ -274,6 +275,10 @@ if arg[1] ~= "execution" then
             local opponent <close> = role == "forger" and roles.new_forger(initial_hash, 2, "forged-input-2.bin")
                 or role == "tamperer" and roles.new_tamperer(initial_hash, 0, 100)
                 or roles.new_quitter()
+            if role ~= "quitter" then
+                replay_test.measure(honest)
+                replay_test.measure(opponent)
+            end
             local players = honest_index == 1 and { honest, opponent } or { opponent, honest }
             local result, server = run_game(players)
             assert(
@@ -281,6 +286,9 @@ if arg[1] ~= "execution" then
                 role .. " defeated the honest player"
             )
             assert(result.final_state_hash == honest.final_state_hash and result.output)
+            if role ~= "quitter" then
+                assert(honest.replay_counts.rounds == 1)
+            end
             print("vg-test: honest player " .. honest_index .. " defeats " .. role)
         end
     end
@@ -304,7 +312,7 @@ if arg[1] ~= "execution" then
                 vg.event_handler.prove_state_transition(self, epoch_input_offset, input_mcycle_offset, uarch_cycle)
             self.proofs = self.proofs + 1
             assert(not agreed_pair.machine)
-            assert(self.agreed_pair.machine:get_root_hash() == initial_hash)
+            assert(not self.agreed_pair and not self.agreed_pair_position and not self.tentative_pair_position)
             assert(
                 self.agreed_position.epoch_input_offset == 0
                     and self.agreed_position.input_mcycle_offset == 0
@@ -325,7 +333,7 @@ if arg[1] ~= "execution" then
         assert(tamperer.proofs == 1 and honest.proofs == 2 and forger.proofs == 2)
         assert(#vg.addresses(settled.players) == 1 and settled.players[next(settled.players)] == settled.winner)
         assert(not honest.epoch_pair)
-        assert(honest.agreed_pair.machine and honest.agreed_position)
+        assert(not honest.agreed_pair and honest.agreed_position)
         print("vg-test: repeated proof rounds eliminate distinct dishonest claims ok")
     end
 
@@ -383,6 +391,10 @@ do
         receive_cmio_request = function()
             return cartesi.HTIF_YIELD_CMD_MANUAL, cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED, ""
         end,
+        fork_server = function(machine)
+            return setmetatable({}, { __index = machine })
+        end,
+        set_cleanup_call = function() end,
     }
     local invalid_proof = { log2_root_size = 0, log2_target_size = 0 }
     local ok, err = pcall(vg.new_player, initial_hash, "invalid proof", invalid_proof, {
@@ -392,6 +404,11 @@ do
     })
     assert(not ok and tostring(err):find("last_output_proof is not an outputs proof", 1, true))
     assert(closed[initial])
+    local count = 0
+    for _ in pairs(closed) do
+        count = count + 1
+    end
+    assert(count == 2, "failed constructor leaked the initial machine or its fork")
 end
 
 -- Snapshot ownership is consumed by commit or revert; retired servers close immediately.
@@ -507,14 +524,13 @@ do
     local tentative_position = { epoch_input_offset = 0, input_mcycle_offset = rejected_at, uarch_cycle = 0 }
     vg.event_handler.dispute_started(player)
     assert(vg.event_handler.reveal_bisection(player, agreed_position, tentative_position) == initial_hash)
-    local candidate = player.tentative_pair
-    assert(candidate.machine ~= player.agreed_pair.machine and not candidate.backup_machine)
+    assert(not player.agreed_pair and not player.tentative_pair)
+    assert(player.fixed_point_mcycle_offsets[1] == rejected_at)
 
     tentative_position = { epoch_input_offset = 0, input_mcycle_offset = (rejected_at + 1) // 2, uarch_cycle = 0 }
     local inside_hash = vg.event_handler.reveal_bisection(player, agreed_position, tentative_position)
-    assert(not candidate.machine)
     assert(player.agreed_pair.machine:get_root_hash() == initial_hash and not player.agreed_pair.backup_machine)
-    candidate = player.tentative_pair
+    local candidate = player.tentative_pair
     local checkpoint = candidate.backup_machine
     assert(checkpoint:get_root_hash() == initial_hash)
 
@@ -532,33 +548,34 @@ do
             and player.tentative_pair.backup_machine:get_root_hash() == initial_hash
     )
 
-    -- Start another dispute and agree on a point past rejection.
-    vg.event_handler.dispute_started(player)
-    agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 }
+    -- Agree on the active candidate, then on a recorded point past rejection.
+    candidate = player.tentative_pair
+    agreed_position = tentative_position
     tentative_position = { epoch_input_offset = 0, input_mcycle_offset = rejected_at, uarch_cycle = 0 }
     assert(vg.event_handler.reveal_bisection(player, agreed_position, tentative_position) == initial_hash)
-    candidate = player.tentative_pair
+    assert(player.agreed_pair == candidate and candidate.backup_machine and not player.tentative_pair)
     agreed_position = tentative_position
     tentative_position = { epoch_input_offset = 0, input_mcycle_offset = (3 * rejected_at + 1) // 2, uarch_cycle = 0 }
     assert(vg.event_handler.reveal_bisection(player, agreed_position, tentative_position) == initial_hash)
-    assert(
-        player.agreed_pair == candidate
-            and not player.agreed_pair.backup_machine
-            and not player.tentative_pair.backup_machine
-    )
-    assert(player.tentative_pair.input_mcycle_boundary == input_mcycle_boundary)
+    assert(player.agreed_pair == candidate and candidate.backup_machine and not player.tentative_pair)
+    assert(not pcall(vg.event_handler.prove_state_transition, player, 0, rejected_at, 0))
+    -- A nonzero uarch reveal materializes the cached agreement by finishing the
+    -- existing pair, including rollback, without reconstructing the prefix again.
+    tentative_position = { epoch_input_offset = 0, input_mcycle_offset = rejected_at, uarch_cycle = 1 }
+    vg.event_handler.reveal_bisection(player, agreed_position, tentative_position)
+    assert(player.agreed_pair == candidate and not candidate.backup_machine)
+    assert(player.agreed_pair.input_mcycle_boundary == input_mcycle_boundary)
     assert(player.agreed_pair.machine:read_reg("mcycle") == input_mcycle_boundary)
-    assert(player.tentative_pair.machine:read_reg("mcycle") == input_mcycle_boundary)
     -- Later offsets observe the restored accept yield, without finalizing the rejected input again.
     local reason, yield_reason, boundary = player:run_to_input_mcycle_offset(
-        player.tentative_pair,
+        player.agreed_pair,
         player.inputs[1],
         tentative_position.input_mcycle_offset,
         tentative_position.input_mcycle_offset + 1
     )
     assert(reason == cartesi.BREAK_REASON_YIELDED_MANUALLY)
     assert(yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED and boundary == input_mcycle_boundary)
-    assert(not player.tentative_pair.backup_machine and player.tentative_pair.machine:get_root_hash() == initial_hash)
+    assert(not player.agreed_pair.backup_machine and player.agreed_pair.machine:get_root_hash() == initial_hash)
 
     -- Finishing an input and advancing to the next one uses the same driver.
     local replay <close> = player:new_advancing_pair()
@@ -622,6 +639,7 @@ for uarch_cycle = 0, 1 do
     vg.event_handler.input_added(player, 0, paths[1])
     local after_input = player.epoch_pair.machine:get_root_hash()
     assert(after_input ~= initial_hash)
+    vg.event_handler.epoch_sealed(player)
     vg.event_handler.dispute_started(player)
     assert(
         vg.event_handler.reveal_bisection(
@@ -664,14 +682,14 @@ for uarch_cycle = 0, 1 do
             == after_uarch
     )
     assert(not agreed.machine and not agreed.backup_machine)
-    assert(player.agreed_pair.machine:get_root_hash() == initial_hash)
+    assert(not player.agreed_pair and not player.agreed_pair_position and not player.tentative_pair_position)
     assert(
         player.agreed_position.epoch_input_offset == 0
             and player.agreed_position.input_mcycle_offset == 0
             and player.agreed_position.uarch_cycle == 0
     )
     assert(not tentative.machine and not tentative.backup_machine and not player.tentative_pair)
-    assert(player.epoch_pair.machine:get_root_hash() == after_input)
+    assert(player.final_state_hash == after_input and not player.epoch_pair)
 end
 
 -- Empty epochs finish after establishing the root, without inventing an output.
@@ -742,6 +760,7 @@ do
     player.agreed_pair = boundary:move()
     player.agreed_position =
         { epoch_input_offset = 0, input_mcycle_offset = offset, uarch_cycle = cartesi.UARCH_CYCLE_MAX }
+    player.agreed_pair_position = player.agreed_position
     local log = vg.event_handler.prove_state_transition(player, 0, offset, cartesi.UARCH_CYCLE_MAX)
     assert(
         vg.validate_state_transition_response(contract, before_reset, 0, offset, cartesi.UARCH_CYCLE_MAX, log)
@@ -874,6 +893,8 @@ do
     end
     local player = setmetatable({
         inputs = {},
+        input_boundary_hashes = { [0] = initial_hash },
+        fixed_point_mcycle_offsets = {},
         epoch_pair = new_pair(),
         outputs = {},
         previous_outputs_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256"),
@@ -891,7 +912,7 @@ do
     vg.event_handler.epoch_sealed(player)
     assert(player.previous_outputs_frontier == completed_frontier and not player.outputs_frontier)
     local offer = vg.event_handler.prove_output(player)
-    assert(offer.output == "last" and offer.output_index == 3 and #player.outputs == 4)
+    assert(offer.output_data == "last" and offer.output_index == 3 and #player.outputs == 4)
     assert(require("game-output").validate_output_response(offer, hash_tree.frontier_get_root_hash(expected)))
     local proofs = player.output_proofs
     local replay = new_pair()
@@ -910,8 +931,16 @@ do
     unfinished.machine.run = function()
         return cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
     end
-    local break_reason = player:run_to_input_mcycle_offset(unfinished, player.inputs[1], 0, 1 << 48)
-    assert(break_reason == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE and unfinished.backup_machine)
+    player.epoch_pair = unfinished
+    player.final_state_hash, player.outputs_merkle_root_proof = nil, nil
+    vg.event_handler.input_added(player, #player.inputs, paths[1])
+    assert(not player.fixed_point_mcycle_offsets[#player.inputs] and unfinished.backup_machine)
+    local ok, err = pcall(vg.event_handler.epoch_sealed, player)
+    assert(not ok and tostring(err):find("cannot seal an unfinished input", 1, true))
+    assert(not player.final_state_hash and not player.outputs_merkle_root_proof)
+    assert(player.epoch_pair == unfinished and unfinished.machine and unfinished.backup_machine)
+    player:close()
+    assert(not unfinished.machine and not unfinished.backup_machine)
 end
 
 -- Malformed final-state and output offers cannot pass the shared proof checks.
@@ -1035,8 +1064,17 @@ for _, terminal in ipairs({ "halt", "overflow", "exception" }) do
     local prefix_uarch <close> = player.epoch_pair:fork()
     player.agreed_pair = player.epoch_pair:fork()
     player.agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 }
+    player.agreed_pair_position = player.agreed_position
     vg.event_handler.epoch_sealed(player, #paths)
     assert(player.final_state_hash == hash)
+    for index = 0, #paths - 1 do
+        assert(player.fixed_point_mcycle_offsets[index + 1] == 0)
+        assert(player.input_boundary_hashes[index + 1] == hash)
+        local position = { epoch_input_offset = index, input_mcycle_offset = 1, uarch_cycle = 0 }
+        assert(player:recorded_position_hash(position) == hash)
+        position.uarch_cycle = 1
+        assert(not player:recorded_position_hash(position))
+    end
     player:run_to_uarch_cycle(prefix_uarch, player.inputs[1], 0, 0, 1)
     local proof = vg.event_handler.prove_state_transition(player, 0, 0, 0)
     assert(
@@ -1069,8 +1107,16 @@ do
         end
         vg.event_handler.input_added(player, 0, paths[1])
     end)
-    assert(not ok and not captured.epoch_pair and not captured.agreed_pair and not captured.tentative_pair)
+    assert(
+        not ok
+            and not captured.initial_machine
+            and not captured.epoch_pair
+            and not captured.agreed_pair
+            and not captured.tentative_pair
+    )
 end
 print("vg-test: fixed points, tamperer rollback and cleanup ok")
+
+replay_test.run(initial_hash, paths)
 
 print("vg-test: ok")

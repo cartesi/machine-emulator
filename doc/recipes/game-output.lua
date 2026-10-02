@@ -55,7 +55,7 @@ local function validate_output_response(output, outputs_merkle_root)
     assert(output_proof.log2_target_size == 0, "output proof target not a leaf")
     assert(output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "output proof height mismatch")
     assert(output_proof.root_hash == outputs_merkle_root, "output proof root mismatch")
-    assert(keccak(output.output) == output_proof.target_hash, "output hash mismatch")
+    assert(keccak(output.output_data) == output_proof.target_hash, "output hash mismatch")
     hash_tree.verify_slice(output_proof)
     return output
 end

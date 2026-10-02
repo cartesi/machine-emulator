@@ -258,7 +258,7 @@ function story.report_winner(winner)
 end
 
 function story.report_output(output)
-    local payload = evmu.decode_calldata(NOTICE, output.output, "raw").payload
+    local payload = evmu.decode_calldata(NOTICE, output.output_data, "raw").payload
     narrate("verdict", "Result proved against the final state:\n%s", payload)
 end
 -- docs:end story
@@ -312,7 +312,7 @@ local SCHEMA_DICT = {
     ProveOutputEvent = { items = { "Base64" } },
     ProveOutputResponse = {
         output_index = "Default",
-        output = "Base64",
+        output_data = "Base64",
         output_proof = "Proof",
     },
     ClaimChildren = { computation_hash_left = "Base64", computation_hash_right = "Base64" },

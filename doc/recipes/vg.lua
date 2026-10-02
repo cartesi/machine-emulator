@@ -494,17 +494,17 @@ function event_handler:reveal_bisection(agreed_position, tentative_position)
     if is_input_bisection(agreed_position, tentative_position) then
         return self.input_base_hashes[math.min(epoch_input_offset, #self.inputs)]
     end
-    if is_same_position(self.agreed_position, agreed_position) then
-        -- The previous tentative position was disputed (a recorded answer left no pair).
-        if self.tentative_pair then
+    if self.tentative_pair then
+        if is_same_position(self.agreed_position, agreed_position) then
+            -- The previous tentative position was disputed.
             self.tentative_pair:close()
+        else
+            -- The previous tentative position is now the agreed predecessor.
+            self.agreed_pair:close()
+            self.agreed_pair = self.tentative_pair
         end
-    elseif self.tentative_pair then
-        -- The previous tentative position is now the agreed predecessor.
-        self.agreed_pair:close()
-        self.agreed_pair = self.tentative_pair
     else
-        -- No pair reached the agreed position (input bisection or a recorded answer), so run forward.
+        -- Without a pair to adopt, the agreed pair runs forward to the agreed position.
         self:run_to_position(self.agreed_pair, self.agreed_position, agreed_position)
     end
     self.agreed_position, self.tentative_pair = agreed_position, nil

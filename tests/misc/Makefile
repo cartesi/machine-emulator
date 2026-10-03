@@ -122,7 +122,7 @@ $(BUILDDIR)/test-uarch-address-range: test-uarch-address-range.o ../../src/libca
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
 
 test-uarch-pma-cache.o: CXXFLAGS += -I../../uarch
-test-uarch-pma-cache.o: ../../uarch/uarch-pma-cache.hpp ../../uarch/uarch-address-range.hpp ../../src/mock-address-range.hpp
+test-uarch-pma-cache.o: ../../uarch/uarch-pma-cache.hpp ../../uarch/uarch-address-range.hpp ../../src/mock-address-range.hpp ../../src/find-pma.hpp
 
 $(BUILDDIR)/test-uarch-pma-cache: test-uarch-pma-cache.o ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)

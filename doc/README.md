@@ -7787,8 +7787,16 @@ Second word:
 |-------|----------|-----------------|
 | Field | `length` | *Reserved (=0)* |
 
-The list of PMA records ends with an invalid PMA entry for which
-`length=0`.
+The array has 32 slots. Index 0 describes RAM. The remaining nonempty
+entries are sorted by start address, all ranges are pairwise disjoint,
+and empty entries (`length=0`) form the suffix. The constructor enforces
+this invariant; the PMA page is immutable after construction.
+
+Lookup probes index 0 first, then binary-searches the sorted tail,
+treating empty entries as having an infinite start address. A miss returns
+the synthetic empty descriptor at index 32, outside the serialized array.
+Replay validates the descriptors it probes, not the whole table; an
+unprobed malformed entry is not rejected solely because it is malformed.
 
 ### Linux setup
 

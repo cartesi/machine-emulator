@@ -17,18 +17,16 @@
 #ifndef UARCH_PMA_CACHE_HPP
 #define UARCH_PMA_CACHE_HPP
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 
 #include "address-range-constants.hpp"
-#include "mock-address-range.hpp"
 #include "uarch-address-range.hpp"
 
 namespace cartesi {
 
-/// Guest descriptor snapshots and successful first-match address intervals.
+/// Guest descriptor snapshots and successful disjoint address intervals.
 /// All storage is part of the hashed guest memory and restored by guest reset.
 class uarch_pma_cache {
     struct interval_lookup {
@@ -40,14 +38,6 @@ class uarch_pma_cache {
     uarch_address_ranges m_ranges{};
     std::array<interval_lookup, 16> m_intervals{};
     size_t m_interval_count{};
-
-    static void exclude(uint64_t start, uint64_t length, uint64_t paddr, uint64_t &lower, uint64_t &upper) {
-        if (paddr < start) {
-            upper = std::min(upper, start);
-        } else {
-            lower = std::max(lower, start + length);
-        }
-    }
 
 public:
     template <typename READ_ENTRY, typename ABRT>
@@ -75,39 +65,49 @@ public:
                 }
             }
         }
-        uint64_t lower = 0;
-        uint64_t upper = UINT64_MAX;
-        for (index = 0; index < PMA_MAX; ++index) {
-            const auto entry = read_entry(index);
-            auto &ar = m_ranges[index];
-            if (!ar.is_initialized() && can_skip_mock_memory_range(entry.istart, entry.ilength, paddr, sizeof(T))) {
-                exclude(entry.istart & PMA_ISTART_START_MASK, entry.ilength, paddr, lower, upper);
-                continue;
+        // Probe index 0 (RAM), then binary-search the sorted nonempty tail, treating
+        // empty suffix entries as +infinity. A miss returns the synthetic empty
+        // descriptor at index 32 (PMA_MAX). Only probed descriptors are validated.
+        index = 0;
+        auto &ram = read(index, read_entry, abrt);
+        if (ram.is_empty()) [[unlikely]] {
+            return ram;
+        }
+        if (ram.contains_absolute(paddr, sizeof(T))) {
+            if (within_page && m_interval_count < m_intervals.size()) {
+                m_intervals[m_interval_count++] = {.start = ram.get_start(),
+                    .end = ram.get_start() + ram.get_length(),
+                    .index = index};
             }
-            ar.initialize(entry.istart, entry.ilength, abrt);
-            if (ar.is_empty()) {
-                return ar;
-            }
-            if (ar.contains_absolute(paddr, sizeof(T))) {
-                // Exclude every earlier range from the matching interval. All
-                // validated bounds are page aligned, so a contained word in this
-                // interval has the same first match. Cross-page queries do not
-                // populate the cache, and later entries remain unvalidated.
+            return ram;
+        }
+        uint64_t lower = 1;
+        uint64_t upper = PMA_MAX;
+        while (lower < upper) {
+            index = lower + (upper - lower) / 2;
+            auto &ar = read(index, read_entry, abrt);
+            // Validate each probe; constructor-sorted, disjoint tails need no exclusions.
+            if (ar.is_empty() || paddr < ar.get_start()) {
+                upper = index;
+            } else if (ar.contains_absolute(paddr, sizeof(T))) {
                 if (within_page && m_interval_count < m_intervals.size()) {
-                    m_intervals[m_interval_count++] = {.start = std::max(lower, ar.get_start()),
-                        .end = std::min(upper, ar.get_start() + ar.get_length()),
+                    m_intervals[m_interval_count++] = {.start = ar.get_start(),
+                        .end = ar.get_start() + ar.get_length(),
                         .index = index};
                 }
                 return ar;
+            } else {
+                lower = index + 1;
             }
-            exclude(ar.get_start(), ar.get_length(), paddr, lower, upper);
         }
+        // PMA_MAX selects the accessor's synthetic empty descriptor.
+        index = PMA_MAX;
         return read(index, read_entry, abrt);
     }
 
     void invalidate_on_write(uint64_t paddr) {
         // Replay may accept unusual descriptors permitting writes to PMA storage.
-        // Keep descriptor snapshots, as before, but rescan their uncached prefix.
+        // Keep descriptor snapshots, as before, but repeat the uncached search.
         if (paddr >= AR_PMAS_START && paddr - AR_PMAS_START < AR_PMAS_LENGTH) [[unlikely]] {
             m_interval_count = 0;
         }

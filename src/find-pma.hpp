@@ -20,6 +20,7 @@
 #include <cstdint>
 
 #include "address-range.hpp"
+#include "pmas-constants.hpp"
 
 namespace cartesi {
 
@@ -36,20 +37,34 @@ auto &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
     if constexpr (requires { a.template find_pma<T>(paddr, index); }) {
         return a.template find_pma<T>(paddr, index);
     } else {
+        // Probe index 0 (RAM), then binary-search the sorted nonempty tail, treating
+        // empty suffix entries as +infinity. A miss returns the synthetic empty
+        // descriptor at index 32 (PMA_MAX). Only probed descriptors are validated.
         index = 0;
-        while (true) {
-            auto &ar = a.read_pma(index);
-            // The pmas array always contain a sentinel.
-            // It is an entry with zero length.
-            // If we hit it, return it
-            if (ar.is_empty()) [[unlikely]] {
-                return ar;
-            }
-            if (ar.contains_absolute(paddr, sizeof(T))) {
-                return ar;
-            }
-            ++index;
+        auto &ram = a.read_pma(index);
+        if (ram.is_empty()) [[unlikely]] {
+            return ram;
         }
+        if (ram.contains_absolute(paddr, sizeof(T))) {
+            return ram;
+        }
+        uint64_t lower = 1;
+        uint64_t upper = PMA_MAX;
+        while (lower < upper) {
+            index = lower + (upper - lower) / 2;
+            auto &ar = a.read_pma(index);
+            // Constructible tails are sorted and disjoint. Empty slots are +infinity.
+            if (ar.is_empty() || paddr < ar.get_start()) {
+                upper = index;
+            } else if (ar.contains_absolute(paddr, sizeof(T))) {
+                return ar;
+            } else {
+                lower = index + 1;
+            }
+        }
+        // PMA_MAX selects the accessor's synthetic empty descriptor.
+        index = PMA_MAX;
+        return a.read_pma(index);
     }
 }
 

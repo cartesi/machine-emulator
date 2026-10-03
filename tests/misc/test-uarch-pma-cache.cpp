@@ -19,9 +19,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <stdexcept>
-#include <utility>
 
-#include "assert-printf.hpp"
+#include "find-pma.hpp"
 #include "mock-address-range.hpp"
 #include "uarch-pma-cache.hpp"
 
@@ -35,278 +34,202 @@ void fail(const char *message) {
 
 void require(bool condition) {
     if (!condition) {
-        throw std::logic_error("PMA lookup cache differs from ordered reference");
+        throw std::logic_error("RAM-first PMA lookup mismatch");
     }
 }
 
-// The pre-cache lookup: independent polymorphic factory and containment checks.
-class reference_cache {
-    mock_address_ranges m_ranges{};
-    address_range m_sentinel{"sentinel"};
+// Use the polymorphic replay factory for the shared lookup; the guest uses its
+// compact descriptors. Both instantiate and validate only entries they probe.
+struct shared_access {
+    const pmas_state &entries;
+    mock_address_ranges ranges{};
+    address_range sentinel{"sentinel"};
 
-public:
-    address_range &read(uint64_t index, const pmas_state &entries) {
-        if (index >= PMA_MAX) {
-            return m_sentinel;
+    int make_scoped_note(const char *) const {
+        return 0;
+    }
+
+    address_range &read_pma(uint64_t index) {
+        require(index <= PMA_MAX);
+        if (index == PMA_MAX) {
+            return sentinel;
         }
-        auto &mock = m_ranges[index];
+        auto &mock = ranges[index];
         if (std::holds_alternative<std::monostate>(mock)) {
             mock = make_mock_address_range(entries[index].istart, entries[index].ilength, fail);
         }
         return get_mock_address_range(mock, fail);
     }
+};
 
-    template <typename T>
-    address_range &find(uint64_t paddr, uint64_t &index, const pmas_state &entries) {
-        for (index = 0; index < PMA_MAX; ++index) {
-            if (std::holds_alternative<std::monostate>(m_ranges[index]) &&
-                can_skip_mock_memory_range(entries[index].istart, entries[index].ilength, paddr, sizeof(T))) {
-                continue;
-            }
-            auto &ar = read(index, entries);
-            if (ar.is_empty() || ar.contains_absolute(paddr, sizeof(T))) {
-                return ar;
-            }
-        }
-        return m_sentinel;
+// find_pma takes its accessor by value, just like the production accessors.
+struct shared_access_ref {
+    shared_access &state;
+    int make_scoped_note(const char *) const {
+        return 0;
+    }
+    address_range &read_pma(uint64_t index) const {
+        return state.read_pma(index);
     }
 };
 
 uint64_t comparisons = 0;
-uint64_t rejections = 0;
 
-class differential_cache {
-    reference_cache m_reference{};
-    uarch_pma_cache m_candidate{};
-
-    static void compare(const address_range &a, const uarch_address_range &b) {
-        require(a.get_start() == b.get_start() && a.get_length() == b.get_length());
-        require(a.is_memory() == b.is_memory() && a.is_empty() == b.is_empty());
-        require(a.get_driver_id() == b.get_driver_id() && a.is_device() == b.is_device());
-        require(a.is_readable() == b.is_readable() && a.is_writeable() == b.is_writeable());
-        require(a.is_executable() == b.is_executable());
+// Independent linear containment oracle for valid, disjoint tables. Misses use
+// the synthetic descriptor at PMA_MAX, regardless of where the empty suffix starts.
+template <typename T>
+uint64_t reference_index(const pmas_state &entries, uint64_t paddr) {
+    if (entries[0].ilength == 0) {
+        return 0; // Defensive empty-RAM handling; not constructor-produced.
     }
-
-public:
-    pmas_state entries{};
-    uint64_t metadata_reads{};
-
-    template <typename T>
-    uint64_t find(uint64_t paddr) {
-        uint64_t old_index = 0;
-        uint64_t new_index = 0;
-        address_range *old_ar = nullptr;
-        uarch_address_range *new_ar = nullptr;
-        try {
-            old_ar = &m_reference.find<T>(paddr, old_index, entries);
-        } catch (const std::runtime_error &) {
+    for (uint64_t i = 0; i < PMA_MAX && entries[i].ilength != 0; ++i) {
+        const uint64_t start = entries[i].istart & PMA_ISTART_START_MASK;
+        const uint64_t length = entries[i].ilength;
+        if (paddr >= start && sizeof(T) <= length && paddr - start <= length - sizeof(T)) {
+            return i;
         }
-        try {
-            new_ar = &m_candidate.find<T>(
-                paddr, new_index,
-                [this](uint64_t i) {
-                    ++metadata_reads;
-                    return entries[i];
-                },
-                fail);
-        } catch (const std::runtime_error &) {
-        }
-        ++comparisons;
-        require((old_ar == nullptr) == (new_ar == nullptr));
-        if (old_ar != nullptr) {
-            require(old_index == new_index);
-            compare(*old_ar, *new_ar);
-            return new_index;
-        }
-        ++rejections;
-        return UINT64_MAX;
     }
-
-    void read(uint64_t index) {
-        auto &a = m_reference.read(index, entries);
-        auto &b = m_candidate.read(index, [this](uint64_t i) { return entries[i]; }, fail);
-        compare(a, b);
-    }
-
-    void write_entry(uint64_t index, pmas_entry entry) {
-        m_candidate.invalidate_on_write(pmas_get_abs_addr(index));
-        entries[index] = entry;
-    }
-
-    void write_elsewhere(uint64_t paddr) {
-        m_candidate.invalidate_on_write(paddr);
-    }
-};
-
-pmas_entry memory(uint64_t start, uint64_t length, uint64_t permissions = 0x1c) {
-    return {start | PMA_ISTART_M_MASK | permissions, length};
+    return PMA_MAX;
 }
 
-void targeted_cases() {
-    differential_cache c;
-    c.entries[0] = memory(0x3000, 0x1000);
-    c.entries[1] = memory(0x2000, 0x4000);
-    require(c.find<uint64_t>(0x2000) == 1);
-    require(c.find<uint64_t>(0x3000) == 0); // Earlier overlap must win.
-    const auto reads = c.metadata_reads;
-    require(c.find<uint8_t>(0x2fff) == 1);
-    require(c.find<uint32_t>(0x3800) == 0);
-    require(c.metadata_reads == reads);     // Hits really avoid rescanning metadata.
-    require(c.find<uint64_t>(0x3ffc) == 1); // Cross-page request cannot hit the first range.
-    require(c.find<uint8_t>(0x3ffc) == 0);  // Nor may that cross-page result poison this page.
-    require(c.find<uint64_t>(UINT64_MAX) == 2);
-    require(c.find<uint64_t>(0) == 2);
-    c.read(PMA_MAX);
-    c.read(UINT64_MAX);
-
-    // One interval can span pages, but must stop at earlier overlaps on either side.
-    differential_cache intervals;
-    intervals.entries[0] = memory(0x1000, 0x2000);
-    intervals.entries[1] = memory(0x7000, 0x2000);
-    intervals.entries[2] = memory(0, 0x10000);
-    require(intervals.find<uint64_t>(0x4000) == 2);
-    const auto interval_reads = intervals.metadata_reads;
-    require(intervals.find<uint8_t>(0x3000) == 2);
-    require(intervals.find<uint64_t>(0x6ff8) == 2);
-    require(intervals.metadata_reads == interval_reads);
-    require(intervals.find<uint64_t>(0x2ff8) == 0);
-    require(intervals.find<uint64_t>(0x7000) == 1);
-    require(intervals.find<uint64_t>(0) == 2);
-    require(intervals.find<uint64_t>(0x9000) == 2);
-    // Invalidation must use cached bounds even if their backing metadata changed.
-    intervals.write_entry(0, memory(0x5000, 0x1000));
-    require(intervals.find<uint64_t>(0x4000) == 2);
-    require(intervals.find<uint64_t>(0x2000) == 0);
-    require(intervals.find<uint64_t>(0x5000) == 2);
-
-    // A skipped descriptor becomes frozen when a later lookup actually selects it.
-    differential_cache prefix;
-    prefix.entries[0] = memory(0x1000, 0x1000);
-    prefix.entries[1] = memory(0x4000, 0x1000);
-    prefix.entries[2] = {UINT64_MAX, 1}; // Must remain unreachable.
-    require(prefix.find<uint64_t>(0x4000) == 1);
-    require(prefix.find<uint64_t>(0x1000) == 0);
-    prefix.read(0);
-    prefix.write_entry(0, memory(0x7000, 0x1000));
-    require(prefix.find<uint64_t>(0x1000) == 0);          // The successful lookup froze this descriptor.
-    require(prefix.find<uint64_t>(0x7000) == UINT64_MAX); // Reach the malformed suffix now.
-
-    // An uninitialized prefix can change after a prior successful lookup.
-    differential_cache mutated;
-    mutated.entries[0] = memory(0x9000, 0x1000);
-    mutated.entries[1] = memory(0x2000, 0x4000);
-    require(mutated.find<uint64_t>(0x3000) == 1);
-    mutated.write_entry(0, memory(0x3000, 0x1000, 4));
-    require(mutated.find<uint64_t>(0x3000) == 0);
-    // Constructed descriptors retain their old value even after the backing entry changes.
-    mutated.write_entry(0, {UINT64_MAX, 1});
-    require(mutated.find<uint64_t>(0x3000) == 0);
-
-    differential_cache rejected;
-    rejected.entries[0] = memory(0x9000, 0x1000);
-    rejected.entries[1] = memory(0x3000, 0x1000);
-    rejected.entries[2] = {UINT64_MAX, 1}; // Unreachable malformed suffix must not reject a hit.
-    require(rejected.find<uint64_t>(0x3000) == 1);
-    require(rejected.find<uint64_t>(0x3800) == 1);
-    rejected.write_entry(0, memory(0x9000, 1));
-    require(rejected.find<uint64_t>(0x3000) == UINT64_MAX); // Now malformed prefix must reject.
-    rejected.write_entry(0, {});
-    require(rejected.find<uint64_t>(0x3000) == 0); // Earlier sentinel must win after invalidation.
-
-    differential_cache full;
-    for (uint64_t i = 0; i < PMA_MAX; ++i) {
-        full.entries[i] = memory((i + 1) * AR_PAGE_SIZE, AR_PAGE_SIZE);
-    }
-    for (unsigned round = 0; round < 2; ++round) {
-        for (uint64_t i = 0; i < PMA_MAX; ++i) {
-            require(full.find<uint64_t>((i + 1) * AR_PAGE_SIZE) == i);
-        }
-    }
-    require(full.find<uint64_t>(UINT64_C(1) << 40) == PMA_MAX);
-    // PMA writes are detected throughout the table page, including subword end addresses.
-    for (uint64_t paddr : {uint64_t{AR_PMAS_START}, AR_PMAS_START + AR_PMAS_LENGTH - 1}) {
-        full.write_elsewhere(paddr);
-        const auto before = full.metadata_reads;
-        require(full.find<uint64_t>(AR_PAGE_SIZE) == 0);
-        require(full.metadata_reads > before);
-    }
-    for (uint64_t paddr : {UINT64_C(0), AR_PMAS_START - 1, AR_PMAS_START + AR_PMAS_LENGTH, UINT64_MAX}) {
-        full.write_elsewhere(paddr);
-        const auto before = full.metadata_reads;
-        require(full.find<uint64_t>(AR_PAGE_SIZE) == 0);
-        require(full.metadata_reads == before);
-    }
+template <typename T>
+void compare(uint64_t paddr, const pmas_state &entries, shared_access &access, uarch_pma_cache &cache) {
+    const auto expected = reference_index<T>(entries, paddr);
+    uint64_t shared_index = UINT64_MAX;
+    uint64_t guest_index = UINT64_MAX;
+    const auto &a = find_pma<T>(shared_access_ref{access}, paddr, shared_index);
+    const auto &b = cache.find<T>(
+        paddr, guest_index,
+        [&](uint64_t i) {
+            require(i < PMA_MAX);
+            return entries[i];
+        },
+        fail);
+    require(shared_index == expected && guest_index == expected);
+    require(a.is_empty() == (expected == PMA_MAX || entries[0].ilength == 0));
+    require(a.is_empty() == b.is_empty());
+    require(a.get_start() == b.get_start() && a.get_length() == b.get_length());
+    require(a.is_memory() == b.is_memory() && a.is_device() == b.is_device());
+    require(a.get_driver_id() == b.get_driver_id());
+    require(a.is_readable() == b.is_readable() && a.is_writeable() == b.is_writeable());
+    require(a.is_executable() == b.is_executable());
+    ++comparisons;
 }
 
-uint64_t random_state = UINT64_C(0xe271cc67a8bd9115);
-uint64_t random_word() {
-    random_state ^= random_state << 13;
-    random_state ^= random_state >> 7;
-    random_state ^= random_state << 17;
-    return random_state;
-}
-
-void random_disjoint_sequences() {
-    for (unsigned trial = 0; trial < 200; ++trial) {
-        differential_cache c;
-        for (uint64_t i = 0; i < PMA_MAX; ++i) {
-            c.entries[i] = memory((i + 1) * AR_PAGE_SIZE, AR_PAGE_SIZE, random_word() & 0xffe);
-        }
-        // Metadata order is deliberately unrelated to physical address order.
-        for (uint64_t i = PMA_MAX - 1; i > 0; --i) {
-            std::swap(c.entries[i], c.entries[random_word() % (i + 1)]);
-        }
-        c.read(PMA_MAX - 1); // An explicit read may freeze a descriptor before any search.
-        for (unsigned query = 0; query < 128; ++query) {
-            const auto address = (random_word() % (PMA_MAX + 2)) * AR_PAGE_SIZE;
-            c.find<uint64_t>(address);
-            c.find<uint64_t>(address + AR_PAGE_SIZE - 4); // Straddles adjacent ranges.
-            c.find<uint8_t>(address + AR_PAGE_SIZE - 1);
-        }
-    }
-}
-
-void random_sequences() {
-    for (unsigned trial = 0; trial < 2000; ++trial) {
-        differential_cache c;
-        for (uint64_t i = 0; i < PMA_MAX; ++i) {
-            c.entries[i] = memory((random_word() % 48) * AR_PAGE_SIZE, (1 + random_word() % 8) * AR_PAGE_SIZE,
-                random_word() & 0xffe);
-        }
-        for (unsigned query = 0; query < 200; ++query) {
-            if (query % 5 == 0) {
-                const auto index = random_word() % PMA_MAX;
-                auto entry = memory((random_word() % 48) * AR_PAGE_SIZE, (1 + random_word() % 8) * AR_PAGE_SIZE);
-                if (query % 15 == 0) {
-                    entry.ilength = random_word() % 3; // Empty and malformed entries.
+void differential_cases() {
+    uint64_t seed = 7;
+    for (uint64_t count = 0; count <= PMA_MAX; ++count) {
+        for (uint64_t trial = 0; trial < 4; ++trial) {
+            pmas_state entries{};
+            uint64_t start = 0;
+            for (uint64_t i = 0; i < count; ++i) {
+                seed = seed * 6364136223846793005ULL + 1;
+                start += ((seed >> 32) % 5) * AR_PAGE_SIZE;
+                const uint64_t length = (1 + (seed >> 40) % 8) * AR_PAGE_SIZE;
+                entries[i] = {.istart = start | 0xfd, .ilength = length};
+                start += length;
+            }
+            // RAM may lie before, between, or after the other ranges. Moving it
+            // to index zero must leave the remaining disjoint ranges sorted.
+            if (count != 0) {
+                const uint64_t chosen = trial * (count - 1) / 3;
+                const auto ram = entries[chosen];
+                for (uint64_t i = chosen; i > 0; --i) {
+                    entries[i] = entries[i - 1];
                 }
-                c.write_entry(index, entry);
+                entries[0] = ram;
             }
-            const uint64_t address = random_word() % (64 * AR_PAGE_SIZE);
-            switch (query % 4) {
-                case 0:
-                    c.find<uint8_t>(address);
-                    break;
-                case 1:
-                    c.find<uint16_t>(address);
-                    break;
-                case 2:
-                    c.find<uint32_t>(address);
-                    break;
-                default:
-                    c.find<uint64_t>(address);
-                    break;
+            shared_access access{entries};
+            uarch_pma_cache cache;
+            auto query = [&](uint64_t paddr) {
+                compare<uint8_t>(paddr, entries, access, cache);
+                compare<uint16_t>(paddr, entries, access, cache);
+                compare<uint32_t>(paddr, entries, access, cache);
+                compare<uint64_t>(paddr, entries, access, cache);
+            };
+            for (unsigned pass = 0; pass < 2; ++pass) {
+                for (uint64_t i = 0; i < count; ++i) {
+                    const auto base = entries[i].istart & PMA_ISTART_START_MASK;
+                    const auto end = base + entries[i].ilength;
+                    for (uint64_t paddr : {base, base + 1, base + 4093, end - 8, end - 1, end, base - 1}) {
+                        query(paddr);
+                    }
+                }
+                query(0);
+                query(start + AR_PAGE_SIZE);
+                query(UINT64_MAX);
+                query(UINT64_MAX - 7);
             }
         }
+    }
+}
+
+void cache_cases() {
+    pmas_state entries{};
+    entries[0] = {.istart = 0x8000 | 0xfd, .ilength = 0x2000};
+    entries[1] = {.istart = 0x2000 | 0xfd, .ilength = 0x3000};
+    uarch_pma_cache cache;
+    uint64_t reads = 0;
+    auto read = [&](uint64_t i) {
+        ++reads;
+        return entries[i];
+    };
+    auto query = [&]<typename T>(uint64_t paddr) {
+        uint64_t index = UINT64_MAX;
+        cache.find<T>(paddr, index, read, fail);
+        return index;
+    };
+    require(query.operator()<uint64_t>(0x3000) == 1);
+    const auto cold_reads = reads;
+    require(query.operator()<uint8_t>(0x2000) == 1);
+    require(query.operator()<uint64_t>(0x4ff8) == 1);
+    require(reads == cold_reads); // An interval spans pages without new metadata.
+    require(query.operator()<uint64_t>(0x4ffc) == PMA_MAX);
+    require(query.operator()<uint8_t>(0x4ffc) == 1); // Cross-page miss must not poison hits.
+    const auto warm_reads = reads;
+    cache.invalidate_on_write(0x8000);
+    require(query.operator()<uint64_t>(0x3000) == 1 && reads == warm_reads);
+    cache.invalidate_on_write(AR_PMAS_START);
+    require(query.operator()<uint64_t>(0x3000) == 1 && reads > warm_reads);
+    require(cache.read(PMA_MAX, read, fail).is_empty());
+}
+
+void malformed_cases() {
+    // A RAM hit never probes index 1. Both lookup implementations deliberately
+    // accept its malformed length; whole-table validation is not the contract.
+    for (bool corrupt_ram : {false, true}) {
+        pmas_state entries{};
+        entries[0] = {.istart = 0x8000 | 0xfd, .ilength = corrupt_ram ? 4095U : 4096U};
+        entries[1] = {.istart = 0x2000 | 0xfd, .ilength = 4095};
+        shared_access access{entries};
+        uarch_pma_cache cache;
+        bool shared_rejected = false;
+        bool guest_rejected = false;
+        uint64_t index = UINT64_MAX;
+        try {
+            require(find_pma<uint64_t>(shared_access_ref{access}, 0x8000, index).get_start() == 0x8000);
+            require(index == 0);
+        } catch (const std::runtime_error &) {
+            shared_rejected = true;
+        }
+        try {
+            require(cache.find<uint64_t>(
+                             0x8000, index, [&](uint64_t i) { return entries[i]; }, fail)
+                        .get_start() == 0x8000);
+            require(index == 0);
+        } catch (const std::runtime_error &) {
+            guest_rejected = true;
+        }
+        require(shared_rejected == corrupt_ram && guest_rejected == corrupt_ram);
     }
 }
 
 } // namespace
 
 int main() {
-    targeted_cases();
-    random_sequences();
-    random_disjoint_sequences();
-    std::printf("%llu ordered/cache comparisons passed, including %llu matching rejections\n",
-        static_cast<unsigned long long>(comparisons), static_cast<unsigned long long>(rejections));
+    differential_cases();
+    cache_cases();
+    malformed_cases();
+    std::printf("%llu width/address/cache comparisons passed; probed/unprobed malformed behavior agrees\n",
+        static_cast<unsigned long long>(comparisons));
 }

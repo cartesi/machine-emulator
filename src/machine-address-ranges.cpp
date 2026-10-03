@@ -330,6 +330,13 @@ machine_address_ranges::machine_address_ranges(const machine_config &config,
     push_back(make_pmas_address_range(c.pmas), register_where{.hash_tree = true, .pmas = true});
     push_back_virtio(c.virtio, c.processor.registers.iunrep, console);
 
+    // PMA invariant: RAM at index 0; nonempty tail sorted by start; all ranges
+    // pairwise disjoint (checked above); empty slots form the suffix. The PMA
+    // page is immutable after construction.
+    std::ranges::sort(
+        m_pmas | std::views::drop(1), [](const auto &a, const auto &b) { return a.get_start() < b.get_start(); },
+        [this](const auto i) { return *m_all[i]; });
+
     // Sort indices visible to hash tree by the start of corresponding address range
     std::ranges::sort(
         m_hash_tree, [](const auto &a, const auto &b) { return a.get_start() < b.get_start(); },

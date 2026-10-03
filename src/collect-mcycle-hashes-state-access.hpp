@@ -450,7 +450,7 @@ private:
     }
 
     address_range &do_read_pma(uint64_t index) const {
-        assert(index < PMA_MAX);
+        assert(index <= PMA_MAX); // PMA_MAX selects the accessor's synthetic empty descriptor.
         return m_m.read_pma(index);
     }
 

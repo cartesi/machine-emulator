@@ -39,6 +39,16 @@ class uarch_pma_cache {
     std::array<interval_lookup, 16> m_intervals{};
     size_t m_interval_count{};
 
+    template <typename READ_ENTRY>
+    pmas_entry probe(uint64_t index, READ_ENTRY read_entry) const {
+        const auto &ar = m_ranges[index];
+        // Descriptor snapshots selected earlier remain authoritative.
+        if (ar.is_initialized()) {
+            return {.istart = ar.get_istart(), .ilength = ar.get_length()};
+        }
+        return read_entry(index);
+    }
+
 public:
     template <typename READ_ENTRY, typename ABRT>
     uarch_address_range &read(uint64_t index, READ_ENTRY read_entry, ABRT abrt) {
@@ -67,13 +77,17 @@ public:
         }
         // Probe index 0 (RAM), then binary-search the sorted nonempty tail, treating
         // empty suffix entries as +infinity. A miss returns the synthetic empty
-        // descriptor at index 32 (PMA_MAX). Only probed descriptors are validated.
+        // descriptor at index 32 (PMA_MAX). Only the selected descriptor is constructed and validated.
         index = 0;
-        auto &ram = read(index, read_entry, abrt);
-        if (ram.is_empty()) [[unlikely]] {
-            return ram;
+        const auto ram_entry = probe(index, read_entry);
+        const uint64_t ram_start = ram_entry.istart & PMA_ISTART_START_MASK;
+        if (ram_entry.ilength == 0) [[unlikely]] {
+            return read(index, read_entry, abrt);
         }
-        if (ram.contains_absolute(paddr, sizeof(T))) {
+        if (paddr >= ram_start && ram_entry.ilength >= sizeof(T) &&
+            paddr - ram_start <= ram_entry.ilength - sizeof(T)) {
+            auto &ram = m_ranges[index];
+            ram.initialize(ram_entry.istart, ram_entry.ilength, abrt);
             if (within_page && m_interval_count < m_intervals.size()) {
                 m_intervals[m_interval_count++] = {.start = ram.get_start(),
                     .end = ram.get_start() + ram.get_length(),
@@ -85,11 +99,14 @@ public:
         uint64_t upper = PMA_MAX;
         while (lower < upper) {
             index = lower + (upper - lower) / 2;
-            auto &ar = read(index, read_entry, abrt);
-            // Validate each probe; constructor-sorted, disjoint tails need no exclusions.
-            if (ar.is_empty() || paddr < ar.get_start()) {
+            const auto entry = probe(index, read_entry);
+            const uint64_t start = entry.istart & PMA_ISTART_START_MASK;
+            // Raw bounds suffice for rejection; construct only the selected descriptor.
+            if (entry.ilength == 0 || paddr < start) {
                 upper = index;
-            } else if (ar.contains_absolute(paddr, sizeof(T))) {
+            } else if (entry.ilength >= sizeof(T) && paddr - start <= entry.ilength - sizeof(T)) {
+                auto &ar = m_ranges[index];
+                ar.initialize(entry.istart, entry.ilength, abrt);
                 if (within_page && m_interval_count < m_intervals.size()) {
                     m_intervals[m_interval_count++] = {.start = ar.get_start(),
                         .end = ar.get_start() + ar.get_length(),

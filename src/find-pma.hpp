@@ -36,7 +36,37 @@ auto &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
     [[maybe_unused]] auto note = a.make_scoped_note("find_pma");
     if constexpr (requires { a.template find_pma<T>(paddr, index); }) {
         return a.template find_pma<T>(paddr, index);
+    } else if constexpr (requires { a.read_pma_bounds(index); }) {
+        // Probe index 0 (RAM), then binary-search the sorted nonempty tail, treating
+        // empty suffix entries as +infinity. A miss returns the synthetic empty
+        // descriptor at index 32 (PMA_MAX). Only the selected descriptor is constructed and validated.
+        index = 0;
+        const auto [ram_start, ram_length] = a.read_pma_bounds(index);
+        if (ram_length == 0) [[unlikely]] {
+            return a.read_pma(index);
+        }
+        if (paddr >= ram_start && ram_length >= sizeof(T) && paddr - ram_start <= ram_length - sizeof(T)) {
+            return a.read_pma(index);
+        }
+        uint64_t lower = 1;
+        uint64_t upper = PMA_MAX;
+        while (lower < upper) {
+            index = lower + (upper - lower) / 2;
+            const auto [start, length] = a.read_pma_bounds(index);
+            // Constructible tails are sorted and disjoint. Empty slots are +infinity.
+            if (length == 0 || paddr < start) {
+                upper = index;
+            } else if (length >= sizeof(T) && paddr - start <= length - sizeof(T)) {
+                return a.read_pma(index);
+            } else {
+                lower = index + 1;
+            }
+        }
+        // PMA_MAX selects the accessor's synthetic empty descriptor.
+        index = PMA_MAX;
+        return a.read_pma(index);
     } else {
+        // Native accessors already own constructed descriptors. Preserve their lookup path.
         // Probe index 0 (RAM), then binary-search the sorted nonempty tail, treating
         // empty suffix entries as +infinity. A miss returns the synthetic empty
         // descriptor at index 32 (PMA_MAX). Only probed descriptors are validated.

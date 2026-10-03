@@ -24,6 +24,7 @@
 #include <cstdarg>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 #include "address-range.hpp"
 #include "assert-printf.hpp"
@@ -308,6 +309,13 @@ public:
         dsa_printf("%s::read_address_range(%" PRIu64 ") = {%s, 0x%" PRIx64 ", 0x%" PRIx64 "}\n", get_name(), index,
             pmas_get_DID_name(ar.get_driver_id()), ar.get_start(), ar.get_length());
         return ar;
+    }
+
+    /// \brief Reads PMA bounds without constructing a replay descriptor.
+    std::pair<uint64_t, uint64_t> read_pma_bounds(uint64_t index) const
+        requires requires { derived().do_read_pma_bounds(index); }
+    {
+        return derived().do_read_pma_bounds(index);
     }
 
     /// \brief Converts a target physical address to the implementation-defined fast address

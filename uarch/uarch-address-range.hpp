@@ -93,6 +93,10 @@ public:
         m_initialized = true;
     }
 
+    uint64_t get_istart() const noexcept {
+        return m_istart;
+    }
+
     uint64_t get_start() const noexcept {
         return m_istart & PMA_ISTART_START_MASK;
     }

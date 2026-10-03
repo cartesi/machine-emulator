@@ -314,6 +314,17 @@ private:
     }
     // LCOV_EXCL_STOP
 
+    std::pair<uint64_t, uint64_t> do_read_pma_bounds(uint64_t index) const {
+        assert(index < PMA_MAX);
+        // Preserve snapshots already selected by lookup or TLB validation.
+        auto &mock = m_context.ars[index];
+        if (!std::holds_alternative<std::monostate>(mock)) {
+            const auto &ar = get_mock_address_range(mock, [](const char *err) { THROW(std::runtime_error, err); });
+            return {ar.get_start(), ar.get_length()};
+        }
+        return {read_pmas_istart(index) & PMA_ISTART_START_MASK, read_pmas_ilength(index)};
+    }
+
     address_range &do_read_pma(uint64_t index) const {
         if (index >= PMA_MAX) [[unlikely]] {
             static address_range sentinel{"sentinel"};

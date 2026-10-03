@@ -39,7 +39,8 @@ void require(bool condition) {
 }
 
 // Use the polymorphic replay factory for the shared lookup; the guest uses its
-// compact descriptors. Both instantiate and validate only entries they probe.
+// compact descriptors. The raw-bounds accessor validates only selected entries;
+// the descriptor accessor below validates every probe.
 struct shared_access {
     const pmas_state &entries;
     mock_address_ranges ranges{};
@@ -47,6 +48,15 @@ struct shared_access {
 
     int make_scoped_note(const char *) const {
         return 0;
+    }
+
+    std::pair<uint64_t, uint64_t> read_pma_bounds(uint64_t index) {
+        require(index < PMA_MAX);
+        if (!std::holds_alternative<std::monostate>(ranges[index])) {
+            const auto &ar = get_mock_address_range(ranges[index], fail);
+            return {ar.get_start(), ar.get_length()};
+        }
+        return {entries[index].istart & PMA_ISTART_START_MASK, entries[index].ilength};
     }
 
     address_range &read_pma(uint64_t index) {
@@ -64,6 +74,20 @@ struct shared_access {
 
 // find_pma takes its accessor by value, just like the production accessors.
 struct shared_access_ref {
+    shared_access &state;
+    int make_scoped_note(const char *) const {
+        return 0;
+    }
+    std::pair<uint64_t, uint64_t> read_pma_bounds(uint64_t index) const {
+        return state.read_pma_bounds(index);
+    }
+    address_range &read_pma(uint64_t index) const {
+        return state.read_pma(index);
+    }
+};
+
+// No read_pma_bounds: exercise the descriptor search body with an independent cache.
+struct descriptor_access_ref {
     shared_access &state;
     int make_scoped_note(const char *) const {
         return 0;
@@ -93,11 +117,16 @@ uint64_t reference_index(const pmas_state &entries, uint64_t paddr) {
 }
 
 template <typename T>
-void compare(uint64_t paddr, const pmas_state &entries, shared_access &access, uarch_pma_cache &cache) {
+void compare(uint64_t paddr, const pmas_state &entries, shared_access &access, shared_access &descriptors,
+    uarch_pma_cache &cache) {
     const auto expected = reference_index<T>(entries, paddr);
     uint64_t shared_index = UINT64_MAX;
     uint64_t guest_index = UINT64_MAX;
     const auto &a = find_pma<T>(shared_access_ref{access}, paddr, shared_index);
+    uint64_t descriptor_index = UINT64_MAX;
+    const auto &descriptor = find_pma<T>(descriptor_access_ref{descriptors}, paddr, descriptor_index);
+    require(descriptor_index == shared_index);
+    require(descriptor.get_start() == a.get_start() && descriptor.get_length() == a.get_length());
     const auto &b = cache.find<T>(
         paddr, guest_index,
         [&](uint64_t i) {
@@ -140,12 +169,13 @@ void differential_cases() {
                 entries[0] = ram;
             }
             shared_access access{entries};
+            shared_access descriptors{entries};
             uarch_pma_cache cache;
             auto query = [&](uint64_t paddr) {
-                compare<uint8_t>(paddr, entries, access, cache);
-                compare<uint16_t>(paddr, entries, access, cache);
-                compare<uint32_t>(paddr, entries, access, cache);
-                compare<uint64_t>(paddr, entries, access, cache);
+                compare<uint8_t>(paddr, entries, access, descriptors, cache);
+                compare<uint16_t>(paddr, entries, access, descriptors, cache);
+                compare<uint32_t>(paddr, entries, access, descriptors, cache);
+                compare<uint64_t>(paddr, entries, access, descriptors, cache);
             };
             for (unsigned pass = 0; pass < 2; ++pass) {
                 for (uint64_t i = 0; i < count; ++i) {
@@ -195,15 +225,17 @@ void cache_cases() {
 }
 
 void malformed_cases() {
-    // A RAM hit never probes index 1. Both lookup implementations deliberately
+    // A RAM hit never probes index 1. All three lookup implementations deliberately
     // accept its malformed length; whole-table validation is not the contract.
     for (bool corrupt_ram : {false, true}) {
         pmas_state entries{};
         entries[0] = {.istart = 0x8000 | 0xfd, .ilength = corrupt_ram ? 4095U : 4096U};
         entries[1] = {.istart = 0x2000 | 0xfd, .ilength = 4095};
         shared_access access{entries};
+        shared_access descriptors{entries};
         uarch_pma_cache cache;
         bool shared_rejected = false;
+        bool descriptor_rejected = false;
         bool guest_rejected = false;
         uint64_t index = UINT64_MAX;
         try {
@@ -213,6 +245,16 @@ void malformed_cases() {
             shared_rejected = true;
         }
         try {
+            uint64_t descriptor_index = UINT64_MAX;
+            const auto &descriptor = find_pma<uint64_t>(descriptor_access_ref{descriptors}, 0x8000, descriptor_index);
+            require(!shared_rejected);
+            require(descriptor_index == index);
+            const auto &selected = access.read_pma(index);
+            require(descriptor.get_start() == selected.get_start() && descriptor.get_length() == selected.get_length());
+        } catch (const std::runtime_error &) {
+            descriptor_rejected = true;
+        }
+        try {
             require(cache.find<uint64_t>(
                              0x8000, index, [&](uint64_t i) { return entries[i]; }, fail)
                         .get_start() == 0x8000);
@@ -220,8 +262,70 @@ void malformed_cases() {
         } catch (const std::runtime_error &) {
             guest_rejected = true;
         }
-        require(shared_rejected == corrupt_ram && guest_rejected == corrupt_ram);
+        require(shared_rejected == corrupt_ram && descriptor_rejected == corrupt_ram && guest_rejected == corrupt_ram);
     }
+}
+
+void nonmatching_malformed_cases() {
+    for (bool match_invalid : {false, true}) {
+        pmas_state entries{};
+        entries[0] = {.istart = 0x8000 | 0xfd, .ilength = 4095};
+        entries[1] = {.istart = 0x2000 | 0xfd, .ilength = 4096};
+        shared_access access{entries};
+        shared_access descriptors{entries};
+        uarch_pma_cache cache;
+        const uint64_t address = match_invalid ? 0x8000 : 0x2000;
+        uint64_t shared_index = UINT64_MAX, guest_index = UINT64_MAX;
+        bool shared_rejected = false, guest_rejected = false;
+        try {
+            find_pma<uint64_t>(shared_access_ref{access}, address, shared_index);
+        } catch (const std::runtime_error &) {
+            shared_rejected = true;
+        }
+        // The only permitted disagreement is rejection of a malformed nonselected
+        // probe: the descriptor path rejects RAM even when the raw path selects index 1.
+        bool descriptor_rejected = false;
+        uint64_t descriptor_index = UINT64_MAX;
+        try {
+            find_pma<uint64_t>(descriptor_access_ref{descriptors}, address, descriptor_index);
+        } catch (const std::runtime_error &) {
+            descriptor_rejected = true;
+        }
+        require(descriptor_rejected && descriptor_index == 0);
+        require(shared_rejected == descriptor_rejected || (!match_invalid && shared_index == 1));
+        try {
+            cache.find<uint64_t>(address, guest_index, [&](uint64_t i) { return entries[i]; }, fail);
+        } catch (const std::runtime_error &) {
+            guest_rejected = true;
+        }
+        require(shared_rejected == match_invalid && guest_rejected == match_invalid);
+        if (!match_invalid)
+            require(shared_index == 1 && guest_index == 1);
+    }
+}
+
+void snapshot_cases() {
+    pmas_state entries{};
+    entries[0] = {.istart = 0x8000 | 0xfd, .ilength = 4096};
+    entries[1] = {.istart = 0x2000 | 0xfd, .ilength = 4096};
+    shared_access access{entries};
+    uarch_pma_cache cache;
+    auto query = [&](uint64_t address, uint64_t expected) {
+        uint64_t shared_index = UINT64_MAX, guest_index = UINT64_MAX;
+        const auto &a = find_pma<uint64_t>(shared_access_ref{access}, address, shared_index);
+        const auto &b = cache.find<uint64_t>(address, guest_index, [&](uint64_t i) { return entries[i]; }, fail);
+        require(shared_index == expected && guest_index == expected);
+        require(a.get_start() == b.get_start() && a.get_length() == b.get_length());
+    };
+    query(0x2000, 1);
+    // Outside the constructor invariant, replay snapshots still agree: the
+    // selected descriptor stays frozen, but a raw nonmatching probe does not.
+    entries[0].istart = 0xa000 | 0xfd;
+    entries[1].istart = 0x3000 | 0xfd;
+    cache.invalidate_on_write(AR_PMAS_START);
+    query(0x2000, 1);
+    query(0x3000, PMA_MAX);
+    query(0xa000, 0);
 }
 
 } // namespace
@@ -230,6 +334,9 @@ int main() {
     differential_cases();
     cache_cases();
     malformed_cases();
-    std::printf("%llu width/address/cache comparisons passed; probed/unprobed malformed behavior agrees\n",
+    nonmatching_malformed_cases();
+    snapshot_cases();
+    std::printf("%llu raw/descriptor/cache index and bounds comparisons passed; malformed rejection policy and "
+                "snapshots checked\n",
         static_cast<unsigned long long>(comparisons));
 }

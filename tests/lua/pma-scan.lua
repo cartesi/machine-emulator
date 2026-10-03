@@ -54,8 +54,8 @@ for _, flash_count in ipairs({ 0, 1, 8 }) do
 end
 print(string.format("PMA scan: %d native/uarch/record/replay root comparisons passed", cases))
 
--- Only probed descriptors are validated. For this unmapped LD, PMA self at
--- index 1 is unprobed; RAM at index 0 is probed. Both verifiers must agree.
+-- Only selected descriptors are validated. For this unmapped LD, PMA self at
+-- index 1 is unprobed, PLIC is probed but rejected, and RAM is selected for fetch. Both verifiers must agree.
 -- Recompute the witness root so malformed metadata reaches interpretation.
 local util = require("cartesi.tests.util")
 local function create()
@@ -69,7 +69,7 @@ local u <close> = create()
 local logs = { { name = "native", data = n:log_step(1) }, { name = "uarch", data = u:log_step_uarch(1 << 20) } }
 local accepted, rejected = 0, 0
 for _, fixture in ipairs(logs) do
-    for _, target in ipairs({ cartesi.AR_PMAS_START, cartesi.AR_RAM_START }) do
+    for _, target in ipairs({ cartesi.AR_PMAS_START, cartesi.AR_PLIC_START, cartesi.AR_RAM_START }) do
         local log = util.parse_step_log(fixture.data)
         local found
         for _, page in ipairs(log.pages) do
@@ -96,7 +96,7 @@ for _, fixture in ipairs(logs) do
                 return cartesi.machine:verify_step_uarch(root, serialized, 1 << 20)
             end
         end)
-        assert(ok == (target == cartesi.AR_PMAS_START), tostring(err))
+        assert(ok == (target ~= cartesi.AR_RAM_START), tostring(err))
         if ok then
             accepted = accepted + 1
         else
@@ -104,7 +104,7 @@ for _, fixture in ipairs(logs) do
         end
     end
 end
-print(string.format("PMA malformed witnesses: %d unprobed accepted, %d probed rejected", accepted, rejected))
+print(string.format("PMA malformed witnesses: %d nonselected accepted, %d selected rejected", accepted, rejected))
 
 -- Compact guest PMAs must keep the original device callbacks and access widths.
 local device_cases = 0

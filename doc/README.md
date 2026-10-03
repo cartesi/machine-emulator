@@ -7795,8 +7795,10 @@ this invariant; the PMA page is immutable after construction.
 Lookup probes index 0 first, then binary-searches the sorted tail,
 treating empty entries as having an infinite start address. A miss returns
 the synthetic empty descriptor at index 32, outside the serialized array.
-Replay validates the descriptors it probes, not the whole table; an
-unprobed malformed entry is not rejected solely because it is malformed.
+Replay compares raw bounds before constructing and validating the selected
+descriptor. A malformed entry rejected by the search is not validated, even
+if its raw bounds were probed. Previously selected descriptor snapshots
+remain authoritative for later lookups.
 
 ### Linux setup
 

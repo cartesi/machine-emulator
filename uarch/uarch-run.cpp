@@ -38,7 +38,8 @@ extern template interpreter_break_reason interpret(uarch_bridge_state_access a, 
 /// \return This function never returns
 extern "C" NO_RETURN void interpret_next_mcycle_with_uarch() {
     // Let the state accessor be on static memory storage to speed up uarch initialization
-    static uarch_pma_cache pmas;
+    // Keep the 0x588-byte cache within one witness page.
+    alignas(AR_PAGE_SIZE) static uarch_pma_cache pmas;
     const uarch_bridge_state_access a(pmas);
     const uint64_t mcycle_end = a.read_mcycle() + 1;
     interpret(a, mcycle_end);

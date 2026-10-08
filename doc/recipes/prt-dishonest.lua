@@ -1,0 +1,511 @@
+-- Dishonest players use the same driver, claims, and protocol handlers as the honest
+-- player. Their private inputs, machines, or computation hashes tell a different history.
+local cartesi = require("cartesi")
+local hash_tree = require("cartesi.hash-tree")
+local prt = require("prt")
+local prtu = require("prtu")
+local util = require("cartesi.util")
+local keccak = cartesi.keccak256
+local usaturating_add = prt.usaturating_add
+local is_target_mcycle = prt.is_target_mcycle
+local is_at_fixed_point = prt.is_at_fixed_point
+
+-- Machine and computation-hash wrappers belong to the strategies, not the honest
+-- implementation. A native machine never carries this private input bookkeeping.
+local machine_methods = {}
+local machine_meta = {
+    __close = function(self)
+        local machine <close> = self.machine -- luacheck: ignore 211
+    end,
+    __index = function(self, name)
+        return machine_methods[name] or self.overrides[name] or util.forward_method(self, self.machine, name)
+    end,
+}
+
+local function wrap_machine(machine, overrides, state)
+    return setmetatable({ machine = machine, overrides = overrides, state = state or {} }, machine_meta)
+end
+
+function machine_methods:fork_server()
+    local state = {}
+    for name, value in pairs(self.state) do
+        state[name] = value
+    end
+    return wrap_machine(assert(self.machine:fork_server()), self.overrides, state)
+end
+
+function machine_methods:swap(other)
+    self.machine:swap(other.machine)
+    self.state, other.state = other.state, self.state
+end
+
+-- Call the original builder methods with the wrapper as self, so internal
+-- calls pass through its overrides too. Builder state stays on the original.
+local function wrap_computation_hash(builder, overrides)
+    return setmetatable({}, {
+        __index = function(_, name)
+            local value = overrides[name]
+            if value ~= nil then
+                return value
+            end
+            return builder[name]
+        end,
+        __newindex = function(_, name, value)
+            builder[name] = value
+        end,
+    })
+end
+
+local function clone_handlers(player)
+    local handlers = {}
+    for name, handler in pairs(player.event_handler) do
+        handlers[name] = handler
+    end
+    player.event_handler = handlers
+end
+
+local function begin_input(machine, epoch_input_offset, input_mcycle_base)
+    if
+        machine.state.epoch_input_offset ~= epoch_input_offset
+        or machine.state.input_mcycle_base ~= input_mcycle_base
+    then
+        machine.state = { epoch_input_offset = epoch_input_offset, input_mcycle_base = input_mcycle_base }
+    end
+end
+
+local function observe_input(builder)
+    return wrap_computation_hash(builder, {
+        begin_input = function(self, machine, epoch_input_offset, input_mcycle_base)
+            begin_input(machine, epoch_input_offset, input_mcycle_base)
+            return builder.begin_input(self, machine, epoch_input_offset, input_mcycle_base)
+        end,
+    })
+end
+
+-- Wrap the existing epoch pair and initial checkpoint before any input executes.
+-- Forks and rollback preserve strategy state through the machine wrapper itself.
+local function use_machine(player, overrides)
+    player.epoch_pair.machine = wrap_machine(player.epoch_pair.machine, overrides)
+    for _, checkpoint in ipairs(player.machine_cache.checkpoints) do
+        checkpoint.machine = wrap_machine(checkpoint.machine, overrides)
+    end
+    player.epoch_builder = observe_input(player.epoch_builder)
+    local make_mcycle = player.make_mcycle_computation_hash_builder
+    function player:make_mcycle_computation_hash_builder()
+        return observe_input(make_mcycle(self))
+    end
+    local make_uarch = player.make_uarch_cycle_computation_hash_builder
+    function player:make_uarch_cycle_computation_hash_builder(epoch_period_offset)
+        return observe_input(make_uarch(self, epoch_period_offset))
+    end
+    local make_null = player.make_null_computation_hash_builder
+    function player:make_null_computation_hash_builder()
+        return observe_input(make_null(self))
+    end
+    return player
+end
+
+-- Substitute an input filename as it arrives. Replay reads the forged file, while the
+-- referee still verifies input inclusion against the original contract inputs.
+local function new_forger(dapp_contract, epoch_input_offset, forged_path, label)
+    local player = prt.new_player(dapp_contract, label or "forger")
+    clone_handlers(player)
+    local input_added = player.event_handler.input_added
+    player.event_handler.input_added = function(self, index, path)
+        input_added(self, index, index == epoch_input_offset and forged_path or path)
+    end
+    return player
+end
+
+-- A checkpoint exactly at the corruption point still holds the agreed state.
+-- Corruption happens only when executing or collecting the transition out of it.
+-- Each execution has private strategy state, which its snapshot restores on rollback.
+local function new_tamperer(dapp_contract, epoch_input_offset, tamper_bundle_offset, label)
+    local geometry = dapp_contract.geometry
+    local offset = tamper_bundle_offset << (prt.LOG2_BUNDLE_MCYCLE_COUNT + geometry.log2_mcycles_per_period)
+    local function tamper_point(machine)
+        local context = machine.state
+        if context.epoch_input_offset ~= epoch_input_offset or context.tampered then
+            return nil
+        end
+        if math.ult(cartesi.MCYCLE_MAX - context.input_mcycle_base, offset) then
+            return nil
+        end
+        return context.input_mcycle_base + offset
+    end
+    local function apply(machine)
+        local point = tamper_point(machine)
+        if
+            point
+            and machine:read_reg("mcycle") == point
+            and machine:read_reg("iflags_Y") == 0
+            and machine:read_reg("iflags_H") == 0
+        then
+            local ram_length = machine:get_initial_config().ram.length
+            machine:write_memory(cartesi.AR_RAM_START + ram_length - 8, "CORRUPT!")
+            machine.state.tampered = true
+        end
+    end
+    local function collection_target(machine, target)
+        apply(machine)
+        local point = tamper_point(machine)
+        if point and math.ult(machine:read_reg("mcycle"), point) and math.ult(point, target) then
+            return point
+        end
+        return target
+    end
+    return use_machine(prt.new_player(dapp_contract, label or "tamperer"), {
+        run = function(machine, target)
+            local point = tamper_point(machine)
+            if point and math.ult(machine:read_reg("mcycle"), point) and math.ult(point, target) then
+                local reason = machine.machine:run(point)
+                if reason ~= cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE then
+                    return reason
+                end
+            end
+            if point and math.ult(point, target) then
+                apply(machine)
+            end
+            return machine.machine:run(target)
+        end,
+        collect_mcycle_root_hashes = function(machine, target, ...)
+            local collection_end = collection_target(machine, target)
+            local collected = machine.machine:collect_mcycle_root_hashes(collection_end, ...)
+            -- The strategy stopped early to tamper; the caller's target is still pending.
+            if collection_end ~= target and is_target_mcycle(collected.break_reason) then
+                collected.break_reason = cartesi.BREAK_REASON_YIELDED_SOFTLY
+            end
+            return collected
+        end,
+        collect_uarch_cycle_root_hashes = function(machine, target, ...)
+            local collection_end = collection_target(machine, target)
+            local collected = machine.machine:collect_uarch_cycle_root_hashes(collection_end, ...)
+            if collection_end ~= target and is_target_mcycle(collected.break_reason) then
+                collected.break_reason = cartesi.BREAK_REASON_YIELDED_SOFTLY
+            end
+            return collected
+        end,
+        collect_mcycle_bundle = function(machine, bundle_offset, log2_period, height)
+            -- The point is bundle aligned. Run to it through the strategy, then let the
+            -- machine collect the remaining bundles from there.
+            local point = tamper_point(machine)
+            local mcycle = machine:read_reg("mcycle")
+            local bundle_begin = usaturating_add(mcycle, bundle_offset << (log2_period + height))
+            if point and math.ult(mcycle, point) and not math.ult(bundle_begin, point) then
+                local break_reason
+                repeat
+                    break_reason = machine:run(point)
+                until is_target_mcycle(break_reason) or is_at_fixed_point(break_reason)
+                -- A fixed point before the corruption repeats the same hash at every offset.
+                bundle_offset = is_target_mcycle(break_reason) and (bundle_begin - point) >> (log2_period + height) or 0
+            end
+            apply(machine)
+            return machine.machine:collect_mcycle_bundle(bundle_offset, log2_period, height)
+        end,
+        collect_uarch_cycle_bundle = function(machine, ...)
+            apply(machine)
+            return machine.machine:collect_uarch_cycle_bundle(...)
+        end,
+        run_uarch = function(machine, ...)
+            apply(machine)
+            return machine.machine:run_uarch(...)
+        end,
+        log_step_uarch = function(machine, ...)
+            apply(machine)
+            return machine.machine:log_step_uarch(...)
+        end,
+    })
+end
+
+-- Private insertion helpers for the fabricated stream. Honest builders use the forest API
+-- directly. Only the affected group is split, preserving its neighbors' compressed trees.
+local function lie_about_leaf(leaf, unbundle)
+    local function pad_back_lie(self, value, count, height)
+        local next_leaf = hash_tree.frontier_forest_get_leaf_count(self.frontier)
+        count = count or (((1 << self.frontier.height) - next_leaf) >> height)
+        if count == 0 or leaf < next_leaf or leaf >= next_leaf + (count << height) then
+            return hash_tree.frontier_forest_pad_back(self.frontier, value, count, height)
+        end
+        local prefix = (leaf - next_leaf) >> height
+        hash_tree.frontier_forest_pad_back(self.frontier, value, prefix, height)
+        if height == self.bundle_height then
+            -- The selected bundle factory reconstructs the fabricated leaves.
+            -- Its replacement is authenticated by the ordinary tree.
+            local forest = unbundle(self, hash_tree.frontier_forest_get_leaf_count(self.frontier), height)
+            hash_tree.frontier_forest_pad_back(
+                self.frontier,
+                hash_tree.frontier_forest_get_root_hash(forest),
+                1,
+                height
+            )
+        else
+            for i = 0, (1 << (height - self.bundle_height)) - 1 do
+                pad_back_lie(
+                    self,
+                    hash_tree.frontier_forest_get_node_hash(value, i << self.bundle_height, self.bundle_height),
+                    1,
+                    self.bundle_height
+                )
+            end
+        end
+        hash_tree.frontier_forest_pad_back(self.frontier, value, count - prefix - 1, height)
+    end
+    return pad_back_lie
+end
+
+-- Collect the same execution samples as the honest run, then assemble the fabricated stream.
+-- Final epoch padding needs its own override because an empty epoch never runs an input.
+local function new_mcycle_liar(builder, insert)
+    return wrap_computation_hash(builder, {
+        run = function(self, machine, mcycle_end)
+            local collected = { mcycle_phase = self.mcycle_phase, partial_bundle = self.partial_bundle }
+            repeat
+                local collection_end =
+                    usaturating_add(machine:read_reg("mcycle"), self.collection_chunk_size, mcycle_end)
+                collected = machine:collect_mcycle_root_hashes(
+                    collection_end,
+                    self.log2_period,
+                    collected.mcycle_phase,
+                    self.bundle_height,
+                    collected.partial_bundle
+                )
+                local count = #collected.hashes
+                if is_at_fixed_point(collected.break_reason) then
+                    self.pad_bundle = collected.hashes[count]
+                    count = count - 1
+                end
+                assert(
+                    count <= self.max_bundles_per_input - self.input_bundle_count,
+                    "mcycle collection exceeds the input's bundle capacity"
+                )
+                for i = 1, count do
+                    insert(self, collected.hashes[i], 1, self.bundle_height)
+                end
+                self.input_bundle_count = self.input_bundle_count + count
+                if is_at_fixed_point(collected.break_reason) then
+                    insert(
+                        self,
+                        self.pad_bundle,
+                        self.max_bundles_per_input - self.input_bundle_count,
+                        self.bundle_height
+                    )
+                    self.input_bundle_count = self.max_bundles_per_input
+                end
+            until not is_target_mcycle(collected.break_reason) or machine:read_reg("mcycle") == mcycle_end
+            self.mcycle_phase, self.partial_bundle = collected.mcycle_phase, collected.partial_bundle
+            return collected.break_reason
+        end,
+        end_epoch = function(self)
+            assert(self.input_bundle_count == 0, "mcycle computation hash input was not closed")
+            insert(self, self.pad_bundle, nil, self.bundle_height)
+            return self.frontier
+        end,
+    })
+end
+
+-- Reuse the honest run and input lifecycle, replacing only how collected groups are inserted.
+local function new_uarch_liar(builder, insert)
+    local log2_cycles = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    local function push_mcycles(self, collected)
+        local offsets = collected.mcycle_hash_offsets
+        local available = #offsets - 1
+        local remaining = self.mcycles_per_period - self.mcycle_count
+        local count = available
+        local at_fixed_point = is_at_fixed_point(collected.break_reason)
+        if at_fixed_point then
+            count = count - 1
+        end
+        assert(count <= remaining, "uarch collection exceeds the claim's mcycle capacity")
+        for i = 1, count do
+            local group = hash_tree.frontier_forest(log2_cycles, "keccak256")
+            prt.uarch_computation_hash_push_mcycle(self, group, collected.hashes, offsets[i], offsets[i + 1])
+            insert(self, group, 1, log2_cycles)
+        end
+        self.mcycle_count = self.mcycle_count + count
+        if at_fixed_point and self.mcycle_count < self.mcycles_per_period then
+            local pad_frontier = hash_tree.frontier_forest(log2_cycles, "keccak256")
+            prt.uarch_computation_hash_push_mcycle(
+                self,
+                pad_frontier,
+                collected.hashes,
+                offsets[available],
+                offsets[available + 1]
+            )
+            insert(self, pad_frontier, remaining - count, log2_cycles)
+            self.mcycle_count = self.mcycles_per_period
+        end
+    end
+    return wrap_computation_hash(builder, {
+        push_collected = push_mcycles,
+    })
+end
+
+-- Replace one leaf in a collected bundle, retaining compression of repeated hashes.
+-- The ordinary claim tree still authenticates this fabricated forest against its bundle root.
+local function falsify_bundle(forest, height, leaf, fake_hash)
+    local leaf_count = 1 << height
+    if leaf < 0 or leaf >= leaf_count then
+        return forest
+    end
+    local replacement = hash_tree.frontier_forest(height, "keccak256")
+    local previous, count = nil, 0
+    for i = 0, leaf_count - 1 do
+        local hash = i == leaf and fake_hash or hash_tree.frontier_forest_get_node_hash(forest, i, 0)
+        if hash ~= previous then
+            hash_tree.frontier_forest_pad_back(replacement, previous, count)
+            previous, count = hash, 0
+        end
+        count = count + 1
+    end
+    hash_tree.frontier_forest_pad_back(replacement, previous, count)
+    return replacement
+end
+
+local function new_fabulist(dapp_contract, epoch_input_offset, leaf_offset, label)
+    local geometry = dapp_contract.geometry
+    local player = prt.new_player(dapp_contract, label or "fabulist")
+    local target_epoch_period_offset =
+        prt.combine_epoch_period_offset(geometry.periods_per_input, epoch_input_offset, leaf_offset)
+    local fake_hash = keccak("fabulist")
+    local insert = lie_about_leaf(target_epoch_period_offset, function(_, first_leaf)
+        local bundle_epoch_input_offset, input_period_offset =
+            prt.split_epoch_period_offset(geometry.periods_per_input, first_leaf)
+        return player:collect_mcycle_bundle(
+            bundle_epoch_input_offset,
+            input_period_offset >> prt.LOG2_BUNDLE_MCYCLE_COUNT
+        )
+    end)
+    player.epoch_builder = new_mcycle_liar(player.epoch_builder, insert)
+    local make_mcycle = player.make_mcycle_computation_hash_builder
+    function player:make_mcycle_computation_hash_builder()
+        return new_mcycle_liar(make_mcycle(self), insert)
+    end
+    local make_uarch = player.make_uarch_cycle_computation_hash_builder
+    function player:make_uarch_cycle_computation_hash_builder(epoch_period_offset)
+        local builder = make_uarch(self, epoch_period_offset)
+        if epoch_period_offset == target_epoch_period_offset then
+            return new_uarch_liar(
+                builder,
+                lie_about_leaf((1 << geometry.uarch_height) - 1, function(_, first_leaf)
+                    return player:collect_uarch_cycle_bundle(
+                        epoch_input_offset,
+                        leaf_offset,
+                        first_leaf >> prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT
+                    )
+                end)
+            )
+        end
+        return builder
+    end
+    local collect_mcycle_bundle = player.collect_mcycle_bundle
+    player.collect_mcycle_bundle = function(self, bundle_epoch_input_offset, input_bundle_offset)
+        local forest = collect_mcycle_bundle(self, bundle_epoch_input_offset, input_bundle_offset)
+        local first_leaf = prt.combine_epoch_period_offset(
+            geometry.periods_per_input,
+            bundle_epoch_input_offset,
+            input_bundle_offset << prt.LOG2_BUNDLE_MCYCLE_COUNT
+        )
+        return falsify_bundle(forest, prt.LOG2_BUNDLE_MCYCLE_COUNT, target_epoch_period_offset - first_leaf, fake_hash)
+    end
+    local collect_uarch_cycle_bundle = player.collect_uarch_cycle_bundle
+    player.collect_uarch_cycle_bundle = function(
+        self,
+        bundle_epoch_input_offset,
+        input_period_offset,
+        period_bundle_offset
+    )
+        local forest =
+            collect_uarch_cycle_bundle(self, bundle_epoch_input_offset, input_period_offset, period_bundle_offset)
+        if bundle_epoch_input_offset == epoch_input_offset and input_period_offset == leaf_offset then
+            local leaf = (1 << geometry.uarch_height) - 1 - (period_bundle_offset << prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT)
+            return falsify_bundle(forest, prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT, leaf, fake_hash)
+        end
+        return forest
+    end
+    return player
+end
+
+-- The quitter never executes the guest. Its machine stays at the initial yield,
+-- its builder substitutes a made-up state at every position, and it disconnects
+-- after posting that claim. The disconnect is its only protocol-level deviation. The made-up
+-- state derives from the label, so quitters with different labels post different claims.
+local function new_quitter(dapp_contract, label)
+    label = label or "quitter"
+    local player = prt.new_player(dapp_contract, label)
+    use_machine(player, { send_cmio_response = function() end })
+    local function insert(liar, _, count, height)
+        local fake_hash = keccak(label)
+        for _ = 1, height do
+            fake_hash = keccak(fake_hash, fake_hash)
+        end
+        return hash_tree.frontier_forest_pad_back(liar.frontier, fake_hash, count, height)
+    end
+    player.epoch_builder = new_mcycle_liar(player.epoch_builder, insert)
+    local make = player.make_mcycle_computation_hash_builder
+    function player:make_mcycle_computation_hash_builder()
+        return new_mcycle_liar(make(self), insert)
+    end
+    player.collect_mcycle_bundle = function()
+        local forest = hash_tree.frontier_forest(prt.LOG2_BUNDLE_MCYCLE_COUNT, "keccak256")
+        hash_tree.frontier_forest_pad_back(forest, keccak(label), 1 << prt.LOG2_BUNDLE_MCYCLE_COUNT)
+        return forest
+    end
+    clone_handlers(player)
+    local commit = player.event_handler.commit_mcycle_claim
+    player.event_handler.commit_mcycle_claim = function(self)
+        self.done = true
+        return commit(self)
+    end
+    return player
+end
+
+if ... == "prt-dishonest" then
+    return {
+        new_forger = new_forger,
+        new_tamperer = new_tamperer,
+        new_fabulist = new_fabulist,
+        new_quitter = new_quitter,
+    }
+end
+
+-- The dishonest demonstration roles have their own entry point. A player's label names it in
+-- the story and defaults to its role.
+-- prt-dishonest.lua <role> <address> <initial-state-hash> [role arguments] [<label>]
+local role = assert(arg[1], "missing role")
+local server_address = assert(arg[2], "missing referee address")
+local initial_state_hash = cartesi.fromhex(assert(arg[3], "missing initial state hash"))
+assert(#initial_state_hash == 32, "invalid initial state hash")
+local next_argument = 4
+-- Takes the next argument. It is required when a message says what is missing.
+local function take_argument(message)
+    local value = arg[next_argument]
+    assert(value or not message, message)
+    next_argument = next_argument + 1
+    return value
+end
+local make_player
+if role == "quitter" then
+    make_player = new_quitter
+elseif role == "forger" then
+    local index =
+        assert(tonumber(take_argument("missing forged epoch input offset")), "invalid forged epoch input offset")
+    local path = take_argument("missing forged input file")
+    make_player = function(dapp_contract, label)
+        return new_forger(dapp_contract, index, path, label)
+    end
+elseif role == "tamperer" or role == "fabulist" then
+    local epoch_input_offset =
+        assert(tonumber(take_argument("missing epoch input offset")), "invalid epoch input offset")
+    local offset = assert(tonumber(take_argument("missing offset")), "invalid offset")
+    local make = role == "tamperer" and new_tamperer or new_fabulist
+    make_player = function(dapp_contract, label)
+        return make(dapp_contract, epoch_input_offset, offset, label)
+    end
+else
+    error("unknown role: " .. role)
+end
+local label = take_argument()
+assert(next_argument > #arg, "only the referee takes input files")
+local dapp_contract = prt.make_dapp_contract(initial_state_hash, {})
+local player <close> = make_player(dapp_contract, label)
+prtu.run_client(player, server_address)

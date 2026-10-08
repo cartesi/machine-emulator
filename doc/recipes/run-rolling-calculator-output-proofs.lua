@@ -66,23 +66,25 @@ stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
 local machine = cartesi_jsonrpc_machine("rolling-calculator-template")
 
 -- Snapshot via fork: the backup server keeps the pre-input state
-local backup
-local function snapshot()
-    backup = machine:fork_server()
+local backup_machine
+local function snapshot(m)
+    backup_machine = m:fork_server()
 end
-local function commit()
-    if backup then
-        backup:shutdown_server()
+
+local function commit(_)
+    if backup_machine then
+        backup_machine:shutdown_server()
     end
-    backup = nil
+    backup_machine = nil
 end
-local function rollback()
-    assert(backup, "no snapshot to rollback to")
-    local address = machine:get_server_address()
-    machine:shutdown_server()
-    machine:swap(backup)
-    machine:rebind_server(address)
-    backup = nil
+
+local function revert(m)
+    assert(backup_machine, "no snapshot to revert to")
+    local address = m:get_server_address()
+    m:shutdown_server()
+    m:swap(backup_machine)
+    m:rebind_server(address)
+    backup_machine = nil
 end
 
 -- Seed frontier builds the end-of-epoch proofs, a running copy checks each input's root
@@ -118,7 +120,7 @@ repeat
     if break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY then
         local _, yield_reason, data = machine:receive_cmio_request()
         if yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-            commit()
+            commit(machine)
             revert_root_hash = machine:get_root_hash()
             -- the just-run input was accepted, so close it out before feeding the next one
             if i > 0 then
@@ -130,7 +132,7 @@ repeat
             end
             local expr = assert(input:read("l"), string.format("empty expression file: expression-%d.txt", i))
             stderr("feeding expression %d\n%s\n", i, expr)
-            snapshot()
+            snapshot(machine)
             machine:send_cmio_response(
                 cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
                 encode_advance(expr, i),
@@ -140,7 +142,8 @@ repeat
         elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             stderr("input rejected\n")
             pending_outputs = {} -- discard the rejected input's outputs; the tree is left untouched
-            rollback()
+            revert(machine)
+            assert(machine:get_root_hash() == revert_root_hash, "revert did not restore the pre-input state")
         else
             stderr("machine initialization failed\n")
             break
@@ -154,7 +157,7 @@ repeat
         end
     end
 until break_reason == cartesi.BREAK_REASON_HALTED
-commit()
+commit(machine)
 
 -- Build, verify, and save one per-output proof against the final root
 local proofs = hash_tree.frontier_next_proofs(seed_frontier, output_hashes)

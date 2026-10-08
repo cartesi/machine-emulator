@@ -890,6 +890,23 @@ CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *brea
 CM_API cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_end, uint64_t log2_mcycle_period,
     uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count, const char *previous_partial_bundle, const char **result);
 
+/// \brief Collects the state root hashes covered by one bundle of periodic samples taken from the current mcycle.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param bundle_offset Zero-based offset of the bundle among the consecutive bundles starting at the current mcycle.
+/// \param log2_mcycle_period Log base 2 of the number of machine cycles between sampling points.
+/// \param log2_bundle_mcycle_count Log base 2 of the number of state root hashes covered by each bundle.
+/// \param result Receives a JSON array of 2^\p log2_bundle_mcycle_count base64-encoded state root hashes as a string,
+/// guaranteed to remain valid only until the next CM_API function is called from the same thread.
+/// \returns 0 for success, non zero code for error.
+/// \detail Each bundle spans 2^(\p log2_mcycle_period + \p log2_bundle_mcycle_count) machine cycles. Execution first
+/// advances to the start of the bundle, then collects a state root hash after every 2^\p log2_mcycle_period machine
+/// cycles. If execution reaches a fixed point before the bundle is complete, the remaining positions are filled with
+/// copies of the fixed-point state root hash, following the same rules as cm_collect_mcycle_root_hashes(). A machine
+/// already at a fixed point returns copies of its state root hash and remains unchanged. Execution continues through
+/// automatic yields and ignores console I/O errors.
+CM_API cm_error cm_collect_mcycle_bundle(cm_machine *m, uint64_t bundle_offset, uint64_t log2_mcycle_period,
+    int32_t log2_bundle_mcycle_count, const char **result);
+
 /// \brief Runs the machine microarchitecture until CM_REG_UARCH_CYCLE reaches uarch_cycle_end or it halts.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param uarch_cycle_end End micro cycle value.
@@ -955,6 +972,25 @@ CM_API cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_b
 /// revert root hash, and instead of executing one additional mcycle, the function collects one extra period,
 /// that of the reverted machine, as given by \p revert_uarch_tail.
 CM_API cm_error cm_collect_uarch_cycle_root_hashes(cm_machine *m, uint64_t mcycle_end,
+    int32_t log2_bundle_uarch_cycle_count, const char *revert_uarch_tail, const char **result);
+
+/// \brief Collects the state root hashes covered by one bundle of uarch cycles of the current mcycle.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param bundle_offset Zero-based offset of the bundle among the 2^(CM_ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE -
+/// \p log2_bundle_uarch_cycle_count) bundles of the mcycle.
+/// \param log2_bundle_uarch_cycle_count Log base 2 of the number of state root hashes covered by the bundle.
+/// \param revert_uarch_tail Same as in cm_collect_uarch_cycle_root_hashes() (can be NULL).
+/// \param result Receives a JSON array of 2^\p log2_bundle_uarch_cycle_count base64-encoded state root hashes as a
+/// string, guaranteed to remain valid only until the next CM_API function is called from the same thread.
+/// \returns 0 for success, non zero code for error.
+/// \detail The mcycle expands to 2^CM_ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE state root hashes, one after each uarch
+/// cycle. Once the uarch halts, its state root hash repeats up to the final position, which holds the state root hash
+/// after the uarch reset, following the same rules as cm_collect_uarch_cycle_root_hashes() without bundling. The
+/// bundle covers the positions starting at \p bundle_offset * 2^\p log2_bundle_uarch_cycle_count.
+///
+/// The machine is left as cm_collect_uarch_cycle_root_hashes() leaves it with \p mcycle_end set to the mcycle
+/// following the current one. In particular, a machine already at a fixed point remains unchanged.
+CM_API cm_error cm_collect_uarch_cycle_bundle(cm_machine *m, uint64_t bundle_offset,
     int32_t log2_bundle_uarch_cycle_count, const char *revert_uarch_tail, const char **result);
 
 /// \brief Resets the entire microarchitecture state to pristine values.

@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added `collect_mcycle_bundle` and `collect_uarch_cycle_bundle` to all machine APIs, returning the state root hashes covered by one bundle of an mcycle or uarch-cycle computation hash starting at the machine's current position
 - Added `protect` to `cartesi.util` for converting errors into `nil, error` results while preserving coroutine yields
 - Added fixed-length tuple schemas to `cartesi.tojson`/`cartesi.fromjson`: an array-valued `items` field assigns one schema type to each tuple position and requires the encoded array to have the same length
 

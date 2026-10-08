@@ -119,6 +119,8 @@ private:
     mcycle_root_hashes do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t log2_mcycle_period,
         uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
         const std::optional<back_merkle_tree> &previous_partial_bundle) override;
+    machine_hashes do_collect_mcycle_bundle(uint64_t bundle_offset, uint64_t log2_mcycle_period,
+        int32_t log2_bundle_mcycle_count) override;
     interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) override;
     void do_store(const std::string &dir, sharing_mode sharing) const override;
     void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const override;
@@ -154,6 +156,8 @@ private:
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
     uarch_cycle_root_hashes do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
         int32_t log2_bundle_uarch_cycle_count, const machine_hashes &revert_uarch_tail) override;
+    machine_hashes do_collect_uarch_cycle_bundle(uint64_t bundle_offset, int32_t log2_bundle_uarch_cycle_count,
+        const machine_hashes &revert_uarch_tail) override;
     address_range_descriptions do_get_address_ranges() const override;
     machine_cmio_request do_receive_cmio_request(std::span<uint8_t> data) const override;
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,

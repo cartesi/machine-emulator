@@ -420,6 +420,43 @@
       }
     },
     {
+      "name": "machine.collect_mcycle_bundle",
+      "summary": "Collect the root hashes covered by one bundle of periodic samples taken from the current mcycle",
+      "params": [
+        {
+          "name": "bundle_offset",
+          "description": "Zero-based offset of the bundle among the consecutive bundles starting at the current mcycle",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "log2_mcycle_period",
+          "description": "Log base 2 of the number of machine cycles between sampling points",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "log2_bundle_mcycle_count",
+          "description": "Log base 2 of the number of root hashes covered by each bundle",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "description": "Root hashes covered by the bundle, padded with the fixed-point root hash when execution stops early",
+        "schema": {
+          "$ref": "#/components/schemas/Base64HashArray"
+        }
+      }
+    },
+    {
       "name": "machine.run_uarch",
       "summary": "Runs the small emulator until a given cycle",
       "params": [
@@ -474,6 +511,43 @@
         "description": "Collected hashes",
         "schema": {
           "$ref": "#/components/schemas/UarchCycleRootHashes"
+        }
+      }
+    },
+    {
+      "name": "machine.collect_uarch_cycle_bundle",
+      "summary": "Collect the root hashes covered by one bundle of uarch cycles of the current mcycle",
+      "params": [
+        {
+          "name": "bundle_offset",
+          "description": "Zero-based offset of the bundle among the bundles of the mcycle",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "log2_bundle_uarch_cycle_count",
+          "description": "Log base 2 of the number of root hashes covered by the bundle",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "revert_uarch_tail",
+          "description": "Same as in machine.collect_uarch_cycle_root_hashes",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/Base64HashArray"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "description": "Root hashes covered by the bundle, with the halted root hash repeated up to the final position, which holds the root hash after reset",
+        "schema": {
+          "$ref": "#/components/schemas/Base64HashArray"
         }
       }
     },

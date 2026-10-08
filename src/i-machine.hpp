@@ -102,6 +102,14 @@ public:
             previous_partial_bundle);
     }
 
+    /// \brief Collects the root hashes covered by the bundle at \p bundle_offset among the consecutive bundles of
+    /// 2^\p log2_bundle_mcycle_count samples taken every 2^\p log2_mcycle_period machine cycles from the current
+    /// mcycle.
+    machine_hashes collect_mcycle_bundle(uint64_t bundle_offset, uint64_t log2_mcycle_period,
+        int32_t log2_bundle_mcycle_count) {
+        return do_collect_mcycle_bundle(bundle_offset, log2_mcycle_period, log2_bundle_mcycle_count);
+    }
+
     /// \brief Serialize entire state to directory
     void store(const std::string &dir, sharing_mode sharing = sharing_mode::all) const {
         do_store(dir, sharing);
@@ -297,6 +305,14 @@ public:
         return do_collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle_uarch_cycle_count, revert_uarch_tail);
     }
 
+    /// \brief Collects the root hashes covered by the bundle at \p bundle_offset among the bundles of
+    /// 2^\p log2_bundle_uarch_cycle_count uarch cycles of the current mcycle.
+    /// \details The \p revert_uarch_tail is the same as in collect_uarch_cycle_root_hashes().
+    machine_hashes collect_uarch_cycle_bundle(uint64_t bundle_offset, int32_t log2_bundle_uarch_cycle_count,
+        const machine_hashes &revert_uarch_tail = {}) {
+        return do_collect_uarch_cycle_bundle(bundle_offset, log2_bundle_uarch_cycle_count, revert_uarch_tail);
+    }
+
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
     virtual address_range_descriptions get_address_ranges() const {
         return do_get_address_ranges();
@@ -372,6 +388,8 @@ private:
     virtual mcycle_root_hashes do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t log2_mcycle_period,
         uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
         const std::optional<back_merkle_tree> &previous_partial_bundle) = 0;
+    virtual machine_hashes do_collect_mcycle_bundle(uint64_t bundle_offset, uint64_t log2_mcycle_period,
+        int32_t log2_bundle_mcycle_count) = 0;
     virtual void do_store(const std::string &dir, sharing_mode sharing) const = 0;
     virtual void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const = 0;
     virtual void do_rename_stored(const std::string &from_dir, const std::string &to_dir) const = 0;
@@ -406,6 +424,8 @@ private:
     virtual uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) = 0;
     virtual uarch_cycle_root_hashes do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
         int32_t log2_bundle_uarch_cycle_count, const machine_hashes &revert_uarch_tail) = 0;
+    virtual machine_hashes do_collect_uarch_cycle_bundle(uint64_t bundle_offset, int32_t log2_bundle_uarch_cycle_count,
+        const machine_hashes &revert_uarch_tail) = 0;
     virtual address_range_descriptions do_get_address_ranges() const = 0;
     virtual machine_cmio_request do_receive_cmio_request(std::span<uint8_t> data) const = 0;
     virtual void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,

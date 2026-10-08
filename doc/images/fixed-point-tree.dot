@@ -1,0 +1,59 @@
+// Height-4 fixed-point tree (16 leaves) over five distinct leaves followed by a sixth that
+// repeats over the remaining positions. Node positions are pinned for a perfectly symmetric
+// binary tree, as in outputs-merkle-tree.dot; render with "neato -n". Each level stores its
+// distinct nodes (filled blue) plus the first repeated one (filled gray), the root of an
+// all-repeated subtree. The implicit positions past it read that last entry and hold nothing
+// (gray outlines). Stored: 6 + 4 + 3 + 2 + 1 = 16 of 31 nodes.
+digraph fixed_point_tree {
+  graph [bgcolor=transparent];
+  node [shape=circle, fixedsize=true, width=0.34, label="", style=filled, color="#555555", penwidth=2];
+  edge [arrowhead=none, color="#555555"];
+
+  N1 [fillcolor="#5b9bf0", color="#5b9bf0", pos="345.0,256!"];
+  N2 [fillcolor="#5b9bf0", color="#5b9bf0", pos="161.0,192!"];
+  N3 [fillcolor="#888888", color="#888888", pos="529.0,192!"];
+  N4 [fillcolor="#5b9bf0", color="#5b9bf0", pos="69.0,128!"];
+  N5 [fillcolor="#5b9bf0", color="#5b9bf0", pos="253.0,128!"];
+  N6 [fillcolor="#888888", color="#888888", pos="437.0,128!"];
+  N7 [fillcolor="none", color="#888888", pos="621.0,128!"];
+  N8 [fillcolor="#5b9bf0", color="#5b9bf0", pos="23.0,64!"];
+  N9 [fillcolor="#5b9bf0", color="#5b9bf0", pos="115.0,64!"];
+  N10 [fillcolor="#5b9bf0", color="#5b9bf0", pos="207.0,64!"];
+  N11 [fillcolor="#888888", color="#888888", pos="299.0,64!"];
+  N12 [fillcolor="none", color="#888888", pos="391.0,64!"];
+  N13 [fillcolor="none", color="#888888", pos="483.0,64!"];
+  N14 [fillcolor="none", color="#888888", pos="575.0,64!"];
+  N15 [fillcolor="none", color="#888888", pos="667.0,64!"];
+  N16 [fillcolor="#5b9bf0", color="#5b9bf0", pos="0.0,0!"];
+  N17 [fillcolor="#5b9bf0", color="#5b9bf0", pos="46.0,0!"];
+  N18 [fillcolor="#5b9bf0", color="#5b9bf0", pos="92.0,0!"];
+  N19 [fillcolor="#5b9bf0", color="#5b9bf0", pos="138.0,0!"];
+  N20 [fillcolor="#5b9bf0", color="#5b9bf0", pos="184.0,0!"];
+  N21 [fillcolor="#888888", color="#888888", pos="230.0,0!"];
+  N22 [fillcolor="none", color="#888888", pos="276.0,0!"];
+  N23 [fillcolor="none", color="#888888", pos="322.0,0!"];
+  N24 [fillcolor="none", color="#888888", pos="368.0,0!"];
+  N25 [fillcolor="none", color="#888888", pos="414.0,0!"];
+  N26 [fillcolor="none", color="#888888", pos="460.0,0!"];
+  N27 [fillcolor="none", color="#888888", pos="506.0,0!"];
+  N28 [fillcolor="none", color="#888888", pos="552.0,0!"];
+  N29 [fillcolor="none", color="#888888", pos="598.0,0!"];
+  N30 [fillcolor="none", color="#888888", pos="644.0,0!"];
+  N31 [fillcolor="none", color="#888888", pos="690.0,0!"];
+
+  N1 -> N2; N1 -> N3;
+  N2 -> N4; N2 -> N5;
+  N3 -> N6; N3 -> N7;
+  N4 -> N8; N4 -> N9;
+  N5 -> N10; N5 -> N11;
+  N6 -> N12; N6 -> N13;
+  N7 -> N14; N7 -> N15;
+  N8 -> N16; N8 -> N17;
+  N9 -> N18; N9 -> N19;
+  N10 -> N20; N10 -> N21;
+  N11 -> N22; N11 -> N23;
+  N12 -> N24; N12 -> N25;
+  N13 -> N26; N13 -> N27;
+  N14 -> N28; N14 -> N29;
+  N15 -> N30; N15 -> N31;
+}

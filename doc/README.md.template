@@ -1252,7 +1252,8 @@ The server shell shows the execution of both sessions:
 
 Remote Cartesi Machines have one ability that local Cartesi Machines lack: they can be _forked_, producing a copy that runs forward independently in a child server while the original is preserved in the parent.
 Inspect-state requests and rejected advance-state requests require that changes to the state of the Rolling Cartesi Machine be reverted.
-One way to implement this is for the host to run the inspect or advance against a fork, then discard it.
+One way to implement this is for the host to fork the machine before each request and keep the fork as a backup.
+If the changes must be reverted, the host replaces the machine with the backup. Otherwise, it discards the backup.
 
 ### Rolling Cartesi Machines
 
@@ -1433,7 +1434,7 @@ cartesi-machine \
     --remote-address=127.0.0.1:8082 \
     --no-remote-destroy \
     --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
-    --cmio-advance-state=input_index_begin:0,input_index_end:3,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3,print_input_state_hashes \
     --final-hash=epoch-0-state-hash.bin \
     -- /mnt/calc/calc.sh
 # docs:end client1
@@ -1446,7 +1447,7 @@ cartesi-machine \
     --remote-address=127.0.0.1:8082 \
     --no-remote-create \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:3,input_index_end:6,last_output_proof:output-1-input-2-proof.lua,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:3,input_file_index_end:6,last_output_proof:output-1-input-2-proof.lua,print_input_state_hashes \
     --cmio-inspect-state=query:query.bin,print_query_state_hashes
 # docs:end client2
 } > client2 2>&1
@@ -1514,6 +1515,7 @@ The copy also lets `cartesi-machine` emit correct proofs, at the right global ou
 The three inputs evaluate `(2^256 - 1) * (2^256 - 1)`, `sqrt(2)` to 80 decimal places, and `355/113` to 100 decimal places.
 Arbitrary-precision results like these are awkward to compute on the blockchain, whose native arithmetic works on fixed-width 256-bit integers and has no fractions.
 Their outputs continue the global output index, becoming outputs 2, 3, and 4.
+The file range selects `input-3.bin` through `input-5.bin`, and `%i` uses those same indices in output, report, and proof filenames.
 The run passes `--remote-shutdown` to stop the server once the epoch is done.
 
 The client shell now shows
@@ -1626,7 +1628,7 @@ cartesi-machine \
     --no-init-splash \
     --remote-address=127.0.0.1:8083 \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:0,input_index_end:6,output_proof:,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:6,output_proof:,print_input_state_hashes \
     --load="rolling-calculator-template"
 # docs:end client
 } > client 2>&1
@@ -1666,7 +1668,7 @@ rm -f output-* rejected-output-* input-*-outputs-merkle-root* final-hash.bin sto
 cartesi-machine \
     --revert-mode=stored \
     --load="machine,clone:rolling-calculator-template,sharing:all" \
-    --cmio-advance-state=input_index_begin:0,input_index_end:6,output_proof:,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:6,output_proof:,print_input_state_hashes \
     --final-hash=final-hash.bin
 # docs:end
 } > run 2>&1
@@ -1689,6 +1691,165 @@ An abbreviated log shows the six inputs advancing in the same invocation
 ```{.text key=rolling_calc_stored_elided runner=bash replace=stdout vars=log->rolling_calc_stored/run/path}
 { head -n 16 "$log"; echo ...; tail -n 8 "$log"; }
 ```
+
+### Computation hashes
+
+```{.lua key=rollup_constants replace=null outputs=log2_max_advance_states_per_epoch,log2_max_mcycles_per_advance_state,log2_max_uarch_cycles_per_mcycle,log2_mcycle_leaves,log2_uarch_leaves}
+local cartesi = require("cartesi")
+local util = require("cartesi.util")
+-- tree heights for the 2^10-mcycle period the examples use
+local log2_period = 10
+local log2_mcycle_leaves = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+    + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+    - log2_period
+local log2_uarch_leaves = log2_period + cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+util.write_file(tostring(cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH), "log2_max_advance_states_per_epoch")
+util.write_file(tostring(cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE), "log2_max_mcycles_per_advance_state")
+util.write_file(tostring(cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE), "log2_max_uarch_cycles_per_mcycle")
+util.write_file(tostring(log2_mcycle_leaves), "log2_mcycle_leaves")
+util.write_file(tostring(log2_uarch_leaves), "log2_uarch_leaves")
+```
+
+A *computation hash* is the root of a Merkle tree whose leaves are the machine state hashes sampled at periodic intervals during a computation.
+Where a state hash commits to the machine at one point, a computation hash commits to the whole run of an epoch.
+The dispute resolution protocol described under [Hash-view of computation](#hash-view-of-computation), in the blockchain perspective, is built on it.
+The `cartesi-machine` utility computes two kinds while `--cmio-advance-state` feeds an epoch to a Rolling Cartesi Machine.
+An *mcycle computation hash* covers the entire epoch, with one leaf every 2<sup>p</sup> mcycles and the initial state implicit.
+A *uarch cycle computation hash* covers one of these mcycle periods, with one leaf after each uarch cycle.
+
+We compute them for the first epoch of the calculator, inputs 0 to 2 fed to its stored template.
+With the template and the encoded inputs in the working directory, start a `cartesi-jsonrpc-machine` server at `127.0.0.1:8095` as in the previous sections, and run the client
+```{.bash key=prt_mch vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode outputs=mch.bin,mch_line replace=source/client}
+rm -f rolling-calculator-template
+ln -sf "$tmpl" rolling-calculator-template
+ln -sf $rolling_calc_encode/input-[012].bin .
+{
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:8095
+} > /dev/null 2>&1 &
+while ! netstat -ntl 2>&1 | grep '\<8095\>' > /dev/null; do sleep 1; done
+{
+# docs:begin client
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:8095 \
+    --remote-shutdown \
+    --load=rolling-calculator-template \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
+    --mcycle-computation-hash=log2_mcycle_period:10,filename:mch.bin
+# docs:end client
+} > client 2>&1
+grep "computation hash" client > mch_line
+```
+The mcycle computation hash is printed at the end of the epoch
+```{replace=prt_mch/mch_line}
+```
+The `log2_mcycle_period` sub-key gives *p*, the log base 2 of the sampling period in mcycles.
+The `filename` sub-key saves the hash as a 32-byte file, `mch.bin` here, besides printing it.
+The optional `log2_bundle_mcycle_count` sub-key groups 2<sup>*n*</sup> consecutive samples into one subtree at a time, which changes how the tree is built but not its root.
+
+The epoch need not be fed in one execution.
+With `resumable:true`, `--cmio-advance-state` saves the bookkeeping another execution needs in a set of epoch files, updated after every completed input.
+To run the same epoch in two executions, start a server that stays alive between them
+```{.bash key=rolling_calc_mch_resumable vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,prt_mch outputs=server,first,second,mch.bin,mch_line replace=source/server}
+rm -f rolling-calculator-template
+ln -sf "$tmpl" rolling-calculator-template
+ln -sf $rolling_calc_encode/input-[012].bin .
+rm -f epoch-state.bin outputs.json computation.json mch.bin
+{
+# docs:begin server
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:8088
+# docs:end server
+} > server 2>&1 &
+srv_pid=$!
+while ! netstat -ntl 2>&1 | grep '\<8088\>' > /dev/null; do sleep 1; done
+{
+# docs:begin first
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:8088 \
+    --no-remote-destroy \
+    --load=rolling-calculator-template \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:1,resumable:true,end_epoch:false,state_hash:epoch-state.bin,outputs_frontier:outputs.json,output_proof: \
+    --mcycle-computation-hash=log2_mcycle_period:10,frontier:computation.json
+# docs:end first
+} > first 2>&1
+first_status=$?
+{
+# docs:begin second
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:8088 \
+    --no-remote-create \
+    --remote-shutdown \
+    --cmio-advance-state=input_file_index_begin:1,input_file_index_end:3,resumable:true,begin_epoch:false,state_hash:epoch-state.bin,outputs_frontier:outputs.json,output_proof: \
+    --mcycle-computation-hash=log2_mcycle_period:10,frontier:computation.json,filename:mch.bin
+# docs:end second
+} > second 2>&1
+second_status=$?
+{ [ "$first_status" -eq 0 ] && [ "$second_status" -eq 0 ]; } || kill "$srv_pid" 2>/dev/null
+wait "$srv_pid"
+grep "computation hash" second > mch_line
+# the two executions must produce the hash of the single execution
+cmp mch.bin $prt_mch/mch.bin
+```
+From a different shell into the same container, run the first execution
+```{.bash replace=rolling_calc_mch_resumable/source/first}
+```
+Passing `end_epoch:false` leaves the epoch open, and `--no-remote-destroy` keeps the machine in the server.
+The `state_hash` file receives the machine state hash after the last completed input, `outputs_frontier` the state of the outputs Merkle tree, and `frontier` in `--mcycle-computation-hash` the state of the computation hash tree.
+(Both are frontiers, explained under [The hash tree frontier](#the-hash-tree-frontier) in the blockchain perspective.)
+Output proofs across executions also need `output_hashes` and `output_input_indices`, which this example does not use, so it disables output proofs with an empty `output_proof` pattern.
+A new epoch requires these files to be missing or empty, and initializes them.
+Now run the second execution
+```{.bash replace=rolling_calc_mch_resumable/source/second}
+```
+Passing `begin_epoch:false` continues the epoch from the saved files, after checking that the machine found in the server matches `state_hash`.
+The default `end_epoch:true` then seals the computation hash tree and prints
+```{replace=rolling_calc_mch_resumable/mch_line}
+```
+the same hash the single execution produced.
+An execution with both `begin_epoch:false` and `end_epoch:false` continues an epoch and leaves it open, so an epoch can be split into any number of executions.
+Each must reuse the same epoch filenames, sampling period, and bundle size, and the machine can equally be retained with store and load instead of a server.
+Epoch file writes are not an atomic transaction, so recovery after a process or host crash can require manual repair.
+
+The uarch cycle computation hash needs no epoch files.
+Replacing `--mcycle-computation-hash` with `--uarch-cycle-computation-hash` computes it for the period `mcycle_period_index` selects, with the same `log2_mcycle_period`.
+Each input owns 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup> mcycles of the epoch, counted from the state that receives it, so the periods of input *i* start at index *i* times 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}-p</sup>.
+Period 49509 is the one in which input 0 stops, so only input 0 needs to run
+```{.bash key=rolling_calc_uch vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,prt_mch outputs=uch_line replace=source/client}
+rm -f rolling-calculator-template
+ln -sf "$tmpl" rolling-calculator-template
+ln -sf $rolling_calc_encode/input-[012].bin .
+# The direct run's log must place input 0's stop in the period the prose names
+start=$(grep '^Cycles:' $prt_mch/client | sed -n 1p | cut -d' ' -f2)
+stop=$(grep '^Cycles:' $prt_mch/client | sed -n 3p | cut -d' ' -f2)
+test $(( (stop - start) >> 10 )) = 49509
+{
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:8087
+} > /dev/null 2>&1 &
+while ! netstat -ntl 2>&1 | grep '\<8087\>' > /dev/null; do sleep 1; done
+{
+# docs:begin client
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:8087 \
+    --remote-shutdown \
+    --load=rolling-calculator-template \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:1 \
+    --uarch-cycle-computation-hash=log2_mcycle_period:10,mcycle_period_index:49509
+# docs:end client
+} > client 2>&1
+grep "computation hash" client > uch_line
+```
+The hash is printed as soon as the period completes
+```{replace=rolling_calc_uch/uch_line}
+```
+A period in a later input does not require running the epoch from its start.
+Given a machine at the state that receives that input, `begin_epoch:false` with `next_input_offset` set to the input's zero-based offset in the epoch, counting rejected inputs, starts there.
+The optional `log2_bundle_uarch_cycle_count` sub-key groups samples into subtrees as before.
 
 ### Additional options
 
@@ -2781,11 +2942,12 @@ If so, it checks the reason for the yield.
 If the reason was `cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED`, the application accepted the previous request and is ready for the next.
 The script then attempts to read the next numbered expression file.
 If there is one, it creates a new snapshot, ABI-encodes the expression as `EvmAdvance` calldata with `cartesi.evmu`, and feeds the encoded input through `machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, ..., revert_root_hash)`.
-If, however, the reason was anything else, the script rolls back the machine and continues with the next loop iteration.
+If the reason was `cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED`, the script reverts the machine and continues with the next loop iteration.
+Any other manual yield ends the loop.
 
 :::note
 The `revert_root_hash` passed to `machine:send_cmio_response()` is recorded into the machine state as the state hash to revert to in case the guest application rejects the input.
-The script collects it whenever the guest accepts, and a rejection keeps it as it was, since the rollback restores the machine to that same state.
+The script collects it whenever the guest accepts, and a rejection keeps it as it was, since the revert restores the machine to that same state (which the script asserts).
 This is required for dispute resolution to operate properly.
 :::
 
@@ -2928,15 +3090,15 @@ Four functions manage stored machines.
 All four are also available on `cartesi.machine` itself, so a script can manipulate stored machines without holding a loaded instance.
 These functions are the basis for the `clone:` and `sync` keys of the command-line utility's `--load` option.
 
-The disk-based driver is the calculator driver from the Rolling Cartesi Machine [example](#rolling-cartesi-machines-1), with the fork-based `snapshot`, `commit`, and `rollback` reimplemented over stored machines, feeding the same expressions the command-line example processed so the resulting state hashes can be compared.
+The disk-based driver is the calculator driver from the Rolling Cartesi Machine [example](#rolling-cartesi-machines-1), with the fork-based `snapshot`, `commit`, and `revert` reimplemented over stored machines, feeding the same expressions the command-line example processed so the resulting state hashes can be compared.
 The helpers and the main loop are unchanged, and the script ends by syncing the final on-disk state and printing its hash, so the excerpt below shows only the reimplemented part
 ```{.lua key=run_rolling_calculator_from_storage include=run-rolling-calculator-from-storage.lua/storage title="run-rolling-calculator-from-storage.lua (excerpt)"}
 ```
 The live machine is loaded from a clone of the template with `cartesi.SHARING_ALL` (the third argument of the `cartesi.machine` constructor), so every modification lands directly on the backing stores of `machine` and there is no store step.
-`commit` syncs `machine` at every accepted boundary, including the initial boundary, so `snapshot` can clone the already-durable directory to `backup_machine` and sync the clone before execution modifies `machine`.
+`commit` syncs `machine` at every accepted boundary, including the initial boundary, so `snapshot` can clone the already-durable directory to `machine.revert` and sync the clone before execution modifies `machine`.
 The backing stores of a loaded directory are locked, so the machine is closed around the clone and reloaded afterward, a cheap operation that copies nothing.
 When a backup exists, `commit` removes it after syncing the accepted machine.
-`rollback` discards the rejected state with `remove_stored`, durably renames `backup_machine` as `machine`, and reloads it.
+`revert` discards the rejected state with `remove_stored`, durably renames `machine.revert` as `machine`, and reloads it.
 The script still records `revert_root_hash` when feeding each input, as every advance-state request requires, even though a rejection here is undone at the filesystem level.
 
 Run the script with the expressions and the stored template in the working directory
@@ -2944,7 +3106,7 @@ Run the script with the expressions and the stored template in the working direc
 rm -f rolling-calculator-template run-rolling-calculator-from-storage.lua expression-*.txt
 ln -sfn "$template" rolling-calculator-template
 ln -sf "$RECIPES_DIR/run-rolling-calculator-from-storage.lua" .
-rm -rf backup_machine machine
+rm -rf machine machine.revert
 printf '6*2^1024 + 3*2^512' > expression-0.txt
 printf 'invalid input' > expression-1.txt
 printf '2^2048' > expression-2.txt
@@ -2965,6 +3127,22 @@ to produce
 ```
 The final state hash matches the command-line stored-mode run, so both drivers commit exactly the same machine.
 Since the whole epoch runs in one process, resuming the outputs Merkle tree across invocations is not a concern, and collecting outputs and their proofs works exactly as in the previous sections.
+
+### Computation hashes
+
+The command-line utility's `--mcycle-computation-hash` and `--uarch-cycle-computation-hash` options (described under [Computation hashes](#computation-hashes)) are built on two methods that sample the machine state hash as the machine runs.
+
+`machine:collect_mcycle_root_hashes(<mcycle_end>, <log2_mcycle_period>, <mcycle_phase>, <log2_bundle_mcycle_count>, <partial_bundle>)` runs the machine up to `<mcycle_end>` and collects the state hash every 2<sup>*q*</sup> mcycles, where *q* is `<log2_mcycle_period>`, the first sample coming 2<sup>*q*</sup> - `<mcycle_phase>` mcycles after the current one.
+It returns a table whose `hashes` array holds the samples, as 32-byte binary strings, and whose `break_reason` reports why the machine stopped, with the same values `machine:run()` returns.
+When the machine reaches a fixed point (a manual yield, a halt, or an mcycle overflow) before the next sampling point, the state hash there is collected as the last entry, so the caller can pad the remaining sampling points with it.
+When the manual yield rejected an input, the recorded revert root hash takes its place.
+With `<log2_bundle_mcycle_count>` greater than zero, each entry of `hashes` is instead the root hash of a complete subtree over that many consecutive samples, and a `partial_bundle` field returns the samples that did not fill a subtree, to be passed as `<partial_bundle>` to the next call.
+
+`machine:collect_uarch_cycle_root_hashes(<mcycle_end>, <log2_bundle_uarch_cycle_count>, <revert_uarch_tail>)` runs the machine up to `<mcycle_end>` one uarch cycle at a time, resetting the uarch after each mcycle, and collects the state hash after every uarch cycle and after every reset.
+Its result adds `mcycle_hash_offsets`, which marks where each mcycle's entries begin in `hashes`.
+The entry before each reset's is the state hash after the uarch halted, with which the caller pads each mcycle to a fixed number of uarch cycles.
+At a fixed point it runs one additional mcycle and collects its hashes as well, and `<revert_uarch_tail>` supplies the entries of the reverted machine in place of that when the fixed point is a rejected input.
+The command-line utility combines the samples of either method into a computation hash with the frontier helpers of the `hash_tree` module, introduced under [Output proofs](#output-proofs).
 
 ### State-transition proofs
 
@@ -3568,7 +3746,7 @@ cartesi-machine \
     --no-init-splash \
     --remote-address=127.0.0.1:8086 \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:0,input_index_end:2,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:2,print_input_state_hashes \
     --cmio-inspect-state=print_query_state_hashes \
     --final-hash \
     -- /home/dapp/puppet
@@ -4173,9 +4351,9 @@ Reports, inspect queries, and exceptions travel as raw bytes.
 
 In the host, the loop is as follows:
 ```
-Save fresh fork of machine as a snapshot
 Repeat
     Obtain the next request from an external source
+    Save fresh fork of machine as a snapshot
     If advance-state request
         Write the current state hash to the state at AR_SHADOW_REVERT_ROOT_HASH_START
         Write ABI-encoded EvmAdvance(...) to CMIO RX buffer and its length to `length`
@@ -4196,12 +4374,12 @@ Repeat
         End
         If register `iflags_Y` is not 0 (machine yielded manual)
             If `REASON` in `tohost` is HTIF_YIELD_MANUAL_REASON_RX_REJECTED
-                Replace machine with fresh fork of snapshot
+                Replace machine with snapshot
             End
             If `REASON` in `tohost` is HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
                 `length` = `DATA` from `tohost` (length of hash)
                 Read outputs Merkle root from CMIO TX buffer using `length`
-                Replace snapshot with fresh fork of machine
+                Discard snapshot
             End
             If `REASON` in `tohost` is HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION
                 `length` = `DATA` from `tohost`
@@ -4226,7 +4404,7 @@ Repeat
                 End
             End
         End
-        Replace machine with fresh fork of snapshot
+        Replace machine with snapshot
     End
 End
 ```
@@ -4234,7 +4412,7 @@ The host controls the emulator via the C, Lua, or JSON-RPC APIs.
 It loops obtaining requests from an external source.
 Processing requests modifies the state of the machine.
 However, at the end of a request, the host may have to revert these changes.
-Therefore, the host keeps a snapshot of the state of the machine before any request is processed.
+Therefore, before delivering each request, the host saves a snapshot of the machine.
 
 For an advance-state request, the host sends the request with `machine:send_cmio_response()`, passing the current state hash for the machine to record.
 (This, of course, changes the state so its hash is not what has just been written, but this is expected.)
@@ -4242,12 +4420,12 @@ The call also writes the request to the CMIO RX buffer and its type and length t
 The machine is now ready to be resumed.
 The host loops resuming the machine and collecting its outputs or reports every time it yields automatic.
 The guest application is eventually done with the input.
-If it rejects the input, the host drops the current machine and replaces it with a copy of the snapshot.
-If it accepts the input, the host replaces the snapshot with a copy of the current machine, and collects the new outputs Merkle root.
+If it rejects the input, the host drops the current machine and replaces it with the snapshot.
+If it accepts the input, the host collects the new outputs Merkle root and discards the snapshot.
 If it threw an exception or halted, the host aborts.
 
 For an inspect-state request, the loop is very similar.
-The differences are that only reports are collected (outputs are ignored), and that the machine is always reverted back to a copy of its snapshot.
+The differences are that only reports are collected (outputs are ignored), and that the machine is always replaced by its snapshot.
 
 #### Address ranges
 
@@ -4637,6 +4815,7 @@ Every leaf the outputs have not reached is pristine.
 The function climbs level by level, combining each present frontier entry on the left with pristine padding on the right.
 The pristine leaf is only the default, used when `<pad>` is omitted.
 Any other leaf hash can be given as `<pad>` instead, and `frontier_pad_back` appends copies of such a hash to the frontier itself, folding them in by the same carry as `frontier_push_back`.
+The outputs Merkle tree needs neither, but the trees under [Fixed-point trees](#fixed-point-trees) do.
 The [Output proofs](#output-proofs) example uses `frontier_push_back` and `frontier_get_root_hash` together while processing an epoch, pushing each accepted output and then rooting the frontier to check it against the outputs Merkle root the guest reported.
 
 The constructor is `frontier`, which produces the frontier an epoch begins from:
@@ -4706,6 +4885,124 @@ produces the output
 ```{replace=lua_verify_output_proof}
 ```
 
+## Hash-view of computation
+
+A *computation hash* is the root of a Merkle tree whose leaves are the machine state hashes sampled at periodic intervals during a computation.
+The two kinds `cartesi-machine` computes, introduced under [Computation hashes](#computation-hashes), are the *mcycle computation hash*, over an entire epoch with one leaf every 2<sup>p</sup> mcycles and the initial state implicit, and the *uarch cycle computation hash*, over one of those periods with one leaf after each uarch transition.
+
+An epoch spans 2<sup>[]{replace=rollup_constants/log2_max_advance_states_per_epoch code=no}</sup> inputs, each input owns 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup> mcycles counted from the state that receives it, and each mcycle expands into 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch transitions.
+A machine stopped at a manual yield, halt, or mcycle overflow no longer advances, so past the last mcycle an input uses it sits at a fixed point, and so does the epoch past its last input.
+The leaves past a stop repeat its state hash (the reverted state hash when an input was rejected) to the end of the input's span, and the leaves past the last input repeat the epoch's final state hash.
+The uarch cycle computation hash is analogous.
+Each mcycle of the period owns 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> leaves.
+The uarch executes one instruction of the main processor in a number of uarch cycles and then halts.
+The first leaves of the mcycle are the state hashes after each of these uarch cycles.
+The halted state fills the leaves that follow.
+The last leaf is the state hash after the uarch reset.
+Every one of these transitions is one the blockchain can verify.
+Once the machine stops inside the period, the uarch starts every remaining mcycle from a state in which the main processor is at a fixed point.
+It executes only the uarch cycles needed to notice this and halts, and the reset then moves the state back to where it started.
+The leaves of that mcycle form a tail that repeats for every mcycle the machine stays at the fixed point, to the end of the period.
+
+When only the computation hash itself matters, the frontier of [The hash tree frontier](#the-hash-tree-frontier) is enough, with `frontier_pad_back` folding in each run of repeated leaves, and this is what `cartesi-machine` uses internally.
+A dispute, however, must later reveal any leaf of a committed tree, along with the siblings on its path, and a frontier has collapsed everything to the left of its last leaf into root hashes.
+That calls for a data structure that captures the repetitions at the fixed points while keeping every node reachable.
+
+### Fixed-point trees
+
+The frontier pads the leaves it has not reached with a single repeated value.
+For the outputs Merkle tree that value is the pristine leaf, but as [The hash tree frontier](#the-hash-tree-frontier) noted, any other hash serves as well.
+Representing a run of repetitions compactly, while keeping every node reachable, calls for a recursive structure.
+
+A *complete tree* of height *h* covers 2<sup>*h*</sup> leaves and has a hash for every one of its nodes.
+The simplest complete tree is a raw hash, the root hash of a subtree whose other nodes are unknown.
+A raw hash is *opaque*, since nothing below it can be read.
+A run of repetitions is captured by a *fixed-point tree*.
+It is built over a sequence of complete trees of equal height, its *base values*, and the last of them repeats to fill the tree.
+Two complete trees of equal height that were built separately are joined as the left and right children of a *mixed tree*.
+A fixed-point or mixed tree can be descended into, down to its base values and through them, until a query reaches its target or an opaque hash.
+A mixed tree always joins two fixed-point or mixed trees, so a raw hash occurs only as a base value.
+
+A fixed-point tree is a table with one array per level.
+The first array holds its base values, and each array above holds the hashes of the parents of the one below.
+A node is found by its index within its level, so the tree needs no child pointers.
+The rule that keeps the tree small is that reading past the end of a level returns its last stored entry.
+The last entry therefore stands for every position after it.
+
+The constructor is `new_fixed_point_tree`:
+```{.lua replace=proof_module/source/new_fixed_point_tree title="hash-tree.lua (excerpt)"}
+```
+In the excerpt, `<values>` holds the base values starting at `<first>`, `<base_height>` is their height, and `<log2_count>` is the number of levels built above them.
+The helper `get_or_last` reads the entry at a 0-based index of a level, returning the last stored entry for any index past the end.
+The helper `get_value_hash` returns the hash of an entry, the entry itself when it is a raw hash and its root hash when it is a tree.
+Each level stores the distinct parents of its children plus the first repeated one.
+With *n* stored children, the explicit pairs give the first *n*/2 parents, rounded down.
+The next parent pairs the last child with itself (when *n* is even), or the unpaired last child with its implicit copy (when *n* is odd).
+Either way it is the root of an all-repeated subtree, and every parent after it is the same hash.
+That is why each level stores at most *n*/2 parents, rounded down, plus one.
+Whenever a level ends in a repeated suffix, its last entry is the repeated value doubled once per level, exactly as pristine padding doubles in the frontier.
+A repeated suffix of any length thus costs one hash per level.
+
+![Fixed-point tree storing the distinct nodes and the first repeated node at each level](images/fixed-point-tree.svg)
+
+The figure shows a fixed-point tree of height four over five distinct leaves, followed by a sixth that repeats over the remaining ten positions.
+Stored hashes are filled and implicit ones are outlined.
+Distinct nodes are blue, and the first repeated node of each level below the root, the root of an all-repeated subtree, is gray.
+The tree stores 16 of its 31 nodes, six leaves, then four, three, two, and finally the root.
+
+A mixed tree is the simpler form:
+```{.lua replace=proof_module/source/new_mixed_tree title="hash-tree.lua (excerpt)"}
+```
+It joins two neighboring complete trees that were built separately, without changing either one, as the next section shows.
+
+### Frontier forests
+
+The [frontier](#the-hash-tree-frontier) answers two questions, the root hash of the tree and the proofs of a batch of new leaves.
+It cannot answer anything about an arbitrary node, because every complete subtree to the left of the batch has been collapsed into its root hash.
+Neither the hash of a node inside it nor the siblings on that node's path can be recovered later.
+These are exactly the queries the verification game needs.
+A *frontier forest* answers them.
+It has the same level array as a frontier, with the same binary carry, but each occupied level holds the complete tree standing there rather than only its root hash.
+
+The constructor is `frontier_forest`, which takes the same height and hash type as `frontier` and returns an empty forest.
+Three functions append to it, mirroring `frontier_push_back`, `frontier_append`, and `frontier_pad_back`.
+The function `frontier_forest_push_back` appends one value, `frontier_forest_append` appends raw hashes in a half-open range with the same defaults as `frontier_append`, and `frontier_forest_pad_back` appends a number of copies of one value, or fills the rest of the forest when the count is omitted.
+Each also takes the height of what it appends.
+A value is a raw hash, standing for a subtree of that height, or a completed forest, which keeps its own height and all of its nodes.
+A completed forest goes in as the complete tree at its top level, which can then become a base value of a fixed-point tree.
+Appending a completed forest is how small trees, built separately, nest into a larger one.
+
+Appended values do not go into the levels right away.
+They accumulate in a pending array of equal-height values, together with a count of how many more times its last value repeats, so a repetition of any length costs one stored value:
+```{.lua replace=proof_module/source/frontier_forest_pad_back title="hash-tree.lua (excerpt)"}
+```
+A raw hash and a forest never merge, even when their roots agree, because that would discard the forest's nodes.
+Since pending values are not yet represented by any level, the forest tracks its leaf count explicitly.
+
+The pending values are materialized by `forest_flush` when a value of a different height arrives, when a repetition is followed by anything other than another copy pushed or padded back, or when the forest becomes full:
+```{.lua replace=proof_module/source/forest_flush title="hash-tree.lua (excerpt)"}
+```
+Like `frontier_append`, it splits the pending range into maximal aligned complete subtrees, each the largest that starts where the materialized leaves end and fits the values left.
+Each subtree becomes a fixed-point tree, so a repeated suffix stays one value per level.
+A pending value that is already a complete tree of the right size is used as is.
+Each subtree is then folded into the levels by the binary carry, and whenever the carry finds a level occupied, the two trees are joined into a mixed tree.
+
+Once full, the forest answers every query from its top level.
+The function `frontier_forest_get_root_hash` returns the root hash in constant time.
+The function `frontier_forest_get_node_hash` returns the hash of a node, identified by its first covered leaf and its height, with the position aligned to the node size.
+The function `frontier_forest_get_siblings` returns the siblings on that node's path, from the node upward:
+```{.lua replace=proof_module/source/frontier_forest_get_siblings title="hash-tree.lua (excerpt)"}
+```
+Both descend from the root in a single pass, going left or right at mixed trees and indexing levels in fixed-point trees, where a position past the stored entries reads the last one.
+The optional `<into>` array receives the siblings after any already there, so a caller can prove a node across two stacked forests by collecting the inner forest's siblings and then the outer forest's.
+A query that reaches a raw hash above its target cannot go further, and both functions return `nil` and an error message.
+
+Such a raw hash can be opened later with `frontier_forest_expand_leaf`:
+```{.lua replace=proof_module/source/frontier_forest_expand_leaf title="hash-tree.lua (excerpt)"}
+```
+It replaces the opaque hash at `<position>` with a completed forest of the same height, after checking that the forest's root is the hash it replaces.
+No ancestor hash changes, so the forest's root is unaffected.
+When the opaque hash is the repeated last value of a fixed-point tree, every repetition reads the same entry, so all of them share the expansion.
 
 ## Verification game
 

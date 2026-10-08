@@ -340,6 +340,27 @@ static const nlohmann::json &clua_get_field_schema(lua_State *L, const std::stri
     return clua_resolve_type_schema(L, schema.at(field_name).template get<std::string_view>(), user_schema_dict);
 }
 
+/// \brief Resolves the schema of an array item.
+/// \details A string-valued "items" applies to every item. An array-valued "items" describes
+/// a fixed-length tuple and applies each type name to the item in the corresponding position.
+static const nlohmann::json &clua_get_array_item_schema(lua_State *L, const std::size_t index,
+    const nlohmann::json &schema, const nlohmann::json &user_schema_dict) {
+    static const nlohmann::json empty_schema;
+    if (!schema.contains("items")) {
+        return empty_schema;
+    }
+    const auto &items = schema.at("items");
+    const auto &item = items.is_array() ? items.at(index) : items;
+    return clua_resolve_type_schema(L, item.template get<std::string_view>(), user_schema_dict);
+}
+
+/// \brief Rejects arrays whose length differs from a fixed-length tuple schema.
+static void clua_check_array_schema_size(const std::size_t size, const nlohmann::json &schema) {
+    if (schema.contains("items") && schema.at("items").is_array() && schema.at("items").size() != size) {
+        throw std::runtime_error{"array length does not match tuple schema"};
+    }
+}
+
 static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx, const nlohmann::json &schema,
     const nlohmann::json &user_schema_dict, int ctxidx) {
     nlohmann::json &j = *clua_push_new_managed_toclose_ptr(L, nlohmann::json(), ctxidx);
@@ -349,10 +370,12 @@ static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx,
             const int64_t len = clua_get_array_table_len(L, idx);
             if (len >= 0) { // array
                 j = nlohmann::json::array();
-                const auto &field_schema = clua_get_field_schema(L, "items", schema, user_schema_dict);
+                clua_check_array_schema_size(static_cast<std::size_t>(len), schema);
                 for (int64_t i = 1; i <= len; ++i) {
                     lua_geti(L, idx, i);
-                    j.push_back(clua_push_managed_toclose_json_ref(L, -1, field_schema, user_schema_dict, ctxidx));
+                    const auto &item_schema =
+                        clua_get_array_item_schema(L, static_cast<std::size_t>(i - 1), schema, user_schema_dict);
+                    j.push_back(clua_push_managed_toclose_json_ref(L, -1, item_schema, user_schema_dict, ctxidx));
                     lua_pop(L, 2); // pop value, child j reference
                 }
             } else { // object
@@ -414,11 +437,13 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nl
     const nlohmann::json &user_schema_dict, int ctxidx) {
     switch (j.type()) {
         case nlohmann::json::value_t::array: {
-            const auto &field_schema = clua_get_field_schema(L, "items", schema, user_schema_dict);
+            clua_check_array_schema_size(j.size(), schema);
             lua_createtable(L, static_cast<int>(j.size()), 0);
             int64_t i = 1;
             for (auto it = j.begin(); it != j.end(); ++it, ++i) {
-                clua_push_json_value(L, *it, field_schema, user_schema_dict, ctxidx);
+                const auto &item_schema =
+                    clua_get_array_item_schema(L, static_cast<std::size_t>(i - 1), schema, user_schema_dict);
+                clua_push_json_value(L, *it, item_schema, user_schema_dict, ctxidx);
                 lua_rawseti(L, -2, i);
             }
             break;

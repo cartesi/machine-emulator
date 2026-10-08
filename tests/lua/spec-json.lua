@@ -145,6 +145,24 @@ describe("tojson / fromjson schema dictionary", function()
         expect.equal(back, { hash = HASH, n = 5, label = "hi" })
     end)
 
+    it("should apply a different schema to each tuple item", function()
+        local SCHEMA = { Tuple = { items = { "Base64", "ArrayIndex", "Default", "Hex" } } }
+        local tuple = { HASH, 5, true, BINARY }
+        local j = cartesi.tojson(tuple, nil, "Tuple", SCHEMA)
+        expect.equal(cartesi.fromjson(j), { cartesi.tobase64(HASH), 4, true, "0x0001feff" })
+        expect.equal(cartesi.fromjson(j, "Tuple", SCHEMA), tuple)
+    end)
+
+    it("should reject a tuple of the wrong length", function()
+        local SCHEMA = { Pair = { items = { "Base64", "Default" } } }
+        expect.fail(function()
+            cartesi.tojson({ HASH }, nil, "Pair", SCHEMA)
+        end, "tuple schema")
+        expect.fail(function()
+            cartesi.fromjson('["a", 1, 2]', "Pair", SCHEMA)
+        end, "tuple schema")
+    end)
+
     it("should roundtrip a Proof through the machine schema dictionary", function()
         local proof = machine:get_proof(0, 12)
         expect.equal(#proof.root_hash, 32)

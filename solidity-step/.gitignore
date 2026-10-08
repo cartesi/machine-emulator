@@ -6,3 +6,7 @@ test/fixtures/
 # not a submodule, so a C++-only checkout never pulls it.
 lib/
 .env
+.env.*
+!.env.example
+.venv/
+script/__pycache__/

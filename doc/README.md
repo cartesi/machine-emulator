@@ -79,19 +79,12 @@
     - [Fixed-point trees](#fixed-point-trees)
     - [Frontier forests](#frontier-forests)
   - [Verification game](#verification-game)
-    - [Settling a dispute](#settling-a-dispute)
-    - [One bisection level](#one-bisection-level)
-    - [Verifying the state transition](#verifying-the-state-transition)
-    - [Verifying the result](#verifying-the-result)
+    - [The state transition function](#the-state-transition-function)
+    - [The referee](#the-referee)
+    - [The player](#the-player)
     - [Running the game](#running-the-game)
-  - [Rolling verification game](#rolling-verification-game)
-    - [Settling a dispute](#settling-a-dispute-1)
-    - [Bisecting over inputs](#bisecting-over-inputs)
-    - [Bisecting within an input](#bisecting-within-an-input)
-    - [Verifying the disputed
-      transition](#verifying-the-disputed-transition)
-    - [Verifying an epoch result](#verifying-an-epoch-result)
-    - [Running the rolling game](#running-the-rolling-game)
+    - [Each player must defend its own
+      claim](#each-player-must-defend-its-own-claim)
 
 # Introduction
 
@@ -9151,803 +9144,1029 @@ expansion.
 
 ## Verification game
 
-The question now becomes how the blockchain can identify the honest
-party when there are two opinions on the final state hash of a Cartesi
-Machine, for a computation the blockchain itself is unable to perform.
-Cartesi is based on *fraud proofs*, a group of approaches through which
-an honest party can show, publicly, that a dishonest party has not
-performed the expected computation correctly by pinpointing an incorrect
-state transition within it. The [verification
+The question now becomes: How can the blockchain identify the honest
+party when there are potentially multiple opinions on the final state
+hash of a Cartesi Machine, for a computation the blockchain itself is
+unable to perform? Cartesi Rollups is based on *fraud proofs*, a group
+of approaches through which an honest party can demonstrate to a
+computationally limited referee that a dishonest party has not performed
+a well-specified computation correctly. The [verification
 game](https://doi.org/10.1016/j.ic.2013.03.003) technique, on which our
 original [whitepaper](https://cartesi.io/cartesi_whitepaper.pdf) builds,
-is a well-established fraud proof strategy. It rests on the assumption
-that at least one of the two parties is honest.
+is a well-established fraud proof strategy.
 
-The `verification-game.lua` script implements this strategy. A referee,
-standing in for the Cartesi contracts deployed on the blockchain,
-mediates a dispute between two players, each standing in for a Cartesi
-Node that ran the computation off-chain. The three are separate
-processes that communicate over the network, which here stands in for
-blockchain transactions. The referee never trusts a player. The two
-players run identical code and differ only in the machine they hold. One
-is honest, the other cheats past a chosen point by switching to a
-machine that ran a different expression.
+The approach assumes that at least one player is honest and responds
+within the allotted time. It proceeds as follows. Initially, the referee
+and all parties agree on the state hash before the computation. The
+dispute starts after each interested party has had a chance to send to
+the referee its proposed state hash after the computation. The referee
+then guides the parties in a dispute that ends when all surviving
+parties agree on the same state hash after. The dispute proceeds in
+rounds. In each round, the referee progressively bisects the computation
+until it isolates a single state transition that is not unanimous. The
+bisection starts by considering an interval that covers an entire
+computation. At each iteration, all surviving players must send to the
+referee a tentative midpoint state hash for the current interval. If the
+midpoint state hash is unanimous, the referee narrows the interval to
+its second half. If it is not unanimous, it narrows the interval to its
+first half. The invariant preserved is that the interval always starts
+at a state all players agree on and always ends at a state for which
+there is at least one disagreement. Bisection eventually leads to an
+interval that consists of a single state transition. All players must
+now send proofs that the state indeed transitions to their chosen state
+hash after. By construction, valid proofs starting from the agreed state
+hash can reach only one resulting state hash. Therefore, the referee
+eliminates at least one player per round. When all remaining players
+agree on the state hash after the computation, the dispute ends.
 
-The game opens with each player committing the final state hash of its
-machine, obtained by running it until it halts. If the two hashes agree
-there is no dispute and the result can be extracted directly. When they
-disagree the referee settles the dispute before accepting the result.
+The `vg.lua` script applies this strategy to an entire epoch of a
+Rolling Cartesi Machine. Its referee stands in for contracts that
+Cartesi deploys to the blockchain. It mediates the dispute over the
+result players obtained by feeding the epoch’s inputs to the machine
+off-chain. Referee and players are run in separate processes, and
+communicate via the network. The referee requests and the players’
+responses that go through the wire represent blockchain events and
+transactions, respectively.
+
+The state an epoch starts from is settled. It is either the stored
+[template hash](#rolling-cartesi-machine-templates) at genesis or the
+settled state hash of the previous epoch. All advance-state inputs in an
+epoch are posted to the blockchain. The referee therefore knows the
+agreed initial state hash and the contents of every input in the epoch.
+In `vg.lua`, the inputs are represented by files. The events generated
+by the blockchain throughout an epoch are represented by the following
+code:
 
 ``` lua
-local function run_referee(referee, dapp_contract)
-    local players = wait_for_commitments()
-
-    local winner = players[1]
-    if players[1].final_hash ~= players[2].final_hash then
-        winner = settle_dispute(players, referee.initial_hash)
+local function run_epoch(dapp_contract, subscribers)
+    for index, path in ipairs(dapp_contract.input_paths) do
+        notify_all(subscribers, EVENTS.input_added, { index - 1, path })
     end
-
-    wait_for_result(dapp_contract, players, winner.final_hash)
+    notify_all(subscribers, EVENTS.epoch_sealed, { #dapp_contract.inputs })
 end
 ```
 
-### Settling a dispute
+The function `notify_all(<subscribers>, <event>, <arguments>)` notifies
+all `<subscribers>` (i.e., the interested parties) of a given `<event>`
+with associated `<arguments>`.
 
-The dispute is settled in two bisections. The first ranges over `mcycle`
-and isolates the disputed main processor instruction. The second ranges
-over `uarch_cycle` and isolates the single uarch step within it.
+### The state transition function
+
+The state transition function is designed to simplify the process of
+bisection. Recall bisection maintains an interval that specifies the
+“agreed position” and the “extent” of the disagreement. An epoch covers
+a number of advance state requests (inputs), each of which takes a
+number of main processor cycles (mcycles) to complete, each of which
+takes a number of microarchitecture cycles (uarch cycles) to complete.
+The state transition happens at the level of a single uarch cycle. The
+interval’s position and extent, therefore, represent all these three
+levels separately: inputs, mcycles, and uarch cycles. Even though the
+number of inputs in any specific epoch, the number of mcycles in any
+specific input, and the number of uarch cycles in any mcycle are all
+variable, we can greatly simplify bisection by assuming they are always
+the same. To do so, we pick a maximum for each of them, and ensure the
+state of the machine is well defined for all positions, even those that
+go past what was actually used in a particular instance of a level.
+Within the maximum number of inputs per epoch (2<sup>24</sup>),
+attempting to add an input past the last existing input to a machine
+will be defined as leaving the machine unchanged. Likewise, within the
+maximum number of mcycles per input (2<sup>48</sup>), attempting to
+advance the main processor past a fixed point (yielded manual, halted,
+or mcycle overflow) also leaves the machine unchanged. Finally, within
+the maximum number of uarch cycles per mcycle (2<sup>20</sup>),
+attempting to advance the uarch processor past a fixed point (halted or
+uarch cycle overflow) leaves the machine unchanged. The transition out
+of the last uarch cycle is special: it resets the microarchitecture so
+the machine is ready for the execution of the next main processor
+instruction.
+
+With this in mind, here is a representation of what the blockchain uses
+to validate a state transition:
 
 ``` lua
-local function settle_dispute(players, initial_hash)
-    local bisection = { last_agreed_hash = initial_hash, hash_after = players[1].final_hash, branch = "start" }
-
-    -- Bisect to the disputed main-processor instruction.
-    local mcycle = bisect_level(players, "mcycle", cartesi.MCYCLE_MAX, bisection)
-    -- Narrow down to the uarch instruction.
-    local uarch_cycle = bisect_level(players, "uarch_cycle", cartesi.UARCH_CYCLE_MAX, bisection)
-
-    -- A converged cycle of UARCH_CYCLE_MAX-1 means the disputed transition ends in the reset, else it is a step.
-    phase("verdict")
-    local log = wait_for_log(players[1], bisection.branch, mcycle, uarch_cycle)
-    eventf("Player 1 posted log")
-
-    -- Player 1 won if its log verifies against the agreed before-hash, otherwise player 2 is honest.
-    local winner = verify_state_transition(uarch_cycle, bisection.last_agreed_hash, log, bisection.hash_after)
-            and players[1]
-        or players[2]
-    eventf("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
-    return winner
-end
-```
-
-### One bisection level
-
-Each bisection narrows the disagreement to the single transition
-responsible for it, repeatedly asking both players for the state hash at
-the midpoint of an interval of cycles and keeping the half where they
-still disagree.
-
-``` lua
-local function bisect_level(players, level, hi, bisection)
-    phase("bisect_" .. level)
-    local lo, round = 0, 0
-    while math.ult(1, hi - lo) do
-        local mid = lo + ((hi - lo) >> 1)
-        local hash = wait_for_bisection(players, bisection.branch, level, mid)
-        if hash[1] == hash[2] then
-            lo, bisection.last_agreed_hash, bisection.branch = mid, hash[1], "agree"
-        else
-            hi, bisection.hash_after, bisection.branch = mid, hash[1], "disagree"
-        end
-        round = round + 1
-        eventf("%s bisection round %d, interval of disagreement is [0x%x, 0x%x]", level, round, lo, hi)
+local function validate_state_transition_response(
+    dapp_contract,
+    root_hash_before,
+    epoch_input_offset,
+    input_mcycle_offset,
+    uarch_cycle,
+    response
+)
+    local obtained_root_hash = root_hash_before
+    local input_data = dapp_contract.inputs[epoch_input_offset + 1]
+    if input_mcycle_offset == 0 and uarch_cycle == 0 and input_data then
+        obtained_root_hash = cartesi.machine:verify_send_cmio_response(
+            cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+            input_data,
+            root_hash_before,
+            response.send_cmio_log,
+            root_hash_before
+        )
     end
-    return lo
+    obtained_root_hash = cartesi.machine:verify_step_uarch(obtained_root_hash, response.step_log)
+    if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
+        obtained_root_hash = cartesi.machine:verify_reset_uarch(obtained_root_hash, response.reset_uarch_log)
+    end
+    return obtained_root_hash
 end
 ```
 
-The main processor has a fixed-point property once the machine halts.
-Running it for more `mcycle`s leaves the state, and therefore the hash,
-unchanged. Likewise, the uarch has a fixed-point property once it halts.
-Running it for more `uarch_cycle`s leaves the state unchanged. This is
-what lets each bisection range over the full cycle ceiling without
-knowing in advance where either machine halts. A midpoint past a halt
-simply repeats the final hash, and the disagreement is still found at
-the cycle where the two computations diverge.
+Every state transition executes one uarch step. The first uarch cycle
+allocated to the input is special: it sends the input data to the
+machine right before executing the step. The last uarch cycle allocated
+to each mcycle is also special: it resets the uarch right after
+executing the step.
 
-### Verifying the state transition
+### The referee
 
-Once a single `uarch_cycle` is in dispute, the referee asks the player
-on the disagreeing side for the access logs of the transition out of it,
-and verifies them without ever instantiating a machine. This stands for
-a Cartesi contract that can verify such logs directly on the blockchain.
-The transition is either a single ordinary uarch step or, out of
-`cartesi.UARCH_CYCLE_MAX - 1` (when the uarch has long since halted), an
-additional uarch reset that prepares the next main processor
-instruction. Which form applies depends only on the agreed cycle, so the
-referee always checks the step with `verify_step_uarch`, chaining
-`verify_reset_uarch` after it for the transition that closes the
-instruction. Each verification starts from a state hash and returns the
-hash the log provably advances it to. This allows the reset verification
-to start where the step verification ended. If the logs prove that the
-agreed before-hash advances to the player’s committed after-hash, that
-player was honest. Otherwise, by assumption, the other one is.
+Once the epoch is sealed, the referee asks all players to commit to the
+final state hash they reached. Then, after settling any potential
+dispute between them, it is ready to accept output proofs for the epoch.
 
 ``` lua
-local function verify_state_transition(uarch_cycle, state_hash_before, log, state_hash_after)
-    local machine = cartesi.machine
-    local pass = pcall(function()
-        eventf("Verifying uarch step log!")
-        local hash = machine:verify_step_uarch(state_hash_before, log.step_log)
-        if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-            eventf("Verifying uarch reset log!")
-            hash = machine:verify_reset_uarch(hash, log.reset_log)
-        end
-        assert(hash == state_hash_after, "log does not reach the committed after-hash")
+local function run_referee(dapp_contract, subscribers)
+    local tournament = request_claims(dapp_contract, subscribers)
+    local winner = settle_dispute(tournament)
+    if winner then
+        wait_for_outputs(winner.final_state_hash)
+    end
+end
+```
+
+Players are always on a clock. Each player starts with a maximum time
+allowance that can be spent with delays caused by external forces.
+(E.g., by censorship.) Each interaction has an additional response
+budget. If a player takes longer than the budget to respond, its
+allowance is reduced by that excess. When a player runs down its clock,
+it is eliminated.
+
+The referee obtains claims as follows (note the claim interaction gives
+no additional response budget):
+
+``` lua
+local function request_claims(dapp_contract, subscribers)
+    local started_at = current_time()
+    local max_allowance = dapp_contract.max_allowance
+    local joining_deadline = started_at + max_allowance
+    local claims <close> = request_all(subscribers, EVENTS.commit_claim, {}, function(response, sender, received_at)
+        assert(received_at < joining_deadline, "late final hash")
+        local hash = validate_hash_response(response, "invalid final hash")
+        return {
+            label = sender.label,
+            allowance = max_allowance - (received_at - started_at),
+            final_state_hash = hash,
+        }
     end)
-    eventf("Log is %s!", pass and "valid" or "invalid")
-    return pass
+    local players = claims:wait_at_most(joining_deadline)
+    return {
+        dapp_contract = dapp_contract,
+        players = players,
+    }
 end
 ```
 
-### Verifying the result
+The function
+`request_all(<subscribers>, <event>, <arguments>, <validator>)` notifies
+all `<subscribers>` of an `<event>` with associated `<arguments>` and
+returns a future. This future has self-explanatory methods
+`wait_at_most(<deadline>)` and `wait_at_least(<deadline>)`, which return
+the list of all entries that were returned by a `<validator>` function.
+In the snippet, the validator ensures the claim arrived on time and
+included a valid hash. It then creates and returns a player structure
+associated with the claim. Given the list of players, `request_claims`
+creates and returns the tournament object.
 
-Naming the winner settles which final state hash is the true one. The
-referee can then accept the first result that verifies against that
-hash.
+The meat of the dispute is, of course, `settle_dispute`:
 
 ``` lua
-local function wait_for_result(dapp_contract, players, final_hash)
-    phase("output")
+local function settle_dispute(tournament)
+    notify_all(addresses(tournament.players), EVENTS.dispute_started, {})
+    while not is_there_at_most_one_claim(tournament.players) do
+        local interval = {
+            agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
+            extent = {
+                log2_input_count = LOG2_INPUTS_PER_EPOCH,
+                log2_mcycle_count = LOG2_MAX_MCYCLES_PER_ADVANCE_STATE,
+                log2_uarch_cycle_count = LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
+            },
+            last_agreed_hash = tournament.dapp_contract.initial_state_hash,
+            hashes_after = map(tournament.players, function(player)
+                return player.final_state_hash
+            end),
+        }
+        tournament.players = isolate_state_transition(tournament, interval)
+        if is_there_at_most_one_claim(tournament.players) then
+            break
+        end
+        tournament.players = request_state_transitions(tournament, interval)
+    end
+    return get_winner(tournament.players)
+end
+```
+
+The function starts by notifying all players that the dispute has
+started. Then, it enters a loop that terminates when there is at most
+one remaining claim. Each iteration sets up the interval by initializing
+the agreed position as the start of the epoch. The extent of the
+interval is initialized with the maximum duration that an epoch can
+have. The `last_agreed_hash` is set to the initial state hash for the
+epoch. Finally, the `hashes_after` contain the final state hash each
+player proposed. The `isolate_state_transition` function repeatedly
+bisects the interval until it covers a single state transition. Players
+that fail to respond in time are eliminated. If more than one claim
+survives, the `request_state_transitions` function ensures that the only
+survivors are those that provided proofs for the valid state transition
+from `last_agreed_hash` to their recorded `hashes_after`.
+
+The state transition is isolated by a loop that halves the extent of the
+interval until a single uarch cycle remains. Each iteration requests
+from each surviving player its opinion on the midpoint state hash. Then,
+if the opinion is unanimous, it narrows the interval to its second half.
+Otherwise, it narrows the interval to its first half.
+
+``` lua
+local function isolate_state_transition(tournament, interval)
+    local players = tournament.players
+    while not is_single_uarch_cycle(interval.extent) do
+        local tentative_position = bisect_interval(interval)
+        players = request_bisections(tournament.dapp_contract, players, interval.agreed_position, tentative_position)
+        if is_there_at_most_one_claim(players) then
+            break
+        end
+        local hashes = map(players, function(player)
+            return player.tentative_hash
+        end)
+        if is_unanimous(hashes) then
+            interval.agreed_position = tentative_position
+            interval.last_agreed_hash = any_of(hashes)
+        else
+            interval.hashes_after = hashes
+        end
+    end
+    return players
+end
+```
+
+The bisection of intervals happens one level at a time. First the
+inputs, then the mcycles, then the uarch cycles:
+
+``` lua
+local function bisect_interval(interval)
+    local extent = interval.extent
+    local tentative_position = shallow_copy(interval.agreed_position)
+    if extent.log2_input_count > 0 then
+        extent.log2_input_count = extent.log2_input_count - 1
+        tentative_position.epoch_input_offset = tentative_position.epoch_input_offset + (1 << extent.log2_input_count)
+    elseif extent.log2_mcycle_count > 0 then
+        extent.log2_mcycle_count = extent.log2_mcycle_count - 1
+        tentative_position.input_mcycle_offset = tentative_position.input_mcycle_offset
+            + (1 << extent.log2_mcycle_count)
+    elseif extent.log2_uarch_cycle_count > 0 then
+        extent.log2_uarch_cycle_count = extent.log2_uarch_cycle_count - 1
+        tentative_position.uarch_cycle = tentative_position.uarch_cycle + (1 << extent.log2_uarch_cycle_count)
+    end
+    return tentative_position
+end
+```
+
+Players that do not respond before exhausting their allowances are
+summarily eliminated. Survivors have their allowances reduced by the
+time elapsed between the request and response, discounted by the
+response budget:
+
+``` lua
+local function request_bisections(dapp_contract, players, agreed_position, tentative_position)
+    local started_at = current_time()
+    local deadline = fold(players, started_at, function(latest, player)
+        return math.max(latest, started_at + player.allowance)
+    end)
+    local survivors <close> = request_all(
+        addresses(players),
+        EVENTS.reveal_bisection,
+        { agreed_position, tentative_position },
+        function(response, sender, received_at)
+            local player = players[sender]
+            assert(received_at < started_at + player.allowance, "late tentative hash")
+            local hash = validate_hash_response(response, "invalid tentative hash")
+            local elapsed = received_at - started_at
+            player.allowance = player.allowance - math.max(elapsed - dapp_contract.response_budget, 0)
+            player.tentative_hash = hash
+            return player
+        end
+    )
+    local remaining_players = survivors:wait_at_most(deadline)
+    return remaining_players
+end
+```
+
+When the state transition has been isolated, players must send their
+corresponding state transition proof. Once again, players that fail to
+respond before their allowances expire are eliminated. Those that
+succeed in responding must pass verification or be eliminated:
+
+``` lua
+local function request_state_transitions(tournament, interval)
+    local agreed_position = interval.agreed_position
+    local started_at = current_time()
+    local deadline = fold(tournament.players, started_at, function(latest, player)
+        return math.max(latest, started_at + player.allowance)
+    end)
+    local survivors <close> = request_all(
+        addresses(tournament.players),
+        EVENTS.prove_state_transition,
+        { agreed_position.epoch_input_offset, agreed_position.input_mcycle_offset, agreed_position.uarch_cycle },
+        function(response, sender, received_at)
+            local player = tournament.players[sender]
+            assert(received_at < started_at + player.allowance, "late state transition proof")
+            local obtained_root_hash = validate_state_transition_response(
+                tournament.dapp_contract,
+                interval.last_agreed_hash,
+                agreed_position.epoch_input_offset,
+                agreed_position.input_mcycle_offset,
+                agreed_position.uarch_cycle,
+                response
+            )
+            assert(obtained_root_hash == interval.hashes_after[sender], "log does not reach the committed after-hash")
+            local elapsed = received_at - started_at
+            player.allowance = player.allowance - math.max(elapsed - tournament.dapp_contract.response_budget, 0)
+            return player
+        end
+    )
+    local remaining_players = survivors:wait_at_most(deadline)
+    return remaining_players
+end
+```
+
+In this way, the dispute is settled. All surviving players agree on the
+final state hash for the machine. This final state contains the outputs
+Merkle root used for verifying the outputs, and serves as the initial
+state for the next epoch. The referee is ready to accept and verify
+outputs. In `vg.lua`, this is represented by
+
+``` lua
+local function wait_for_outputs(final_state_hash)
+    local outputs_merkle_root = wait_for_first_valid(
+        ANYONE,
+        EVENTS.prove_outputs_merkle_root,
+        { final_state_hash },
+        function(response)
+            return validate_outputs_merkle_root_response(response, final_state_hash)
+        end
+    )
+    local accepted_output_indices = {}
     while true do
-        local output = wait_for_output(players)
-        if verify_output(dapp_contract, output, final_hash) then
-            eventf("Result posted:\n%sAccepted!", output.target_value)
+        local output = wait_for_first_valid(ANYONE, EVENTS.prove_output, { outputs_merkle_root }, function(response)
+            if not accepted_output_indices[response.output_index] then
+                return validate_output_response(response, outputs_merkle_root)
+            end
+        end)
+        accepted_output_indices[output.output_index] = true
+    end
+end
+```
+
+First, the referee waits for a proof that allows it to extract the
+outputs Merkle root from the final state. After that, it is able to
+validate any output proofs it receives.
+
+### The player
+
+The player must be able to respond promptly to each of the referee’s
+requests. As we have seen, the referee will first ask for the final
+state hash for the epoch. Then, multiple rounds of dispute follow, each
+consisting of a loop that isolates a single state transition. In each
+iteration of the loop, the player is asked for the state hash of the
+machine at the midpoint of the current dispute interval. At the end of
+each round, the player is asked for a state transition proof that covers
+the now-singleton interval.
+
+In normal applications, it is impossible for the player to precompute
+all the information that may be requested by the referee. It would be
+too much data to store and take too long to produce. Instead, any player
+implementation will occasionally have to move a Cartesi Machine instance
+to the required position in the epoch computation and probe it for the
+needed information. Fortunately, it is possible to avoid storing too
+much information or recomputing the epoch many times.
+
+In `vg.lua`, the player registers a handler for each of the associated
+events. The epoch is computed only once, in response to the
+`input_added` events.
+
+``` lua
+function event_handler:input_added(epoch_input_offset, path)
+    local next_epoch_input_offset = epoch_input_offset + 1
+    self.inputs[next_epoch_input_offset] = self:read_input(epoch_input_offset, path)
+    local _, _, _, input_mcycle_length = self:run_to_input_mcycle_offset(
+        self.epoch_pair,
+        self.inputs[next_epoch_input_offset],
+        0,
+        MAX_MCYCLES_PER_ADVANCE_STATE,
+        self.outputs,
+        self.outputs_frontier
+    )
+    self.state_hashes_before_inputs[next_epoch_input_offset] = self.epoch_pair.machine:get_root_hash()
+    self.input_mcycle_lengths[epoch_input_offset] = input_mcycle_length
+    assert(not self.epoch_pair.backup_machine, "input stopped before completion")
+    self.machine_cache:consider(next_epoch_input_offset, self.epoch_pair.machine)
+end
+```
+
+The call to function
+`run_to_input_mcycle_offset(<machine-pair>, <input_data>, <input_mcycle_offset_begin>, <input_mcycle_offset_end>, <outputs>, <outputs_frontier>)`
+adds the input data to the machine and runs it until it hits a fixed
+point, all the while collecting the outputs and maintaining the outputs
+Merkle frontier. If the input is rejected, the function reverts the
+machine back to its state before the input and discards the outputs it
+produced. To do so, it keeps a `<machine-pair>` much like we saw in the
+Rolling Cartesi Machine calculator
+[example](#rolling-cartesi-machines-1). Once the function returns, the
+player stores the resulting state hash and the mcycle offset at which
+the machine hit the fixed point. Finally, it offers the machine at its
+current state to the cache. The fixed-point machine cache, the hashes,
+and mcycle offsets allow the player to respond promptly to the referee’s
+requests.
+
+The cache implemented by `vg.lua` maintains at most a fixed number of
+machines spread throughout the epoch, rather than keeping a copy of a
+machine as it was after each processed input. Machines must be offered
+to it sequentially, after each input. To decide whether to keep a copy
+of the machine currently being offered, it checks if it has advanced
+enough past the last machine it decided to store. This is controlled by
+the current minimum gap. If the gap is too small, the machine on offer
+is rejected. If the gap is large enough and the cache has room, it
+stores a copy. Otherwise, it selects an existing machine to evict,
+always preserving the initial machine. This selection is very simple.
+The cache maintains the machines in an array, in the order they were
+accepted. It also maintains a cursor into this array. To select the
+evicted machine, it advances the cursor until it finds a machine in the
+cache whose gap relative to the earlier machine is smaller than the
+current minimum gap. If it finds no such machine in the cache, the
+current minimum gap is doubled, the cursor is moved back to the start,
+and the machine being offered is rejected. If it finds one, that machine
+is replaced with a copy of the machine currently on offer:
+
+``` lua
+function machine_cache_methods:consider(epoch_input_offset, machine)
+    local checkpoints = assert(self.checkpoints, "machine cache is closed or moved")
+    assert(epoch_input_offset > self.last_epoch_input_offset, "machine checkpoints are not ordered")
+    self.last_epoch_input_offset = epoch_input_offset
+    if epoch_input_offset - checkpoints[#checkpoints].epoch_input_offset < self.input_gap then
+        return
+    end
+    local replace_index
+    if #checkpoints == self.capacity then
+        replace_index = self.replace_cursor
+        while replace_index <= #checkpoints do
+            local previous = checkpoints[replace_index - 1].epoch_input_offset
+            if checkpoints[replace_index].epoch_input_offset - previous < self.input_gap then
+                break
+            end
+            replace_index = replace_index + 1
+        end
+        if replace_index > #checkpoints then
+            self.input_gap = self.input_gap << 1
+            self.replace_cursor = 2
             return
         end
-        eventf("Result posted:\n%sRejected!", output.target_value)
     end
+    local clone <close> = new_machine_pair(fork_machine(machine))
+    if replace_index then
+        table.remove(checkpoints, replace_index).machine:shutdown_server()
+        self.replace_cursor = replace_index
+    end
+    checkpoints[#checkpoints + 1] = { epoch_input_offset = epoch_input_offset, machine = clone.machine }
+    clone.machine = nil
 end
 ```
 
-A posted result verifies (by the same slicing operation shown earlier)
-only if its bytes hash to the proof’s target, the target sits at the
-output drive’s address, and the proof rolls up to the winner’s final
-hash.
+This design has a variety of interesting properties. It uses bounded
+memory. The machines are evenly spaced in the epoch, in the sense that
+the gap between consecutive machines is either the current minimum gap
+or half of it. Finally, eviction takes amortized constant time. All in a
+few lines of code. For demonstration purposes, the implementation of
+`vg.lua` uses forks to maintain machine copies. In production, the cache
+implementation could instead use stored machines, without changing the
+outside-facing interface.
+
+When the epoch is finally sealed, the player saves its final state hash,
+the proof of the outputs Merkle root, and all the output proofs for the
+epoch:
 
 ``` lua
-local function verify_output(dapp_contract, output, final_hash)
-    return output.proof.root_hash == final_hash
-        and output.proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE
-        and output.proof.target_address == dapp_contract.output.start
-        and output.proof.log2_target_size == dapp_contract.output.log2_size
-        and hash_tree.get_data_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash
-        and pcall(hash_tree.verify_slice, output.proof)
+function event_handler:epoch_sealed()
+    self.final_state_hash = self.epoch_pair.machine:get_root_hash()
+    self.outputs_merkle_root_proof = get_outputs_merkle_root_proof(self.epoch_pair.machine)
+    self.epoch_pair:close()
+    self.epoch_pair = nil
+    local leaves = map(self.outputs, cartesi.keccak256)
+    self.output_proofs = hash_tree.frontier_next_proofs(self.previous_outputs_frontier, leaves)
+    self.previous_outputs_frontier = self.outputs_frontier
+    self.outputs_frontier = nil
 end
 ```
 
-A result that does not, from the dishonest player or anyone else, is
-rejected. This keeps the result phase decoupled from the dispute. The
-parties who settle it are not necessarily the parties who later rely on
-the finalized hash to prove the result.
+To respond to the `commit_claim` event, we simply return the final state
+hash:
+
+``` lua
+function event_handler:commit_claim()
+    return self.final_state_hash
+end
+```
+
+The dispute is divided into rounds. Each round is supported by at most
+two pairs of machines. (Recall we need a pair of machines to be able to
+revert back to the pre-input state on rejections.) The `agreed_pair`
+tracks the start of the dispute interval. The `tentative_pair` is
+advanced from it to the interval midpoint. A call to `reset_bisection`
+restores the agreed pair to the start of the epoch and clears the
+tentative pair for the next round of dispute:
+
+``` lua
+function player_methods:reset_bisection()
+    close_pair(self.agreed_pair)
+    close_pair(self.tentative_pair)
+    self.agreed_pair = self:new_machine_pair_at_epoch_input_offset(0)
+    self.agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 }
+    self.tentative_pair = nil
+end
+```
+
+This is, in fact, the only task performed in response to the event that
+starts a dispute:
+
+``` lua
+function event_handler:dispute_started()
+    self:reset_bisection()
+end
+```
+
+The trickiest part of the player implementation is its response to the
+bisection event:
+
+``` lua
+function event_handler:reveal_bisection(agreed_position, tentative_position)
+    local epoch_input_offset = tentative_position.epoch_input_offset
+    if covers_at_least_one_input(agreed_position, tentative_position) then
+        return self.state_hashes_before_inputs[math.min(epoch_input_offset, #self.inputs)]
+    end
+    if self.tentative_pair then
+        if is_same_position(self.agreed_position, agreed_position) then
+            self.tentative_pair:close()
+        else
+            self.agreed_pair:close()
+            self.agreed_pair = self.tentative_pair
+        end
+    else
+        self.agreed_pair = self:run_to_position(self.agreed_pair:move(), self.agreed_position, agreed_position)
+    end
+    self.agreed_position, self.tentative_pair = agreed_position, nil
+    if is_past_fixed_point(tentative_position, self.input_mcycle_lengths[epoch_input_offset]) then
+        return self.state_hashes_before_inputs[epoch_input_offset + 1]
+    end
+    self.tentative_pair = self:run_to_position(self.agreed_pair:fork(), agreed_position, tentative_position)
+    return self.tentative_pair.machine:get_root_hash()
+end
+```
+
+Here we see two optimizations: the input-level optimization and the
+fixed-point optimization. The first allows us to answer directly from
+the state hashes stored before inputs whenever the agreed and tentative
+positions fall at different input offsets. The second allows us to
+return the next input’s base hash whenever the tentative position is at
+or past the current input’s fixed-point mcycle, with uarch cycle zero.
+Neither optimization requires a machine at the tentative position.
+
+When the input-level optimization cannot be used, we first bring the
+agreed pair to the agreed position in the event. If we have a tentative
+pair from the previous response, we check the new agreed position
+against the one we hold. If they match, the previous tentative position
+was disputed, so that pair is discarded. Otherwise, the previous
+tentative position is now agreed, and its pair replaces the agreed pair.
+If the previous response used an optimization, there is no tentative
+pair to adopt, so we advance the agreed pair to the new agreed position
+instead.
+
+With the agreed pair in place, we can answer the new tentative position.
+If the fixed-point optimization applies, we return the recorded hash.
+Otherwise, we fork a new tentative pair from the agreed pair, advance it
+to the new midpoint, and return its state hash.
+
+The player consults the cache when advancing a pair through the
+`run_to_position` method:
+
+``` lua
+function player_methods:run_to_position(pair, position_begin, position_end)
+    local received_pair <close> = pair
+    local advancing_pair <close>, epoch_input_offset = self.machine_cache:nearer_not_past_epoch_input_offset_or(
+        received_pair:move(),
+        position_begin.epoch_input_offset,
+        position_end.epoch_input_offset
+    )
+    if epoch_input_offset < position_end.epoch_input_offset then
+        self:run_to_epoch_input_offset(advancing_pair, self.inputs, epoch_input_offset, position_end.epoch_input_offset)
+    end
+    if position_begin.input_mcycle_offset < position_end.input_mcycle_offset then
+        self:run_to_input_mcycle_offset(
+            advancing_pair,
+            self.inputs[position_end.epoch_input_offset + 1],
+            position_begin.input_mcycle_offset,
+            position_end.input_mcycle_offset
+        )
+    end
+    if position_begin.uarch_cycle < position_end.uarch_cycle then
+        self:run_to_uarch_cycle(
+            advancing_pair,
+            self.inputs[position_end.epoch_input_offset + 1],
+            position_end.input_mcycle_offset,
+            position_begin.uarch_cycle,
+            position_end.uarch_cycle
+        )
+    end
+    return advancing_pair:move()
+end
+```
+
+The cache’s
+`nearer_not_past_epoch_input_offset_or(<pair>, <pair-input-offset>, <desired-input-offset>)`
+compares the existing pair with its retained input boundaries. If a
+cached machine is closer to the desired input without going past it, the
+cache returns a new pair from that machine and closes the existing pair.
+Otherwise, it returns the existing pair itself. The player’s
+`run_to_position` method then advances the returned pair through the
+remaining inputs, mcycles, and uarch cycles.
+
+The player’s response to the `prove_state_transition` event is the
+mirror image of the referee’s implementation of
+`validate_state_transition_response`:
+
+``` lua
+function event_handler:prove_state_transition(epoch_input_offset, input_mcycle_offset, uarch_cycle)
+    local pair = self.agreed_position.uarch_cycle ~= uarch_cycle and self.tentative_pair or self.agreed_pair
+    local machine = pair.machine
+    local input_data = self.inputs[epoch_input_offset + 1]
+    local proof
+    if input_mcycle_offset == 0 and uarch_cycle == 0 and input_data then
+        local send =
+            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input_data, pair.revert_root_hash)
+        proof = { send_cmio_log = send, step_log = machine:log_step_uarch() }
+    elseif uarch_cycle == cartesi.UARCH_CYCLE_MAX then
+        local step = machine:log_step_uarch()
+        proof = { step_log = step, reset_uarch_log = machine:log_reset_uarch() }
+    else
+        proof = { step_log = machine:log_step_uarch() }
+    end
+    self:reset_bisection()
+    return proof
+end
+```
+
+The only addition is that the player prepares for the next round of the
+dispute by resetting the bisection.
+
+Before proving any output of its interest, the player proves the outputs
+Merkle root:
+
+``` lua
+function event_handler:prove_outputs_merkle_root()
+    return self.outputs_merkle_root_proof
+end
+```
+
+In the demonstration, the player then proves its last output:
+
+``` lua
+function event_handler:prove_output()
+    if #self.outputs == 0 then
+        return {}
+    end
+    return {
+        output_index = self.output_proofs[#self.outputs].target_address,
+        output_data = self.outputs[#self.outputs],
+        output_proof = self.output_proofs[#self.outputs],
+    }
+end
+```
 
 ### Running the game
 
-To run the whole game, start the referee. This is the server the players
-connect to:
+We can now use the verification game to settle the calculator’s [first
+epoch](#rolling-cartesi-machines). The computation starts from the same
+rolling-machine template and processes the same three inputs,
+`input-0.bin` through `input-2.bin`. Recall that the calculator rejects
+input 1, restoring the state it had before receiving it.
+
+An honest player represents the correct computation, processing the
+posted inputs according to the machine’s state transition function. It
+will play against three dishonest players at the same time, each
+representing a different way to misrepresent that computation:
+substituting an input, tampering with the machine during execution, or
+failing to restore its state after a rejected input. Each proposes a
+different final state hash. The referee must settle their disagreement
+through successive proof rounds, exposing an invalid transition in each
+round until the surviving players agree.
+
+To run the game, start the referee with the initial state hash and the
+epoch’s input files. These files represent the inputs posted to the
+blockchain:
 
 ``` bash
-lua5.4 verification-game.lua referee 127.0.0.1:8087 "6*2^1024 + 3*2^512"
-```
-
-Then start the honest player, which evaluates the public expression:
-
-``` bash
-lua5.4 verification-game.lua honest 127.0.0.1:8087 "6*2^1024 + 3*2^512"
-```
-
-and the dishonest player, which cheats at an early cycle into a
-different expression:
-
-``` bash
-lua5.4 verification-game.lua dishonest 127.0.0.1:8087 "6*2^1024 + 3*2^512" 25 7 "2+2"
-```
-
-The referee narrates the dispute from start to finish:
-
-``` text
-Player 1 posted final state hash 0x2820acc5....
-Player 2 posted final state hash 0x63c805e1....
-mcycle bisection round 1, interval of disagreement is [0x0, 0x7fffffffffffffff]
-mcycle bisection round 2, interval of disagreement is [0x0, 0x3fffffffffffffff]
-mcycle bisection round 3, interval of disagreement is [0x0, 0x1fffffffffffffff]
-...
-mcycle bisection round 62, interval of disagreement is [0x17, 0x1b]
-mcycle bisection round 63, interval of disagreement is [0x19, 0x1b]
-mcycle bisection round 64, interval of disagreement is [0x19, 0x1a]
-uarch_cycle bisection round 1, interval of disagreement is [0x0, 0x7ffff]
-uarch_cycle bisection round 2, interval of disagreement is [0x0, 0x3ffff]
-uarch_cycle bisection round 3, interval of disagreement is [0x0, 0x1ffff]
-...
-uarch_cycle bisection round 18, interval of disagreement is [0x7, 0xb]
-uarch_cycle bisection round 19, interval of disagreement is [0x7, 0x9]
-uarch_cycle bisection round 20, interval of disagreement is [0x7, 0x8]
-Player 1 posted log
-Verifying uarch step log!
-Log is valid!
-Player 1 wins! Final state hash is 0x2820acc5....
-Result posted:
-4
-Rejected!
-Result posted:
-10786158809173895446375831144734148401707861873653839436405804869463\
-96054833005778796250863934445216126720683279228360145952738612886499\
-73495708458383684478649003115037698421037988831222501494715481595948\
-96901677837132352593468675094844090688678579236903861342030923488978\
-36036892526733668721977278692363075584
-Accepted!
-```
-
-The bisection converges on the cheat point, the disputed step verifies
-in the honest player’s favor, and the cheater’s result is rejected
-before the true one is accepted.
-
-That dispute resolved on an ordinary uarch step, since the cheat point
-fell early in the disputed instruction’s uarch cycles. Cheating instead
-at the last uarch cycle, `cartesi.UARCH_CYCLE_MAX - 1`, moves the
-disagreement onto the transition that closes the instruction. In this
-case, the referee checks with `verify_step_uarch` followed by
-`verify_reset_uarch`:
-
-``` bash
-lua5.4 verification-game.lua dishonest 127.0.0.1:8088 "6*2^1024 + 3*2^512" 25 1048574 "2+2"
-```
-
-This time the uarch bisection climbs to the reset boundary and the
-honest player’s step and reset logs verify just the same:
-
-``` text
-uarch_cycle bisection round 1, interval of disagreement is [0x7ffff, 0xfffff]
-uarch_cycle bisection round 2, interval of disagreement is [0xbffff, 0xfffff]
-uarch_cycle bisection round 3, interval of disagreement is [0xdffff, 0xfffff]
-...
-uarch_cycle bisection round 18, interval of disagreement is [0xffffb, 0xfffff]
-uarch_cycle bisection round 19, interval of disagreement is [0xffffd, 0xfffff]
-uarch_cycle bisection round 20, interval of disagreement is [0xffffe, 0xfffff]
-Player 1 posted log
-Verifying uarch step log!
-Verifying uarch reset log!
-Log is valid!
-Player 1 wins! Final state hash is 0x2820acc5....
-```
-
-## Rolling verification game
-
-The verification game above settles the result of a single computation
-executed inside a Cartesi Machine that runs until it halts. We will now
-show how to settle an entire epoch of a Rolling Cartesi Machine. The
-`rolling-verification-game.lua` script extends the game to this setting.
-The referee, the players, and the network between them stand in for the
-same parties as before, and the referee still never trusts a player.
-
-The state an epoch starts from is settled. It is either the stored
-[template](#rolling-cartesi-machine-templates) at genesis or the settled
-result of the previous epoch. All advance-state inputs in an epoch are
-posted to the blockchain. These include not only the payload, but also
-the other fields in the ABI-encoded `EvmAdvance`, which are set by the
-blockchain itself. The referee therefore knows the agreed initial state
-hash and the contents of every input in the epoch.
-
-As before, the game opens with each player committing a final state
-hash, now the hash of the state in which the epoch’s last input is done
-processing. We again assume one of the players is honest.
-
-In this demonstration, the epoch under dispute is the calculator’s
-[first epoch](#rolling-cartesi-machines). The referee and the players
-receive the epoch’s inputs in the command line, as the same encoded
-files the calculator processed, standing in for the record the
-blockchain keeps.
-
-### Settling a dispute
-
-The epoch under dispute is settled in three bisections rather than two.
-The first ranges over the epoch’s inputs and isolates the input whose
-processing the players disagree on. The second ranges over `mcycle`
-(counted as an offset from the value it had when the disputed input
-arrived) and isolates the disputed main processor instruction. The third
-ranges over `uarch_cycle` and isolates the disputed uarch step, as
-before. Just as the verification game limits each main processor
-instruction to 2<sup>20</sup> uarch cycles, the rolling verification
-game limits each input to 2<sup>48</sup> mcycles and each epoch to
-2<sup>16</sup> inputs. Every transition in the epoch is then identified
-by three coordinates: the input index, the mcycle offset within that
-input, and the uarch cycle within that instruction. Each bisection
-searches one of them.
-
-The uarch reset keeps the place it had in the verification game, sharing
-the transition out of `cartesi.UARCH_CYCLE_MAX - 1` with a step of the
-long-halted uarch. The inclusion of an input advances no cycle counter
-either, and shares a transition the same way. The transition out of
-input *i-1* includes input *i* and also performs the first uarch step of
-the instruction that resumes the machine.
-
-The referee runs the three bisections in turn, reusing `bisect_level`
-unchanged, then verifies the transition out of the position they
-converged on:
-
-``` lua
-local function settle_dispute(players, initial_hash, dapp_contract)
-    local bisection = { last_agreed_hash = initial_hash, hash_after = players[1].final_hash, branch = "start" }
-
-    -- Bisect to the disputed input
-    local input = bisect_level(players, "input", INPUTS_PER_EPOCH, bisection)
-    -- Narrow down to the disputed main-processor instruction.
-    local mcycle_offset = bisect_level(players, "mcycle", MCYCLES_PER_INPUT, bisection)
-    -- Narrow down to the uarch instruction.
-    local uarch_cycle = bisect_level(players, "uarch_cycle", cartesi.UARCH_CYCLE_MAX, bisection)
-
-    phase("verdict")
-    local log = wait_for_log(players[1], bisection.branch, mcycle_offset, uarch_cycle)
-    eventf("Player 1 posted logs")
-
-    -- Player 1 won if its logs verify against the agreed before-hash, otherwise player 2 is honest.
-    local winner = verify_state_transition(
-        dapp_contract,
-        input,
-        mcycle_offset,
-        uarch_cycle,
-        bisection.last_agreed_hash,
-        log,
-        bisection.hash_after
-    ) and players[1] or players[2]
-    eventf("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
-    return winner
-end
-```
-
-### Bisecting over inputs
-
-The input bisection ranges over input boundaries, the machine states in
-which the first *i* inputs (and no others) are done processing. An input
-boundary is a machine that has yielded manual with accept and is waiting
-for the next input. The emulator does not run a machine that has yielded
-manual, so input boundaries are fixed points.
-
-The bisection ranges over all 2<sup>16</sup> input indices, not just the
-inputs the epoch received. A boundary past the last input has no input
-to include, so the transition out of it is the first uarch step alone.
-The uarch runs only far enough to find the machine yielded manual and
-halts, leaving the main processor untouched, and the reset that ends the
-instruction returns the uarch to pristine. Every `mcycle` boundary past
-the last input therefore repeats the state in which the last input is
-done processing, the same way every `mcycle` past the halt repeated the
-final state in the verification game. This is also how the state
-transition Dave deploys behaves when the input index falls outside the
-epoch’s input box.
-
-Rejected inputs also end at input boundaries. Recall that
-`machine:send_cmio_response()` records a revert state hash, and rejects
-any value other than the hash of the machine receiving the input. When
-the guest rejects an input, the transitions that process it lead back to
-this recorded revert state, so the boundary that follows a rejected
-input is the boundary that preceded it. No emulator operation moves a
-machine backwards, however, so producing the reverted state is left to
-the client code. This is why a Cartesi Node keeps a snapshot of the
-machine while an input is processed, and the players of this game do the
-same. Each player crosses one input with `advance`:
-
-``` lua
-local function advance(player, machine, data, sink)
-    if not data then
-        return
-    end
-    local snapshot = assert(machine:fork_server())
-    local revert_root_hash = machine:get_root_hash()
-    machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
-    run_to(machine, machine:read_reg("mcycle") + MCYCLES_PER_INPUT, sink)
-    local request_reason, accept_data = player:revert_if_rejected(machine, snapshot)
-    snapshot:shutdown_server()
-    return request_reason, accept_data
-end
-```
-
-The revert itself is a player operation of its own, shared with the
-bisection rounds we will meet below:
-
-``` lua
-local function revert_if_rejected(_player, machine, revert_machine)
-    local _, request_reason, data = machine:receive_cmio_request()
-    if request_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
-        machine:shutdown_server()
-        machine:swap(assert(revert_machine:fork_server()))
-        return request_reason
-    end
-    return request_reason, data
-end
-```
-
-A machine that rejects its input trades places with a fresh fork of the
-snapshot taken when the input was fed (a machine standing at the
-recorded revert state), and the server it abandons is shut down. Inputs
-are typically accepted, however, and an accepted input passes through
-untouched, so a player crosses a whole epoch on the same server while
-the snapshot beside it comes and goes. A dishonest player could override
-this operation and keep the rejecting machine instead, and we will later
-see the referee catch one that does.
-
-### Bisecting within an input
-
-The mcycle bisection ranges over the disputed input’s 2<sup>48</sup>
-mcycles. The input is included by the first of these transitions, so the
-state at offset *m* is the input boundary, fed, and run for *m* mcycles.
-The calculator is done with each input within about 50 million mcycles,
-after which the machine has yielded manual and no longer advances. A
-midpoint past the yield therefore repeats the yielded state, and the
-bisection ranges over the full ceiling without knowing where the guest
-yields, exactly as the halt allowed in the verification game. The
-uarch_cycle bisection that follows is unchanged, over the 2<sup>20</sup>
-uarch cycles of the disputed instruction. A single player operation
-serves the three levels:
-
-``` lua
-local function commit_bisection(player, branch, level, target)
-    take_branch(player, branch)
-    local agreed = player.agreed
-    if level == "input" then
-        local machine = assert(agreed.machine:fork_server())
-        for index = agreed.input_index + 1, target do
-            player:advance(machine, player.inputs[index])
-        end
-        player.tentative = { machine = machine, input_index = target }
-    else
-        -- The first round below the input level pins the disputed input and its boundary, the
-        -- recorded revert state any rejecting fork reverts to.
-        local boundary = player.boundary
-            or {
-                machine = assert(agreed.machine:fork_server()),
-                mcycle = agreed.machine:read_reg("mcycle"),
-                data = player.inputs[agreed.input_index + 1],
-            }
-        player.boundary = boundary
-        local machine = assert(agreed.machine:fork_server())
-        if not agreed.offset and boundary.data then
-            local revert_root_hash = machine:get_root_hash()
-            machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, boundary.data, revert_root_hash)
-        end
-        local offset = agreed.offset or 0
-        if level == "mcycle" then
-            offset = target
-            if run_to(machine, boundary.mcycle + target) == cartesi.BREAK_REASON_YIELDED_MANUALLY then
-                player:revert_if_rejected(machine, boundary.machine)
-            end
-        else
-            machine:run_uarch(target)
-        end
-        player.tentative = { machine = machine, input_index = agreed.input_index, offset = offset }
-    end
-    return player.tentative.machine:get_root_hash()
-end
-```
-
-The first round below the input level keeps a fork of the disputed
-input’s boundary. A round that finds the guest rejecting the input
-answers with a fresh fork of that boundary, the recorded revert state. A
-fork that still stands at the boundary includes the input before running
-(at both lower levels), and the offset promoted along with each fork
-guarantees the input is included exactly once.
-
-### Verifying the disputed transition
-
-Once the bisections converge, the mcycle offset and uarch cycle they
-agreed on determine the form of the disputed transition, and the referee
-asks player 1 for the matching logs:
-
-``` lua
-local function commit_log(player, branch, mcycle_offset, uarch_cycle)
-    take_branch(player, branch)
-    local agreed = player.agreed.machine
-    if mcycle_offset == 0 and uarch_cycle == 0 and player.boundary.data then
-        local revert_root_hash = agreed:get_root_hash()
-        local send_cmio_log = agreed:log_send_cmio_response(
-            cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-            player.boundary.data,
-            revert_root_hash
-        )
-        return { send_cmio_log = send_cmio_log, step_log = agreed:log_step_uarch() }
-    end
-    if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-        local step_log = agreed:log_step_uarch()
-        return { step_log = step_log, reset_log = agreed:log_reset_uarch() }
-    end
-    return { step_log = agreed:log_step_uarch() }
-end
-```
-
-A combined transition is committed as its two access logs.
-
-The referee verifies the logs on their own, again without ever
-instantiating a machine, each verification starting from the hash the
-previous one returned:
-
-``` lua
-local function verify_state_transition(
-    dapp_contract,
-    input,
-    mcycle_offset,
-    uarch_cycle,
-    state_hash_before,
-    log,
-    state_hash_after
-)
-    local machine = cartesi.machine
-    local data = dapp_contract.inputs[input + 1]
-    local pass = pcall(function()
-        local hash = state_hash_before
-        if mcycle_offset == 0 and uarch_cycle == 0 and data then
-            eventf("Verifying input inclusion log!")
-            local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-            hash = machine:verify_send_cmio_response(reason, data, hash, log.send_cmio_log, hash)
-        end
-        eventf("Verifying uarch step log!")
-        hash = machine:verify_step_uarch(hash, log.step_log)
-        if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-            eventf("Verifying uarch reset log!")
-            hash = machine:verify_reset_uarch(hash, log.reset_log)
-        end
-        assert(hash == state_hash_after, "log does not reach the committed after-hash")
-    end)
-    eventf("Log is %s!", pass and "valid" or "invalid")
-    return pass
-end
-```
-
-For the transition that includes the input, the referee passes the
-agreed before-hash twice, once as the state the input arrives in and
-once as the revert state hash the operation must record (the same
-restriction `machine:send_cmio_response()` imposes). The disputed input
-is named by its index and taken from the dapp contract, which owns its
-own encoding of the epoch’s inputs, just as the blockchain does. A
-dishonest player can post a valid log of a machine including some other
-input, but no such log replays against the input the blockchain knows.
-When the contract holds no input at the disputed index (the epoch ended
-before it), there is nothing to include, and the transition out of the
-boundary is checked as an ordinary uarch step.
-
-For the transition that resets the uarch, `verify_reset_uarch` settles
-rejected inputs by itself. Replaying a reset from a state that has
-yielded manual with reject ends at the recorded revert state hash,
-rather than at the state with a pristine microarchitecture. The
-processing of a rejected input therefore ends at the boundary it started
-from, as the input bisection expects. Every other transition is a single
-uarch step, checked with `verify_step_uarch` as before.
-
-### Verifying an epoch result
-
-Naming the winner settles the epoch’s final state hash, and with it
-every output the epoch produced. The verification game extracted its
-result directly from the winner’s output drive. The outputs of a Rolling
-Cartesi Machine are verified as in [Output
-verification](#output-verification) instead, by an outputs Merkle root
-proof that ties the root of the outputs Merkle tree to the final state
-hash, and an output proof that places the output’s hash among that
-tree’s leaves. The honest player collects both proofs while committing,
-processing the epoch the same way the [output proofs](#output-proofs)
-script did: it folds each accepted input’s outputs into a frontier,
-checks the resulting root hash against the one the guest reports, saves
-the tx-buffer word proof from the accepting state, and produces the
-output proofs once the epoch closes. The referee accepts the first
-result that verifies against the winner’s final hash:
-
-``` lua
-local function verify_result(result, final_hash)
-    local outputs_merkle_root_proof, output_proof = result.outputs_merkle_root_proof, result.output_proof
-    return outputs_merkle_root_proof.root_hash == final_hash
-        and outputs_merkle_root_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE
-        and outputs_merkle_root_proof.target_address == cartesi.AR_CMIO_TX_BUFFER_START
-        and outputs_merkle_root_proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE
-        and pcall(hash_tree.verify_slice, outputs_merkle_root_proof)
-        and cartesi.keccak256(output_proof.root_hash) == outputs_merkle_root_proof.target_hash
-        and pcall(hash_tree.verify_slice, output_proof)
-        and cartesi.keccak256(result.output) == output_proof.target_hash
-end
-```
-
-### Running the rolling game
-
-The rolling game runs over `input-0.bin` to `input-2.bin`, the second of
-which the guest rejects. In the verification game, the honest player
-connected first and the referee verified its logs. This time the
-dishonest player connects first, so that every verdict follows from the
-failure of the cheater’s own logs. There are four ways to cheat. The
-first three make the dispute converge on each form the disputed
-transition can take, and the last claims an input the epoch never
-received.
-
-The first dishonest player cheats in the inputs alone. It runs the
-honest code over the wrong inputs, claiming input 2 (the epoch’s last)
-asked for `2^1024` rather than `2^2048`. The input it wishes had been
-posted is fabricated as `fake-input-2.bin`, mirroring the fields of the
-real input 2 with the cheat payload. To run the game, start the referee,
-giving it the epoch’s input files:
-
-``` bash
-lua5.4 rolling-verification-game.lua referee 127.0.0.1:8090 \
+lua5.4 vg.lua referee 127.0.0.1:8090 "0x4eccdd39ec08667a9670088ab26950ad291668b3c2c86216084d3033244575f9" \
     input-0.bin input-1.bin input-2.bin
 ```
 
-then the dishonest player, which connects first to become player 1:
+Then connect the honest player, which processes the inputs announced by
+the referee:
 
 ``` bash
-lua5.4 rolling-verification-game.lua dishonest 127.0.0.1:8090 wrong-input 2 fake-input-2.bin \
-    input-0.bin input-1.bin input-2.bin
+lua5.4 vg.lua honest 127.0.0.1:8090 "0x4eccdd39ec08667a9670088ab26950ad291668b3c2c86216084d3033244575f9"
 ```
 
-and finally the honest player:
+The first dishonest player is the forger, which substitutes
+`fake-input-2.bin` for input 2. The fabricated input asks for `2^1024`,
+whereas the posted input asks for `2^2048`. All other fields remain the
+same:
 
 ``` bash
-lua5.4 rolling-verification-game.lua honest 127.0.0.1:8090 \
-    input-0.bin input-1.bin input-2.bin
+lua5.4 vg-dishonest.lua forger 127.0.0.1:8090 "0x4eccdd39ec08667a9670088ab26950ad291668b3c2c86216084d3033244575f9" 2 fake-input-2.bin
 ```
 
-The referee narrates the dispute from start to finish:
+The second is the tamperer, which processes the posted inputs but
+corrupts memory at mcycle offset 100 within input 2:
+
+``` bash
+lua5.4 vg-dishonest.lua tamperer 127.0.0.1:8090 "0x4eccdd39ec08667a9670088ab26950ad291668b3c2c86216084d3033244575f9" 2 100
+```
+
+The third is the no-rollback player, which keeps the rejecting machine
+when input 1 finishes instead of restoring the pre-input snapshot:
+
+``` bash
+lua5.4 vg-dishonest.lua no-rollback 127.0.0.1:8090 "0x4eccdd39ec08667a9670088ab26950ad291668b3c2c86216084d3033244575f9"
+```
+
+All four players start from the same machine state, but reach different
+final state hashes. The referee first collects their claims:
 
 ``` text
-Player 1 posted final state hash 0x8301215d....
-Player 2 posted final state hash 0x26c3197a....
-input bisection round 1, interval of disagreement is [0x0, 0x8000]
-input bisection round 2, interval of disagreement is [0x0, 0x4000]
-input bisection round 3, interval of disagreement is [0x0, 0x2000]
-...
-input bisection round 14, interval of disagreement is [0x0, 0x4]
-input bisection round 15, interval of disagreement is [0x2, 0x4]
-input bisection round 16, interval of disagreement is [0x2, 0x3]
-mcycle bisection round 1, interval of disagreement is [0x0, 0x800000000000]
-mcycle bisection round 2, interval of disagreement is [0x0, 0x400000000000]
-mcycle bisection round 3, interval of disagreement is [0x0, 0x200000000000]
-...
-mcycle bisection round 46, interval of disagreement is [0x0, 0x4]
-mcycle bisection round 47, interval of disagreement is [0x0, 0x2]
-mcycle bisection round 48, interval of disagreement is [0x0, 0x1]
-uarch_cycle bisection round 1, interval of disagreement is [0x0, 0x7ffff]
-uarch_cycle bisection round 2, interval of disagreement is [0x0, 0x3ffff]
-uarch_cycle bisection round 3, interval of disagreement is [0x0, 0x1ffff]
-...
-uarch_cycle bisection round 17, interval of disagreement is [0x0, 0x7]
-uarch_cycle bisection round 18, interval of disagreement is [0x0, 0x3]
-uarch_cycle bisection round 19, interval of disagreement is [0x0, 0x1]
-Player 1 posted logs
-Verifying input inclusion log!
-Log is invalid!
-Player 2 wins! Final state hash is 0x26c3197a....
-Result posted:
-179769313486231590772930519078902473361797697894230657273430081157732675805500963132708477322407536021120113879871393357658789768814416622492847430639474124377767893424865485276302219601246094119453082952085005768838150682342462881473913110540827237163350510684586298239947245938479716304835356329624224137216Rejected!
-Result posted:
-32317006071311007300714876688669951960444102669715484032130345427524655138867890893197201411522913463688717960921898019494119559150490921095088152386448283120630877367300996091750197750389652106796057638384067568276792218642619756161838094338476170470581645852036305042887575891541065808607552399123930385521914333389668342420684974786564569494856176035326322058077805659331026192708460314150258592864177116725943603718461857357598351152301645904403697613233287231227125684710820209725157101726931323469678542580656697935045997268352998638215525166389437335543602135433229604645318478604952148193555853611059596230656Accepted!
+Player honest claimed 0x26c3197a....
+Player forger claimed 0x8301215d....
+Player tamperer claimed 0xe4d0f199....
+Player no-rollback claimed 0x6dba8fd7....
 ```
 
-The input bisection converges on input 2. It crosses the rejected input
-1 undisturbed, both players agreeing that its boundary repeats the one
-before it. The mcycle and uarch_cycle bisections both collapse to zero,
-since the players disagree on every state past the inclusion of the
-input. The logs player 1 posts are valid (a machine fed `2^1024` indeed
-transitions this way), but they do not replay against the true input 2,
-and the referee rejects them. The dishonest player’s result is rejected
-just the same, before the honest player’s result verifies against the
-settled hash. The settled hash is the one the calculator’s run saved as
-`epoch-0-state-hash.bin`. The dispute ends on the same state the direct
-run produced.
+The first round isolates a disagreement in input 1, at the reset that
+closes the rejecting instruction:
 
-The second dishonest player runs the honest code over the true inputs,
-but keeps the rejecting machine when the guest rejects input 1:
+``` text
+Disagreement is within inputs [0x0, 0x8000).
+Disagreement is within inputs [0x0, 0x4000).
+Disagreement is within inputs [0x0, 0x2000).
+...
+Disagreement is within inputs [0x0, 0x4).
+Disagreement is within inputs [0x0, 0x2).
+Disagreement is within inputs [0x1, 0x2).
+Disagreement is within input 0x1 and mcycle [0x0, 0x800000000000).
+Disagreement is within input 0x1 and mcycle [0x0, 0x400000000000).
+Disagreement is within input 0x1 and mcycle [0x0, 0x200000000000).
+...
+Disagreement is within input 0x1 and mcycle [0x2b87844, 0x2b87848).
+Disagreement is within input 0x1 and mcycle [0x2b87846, 0x2b87848).
+Disagreement is within input 0x1 and mcycle [0x2b87847, 0x2b87848).
+Disagreement is within input 0x1, mcycle 0x2b87847, and uarch cycles [0x80000, 0x100000).
+Disagreement is within input 0x1, mcycle 0x2b87847, and uarch cycles [0xc0000, 0x100000).
+Disagreement is within input 0x1, mcycle 0x2b87847, and uarch cycles [0xe0000, 0x100000).
+...
+Disagreement is within input 0x1, mcycle 0x2b87847, and uarch cycles [0xffffc, 0x100000).
+Disagreement is within input 0x1, mcycle 0x2b87847, and uarch cycles [0xffffe, 0x100000).
+Disagreement is within input 0x1, mcycle 0x2b87847, and uarch cycles [0xfffff, 0x100000).
+Player honest's transition proof is valid.
+Player forger's transition proof is valid.
+Player tamperer's transition proof is valid.
+Player no-rollback failed to prove its transition and is eliminated.
+```
+
+The uarch step verifies, but `verify_reset_uarch` returns the recorded
+revert state hash. The honest player, forger, and tamperer all restored
+that state and can prove the transition to it. The no-rollback player
+kept the rejecting state instead, so it cannot prove its claimed
+after-hash and is eliminated. Notice that surviving a proof round does
+not establish that a player’s entire computation is correct. Two of the
+three surviving players still claim incorrect final state hashes.
+
+The referee therefore starts another round from the beginning of the
+epoch. This time the players’ midpoint responses guide the bisection to
+input 2:
+
+``` text
+Disagreement is within inputs [0x0, 0x8000).
+Disagreement is within inputs [0x0, 0x4000).
+Disagreement is within inputs [0x0, 0x2000).
+...
+Disagreement is within inputs [0x0, 0x4).
+Disagreement is within inputs [0x2, 0x4).
+Disagreement is within inputs [0x2, 0x3).
+Disagreement is within input 0x2 and mcycle [0x0, 0x800000000000).
+Disagreement is within input 0x2 and mcycle [0x0, 0x400000000000).
+Disagreement is within input 0x2 and mcycle [0x0, 0x200000000000).
+...
+Disagreement is within input 0x2 and mcycle [0x0, 0x4).
+Disagreement is within input 0x2 and mcycle [0x0, 0x2).
+Disagreement is within input 0x2 and mcycle [0x0, 0x1).
+Disagreement is within input 0x2, mcycle 0x0, and uarch cycles [0x0, 0x80000).
+Disagreement is within input 0x2, mcycle 0x0, and uarch cycles [0x0, 0x40000).
+Disagreement is within input 0x2, mcycle 0x0, and uarch cycles [0x0, 0x20000).
+...
+Disagreement is within input 0x2, mcycle 0x0, and uarch cycles [0x0, 0x4).
+Disagreement is within input 0x2, mcycle 0x0, and uarch cycles [0x0, 0x2).
+Disagreement is within input 0x2, mcycle 0x0, and uarch cycles [0x0, 0x1).
+Player honest's transition proof is valid.
+Player tamperer's transition proof is valid.
+Player forger failed to prove its transition and is eliminated.
+```
+
+Within input 2, the mcycle and uarch bisections both converge to offset
+zero. The disagreement begins at input inclusion, before the machine has
+executed the input’s first uarch step. The forger can produce valid logs
+for the computation it actually performed, but those logs cannot verify
+against the input held by the referee. The honest player and tamperer
+both included the posted input, so their proofs verify, and the forger
+is eliminated.
+
+A third round isolates the disagreement between the two remaining
+players:
+
+``` text
+Disagreement is within inputs [0x0, 0x8000).
+Disagreement is within inputs [0x0, 0x4000).
+Disagreement is within inputs [0x0, 0x2000).
+...
+Disagreement is within inputs [0x0, 0x4).
+Disagreement is within inputs [0x2, 0x4).
+Disagreement is within inputs [0x2, 0x3).
+Disagreement is within input 0x2 and mcycle [0x0, 0x800000000000).
+Disagreement is within input 0x2 and mcycle [0x0, 0x400000000000).
+Disagreement is within input 0x2 and mcycle [0x0, 0x200000000000).
+...
+Disagreement is within input 0x2 and mcycle [0x64, 0x68).
+Disagreement is within input 0x2 and mcycle [0x64, 0x66).
+Disagreement is within input 0x2 and mcycle [0x64, 0x65).
+Disagreement is within input 0x2, mcycle 0x64, and uarch cycles [0x0, 0x80000).
+Disagreement is within input 0x2, mcycle 0x64, and uarch cycles [0x0, 0x40000).
+Disagreement is within input 0x2, mcycle 0x64, and uarch cycles [0x0, 0x20000).
+...
+Disagreement is within input 0x2, mcycle 0x64, and uarch cycles [0x0, 0x4).
+Disagreement is within input 0x2, mcycle 0x64, and uarch cycles [0x0, 0x2).
+Disagreement is within input 0x2, mcycle 0x64, and uarch cycles [0x0, 0x1).
+Player honest's transition proof is valid.
+Player tamperer failed to prove its transition and is eliminated.
+```
+
+They agree on the state before mcycle offset 100 in input 2, but
+disagree on the first uarch step after the tamperer changes memory. The
+referee verifies that step from the agreed state hash, so a log produced
+from the corrupted machine cannot establish the tamperer’s claimed
+transition. The honest player’s proof verifies, and the tamperer is
+eliminated.
+
+Only the honest player remains. Its final state hash becomes the settled
+result of the epoch, and the referee can verify outputs against it:
+
+``` text
+Player honest wins.
+Final state hash is 0x26c3197a1fbac88073669dfacbe1a5e02b2053a74cf7b1a416589107a56850b8.
+```
+
+``` text
+Output 1 of input "2^2048" is "32317006071311007300714876688669951960444102669715484032130345427524655138867890893197201411522913463688717960921898019494119559150490921095088152386448283120630877367300996091750197750389652106796057638384067568276792218642619756161838094338476170470581645852036305042887575891541065808607552399123930385521914333389668342420684974786564569494856176035326322058077805659331026192708460314150258592864177116725943603718461857357598351152301645904403697613233287231227125684710820209725157101726931323469678542580656697935045997268352998638215525166389437335543602135433229604645318478604952148193555853611059596230656".
+```
+
+This is the same hash saved by the calculator’s direct run in
+`epoch-0-state-hash.bin`. The referee has identified three invalid
+transitions without executing the epoch itself. The party proving an
+output need not be the one that settled the dispute: anyone can use the
+settled hash to prove an output of interest.
+
+### Each player must defend its own claim
+
+During the dispute, however, a player cannot entrust the defense of its
+claim to another player merely because they proposed the same final
+state hash. A correct final hash does not imply an honest defense. An
+adversary can control two identities (Sybils), post the correct final
+hash through one and an incorrect hash through the other, and
+deliberately make the first lose to the second. If an honest player
+relies on the Sybil claiming the correct hash to defend it, the
+adversary controls both sides of the dispute.
+
+We can demonstrate this with the same calculator epoch. The adversary’s
+first player is the forger from the previous example, which substitutes
+`fake-input-2.bin` for input 2 and claims the resulting incorrect final
+state hash. Its second player, the fabulist, copies the correct final
+hash from `epoch-0-state-hash.bin`, but answers every bisection using
+the forger’s computation. The fabulist uses the forger’s player
+implementation, overriding only the claim it submits. Both therefore
+give the same tentative hashes throughout bisection, even though their
+original claims differ.
+
+Start the referee as before:
 
 ``` bash
-lua5.4 rolling-verification-game.lua dishonest 127.0.0.1:8091 no-rollback \
+lua5.4 vg.lua referee 127.0.0.1:8090 "0x4eccdd39ec08667a9670088ab26950ad291668b3c2c86216084d3033244575f9" \
     input-0.bin input-1.bin input-2.bin
 ```
 
-The two machines are now identical, and the players differ only in what
-they post for the states that follow the rejection (the recorded revert
-state on the honest side, the rejecting machine on the dishonest one).
-The mcycle bisection converges on the instruction in which the guest
-yields its rejection, and the uarch_cycle bisection climbs to the reset
-that ends it, the players agreeing on every uarch cycle before it:
-
-``` text
-input bisection round 16, interval of disagreement is [0x1, 0x2]
-mcycle bisection round 1, interval of disagreement is [0x0, 0x800000000000]
-mcycle bisection round 2, interval of disagreement is [0x0, 0x400000000000]
-mcycle bisection round 3, interval of disagreement is [0x0, 0x200000000000]
-...
-mcycle bisection round 46, interval of disagreement is [0x2b87844, 0x2b87848]
-mcycle bisection round 47, interval of disagreement is [0x2b87846, 0x2b87848]
-mcycle bisection round 48, interval of disagreement is [0x2b87847, 0x2b87848]
-uarch_cycle bisection round 1, interval of disagreement is [0x7ffff, 0xfffff]
-uarch_cycle bisection round 2, interval of disagreement is [0xbffff, 0xfffff]
-uarch_cycle bisection round 3, interval of disagreement is [0xdffff, 0xfffff]
-...
-uarch_cycle bisection round 18, interval of disagreement is [0xffffb, 0xfffff]
-uarch_cycle bisection round 19, interval of disagreement is [0xffffd, 0xfffff]
-uarch_cycle bisection round 20, interval of disagreement is [0xffffe, 0xfffff]
-Player 1 posted logs
-Verifying uarch step log!
-Verifying uarch reset log!
-Log is invalid!
-Player 2 wins! Final state hash is 0x26c3197a....
-```
-
-The uarch step in player 1’s logs verifies, but the reset replays to the
-recorded revert state hash (the value the honest player posted), and the
-verification rejects the after-hash player 1 committed.
-
-The third dishonest player cheats like the one in the verification game,
-switching to a machine fed a fabricated `2+2` input in place of input 2,
-at mcycle offset 25 and uarch cycle 7 of its processing:
+The `idle` role computes honestly and submits the correct final hash,
+but lets its first bisection request time out, relying on the other
+player claiming the same hash:
 
 ``` bash
-lua5.4 rolling-verification-game.lua dishonest 127.0.0.1:8092 mid-processing 2 25 7 fake-input-2.bin \
-    input-0.bin input-1.bin input-2.bin
+lua5.4 vg-dishonest.lua idle 127.0.0.1:8090 "0x4eccdd39ec08667a9670088ab26950ad291668b3c2c86216084d3033244575f9"
 ```
 
-The dispute crosses the three levels and converges on an ordinary uarch
-step, and player 1’s log fails `verify_step_uarch`:
-
-``` text
-input bisection round 16, interval of disagreement is [0x2, 0x3]
-mcycle bisection round 1, interval of disagreement is [0x0, 0x800000000000]
-mcycle bisection round 2, interval of disagreement is [0x0, 0x400000000000]
-mcycle bisection round 3, interval of disagreement is [0x0, 0x200000000000]
-...
-mcycle bisection round 46, interval of disagreement is [0x18, 0x1c]
-mcycle bisection round 47, interval of disagreement is [0x18, 0x1a]
-mcycle bisection round 48, interval of disagreement is [0x19, 0x1a]
-uarch_cycle bisection round 1, interval of disagreement is [0x0, 0x7ffff]
-uarch_cycle bisection round 2, interval of disagreement is [0x0, 0x3ffff]
-uarch_cycle bisection round 3, interval of disagreement is [0x0, 0x1ffff]
-...
-uarch_cycle bisection round 18, interval of disagreement is [0x7, 0xb]
-uarch_cycle bisection round 19, interval of disagreement is [0x7, 0x9]
-uarch_cycle bisection round 20, interval of disagreement is [0x7, 0x8]
-Player 1 posted logs
-Verifying uarch step log!
-Log is invalid!
-Player 2 wins! Final state hash is 0x26c3197a....
-```
-
-The last dishonest player claims the epoch received a fourth input, a
-fabricated `3*5` request that was never posted:
+Connect the adversary’s two players:
 
 ``` bash
-lua5.4 rolling-verification-game.lua dishonest 127.0.0.1:8093 extra-input fake-input-3.bin \
-    input-0.bin input-1.bin input-2.bin
+lua5.4 vg-dishonest.lua forger 127.0.0.1:8090 "0x4eccdd39ec08667a9670088ab26950ad291668b3c2c86216084d3033244575f9" 2 fake-input-2.bin
 ```
 
-The input bisection walks past the epoch’s end and isolates input 3. The
-boundaries the honest player posts there all repeat the state in which
-input 2 is done processing, while the dishonest machine took the extra
-input, so the two lower bisections collapse to zero as in the first run:
+``` bash
+lua5.4 vg-dishonest.lua fabulist 127.0.0.1:8090 "0x4eccdd39ec08667a9670088ab26950ad291668b3c2c86216084d3033244575f9" \
+    2 fake-input-2.bin "0x26c3197a1fbac88073669dfacbe1a5e02b2053a74cf7b1a416589107a56850b8"
+```
+
+The idle player and the fabulist submit the same correct final hash:
 
 ``` text
-input bisection round 1, interval of disagreement is [0x0, 0x8000]
-input bisection round 2, interval of disagreement is [0x0, 0x4000]
-input bisection round 3, interval of disagreement is [0x0, 0x2000]
-...
-input bisection round 14, interval of disagreement is [0x0, 0x4]
-input bisection round 15, interval of disagreement is [0x2, 0x4]
-input bisection round 16, interval of disagreement is [0x3, 0x4]
-Player 1 posted logs
-Verifying uarch step log!
-Log is invalid!
-Player 2 wins! Final state hash is 0x26c3197a....
+Player idle claimed 0x26c3197a....
+Player forger claimed 0x8301215d....
+Player fabulist claimed 0x26c3197a....
 ```
 
-The dishonest player posts the logs of including its extra input. The
-referee, however, holds no input 3, so the disputed transition is an
-ordinary uarch step out of the yielded boundary. The posted step log,
-which leaves a machine that just took an input, does not replay from it.
+When the idle player fails to answer, the referee eliminates it after
+its time allowance expires:
 
-For simplicity this model uses only two players, but the same idea is
-the basis for efficient algorithms that resolve disputes among many
-players. Our implementation has since moved on to use our
-[Permissionless Refereed Tournaments](https://arxiv.org/abs/2212.12439).
-For an even better algorithm, see our [Dave: A Decentralized, Secure,
-and Lively Fraud-Proof Algorithm](https://doi.org/10.1145/3734698).
+``` text
+Player idle failed to provide a valid tentative hash in time and is eliminated.
+```
+
+The correct claim is now represented only by the fabulist. Because the
+two surviving Sybils agree at every midpoint, the referee keeps the
+second half of every interval. It eventually asks them to prove the last
+transition of the epoch, in the padding that repeats the final state.
+The forger can prove this transition from its own final state back to
+itself. The fabulist offers the same proof, which cannot reach the
+correct final hash it claimed:
+
+``` text
+Player forger's transition proof is valid.
+Player fabulist failed to prove its transition and is eliminated.
+```
+
+``` text
+Player forger wins.
+Final state hash is 0x8301215d5ab64507c760f443ce934d88ef7737369e1780a30382cd2d0fa36764.
+```
+
+No invalid transition proof was accepted. The Sybils agreed on a false
+history, and the referee checked a valid transition within it. This is
+what can happen if an honest player relies on someone else to defend the
+correct final hash: the hash is present, but no honest player defends
+it.
+
+Now repeat the game, replacing the idle player with the ordinary honest
+player:
+
+``` bash
+lua5.4 vg.lua honest 127.0.0.1:8090 "0x4eccdd39ec08667a9670088ab26950ad291668b3c2c86216084d3033244575f9"
+```
+
+It submits that same correct final hash and answers the referee for
+itself:
+
+``` text
+Player honest claimed 0x26c3197a....
+Player forger claimed 0x8301215d....
+Player fabulist claimed 0x26c3197a....
+```
+
+Its tentative hashes expose the disagreement where the Sybils substitute
+input 2. The referee verifies input delivery against the posted input,
+so both Sybils fail to prove their transitions:
+
+``` text
+Player honest's transition proof is valid.
+Player forger failed to prove its transition and is eliminated.
+Player fabulist failed to prove its transition and is eliminated.
+```
+
+``` text
+Player honest wins.
+Final state hash is 0x26c3197a1fbac88073669dfacbe1a5e02b2053a74cf7b1a416589107a56850b8.
+```
+
+The fabulist’s defeat eliminates only the fabulist, even though it
+submitted the same final hash as the honest player. In `vg.lua`, claims,
+tentative hashes, clocks, and proof responses belong to individual
+players; an equal final hash never authorizes one player to answer for
+another. The guarantee requires at least one honest player to defend its
+claim throughout the dispute within the allotted time.

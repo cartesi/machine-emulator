@@ -208,6 +208,25 @@ prepare-readme:
 $(REPLACE_CACHE_DIR):
 	mkdir -p $@
 
+# Standalone recipe tests never read template.d or render the documentation.
+RECIPE_TEST_ENV ?= no
+GAME_TEST_DIR := $(REPLACE_CACHE_DIR)/game-tests
+.PHONY: test-vg test-vg-execution
+ifeq ($(RECIPE_TEST_ENV),yes)
+$(GAME_TEST_DIR)/initial-hash: $(RECIPES_DIR)/game-test-fixtures.sh $(RECIPES_DIR)/calc.sh
+	mkdir -p $(GAME_TEST_DIR)
+	cd $(GAME_TEST_DIR) && bash $(RECIPES_DIR)/game-test-fixtures.sh
+
+test-vg: $(GAME_TEST_DIR)/initial-hash
+	cd $(GAME_TEST_DIR) && lua5.4 $(RECIPES_DIR)/game-transport-test.lua && \
+	    lua5.4 $(RECIPES_DIR)/vg-clock-test.lua && lua5.4 $(RECIPES_DIR)/vg-test.lua
+test-vg-execution: $(GAME_TEST_DIR)/initial-hash
+	cd $(GAME_TEST_DIR) && lua5.4 $(RECIPES_DIR)/vg-test.lua execution
+else
+test-vg test-vg-execution:
+	$(MAKE) docs-image-exec CONTAINER_COMMAND="make $@ RECIPE_TEST_ENV=yes"
+endif
+
 ifeq ($(DEV_ENV_HAS_DOCGEN),yes)
 
 ifeq ($(DOCS_IMAGE_ID),)
@@ -225,7 +244,7 @@ template.d: README.md.template replace.lua | $(REPLACE_CACHE_DIR)
 	    -M docs_image_id="$(DOCS_IMAGE_ID)" \
 	    --lua-filter replace.lua README.md.template -o $@
 
-ifeq (,$(filter clean,$(MAKECMDGOALS)))
+ifeq (,$(filter clean test-vg test-vg-execution,$(MAKECMDGOALS)))
 -include template.d
 endif
 

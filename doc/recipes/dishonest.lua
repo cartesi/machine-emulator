@@ -5,12 +5,8 @@
 -- switch wrong. Only the active machine advances between input boundaries, the second having
 -- been positioned at the switch point ahead of time. Forking forks both. Only the switching
 -- methods are defined below, the rest fall through to the active machine.
--- In verification-game.lua the machine takes no inputs, so the point is an absolute (mcycle,
--- uarch_cycle) pair, with offsets measured from mcycle 0 and the cheat machine positioned at
--- construction. In rolling-verification-game.lua inputs flow through the composite, which
--- recognizes the cheat input by its bytes, feeds the cheat machine a doctored input in its
--- place, and positions it right after. Recognizing the input by its bytes survives rollbacks,
--- since a rolled-back feed disappears with the fork that made it.
+-- The rolling test fixture selects the cheat input by its explicit epoch index.
+-- Forking and rollback preserve the strategy together with the machine state.
 -- Every mutable field lives in the instance's single data table, so forking copies it whole
 -- and trading places with another composite swaps it whole, with no field list to maintain.
 -- First access caches the result on the instance, so later accesses skip __index. A defined
@@ -58,30 +54,12 @@ local function past_cheat(data, mcycle, uarch_cycle)
     return uarch_cycle > data.cheat_uarch_cycle
 end
 
--- The composite for verification-game.lua, cheating at an absolute (mcycle, uarch_cycle) point
--- of a machine that takes no inputs. The cheat machine is run to the switch mcycle once, here.
-local function new_composite_machine(real_machine, cheat_mcycle, cheat_uarch_cycle, cheat_machine)
-    cheat_machine:run(cheat_mcycle)
-    return setmetatable({
-        data = {
-            real_machine = real_machine,
-            cheat_machine = cheat_machine,
-            active = real_machine,
-            mcycle = 0,
-            cheated = true,
-            feed_mcycle = 0,
-            cheat_offset = cheat_mcycle,
-            cheat_uarch_cycle = cheat_uarch_cycle,
-        },
-    }, composite_meta)
-end
-
--- The composite for rolling-verification-game.lua, cheating at an (mcycle offset, uarch_cycle)
--- point of the input whose bytes match cheat_input_data. Both machines start at the same input
+-- The composite for vg.lua, cheating at an (mcycle offset, uarch_cycle)
+-- point of the input at cheat_input_index. Both machines start at the same input
 -- boundary.
 local function new_rolling_composite_machine(
     real_machine,
-    cheat_input_data,
+    cheat_input_index,
     cheat_offset,
     cheat_uarch_cycle,
     cheat_machine,
@@ -97,7 +75,7 @@ local function new_rolling_composite_machine(
             feed_mcycle = 0,
             cheat_offset = cheat_offset,
             cheat_uarch_cycle = cheat_uarch_cycle,
-            cheat_input_data = cheat_input_data,
+            cheat_input_index = cheat_input_index,
             cheat_data = cheat_data,
         },
     }, composite_meta)
@@ -110,7 +88,7 @@ function composite_meta.fork_server(self)
     end
     data.real_machine = assert(self.data.real_machine:fork_server())
     data.cheat_machine = assert(self.data.cheat_machine:fork_server())
-    data.active = data.real_machine
+    data.active = self.data.active == self.data.real_machine and data.real_machine or data.cheat_machine
     return setmetatable({ data = data }, composite_meta)
 end
 
@@ -118,15 +96,20 @@ end
 -- Each records its own root hash, since their states diverge past the cheat input's feed. The
 -- cheat machine takes the doctored input in place of the cheat input and is then run to the
 -- switch point, where later rounds expect to find it.
+function composite_meta.set_input_index(self, index)
+    self.data.input_index = index
+end
+
 function composite_meta.send_cmio_response(self, reason, input, _)
     local data = self.data
     for _, machine in ipairs({ data.real_machine, data.cheat_machine }) do
         run_idle(machine, math.maxinteger)
-        local fed = input == data.cheat_input_data and machine == data.cheat_machine and data.cheat_data or input
+        local fed = data.input_index == data.cheat_input_index and machine == data.cheat_machine and data.cheat_data
+            or input
         local revert_root_hash = machine:get_root_hash()
         machine:send_cmio_response(reason, fed, revert_root_hash)
     end
-    if input == data.cheat_input_data then
+    if data.input_index == data.cheat_input_index then
         data.cheated, data.feed_mcycle = true, data.real_machine:read_reg("mcycle")
         run_idle(data.cheat_machine, data.feed_mcycle + data.cheat_offset)
     end
@@ -174,4 +157,4 @@ function composite_meta.log_reset_uarch(self, log_type)
     return data.cheat_machine:log_reset_uarch(log_type)
 end
 
-return { new_composite_machine = new_composite_machine, new_rolling_composite_machine = new_rolling_composite_machine }
+return { new_rolling_composite_machine = new_rolling_composite_machine }

@@ -237,9 +237,10 @@ endif
 # Diagrams are committed SVGs under images/, like README.md itself, with no background of
 # their own so they inherit the page. state-tree's ink colors depend on the theme, so it is
 # built in a light and a dark variant that the template selects with a <picture>;
-# outputs-merkle-tree reads on both themes, so a single variant serves both.
+# outputs-merkle-tree and fixed-point-tree read on both themes, so a single variant serves both.
 DOC_DIAGRAMS := \
     images/outputs-merkle-tree.svg \
+    images/fixed-point-tree.svg \
     images/state-tree-light.svg images/state-tree-dark.svg
 
 # outputs-merkle-tree pins its node positions for a perfectly symmetric binary tree (dot's own
@@ -247,6 +248,10 @@ DOC_DIAGRAMS := \
 # and runs no layout. Held nodes are filled and the unmaterialized interiors are transparent
 # outlines, so its colors read on both themes from one variant.
 images/outputs-merkle-tree.svg: images/outputs-merkle-tree.dot
+	neato -n -Tsvg $< -o $@
+
+# fixed-point-tree uses the same pinned positions and style as outputs-merkle-tree.
+images/fixed-point-tree.svg: images/fixed-point-tree.dot
 	neato -n -Tsvg $< -o $@
 
 # state-tree draws an actual machine's state hash-tree over the address space. It

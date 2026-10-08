@@ -45,31 +45,31 @@ end
 cartesi.machine:clone_stored("rolling-calculator-template", "machine")
 local machine = cartesi.machine("machine", nil, cartesi.SHARING_ALL)
 
--- Snapshot via storage: backup_machine keeps a copy of the pre-input state.
-local backup
+-- Snapshot via storage: machine.revert keeps a copy of the pre-input state.
+local backup_directory
 local function snapshot(m)
     m:destroy()
-    m:clone_stored("machine", "backup_machine")
-    m:sync_stored("backup_machine")
+    m:clone_stored("machine", "machine.revert")
+    backup_directory = "machine.revert"
+    m:sync_stored(backup_directory)
     m:load("machine", nil, cartesi.SHARING_ALL)
-    backup = true
 end
 
 local function commit(m)
     m:sync_stored("machine")
-    if backup then
-        m:remove_stored("backup_machine")
+    if backup_directory then
+        m:remove_stored(backup_directory)
     end
-    backup = nil
+    backup_directory = nil
 end
 
-local function rollback(m)
-    assert(backup, "no snapshot to rollback to")
+local function revert(m)
+    assert(backup_directory, "no snapshot to revert to")
     m:destroy()
     m:remove_stored("machine")
-    m:rename_stored("backup_machine", "machine")
+    m:rename_stored(backup_directory, "machine")
     m:load("machine", nil, cartesi.SHARING_ALL)
-    backup = nil
+    backup_directory = nil
 end
 -- docs:end storage
 
@@ -98,7 +98,8 @@ repeat
             i = i + 1
         elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             stderr("input rejected\n")
-            rollback(machine)
+            revert(machine)
+            assert(machine:get_root_hash() == revert_root_hash, "revert did not restore the pre-input state")
         else
             stderr("machine initialization failed\n")
             break

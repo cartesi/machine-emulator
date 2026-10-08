@@ -31,7 +31,7 @@ export LUA_PATH := $(CURDIR)/?.lua;$(RECIPES_DIR)/?.lua;$(LUA_PATH);;
 STYLUA=stylua
 STYLUA_FLAGS=--indent-type Spaces --respect-ignores
 
-.PHONY: build-docs-image prepare-readme clean format-lua check-format-lua check-lua
+.PHONY: build-docs-image prepare-readme clean format-lua check-format-lua check-lua test-prt-repeat
 .DELETE_ON_ERROR:
 
 # Lua linting/formatting for the recipe snippets and pandoc filters. The
@@ -211,8 +211,15 @@ $(REPLACE_CACHE_DIR):
 # Standalone recipe tests never read template.d or render the documentation.
 RECIPE_TEST_ENV ?= no
 GAME_TEST_DIR := $(REPLACE_CACHE_DIR)/game-tests
-.PHONY: test-vg test-vg-execution
+.PHONY: test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat
 ifeq ($(RECIPE_TEST_ENV),yes)
+test-prt-protocol:
+	bash $(RECIPES_DIR)/game-runner-test.sh
+	@work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; \
+	    cd "$$work" && lua5.4 $(RECIPES_DIR)/prt-test.lua && \
+	    lua5.4 $(RECIPES_DIR)/game-transport-test.lua && \
+	    lua5.4 $(RECIPES_DIR)/vg-clock-test.lua
+
 $(GAME_TEST_DIR)/initial-hash: $(RECIPES_DIR)/game-test-fixtures.sh $(RECIPES_DIR)/calc.sh
 	mkdir -p $(GAME_TEST_DIR)
 	cd $(GAME_TEST_DIR) && bash $(RECIPES_DIR)/game-test-fixtures.sh
@@ -222,8 +229,25 @@ test-vg: $(GAME_TEST_DIR)/initial-hash
 	    lua5.4 $(RECIPES_DIR)/vg-clock-test.lua && lua5.4 $(RECIPES_DIR)/vg-test.lua
 test-vg-execution: $(GAME_TEST_DIR)/initial-hash
 	cd $(GAME_TEST_DIR) && lua5.4 $(RECIPES_DIR)/vg-test.lua execution
+
+# The machine-backed PRT suite also records the reference tournament. test-prt-game always
+# runs it. test-prt-repeat records only when no recording exists, then compares a fresh run.
+define record-prt-tournament
+mkdir -p $(GAME_TEST_DIR)/prt-machine
+cd $(GAME_TEST_DIR)/prt-machine && bash $(RECIPES_DIR)/prt-machine-test.sh $(GAME_TEST_DIR)
+endef
+
+test-prt-game: $(GAME_TEST_DIR)/initial-hash
+	$(record-prt-tournament)
+
+$(GAME_TEST_DIR)/prt-run/verdict: $(GAME_TEST_DIR)/initial-hash
+	$(record-prt-tournament)
+
+test-prt-repeat: $(GAME_TEST_DIR)/prt-run/verdict
+	bash $(RECIPES_DIR)/prt-repeat-test.sh $(GAME_TEST_DIR)/rolling-calculator-template \
+	    $(GAME_TEST_DIR) $(GAME_TEST_DIR)/prt-run
 else
-test-vg test-vg-execution:
+test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat:
 	$(MAKE) docs-image-exec CONTAINER_COMMAND="make $@ RECIPE_TEST_ENV=yes"
 endif
 
@@ -244,7 +268,7 @@ template.d: README.md.template replace.lua | $(REPLACE_CACHE_DIR)
 	    -M docs_image_id="$(DOCS_IMAGE_ID)" \
 	    --lua-filter replace.lua README.md.template -o $@
 
-ifeq (,$(filter clean test-vg test-vg-execution,$(MAKECMDGOALS)))
+ifeq (,$(filter clean test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat,$(MAKECMDGOALS)))
 -include template.d
 endif
 

@@ -28,13 +28,15 @@ LD := $(TOOLCHAIN_PREFIX)ld
 CXX := $(TOOLCHAIN_PREFIX)g++
 OBJCOPY := $(TOOLCHAIN_PREFIX)objcopy
 OBJDUMP := $(TOOLCHAIN_PREFIX)objdump
+NM := $(TOOLCHAIN_PREFIX)nm
 
 # Instructions supported by the uarch interpreter (rv64ui)
 SUPPORTED_UARCH_INSN := add|addi|addiw|addw|and|andi|auipc|beq|bge|bgeu|blt|bltu|bne|ebreak|ecall|fence|jal|jalr|lb|lbu|ld|lh|$\
 	lhu|lui|lw|lwu|or|ori|sb|sd|sh|sll|slli|slliw|sllw|slt|slti|sltiu|sltu|sra|srai|sraiw|sraw|srl|srli|srliw|srlw|sub|$\
 	subw|sw|xor|xori
 
-OPTFLAGS=-O2 -g0
+# Keep guest branches and switch dispatch compact for witness page locality.
+OPTFLAGS=-O2 -g0 -freorder-blocks-algorithm=simple -fno-jump-tables
 GC_SECTIONS=-Wl,--gc-sections
 
 # -ffunction-sections + -fno-inline keep every function out-of-line in its own
@@ -109,7 +111,7 @@ CLANG_TIDY_FLAGS=--header-filter='^$(abspath ..)/'
 CLANG_TIDY_WARNS=-Wthread-safety -Wglobal-constructors -Wno-unused-command-line-argument -Wno-format
 CLANG_TIDY_CXXFLAGS=-target riscv64-linux-gnu -I../tools/rv64i-lp64-stubs
 
-.PHONY: all clean validate-instruction-set
+.PHONY: all clean validate-instruction-set validate-layout
 
 coverage?=no
 
@@ -125,6 +127,8 @@ all: uarch-ram.bin uarch-ram-coverage.bin uarch-pristine-ram.c uarch-pristine-ha
 else
 all: uarch-ram.bin uarch-pristine-ram.c uarch-pristine-hash.c validate-instruction-set
 endif
+
+all: validate-layout
 
 compute-uarch-pristine-hash: $(COMPUTE_OBJS)
 	$(HOST_CXX) $(HOST_CFLAGS) $(HOST_CXXFLAGS) -o $@ $^
@@ -170,6 +174,30 @@ validate-instruction-set: uarch-ram.elf.insn.txt
 		false;\
 	fi
 
+# Keep every explicitly ordered hot function within the first 64 KiB of guest RAM.
+validate-layout: uarch-ram.elf uarch-ram.ld.in
+	@set -ef; symbols=$$(mktemp); trap 'rm -f "$$symbols"' EXIT; \
+	$(NM) --defined-only --format=posix uarch-ram.elf > "$$symbols"; \
+	patterns=$$(sed -n 's/^[[:space:]]*\*(\.text\.\([^ )]*\)).*/\1/p' uarch-ram.ld.in); \
+	test -n "$$patterns" || { echo "No hot layout patterns found"; exit 1; }; \
+	limit=$$((0x610000)); total=0; \
+	for pattern in $$patterns; do \
+		count=0; \
+		while read -r name type address size; do \
+			case "$$type:$$name" in [tTwW]:$$pattern) \
+				start=$$((0x$$address)); end=$$((start + 0x$${size:-0})); \
+				if [ "$$start" -lt $$((0x600000)) ] || [ "$$start" -ge "$$limit" ] || [ "$$end" -gt "$$limit" ]; then \
+					echo "Hot function outside [0x600000, 0x610000): $$name at 0x$$address, size 0x$$size"; exit 1; \
+				fi; \
+				count=$$((count + 1));; \
+			esac; \
+		done < "$$symbols"; \
+		[ "$$count" -gt 0 ] || { echo "Missing hot function pattern: $$pattern"; exit 1; }; \
+		printf 'Layout: %s: %s symbol(s) below 0x610000\n' "$$pattern" "$$count"; \
+		total=$$((total + count)); \
+	done; \
+	printf 'Validated %s hot symbols within the first 64 KiB of guest RAM\n' "$$total"
+
 uarch-ram.elf: $(EMULATOR_OBJS) $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) uarch-ram-entry.o uarch-ram.ld
 	$(CXX) $(CFLAGS) $(CXXFLAGS) -Wl,-Tuarch-ram.ld -Wl,--no-warn-rwx-segments -o $@ $(EMULATOR_OBJS) $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) uarch-ram-entry.o $(TOOLCHAIN_LIBS)
 
@@ -187,6 +215,9 @@ uarch-ram-entry.o: uarch-ram-entry.S
 
 %.uarch_c.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+# Give the entry wrapper its own section for placement in the hot witness cluster.
+uarch-run.uarch_cpp.o: CFLAGS += -ffunction-sections
 
 %.uarch_cpp.o: %.cpp
 	$(CXX) $(CFLAGS) $(CXXFLAGS) -c -o $@ $<

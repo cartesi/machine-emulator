@@ -3041,9 +3041,12 @@ local function flush_pending_outputs(machine, advance, yield_reason, data)
                 advance.next_input_index - 1
             )
         end
-        -- The accept-state proof that the tx buffer holds this root hash (target_hash = keccak256(data)).
+        -- The accept-state proof uses the machine's hash function.
         local proof = machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
-        assert(proof.target_hash == cartesi.keccak256(data), "tx buffer does not hold the outputs Merkle root")
+        assert(
+            proof.target_hash == cartesi[initial_config.hash_tree.hash_function](data),
+            "tx buffer does not hold the outputs Merkle root"
+        )
         save_cmio_outputs_merkle_root_proof(advance, proof)
     else
         for position, output in ipairs(advance.pending_outputs) do

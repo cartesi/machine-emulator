@@ -6355,7 +6355,8 @@ interpreter_break_reason interpret(const STATE_ACCESS a, uint64_t mcycle_end) {
     const uint64_t mcycle = a.read_mcycle();
     const uint64_t imcyclemax = a.read_imcyclemax();
 
-    // Overflow is a derived fixed point and has precedence over all other break reasons.
+    // Overflow is a derived fixed point. It is checked first here, but the public break reason
+    // is derived from the state after the fact, where halt and manual yield take precedence.
     if (mcycle >= imcyclemax) {
         return interpreter_break_reason::mcycle_overflow;
     }

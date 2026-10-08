@@ -1287,7 +1287,7 @@ cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *re
     return cm_result_failure();
 }
 
-cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
+cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint32_t length,
     const cm_hash *revert_root_hash) try {
     auto *cpp_m = convert_from_c(m);
     std::optional<cartesi::machine_hash> cpp_revert_root_hash;
@@ -1300,7 +1300,7 @@ cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *da
     return cm_result_failure();
 }
 
-cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
+cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint32_t length,
     const cm_hash *revert_root_hash, int32_t log_type, const char **log) try {
     if (log == nullptr) {
         throw std::invalid_argument("invalid access log output");
@@ -1319,7 +1319,7 @@ cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t
     return cm_result_failure();
 }
 
-cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
+cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, const uint8_t *data, uint32_t length,
     const cm_hash *root_hash_before, const char *log, const cm_hash *revert_root_hash,
     cm_hash *obtained_root_hash) try {
     if (log == nullptr) {

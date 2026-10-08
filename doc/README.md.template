@@ -1525,7 +1525,7 @@ The calculator evaluates `scale=70; (1+sqrt(5))/2`, the golden ratio, and return
 An inspect-state request cannot emit verifiable outputs such as notices or vouchers, because any change its processing makes to the machine state is reverted afterward.
 The client saves the report as `query-report-0.bin`.
 
-The hash operations behind the output proofs are explained later, under [The outputs Merkle tree](#the-outputs-merkle-tree) in the Blockchain perspective.
+The hash operations behind the output proofs are explained later, under [Hash-view of outputs](#hash-view-of-outputs) in the Blockchain perspective.
 
 The server shell shows only the error message output by `bc` and `rollup`.
 In production, these error messages should have been captured and output as a report, rather than being allowed to leak into the console.
@@ -2858,7 +2858,7 @@ As each output is accepted, `hash_tree.frontier_push_back(<frontier>, <leaf>)` f
 the guest wrote.
 Once the epoch closes, `hash_tree.frontier_next_proofs(<frontier>, <leaves>)` returns one proof per new
 output, all against the single final root.
-These helpers are shown and explained under [The outputs Merkle tree](#the-outputs-merkle-tree) in the
+These helpers are shown and explained under [The hash tree frontier](#the-hash-tree-frontier) in the
 Blockchain perspective.
 
 The following script extends the Rolling Cartesi Machine calculator [example](#rolling-cartesi-machines-1) to collect output proofs and
@@ -4528,8 +4528,8 @@ For this, it needs only the pristine input proof and the root hash of the modifi
 The splicing operation bubbles that root hash up the tree to recover the state hash, which the script then compares against the one obtained off-chain.
 
 Since the input NVRAM starts completely filled with zeros, only the mathematical expression is needed to describe its modified contents.
-Its root hash is computed by `hash_tree.get_root_hash(<data>, <log2_root_size>)`, which lays `<data>` at the base of a 2^`<log2_root_size>`-byte subtree and returns its root.
-```{.lua replace=proof_module/source/get_root_hash title="hash-tree.lua (excerpt)"}
+Its root hash is computed by `hash_tree.get_data_root_hash(<data>, <log2_root_size>)`, which lays `<data>` at the base of a 2^`<log2_root_size>`-byte subtree and returns its root.
+```{.lua replace=proof_module/source/get_data_root_hash title="hash-tree.lua (excerpt)"}
 ```
 The leaves are the []{replace=hash_tree_constants/word_size code=no}-byte words of `<data>`, each hashed with `cartesi.keccak256`, and a trailing partial word is zero-padded.
 Each inner node is the hash of its two children.
@@ -4563,7 +4563,7 @@ Off-chain, it instantiates the `calculator-template` concretely, writes a mathem
 
 On chain, the blockchain wants to verify the result of the computation.
 This is possible when all interested parties agree on the final state hash *M'* of the Cartesi Machine they ran off-chain.
-Assuming this to be the case, and in possession of the output proof and the result, the blockchain reconstructs the root hash of the output NVRAM from the result with `hash_tree.get_root_hash`, the same function the previous example used for the input drive.
+Assuming this to be the case, and in possession of the output proof and the result, the blockchain reconstructs the root hash of the output NVRAM from the result with `hash_tree.get_data_root_hash`, the same function the previous example used for the input drive.
 It then passes the output proof, this reconstructed hash, and the agreed hash *M'* to `verify_splice`, which confirms that an output NVRAM with exactly this content sits in the machine whose state hash is *M'*.
 In other words, once everyone agrees on *M'*, the result really is there.
 ```{.bash key=lua_slice_calculator_output vars=template->calc_template/calculator-template/path,output_raw_proof depends=slice_calculator_output,proof_module replace=source}
@@ -4578,7 +4578,7 @@ produces the output
 ```{replace=lua_slice_calculator_output}
 ```
 
-### The outputs Merkle tree
+## Hash-view of outputs
 
 The operations so far concern the word-leaf tree of the machine state.
 The same slicing idea applies to another Merkle tree the project uses, the *outputs Merkle tree*, introduced under [Rolling Cartesi Machines and Cartesi Rollups](#rolling-cartesi-machines-and-cartesi-rollups).
@@ -4593,6 +4593,8 @@ Inside the Cartesi Machine, outputs accumulate across an unbounded number of epo
 Outside, as we will see, even the output proofs can be generated holding only the frontier.
 The outputs themselves and their proofs are kept outside the machine, by the Cartesi Node.
 The machine state commits to them through the outputs Merkle root alone.
+
+### The hash tree frontier
 
 The frontier after *c* outputs captures the complete left subtrees standing over the leaves in the range [0, *c*), each by its root hash.
 Writing *c* in binary, such a subtree spans 2<sup>*l*</sup> leaves and is present exactly when bit *l* of *c* is set.
@@ -4624,13 +4626,18 @@ In binary that clears a run of low set bits and sets the next one up, an ordinar
 The function mirrors the carry, combining the new leaf with the present low levels from the bottom up to the first empty one, clearing each, and storing the resulting hash at that first empty level.
 It is the root of the subtree covering exactly the leaves ending at the new output, the frontier entry the carry creates.
 A level is combined only once every 2<sup>*l*</sup> outputs, so a long run of outputs costs constant work each, amortized.
+The function `frontier_append` appends hashes in the half-open range `[begin_index, end_index)` in order as maximal aligned complete subtrees, each hashed into one root and pushed back as one entry. The bounds default to `1` and `#hashes + 1`; equal bounds select an empty range:
+```{.lua replace=proof_module/source/frontier_append title="hash-tree.lua (excerpt)"}
+```
 
 The function `frontier_get_root_hash` returns the root hash of the tree, padded with zero leaves to completion:
 ```{.lua replace=proof_module/source/frontier_get_root_hash title="hash-tree.lua (excerpt)"}
 ```
 Every leaf the outputs have not reached is pristine.
 The function climbs level by level, combining each present frontier entry on the left with pristine padding on the right.
-The [Output proofs](#output-proofs) example uses these two together while processing an epoch, pushing each accepted output and then rooting the frontier to check it against the outputs Merkle root the guest reported.
+The pristine leaf is only the default, used when `<pad>` is omitted.
+Any other leaf hash can be given as `<pad>` instead, and `frontier_pad_back` appends copies of such a hash to the frontier itself, folding them in by the same carry as `frontier_push_back`.
+The [Output proofs](#output-proofs) example uses `frontier_push_back` and `frontier_get_root_hash` together while processing an epoch, pushing each accepted output and then rooting the frontier to check it against the outputs Merkle root the guest reported.
 
 The constructor is `frontier`, which produces the frontier an epoch begins from:
 ```{.lua replace=proof_module/source/frontier title="hash-tree.lua (excerpt)"}

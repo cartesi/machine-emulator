@@ -35,7 +35,7 @@ local function stderr(...)
     io.stderr:write(string.format(...))
 end
 
-local final_mcycle = 1835100
+local final_mcycle = 1835136
 local exit_payload = 0
 
 local function test(config)

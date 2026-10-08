@@ -436,51 +436,89 @@ describe("verify_step", function()
     end)
 
     describe("interpret: corrupted PMA data", function()
-        it("rejects a log with invalid PMA entries", function()
-            local log_data = test_util.parse_step_log(produce_valid_log())
-            local hash_fn = log_data.hash_function == 0 and "keccak256" or "sha256"
+        -- Replay constructs and validates only the PMA descriptor a lookup
+        -- selects; raw bounds drive the search. A malformed entry that is
+        -- never selected is not rejected.
+        local BAD_LENGTH = 0xFFFFFFFFFFFFF000 -- page multiple, but start + length overflows
+        local pma_page_index = cartesi.AR_PMAS_START >> LOG2_PAGE_SIZE
 
-            local pma_page_index = cartesi.AR_PMAS_START >> LOG2_PAGE_SIZE
-            local pma_pos
-            for i, p in ipairs(log_data.pages) do
-                if p.index == pma_page_index then
-                    pma_pos = i
-                    break
-                end
-            end
-            assert(pma_pos, "PMA page not found in log -- machine config must touch it")
-
-            log_data.pages[pma_pos].data = string.rep("\xff", PAGE_SIZE)
-
-            -- Walk corrupted PMA page up to root, picking siblings from a
-            -- pristine machine to keep the merkle tree self-consistent.
-            local fresh <close> = build_machine()
-            local pma_addr = pma_page_index << LOG2_PAGE_SIZE
-            local node_hash = hash_tree.get_data_root_hash(log_data.pages[pma_pos].data, LOG2_PAGE_SIZE, hash_fn)
+        -- Root hash of `machine` with its PMA page replaced by `data`.
+        local function root_with_pma_page(machine, data, hash_fn)
+            local addr = pma_page_index << LOG2_PAGE_SIZE
+            local node_hash = hash_tree.get_data_root_hash(data, LOG2_PAGE_SIZE, hash_fn)
             for log2_size = LOG2_PAGE_SIZE, LOG2_ROOT_SIZE - 1 do
                 local bit = 1 << log2_size
-                local sibling_addr = (pma_addr ~ bit) & ~(bit - 1)
-                local sibling = fresh:get_node_hash(sibling_addr, log2_size)
-                if (pma_addr & bit) ~= 0 then
+                local sibling = machine:get_node_hash((addr ~ bit) & ~(bit - 1), log2_size)
+                if (addr & bit) ~= 0 then
                     node_hash = cartesi[hash_fn](sibling, node_hash)
                 else
                     node_hash = cartesi[hash_fn](node_hash, sibling)
                 end
             end
-            local new_root = node_hash
+            return node_hash
+        end
 
+        -- Valid log with the length of PMA entry `index` set to BAD_LENGTH,
+        -- the matching root-hash-before, the corrupted page and the hash name.
+        local function corrupt_pma_entry(index)
+            local log_data = test_util.parse_step_log(produce_valid_log())
+            local hash_fn = log_data.hash_function == 0 and "keccak256" or "sha256"
+            local page
+            for _, p in ipairs(log_data.pages) do
+                if p.index == pma_page_index then
+                    page = p
+                    break
+                end
+            end
+            assert(page, "PMA page not found in log -- machine config must touch it")
+            local offset = index * 16 + 8
+            page.data = page.data:sub(1, offset) .. string.pack("<I8", BAD_LENGTH) .. page.data:sub(offset + 9)
+            local fresh <close> = build_machine()
             local indices = {}
             for i, p in ipairs(log_data.pages) do
                 indices[i] = p.index
             end
             log_data.siblings = get_siblings_for_pages(fresh, indices)
+            return test_util.serialize_step_log(log_data),
+                root_with_pma_page(fresh, page.data, hash_fn),
+                page.data,
+                hash_fn
+        end
 
-            local adversarial = test_util.serialize_step_log(log_data)
+        -- Index of the PMA entry starting at `start`.
+        local function pma_index_of(start)
+            local machine <close> = build_machine()
+            local entries = machine:read_memory(cartesi.AR_PMAS_START, 32 * 16)
+            for i = 0, 31 do
+                local istart = string.unpack("<I8", entries, i * 16 + 1)
+                if (istart & ~(PAGE_SIZE - 1)) == start then
+                    return i
+                end
+            end
+            error("PMA entry not found")
+        end
+
+        it("rejects a log whose selected PMA entry is invalid", function()
+            -- The first fetch selects RAM, entry 0.
+            local adversarial, root = corrupt_pma_entry(0)
             local ok, err = pcall(function()
-                cartesi.machine:verify_step(new_root, adversarial, MCYCLE_COUNT)
+                cartesi.machine:verify_step(root, adversarial, MCYCLE_COUNT)
             end)
             expect.falsy(ok)
             expect.truthy(err and err:find("when initializing", 1, true), err)
         end)
+
+        it("accepts a log whose unselected PMA entry is invalid", function()
+            -- Nothing in these mcycles touches the DTB.
+            local adversarial, root, page_data, hash_fn = corrupt_pma_entry(pma_index_of(cartesi.AR_DTB_START))
+            local stepped <close> = build_machine()
+            stepped:write_reg("mcycle", 0)
+            stepped:run(MCYCLE_COUNT)
+            local obtained = cartesi.machine:verify_step(root, adversarial, MCYCLE_COUNT)
+            expect.equal(obtained, root_with_pma_page(stepped, page_data, hash_fn))
+        end)
     end)
 end)
+
+lester.report()
+lester.exit()

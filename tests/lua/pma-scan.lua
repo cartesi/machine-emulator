@@ -150,7 +150,7 @@ for _, count in ipairs({ 0, 2, 4, 8 }) do
     end
     local m <close> = cartesi.machine(config)
     local bytes = m:read_memory(cartesi.AR_PMAS_START, cartesi.AR_PMAS_LENGTH)
-    local last, empty, n = 0, false, 0
+    local last, empty, nonempty = 0, false, 0
     for index = 0, 31 do
         local start, length = string.unpack("<I8I8", bytes, index * 16 + 1)
         start = start & ~4095
@@ -163,15 +163,19 @@ for _, count in ipairs({ 0, 2, 4, 8 }) do
         if length == 0 then
             empty = true
         else
-            n = n + 1
+            nonempty = nonempty + 1
         end
     end
-    assert(n == 8 + 2 * count)
+    assert(nonempty == 8 + 2 * count)
     local ok = pcall(function()
         m:write_memory(cartesi.AR_PMAS_START, bytes:sub(1, 8))
     end)
     assert(not ok, "PMA table must remain host-read-only")
     print(
-        string.format("%d drives: RAM0, sorted nonoverlapping tail, %d PMAs, empty suffix, immutable API", 2 * count, n)
+        string.format(
+            "%d drives: RAM0, sorted nonoverlapping tail, %d PMAs, empty suffix, immutable API",
+            2 * count,
+            nonempty
+        )
     )
 end

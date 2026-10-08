@@ -2275,7 +2275,7 @@ Note that the `machine:run()` method can return prematurely for a variety of rea
 It returns a break reason explaining why control was returned to the caller, taken from the `cartesi.BREAK_REASON_*` set.
 The script's loop terminates when the break reason is `BREAK_REASON_HALTED` or `BREAK_REASON_YIELDED_MANUALLY`, the two reasons that signal the machine has reached a state past which it cannot continue on its own.
 `BREAK_REASON_MCYCLE_OVERFLOW` likewise signals a fixed point when `mcycle` reaches `imcyclemax`.
-Overflow takes precedence over halt, manual yield, and reaching the requested target.
+When several reasons apply, the reported one is halt, then manual yield, then overflow, then reaching the requested target.
 
 At any point, the `machine:get_initial_config()` method can be used to obtain the configuration that was used to create a Cartesi Machine instance.
 
@@ -2748,7 +2748,10 @@ The data associated with new requests is sent to the machine in the CMIO memory 
 Conversely, the data associated with responses (or exceptions) is obtained from the machine in the `cmio.tx_buffer` memory range.
 The host does not need to access these ranges directly.
 The call `machine:send_cmio_response(<reason>, <data>[, <revert_root_hash>])` writes `<data>` into `cmio.rx_buffer`, records the reason and length in `htif_fromhost`, and clears `iflags_Y` so the machine can resume.
-The optional last argument `<revert_root_hash>` is required exactly when `<reason>` is `cartesi.HTIF_YIELD_REASON_ADVANCE_STATE`, and only then is it recorded in the machine state (all other reasons refuse it).
+For `<reason>` equal to `cartesi.HTIF_YIELD_REASON_ADVANCE_STATE`, the optional last argument `<revert_root_hash>` is required to match the machine root hash when an rx-accepted manual yield is pending, and is ignored otherwise.
+All other response reasons refuse this argument. It is recorded in the machine state only for advance-state delivery.
+Validation happens before delivery, including when the input exceeds the receive buffer; validation errors leave the machine unchanged.
+After validation, sending is a no-op if no manual yield is pending, the input exceeds the receive buffer, or an advance-state response finds a yield other than rx-accepted, matching the logged transition.
 Conversely, the _data_ value returned by `machine:receive_cmio_request()` is the contents of `cmio.tx_buffer` at the yield.
 
 Advance-state inputs are passed as ABI-encoded `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)` calldata blobs.

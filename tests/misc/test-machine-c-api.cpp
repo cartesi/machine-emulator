@@ -1422,6 +1422,34 @@ protected:
     const std::array<uint8_t, 8> _expected_data{{0x00, 0x11, 0x22, 0x33, 0xaa, 0xbb, 0xcc, 0xff}};
 };
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(send_cmio_response_oversized_length_test, cmio_request_machine_fixture) {
+    if (g_server != nullptr) {
+        BOOST_TEST_MESSAGE("Oversized lengths without backing data can only be tested locally");
+        return;
+    }
+    cm_hash before{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &before), CM_ERROR_OK);
+    for (const uint32_t length : {uint32_t{CM_AR_CMIO_RX_BUFFER_LENGTH} + 1, UINT32_MAX}) {
+        // Oversized responses, including the largest representable length, must not read or allocate data.
+        BOOST_REQUIRE_EQUAL(
+            cm_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, length, &before), CM_ERROR_OK);
+        cm_hash after{};
+        BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &after), CM_ERROR_OK);
+        BOOST_CHECK_EQUAL(0, memcmp(before, after, sizeof(cm_hash)));
+        const char *log{};
+        BOOST_REQUIRE_EQUAL(cm_log_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, length,
+                                &before, CM_ACCESS_LOG_TYPE_ANNOTATIONS, &log),
+            CM_ERROR_OK);
+        const std::string saved_log(log);
+        BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &after), CM_ERROR_OK);
+        BOOST_CHECK_EQUAL(0, memcmp(before, after, sizeof(cm_hash)));
+        BOOST_REQUIRE_EQUAL(cm_verify_send_cmio_response(nullptr, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, length,
+                                &before, saved_log.c_str(), &before, &after),
+            CM_ERROR_OK);
+        BOOST_CHECK_EQUAL(0, memcmp(before, after, sizeof(cm_hash)));
+    }
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(receive_cmio_request_length_query_test, cmio_request_machine_fixture) {
     uint8_t cmd{};
     uint16_t reason{};

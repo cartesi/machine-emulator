@@ -1144,13 +1144,14 @@ static int machine_obj_index_send_cmio_response(lua_State *L) {
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
+    luaL_argcheck(L, length <= UINT32_MAX, 3, "CMIO response data length exceeds uint32_t");
     cm_hash revert_root_hash{};
     const cm_hash *revert_root_hash_ptr = nullptr;
     if (!lua_isnoneornil(L, 4)) {
         clua_check_cm_hash(L, 4, &revert_root_hash);
         revert_root_hash_ptr = &revert_root_hash;
     }
-    if (cm_send_cmio_response(m.get(), reason, data, length, revert_root_hash_ptr) != 0) {
+    if (cm_send_cmio_response(m.get(), reason, data, static_cast<uint32_t>(length), revert_root_hash_ptr) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     return 0;
@@ -1164,11 +1165,13 @@ static int machine_obj_index_log_send_cmio_response(lua_State *L) {
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
+    luaL_argcheck(L, length <= UINT32_MAX, 3, "CMIO response data length exceeds uint32_t");
     cm_hash revert_root_hash{};
     clua_check_cm_hash(L, 4, &revert_root_hash);
     const int log_type = static_cast<int>(luaL_optinteger(L, 5, 0));
     const char *log = nullptr;
-    if (cm_log_send_cmio_response(m.get(), reason, data, length, &revert_root_hash, log_type, &log) != 0) {
+    if (cm_log_send_cmio_response(m.get(), reason, data, static_cast<uint32_t>(length), &revert_root_hash, log_type,
+            &log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_fromjson(L, log, "AccessLog");
@@ -1345,14 +1348,15 @@ static int machine_obj_index_verify_send_cmio_response(lua_State *L) {
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
+    luaL_argcheck(L, length <= UINT32_MAX, 3, "CMIO response data length exceeds uint32_t");
     cm_hash root_hash_before{};
     clua_check_cm_hash(L, 4, &root_hash_before);
     const char *log = clua_tojson(L, 5, -1, "AccessLog");
     cm_hash revert_root_hash{};
     clua_check_cm_hash(L, 6, &revert_root_hash);
     cm_hash obtained_root_hash{};
-    if (cm_verify_send_cmio_response(m.get(), reason, data, length, &root_hash_before, log, &revert_root_hash,
-            &obtained_root_hash) != 0) {
+    if (cm_verify_send_cmio_response(m.get(), reason, data, static_cast<uint32_t>(length), &root_hash_before, log,
+            &revert_root_hash, &obtained_root_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_cm_hash(L, &obtained_root_hash);

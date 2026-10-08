@@ -1659,9 +1659,12 @@ static json jsonrpc_machine_send_cmio_response_handler(const json &j, const std:
     static const char *const param_name[] = {"reason", "data", "revert_root_hash"};
     auto args = parse_args<uint16_t, std::string, cartesi::optional_param<cartesi::machine_hash>>(j, param_name);
     auto bin = cartesi::decode_base64(std::get<1>(args));
+    if (bin.size() > UINT32_MAX) {
+        throw std::domain_error("CMIO response data length exceeds uint32_t");
+    }
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
     session->handler->machine->send_cmio_response(std::get<0>(args), reinterpret_cast<unsigned char *>(bin.data()),
-        bin.size(), std::get<2>(args));
+        static_cast<uint32_t>(bin.size()), std::get<2>(args));
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
     return jsonrpc_response_ok(j);
 }
@@ -1675,11 +1678,15 @@ static json jsonrpc_machine_log_send_cmio_response_handler(const json &j,
     auto args = parse_args<uint16_t, std::string, cartesi::machine_hash,
         cartesi::not_default_constructible<cartesi::access_log::type>>(j, param_name);
     auto bin = cartesi::decode_base64(std::get<1>(args));
+    if (bin.size() > UINT32_MAX) {
+        throw std::domain_error("CMIO response data length exceeds uint32_t");
+    }
     // NOLINTBEGIN(bugprone-unchecked-optional-access)
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
     return jsonrpc_response_ok(j,
         session->handler->machine->log_send_cmio_response(std::get<0>(args),
-            reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args), std::get<3>(args).value()));
+            reinterpret_cast<unsigned char *>(bin.data()), static_cast<uint32_t>(bin.size()), std::get<2>(args),
+            std::get<3>(args).value()));
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
     // NOLINTEND(bugprone-unchecked-optional-access)
 }
@@ -1695,11 +1702,14 @@ static json jsonrpc_machine_verify_send_cmio_response_handler(const json &j,
         cartesi::not_default_constructible<cartesi::access_log>, cartesi::machine_hash>(j, param_name);
 
     auto bin = cartesi::decode_base64(std::get<1>(args));
+    if (bin.size() > UINT32_MAX) {
+        throw std::domain_error("CMIO response data length exceeds uint32_t");
+    }
     // NOLINTBEGIN(bugprone-unchecked-optional-access)
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
     auto obtained_root_hash =
         cartesi::machine::verify_send_cmio_response(std::get<0>(args), reinterpret_cast<unsigned char *>(bin.data()),
-            bin.size(), std::get<2>(args), std::get<3>(args).value(), std::get<4>(args));
+            static_cast<uint32_t>(bin.size()), std::get<2>(args), std::get<3>(args).value(), std::get<4>(args));
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
     // NOLINTEND(bugprone-unchecked-optional-access)
     return jsonrpc_response_ok(j, cartesi::base64_machine_hash(obtained_root_hash));

@@ -768,6 +768,52 @@ describe("collect hashes", function()
                 )
             end)
 
+            it("should treat a rejected yield on the last budget cycle as rejected", function()
+                local mcycle_end = 32
+                local revert_root_hash = string.rep("\x5a", cartesi.HASH_SIZE)
+                local revert_uarch_tail = { string.rep("\x01", cartesi.HASH_SIZE), revert_root_hash }
+                local machine <close> = create_machine({ ram = { length = 4096 } })
+                machine:write_revert_root_hash(revert_root_hash)
+                machine:write_reg("iflags_Y", 1)
+                machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+                machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+                machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+                machine:write_reg("imcyclemax", machine:read_reg("mcycle"))
+                local expected_root_hash = machine:get_root_hash()
+
+                -- the pending yield outranks the exhausted budget everywhere
+                expect.equal(machine:run(mcycle_end), cartesi.BREAK_REASON_YIELDED_MANUALLY)
+                expect.fail(function()
+                    machine:collect_uarch_cycle_root_hashes(mcycle_end)
+                end, "revert uarch tail is required")
+                expect.equal(machine:collect_uarch_cycle_root_hashes(mcycle_end, 0, revert_uarch_tail), {
+                    hashes = revert_uarch_tail,
+                    mcycle_hash_offsets = { 1, #revert_uarch_tail + 1 },
+                    break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
+                })
+                expect.equal(machine:collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period(32), 1), {
+                    hashes = { revert_root_hash },
+                    break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
+                    mcycle_phase = 1,
+                })
+                expect.equal(machine:get_root_hash(), expected_root_hash)
+                -- A simultaneous halt still outranks the rejected yield, including when
+                -- collection returns the saved tail without executing an instruction.
+                machine:write_reg("iflags_H", 1)
+                expected_root_hash = machine:get_root_hash()
+                expect.equal(machine:run(mcycle_end), cartesi.BREAK_REASON_HALTED)
+                expect.equal(
+                    machine:collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period(32), 1).break_reason,
+                    cartesi.BREAK_REASON_HALTED
+                )
+                expect.equal(machine:collect_uarch_cycle_root_hashes(mcycle_end, 0, revert_uarch_tail), {
+                    hashes = revert_uarch_tail,
+                    mcycle_hash_offsets = { 1, #revert_uarch_tail + 1 },
+                    break_reason = cartesi.BREAK_REASON_HALTED,
+                })
+                expect.equal(machine:get_root_hash(), expected_root_hash)
+            end)
+
             it("should collect mcycles during mcycle overflow", function()
                 local mcycle_period = 32
                 local machine <close> = create_machine({ ram = { length = 4096 } })
@@ -906,6 +952,7 @@ describe("collect hashes", function()
             end)
 
             it("should use the same fixed-point precedence across advancement APIs", function()
+                -- Pending flags outrank an exhausted budget, halt first, then a manual yield.
                 local cases = {
                     {
                         expected = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
@@ -919,8 +966,16 @@ describe("collect hashes", function()
                         expected = cartesi.BREAK_REASON_HALTED,
                     },
                     {
-                        registers = { imcyclemax = 0, iflags_H = 1, iflags_Y = 1 },
+                        registers = { imcyclemax = 0 },
                         expected = cartesi.BREAK_REASON_MCYCLE_OVERFLOW,
+                    },
+                    {
+                        registers = { imcyclemax = 0, iflags_Y = 1 },
+                        expected = cartesi.BREAK_REASON_YIELDED_MANUALLY,
+                    },
+                    {
+                        registers = { imcyclemax = 0, iflags_H = 1, iflags_Y = 1 },
+                        expected = cartesi.BREAK_REASON_HALTED,
                     },
                 }
 
@@ -988,7 +1043,20 @@ describe("collect hashes", function()
                         registers = { imcyclemax = 0, iflags_H = 1, iflags_Y = 1 },
                     },
                     {
+                        registers = { imcyclemax = 0, iflags_Y = 1 },
+                    },
+                    {
                         registers = {
+                            iflags_Y = 1,
+                            htif_tohost_dev = cartesi.HTIF_DEV_YIELD,
+                            htif_tohost_cmd = cartesi.HTIF_YIELD_CMD_MANUAL,
+                            htif_tohost_reason = cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED,
+                        },
+                        rejected = true,
+                    },
+                    {
+                        registers = {
+                            imcyclemax = 0,
                             iflags_Y = 1,
                             htif_tohost_dev = cartesi.HTIF_DEV_YIELD,
                             htif_tohost_cmd = cartesi.HTIF_YIELD_CMD_MANUAL,

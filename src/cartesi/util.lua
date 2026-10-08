@@ -18,6 +18,16 @@ local cartesi = require("cartesi")
 
 local _M = {}
 
+-- Converts a function that raises on failure into one that returns nil and the error.
+-- pcall is yieldable in Lua 5.4, so the protected function may suspend a coroutine.
+function _M.protect(f)
+    return function(...)
+        local results = table.pack(pcall(f, ...))
+        if not results[1] then return nil, results[2] end
+        return table.unpack(results, 2, results.n)
+    end
+end
+
 local function indentout(f, indent, fmt, ...) f:write(string.rep("  ", indent), string.format(fmt, ...)) end
 
 _M.indentout = indentout

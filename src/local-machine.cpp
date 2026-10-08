@@ -104,6 +104,11 @@ mcycle_root_hashes local_machine::do_collect_mcycle_root_hashes(uint64_t mcycle_
         log2_bundle_mcycle_count, previous_partial_bundle);
 }
 
+machine_hashes local_machine::do_collect_mcycle_bundle(uint64_t bundle_offset, uint64_t log2_mcycle_period,
+    int32_t log2_bundle_mcycle_count) {
+    return get_machine()->collect_mcycle_bundle(bundle_offset, log2_mcycle_period, log2_bundle_mcycle_count);
+}
+
 interpreter_break_reason local_machine::do_log_step(uint64_t mcycle_count, const std::string &filename) {
     return m_machine->log_step(mcycle_count, filename);
 }
@@ -220,6 +225,11 @@ uarch_interpreter_break_reason local_machine::do_run_uarch(uint64_t uarch_cycle_
 uarch_cycle_root_hashes local_machine::do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
     int32_t log2_bundle_uarch_cycle_count, const machine_hashes &revert_uarch_tail) {
     return get_machine()->collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle_uarch_cycle_count, revert_uarch_tail);
+}
+
+machine_hashes local_machine::do_collect_uarch_cycle_bundle(uint64_t bundle_offset,
+    int32_t log2_bundle_uarch_cycle_count, const machine_hashes &revert_uarch_tail) {
+    return get_machine()->collect_uarch_cycle_bundle(bundle_offset, log2_bundle_uarch_cycle_count, revert_uarch_tail);
 }
 
 address_range_descriptions local_machine::do_get_address_ranges() const {

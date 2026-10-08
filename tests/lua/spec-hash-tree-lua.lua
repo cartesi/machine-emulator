@@ -67,6 +67,23 @@ describe("hash-tree.lua", function()
             end, "hash type is required")
         end)
 
+        it("counts leaves and aligned subtrees, including tall frontiers", function()
+            local frontier = hash_tree.frontier(72, "keccak256")
+            expect.equal(hash_tree.frontier_get_leaf_count(frontier, 48), 0)
+            hash_tree.frontier_pad_back(frontier, leaf(1), 3 << 48)
+            expect.equal(hash_tree.frontier_get_leaf_count(frontier, 48), 3)
+            expect.equal(hash_tree.frontier_get_leaf_count(frontier), 3 << 48)
+            hash_tree.frontier_push_back(frontier, leaf(2))
+            expect.fail(function()
+                hash_tree.frontier_get_leaf_count(frontier, 48)
+            end, "frontier is not aligned to the subtree size")
+            hash_tree.frontier_pad_back(frontier, leaf(3))
+            expect.equal(hash_tree.frontier_get_leaf_count(frontier, 48), 1 << 24)
+            expect.fail(function()
+                hash_tree.frontier_get_leaf_count(frontier)
+            end, "frontier leaf count exceeds 64 bits")
+        end)
+
         it("produces proofs that verify and share the reference root", function()
             for _, n in ipairs(counts) do
                 local leaves = make_leaves(n)
@@ -202,6 +219,53 @@ describe("hash-tree.lua", function()
             expect.equal(hash_tree.frontier_get_root_hash(frontier), reference_padded_root(expected, pad, 0))
         end)
 
+        it("fills all remaining positions when count is omitted", function()
+            for _, pad_height in ipairs({ 0, 2 }) do
+                local pad_size = 1 << pad_height
+                local pad_root = pad
+                for _ = 1, pad_height do
+                    pad_root = cartesi.keccak256(pad_root, pad_root)
+                end
+                for n = 0, SMALL_MAX, pad_size do
+                    local leaves = make_leaves(n)
+                    local frontier = hash_tree.frontier(SMALL_H, "keccak256")
+                    hash_tree.frontier_append(frontier, leaves)
+                    hash_tree.frontier_pad_back(frontier, pad_root, nil, pad_height)
+                    local expected = reference_padded_root(leaves, pad, SMALL_MAX - n)
+                    expect.equal(frontier[SMALL_H + 1], expected)
+                    for level = 1, SMALL_H do
+                        expect.equal(frontier[level], false)
+                    end
+                    hash_tree.frontier_pad_back(frontier, pad_root, nil, pad_height)
+                    expect.equal(frontier[SMALL_H + 1], expected)
+                    expect.fail(function()
+                        hash_tree.frontier_push_back(frontier, pad)
+                    end, "too many leaves")
+                end
+            end
+        end)
+
+        it("fills to the root without a leaf count at integer boundaries", function()
+            for _, height in ipairs({ 0, 63, 64, 72 }) do
+                for _, count in ipairs({ 0, 1 }) do
+                    local frontier = hash_tree.frontier(height, "keccak256")
+                    hash_tree.frontier_pad_back(frontier, pad, count)
+                    hash_tree.frontier_pad_back(frontier, pad)
+                    local expected = pad
+                    for _ = 1, height do
+                        expected = cartesi.keccak256(expected, expected)
+                    end
+                    expect.equal(frontier[height + 1], expected)
+                    for level = 1, height do
+                        expect.equal(frontier[level], false)
+                    end
+                    expect.fail(function()
+                        hash_tree.frontier_pad_back(frontier, pad, 1)
+                    end, "too many leaves")
+                end
+            end
+        end)
+
         it("keeps the root of an exactly-full tree in the top entry", function()
             -- filled by padding
             local padded = hash_tree.frontier(SMALL_H, "keccak256")
@@ -243,9 +307,9 @@ describe("hash-tree.lua", function()
             end, "too many leaves")
         end)
 
-        it("pads with subtree roots when log2_pad_size is given", function()
-            local log2_pad_size = 2
-            local pad_size = 1 << log2_pad_size
+        it("pads with subtree roots at a given height", function()
+            local pad_height = 2
+            local pad_size = 1 << pad_height
             local pad_root = cartesi.keccak256(cartesi.keccak256(pad, pad), cartesi.keccak256(pad, pad))
             -- every aligned fill and every subtree pad count that still fits
             for n = 0, SMALL_MAX // pad_size do
@@ -255,7 +319,7 @@ describe("hash-tree.lua", function()
                     for _, l in ipairs(leaves) do
                         hash_tree.frontier_push_back(frontier, l)
                     end
-                    hash_tree.frontier_pad_back(frontier, pad_root, k, log2_pad_size)
+                    hash_tree.frontier_pad_back(frontier, pad_root, k, pad_height)
                     -- one subtree root pad is pad_size leaf pads
                     expect.equal(
                         hash_tree.frontier_get_root_hash(frontier),
@@ -271,6 +335,9 @@ describe("hash-tree.lua", function()
             expect.fail(function()
                 hash_tree.frontier_pad_back(frontier, pad, 1, 2)
             end, "frontier is not aligned to the pad size")
+            expect.fail(function()
+                hash_tree.frontier_pad_back(frontier, pad, nil, 2)
+            end, "frontier is not aligned to the pad size")
         end)
 
         it("rejects a subtree pad past the end of the tree", function()
@@ -284,7 +351,7 @@ describe("hash-tree.lua", function()
     describe("frontier_push_back", function()
         local pad = cartesi.keccak256("pad")
 
-        it("pushes a subtree root when log2_hash_size is given", function()
+        it("pushes a subtree root at a given height", function()
             local SMALL_H = 4
             -- push leaves 1..2 individually, then the subtree of leaves 3..4 as one entry
             local leaves = make_leaves(4)
@@ -307,7 +374,84 @@ describe("hash-tree.lua", function()
             hash_tree.frontier_push_back(frontier, leaf(1))
             expect.fail(function()
                 hash_tree.frontier_push_back(frontier, leaf(2), 1)
-            end, "frontier is not aligned to the hash size")
+            end, "frontier is not aligned to the subtree size")
+        end)
+
+        it("appends an array of hashes like repeated scalar pushes", function()
+            for _, n in ipairs({ 0, 1, 2, 3, 5, 8, 11, 16 }) do
+                local leaves = make_leaves(n)
+                local expected = hash_tree.frontier(4, "keccak256")
+                for _, l in ipairs(leaves) do
+                    hash_tree.frontier_push_back(expected, l)
+                end
+                local frontier = hash_tree.frontier(4, "keccak256")
+                hash_tree.frontier_append(frontier, leaves)
+                expect.equal(
+                    hash_tree.frontier_get_root_hash(frontier, pad),
+                    hash_tree.frontier_get_root_hash(expected, pad)
+                )
+            end
+        end)
+
+        it("appends a slice with an exclusive end index", function()
+            local leaves = make_leaves(10)
+            local expected = hash_tree.frontier(4, "keccak256")
+            for k = 3, 7 do
+                hash_tree.frontier_push_back(expected, leaves[k])
+            end
+            local frontier = hash_tree.frontier(4, "keccak256")
+            hash_tree.frontier_append(frontier, leaves, 1, 1) -- empty at the start
+            hash_tree.frontier_append(frontier, leaves, 3, 8)
+            hash_tree.frontier_append(frontier, leaves, 8, 8) -- an empty range is a no-op
+            hash_tree.frontier_append(frontier, leaves, #leaves + 1, #leaves + 1) -- empty past the end
+            expect.equal(
+                hash_tree.frontier_get_root_hash(frontier, pad),
+                hash_tree.frontier_get_root_hash(expected, pad)
+            )
+        end)
+
+        it("appends an array of subtree roots at their height", function()
+            local roots = {}
+            for i = 1, 3 do
+                roots[i] = cartesi.keccak256("subtree-" .. i)
+            end
+            local expected = hash_tree.frontier(4, "keccak256")
+            for _, r in ipairs(roots) do
+                hash_tree.frontier_push_back(expected, r, 1)
+            end
+            local frontier = hash_tree.frontier(4, "keccak256")
+            hash_tree.frontier_append(frontier, roots, 1, 4, 1)
+            expect.equal(
+                hash_tree.frontier_get_root_hash(frontier, pad),
+                hash_tree.frontier_get_root_hash(expected, pad)
+            )
+        end)
+
+        it("rejects invalid ranges and overflow", function()
+            local leaves = make_leaves(4)
+            local frontier = hash_tree.frontier(2, "keccak256")
+            expect.fail(function()
+                hash_tree.frontier_append(frontier, leaves, 0, 3)
+            end, "invalid range")
+            expect.fail(function()
+                hash_tree.frontier_append(frontier, leaves, 3, 2)
+            end, "invalid range")
+            expect.fail(function()
+                hash_tree.frontier_append(frontier, leaves, 1, 2.5)
+            end, "invalid range")
+            expect.fail(function()
+                hash_tree.frontier_append(frontier, leaves, 1, 6)
+            end, "invalid range")
+            expect.fail(function()
+                hash_tree.frontier_append(frontier, make_leaves(5))
+            end, "too many leaves")
+            hash_tree.frontier_append(frontier, leaves, 1, 5)
+            expect.fail(function()
+                hash_tree.frontier_push_back(frontier, leaves[1])
+            end, "too many leaves")
+            expect.fail(function()
+                hash_tree.frontier_append(frontier, leaves, 1, 2)
+            end, "too many leaves")
         end)
     end)
 
@@ -346,11 +490,11 @@ describe("hash-tree.lua", function()
             expect.equal(hash_tree.frontier_get_root_hash(frontier), hash_tree.frontier_get_root_hash(frontier, z))
         end)
 
-        it("pads with a subtree root when log2_pad_size is given", function()
-            local log2_pad_size = 2
-            local pad_size = 1 << log2_pad_size
+        it("pads with a subtree root at a given height", function()
+            local pad_height = 2
+            local pad_size = 1 << pad_height
             for n = 0, MAX4 // pad_size do
-                -- fill n complete subtrees of distinct leaves, so levels below log2_pad_size are empty
+                -- fill n complete subtrees of distinct leaves, so levels below pad_height are empty
                 local leaves = make_leaves(n * pad_size)
                 local frontier = hash_tree.frontier(H4, "keccak256")
                 for _, l in ipairs(leaves) do
@@ -372,7 +516,7 @@ describe("hash-tree.lua", function()
                     end
                 end
                 expect.equal(
-                    hash_tree.frontier_get_root_hash(frontier, subtree_root, log2_pad_size),
+                    hash_tree.frontier_get_root_hash(frontier, subtree_root, pad_height),
                     hash_tree.frontier_get_root_hash(expected_frontier)
                 )
             end
@@ -384,6 +528,522 @@ describe("hash-tree.lua", function()
             expect.fail(function()
                 hash_tree.frontier_get_root_hash(frontier, pad, 2)
             end, "frontier is not aligned to the pad size")
+        end)
+    end)
+
+    describe("frontier_forest", function()
+        local H4 = 4
+        local MAX4 = 1 << H4
+        local keccak = cartesi.keccak256
+
+        -- Every node of the fully materialized reference tree over exactly 2^H4 leaves.
+        local function reference_levels(leaves)
+            assert(#leaves == MAX4)
+            local levels = { [0] = leaves }
+            for log2_size = 1, H4 do
+                local parents = {}
+                local children = levels[log2_size - 1]
+                for i = 1, #children, 2 do
+                    parents[#parents + 1] = keccak(children[i], children[i + 1])
+                end
+                levels[log2_size] = parents
+            end
+            return levels
+        end
+
+        -- Checks a full forest against the reference: every node at every height and its
+        -- siblings, assembled into a proof that verifies.
+        local function expect_matches_reference(forest, leaves)
+            local levels = reference_levels(leaves)
+            expect.equal(hash_tree.frontier_forest_get_root_hash(forest), levels[H4][1])
+            for log2_size = 0, H4 do
+                for index = 0, (MAX4 >> log2_size) - 1 do
+                    local position = index << log2_size
+                    local target_hash = levels[log2_size][index + 1]
+                    expect.equal(hash_tree.frontier_forest_get_node_hash(forest, position, log2_size), target_hash)
+                    local siblings = hash_tree.frontier_forest_get_siblings(forest, position, log2_size)
+                    expect.equal(#siblings, H4 - log2_size)
+                    for sibling_height = log2_size, H4 - 1 do
+                        expect.equal(
+                            siblings[sibling_height - log2_size + 1],
+                            levels[sibling_height][((position >> sibling_height) ~ 1) + 1]
+                        )
+                    end
+                    hash_tree.verify_slice({
+                        target_address = position,
+                        log2_target_size = log2_size,
+                        target_hash = target_hash,
+                        log2_root_size = H4,
+                        root_hash = levels[H4][1],
+                        sibling_hashes = siblings,
+                    })
+                end
+            end
+        end
+
+        it("fills to capacity with raw hashes and retained subtrees", function()
+            for _, height in ipairs({ 0, 2, H4 }) do
+                local width = 1 << height
+                local pad_leaves = make_leaves(width)
+                local subtree = hash_tree.frontier_forest(height, "keccak256")
+                hash_tree.frontier_forest_append(subtree, pad_leaves)
+                local root = hash_tree.frontier_forest_get_root_hash(subtree)
+                for _, opaque in ipairs({ false, true }) do
+                    for prefix_count = 0, MAX4, width do
+                        local leaves = make_leaves(prefix_count)
+                        local forest = hash_tree.frontier_forest(H4, "keccak256")
+                        hash_tree.frontier_forest_append(forest, leaves)
+                        local value = opaque and root or subtree
+                        hash_tree.frontier_forest_pad_back(forest, value, nil, height)
+                        expect.equal(hash_tree.frontier_forest_get_leaf_count(forest), MAX4)
+                        -- Filling a full forest again leaves its root and retained nodes unchanged.
+                        hash_tree.frontier_forest_pad_back(forest, value, nil, height)
+                        for position = prefix_count, MAX4 - 1, width do
+                            if opaque then
+                                expect.equal(hash_tree.frontier_forest_get_node_hash(forest, position, height), root)
+                                if height > 0 then
+                                    -- Expansion authenticates and preserves the repeated padding's descendants.
+                                    local hash = hash_tree.frontier_forest_get_node_hash(forest, position, 0)
+                                    if not hash then
+                                        hash_tree.frontier_forest_expand_leaf(forest, position, subtree)
+                                    end
+                                end
+                            end
+                            for _, hash in ipairs(pad_leaves) do
+                                leaves[#leaves + 1] = hash
+                            end
+                        end
+                        expect_matches_reference(forest, leaves)
+                    end
+                end
+            end
+        end)
+
+        it("validates implicit padding before changing the forest", function()
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            hash_tree.frontier_forest_push_back(forest, leaf(1))
+            expect.fail(function()
+                hash_tree.frontier_forest_pad_back(forest, leaf(2), nil, 1)
+            end, "the forest is not aligned to the given height")
+            expect.fail(function()
+                hash_tree.frontier_forest_pad_back(forest, leaf(2), nil, H4 + 1)
+            end, "value height exceeds forest height")
+            expect.fail(function()
+                hash_tree.frontier_forest_pad_back(forest, "short")
+            end, "invalid hash size")
+            expect.fail(function()
+                hash_tree.frontier_forest_pad_back(forest, hash_tree.frontier_forest(0, "keccak256"))
+            end, "a forest value is not full")
+            local wrong_hash = hash_tree.frontier_forest(0, "sha256")
+            hash_tree.frontier_forest_push_back(wrong_hash, leaf(2))
+            expect.fail(function()
+                hash_tree.frontier_forest_pad_back(forest, wrong_hash)
+            end, "value hash function mismatch")
+            expect.equal(hash_tree.frontier_forest_get_leaf_count(forest), 1)
+            hash_tree.frontier_forest_pad_back(forest, leaf(2))
+            local leaves = { leaf(1) }
+            for i = 2, MAX4 do
+                leaves[i] = leaf(2)
+            end
+            expect_matches_reference(forest, leaves)
+        end)
+
+        it("assembles a fixed-point tree with push_back and append", function()
+            local leaves = make_leaves(MAX4)
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            hash_tree.frontier_forest_append(forest, leaves, 1, 1) -- empty at the start
+            hash_tree.frontier_forest_push_back(forest, leaves[1])
+            hash_tree.frontier_forest_append(forest, leaves, 2, 10)
+            hash_tree.frontier_forest_append(forest, leaves, 10, 10) -- an empty range is a no-op
+            hash_tree.frontier_forest_append(forest, leaves, 10, MAX4 + 1)
+            hash_tree.frontier_forest_append(forest, leaves, MAX4 + 1, MAX4 + 1) -- empty after filling the tree
+            expect_matches_reference(forest, leaves)
+        end)
+
+        it("pads explicit prefixes with repeated suffixes", function()
+            local pad = keccak("pad")
+            local prefix = make_leaves(3)
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            hash_tree.frontier_forest_append(forest, prefix)
+            hash_tree.frontier_forest_pad_back(forest, pad, 6)
+            hash_tree.frontier_forest_pad_back(forest, pad, 4) -- extends the same repetition
+            local pad_count = forest.pending.pad_count
+            hash_tree.frontier_forest_push_back(forest, pad) -- a matching push extends it too
+            expect.equal(forest.pending.pad_count, pad_count + 1)
+            hash_tree.frontier_forest_push_back(forest, prefix[1]) -- an incompatible push flushes it
+            hash_tree.frontier_forest_pad_back(forest, prefix[2], 1) -- an incompatible pad
+            local leaves = { prefix[1], prefix[2], prefix[3] }
+            for i = 4, 14 do
+                leaves[i] = pad
+            end
+            leaves[15], leaves[16] = prefix[1], prefix[2]
+            expect_matches_reference(forest, leaves)
+        end)
+
+        it("appends opaque subtrees at their declared height", function()
+            local roots = {}
+            for i = 1, 4 do
+                roots[i] = keccak("subtree-" .. i)
+            end
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            hash_tree.frontier_forest_push_back(forest, roots[1], 2)
+            hash_tree.frontier_forest_append(forest, roots, 2, 4, 2)
+            hash_tree.frontier_forest_pad_back(forest, roots[4], 1, 2)
+            local frontier = hash_tree.frontier(H4, "keccak256")
+            hash_tree.frontier_append(frontier, roots, 1, 5, 2)
+            expect.equal(hash_tree.frontier_forest_get_root_hash(forest), hash_tree.frontier_get_root_hash(frontier))
+            expect.equal(hash_tree.frontier_forest_get_node_hash(forest, 4, 2), roots[2])
+            local node_hash, node_err = hash_tree.frontier_forest_get_node_hash(forest, 0, 1)
+            expect.equal(node_hash, nil)
+            expect.equal(node_err, "the node is below an opaque hash")
+            expect.fail(function()
+                hash_tree.frontier_forest_get_node_hash(forest, 1, 2)
+            end, "not aligned")
+            expect.fail(function()
+                hash_tree.frontier_forest_get_siblings(forest, 1, 2)
+            end, "not aligned")
+            local into = { roots[1] }
+            local siblings, err = hash_tree.frontier_forest_get_siblings(forest, 0, 0, into)
+            expect.equal(siblings, nil)
+            expect.equal(err, "the node is below an opaque hash")
+            expect.equal(#into, 1)
+            expect.equal(into[1], roots[1])
+        end)
+
+        it("retries node and sibling queries after expanding an opaque bundle", function()
+            local bundle = hash_tree.frontier_forest(2, "keccak256")
+            hash_tree.frontier_forest_pad_back(bundle, keccak("state"), 4)
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            hash_tree.frontier_forest_pad_back(forest, hash_tree.frontier_forest_get_root_hash(bundle), 4, 2)
+            local root = hash_tree.frontier_forest_get_root_hash(forest)
+            local node_hash, node_err = hash_tree.frontier_forest_get_node_hash(forest, 13, 0)
+            expect.equal(node_hash, nil)
+            expect.equal(node_err, "the node is below an opaque hash")
+            local siblings, err = hash_tree.frontier_forest_get_siblings(forest, 13, 0)
+            expect.equal(siblings, nil)
+            expect.equal(err, "the node is below an opaque hash")
+            hash_tree.frontier_forest_expand_leaf(forest, 12, bundle)
+            for _, position in ipairs({ 12, 13, 15, 0 }) do
+                siblings, err = hash_tree.frontier_forest_get_siblings(forest, position, 0)
+                expect.equal(err, nil)
+                node_hash, node_err = hash_tree.frontier_forest_get_node_hash(forest, position, 0)
+                expect.equal(node_hash, keccak("state"))
+                expect.equal(node_err, nil)
+                hash_tree.verify_slice({
+                    target_address = position,
+                    log2_target_size = 0,
+                    target_hash = hash_tree.frontier_forest_get_node_hash(forest, position, 0),
+                    log2_root_size = H4,
+                    root_hash = root,
+                    sibling_hashes = siblings,
+                })
+            end
+            expect.equal(#hash_tree.frontier_forest_get_siblings(forest, 0, H4), 0)
+            for _, position in ipairs({ -1, 1 << H4, 0.5, "0" }) do
+                expect.fail(function()
+                    hash_tree.frontier_forest_get_siblings(forest, position, 0)
+                end, "invalid node position")
+                expect.fail(function()
+                    hash_tree.frontier_forest_get_node_hash(forest, position, 0)
+                end, "invalid node position")
+            end
+            expect.fail(function()
+                hash_tree.frontier_forest_get_node_hash(forest, 0, -1)
+            end, "invalid node height")
+            expect.fail(function()
+                hash_tree.frontier_forest_get_node_hash(hash_tree.frontier_forest(H4, "keccak256"), 0, 0)
+            end, "the forest is not full")
+            expect.fail(function()
+                hash_tree.frontier_forest_get_siblings(forest, 0, -1)
+            end, "invalid node height")
+            expect.fail(function()
+                hash_tree.frontier_forest_get_siblings(hash_tree.frontier_forest(H4, "keccak256"), 0, 0)
+            end, "the forest is not full")
+        end)
+
+        it("queries inside completed forests, including repeated ones", function()
+            local sub_leaves, other_leaves = {}, {}
+            for i = 1, 4 do
+                sub_leaves[i] = keccak("sub-" .. i)
+                other_leaves[i] = keccak("other-" .. i)
+            end
+            local sub = hash_tree.frontier_forest(2, "keccak256")
+            hash_tree.frontier_forest_append(sub, sub_leaves)
+            local other = hash_tree.frontier_forest(2, "keccak256")
+            hash_tree.frontier_forest_append(other, other_leaves)
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            hash_tree.frontier_forest_pad_back(forest, sub, 3)
+            hash_tree.frontier_forest_push_back(forest, other)
+            local leaves = {}
+            for _ = 1, 3 do
+                table.move(sub_leaves, 1, 4, #leaves + 1, leaves)
+            end
+            table.move(other_leaves, 1, 4, #leaves + 1, leaves)
+            expect_matches_reference(forest, leaves)
+        end)
+
+        it("rejects invalid ranges and bad values", function()
+            local leaves = make_leaves(4)
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            expect.fail(function()
+                hash_tree.frontier_forest_append(forest, leaves, 0, 3)
+            end, "invalid range")
+            expect.fail(function()
+                hash_tree.frontier_forest_append(forest, leaves, 2, 6)
+            end, "invalid range")
+            expect.fail(function()
+                hash_tree.frontier_forest_append(forest, leaves, 4, 3)
+            end, "invalid range")
+            expect.fail(function()
+                hash_tree.frontier_forest_append(forest, leaves, 1, 2.5)
+            end, "invalid range")
+            expect.fail(function()
+                hash_tree.frontier_forest_push_back(forest, "short")
+            end, "invalid hash size")
+            expect.fail(function()
+                hash_tree.frontier_forest_push_back(forest, hash_tree.frontier_forest(2, "keccak256"))
+            end, "not full")
+            local sub1 = hash_tree.frontier_forest(1, "keccak256")
+            hash_tree.frontier_forest_append(sub1, leaves, 1, 3)
+            local sub2 = hash_tree.frontier_forest(2, "keccak256")
+            hash_tree.frontier_forest_append(sub2, leaves)
+            expect.fail(function()
+                hash_tree.frontier_forest_append(forest, { sub1, sub2 })
+            end, "a value is not a hash")
+            expect.fail(function()
+                hash_tree.frontier_forest_push_back(forest, sub2, 1)
+            end, "height mismatch")
+        end)
+
+        it("rejects completed forests built with another hash function", function()
+            local sha_forest = hash_tree.frontier_forest(2, "sha256")
+            hash_tree.frontier_forest_append(sha_forest, {
+                cartesi.sha256("one"),
+                cartesi.sha256("two"),
+                cartesi.sha256("three"),
+                cartesi.sha256("four"),
+            })
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            expect.fail(function()
+                hash_tree.frontier_forest_push_back(forest, sha_forest)
+            end, "hash function mismatch")
+            expect.fail(function()
+                hash_tree.frontier_forest_pad_back(forest, sha_forest, 4)
+            end, "hash function mismatch")
+        end)
+
+        it("rejects non-integer counts and heights without mutation", function()
+            local leaves = make_leaves(MAX4)
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            expect.fail(function()
+                hash_tree.frontier_forest_pad_back(forest, leaves[1], 1.5)
+            end, "invalid pad count")
+            expect.fail(function()
+                hash_tree.frontier_forest_push_back(forest, leaves[1], -1)
+            end, "invalid value height")
+            expect.fail(function()
+                hash_tree.frontier_forest_append(forest, leaves, 1.5, 3)
+            end, "invalid range")
+            hash_tree.frontier_forest_append(forest, leaves)
+            expect_matches_reference(forest, leaves)
+        end)
+
+        it("rejects values the leaf count is not aligned to", function()
+            local leaves = make_leaves(2)
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            hash_tree.frontier_forest_push_back(forest, leaves[1])
+            expect.fail(function()
+                hash_tree.frontier_forest_push_back(forest, leaves[2], 1)
+            end, "not aligned")
+            expect.fail(function()
+                hash_tree.frontier_forest_pad_back(forest, leaves[2], 1, 1)
+            end, "not aligned")
+        end)
+
+        it("rejects overflow without mutating the forest", function()
+            local pad = keccak("pad")
+            local leaves = make_leaves(3)
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            hash_tree.frontier_forest_append(forest, leaves)
+            expect.fail(function()
+                hash_tree.frontier_forest_pad_back(forest, pad, MAX4)
+            end, "too many leaves")
+            expect.fail(function()
+                hash_tree.frontier_forest_append(forest, make_leaves(MAX4))
+            end, "too many leaves")
+            expect.fail(function()
+                hash_tree.frontier_forest_get_root_hash(forest)
+            end, "not full")
+            -- the rejected appends changed nothing: completing still matches the reference
+            hash_tree.frontier_forest_pad_back(forest, pad, MAX4 - 3)
+            local expected = { leaves[1], leaves[2], leaves[3] }
+            for i = 4, MAX4 do
+                expected[i] = pad
+            end
+            expect_matches_reference(forest, expected)
+            expect.fail(function()
+                hash_tree.frontier_forest_push_back(forest, pad)
+            end, "too many leaves")
+            expect.fail(function()
+                hash_tree.frontier_forest_pad_back(forest, pad, 1)
+            end, "too many leaves")
+        end)
+
+        it("handles the height-62 mcycle claim shape", function()
+            local H62 = 62
+            local first_leaf, pad = keccak("first"), keccak("pad")
+            local forest = hash_tree.frontier_forest(H62, "keccak256")
+            hash_tree.frontier_forest_push_back(forest, first_leaf)
+            hash_tree.frontier_forest_pad_back(forest, pad)
+            -- reference: fold the lone leaf against doubling all-pad subtrees
+            local root, level_pad = first_leaf, pad
+            for _ = 1, H62 do
+                root = keccak(root, level_pad)
+                level_pad = keccak(level_pad, level_pad)
+            end
+            expect.equal(hash_tree.frontier_forest_get_root_hash(forest), root)
+            expect.equal(hash_tree.frontier_forest_get_node_hash(forest, 0, 0), first_leaf)
+            expect.equal(hash_tree.frontier_forest_get_node_hash(forest, (1 << H62) - 1, 0), pad)
+            hash_tree.verify_slice({
+                target_address = (1 << H62) - 1,
+                log2_target_size = 0,
+                target_hash = pad,
+                log2_root_size = H62,
+                root_hash = root,
+                sibling_hashes = hash_tree.frontier_forest_get_siblings(forest, (1 << H62) - 1, 0),
+            })
+            expect.fail(function()
+                hash_tree.frontier_forest_pad_back(forest, pad, 1)
+            end, "too many leaves")
+        end)
+
+        it("expands opaque bundles without changing roots or coverage", function()
+            local leaves = make_leaves(MAX4)
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            local bundles = {}
+            for i = 1, 4 do
+                local bundle = hash_tree.frontier_forest(2, "keccak256")
+                hash_tree.frontier_forest_append(bundle, leaves, 4 * i - 3, 4 * i + 1)
+                bundles[i] = bundle
+                hash_tree.frontier_forest_push_back(forest, hash_tree.frontier_forest_get_root_hash(bundle), 2)
+            end
+            local root = hash_tree.frontier_forest_get_root_hash(forest)
+            for _, i in ipairs({ 4, 1, 3, 2 }) do
+                hash_tree.frontier_forest_expand_leaf(forest, (i - 1) * 4, bundles[i])
+                expect.equal(hash_tree.frontier_forest_get_root_hash(forest), root)
+                expect.equal(hash_tree.frontier_forest_get_leaf_count(forest), MAX4)
+            end
+            expect_matches_reference(forest, leaves)
+        end)
+
+        it("expands nested padding through mixed trees and implicit repetitions", function()
+            local leaves = make_leaves(6)
+            local bundle = hash_tree.frontier_forest(1, "keccak256")
+            hash_tree.frontier_forest_append(bundle, leaves, 5, 7)
+            local group = hash_tree.frontier_forest(2, "keccak256")
+            hash_tree.frontier_forest_pad_back(group, hash_tree.frontier_forest_get_root_hash(bundle), 2, 1)
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            hash_tree.frontier_forest_append(forest, leaves, 1, 5)
+            hash_tree.frontier_forest_pad_back(forest, group, 3)
+            hash_tree.frontier_forest_expand_leaf(forest, 14, bundle)
+            local expected = { leaves[1], leaves[2], leaves[3], leaves[4] }
+            for i = 5, MAX4 do
+                expected[i] = leaves[5 + ((i - 5) % 2)]
+            end
+            expect_matches_reference(forest, expected)
+        end)
+
+        it("expands a whole opaque root and accepts a wrapped completed subtree", function()
+            local leaves = make_leaves(MAX4)
+            local bundle = hash_tree.frontier_forest(H4, "keccak256")
+            hash_tree.frontier_forest_append(bundle, leaves)
+            local wrapper = hash_tree.frontier_forest(H4, "keccak256")
+            hash_tree.frontier_forest_push_back(wrapper, bundle)
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            hash_tree.frontier_forest_push_back(forest, hash_tree.frontier_forest_get_root_hash(bundle), H4)
+            hash_tree.frontier_forest_expand_leaf(forest, 0, wrapper)
+            expect_matches_reference(forest, leaves)
+        end)
+
+        it("expands a height-62 repeated forest without materializing repetitions", function()
+            local leaves = make_leaves(2)
+            local bundle = hash_tree.frontier_forest(1, "keccak256")
+            hash_tree.frontier_forest_append(bundle, leaves)
+            local forest = hash_tree.frontier_forest(62, "keccak256")
+            hash_tree.frontier_forest_pad_back(forest, hash_tree.frontier_forest_get_root_hash(bundle), 1 << 61, 1)
+            local root = hash_tree.frontier_forest_get_root_hash(forest)
+            hash_tree.frontier_forest_expand_leaf(forest, (1 << 62) - 2, bundle)
+            expect.equal(hash_tree.frontier_forest_get_root_hash(forest), root)
+            expect.equal(hash_tree.frontier_forest_get_leaf_count(forest), 1 << 62)
+            for _, position in ipairs({ 0, 1, (1 << 62) - 2, (1 << 62) - 1 }) do
+                local target = leaves[(position % 2) + 1]
+                expect.equal(hash_tree.frontier_forest_get_node_hash(forest, position, 0), target)
+                hash_tree.verify_slice({
+                    target_address = position,
+                    log2_target_size = 0,
+                    target_hash = target,
+                    log2_root_size = 62,
+                    root_hash = root,
+                    sibling_hashes = hash_tree.frontier_forest_get_siblings(forest, position, 0),
+                })
+            end
+        end)
+
+        it("rejects invalid expansions before mutation", function()
+            local leaves = make_leaves(MAX4)
+            local bundle = hash_tree.frontier_forest(2, "keccak256")
+            hash_tree.frontier_forest_append(bundle, leaves, 1, 5)
+            local bundle_root = hash_tree.frontier_forest_get_root_hash(bundle)
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            hash_tree.frontier_forest_pad_back(forest, bundle_root, 4, 2)
+            local root = hash_tree.frontier_forest_get_root_hash(forest)
+            for _, position in ipairs({ -1, 1, 2.5, MAX4 }) do
+                expect.fail(function()
+                    hash_tree.frontier_forest_expand_leaf(forest, position, bundle)
+                end)
+            end
+            local wrong_hash = hash_tree.frontier_forest(2, "keccak256")
+            hash_tree.frontier_forest_append(wrong_hash, leaves, 5, 9)
+            local wrong_height = hash_tree.frontier_forest(1, "keccak256")
+            hash_tree.frontier_forest_append(wrong_height, leaves, 1, 3)
+            local wrong_type = hash_tree.frontier_forest(2, "sha256")
+            hash_tree.frontier_forest_append(wrong_type, leaves, 1, 5)
+            local incomplete = hash_tree.frontier_forest(2, "keccak256")
+            hash_tree.frontier_forest_push_back(incomplete, leaves[1])
+            local opaque = hash_tree.frontier_forest(2, "keccak256")
+            hash_tree.frontier_forest_push_back(opaque, bundle_root, 2)
+            for _, replacement in ipairs({ wrong_hash, wrong_height, wrong_type, incomplete, opaque, bundle_root }) do
+                expect.fail(function()
+                    hash_tree.frontier_forest_expand_leaf(forest, 0, replacement)
+                end)
+                expect.equal(hash_tree.frontier_forest_get_root_hash(forest), root)
+                expect.equal(hash_tree.frontier_forest_get_leaf_count(forest), MAX4)
+                local node_hash, err = hash_tree.frontier_forest_get_node_hash(forest, 0, 0)
+                expect.equal(node_hash, nil)
+                expect.equal(err, "the node is below an opaque hash")
+            end
+            expect.fail(function()
+                hash_tree.frontier_forest_expand_leaf(incomplete, 0, bundle)
+            end, "not full")
+            expect.fail(function()
+                hash_tree.frontier_forest_expand_leaf(opaque, 0, opaque)
+            end, "replacement leaf is opaque")
+            hash_tree.frontier_forest_expand_leaf(forest, 0, bundle)
+            expect.fail(function()
+                hash_tree.frontier_forest_expand_leaf(forest, 0, bundle)
+            end, "leaf height mismatch")
+            local expected = {}
+            for i = 1, MAX4 do
+                expected[i] = leaves[((i - 1) % 4) + 1]
+            end
+            expect_matches_reference(forest, expected)
+        end)
+
+        it("uses the hash function selected by the constructor", function()
+            local leaves = { cartesi.sha256("left"), cartesi.sha256("right") }
+            local forest = hash_tree.frontier_forest(1, "sha256")
+            hash_tree.frontier_forest_append(forest, leaves)
+            expect.equal(hash_tree.frontier_forest_get_root_hash(forest), cartesi.sha256(leaves[1], leaves[2]))
         end)
     end)
 

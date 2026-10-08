@@ -70,7 +70,8 @@
     - [Slicing and splicing](#slicing-and-splicing)
     - [Template instantiation](#template-instantiation)
     - [Result extraction](#result-extraction)
-    - [The outputs Merkle tree](#the-outputs-merkle-tree)
+  - [Hash-view of outputs](#hash-view-of-outputs)
+    - [The hash tree frontier](#the-hash-tree-frontier)
     - [Output verification](#output-verification)
   - [Verification game](#verification-game)
     - [Settling a dispute](#settling-a-dispute)
@@ -2299,7 +2300,7 @@ makes to the machine state is reverted afterward. The client saves the
 report as `query-report-0.bin`.
 
 The hash operations behind the output proofs are explained later, under
-[The outputs Merkle tree](#the-outputs-merkle-tree) in the Blockchain
+[Hash-view of outputs](#hash-view-of-outputs) in the Blockchain
 perspective.
 
 The server shell shows only the error message output by `bc` and
@@ -5011,8 +5012,8 @@ its leaf in, and `hash_tree.frontier_get_root_hash(<frontier>)` yields
 the outputs Merkle root to check against the one the guest wrote. Once
 the epoch closes, `hash_tree.frontier_next_proofs(<frontier>, <leaves>)`
 returns one proof per new output, all against the single final root.
-These helpers are shown and explained under [The outputs Merkle
-tree](#the-outputs-merkle-tree) in the Blockchain perspective.
+These helpers are shown and explained under [The hash tree
+frontier](#the-hash-tree-frontier) in the Blockchain perspective.
 
 The following script extends the Rolling Cartesi Machine calculator
 [example](#rolling-cartesi-machines-1) to collect output proofs and the
@@ -8081,7 +8082,7 @@ local template_input_proof = require("pristine-input-proof")
 assert(template_input_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "proof depth mismatch")
 
 -- Load actual input hash
-local input_hash = hash_tree.get_root_hash(input_expr .. "\n", input_nvram.log2_size)
+local input_hash = hash_tree.get_data_root_hash(input_expr .. "\n", input_nvram.log2_size)
 
 -- Check that instantiated template hash can be obtained directly from input proof and new input hash
 hash_tree.verify_splice(template_input_proof, input_hash, instantiated_template_hash)
@@ -8098,11 +8099,12 @@ compares against the one obtained off-chain.
 Since the input NVRAM starts completely filled with zeros, only the
 mathematical expression is needed to describe its modified contents. Its
 root hash is computed by
-`hash_tree.get_root_hash(<data>, <log2_root_size>)`, which lays `<data>`
-at the base of a 2^`<log2_root_size>`-byte subtree and returns its root.
+`hash_tree.get_data_root_hash(<data>, <log2_root_size>)`, which lays
+`<data>` at the base of a 2^`<log2_root_size>`-byte subtree and returns
+its root.
 
 ``` lua
-local function get_root_hash(data, log2_root_size, hash_type)
+local function get_data_root_hash(data, log2_root_size, hash_type)
     local hash_function = cartesi[hash_type or "keccak256"]
     assert(#data <= (1 << log2_root_size), "data does not fit in the tree")
     -- Level zero is one hash per word, a trailing partial word zero-padded after the loop.
@@ -8202,7 +8204,7 @@ local output_proof = require("output-proof")
 assert(output_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "proof depth mismatch")
 
 -- Reconstruct the root hash of the output NVRAM from the result alone
-local output_hash = hash_tree.get_root_hash(result, output_nvram.log2_size)
+local output_hash = hash_tree.get_data_root_hash(result, output_nvram.log2_size)
 
 -- Splicing the reconstructed output drive into the proof must reproduce the agreed machine hash
 hash_tree.verify_splice(output_proof, output_hash, halted_state_hash)
@@ -8215,12 +8217,12 @@ This is possible when all interested parties agree on the final state
 hash *M’* of the Cartesi Machine they ran off-chain. Assuming this to be
 the case, and in possession of the output proof and the result, the
 blockchain reconstructs the root hash of the output NVRAM from the
-result with `hash_tree.get_root_hash`, the same function the previous
-example used for the input drive. It then passes the output proof, this
-reconstructed hash, and the agreed hash *M’* to `verify_splice`, which
-confirms that an output NVRAM with exactly this content sits in the
-machine whose state hash is *M’*. In other words, once everyone agrees
-on *M’*, the result really is there.
+result with `hash_tree.get_data_root_hash`, the same function the
+previous example used for the input drive. It then passes the output
+proof, this reconstructed hash, and the agreed hash *M’* to
+`verify_splice`, which confirms that an output NVRAM with exactly this
+content sits in the machine whose state hash is *M’*. In other words,
+once everyone agrees on *M’*, the result really is there.
 
 ``` bash
 lua5.4 slice-calculator-output.lua "6*2^1024 + 3*2^512"
@@ -8237,7 +8239,7 @@ Extraction by proof works!
 36036892526733668721977278692363075584
 ```
 
-### The outputs Merkle tree
+## Hash-view of outputs
 
 The operations so far concern the word-leaf tree of the machine state.
 The same slicing idea applies to another Merkle tree the project uses,
@@ -8259,6 +8261,8 @@ available to the guest. Outside, as we will see, even the output proofs
 can be generated holding only the frontier. The outputs themselves and
 their proofs are kept outside the machine, by the Cartesi Node. The
 machine state commits to them through the outputs Merkle root alone.
+
+### The hash tree frontier
 
 The frontier after *c* outputs captures the complete left subtrees
 standing over the leaves in the range \[0, *c*), each by its root hash.
@@ -8320,12 +8324,11 @@ The function `frontier_push_back` folds one new output leaf into the
 frontier:
 
 ``` lua
-local function frontier_push_back(frontier, hash, log2_hash_size)
+local function frontier_push_back(frontier, hash, height)
     local hash_function = assert(frontier.hash_function)
-    local level = (log2_hash_size or 0) + 1
-    for below = 1, level - 1 do
-        assert(not frontier[below], "frontier is not aligned to the hash size")
-    end
+    local level = (height or 0) + 1
+    assert_aligned_below(frontier, level, "frontier is not aligned to the subtree size")
+    assert(not frontier[#frontier], "too many leaves")
     local right = hash
     while frontier[level] do
         right = hash_function(frontier[level], right)
@@ -8344,23 +8347,53 @@ each, and storing the resulting hash at that first empty level. It is
 the root of the subtree covering exactly the leaves ending at the new
 output, the frontier entry the carry creates. A level is combined only
 once every 2<sup>*l*</sup> outputs, so a long run of outputs costs
-constant work each, amortized.
+constant work each, amortized. The function `frontier_append` appends
+hashes in the half-open range `[begin_index, end_index)` in order as
+maximal aligned complete subtrees, each hashed into one root and pushed
+back as one entry. The bounds default to `1` and `#hashes + 1`; equal
+bounds select an empty range:
+
+``` lua
+local function frontier_append(frontier, hashes, begin_index, end_index, height)
+    local hash_function = assert(frontier.hash_function)
+    begin_index, end_index = normalize_range(hashes, begin_index, end_index)
+    local first_level = (height or 0) + 1
+    assert_aligned_below(frontier, first_level, "frontier is not aligned to the subtree size")
+    assert(frontier_padding_fits(frontier, end_index - begin_index, first_level), "too many leaves")
+    while begin_index < end_index do
+        local added_height = 0
+        local subtree_count = 1
+        while not frontier[first_level + added_height] and subtree_count <= ((end_index - begin_index) >> 1) do
+            added_height = added_height + 1
+            subtree_count = subtree_count << 1
+        end
+        local nodes = table.move(hashes, begin_index, begin_index + subtree_count - 1, 1, {})
+        for _ = 1, added_height do
+            local parents = {}
+            for j = 1, #nodes, 2 do
+                parents[#parents + 1] = hash_function(nodes[j], nodes[j + 1])
+            end
+            nodes = parents
+        end
+        frontier_push_back(frontier, nodes[1], first_level + added_height - 1)
+        begin_index = begin_index + subtree_count
+    end
+end
+```
 
 The function `frontier_get_root_hash` returns the root hash of the tree,
 padded with zero leaves to completion:
 
 ``` lua
-local function frontier_get_root_hash(frontier, pad, log2_pad_size)
+local function frontier_get_root_hash(frontier, pad, pad_height)
     local hash_function = assert(frontier.hash_function)
     local height = #frontier - 1
     if frontier[height + 1] then return frontier[height + 1] end
     pad = pad or pristine_leaf
     local root = pad
-    for level = 1, log2_pad_size or 0 do
-        assert(not frontier[level], "frontier is not aligned to the pad size")
-    end
+    assert_aligned_below(frontier, (pad_height or 0) + 1, "frontier is not aligned to the pad size")
     -- pad doubles into the all-pad subtree of each level, the right sibling of every empty one
-    for level = (log2_pad_size or 0) + 1, height do
+    for level = (pad_height or 0) + 1, height do
         if frontier[level] then
             root = hash_function(frontier[level], root)
         else
@@ -8374,10 +8407,14 @@ end
 
 Every leaf the outputs have not reached is pristine. The function climbs
 level by level, combining each present frontier entry on the left with
-pristine padding on the right. The [Output proofs](#output-proofs)
-example uses these two together while processing an epoch, pushing each
-accepted output and then rooting the frontier to check it against the
-outputs Merkle root the guest reported.
+pristine padding on the right. The pristine leaf is only the default,
+used when `<pad>` is omitted. Any other leaf hash can be given as
+`<pad>` instead, and `frontier_pad_back` appends copies of such a hash
+to the frontier itself, folding them in by the same carry as
+`frontier_push_back`. The [Output proofs](#output-proofs) example uses
+`frontier_push_back` and `frontier_get_root_hash` together while
+processing an epoch, pushing each accepted output and then rooting the
+frontier to check it against the outputs Merkle root the guest reported.
 
 The constructor is `frontier`, which produces the frontier an epoch
 begins from:
@@ -8392,14 +8429,14 @@ local function frontier(log2_max_leaves_or_last_proof, hash_type)
         local hash_function = f.hash_function
         local leaf_count = proof.target_address + 1
         local lowest_complete_level = 1
-        while leaf_count & (1 << (lowest_complete_level - 1)) == 0 do
+        while (leaf_count & (1 << (lowest_complete_level - 1))) == 0 do
             lowest_complete_level = lowest_complete_level + 1
         end
         -- Above the lowest complete level, where the leaf count's bit at that level is set, the last leaf
         -- is a right child, so its proof sibling there is exactly the complete left subtree we need.
         for level = lowest_complete_level + 1, log2_max_leaves do
             local bit = level - 1
-            if leaf_count & (1 << bit) ~= 0 then f[level] = proof.sibling_hashes[level] end
+            if (leaf_count & (1 << bit)) ~= 0 then f[level] = proof.sibling_hashes[level] end
         end
         -- At the lowest complete level, the last leaf is a right child at every lower level, so rolling it
         -- up through the siblings below rebuilds that level's complete left subtree, which ends at the leaf
@@ -8436,26 +8473,26 @@ local function frontier_next_proofs(frontier, next_output_hashes)
     local log2_max_leaves = #frontier - 1
     local next_output_count = #next_output_hashes
     if next_output_count == 0 then return {} end
-    local leaf_count = frontier_leaf_count(frontier)
-    -- siblings[i] is the i-th new output's sibling array.
+    local leaf_count = frontier_get_leaf_count(frontier)
+    -- Allocate each proof's sibling array.
     local siblings = {}
     for i = 1, next_output_count do
         siblings[i] = {}
     end
-    -- active holds the node hashes covering global indices [base, base + #active - 1] at the
-    -- current level; start at the leaves over [leaf_count, leaf_count + next_output_count).
+    -- Start with the new leaves at their global indices.
     local active = next_output_hashes
     local base = leaf_count
-    local pristine = pristine_leaf -- the all-pristine subtree at the current level
+    -- Track the pristine subtree at the current level.
+    local pristine = pristine_leaf
     for level = 1, log2_max_leaves do
         local bit = level - 1
         local frontier_entry = frontier[level]
-        -- Each output's proof sibling at this level is its node's neighbour (toggle the low bit).
+        -- Add each output's sibling at this level.
         for i = 1, next_output_count do
             local node = (leaf_count + i - 1) >> bit
             siblings[i][level] = frontier_node(frontier_entry, base, active, pristine, node ~ 1)
         end
-        -- Climb one level: parent p has children 2p and 2p+1; the leftmost index halves.
+        -- Hash the active nodes into their parents.
         local parents = {}
         local parents_base = base >> 1
         for p = parents_base, (base + #active - 1) >> 1 do
@@ -8466,7 +8503,8 @@ local function frontier_next_proofs(frontier, next_output_hashes)
         active, base = parents, parents_base
         pristine = hash_function(pristine, pristine)
     end
-    local root_hash = active[1] -- after the last level the single active node is the root
+    -- The final active node is the root.
+    local root_hash = active[1]
     local proofs = {}
     for i = 1, next_output_count do
         proofs[i] = {
@@ -8756,7 +8794,7 @@ local function verify_output(dapp_contract, output, final_hash)
         and output.proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE
         and output.proof.target_address == dapp_contract.output.start
         and output.proof.log2_target_size == dapp_contract.output.log2_size
-        and hash_tree.get_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash
+        and hash_tree.get_data_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash
         and pcall(hash_tree.verify_slice, output.proof)
 end
 ```

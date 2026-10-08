@@ -2871,6 +2871,18 @@ end
 -- obtain config from instantiated machine
 local initial_config = main_machine:get_initial_config()
 
+-- Interactive consoles need progress on separate lines.
+local progress_terminator = "\r"
+if (initial_config.processor.registers.htif.iconsole & cartesi.HTIF_CONSOLE_CMD_GETCHAR_MASK) ~= 0 then
+    progress_terminator = "\n"
+end
+for _, device in ipairs(initial_config.virtio) do
+    if device.type == "console" then
+        progress_terminator = "\n"
+        break
+    end
+end
+
 for _, r in ipairs(cmdline.memory_range_replace) do
     set_empty_omitted_filenames(r)
     main_machine:replace_memory_range(r)
@@ -2912,13 +2924,10 @@ local function report_mcycles(machine) stderr("Cycles: %u\n", machine:read_reg("
 
 local function report_uarch_cycles(machine) stderr("uCycles: %u\n", machine:read_reg("uarch_cycle")) end
 
-local function get_and_print_yield(machine, htif)
+local function get_and_print_yield(machine)
     local cmd, yield_reason, data = machine:receive_cmio_request()
     if cmd == cartesi.HTIF_YIELD_CMD_AUTOMATIC and yield_reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS then
-        stderr(
-            "Progress: %6.2f" .. ((htif.iconsole & cartesi.HTIF_CONSOLE_CMD_GETCHAR_MASK) ~= 0 and "\n" or "\r"),
-            string.unpack("I4", data) / 10
-        )
+        stderr("Progress: %6.2f%s", string.unpack("I4", data) / 10, progress_terminator)
         return cmd, yield_reason, data
     end
     local cmd_str = cmio_yield_command[cmd] or "Unknown"
@@ -3794,7 +3803,7 @@ local function run_to_stop(m, on_yield_automatic, runner)
         if is_at_fixed_point(break_reason) or is_target_mcycle(break_reason) then
             return break_reason
         elseif is_yielded_automatic(break_reason) then
-            local _, yield_reason, data = get_and_print_yield(m, initial_config.processor.registers.htif)
+            local _, yield_reason, data = get_and_print_yield(m)
             on_yield_automatic(yield_reason, data)
         end
         -- any other reason (a soft yield or console output) just keeps going
@@ -3842,7 +3851,7 @@ local function report_stop(m, break_reason)
     elseif is_mcycle_overflow(break_reason) then
         report_mcycle_overflow(m)
     elseif is_yielded_manual(break_reason) then
-        get_and_print_yield(m, initial_config.processor.registers.htif)
+        get_and_print_yield(m)
     end
 end
 
@@ -3855,7 +3864,6 @@ local function ignore_yield_automatic() end
 -- (already there). The yield is announced only when reached by advancing, since after an epoch the
 -- advance loop already announced this same yield.
 local function run_inspect_state_query(m, runner)
-    local htif = initial_config.processor.registers.htif
     local mcycle = m:read_reg("mcycle")
     -- Boot always runs the machine plainly, and only the query itself runs with the runner. If the
     -- machine did not stop at a manual yield (it halted, or ran out of mcycles), it is not at an
@@ -3865,7 +3873,7 @@ local function run_inspect_state_query(m, runner)
     -- Announce the yield we advanced to reach (after an epoch it is the epoch's already-announced
     -- accept yield, at the same mcycle, so skip it). load_cmio_query is the gate on the reason: it
     -- fails unless the machine is at an rx-accepted manual yield, rejecting a reject or exception.
-    if m:read_reg("mcycle") ~= mcycle then get_and_print_yield(m, htif) end
+    if m:read_reg("mcycle") ~= mcycle then get_and_print_yield(m) end
     commit(m)
     stderr("\nBefore query\n")
     if cmdline.cmio_inspect.print_query_state_hashes then print_root_hash(m) end
@@ -3900,7 +3908,6 @@ end
 -- inputs run with the claim, which either collects a computation hash (advancing through the
 -- given runner) or delegates to the runner directly (the machine itself, or gdb).
 local function run_advance_state_epoch(m, runner)
-    local htif = initial_config.processor.registers.htif
     local advance = cmdline.cmio_advance
     local claim = advance.mcycle_computation_hash and make_mcycle_computation_hash(m, advance, runner)
         or advance.uarch_cycle_computation_hash and make_uarch_cycle_computation_hash(m, advance, runner)
@@ -3919,7 +3926,7 @@ local function run_advance_state_epoch(m, runner)
     -- break_reason holds where the last resume stopped, and decides how the epoch closes below.
     local break_reason = run_to_stop(m, ignore_yield_automatic, m)
     if is_yielded_manual(break_reason) then
-        get_and_print_yield(m, htif)
+        get_and_print_yield(m)
         commit(m)
         local revert_root_hash
         for input_index = advance.input_index_begin, advance.input_index_end - 1 do
@@ -3941,7 +3948,7 @@ local function run_advance_state_epoch(m, runner)
             -- a halt, overflow, or max_mcycle before the accept or reject yield ends the epoch;
             -- it closes below
             if not is_yielded_manual(break_reason) then break end
-            local _, yield_reason, data = get_and_print_yield(m, htif)
+            local _, yield_reason, data = get_and_print_yield(m)
             if is_rx_accepted(yield_reason) then
                 flush_pending_outputs(m, advance, yield_reason, data)
                 commit(m)

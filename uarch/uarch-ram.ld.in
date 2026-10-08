@@ -10,7 +10,7 @@ SECTIONS
   /* Hot path first, so one big-machine instruction touches few witness pages:
      the interpret loop, fetch and dispatch, address translation, the TLB slot
      check and the load/store slow paths. Order comes from tracing uarch PCs
-     over a whole mcycle and counting cycles per code page. validate-layout
+     over a whole mcycle with tools/uarch-page-xray.lua. validate-layout
      checks these land in the first 64 KiB. */
   .text : {
     *(.text._ZN7cartesiL14interpret_loop*)

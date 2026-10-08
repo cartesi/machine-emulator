@@ -1,0 +1,1093 @@
+-- Deadline regressions exercise the real referee, player handlers, and transport.
+local cartesi = require("cartesi")
+local hash_tree = require("cartesi.hash-tree")
+local prt = require("prt")
+local prtu = require("prtu")
+local keccak = cartesi.keccak256
+local EVERYONE = prtu.EVERYONE
+local FOREVER = nil
+
+local function copy(value)
+    if type(value) ~= "table" then
+        return value
+    end
+    local result = {}
+    for key, field in pairs(value) do
+        result[key] = copy(field)
+    end
+    return result
+end
+
+local function repeated_tree(value, height)
+    local forest = hash_tree.frontier_forest(height, "keccak256")
+    for _ = 1, 1 << height do
+        hash_tree.frontier_forest_push_back(forest, value)
+    end
+    return prt.new_tree(height, 0, forest)
+end
+
+local function clone_handlers(player)
+    local handlers = {}
+    for name, handler in pairs(player.event_handler) do
+        handlers[name] = handler
+    end
+    player.event_handler = handlers
+end
+
+return function(run_with_server, new_test_player)
+    -- Replacing one player's handler must leave the other player's defaults intact.
+    do
+        local first, second = new_test_player(), new_test_player()
+        assert(first.event_handler == second.event_handler, "default handlers are not shared")
+        clone_handlers(first)
+        clone_handlers(second)
+        local original = second.event_handler.prove_output
+        first.event_handler.prove_output = function(player)
+            assert(player == first, "dispatcher passed the handler table instead of the player")
+            return {}
+        end
+        assert(second.event_handler.prove_output == original, "handler override changed another player")
+        local event = cartesi.tojson({ operation = "prove_output" }, -1)
+        local encoded = prtu.answer_event(first, event)
+        assert(next(cartesi.fromjson(encoded).value) == nil, "dispatcher ignored the handler override")
+        second.event_handler.prove_output = nil
+        second.prove_output = function()
+            error("dispatcher called an ordinary player method")
+        end
+        local ok, err = pcall(prtu.answer_event, second, event)
+        assert(not ok and err:find("missing event handler"), "dispatcher fell back to an ordinary player method")
+    end
+
+    -- One ordinary event can answer immediately or schedule explicitly. Its only wire
+    -- argument names a claim, so the transport cannot derive a deadline from its position.
+    run_with_server(function(server, run_client, wait_connections)
+        local event = prtu.define_event("probe", nil, "ClaimChildren")
+        prtu.EVENTS.probe = event
+        local left, right = keccak("explicit left"), keccak("explicit right")
+        local root = keccak(left, right)
+        local children = { computation_hash_left = left, computation_hash_right = right }
+        local response_block, acknowledge_only
+        local calls = 0
+        local player = {
+            label = "explicit",
+            event_handler = {
+                probe = function(self, claim, ...)
+                    assert(select("#", ...) == 0, "transport added arguments to the player handler")
+                    assert(claim == "claim")
+                    if acknowledge_only then
+                        return true
+                    elseif not response_block then
+                        return children
+                    end
+                    return prtu.schedule_response(self, response_block, function()
+                        assert(server:get_time() == response_block, "callback ran outside its scheduled block")
+                        calls = calls + 1
+                        return children
+                    end)
+                end,
+            },
+        }
+        run_client({ role = "player", label = player.label }, function(_, line)
+            return prtu.answer_event(player, line)
+        end, true)
+        wait_connections(1)
+        local function validate(response)
+            assert(response.computation_hash_left == left and response.computation_hash_right == right)
+            return root
+        end
+        local immediate <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate)
+        assert(immediate:wait_at_most(FOREVER) == root and calls == 0)
+        response_block = server:get_time() + 3
+        local delayed <close> = server:request_first_valid(
+            EVERYONE,
+            event,
+            { "claim" },
+            function(response, _, received_at)
+                assert(received_at < response_block, "late response")
+                return validate(response)
+            end
+        )
+        do
+            -- The closed future's response still arrives on its block, stale, and is ignored.
+            local closed <close> = -- luacheck: ignore 211
+                server:request_first_valid(EVERYONE, event, { "claim" }, validate)
+        end
+        server:wait_until(response_block - 1)
+        assert(calls == 0, "scheduling ran a callback immediately")
+        assert(delayed:wait_at_most(response_block) == nil, "wait returned a response its validator rejected")
+        assert(delayed.closed and not pcall(delayed.wait_at_most, delayed), "expiry left the request open")
+        server:wait_until(response_block + 1)
+        assert(calls == 2, "scheduled callbacks did not run")
+        acknowledge_only = true
+        response_block = server:get_time() + 2
+        local unscheduled <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate)
+        assert(
+            unscheduled:wait_at_most(response_block + 1) == nil and calls == 2,
+            "acknowledgement scheduled a callback"
+        )
+        assert(
+            not pcall(prtu.schedule_response, player, response_block, function() end),
+            "finished handler retained routing"
+        )
+        prtu.EVENTS.probe = nil
+    end)
+
+    -- A failed handler must not leave its request available to later scheduling calls.
+    do
+        local player = {
+            event_handler = {
+                schedule_match_elimination = function()
+                    error("handler failed")
+                end,
+            },
+        }
+        local ok, err = pcall(
+            prtu.answer_event,
+            player,
+            cartesi.tojson({ id = 1, operation = "schedule_match_elimination", arguments = { 3 } }, -1)
+        )
+        assert(not ok and err:find("handler failed"), "transport swallowed the handler error")
+        assert(not pcall(prtu.schedule_response, player, 3, function() end), "failed handler retained routing")
+    end
+
+    -- Time waits advance to their requested block, but do not suspend or emit another
+    -- time request when the requested block has already been reached.
+    run_with_server(function(server, run_client, wait_connections)
+        local blocks = {}
+        run_client(nil, function(event)
+            if event.operation == "advance_time" then
+                blocks[#blocks + 1] = event.arguments[1]
+                return { value = {} }
+            end
+            assert(event.operation == "finish", "a time wait emitted a player request")
+            return { value = true }, true
+        end, true)
+        wait_connections(1)
+        for _, invalid in ipairs({ -1, 1.5, "1" }) do
+            assert(not pcall(server.wait_until, server, invalid), "an invalid block was accepted")
+        end
+        local yielded = false
+        server.dispatcher:spawn(function()
+            yielded = true
+        end)
+        server:wait_until(0)
+        assert(not yielded, "waiting for the current block suspended the caller")
+        server:wait_until(3)
+        assert(yielded and server:get_time() == 3)
+        server:wait_until(2)
+        server:wait_until(3)
+        assert(server:get_time() == 3)
+        server:wait_until(10)
+        assert(server:get_time() == 10)
+        assert(#blocks == 2 and blocks[1] == 3 and blocks[2] == 10, "time waits added an unexpected block")
+    end)
+
+    -- A bridge can observe new blocks while responses are still missing. Exercise that
+    -- future state directly, independently of the documentation's response barrier.
+    do
+        local server = prtu.new_server()
+        local collection <close> = server:request_all({}, prtu.define_event("probe", nil, "Default"), {})
+        local first_valid <close> = server:request_first_valid(
+            {},
+            prtu.define_event("probe", nil, "Default"),
+            {},
+            function(v)
+                return v
+            end
+        )
+        server.clock:advance(1)
+        local senders = { {}, {}, {} }
+        -- Validators decide acceptance, so expiry returns every accepted reply, whatever its block.
+        local third = { value = "third", connection = senders[3], order = 3 }
+        collection.accepted_replies[#collection.accepted_replies + 1] = third
+        server.clock:advance(2)
+        assert(first_valid:wait_at_most(2) == nil, "first-valid expiry returned a collection")
+        local first = { value = "first", connection = senders[1], order = 1 }
+        collection.accepted_replies[#collection.accepted_replies + 1] = first
+        server.clock:advance(3)
+        local second = { value = "second", connection = senders[2], order = 2 }
+        collection.accepted_replies[#collection.accepted_replies + 1] = second
+        local snapshot, snapshot_order = collection:wait_at_most(2)
+        assert(
+            #snapshot_order == 3
+                and snapshot_order[1] == senders[1]
+                and snapshot_order[2] == senders[2]
+                and snapshot_order[3] == senders[3],
+            "expiry did not return accepted replies in admission order"
+        )
+        assert(
+            snapshot[senders[1]] == first.value
+                and snapshot[senders[2]] == second.value
+                and snapshot[senders[3]] == third.value,
+            "expiry discarded accepted replies"
+        )
+        assert(collection.closed and first_valid.closed and not next(server.active))
+        assert(not pcall(collection.wait_at_most, collection), "an expired collection accepted another wait")
+        local empty <close> = server:request_all({}, prtu.define_event("probe", nil, "Default"), {})
+        local missing, missing_order = empty:wait_at_most(3)
+        assert(
+            not next(missing) and #missing_order == 0,
+            "expiry without responses did not return an empty map and order"
+        )
+    end
+
+    -- Collection and time waits can happen in either order. Both obey
+    -- the response barriers, including delayed skips, explicit departures, and time acknowledgements.
+    for _, block_first in ipairs({ false, true }) do
+        run_with_server(function(server, run_client, wait_connections)
+            local collected, closed = false, false
+            local opening = server:get_time() + 1
+            local close_block = opening + 1
+            run_client(nil, function(event)
+                if event.operation == "cancelled_collection" then
+                    return { value = true }
+                end
+                assert(event.operation == "probe")
+                return { value = "answer" }
+            end)
+            run_client(nil, function(event)
+                if event.operation == "finish" then
+                    return { value = true }, true
+                elseif event.operation == "advance_time" then
+                    for _ = 1, 3 do
+                        if event.arguments[1] <= close_block then
+                            assert(not closed, "the time wait bypassed the time barrier")
+                        end
+                        server.dispatcher:schedule(coroutine.running(), "delay")
+                        coroutine.yield()
+                    end
+                    return { value = {} }
+                end
+                if event.operation == "cancelled_collection" then
+                    return { value = true }
+                end
+                assert(event.operation == "probe")
+                for _ = 1, 3 do
+                    assert(not collected and not closed, "a future bypassed the collection barrier")
+                    assert(server:get_time() == opening - 1, "time advanced before the audience finished")
+                    server.dispatcher:schedule(coroutine.running(), "delay")
+                    coroutine.yield()
+                end
+                return { skip = true, id = event.id }
+            end, true)
+            run_client(nil, function(event)
+                if event.operation == "cancelled_collection" then
+                    return { value = true }
+                end
+                assert(event.operation == "probe")
+                return { skip = true, done = true }, true
+            end)
+            wait_connections(3)
+            for _, connection in ipairs(server:get_players()) do
+                server:subscribe_connection("audience", connection)
+            end
+            server:subscribe_connection("overlap", server.connections[1])
+            local collection <close> = server:request_all(
+                { "audience", "overlap" },
+                prtu.define_event("probe", nil, "Default"),
+                {},
+                function(value, connection, received_at)
+                    assert(connection == server.connections[1], "collection lost its sender")
+                    assert(received_at == opening, "collection lost its receipt block")
+                    return value
+                end
+            )
+            local cancelled <close> = server:request_all(EVERYONE, prtu.define_event("cancelled_collection"), {})
+            cancelled:close()
+            assert(server:get_time() == 0, "request_all suspended the caller")
+            run_client(nil, function()
+                error("a late subscriber received the existing collection")
+            end)
+            wait_connections(4)
+            server:subscribe_connection("audience", server.connections[4])
+            if block_first then
+                server:wait_until(close_block)
+                closed = true
+            end
+            local responses, order = collection:wait_at_most(close_block)
+            collected = true
+            assert(
+                #order == 1 and order[1] == server.connections[1] and responses[order[1]] == "answer",
+                "collection lost, duplicated, or broadened its responses"
+            )
+            if not block_first then
+                assert(server:get_time() == opening, "collection waited for the closing block")
+                server:wait_until(close_block)
+                closed = true
+            end
+            assert(server:get_time() == close_block)
+            assert(
+                collection.closed and not pcall(collection.wait_at_most, collection),
+                "a consumed collection remained open"
+            )
+            local empty <close> = server:request_all({}, prtu.define_event("probe", nil, "Default"), {})
+            local missing, missing_order = empty:wait_at_most(close_block)
+            assert(
+                not next(missing) and #missing_order == 0,
+                "an empty collection did not resolve to an empty map and order"
+            )
+        end)
+    end
+
+    -- Waiting closes an expired request. An abandoned, unscoped future still fails.
+    for _, deadline in ipairs({ false, 1 }) do
+        local server = prtu.new_server()
+        local ok, err = pcall(server.run, server, function()
+            local future = server:request_first_valid(
+                {},
+                prtu.EVENTS.schedule_match_elimination,
+                { 1 },
+                function(response)
+                    return response
+                end
+            )
+            if deadline then
+                assert(future:wait_at_most(deadline) == nil)
+                assert(future.closed and not next(server.active) and not next(server.scheduled_responses))
+            end
+        end)
+        if deadline then
+            assert(ok, err)
+        else
+            assert(
+                not ok and err:find("referee finished with pending requests"),
+                "an unclosed future escaped detection"
+            )
+        end
+    end
+
+    -- No scheduled acknowledgement means no elimination, even after the deadline.
+    do
+        local server = prtu.new_server()
+        local resumed = false
+        server.dispatcher:spawn(function()
+            local elimination <close> = server:request_first_valid(
+                {},
+                prtu.EVENTS.schedule_match_elimination,
+                { 3 },
+                function()
+                    assert(server:get_time() >= 3)
+                    return 0
+                end
+            )
+            elimination:wait_at_most(FOREVER)
+            resumed = true
+        end)
+        local ok, err = pcall(function()
+            while true do
+                if server.dispatcher.ready_first <= server.dispatcher.ready_last or not server:step_time() then
+                    server.dispatcher:step()
+                end
+            end
+        end)
+        assert(not ok and err:find("would block forever") and not resumed)
+        assert(next(server.active), "an unanswered future completed without a response")
+    end
+
+    -- Route premature, expired, forged, and duplicate responses to independent waiters.
+    do
+        local server = prtu.new_server()
+        local resumed, checked, ids = {}, {}, {}
+        local sender = { order = 1 }
+        server.dispatcher:spawn(function()
+            server:wait_until(1)
+        end)
+        local function schedule(name, block, expires)
+            local future = server:request_first_valid(
+                {},
+                prtu.define_event("probe", nil, "Default"),
+                { block },
+                function(response)
+                    checked[#checked + 1] = { name, server:get_time() }
+                    assert(server:get_time() >= block and (not expires or server:get_time() < expires))
+                    assert(response == true)
+                    return 0
+                end
+            )
+            future.audience[sender] = true
+            future.pending[sender] = block
+            ids[name] = future.id
+            return future
+        end
+        for index = 1, 2 do
+            server.dispatcher:spawn(function()
+                if index == 1 then
+                    local timeout <close> = schedule("timeout", 3, 4)
+                    local elimination <close> = schedule("eliminate", 5)
+                    local reveal <close> = server:request_first_valid(
+                        {},
+                        prtu.EVENTS.reveal_bisection,
+                        { keccak("claim"), 0, 3, keccak("left") },
+                        function()
+                            error("another event supplied a reveal response")
+                        end
+                    )
+                    assert(reveal:wait_at_most(2) == nil)
+                    assert(timeout:wait_at_most(4) == nil)
+                    assert(elimination:wait_at_most(FOREVER) == 0)
+                else
+                    local unrelated <close> = schedule("unrelated", 6)
+                    assert(unrelated:wait_at_most(FOREVER) == 0)
+                end
+                assert(not resumed[index])
+                resumed[index] = server:get_time()
+            end)
+        end
+        local injected = {}
+        while not resumed[2] do
+            local block = server:get_time()
+            if server.batch and not injected[block] then
+                injected[block] = true
+                local responses = {}
+                local function offer(name, value)
+                    responses[#responses + 1] =
+                        { id = ids[name], value = value, eligible = 0, expires = math.maxinteger }
+                end
+                if block == 1 or block == 4 then
+                    offer("timeout", true)
+                    offer("eliminate", true)
+                elseif block == 3 then
+                    responses = { { id = -1, value = true }, { id = "forged", value = true }, false }
+                    offer("timeout", false)
+                elseif block == 5 then
+                    offer("eliminate", true)
+                    offer("eliminate", true)
+                    offer("unrelated", true)
+                elseif block == 6 then
+                    assert(resumed[1] == 5 and not resumed[2])
+                    offer("eliminate", true)
+                    offer("unrelated", true)
+                    offer("unrelated", true)
+                end
+                server.batch[1].replies = { { value = responses, order = 1, connection = sender } }
+            end
+            if server.dispatcher.ready_first <= server.dispatcher.ready_last or not server:step_time() then
+                server.dispatcher:step()
+            end
+        end
+        assert(resumed[1] == 5 and resumed[2] == 6 and not next(server.active) and not next(server.scheduled_responses))
+        local early, late = false, false
+        for _, check in ipairs(checked) do
+            early = early or check[2] == 1
+            late = late or (check[1] == "timeout" and check[2] == 4)
+        end
+        assert(early and late, "transport filtered timing instead of invoking the referee")
+    end
+
+    -- Results survive until their own wait, and a timed wait can be retried.
+    run_with_server(function(server, run_client, wait_connections)
+        local player = new_test_player({ mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }, nil)
+        local tree = repeated_tree(keccak("future leaf"), 3)
+        local left, right = tree:get_child_hashes(0, tree.height)
+        player.trees[tree:get_root_hash()] = tree
+        local scheduled_calls, reveal_calls = {}, 0
+        clone_handlers(player)
+        player.event_handler.schedule_match_elimination = function(self, block)
+            return prtu.schedule_response(self, block, function()
+                scheduled_calls[block] = (scheduled_calls[block] or 0) + 1
+                return {}
+            end)
+        end
+        run_client({ role = "player", label = player.label }, function(event, line)
+            if event.operation == "cancelled_probe" then
+                return { id = event.id, skip = true }
+            end
+            return prtu.answer_event(player, line)
+        end, true)
+        wait_connections(1)
+        do
+            local block = server:get_time()
+            local marker = {}
+            local timeout <close> = server:request_first_valid(
+                EVERYONE,
+                prtu.EVENTS.schedule_match_timeout_win,
+                { block + 2, keccak(left, right) },
+                function(response)
+                    assert(response.computation_hash_left == left and response.computation_hash_right == right)
+                    return marker
+                end
+            )
+            local reveal <close> = server:request_first_valid(
+                {},
+                prtu.EVENTS.reveal_bisection,
+                { keccak("claim"), 0, 3, keccak("left") },
+                function()
+                    reveal_calls = reveal_calls + 1
+                end
+            )
+            local elimination <close> = server:request_first_valid(
+                EVERYONE,
+                prtu.EVENTS.schedule_match_elimination,
+                { block + 5 },
+                function()
+                    assert(server:get_time() >= block + 5)
+                    return 0
+                end
+            )
+            assert(server:get_time() == block, "request_first_valid suspended its caller")
+            local ok, err = pcall(function()
+                local closed <close> = server:request_first_valid( -- luacheck: ignore 211
+                    EVERYONE,
+                    prtu.EVENTS.schedule_match_elimination,
+                    { block + 4 },
+                    function() end
+                )
+                local ordinary <close> = server:request_first_valid( -- luacheck: ignore 211
+                    EVERYONE,
+                    prtu.define_event("cancelled_probe"),
+                    {},
+                    function() end
+                )
+                error("close pending futures")
+            end)
+            assert(not ok and err:find("close pending futures"))
+            assert(reveal:wait_at_most(block + 3) == nil and server:get_time() == block + 3)
+            assert(timeout:wait_at_most(block + 3) == marker, "an earlier result was lost before its own wait")
+            assert(elimination:wait_at_most(block + 4) == nil and server:get_time() == block + 4)
+            assert(
+                elimination.closed and not pcall(elimination.wait_at_most, elimination),
+                "expiry left elimination open"
+            )
+            server:wait_until(block + 5)
+            -- The closed future's callback still runs on its block. Its stale response is ignored.
+            assert(reveal_calls == 0 and scheduled_calls[block + 4] == 1 and scheduled_calls[block + 5] == 1)
+            timeout:close()
+            timeout:close()
+            assert(not pcall(timeout.wait_at_most, timeout), "a closed future accepted a wait")
+        end
+        assert(not next(server.active) and not next(server.scheduled_responses), "closed futures retained pending work")
+    end)
+
+    -- A block waits for every audience before releasing any ordinary response.
+    run_with_server(function(server, run_client, wait_connections)
+        local resumed, seen = 0, 0
+        run_client(nil, function()
+            seen = seen + 1
+            return { value = true }
+        end)
+        run_client(nil, function()
+            for _ = 1, 3 do
+                server.dispatcher:schedule(coroutine.running(), "delay")
+                coroutine.yield()
+            end
+            assert(resumed == 0, "an early response released a protocol coroutine")
+            return { skip = true }
+        end)
+        wait_connections(2)
+        local parent, blocks = coroutine.running(), {}
+        for index = 1, 2 do
+            server.dispatcher:spawn(function()
+                server:subscribe_connection(index, server.connections[index])
+                blocks[index] = server:get_time() + 1
+                local future <close> = server:request_first_valid(
+                    { index },
+                    prtu.define_event("probe", nil, "Default"),
+                    {},
+                    function(v)
+                        assert(seen == 1 and server:get_time() == blocks[index])
+                        return v
+                    end
+                )
+                local value = future:wait_at_most(blocks[index] + 1)
+                assert((index == 1 and value == true) or (index == 2 and value == nil))
+                resumed = resumed + 1
+                if resumed == 2 then
+                    server.dispatcher:schedule(parent, "done")
+                end
+            end)
+        end
+        while resumed < 2 do
+            coroutine.yield()
+        end
+        assert(blocks[1] == blocks[2])
+    end)
+
+    -- A scheduling request waits behind an in-flight response on the same socket.
+    run_with_server(function(server, run_client, wait_connections)
+        local nested_done, scheduled = false, false
+        local parent = coroutine.running()
+        local probe = prtu.define_event("probe", nil, "Default")
+        run_client(nil, function(event)
+            if event.operation == "advance_time" then
+                return { value = {} }
+            elseif event.operation == "schedule_match_elimination" then
+                scheduled = true
+            elseif event.operation == "probe" and not scheduled then
+                local connection = server.connections[1]
+                server:subscribe_connection("probe", connection)
+                server.dispatcher:spawn(function()
+                    local elimination <close> = server:request_first_valid( -- luacheck: ignore 211
+                        { "probe" },
+                        prtu.EVENTS.schedule_match_elimination,
+                        { server:get_time() + 11 },
+                        function() end
+                    )
+                    local future <close> = server:request_first_valid({ "probe" }, probe, {}, function(v)
+                        return v
+                    end)
+                    assert(future:wait_at_most(FOREVER))
+                    nested_done = true
+                    server.dispatcher:schedule(parent, "nested_done")
+                end)
+                server.dispatcher:schedule(coroutine.running(), "reply")
+                coroutine.yield()
+                assert(connection.current_event and #connection.events == 2)
+            end
+            return { value = event.id and { answer = true } or true, id = event.id }
+        end, true)
+        wait_connections(1)
+        local first <close> = server:request_first_valid(EVERYONE, probe, {}, function(v)
+            assert(scheduled, "scheduling did not drain before continuing")
+            return v
+        end)
+        assert(first:wait_at_most(FOREVER))
+        while not nested_done do
+            coroutine.yield()
+        end
+    end)
+
+    -- Malformed computed values cannot discard other responses in the same batch.
+    run_with_server(function(server, run_client, wait_connections)
+        local player = new_test_player({ mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }, nil)
+        local tree = repeated_tree(keccak("leaf"), 3)
+        local left, right = tree:get_child_hashes(0, tree.height)
+        player.trees[tree:get_root_hash()] = tree
+        local accepted, malformed = 0, false
+        run_client({ role = "player", label = player.label }, function(event, line)
+            if event.operation == "probe" then
+                return { skip = true }
+            end
+            local encoded, done = prtu.answer_event(player, line)
+            if event.operation == "advance_time" then
+                local response = cartesi.fromjson(encoded)
+                if #response.value > 0 then
+                    assert(#response.value == 2)
+                    local valid = response.value[1]
+                    valid.value.output_data = "!"
+                    local elimination = response.value[2].value
+                    assert(type(elimination) == "table" and not next(elimination), "elimination response is not empty")
+                    valid.request = "prove_output"
+                    local invalid = copy(valid)
+                    invalid.value.computation_hash_left = "!"
+                    table.insert(response.value, 1, invalid)
+                    encoded, malformed = cartesi.tojson(response, -1), true
+                end
+            end
+            return encoded, done
+        end, true)
+        wait_connections(1)
+        local parent, completed = coroutine.running(), 0
+        for index = 1, 2 do
+            server.dispatcher:spawn(function()
+                local block = server:get_time() + 2
+                if index == 1 then
+                    local timeout <close> = server:request_first_valid(
+                        EVERYONE,
+                        prtu.EVENTS.schedule_match_timeout_win,
+                        { block, keccak(left, right) },
+                        function(response)
+                            assert(response.computation_hash_left == left and response.computation_hash_right == right)
+                            assert(response.output_data == "!", "an unrelated response schema decoded the value")
+                            accepted = accepted + 1
+                            return true
+                        end
+                    )
+                    assert(timeout:wait_at_most(block + 1))
+                else
+                    local elimination <close> = server:request_first_valid(
+                        EVERYONE,
+                        prtu.EVENTS.schedule_match_elimination,
+                        { block },
+                        function()
+                            assert(server:get_time() >= block)
+                            accepted = accepted + 1
+                            return true
+                        end
+                    )
+                    assert(elimination:wait_at_most(FOREVER))
+                end
+                completed = completed + 1
+                if completed == 2 then
+                    server.dispatcher:schedule(parent, "done")
+                end
+            end)
+        end
+        while completed < 2 do
+            coroutine.yield()
+        end
+        assert(malformed and accepted == 2, "a malformed response interfered with its batch peers")
+    end)
+
+    -- The first uarch step is a small real proof, independent of guest execution.
+    local machine <close> = cartesi.machine({ ram = { length = 4096 } })
+    local initial = machine:get_root_hash()
+    local logs = { step_log = machine:log_step_uarch() }
+    local after = machine:get_root_hash()
+    assert(cartesi.machine:verify_step_uarch(initial, logs.step_log) == after)
+    local invalid_logs = { step_log = machine:log_step_uarch() }
+    assert(not pcall(cartesi.machine.verify_step_uarch, cartesi.machine, initial, invalid_logs.step_log))
+    local geometry = { mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }
+    local max_allowance = 4
+    -- Every claim joins one block after its tournament opens, and a uarch tournament inherits
+    -- the remaining mcycle clock, so each level's clocks are one block shorter than the last.
+    local mcycle_clock = max_allowance - 1
+    local uarch_clock = mcycle_clock - 1
+
+    -- Narration remains outside the referee. Capture semantic reports so each
+    -- fixture can assert its outcome without writing walkthrough artifacts.
+    local original_story = copy(prtu.story)
+    local reports, probing, current_server
+    for name in pairs(prtu.story) do
+        prtu.story[name] = function(...)
+            if not probing then
+                reports[#reports + 1] = { name, ... }
+                reports[#reports].block = current_server:get_time()
+            end
+        end
+    end
+
+    local function scenario(mode)
+        reports = {}
+        local schedules, proof_checks, stale_checks = {}, 0, 0
+        local opening_blocks, unrelated_responses, invalid_proofs = {}, 0, 0
+        local pending_elimination_delay
+        local players = {}
+        local finals = { after, keccak("false final") }
+        if mode == "concurrent" then
+            finals[3], finals[4] = keccak("third final"), keccak("fourth final")
+        elseif mode == "uarch_inactive" then
+            finals[3], finals[4] = after, after
+        end
+        for index, final in ipairs(finals) do
+            local player = new_test_player(geometry, nil, "fixture" .. index)
+            -- These clock fixtures supply synthetic claims independently of execution.
+            clone_handlers(player)
+            player.event_handler.epoch_sealed = function()
+                return true
+            end
+            player.make_mcycle_tree = function()
+                return repeated_tree(final, geometry.mcycle_height)
+            end
+            player.make_uarch_tree = function()
+                return repeated_tree(final, geometry.uarch_height)
+            end
+            player.event_handler.prove_state_transition = function()
+                return logs
+            end
+            player.event_handler.prove_outputs_merkle_root = function()
+                return {}
+            end
+            players[index] = player
+        end
+        if mode == "uarch_inactive" then
+            -- Slots 3 and 4 join after slots 1 and 2, so their uarch claims pair with each other.
+            local inactive = {}
+            for index = 3, 4 do
+                local forest = hash_tree.frontier_forest(3, "keccak256")
+                for leaf = 0, 7 do
+                    hash_tree.frontier_forest_push_back(forest, leaf == 1 and keccak("inactive" .. index) or after)
+                end
+                local tree = prt.new_tree(3, 0, forest)
+                players[index].make_uarch_tree = function()
+                    return tree
+                end
+                inactive[#inactive + 1] = tree:get_root_hash()
+            end
+            table.sort(inactive, function(a, b)
+                return cartesi.tohex(a) < cartesi.tohex(b)
+            end)
+            assert(inactive[1] ~= inactive[2])
+        end
+        -- Determine the bracket without relying on connection order.
+        local roots = { players[1]:make_mcycle_tree():get_root_hash(), players[2]:make_mcycle_tree():get_root_hash() }
+        -- Claims pair in join order, and slot 1 connects first.
+        local first = 1
+        run_with_server(function(server, run_client, wait_connections)
+            current_server = server
+            local request_first_valid = server.request_first_valid
+            server.request_first_valid = function(self, subscriptions, event, arguments, accept)
+                -- Validators take the receipt block as an argument, so probes pass the simulated block.
+                local function probe(value, sender)
+                    return pcall(accept, value, sender, self.clock.block)
+                end
+                if
+                    event == prtu.EVENTS.schedule_match_timeout_win
+                    or event == prtu.EVENTS.schedule_match_elimination
+                then
+                    local block = arguments[1]
+                    local timeout_win = event == prtu.EVENTS.schedule_match_timeout_win
+                    local delay = block - self:get_time()
+                    local expires
+                    if timeout_win then
+                        -- The timeout win opens at the on-turn clock's deadline and lasts while the waiting
+                        -- clock, equal to it, runs out. The elimination emitted next waits for both.
+                        local clock = subscriptions == keccak(initial, arguments[2]) and mcycle_clock or uarch_clock
+                        assert(delay == clock, "timeout win not due at the on-turn clock's deadline")
+                        expires = block + clock
+                        pending_elimination_delay = 2 * clock
+                    else
+                        -- An elimination with no timeout win before it follows a seal, where both uarch
+                        -- clocks run together.
+                        assert(
+                            delay == (pending_elimination_delay or uarch_clock),
+                            "elimination not due when both clocks run out"
+                        )
+                        pending_elimination_delay = nil
+                    end
+                    local response = {}
+                    if timeout_win then
+                        for _, player in ipairs(players) do
+                            local tree = player.trees[arguments[2]]
+                            if tree then
+                                local left, right = tree:get_child_hashes(0, tree.height)
+                                response = { computation_hash_left = left, computation_hash_right = right }
+                            end
+                        end
+                        assert(type(response) == "table")
+                    end
+                    local saved = self.clock.block
+                    local sender = self:get_players()[1]
+                    probing = true
+                    self.clock.block = block - 1
+                    assert(not probe(response, sender), "premature scheduled response accepted")
+                    self.clock.block = block
+                    local ok, value = probe(response, sender)
+                    assert(ok and value, "eligible scheduled response rejected")
+                    if expires then
+                        local invalid = copy(response)
+                        invalid.computation_hash_left = keccak("wrong children")
+                        assert(not probe(invalid, sender), "invalid scheduled response accepted")
+                        self.clock.block = expires
+                        assert(not probe(response, sender), "scheduled response accepted at expiry")
+                        self.clock.block = expires + 1
+                        assert(not probe(response, sender), "scheduled response accepted after expiry")
+                    else
+                        assert(probe(nil, sender), "elimination required response data")
+                    end
+                    probing = false
+                    self.clock.block = saved
+                elseif
+                    event == prtu.EVENTS.reveal_bisection
+                    or event == prtu.EVENTS.seal_divergence
+                    or event == prtu.EVENTS.prove_state_transition
+                then
+                    local block = self:get_time() + 1
+                    local request = event.name
+                    if request == "reveal_bisection" and arguments[3] == 3 then
+                        opening_blocks[#opening_blocks + 1] = block
+                    end
+                    local clock = uarch_clock
+                    if request ~= "prove_state_transition" and subscriptions == keccak(initial, arguments[1]) then
+                        clock = mcycle_clock
+                    end
+                    local deadline = self:get_time() + clock
+                    -- Ordinary validators themselves reject at exact expiry,
+                    -- even when a response lies about its eligibility and timestamp.
+                    local holder = request == "prove_state_transition" and players[1]
+                    if request == "reveal_bisection" or request == "seal_divergence" then
+                        for _, player in ipairs(players) do
+                            local root = arguments[1]
+                            if player.trees[root] then
+                                holder = player
+                            end
+                        end
+                    end
+                    if holder then
+                        local response = holder.event_handler[request](holder, table.unpack(arguments))
+                        response.block, response.eligible, response.expires = 0, 0, math.maxinteger
+                        local saved = self.clock.block
+                        self.clock.block = deadline
+                        probing = true
+                        assert(not probe(response), "ordinary response accepted at expiry")
+                        self.clock.block = deadline + 1
+                        assert(not probe(response), "ordinary response accepted after expiry")
+                        self.clock.block = block
+                        local ok, value = probe(response)
+                        assert(ok and value, "valid response rejected before expiry")
+                        if request == "prove_state_transition" then
+                            proof_checks = proof_checks + 1
+                            local invalid = {}
+                            local valid, result = probe(invalid)
+                            assert(not valid, "invalid transition proof did not raise an error")
+                            assert(result, "invalid transition proof has no error")
+                        end
+                        probing = false
+                        self.clock.block = saved
+                    end
+                end
+                if event == prtu.EVENTS.prove_outputs_merkle_root then
+                    -- These fixtures settle matches, but have no valid epoch-output proof.
+                    -- End the example through its controller instead of a proof deadline.
+                    local closer = prtu.new_phase_closer("stop")
+                    run_client(cartesi.fromjson(closer.hello), function(_, line)
+                        return prtu.answer_event(closer, line)
+                    end, true)
+                end
+                return request_first_valid(self, subscriptions, event, arguments, accept)
+            end
+            for slot = 1, #players do
+                local index = slot
+                local player = players[index]
+                local committed_uarch = false
+                run_client({ role = "player", label = player.label }, function(event, line)
+                    if
+                        event.operation == "schedule_match_timeout_win"
+                        or event.operation == "schedule_match_elimination"
+                    then
+                        schedules[event.id] = (schedules[event.id] or 0) + 1
+                    else
+                        local request = event.operation
+                        if mode == "invalid_proof" and slot == 1 and request == "prove_state_transition" then
+                            -- The first reply has a well-formed log for the wrong before-state.
+                            -- The dispatcher must reject it and accept the other player's proof.
+                            invalid_proofs = invalid_proofs + 1
+                            return prtu.answer_event({
+                                label = player.label,
+                                event_handler = {
+                                    prove_state_transition = function()
+                                        return invalid_logs
+                                    end,
+                                },
+                            }, line)
+                        end
+                        local opening = request == "reveal_bisection" or request == "seal_divergence"
+                        if
+                            (mode == "timeout" and index == first and opening)
+                            or (mode == "timeout_advanced" and opening and event.arguments[3] == 2)
+                            or (mode == "timeout_seal" and opening and request == "seal_divergence")
+                            or ((mode == "eliminate" or mode == "concurrent") and opening)
+                            or (mode == "leaf_expiry" and request == "prove_state_transition")
+                            or (mode == "uarch_inactive" and index >= 3 and opening and committed_uarch)
+                        then
+                            return cartesi.tojson({ skip = true, id = event.id }, -1)
+                        end
+                        if
+                            request == "commit_uarch_claim"
+                            and (
+                                mode == "empty_uarch"
+                                or ((mode == "uarch" or mode == "uarch_without_holder") and index == 2)
+                            )
+                        then
+                            return cartesi.tojson({ skip = true, id = event.id }, -1)
+                        end
+                    end
+                    if mode == "uarch_without_holder" and index == 1 and event.operation == "commit_uarch_claim" then
+                        player.done = true
+                    end
+                    local encoded, done = prtu.answer_event(player, line)
+                    if event.operation == "commit_uarch_claim" then
+                        committed_uarch = true
+                    end
+                    if event.operation == "advance_time" then
+                        local response = cartesi.fromjson(encoded)
+                        local kept = {}
+                        for _, reply in ipairs(response.value) do
+                            local future = server.scheduled_responses[reply.id]
+                            if not future then
+                                -- The future closed before this block. Its stale response must be ignored.
+                                kept[#kept + 1] = reply
+                                stale_checks = stale_checks + 1
+                            else
+                                local timeout = future.event == prtu.EVENTS.schedule_match_timeout_win
+                                local suppress = mode == "eliminate"
+                                    or mode == "concurrent"
+                                    or (mode == "uarch_inactive" and index >= 3)
+                                if not (suppress and timeout) then
+                                    kept[#kept + 1] = reply
+                                    if not timeout then
+                                        kept[#kept + 1] = copy(reply)
+                                    end
+                                    if index == 1 and future.event == prtu.EVENTS.schedule_match_elimination then
+                                        unrelated_responses = unrelated_responses + 1
+                                    end
+                                end
+                            end
+                        end
+                        response.value = kept
+                        encoded = cartesi.tojson(response, -1)
+                    end
+                    return encoded, done
+                end, true)
+                wait_connections(slot)
+            end
+            run_client({ role = "phase_closer" }, function(_, line)
+                return prtu.answer_event(prtu.new_phase_closer(), line)
+            end, true)
+            prt.new_referee({
+                geometry = geometry,
+                initial_state_hash = initial,
+                inputs = {},
+                input_paths = {},
+                max_allowance = max_allowance,
+                response_budget = max_allowance,
+            }):run(server)
+        end)
+        assert(#current_server.open_phases == 0 and not next(current_server.scheduled_responses))
+        assert(current_server.phase_closer.dead, "phase closer stayed necessary after subscriptions")
+        local winner, timeouts, eliminated = nil, 0, 0
+        local trace = {}
+        for index, report in ipairs(reports) do
+            trace[#trace + 1] = report[1]
+            if report[1] == "report_uarch_result" then
+                local previous = reports[index - 1]
+                assert(
+                    previous[2].level == "uarch" and previous.block == report.block,
+                    "uarch result propagation waited after the tournament finished"
+                )
+            end
+            if report[1] == "report_winner" then
+                winner = report[2]
+            elseif report[1] == "report_timeout_win" then
+                timeouts = timeouts + 1
+            elseif report[1] == "report_uarch_result" and mode == "empty_uarch" then
+                assert(not report[3], "an empty uarch tournament was reported as having a winner")
+            elseif report[1] == "report_match_eliminated" then
+                eliminated = eliminated + 1
+            end
+        end
+        if mode == "timeout" or mode == "timeout_seal" or mode == "timeout_advanced" then
+            local winner_index = mode == "timeout_advanced" and first or 3 - first
+            assert(winner and winner.computation_hash == roots[winner_index] and timeouts == 1)
+        elseif mode == "eliminate" or mode == "concurrent" then
+            assert(not winner and eliminated == #players // 2, "elimination did not resolve exactly once")
+            if mode == "concurrent" then
+                assert(#opening_blocks == 2 and opening_blocks[1] == opening_blocks[2])
+            end
+        elseif mode == "empty_uarch" or mode == "leaf_expiry" then
+            assert(not winner, "an unavailable uarch result propagated")
+        else
+            assert(winner and winner.final_state_hash == after, "wrong uarch winner propagated")
+        end
+        if mode == "proof" or mode == "invalid_proof" or mode == "leaf_expiry" or mode == "uarch_inactive" then
+            assert(proof_checks == 1 and stale_checks > 0)
+        end
+        if mode == "invalid_proof" then
+            assert(invalid_proofs == 1, "invalid-proof scenario did not submit its bad log")
+        end
+        if mode == "uarch_inactive" then
+            assert(unrelated_responses == 1 and eliminated == 1, "honest lineage left an unrelated uarch match pending")
+        end
+        assert(next(schedules), "no response was scheduled")
+        return table.concat(trace, ",")
+    end
+
+    for _, mode in ipairs({
+        "timeout",
+        "timeout_advanced",
+        "timeout_seal",
+        "eliminate",
+        "concurrent",
+        "uarch_inactive",
+        "uarch",
+        "empty_uarch",
+        "uarch_without_holder",
+        "proof",
+        "invalid_proof",
+        "leaf_expiry",
+    }) do
+        assert(scenario(mode) == scenario(mode), "the protocol trace was not reproducible")
+    end
+    for name, handler in pairs(original_story) do
+        prtu.story[name] = handler
+    end
+end

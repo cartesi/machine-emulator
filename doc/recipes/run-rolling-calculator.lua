@@ -55,25 +55,25 @@ stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
 local machine = cartesi_jsonrpc_machine("rolling-calculator-template")
 
 -- Snapshot via fork: the backup server keeps the pre-input state
-local backup
+local backup_machine
 local function snapshot(m)
-    backup = m:fork_server()
+    backup_machine = m:fork_server()
 end
 
 local function commit(_)
-    if backup then
-        backup:shutdown_server()
+    if backup_machine then
+        backup_machine:shutdown_server()
     end
-    backup = nil
+    backup_machine = nil
 end
 
-local function rollback(m)
-    assert(backup, "no snapshot to rollback to")
+local function revert(m)
+    assert(backup_machine, "no snapshot to revert to")
     local address = m:get_server_address()
     m:shutdown_server()
-    m:swap(backup)
+    m:swap(backup_machine)
     m:rebind_server(address)
-    backup = nil
+    backup_machine = nil
 end
 
 -- Run the machine until it halts or the expressions run out
@@ -101,7 +101,8 @@ repeat
             i = i + 1
         elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             stderr("input rejected\n")
-            rollback(machine)
+            revert(machine)
+            assert(machine:get_root_hash() == revert_root_hash, "revert did not restore the pre-input state")
         else
             stderr("machine initialization failed\n")
             break

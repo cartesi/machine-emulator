@@ -124,16 +124,16 @@ endif
 RUN_ARCH_TEST = $(LUA) $(abspath ./lua/run-rv64i-arch-test.lua)
 
 MACHINE_GUEST_TOOLS_ROOTFS_URL = https://github.com/cartesi/machine-guest-tools/releases/download/$(MACHINE_GUEST_TOOLS_TAG)/rootfs-tools.ext2
-MACHINE_LINUX_IMAGE_URL = https://github.com/cartesi/machine-linux-image/releases/download/$(MACHINE_LINUX_IMAGE_TAG)/$(MACHINE_LINUX_IMAGE_FILENAME)
+LINUX_IMAGE_URL = https://github.com/cartesi/linux/releases/download/$(LINUX_TAG)/linux-$(LINUX_VERSION).bin
 ROOTFS_TOOLS_IMAGE = $(CARTESI_IMAGES_PATH)/rootfs-tools.ext2
-LINUX_IMAGE = $(CARTESI_IMAGES_PATH)/$(MACHINE_LINUX_IMAGE_FILENAME)
+LINUX_IMAGE = $(CARTESI_IMAGES_PATH)/linux-$(LINUX_VERSION).bin
 ROOTFS_TOOLS_INPUTS_HASH := $(shell printf '%s\n' \
 	'$(MACHINE_GUEST_TOOLS_TAG)' \
 	'$(MACHINE_GUEST_TOOLS_ROOTFS_SHA256)' | shasum -a 256 | head -c 64)
 LINUX_IMAGE_INPUTS_HASH := $(shell printf '%s\n' \
-	'$(MACHINE_LINUX_IMAGE_TAG)' \
-	'$(MACHINE_LINUX_IMAGE_FILENAME)' \
-	'$(MACHINE_LINUX_IMAGE_SHA256)' | shasum -a 256 | head -c 64)
+	'$(LINUX_TAG)' \
+	'$(LINUX_VERSION)' \
+	'$(LINUX_SHA256)' | shasum -a 256 | head -c 64)
 ROOTFS_TOOLS_INPUTS_KEY = $(CARTESI_IMAGES_PATH)/.rootfs-tools-$(ROOTFS_TOOLS_INPUTS_HASH)
 LINUX_IMAGE_INPUTS_KEY = $(CARTESI_IMAGES_PATH)/.linux-$(LINUX_IMAGE_INPUTS_HASH)
 CARTESI_IMAGES = $(CARTESI_IMAGES_PATH)/linux.bin $(CARTESI_IMAGES_PATH)/rootfs.ext2
@@ -225,8 +225,8 @@ $(ROOTFS_TOOLS_IMAGE): $(ROOTFS_TOOLS_INPUTS_KEY)
 	touch $@
 
 $(LINUX_IMAGE): $(LINUX_IMAGE_INPUTS_KEY)
-	wget -q -O $@ $(MACHINE_LINUX_IMAGE_URL)
-	printf '%s  %s\n' '$(MACHINE_LINUX_IMAGE_SHA256)' '$@' | shasum -a 256 -c -
+	wget -q -O $@ $(LINUX_IMAGE_URL)
+	printf '%s  %s\n' '$(LINUX_SHA256)' '$@' | shasum -a 256 -c -
 	touch $@
 
 $(CARTESI_IMAGES_PATH)/rootfs.ext2: $(ROOTFS_TOOLS_IMAGE)

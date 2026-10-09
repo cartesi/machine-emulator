@@ -1,8 +1,10 @@
 # Contract event requirements for the Lua PRT bridge
 
 This proposal specifies the event changes needed by the
-[Lua PRT bridge](prt-lua-bridge.md). The baseline is Dave commit 16d49bf8.
-These are requested changes, not an implemented ABI.
+[Lua PRT bridge](prt-lua-bridge.md). It targets Dave's tournament interface
+with commitment-build budgets, child-return refills, and response-budget
+discounts on wins, together with the planned two-level deployment. The event
+extensions below are requested changes, not an implemented ABI.
 
 The goal is to simplify the implementation of validator nodes. A client should
 turn every event into its next job with a static table, using only the event
@@ -32,6 +34,8 @@ value to creation events, and one new event. StandingChanged carries the
 instants the contract itself compares against at closure. Dave floated
 emitting the survivor's paused allowance on MatchDeleted for the same purpose.
 StandingChanged emits the resulting instants where the contract computes them.
+The newer clock accounting changes those instants, not the information the
+client needs: discounts and refills remain contract responsibilities.
 
 ## The diff
 
@@ -233,9 +237,31 @@ Closure and winner expiry are time-driven, but the instants that drive them
 are fixed at the last state change, and the contract can emit them there. No
 standing read per tournament remains.
 
+The emitted standing must include all clock adjustments from the completed
+call. A leaf proof or timeout win discounts at most one responseBudget from
+the winner's incurred cost, after eligibility has been decided on the full
+cost. Child propagation deducts elapsed time from the child's paused winner
+allowance, then installs this allowance in the parent:
+
+```text
+min(carried + commitmentBudget + 2 * responseBudget, parentPairEnvelope)
+```
+
+Here carried is the positive remainder returned by innerResult, and
+parentPairEnvelope is the maximum of the two parent clocks' paused allowances
+after sealing. The refill can keep the installed allowance at that cap despite
+a propagation delay. It does not extend the child's winnerExpiresAt. Any
+resulting MatchCreated deadlines and StandingChanged instants describe the
+adjusted clocks, so clients need not implement the formula.
+
 The tournament does not need to know its epoch. A client associates
 EpochSealed's epoch number with its tournament address and stages when the
-root's StandingChanged shows no matches and a dangling commitment it holds.
+root's StandingChanged shows no matches and a dangling commitment it holds,
+provided the committed final state satisfies MachineValidityProof. An honest
+terminal-state commitment can win without satisfying that proof. The client
+reports the terminal outcome and continues bond recovery without staging.
+It checks validity from its own final-state proof; no extra event field or
+tournament view is needed.
 
 ## The conversion table
 
@@ -257,7 +283,7 @@ that combine to produce its computation hash.
 | NewInnerTournament(h, C, one, two, f1, f2, descriptor, bondValue) | cancel the parent match's three jobs. Holders of one or two join C. Everyone follows C's stream and installs P.eliminateInnerTournament(C), where P is the emitter | C, descriptor, bondValue | commitment over C's window with final state in {f1, f2} | join before C's joining deadline. Eliminate from C's joining deadline |
 | MatchDeleted(h, one, two, reason, winner) | cancel the match's three jobs and any linked child's propagation and elimination. Keep the child's bond recovery | | | |
 | StandingChanged on child C of (P, h) | matchCount > 0 cancels the result jobs. With matchCount 0 and a dangling commitment, the holder of parentCommitment calls P.winInnerTournament(C, children), anyone calls P.eliminateInnerTournament(C), and the claimer of dangling calls C.tryRecoveringBond. With matchCount 0 and no dangling commitment, anyone eliminates | C, parentCommitment | children of parentCommitment | win in [resultAt, winnerExpiresAt). Eliminate from winnerExpiresAt, or from resultAt with no dangling. Recover from resultAt |
-| StandingChanged on root R of epoch e | matchCount > 0 cancels the result jobs. With matchCount 0 and a dangling commitment, its holder calls stageTournamentResult(e, proof) and its claimer calls R.tryRecoveringBond, as separate jobs. With no dangling commitment there is no staging job | e | the MachineValidityProof of the winner's final state | from resultAt |
+| StandingChanged on root R of epoch e | matchCount > 0 cancels the result jobs. With matchCount 0 and a dangling commitment, its holder calls stageTournamentResult(e, proof) only if the final state satisfies MachineValidityProof; its claimer independently calls R.tryRecoveringBond. Report a terminal winner without scheduling staging. With no dangling commitment there is no staging job | e | the winner's final-state proof and validity check | from resultAt |
 | CommitmentJoined on T | complete the matching join job, whoever submitted it | | | immediate |
 | EpochStaged | complete staging for the epoch, whoever submitted it. Keep R's bond recovery | | | immediate |
 | BondRecovered on T | complete T's bond recovery, whoever submitted it | | | immediate |
@@ -323,8 +349,17 @@ allowance runs out.
   deadlines. Equal deadlines leave no timeout-win window.
 - A won child's propagation succeeds in [resultAt, winnerExpiresAt), fails at
   winnerExpiresAt and afterwards, and is replaced by elimination at expiry.
-  Delay propagation across blocks and transactions. The allowance carried into
-  the parent shrinks by the delay and never restarts.
+  Delay propagation across blocks and transactions. innerResult's carried
+  allowance shrinks by the delay. The parent installs the carried allowance
+  plus commitmentBudget + 2 * responseBudget, capped at the parent pair's
+  post-seal envelope. Cover both capped and uncapped returns, both winner
+  orientations, and the resulting MatchCreated or StandingChanged deadlines.
+- A leaf proof or timeout win discounts the winner's incurred cost by at most
+  one responseBudget, without exceeding its prior stored allowance. Cover
+  costs below, at, and above that budget, running and paused timeout winners,
+  and both orientations. Eligibility uses the full cost before the discount:
+  the discount cannot revive an expired winner or extend a proof window.
+  Resulting deadlines and standings must include the adjustment.
 
 Re-pairing fixtures. A claim fights a sequence of matches, and each new
 opponent needs a new child commitment while old bond recoveries stay pending.
@@ -339,12 +374,25 @@ opponent needs a new child commitment while old bond recoveries stay pending.
   the submitter of the first. Holding the commitment does not establish the
   bond.
 
-Separately from the events, the unchanged proof calldata of winLeafMatch needs
-CartesiStateTransition acceptance and rejection vectors for ordinary steps,
-input delivery including terminal no-ops, absent inputs, reset boundaries,
-rejecting resets, transitions after a rejected input, and consecutive rejected
-inputs, together with the
-root and leaf commitment comparison Dave offered.
+Separately from the events, CartesiStateTransition already defines the
+winLeafMatch witness encoding. Input-window openings prefix the access logs
+with an eight-byte big-endian input length and the exact input bytes, followed
+by optional CMIO delivery and a uarch step. Closing transitions contain a
+uarch step and reset; other transitions contain one uarch step. Absent inputs
+require a zero length and no CMIO log. Existing empty inputs still require
+CMIO delivery. The verifier requires exact access-log consumption.
+
+Provide acceptance and rejection vectors for that encoding: ordinary steps,
+input delivery including terminal no-ops, absent and empty inputs, reset
+boundaries, rejecting resets, transitions after a rejected input, consecutive
+rejected inputs, and trailing or truncated witnesses. Together with the root
+and leaf commitment comparison Dave offered, these establish the bridge's
+first conformance gate before its full Anvil lifecycle.
+
+Also fixture an honest terminal-state root winner: its machine validity proof
+must fail staging while its winning claimer can recover the bond. The bridge
+must report that outcome without repeatedly attempting staging. Include a
+stageable winner to establish successful staging and independent recovery.
 
 ## Not in this ask
 

@@ -5,15 +5,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
 ### Added
-- Added `collect_mcycle_bundle` and `collect_uarch_cycle_bundle` to all machine APIs, returning the state root hashes covered by one bundle of an mcycle or uarch-cycle computation hash starting at the machine's current position
-- Added `protect` to `cartesi.util` for converting errors into `nil, error` results while preserving coroutine yields
-- Added fixed-length tuple schemas to `cartesi.tojson`/`cartesi.fromjson`: an array-valued `items` field assigns one schema type to each tuple position and requires the encoded array to have the same length
+- Added `collect_mcycle_bundle` and `collect_uarch_cycle_bundle` to all machine APIs
+- Added `protect` to `cartesi.util`
+- Added fixed-length tuple schemas to `cartesi.tojson`/`cartesi.fromjson`
+- Added resumable epochs to `--cmio-advance-state` (`begin_epoch`, `end_epoch`, `resumable`)
+- Added frontier forests to `cartesi.hash-tree`
+- Added `machine:move()` to the Lua API
+- Added outputs Merkle root validation to `--assert-rolling-template`
+
+### Fixed
+- Fixed stored machines whose page hash-tree cache could be corrupted by sync or clone
+- Fixed filesystem locks leaking into concurrently spawned processes
+- Fixed outputs Merkle root proofs being rejected on SHA-256 machines
+- Fixed progress output with VirtIO consoles
+- Fixed halt and manual yield precedence over an exhausted input budget
 
 ### Changed
-- Added outputs Merkle root validation to `--assert-rolling-template`
-- Bumped test Linux image to kernel 6.18.38-ctsi-1, now downloaded from cartesi/linux releases instead of machine-linux-image
+- Changed `send_cmio_response` to perform no-op transitions as logged and verified ones do
+- Changed CMIO response lengths in the C API to `uint32_t`
+- Replaced the computation hash sub-options of `--cmio-advance-state` with `--mcycle-computation-hash` and `--uarch-cycle-computation-hash`
+- Renamed `input_index_begin`/`input_index_end` to `input_file_index_begin`/`input_file_index_end`
+- Renamed `get_root_hash` in `cartesi.hash-tree` to `get_data_root_hash`
+- Bumped machine configuration archive version from 7 to 8
+- Bumped test Linux image to kernel 6.18.38-ctsi-1, now downloaded from cartesi/linux
 
 ## [0.21.0] - 2026-08-04
 ### Added

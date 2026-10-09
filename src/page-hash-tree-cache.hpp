@@ -499,7 +499,7 @@ public:
     page_hash_tree_cache &operator=(page_hash_tree_cache &&other) = delete;
 
     static uint64_t get_storage_length(size_t num_entries) {
-        return sizeof(lru) + (num_entries * sizeof(entry));
+        return sizeof(initialized_tag) + sizeof(lru) + (num_entries * sizeof(entry));
     }
 
     std::span<const unsigned char> get_storage_data() const noexcept {

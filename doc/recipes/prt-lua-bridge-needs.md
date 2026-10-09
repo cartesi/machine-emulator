@@ -4,7 +4,25 @@ This proposal specifies the event changes needed by the
 [Lua PRT bridge](prt-lua-bridge.md). It targets Dave's tournament interface
 with commitment-build budgets, child-return refills, and response-budget
 discounts on wins, together with the planned two-level deployment. The event
-extensions below are requested changes, not an implemented ABI.
+extensions below are requested upstream changes. The local Anvil recipe carries
+an implementation in [prt-contracts.patch](prt-contracts.patch); it is a separate
+deployment generation, not the ABI of an existing Dave deployment. Its canonical
+table has two levels: height 62 at stride 2^30, then height 30 at stride 1.
+
+The local recipe also carries [prt-step.patch](prt-step.patch), generated with
+machine-solidity-step's `make generate-constants` against the recipe emulator.
+Dave's pinned release and a locally compiled emulator can share the architecture
+ID while having different pristine uarch hashes. The state transition exposes
+`UARCH_PRISTINE_STATE_HASH()` so the bridge rejects that mismatch before joining.
+The hash stays a compiled verifier constant; no caller can choose a reset state.
+Instruction semantics and all authentication checks remain enforced by the step.
+
+The demo uses the existing DaveAppFactory, InputBox, and consensus lifecycle.
+Epoch zero remains empty; the two calculator groups stream into epochs one and
+two before their seals. Staging and acceptance use the existing consensus
+methods and events. Machine and last-output-proof checkpoints belong to the
+player and require no additional contract changes. See the
+[implementation notes](prt-bridge-implementation-notes.md).
 
 The goal is to simplify the implementation of validator nodes. A client should
 turn every event into its next job with a static table, using only the event

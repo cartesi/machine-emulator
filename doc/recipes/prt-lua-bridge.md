@@ -1,5 +1,59 @@
 # Lua PRT bridge implementation plan
 
+## Local chain recipe
+
+The experimental implementation lives in `prt-epoch.lua`, `prt-bridge.lua`,
+`prt-ethereum.lua`, and `prt-cast.lua`. `prt-demo.lua` deploys a fresh local
+chain and drives the recipe players from `prt.lua` and `prt-dishonest.lua`. It uses real InputBox
+event bytes, DaveConsensus, tournament clones, and the Solidity state transition.
+The harness advances Anvil blocks to the next emitted deadline when no move is
+ready. The bridge itself never mines or reproduces clock accounting.
+
+Deployment uses DaveAppFactory and preserves the empty epoch zero. The two
+calculator input groups run as epochs one and two. The bridge delivers each
+InputAdded before sealing, stores the final machine and last-output proof at
+the seal, and bootstraps the next player from that checkpoint while the sealed
+epoch is disputed. It stages and accepts each result and checks it against the
+checkpoint. See [implementation notes](prt-bridge-implementation-notes.md) for
+the exact lifecycle and artifact layout.
+
+From the emulator repository:
+
+```sh
+make -C doc build-prt-image
+make -C doc run-prt-bridge PRT_MODE=smoke
+make -C doc run-prt-bridge
+```
+
+The image includes the emulator, calculator snapshot, contracts, Foundry, and
+Lua scripts. Each invocation starts a fresh Anvil and creates a directory under
+`doc/recipes/cache/prt-chain/`. `story.txt` narrates the contract events;
+`deployment.json` records the addresses. Each `epoch-N/` directory retains
+its inputs, checkpoint, observations, transaction journal, and story; calculator
+epochs also retain native/Solidity proof comparisons in `proof-vectors.json`. `PRT_OUTPUT_DIR` overrides the host output
+directory. Anvil uses public development accounts and listens only inside the
+container. The eight-player story covers false claims, forged input, corrupted
+execution, disconnected players, child propagation, timeout cleanup, staging,
+acceptance, and independent bond recovery. The smoke mode uses one honest player.
+
+`prt-contracts.patch` records the proposed Dave changes against the revision
+pinned in `Dockerfile.prt`. `prt-step.patch` records upstream-generated constants
+for this emulator's pristine uarch state. A matching architecture ID alone does
+not establish that reset states match: the bridge checks the deployed pristine
+hash before playing, then compares native and Solidity verification. The proof
+tests also reject corrupted, truncated, and trailing witnesses.
+
+`cast` reads local keystores and signs one transaction at a time. Its exit status,
+receipt status, sender, destination, calldata, and value are checked. Anvil EVM
+reverts suppress that actor's attempted response to the observed event; transport
+and provider failures abort the run. The journal includes native proof results.
+The local harness uses exclusive accounts and synchronous mining. It does not
+implement the restart, pending-transaction replacement, and reorg recovery
+requirements described below for a long-lived validator. The documents retain
+those requirements as the intended design beyond this disposable-chain demo.
+
+## Validator design
+
 The goal is to simplify the implementation of validator nodes. Dave's
 Permissionless Refereed Tournaments (PRT) resolve competing claims about machine
 execution by narrowing a disagreement until a state-transition proof can settle
@@ -287,7 +341,7 @@ period_index, state_transition_offset). Its machine access logs and input bytes
 are encoded for the pinned proofs argument of winLeafMatch.
 
 Load [prt.lua](prt.lua) as a module and construct the player with
-new_player(dapp_contract, label), using the contract context with
+new_player(dapp_contract, label, last_output_proof), using the contract context with
 its validated geometry and initial state hash. The player loads the initial
 machine and owns its cache and initially empty filename table. Keep the player in a
 <close> local; its __close method releases the cache and any unfinished execution.
@@ -296,22 +350,23 @@ As InputAdded events arrive, verify and materialize each input in a local file a
 call input_added(epoch_local_index, filename) in order. The player retains the
 filename and reads the file whenever delivery or proof generation needs its bytes.
 Files must remain readable and unchanged throughout the player's lifetime, including
-disputes. The player keeps its expected boundary hash, accumulated claim forest,
-and outputs between calls. Its cache retains the latest input boundary separately
-from the thinned historical checkpoints. Each input handler acquires a scoped clone
-and calls consider(next_input_index, machine) after execution and any rollback.
-The cache reuses its latest machine when the state is unchanged, advancing only
-its logical index. Every offer still runs the historical thinning policy. Latest
-and historical boundaries own separate snapshots. Rejected and terminal inputs
-use this same operation.
+disputes. The player owns a working machine pair, accumulated claim forest, and
+outputs between calls. Its cache retains thinned historical input boundaries
+for later proof replay. Each input handler advances the owned pair, handles
+rollback for rejected input, and offers the next boundary to the cache through
+consider(next_input_index, machine). Sealing closes the working pair after
+capturing the final-machine proofs and optional persistent checkpoint.
 Builders retain computation state only. Their methods receive the working machine
 explicitly when needed; no machine is attached to a builder.
 At sealing, check the initial state and exact input bounds, then call
-epoch_sealed(input_count) to finalize the computation and output proofs. Call commit_mcycle_claim
+epoch_sealed(input_count, checkpoint_directory) to finalize the computation and
+output proofs and optionally store the final machine and last-output proof. Call commit_mcycle_claim
 only after epoch_sealed; do not defer input processing until EpochSealed.
 The player retains every accepted output and its proof, and answers client requests through
 player:prove_output(output_index). The demonstration offers the last output to the
-referee. Final-machine output-root proofs are generated from the cache on demand.
+referee. Final-machine output-root proofs are captured at sealing. A later
+player loads the saved bootstrap inputs with prt.load_epoch(directory); its
+constructor checks the machine hash and authenticates the output frontier.
 
 There is no separate begin event. Each player and cache describe one epoch.
 At each seal whose locally computed final state can start another epoch, the

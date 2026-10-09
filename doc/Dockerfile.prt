@@ -1,0 +1,65 @@
+ARG TOOLS_BASE=cartesi/machine-emulator-docs:devel
+FROM ghcr.io/foundry-rs/foundry:v1.5.1 AS foundry
+
+FROM ${TOOLS_BASE} AS tools
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl git jq wget && rm -rf /var/lib/apt/lists/*
+# Match Dave's CI tool version; Debian's just predates stable script recipes.
+RUN case "$(uname -m)" in \
+      aarch64) just_sha=f225044a81adea6e0b3a8b9370aaf374e6af76c8735ae263ac993df55fd137ec ;; \
+      x86_64) just_sha=45b548094283cb9739af8f13273b8cddeee869f5b4ef2bb631b1f311cb566155 ;; \
+      *) exit 1 ;; esac && \
+    wget -q -O /tmp/just.tar.gz "https://github.com/casey/just/releases/download/1.57.0/just-1.57.0-$(uname -m)-unknown-linux-musl.tar.gz" && \
+    echo "$just_sha  /tmp/just.tar.gz" | sha256sum -c - && \
+    tar -xzf /tmp/just.tar.gz -C /usr/local/bin just && rm /tmp/just.tar.gz
+COPY --from=foundry /usr/local/bin/forge /usr/local/bin/cast /usr/local/bin/anvil /usr/local/bin/
+ENV GIT_CONFIG_GLOBAL=/dev/null
+WORKDIR /opt/dave
+ENTRYPOINT []
+
+FROM tools AS contracts
+ARG DAVE_REF=f5072c3bf91587b374f181a9191e526e53bf2834
+RUN git init . && git remote add origin https://github.com/cartesi/dave.git && \
+    git fetch --depth 1 origin "$DAVE_REF" && git checkout --detach FETCH_HEAD && \
+    git submodule update --init machine/step && \
+    just prt-contracts::install-deps && just rollups-contracts::install-deps
+COPY recipes/prt-contracts.patch /tmp/prt-contracts.patch
+RUN git apply --check /tmp/prt-contracts.patch && git apply /tmp/prt-contracts.patch && \
+    git add prt/contracts cartesi-rollups/contracts && \
+    git -c user.name='PRT recipe build' -c user.email='prt-recipe@localhost' \
+        commit -m 'Apply the local-chain recipe contract proposal'
+RUN just build-smart-contracts
+
+FROM contracts AS calibration
+RUN just programs::download-deps && just programs::build-yield
+CMD ["just", "measure-prt-gas"]
+
+FROM contracts AS recipe-contracts
+# Generated upstream with make generate-constants against this emulator build.
+# Commit in the step repository first, then record its pin in the Dave checkout.
+COPY recipes/prt-step.patch /tmp/prt-step.patch
+RUN git -C machine/step apply --check /tmp/prt-step.patch && \
+    git -C machine/step apply /tmp/prt-step.patch && \
+    git -C machine/step add src/EmulatorConstants.sol && \
+    git -C machine/step -c user.name='PRT recipe build' -c user.email='prt-recipe@localhost' \
+        commit -m 'Qualify the recipe emulator pristine uarch state' && \
+    git add machine/step && \
+    git -c user.name='PRT recipe build' -c user.email='prt-recipe@localhost' \
+        commit -m 'Pin the recipe state transition' && just build-smart-contracts
+
+FROM recipe-contracts AS runtime
+COPY --from=emulator dependencies.lock /opt/dependencies.lock
+COPY --from=emulator src/cartesi/evmu.lua /usr/local/share/lua/5.4/cartesi/evmu.lua
+COPY Makefile /opt/prt/Makefile
+COPY recipes/*.lua recipes/*.sh /opt/prt/recipes/
+COPY recipes/Dockerfile.rootfs-docs recipes/puppet.c /opt/prt/recipes/
+COPY recipes/hello /opt/prt/recipes/hello
+ENV RECIPES_DIR=/opt/prt/recipes
+ENV PATH=/opt/prt/recipes:${PATH}
+ENV PRT_OUTPUT_DIR=/work
+ENV DEV_ENV_HAS_DOCGEN=no
+RUN make -C /opt/prt RECIPE_TEST_ENV=yes prt-demo-fixture
+WORKDIR /work
+ENTRYPOINT ["bash", "/opt/prt/recipes/prt-demo.sh"]
+CMD ["story"]

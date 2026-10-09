@@ -5,6 +5,10 @@
 TAG ?= devel
 
 DOCS_IMAGE = cartesi/machine-emulator-docs
+PRT_IMAGE = cartesi/machine-emulator-prt
+PRT_DAVE_DIR ?= $(abspath ../../dave-prt-bridge)
+PRT_DAVE_GIT_DIR ?= $(abspath ../../dave/.git)
+PRT_CONTRACT_COMMAND ?= just build-smart-contracts
 
 DEPENDENCIES_LOCK ?= $(abspath ../dependencies.lock)
 include $(DEPENDENCIES_LOCK)
@@ -45,6 +49,55 @@ check-format-lua:
 
 check-lua:
 	luacheck . --exclude-files '$(REPLACE_CACHE_DIR)/**'
+
+.PHONY: build-prt-tools-image prt-contracts-exec
+build-prt-tools-image:
+	docker build $(DOCKER_PLATFORM) --build-arg TOOLS_BASE=$(DOCS_IMAGE):$(TAG) --target tools \
+		-t $(PRT_IMAGE):tools -f Dockerfile.prt .
+
+.PHONY: build-prt-calibration-image measure-prt-gas
+build-prt-calibration-image:
+	docker build $(DOCKER_PLATFORM) --build-arg TOOLS_BASE=cartesi/machine-emulator:0.21.0 \
+		--target calibration -t $(PRT_IMAGE):calibration -f Dockerfile.prt .
+
+measure-prt-gas:
+	docker run --rm $(DOCKER_PLATFORM) $(PRT_IMAGE):calibration
+
+.PHONY: test-prt-contracts
+test-prt-contracts:
+	docker run --rm $(DOCKER_PLATFORM) $(PRT_IMAGE):calibration \
+		bash -c 'just test-smart-contracts && just test-prt-gas && just bind && just prt-contracts::compatibility-hashes'
+
+.PHONY: build-prt-image run-prt-bridge
+build-prt-image:
+	$(MAKE) -C .. uarch-with-toolchain
+	$(MAKE) build-docs-image
+	docker build $(DOCKER_PLATFORM) --build-context emulator=.. \
+		--build-arg TOOLS_BASE=$(DOCS_IMAGE):$(TAG) --target runtime \
+		-t $(PRT_IMAGE):$(TAG) -f Dockerfile.prt .
+
+PRT_OUTPUT_DIR ?= $(REPLACE_CACHE_DIR)/prt-chain
+run-prt-bridge:
+	mkdir -p "$(PRT_OUTPUT_DIR)"
+	docker run --rm $(DOCKER_PLATFORM) --user "$$(id -u):$$(id -g)" \
+		-v "$(PRT_OUTPUT_DIR):/work" $(PRT_IMAGE):$(TAG) $(PRT_MODE)
+
+prt-contracts-exec:
+	docker run --rm $(DOCKER_PLATFORM) -v "$(PRT_DAVE_DIR):/opt/dave" \
+		-v "$(PRT_DAVE_DIR):$(PRT_DAVE_DIR)" -w "$(PRT_DAVE_DIR)" \
+		-v "$(PRT_DAVE_GIT_DIR):$(PRT_DAVE_GIT_DIR):ro" \
+		-e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0="$(PRT_DAVE_DIR)" \
+		$(PRT_IMAGE):tools bash -c '$(PRT_CONTRACT_COMMAND)'
+
+PRT_MODE ?= story
+.PHONY: test-prt-bridge
+test-prt-bridge:
+	docker run --rm $(DOCKER_PLATFORM) --entrypoint bash --user "$$(id -u):$$(id -g)" \
+		-e RECIPES_DIR=/work/recipes -e PRT_OUTPUT_DIR=/work/recipes/cache/prt-chain \
+		-v "$(DEPENDENCIES_LOCK):/dependencies.lock:ro" \
+		-v "$(CURDIR):/work" \
+		-v "$(abspath ../src/cartesi/evmu.lua):/usr/local/share/lua/5.4/cartesi/evmu.lua:ro" \
+		-w /work $(PRT_IMAGE):$(TAG) recipes/prt-demo.sh $(PRT_MODE)
 
 ROOTFS_DOCS_INPUTS := \
     $(RECIPES_DIR)/Dockerfile.rootfs-docs \
@@ -213,6 +266,9 @@ RECIPE_TEST_ENV ?= no
 GAME_TEST_DIR := $(REPLACE_CACHE_DIR)/game-tests
 .PHONY: test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat
 ifeq ($(RECIPE_TEST_ENV),yes)
+.PHONY: prt-demo-fixture
+prt-demo-fixture: $(GAME_TEST_DIR)/initial-hash
+
 test-prt-protocol:
 	bash $(RECIPES_DIR)/game-runner-test.sh
 	@work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; \
@@ -268,7 +324,7 @@ template.d: README.md.template replace.lua | $(REPLACE_CACHE_DIR)
 	    -M docs_image_id="$(DOCS_IMAGE_ID)" \
 	    --lua-filter replace.lua README.md.template -o $@
 
-ifeq (,$(filter clean test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat,$(MAKECMDGOALS)))
+ifeq (,$(filter clean prt-demo-fixture build-prt-tools-image build-prt-calibration-image measure-prt-gas test-prt-contracts prt-contracts-exec test-prt-bridge build-prt-image run-prt-bridge test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat,$(MAKECMDGOALS)))
 -include template.d
 endif
 

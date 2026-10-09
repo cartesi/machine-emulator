@@ -1,0 +1,394 @@
+# PRT bridge implementation notes
+
+The Docker recipe runs the two calculator epochs against Dave contracts on
+Anvil, using the existing players from [prt.lua](prt.lua) and
+[prt-dishonest.lua](prt-dishonest.lua). The image compiles patched contracts
+during its build. Each invocation starts a fresh chain, deploys an application,
+streams the two calculator epochs, settles their results, and records a story
+from the contract events. Epoch zero stays empty, as in the normal Dave deployment.
+
+These notes describe the implemented demo. The broader validator design and
+contract event proposal remain in [prt-lua-bridge.md](prt-lua-bridge.md) and
+[prt-lua-bridge-needs.md](prt-lua-bridge-needs.md).
+
+## Responsibilities
+
+```mermaid
+flowchart LR
+    H["Demo harness"] -->|"deploys, posts inputs, advances blocks"| A["Anvil / Dave contracts"]
+    A -->|"JSON-RPC events"| B["Lua bridge"]
+    B -->|"computation requests"| P["Existing recipe players"]
+    P -->|"claims, openings, proofs"| B
+    B -->|"cast-signed transactions"| A
+    A -->|"observed contract events"| N["Story narration"]
+```
+
+The contracts own pairing, clocks, move validity, and tournament results. The
+players own machine execution, computation hash trees, and proof generation.
+The bridge translates contract events into player requests and transactions.
+The harness owns deployment, actor selection, local mining, and narration.
+
+| File | Responsibility |
+| --- | --- |
+| [Dockerfile.prt](../Dockerfile.prt) | Fetch, patch, and compile contracts; package the emulator and recipe |
+| [prt-demo.sh](prt-demo.sh) | Prepare the run directory and keystores; start and stop Anvil |
+| [prt-demo.lua](prt-demo.lua) | Deploy the application, deliver inputs, construct actors, drive the run, and narrate events |
+| [prt-epoch.lua](prt-epoch.lua) | Deliver the ordered input stream, validate the seal, and start the dispute |
+| [prt-bridge.lua](prt-bridge.lua) | Observe the dispute, derive eligible actions, call players, and submit responses |
+| [prt-ethereum.lua](prt-ethereum.lua) | Decode ABI events, encode calls, translate coordinates, and serialize proofs |
+| [prt-cast.lua](prt-cast.lua) | Make HTTP JSON-RPC requests and invoke cast for signing and submission |
+| [prt.lua](prt.lua) | Execute inputs, build commitments and proofs, and save or load epoch checkpoints |
+| [prt-dishonest.lua](prt-dishonest.lua) | Apply the existing dishonest strategies to the same player implementation |
+| [prt-bridge-test.lua](prt-bridge-test.lua) | Check ABI encoding, process boundaries, event ordering, and scheduling |
+| [prt-proof-test.lua](prt-proof-test.lua) | Compare native and deployed Solidity transition verification |
+
+All actors currently run in one Lua process. Each has its own player object,
+claim state, and signing account. These are the recipe players, with checkpoint
+export at sealing and authenticated continuation from the previous last-output
+proof. Their computation handlers are called directly, without a socket protocol
+or the simulated referee's scheduling callbacks.
+
+Each calculator epoch has eight actors: the honest player, a forger that
+substitutes an input, a tamperer that corrupts execution, two fabulists that
+alter claimed hashes, and three quitters that post claims and disconnect.
+A separate keeper account handles cleanup and acceptance. Only the honest
+player exports a checkpoint, selected explicitly by the harness. The epoch
+listener passes each actor's configured checkpoint destination to its player.
+
+## Image build and patches
+
+The Dockerfile fetches the Dave revision pinned by `DAVE_REF`, initializes its
+`machine/step` submodule, and installs the locked Solidity dependencies. It does
+not copy the separate local Dave worktree into the image.
+
+Both patches live beside this file, in `doc/recipes/`:
+
+- [prt-contracts.patch](prt-contracts.patch) applies to the Dave checkout. It
+  contains the proposed event changes, two-level geometry, corresponding gas
+  allocations and tests. Deployment uses the existing `DaveAppFactory`.
+- [prt-step.patch](prt-step.patch) applies inside `machine/step`. It changes the
+  generated `UARCH_PRISTINE_STATE_HASH` to match this emulator build. It changes
+  no instruction semantics or verification rules.
+
+The event proposal adds creation descriptors and bonds, ordered match
+participants, computation coordinates and states, and the deadlines needed to
+respond or clean up. `StandingChanged` exposes the current candidate and its
+result and expiry boundaries. Gas allocations account for the changed events
+and two-level geometry. The complete event diff and gas rationale are in
+[the contract requirements](prt-lua-bridge-needs.md).
+
+The build checks patch applicability with `git apply --check`, applies the
+patches, records them in the container's Git checkouts, and compiles through
+Dave's `just build-smart-contracts`. The final image contains the resulting
+creation bytecode and ABI artifacts under `/opt/dave`, together with Foundry,
+the emulator, Lua scripts, and the calculator machine snapshot. A run deploys
+these packaged artifacts; it does not fetch or compile contracts at startup.
+
+The Makefile builds the separate calibration target with the release emulator
+for Dave's gas fixtures. The runtime target applies the recipe's step
+patch and rebuilds the contracts against it. Calibration and recipe execution
+therefore use their corresponding emulator and Solidity reset constants.
+
+The configured root has height 62 and stride `2^30`; its leaf tournaments have
+height 30 and stride 1. This matches `prt.new_geometry(10)`. The demo uses this
+fixed geometry and checks creation descriptors when building claims.
+
+The pristine-uarch patch is necessary because matching architecture IDs alone
+does not guarantee matching reset states. Startup compares the deployed
+verifier's pristine hash with the emulator's hash before playing.
+
+## Deployment and InputBox
+
+`prt-demo.sh` creates keystores from Anvil's public development mnemonic and
+starts Anvil with funded accounts, the Prague hardfork, and RPC listening on
+`127.0.0.1:8545` inside the container. The shell stops Anvil when the run exits.
+
+`prt-demo.lua` reads each compiled artifact, appends ABI-encoded constructor
+arguments to its creation bytecode, and submits a deployment through
+`cast send --create`. It deploys:
+
+1. The `Tournament` implementation and `CartesiStateTransition` verifier.
+2. `CanonicalTournamentParametersProvider` and `MultiLevelTournamentFactory`.
+3. The real Rollups `InputBox` and `ApplicationFactory`.
+4. Dave's existing `DaveAppFactory`, then calls `newDaveApp`.
+
+`newDaveApp` creates the Application and DaveConsensus, migrates the Application's
+validator to that consensus, and renounces ownership in one transaction. The
+harness learns both addresses from `DaveAppCreated`. There is no custom
+application deployment helper. The calculator configures no withdrawals,
+refund portals, or sentries; its staging period is ten blocks.
+
+DaveConsensus immediately seals empty epoch zero. The honest bootstrap player
+joins that tournament, proves its unchanged final machine and empty outputs
+root, and stages the result. The keeper accepts it after the staging period.
+Acceptance seals epoch one from the InputBox bounds at that moment. Every later
+acceptance follows the same contract lifecycle.
+
+## Streaming the two calculator epochs
+
+| Dave epoch | Global input indices | Calculator payloads | New global output indices |
+| --- | --- | --- | --- |
+| 0 | none | empty bootstrap | none |
+| 1 | 0-2 | `6*2^1024 + 3*2^512`, `invalid input`, `2^2048` | 0-1 |
+| 2 | 3-5 | `(2^256 - 1) * (2^256 - 1)`, `scale=80; sqrt(2)`, `scale=100; 355/113` | 2-4 |
+
+Each payload ends with a newline. The invalid input is rejected by the
+calculator and adds no output. These are the two input groups from the README
+calculator example, numbered one and two on Dave to preserve its empty epoch zero.
+
+Before submitting a group's inputs, the harness constructs its players from
+the preceding epoch's final machine and last-output proof. It submits each
+payload through `InputBox.addInput(application, payload)` using the deployer
+account, then polls the epoch listener immediately. Inputs for epoch one arrive
+while epoch zero awaits settlement; inputs for epoch two arrive while epoch one
+awaits settlement. Thus input execution is complete before the corresponding
+seal arrives; sealing finalizes commitments and output proofs.
+
+The harness follows this order:
+
+| Step | Computation and persistence | Chain progress |
+| --- | --- | --- |
+| Deploy | Seal the empty bootstrap player and save checkpoint 0 | DaveAppFactory creates the app and consensus; epoch 0 is sealed |
+| Accumulate epoch 1 | Load checkpoint 0 and process inputs 0-2 as they arrive | Inputs enter InputBox while epoch 0 is unsettled |
+| Settle epoch 0 | On the new seal, finalize epoch 1 and save checkpoint 1 | Stage and accept epoch 0; consensus seals epoch 1 |
+| Accumulate epoch 2 | Load checkpoint 1 and process inputs 3-5 as they arrive | Inputs enter InputBox while epoch 1 is unsettled |
+| Settle epoch 1 | On the new seal, finalize epoch 2 and save checkpoint 2 | Resolve epoch 1's disputes, stage, and accept; consensus seals epoch 2 |
+| Settle epoch 2 | Check its accepted result against checkpoint 2 | Resolve epoch 2's disputes, stage, and accept; consensus seals empty epoch 3 |
+
+The next player's execution starts from the preceding player's computed final
+state before that state is accepted on-chain. The later seal must authenticate
+that starting state. Accumulation and disputes overlap in the epoch lifecycle;
+the demo drives their handlers synchronously in one Lua process.
+
+`prt-epoch.lua` fetches InputBox and consensus logs through one sampled head and
+sorts them together by block and log index. For this application's `InputAdded`,
+it requires consecutive global indices, writes the exact `input` bytes to a
+file, and calls every player's `input_added(index - input_begin, filename)`.
+The bytes include InputBox metadata. Proof encoding always uses these original
+bytes, even when a dishonest player privately substitutes a forged input.
+
+On `EpochSealed`, the listener checks the initial machine hash, preceding outputs
+root, and both input bounds against its bootstrap and processed inputs. It calls
+`epoch_sealed(input_count, checkpoint_directory)` on the honest player and seals
+the other players without saving them. It then constructs the dispute bridge.
+Logs after the seal cannot feed more inputs to that player. Repeated observations
+check their already-applied prefix and never execute an input twice. A changed
+history aborts; automatic reorg recovery is not implemented.
+
+## Machine and output continuation
+
+The player owns checkpoint persistence. At sealing it stores its exact final
+machine before closing execution. Each honest `epoch-N/checkpoint/` contains:
+
+- The emulator's stored machine.
+- `last-output-proof.json` when output history is nonempty.
+- `epoch.json`, written last, with format version, initial and final machine
+  hashes, outputs root and count, input count, and period geometry.
+
+The last-output proof authenticates the global last leaf and lets the next
+player reconstruct the output frontier. It is distinct from the machine proof
+that binds the outputs root to the final machine for on-chain staging. If an
+epoch produces no new outputs, it preserves the inherited last-output proof.
+The empty bootstrap has no last-output proof.
+
+`prt.load_epoch(directory)` reads and validates the manifest and output proof,
+returning the arguments for `prt.new_player(dapp, label, last_output_proof)`.
+Player construction loads and checks the machine hash, verifies that the proof
+is the last output, and binds its root to the machine's CMIO tx buffer. A missing
+proof is valid only when that buffer contains the empty output-tree root.
+
+The bootstrap API for a saved checkpoint is:
+
+```lua
+local prt = require("prt")
+local dapp, last_output_proof = prt.load_epoch(checkpoint_directory)
+local player <close> = prt.new_player(dapp, "honest", last_output_proof)
+```
+
+The returned `dapp` contains the stored machine directory, its expected initial
+hash, and the geometry. The bridge supplies this new epoch's global input lower
+bound separately and converts incoming indices to player-local offsets.
+
+A checkpoint initially records the player's computation. Later settlement must
+agree with its final machine and outputs root. The demo checks that agreement
+for every epoch. It also opens the epoch-two checkpoint in a fresh player and
+seals an empty continuation, checking that the final machine and inherited proof
+remain unchanged. Checkpoints bootstrap later epoch execution; they do not
+restore a partially completed dispute or a pending transaction.
+
+## Event observation and scheduling
+
+The bridge polls HTTP JSON-RPC. Each tick samples the latest block number and
+hash, then requests `eth_getLogs` from block zero through that head for the
+factory, consensus, and root tournament. Each `NewInnerTournament` event adds
+the child address to the set of streams fetched during the same observation.
+
+Event signatures and layouts come from the compiled contract ABIs. The bridge
+uses `cartesi.evmu` to decode indexed fields and event data, preserving full
+256-bit coordinates. Its selectorless `encode_abi` and `decode_abi` operations
+also encode constructor arguments and decode view results. The bridge sorts
+logs by block and log index, rejects duplicate
+positions, removed logs, and inconsistent block hashes, and rechecks the
+sampled head. It also checks that the observed epoch seal binds the configured
+root tournament to the expected initial machine hash.
+
+Every tick reconstructs temporary tournament contexts, latest match events,
+standings, and eligible actions from those logs. Later events replace or cancel
+earlier actions. Player computations and local claims survive ticks; the
+observed dispute state is reconstructed afresh.
+
+| Observed information | Action derived by the bridge |
+| --- | --- |
+| Tournament creation, descriptor, and bond | Ask the player for a commitment and join |
+| `MatchCreated` or `MatchAdvanced` | Request a bisection opening or divergence seal |
+| `NewInnerTournament` | Build the relevant uarch commitment and join the child |
+| `LeafMatchSealed` | Request and encode a state-transition proof |
+| Emitted timeout boundaries | Claim a timeout win or eliminate the match |
+| `StandingChanged` | Propagate a child result, stage the root result, or recover a bond |
+| `MatchDeleted` | Cancel pending actions for that match |
+| `EpochStaged` | Schedule acceptance after the configured staging period |
+| Next `EpochSealed` | Confirm acceptance and check the stored final machine and outputs root |
+
+The bridge uses the emitted response, timeout, result, and expiry boundaries.
+Eligible windows include their start and exclude their end. It performs the
+necessary interface translation, including selecting the responder from
+bisection parity, but does not reproduce the contracts' clock discounts or
+child-return refill accounting. A separate keeper account handles permissionless
+cleanup without owning a player or computation claim.
+
+## Proofs and transactions
+
+The bridge calls the existing handlers for commitments, bisection openings,
+divergence seals, transition proofs, and outputs-root proofs. `prt-ethereum.lua`
+converts their results into ABI arguments and the Solidity witness format.
+Transition witnesses combine input delivery when applicable, a uarch step,
+and a reset at the appropriate boundary. Eight-byte accesses serialize their
+complete authenticated 32-byte machine-tree leaf.
+
+For a due action, the bridge prepares the response and rechecks the chain head.
+If the head changed during computation, it returns to observation. Otherwise,
+`prt-cast.lua` preflights the transaction with `eth_call` against `pending`,
+then invokes `cast send` with the actor's keystore and password file. Command
+arguments are shell-quoted, and process exit status is checked.
+
+The bridge submits at most one transaction per tick and waits for its receipt.
+It checks receipt success and fetches the transaction to verify its sender,
+destination, calldata, and value. The local setup assumes exclusive signing
+accounts and synchronous Anvil mining; cast handles transaction construction
+and signing.
+
+Anvil EVM rejections suppress the actor's attempted action for that event.
+Other provider or transport errors abort the run. Dishonest moves can therefore
+be rejected during preflight without broadcasting a reverting transaction.
+Attempts and results are recorded in `transactions.jsonl`.
+
+Transition proofs also run through the native verifier, using the emitted
+agreed state and authoritative InputBox bytes. The bridge requires native
+validity to agree with the Solidity outcome. Before the tournament, the proof
+checks exercise input delivery, an ordinary step, an instruction reset, a late
+period reset, and absent input. Each class also checks rejection of corrupted,
+truncated, and trailing witnesses. This comparison exposed the pristine-uarch
+mismatch; no verification check was removed to make resets pass.
+
+## Mining, narration, and output
+
+Anvil mines submitted transactions immediately. When no action is eligible,
+the harness mines empty blocks so the next transaction can reach the next
+emitted deadline. Mining policy belongs to the harness; the bridge never mines.
+
+The harness narrates observed contract events into `story.txt`: joins,
+pairings, child creation, isolated transitions, proof and timeout wins,
+staging, acceptance, and bond recovery. Player labels are associated with their
+submitted commitments; the contract events supply the outcomes and reasons.
+Success requires the winning commitment to equal the honest player's claim,
+the accepted machine and outputs root to match its checkpoint, and the root
+bond to have been recovered. Staging alone does not complete an epoch.
+
+Run from `machine-emulator-2`. These commands include the MacPorts path required
+on Diego's macOS host and the workspace's Git environment:
+
+```sh
+PATH=/opt/local/bin:$PATH GIT_CONFIG_GLOBAL=/dev/null make -C doc build-prt-image
+PATH=/opt/local/bin:$PATH GIT_CONFIG_GLOBAL=/dev/null make -C doc run-prt-bridge PRT_MODE=smoke
+PATH=/opt/local/bin:$PATH GIT_CONFIG_GLOBAL=/dev/null make -C doc run-prt-bridge
+```
+
+If the matching emulator image has already been built, `EMULATOR_IMAGE_READY=yes`
+on `build-prt-image` reuses it. The target still prepares uarch and builds the
+docs and PRT runtime images.
+
+The runtime image is `cartesi/machine-emulator-prt:devel`. Smoke mode uses one
+honest player; the default story uses eight actors for each calculator epoch
+and one honest player for bootstrap. Each run creates a fresh directory under
+`doc/recipes/cache/prt-chain/`, or the absolute host path supplied through
+`PRT_OUTPUT_DIR`. Top-level `story.txt` combines the three epoch stories and
+`deployment.json` records deployed addresses. Each `epoch-N/` retains its input
+files, `epoch.json`, checkpoint, `story.txt`, `chain-logs.json`,
+`transactions.jsonl`, and local claim artifacts. Calculator epochs also retain
+`proof-vectors.json` with native/Solidity comparisons. The run also retains
+`continuation-checkpoint/`, produced by reopening checkpoint 2 and sealing an
+empty continuation. This is an off-chain persistence check, not another settled
+epoch on Anvil.
+
+For development, `make -C doc test-prt-bridge` mounts current recipe sources
+into the existing runtime image. `run-prt-bridge` tests the packaged sources.
+
+## Validation results
+
+On 2026-10-09, the rebuilt `cartesi/machine-emulator-prt:devel` completed the
+default story using its packaged scripts and contracts, without mounting the
+working recipe sources. The recorded run was `cache/prt-chain/run.51AIeY/`
+relative to this file; its `story.txt` contains the complete narration. These
+generated artifacts are local and are not part of the source distribution.
+
+| Epoch | Input range, end excluded | Cumulative outputs | Dispute observations | Invalid transition proofs rejected |
+| --- | --- | --- | --- | --- |
+| 0 | [0, 0) | 0 | 7 | 0 |
+| 1 | [0, 3) | 2 | 412 | 4 |
+| 2 | [3, 6) | 5 | 412 | 4 |
+
+All three results were staged and accepted, and their winning root bonds were
+recovered. The input records show every calculator input was processed before
+its epoch's sealing block. The checkpoint chain preserved the preceding final
+machine hash as the next initial hash. The empty continuation preserved the
+final machine hash, output count, and outputs root; its last-output proof file
+was identical byte for byte.
+
+Validation also passed for:
+
+- Five native/Solidity proof classes per calculator epoch, with corrupted,
+  truncated, and trailing witnesses rejected.
+- The bridge's independent Foundry ABI comparison, shell quoting and exit
+  status checks, deadline boundaries, ordered input delivery, replay protection,
+  mismatched seals, and changed input history.
+- The existing PRT protocol suite, including the added checks for invalid,
+  missing, or non-last continuation proofs and preservation through an empty
+  epoch.
+- Lua formatting and lint in the Makefile-managed toolchain, with no warnings.
+
+To rerun the protocol suite or test edited bridge sources against the existing
+image:
+
+```sh
+PATH=/opt/local/bin:$PATH GIT_CONFIG_GLOBAL=/dev/null make -C doc test-prt-protocol
+PATH=/opt/local/bin:$PATH GIT_CONFIG_GLOBAL=/dev/null make -C doc test-prt-bridge
+```
+
+## Current limits
+
+The recipe streams and accepts the two fixed calculator groups. Accepting epoch
+two also seals the normal empty epoch three; the demo stops there and shuts down
+Anvil. It does not expose a persistent chain for interactive use or run an
+unbounded epoch service. The configured zero-sentry settlement path waits the
+full staging period; sentry-driven early acceptance is outside this demo.
+
+The geometry, deployment, and actor population are fixed for this recipe.
+Reading complete log histories is suitable for the disposable local chain;
+log pagination and a general deployment-discovery interface are not implemented.
+Saved claim files and transaction records are diagnostic artifacts, not an
+implemented restart protocol. Pending-transaction reconciliation, replacement,
+and reorg recovery remain part of the broader validator design.
+
+The packaged story validates the Lua players against the patched contracts. It
+does not qualify the Rust node against this emulator's uarch pin; release-pinned
+Rust proof fixtures require their own coordinated update.

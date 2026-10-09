@@ -1817,15 +1817,16 @@ Epoch file writes are not an atomic transaction, so recovery after a process or 
 The uarch cycle computation hash needs no epoch files.
 Replacing `--mcycle-computation-hash` with `--uarch-cycle-computation-hash` computes it for the period `mcycle_period_index` selects, with the same `log2_mcycle_period`.
 Each input owns 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup> mcycles of the epoch, counted from the state that receives it, so the periods of input *i* start at index *i* times 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}-p</sup>.
-Period 49509 is the one in which input 0 stops, so only input 0 needs to run
-```{.bash key=rolling_calc_uch vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,prt_mch outputs=uch_line replace=source/client}
+Period []{replace=rolling_calc_uch_period/stdout code=no} is the one in which input 0 stops, so only input 0 needs to run
+```{.bash key=rolling_calc_uch_period vars=prt_mch replace=null}
+start=$(grep '^Cycles:' $prt_mch/client | sed -n 1p | cut -d' ' -f2)
+stop=$(grep '^Cycles:' $prt_mch/client | sed -n 3p | cut -d' ' -f2)
+printf '%d' $(( (stop - start) >> 10 ))
+```
+```{.bash key=rolling_calc_uch vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,period->rolling_calc_uch_period/stdout outputs=uch_line replace=source/client}
 rm -f rolling-calculator-template
 ln -sf "$tmpl" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
-# The direct run's log must place input 0's stop in the period the prose names
-start=$(grep '^Cycles:' $prt_mch/client | sed -n 1p | cut -d' ' -f2)
-stop=$(grep '^Cycles:' $prt_mch/client | sed -n 3p | cut -d' ' -f2)
-test $(( (stop - start) >> 10 )) = 49509
 {
 cartesi-jsonrpc-machine \
     --server-address=127.0.0.1:8087
@@ -1839,7 +1840,7 @@ cartesi-machine \
     --remote-shutdown \
     --load=rolling-calculator-template \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:1 \
-    --uarch-cycle-computation-hash=log2_mcycle_period:10,mcycle_period_index:49509
+    --uarch-cycle-computation-hash=log2_mcycle_period:10,mcycle_period_index:$period
 # docs:end client
 } > client 2>&1
 grep "computation hash" client > uch_line

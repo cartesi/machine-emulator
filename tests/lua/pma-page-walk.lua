@@ -15,7 +15,7 @@ for _, mode in ipairs({ 8, 9 }) do
         end
         local levels = mode - 5
         local code = cartesi.AR_RAM_START + 4096
-        local tables = config.nvram[8].start
+        local tables = cartesi.AR_RAM_START + 0x10000
         local data = config.nvram[1].start
         local atomic = operation:find("amo", 1, true) ~= nil
         local split = operation:find("split", 1, true) ~= nil

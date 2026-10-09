@@ -994,9 +994,12 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(const STATE_
     }
     // Deal with aligned accesses
     uint64_t paddr{};
-    if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) [[unlikely]] {
-        pc = raise_exception(a, pc, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_PAGE_FAULT : MCAUSE_LOAD_PAGE_FAULT,
-            vaddr);
+    if (const auto status = translate_virtual_address(a, &paddr, vaddr, PTE_XWR_R_SHIFT);
+        status != translation_status::success) [[unlikely]] {
+        const uint64_t cause = status == translation_status::access_fault ?
+            (RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT) :
+            (RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_PAGE_FAULT : MCAUSE_LOAD_PAGE_FAULT);
+        pc = raise_exception(a, pc, cause, vaddr);
         return {false, pc};
     }
     uint64_t pma_index = 0;
@@ -1111,8 +1114,11 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(c
     }
     // Deal with aligned accesses
     uint64_t paddr{};
-    if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_W_SHIFT)) [[unlikely]] {
-        pc = raise_exception(a, pc, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
+    if (const auto status = translate_virtual_address(a, &paddr, vaddr, PTE_XWR_W_SHIFT);
+        status != translation_status::success) [[unlikely]] {
+        pc = raise_exception(a, pc,
+            status == translation_status::access_fault ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_STORE_AMO_PAGE_FAULT,
+            vaddr);
         return {execute_status::failure, pc};
     }
     uint64_t pma_index = 0;
@@ -1197,7 +1203,7 @@ static auto dump_insn([[maybe_unused]] const STATE_ACCESS a, [[maybe_unused]] ui
 #ifdef DUMP_INSN
     [[maybe_unused]] auto note = a.make_scoped_note("dump_insn");
     uint64_t ppc = pc;
-    if (!translate_virtual_address<STATE_ACCESS, false>(a, &ppc, pc, PTE_XWR_X_SHIFT)) {
+    if (translate_virtual_address<STATE_ACCESS, false>(a, &ppc, pc, PTE_XWR_X_SHIFT) != translation_status::success) {
         d_printf("v    %08" PRIx64, ppc);
     } else {
         d_printf("p    %08" PRIx64, ppc);
@@ -5558,8 +5564,10 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(const STATE_ACCESS a, u
     i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset, uint64_t &pma_index, uint64_t &last_vaddr_page) {
     uint64_t paddr{};
     // Walk page table and obtain the physical address
-    if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_X_SHIFT)) [[unlikely]] {
-        pc = raise_exception(a, pc, MCAUSE_FETCH_PAGE_FAULT, vaddr);
+    if (const auto status = translate_virtual_address(a, &paddr, vaddr, PTE_XWR_X_SHIFT);
+        status != translation_status::success) [[unlikely]] {
+        pc = raise_exception(a, pc,
+            status == translation_status::access_fault ? MCAUSE_INSN_ACCESS_FAULT : MCAUSE_FETCH_PAGE_FAULT, vaddr);
         last_vaddr_page = ensure_fetch_cache_miss(pc);
         return fetch_status::exception;
     }

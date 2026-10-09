@@ -25,6 +25,7 @@ namespace cartesi {
 
 /// \brief PMA constants.
 enum PMA_constants : uint64_t {
+    PMA_RAM_INDEX = 0,                     ///< Index of the RAM descriptor
     PMA_MAX = EXPAND_UINT64_C(PMA_MAX_DEF) ///< Maximum number of PMAs
 };
 

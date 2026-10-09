@@ -105,7 +105,9 @@ test7: // U-mode is not allowed to access privileged memory
     auipc a1, 0 // return pc
     j enter_user_mode
 
-test8: // PTE with memory out of range
+test8: // A next-level PTE outside RAM raises an instruction access fault
+    la t0, skip_fetch_access_fault_trap
+    csrw mtvec, t0
     li t0, (PTE_V | PTE_U)
     li t1, (1 << 38)
     srli t1, t1, 2
@@ -117,6 +119,8 @@ test8: // PTE with memory out of range
     j enter_user_mode
 
 test9: // Recursive PTE should raise a page fault
+    la t0, skip_fetch_page_fault_trap
+    csrw mtvec, t0
     li t0, PTE_V
     la t1, page_table
     srli t1, t1, 2
@@ -266,6 +270,12 @@ skip_user_ecall_trap:
 skip_fetch_page_fault_trap:
     csrr t0, mcause
     li t1, CAUSE_FETCH_PAGE_FAULT
+    bne t0, t1, fail
+    jalr a1, 8
+
+skip_fetch_access_fault_trap:
+    csrr t0, mcause
+    li t1, CAUSE_FETCH_ACCESS
     bne t0, t1, fail
     jalr a1, 8
 

@@ -330,9 +330,12 @@ machine_address_ranges::machine_address_ranges(const machine_config &config,
     push_back(make_pmas_address_range(c.pmas), register_where{.hash_tree = true, .pmas = true});
     push_back_virtio(c.virtio, c.processor.registers.iunrep, console);
 
-    // PMA invariant: RAM at index 0; nonempty tail sorted by start; all ranges
+    // PMA invariant: RAM at PMA_RAM_INDEX; nonempty tail sorted by start; all ranges
     // pairwise disjoint (checked above); empty slots form the suffix. The PMA
     // page is immutable after construction.
+    if (m_all[m_pmas[PMA_RAM_INDEX]]->get_start() != AR_RAM_START) {
+        throw std::invalid_argument("RAM must be the first PMA");
+    }
     std::ranges::sort(
         m_pmas | std::views::drop(1), [](const auto &a, const auto &b) { return a.get_start() < b.get_start(); },
         [this](const auto i) { return *m_all[i]; });

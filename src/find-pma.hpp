@@ -37,10 +37,10 @@ auto &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
     if constexpr (requires { a.template find_pma<T>(paddr, index); }) {
         return a.template find_pma<T>(paddr, index);
     } else if constexpr (requires { a.read_pma_bounds(index); }) {
-        // Probe index 0 (RAM), then binary-search the sorted nonempty tail, treating
+        // Probe RAM, then binary-search the sorted nonempty tail, treating
         // empty suffix entries as +infinity. A miss returns the synthetic empty
         // descriptor at index 32 (PMA_MAX). Only the selected descriptor is constructed and validated.
-        index = 0;
+        index = PMA_RAM_INDEX;
         const auto [ram_start, ram_length] = a.read_pma_bounds(index);
         if (ram_length == 0) [[unlikely]] {
             return a.read_pma(index);
@@ -67,10 +67,10 @@ auto &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
         return a.read_pma(index);
     } else {
         // Native accessors already own constructed descriptors. Preserve their lookup path.
-        // Probe index 0 (RAM), then binary-search the sorted nonempty tail, treating
+        // Probe RAM, then binary-search the sorted nonempty tail, treating
         // empty suffix entries as +infinity. A miss returns the synthetic empty
         // descriptor at index 32 (PMA_MAX). Only probed descriptors are validated.
-        index = 0;
+        index = PMA_RAM_INDEX;
         auto &ram = a.read_pma(index);
         if (ram.is_empty()) [[unlikely]] {
             return ram;

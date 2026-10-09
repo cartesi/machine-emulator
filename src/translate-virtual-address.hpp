@@ -46,8 +46,8 @@
 #include <cstdint>
 
 #include "compiler-defines.hpp"
-#include "find-pma.hpp"
 #include "i-accept-dirty-pages.hpp"
+#include "pmas-constants.hpp"
 #include "riscv-constants.hpp"
 
 namespace cartesi {
@@ -92,6 +92,8 @@ static inline bool read_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t *pva
     return true;
 }
 
+enum class translation_status { success, page_fault, access_fault };
+
 /// \brief Walk the page table and translate a virtual address to the corresponding physical address
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \tparam UPDATE_PTE Whether PTE entries can be modified during the translation.
@@ -101,9 +103,10 @@ static inline bool read_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t *pva
 /// \param xwr_shift Encodes the access mode by the shift to the XWR triad (PTE_XWR_R_SHIFT,
 ///  PTE_XWR_R_SHIFT, or PTE_XWR_R_SHIFT)
 /// \details This function is outlined to minimize host CPU code cache pressure.
-/// \returns True if succeeded, false otherwise.
+/// \returns Success, a page fault, or an access fault while reading a PTE.
 template <typename STATE_ACCESS, bool UPDATE_PTE = true>
-static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
+static NO_INLINE translation_status translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t vaddr,
+    int xwr_shift) {
     auto prv = a.read_iprv();
     const uint64_t mstatus = a.read_mstatus();
 
@@ -119,7 +122,7 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr
     if (prv > PRV_S) [[unlikely]] {
         // We are in M-mode (or in HS-mode if Hypervisor extension is active)
         *ppaddr = vaddr;
-        return true;
+        return translation_status::success;
     }
 
     const uint64_t satp = a.read_satp();
@@ -128,7 +131,7 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr
     switch (mode) {
         case SATP_MODE_BARE: // Bare: No translation or protection
             *ppaddr = vaddr;
-            return true;
+            return translation_status::success;
         case SATP_MODE_SV39: // Sv39: Page-based 39-bit virtual addressing
         case SATP_MODE_SV48: // Sv48: Page-based 48-bit virtual addressing
 #ifndef NO_SATP_MODE_SV57
@@ -136,7 +139,7 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr
 #endif
             break;
         default: // Unsupported mode
-            return false;
+            return translation_status::page_fault;
     }
     // Here we know we are in sv39, sv48 or sv57 modes
 
@@ -154,10 +157,11 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr
     // Hence, the use of arithmetic shifts here
     const int vaddr_bits = XLEN - (LOG2_PAGE_SIZE + (levels * LOG2_VPN_SIZE));
     if ((static_cast<int64_t>(vaddr << vaddr_bits) >> vaddr_bits) != static_cast<int64_t>(vaddr)) [[unlikely]] {
-        return false;
+        return translation_status::page_fault;
     }
     // Initialize pte_addr with the base address for the root page table
     uint64_t pte_addr = (satp & SATP_PPN_MASK) << LOG2_PAGE_SIZE;
+    const auto &ram = a.read_pma(PMA_RAM_INDEX);
     for (int i = 0; i < levels; i++) {
         // Mask out VPN[levels-i-1]
         const int vaddr_shift = LOG2_PAGE_SIZE + (LOG2_VPN_SIZE * (levels - 1 - i));
@@ -166,15 +170,16 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr
         pte_addr += vpn << LOG2_PTE_SIZE; //??D we can probably save this shift here
         // Read page table entry from physical memory
         uint64_t pte = 0;
-        uint64_t pma_index = 0;
-        auto &pte_ar = find_pma<uint64_t>(a, pte_addr, pma_index);
-        if (!read_ram_uint64(a, pte_addr, &pte, pte_ar, pma_index)) [[unlikely]] {
-            return false;
+        if (!ram.contains_absolute(pte_addr, sizeof(pte))) [[unlikely]] {
+            return translation_status::access_fault;
+        }
+        if (!read_ram_uint64(a, pte_addr, &pte, ram, 0)) [[unlikely]] {
+            return translation_status::access_fault;
         }
         // The OS can mark page table entries as invalid,
         // but these entries shouldn't be reached during page lookups
         if ((pte & PTE_V_MASK) == 0) [[unlikely]] {
-            return false;
+            return translation_status::page_fault;
         }
         // Bits 60–54 are reserved for future standard use and must be zeroed
         // by software for forward compatibility. If any of these bits are set,
@@ -184,7 +189,7 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr
         // If Svnapot is not implemented, bit 63 remains reserved and must be zeroed
         // by software for forward compatibility, or else a page-fault exception is raised.
         if ((pte & (PTE_60_54_MASK | PTE_PBMT_MASK | PTE_N_MASK)) != 0) [[unlikely]] {
-            return false;
+            return translation_status::page_fault;
         }
         // Clear all flags in least significant bits, then shift back to multiple of page size to form physical address.
         const uint64_t ppn = (pte & PTE_PPN_MASK)
@@ -195,24 +200,24 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr
         if (xwr != 0) {
             // These protection bit combinations are reserved for future use
             if (xwr == PTE_XWR_W_MASK || xwr == (PTE_XWR_W_MASK | PTE_XWR_X_MASK)) [[unlikely]] {
-                return false;
+                return translation_status::page_fault;
             }
             // (We know we are not PRV_M if we reached here)
             if (prv == PRV_S) {
                 if ((pte & PTE_U_MASK)) {
                     // S-mode can never execute instructions from user pages, regardless of the state of SUM
                     if (xwr_shift == PTE_XWR_X_SHIFT) [[unlikely]] {
-                        return false;
+                        return translation_status::page_fault;
                     }
                     // If SUM is not set, forbid S-mode code from accessing U-mode memory
                     if ((mstatus & MSTATUS_SUM_MASK) == 0) [[unlikely]] {
-                        return false;
+                        return translation_status::page_fault;
                     }
                 }
             } else {
                 // Forbid U-mode code from accessing S-mode memory
                 if ((pte & PTE_U_MASK) == 0) [[unlikely]] {
-                    return false;
+                    return translation_status::page_fault;
                 }
             }
             // MXR allows read access to execute-only pages
@@ -222,12 +227,12 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr
             }
             // Check protection bits against requested access
             if (((xwr >> xwr_shift) & 1) == 0) [[unlikely]] {
-                return false;
+                return translation_status::page_fault;
             }
             // Check page, megapage, and gigapage alignment
             const uint64_t vaddr_mask = (UINT64_C(1) << vaddr_shift) - 1;
             if ((ppn & vaddr_mask) != 0) [[unlikely]] {
-                return false;
+                return translation_status::page_fault;
             }
             // Decide if we need to update access bits in pte
             if constexpr (UPDATE_PTE) {
@@ -237,19 +242,17 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr
                     update_pte |= PTE_D_MASK; // Set dirty bit
                 }
                 if (pte != update_pte) {
-                    // No intervening write changes the PMA lookup. Preserve the permission
-                    // check and ignored result: read-only PTE storage skips the A/D update.
-                    write_ram_uint64(a, pte_addr, update_pte, pte_ar, pma_index);
+                    write_ram_uint64(a, pte_addr, update_pte, ram, 0);
                 }
             }
             // Add page offset in vaddr to ppn to form physical address
             *ppaddr = (vaddr & vaddr_mask) | (ppn & ~vaddr_mask);
-            return true;
+            return translation_status::success;
             // xwr == 0 means we have a pointer to the start of the next page table
         }
         pte_addr = ppn;
     }
-    return false;
+    return translation_status::page_fault;
 }
 
 } // namespace cartesi

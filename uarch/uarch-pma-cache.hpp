@@ -75,10 +75,10 @@ public:
                 }
             }
         }
-        // Probe index 0 (RAM), then binary-search the sorted nonempty tail, treating
+        // Probe RAM, then binary-search the sorted nonempty tail, treating
         // empty suffix entries as +infinity. A miss returns the synthetic empty
         // descriptor at index 32 (PMA_MAX). Only the selected descriptor is constructed and validated.
-        index = 0;
+        index = PMA_RAM_INDEX;
         const auto ram_entry = probe(index, read_entry);
         const uint64_t ram_start = ram_entry.istart & PMA_ISTART_START_MASK;
         if (ram_entry.ilength == 0) [[unlikely]] {

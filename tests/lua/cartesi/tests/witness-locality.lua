@@ -20,7 +20,7 @@ end
 
 -- sv48-load / sv48-amo: the existing pma-page-walk recipe, prefixed with
 -- one ADDI to warm only the code TLB. Data A/D bits and both data TLBs stay
--- cold; four table levels occupy separate NVRAMs.
+-- cold; four table levels occupy separate RAM pages.
 local function sv48(instruction)
     return function()
         local config = { ram = { length = 1 << 20 }, flash_drive = {}, nvram = {} }
@@ -29,7 +29,7 @@ local function sv48(instruction)
             config.nvram[i] = { start = 0xa0000000 + i * 4096, length = 4096 }
         end
         local m = cartesi.machine(config)
-        local code, tables, data = cartesi.AR_RAM_START + 4096, config.nvram[8].start, config.nvram[1].start
+        local code, tables, data = cartesi.AR_RAM_START + 4096, cartesi.AR_RAM_START + 0x10000, config.nvram[1].start
         for i = 0, 2 do
             local at = tables - i * 4096
             m:write_memory(at, string.pack("<I8", ((at - 4096) >> 2) | 1))

@@ -7792,6 +7792,13 @@ entries are sorted by start address, all ranges are pairwise disjoint,
 and empty entries (`length=0`) form the suffix. The constructor enforces
 this invariant; the PMA page is immutable after construction.
 
+Page-table entries must reside in RAM, as described by PMA index 0. At every
+level of an address translation, an entry outside this range causes an access
+fault for the original instruction fetch, load, or store/AMO. Other memory
+ranges cannot hold page tables, even when their PMAs permit ordinary reads
+and writes. Accessed and dirty bits are updated in the RAM entry through the
+same memory access and dirty-page tracking used for other writes.
+
 Lookup probes index 0 first, then binary-searches the sorted tail,
 treating empty entries as having an infinite start address. A miss returns
 the synthetic empty descriptor at index 32, outside the serialized array.

@@ -1430,6 +1430,19 @@ static int machine_obj_index_swap(lua_State *L) {
     return 0;
 }
 
+/// \brief Moves the machine into a new handle, leaving self as an empty local handle.
+/// \details The returned handle owns the machine and its cleanup policy, so closing self is harmless.
+/// \param L Lua state.
+static int machine_obj_index_move(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    auto &new_m = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr));
+    if (cm_new(&new_m.get()) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    std::swap(m.get(), new_m.get());
+    return 1;
+}
+
 /// \brief Contents of the machine object metatable __index table.
 static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {.name = "create", .func = machine_obj_index_create},
@@ -1456,6 +1469,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {.name = "log_send_cmio_response", .func = machine_obj_index_log_send_cmio_response},
     {.name = "log_step", .func = machine_obj_index_log_step},
     {.name = "log_step_uarch", .func = machine_obj_index_log_step_uarch},
+    {.name = "move", .func = machine_obj_index_move},
     {.name = "read_console_output", .func = machine_obj_index_read_console_output},
     {.name = "read_memory", .func = machine_obj_index_read_memory},
     {.name = "read_reg", .func = machine_obj_index_read_reg},

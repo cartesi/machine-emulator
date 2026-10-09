@@ -969,7 +969,7 @@ cartesi-machine \
 produces the output
 
 ``` text
-0: 0x23747d790660c8b03d5772e0670b6d6ab9fd36715460a24ccce1ee02acce18d9
+0: 0x946c0607b1e7ca6942ea527d7abd85a5dd37c49167a992675a15e6f15f601dde
 
          .
         / \
@@ -978,17 +978,17 @@ produces the output
  \       X       \
   \----/  \---/---\
        \    / CARTESI
-44110346: 0x9c8b1ef31ae394ef257e376f3972ab0d8bc407d9c6ecb36db131021e776734af
+44110346: 0x01bd3d6a541eacdbe928f951bee9a9a37afcb1638b4d64cd0c8ee782393deedc
 ```
 
-The initial state hash `23747d79…` is the Merkle tree root hash for the
+The initial state hash `946c0607…` is the Merkle tree root hash for the
 initial Cartesi Machine state. Since Cartesi Machines are reproducible,
 the initial state hash also works as a *promise* on the result of the
 entire computation.
 
-In other words, the “final state hash” `9c8b1ef3…` is the “only”
+In other words, the “final state hash” `01bd3d6a…` is the “only”
 possible outcome for the `--final-hash` at cycle `44110346`, given the
-result of the `--initial-hash` operation was `23747d79…`.
+result of the `--initial-hash` operation was `946c0607…`.
 
 > [!NOTE]
 >
@@ -1018,7 +1018,7 @@ cartesi-machine \
 produces instead the output
 
 ``` text
-0: 0x23747d790660c8b03d5772e0670b6d6ab9fd36715460a24ccce1ee02acce18d9
+0: 0x946c0607b1e7ca6942ea527d7abd85a5dd37c49167a992675a15e6f15f601dde
 
          .
         / \
@@ -1034,15 +1034,15 @@ Nothing to do.
 
 Halted
 Cycles: 48435307
-48435307: 0xb7743dfd4256fdf59b8867e77c743ec882e43c832883d7355fedee63ed1441be
+48435307: 0x79fcc6469a74cdf9ac468f556b7fcb2b81bf8210d8f6343843f803d9c25db485
 ```
 
 Naturally, the initial state hash is the same as before.
 
-However, the final state hash `b7743dfd…` now pertains to cycle
+However, the final state hash `79fcc646…` now pertains to cycle
 `48435307`, where the machine is halted. This is the “only” possible
 state hash for a *halted* machine that started from state hash
-`23747d79…`.
+`946c0607…`.
 
 ### Persistent Cartesi Machines
 
@@ -1053,7 +1053,7 @@ command-line option `--store=<directory>`. (In `<directory>`, the `%h`
 escape will be replaced by the state hash in hex.) The machine is stored
 as it was right before `cartesi-machine` returns to the command line.
 For example, to store the machine corresponding to state hash
-`9c8b1ef3…`
+`01bd3d6a…`
 
 ``` bash
 cartesi-machine \
@@ -1061,7 +1061,7 @@ cartesi-machine \
     --store="machine-%8h"
 ```
 
-This command creates a directory `machine-0x9c8b1e`, containing a
+This command creates a directory `machine-0x01bd3d`, containing a
 variety of files that allow the Cartesi Machine emulator to recreate a
 machine state. Every image file is copied into the directory, so no
 external dependencies remain.
@@ -1082,7 +1082,7 @@ the corresponding Cartesi Machine, use the command-line option
 
 ``` bash
 cartesi-machine \
-    --load="machine-0x9c8b1e" \
+    --load="machine-0x01bd3d" \
     --initial-hash \
     --final-hash
 ```
@@ -1091,7 +1091,7 @@ produces the output
 
 ``` text
 Loading machine: please wait
-44110346: 0x9c8b1ef31ae394ef257e376f3972ab0d8bc407d9c6ecb36db131021e776734af
+44110346: 0x01bd3d6a541eacdbe928f951bee9a9a37afcb1638b4d64cd0c8ee782393deedc
 
         \ /   MACHINE
          '
@@ -1100,16 +1100,16 @@ Nothing to do.
 
 Halted
 Cycles: 48435307
-48435307: 0xb7743dfd4256fdf59b8867e77c743ec882e43c832883d7355fedee63ed1441be
+48435307: 0x79fcc6469a74cdf9ac468f556b7fcb2b81bf8210d8f6343843f803d9c25db485
 ```
 
 Note that, other than `--load`, no initialization command-line options
 were used. These initializations were used to define the machine before
 it was stored: their values are implicitly encoded in the stored state.
 The machine continues from where it left off, and reaches the same final
-state hash `b7743dfd…`, as if it had never been interrupted.
+state hash `79fcc646…`, as if it had never been interrupted.
 
-Note also that the initial state hash `9c8b1ef3…` after `--load` matches
+Note also that the initial state hash `01bd3d6a…` after `--load` matches
 the final state hash before `--store`. After all, they are state hashes
 concerning the state of the same machine at the same cycle. `--load`
 verifies the archive format version recorded in the stored machine, and
@@ -1120,13 +1120,13 @@ The `cartesi-machine-stored-hash` command-line utility can be used to
 extract the state hash from a stored Cartesi Machine. The command
 
 ``` bash
-cartesi-machine-stored-hash machine-0x9c8b1e
+cartesi-machine-stored-hash machine-0x01bd3d
 ```
 
 produces the output
 
 ``` text
-0x9c8b1ef31ae394ef257e376f3972ab0d8bc407d9c6ecb36db131021e776734af
+0x01bd3d6a541eacdbe928f951bee9a9a37afcb1638b4d64cd0c8ee782393deedc
 ```
 
 A stored machine can also be cloned. The option
@@ -1164,7 +1164,7 @@ For example, the command
 ``` bash
 cartesi-machine \
     --revert-mode=none \
-    --load="cloned-machine,clone:machine-0x9c8b1e,sharing:all,sync" \
+    --load="cloned-machine,clone:machine-0x01bd3d,sharing:all,sync" \
     --final-hash
 ```
 
@@ -1176,7 +1176,7 @@ Loading machine: please wait
 
 Halted
 Cycles: 48435307
-48435307: 0xb7743dfd4256fdf59b8867e77c743ec882e43c832883d7355fedee63ed1441be
+48435307: 0x79fcc6469a74cdf9ac468f556b7fcb2b81bf8210d8f6343843f803d9c25db485
 Syncing machine: please wait
 ```
 
@@ -1184,18 +1184,18 @@ No `--store` was given, yet the finished machine is on disk. The command
 
 ``` bash
 cartesi-machine-stored-hash cloned-machine
-cartesi-machine-stored-hash machine-0x9c8b1e
+cartesi-machine-stored-hash machine-0x01bd3d
 ```
 
 produces the output
 
 ``` text
-0xb7743dfd4256fdf59b8867e77c743ec882e43c832883d7355fedee63ed1441be
-0x9c8b1ef31ae394ef257e376f3972ab0d8bc407d9c6ecb36db131021e776734af
+0x79fcc6469a74cdf9ac468f556b7fcb2b81bf8210d8f6343843f803d9c25db485
+0x01bd3d6a541eacdbe928f951bee9a9a37afcb1638b4d64cd0c8ee782393deedc
 ```
 
-The clone advanced to the final state hash `b7743dfd…`, while the source
-still holds the machine at the stored state hash `9c8b1ef3…`.
+The clone advanced to the final state hash `79fcc646…`, while the source
+still holds the machine at the stored state hash `01bd3d6a…`.
 
 ### Running as root
 
@@ -1384,7 +1384,7 @@ cartesi-machine \
 The result is as follows
 
 ``` text
-0: 0x3e965d8898db74c693e3710617a9a3749faf729e9ecba03fc0590b2c61d2de95
+0: 0x68211cc9813bc67c3188dbfc7157ac21316be1e4f48d042223f5a40d13fa5fe6
 Storing machine: please wait
 ```
 
@@ -1398,10 +1398,10 @@ cartesi-machine-stored-hash calculator-template/
 we can see from the output
 
 ``` text
-0x3e965d8898db74c693e3710617a9a3749faf729e9ecba03fc0590b2c61d2de95
+0x68211cc9813bc67c3188dbfc7157ac21316be1e4f48d042223f5a40d13fa5fe6
 ```
 
-that the stored template hash is `3e965d88…`.
+that the stored template hash is `68211cc9…`.
 
 Templates are typically used by programs that control the emulator with
 the C++, Lua, or JSON-RPC interfaces.
@@ -1484,12 +1484,12 @@ The output of the command is
 
 ``` text
 Loading machine: please wait
-0: 0x3e965d8898db74c693e3710617a9a3749faf729e9ecba03fc0590b2c61d2de95
+0: 0x68211cc9813bc67c3188dbfc7157ac21316be1e4f48d042223f5a40d13fa5fe6
 ```
 
 In addition, the `pristine-input-proof.lua` file now contains a Lua
 table with the requested proof. The value of field `root_hash` is the
-expected initial state hash `3e965d88…` seen in the output of the
+expected initial state hash `68211cc9…` seen in the output of the
 `cartesi-machine` command. The `target_address` value `0xa0000000` is
 the start of the input NVRAM. The `log2_target_size` value `12` refers
 to the size of the 4KiB input NVRAM. The `target_hash` value `292c23a9…`
@@ -1559,14 +1559,14 @@ This produces the output
 
 ``` text
 Loading machine: please wait
-0: 0x55aa355fcbfa77cb75712d19ca4ec90181c6536739cbaa89695dff8b494001c4
+0: 0x7be700a190f10cbb11239463c3cf7e8fd9ceae454b51714e356a39c3f856097b
 ```
 
 In addition, the `input-proof.lua` file now contains a Lua table with
 the requested proof, which is produced after the input NVRAM has been
 replaced. The `target_hash` value `d5ea32c1…` reflects the hash computed
-for the input. The `root_hash` value `55aa355f…` differs from
-`3e965d88…` obtained for the template, as expected, and matches the
+for the input. The `root_hash` value `7be700a1…` differs from
+`68211cc9…` obtained for the template, as expected, and matches the
 final hash printed by the utility. Moreover, the `sibling_hashes`
 entries in the template Cartesi Machine and in the instantiated Cartesi
 Machine remain the same, reflecting the fact that there were no other
@@ -1602,10 +1602,10 @@ Loading machine: please wait
 
 Halted
 Cycles: 70125397
-70125397: 0xb106fef8016223bb89468a4caeedd1d8aef2310c1e586c0be5db4aa7e6ea1750
+70125397: 0xf4e44646b51534779e14690be2ff8944edf26b78f12490a7bda440a7797db3b6
 ```
 
-The `root_hash` field in the proof `b106fef8…` matches the final state
+The `root_hash` field in the proof `f4e44646…` matches the final state
 hash output by the `cartesi-machine` command-line utility. The
 `target_hash` field `1beb375b…` is the hash of the `output.raw` NVRAM.
 To compute it independently, use the `cartesi-hash-tree-hash`
@@ -1650,8 +1650,8 @@ CARTESI_AR_CMIO_RX_BUFFER_LOG2_SIZE=21
 ...
 CARTESI_VERSION_LABEL=''
 CARTESI_VERSION_MAJOR=0
-CARTESI_VERSION_MINOR=21
-CARTESI_VERSION_NUM=21000
+CARTESI_VERSION_MINOR=22
+CARTESI_VERSION_NUM=22000
 CARTESI_VERSION_PATCH=0
 ```
 
@@ -2106,8 +2106,8 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 73222305
 
 Before input 0
-73222305: 0x8daf573387b6879af156912125587addee3c090c57fa2ca5580b5b3255f8084e
-73222305: 0xe2398fc56e3a79f780a35469b5853c3804185e10fa8e25f31bae1de2d86a7ee3
+73222305: 0xa93f3c277e74e3061ae309d8523e0dcfaee3882ada535e9dc20aabcb2fce8e34
+73222305: 0x97f3f4e04081270f9fa1da2dd69fadc0be59c84ff443d36c93fe0a4278b3ea06
 
 Automatic yield tx-output (2) (0x000184 data)
 Cycles: 116430935
@@ -2119,8 +2119,8 @@ Storing input-0-outputs-merkle-root.bin
 Storing input-0-outputs-merkle-root-proof.lua
 
 Before input 1
-123049624: 0xdafa21c30a5bc6acf19f965e0f537a7ecbd93ce211d90ee2cfc3a11b3c2a5511
-123049624: 0xeeb43d766907dc8ede60efdeef2bae9156884ea719f181598d67c7bdf4e88e48
+123049624: 0x8070ee14845b3cf86ea6c8dee67411d4a1a9ffc4c74ee041f2e05466da850a21
+123049624: 0xeecf5f8dfabd039a8e55e4ba01c8e4e7cc57abedafd846a5280162ca9b57c99e
 
 Automatic yield tx-output (2) (0x000044 data)
 Cycles: 163567846
@@ -2130,8 +2130,8 @@ Cycles: 168121311
 Storing rejected-output-1-input-1.bin
 
 Before input 2
-123049624: 0xdafa21c30a5bc6acf19f965e0f537a7ecbd93ce211d90ee2cfc3a11b3c2a5511
-123049624: 0xe74f6de2e88081aa41ed017999468c0e7af195ced02d024adf4c90abcc5d566f
+123049624: 0x8070ee14845b3cf86ea6c8dee67411d4a1a9ffc4c74ee041f2e05466da850a21
+123049624: 0xe8841c305596313241c31eb94c5faf3679c7ac93d14cea6bc92288a02c9a1387
 
 Automatic yield tx-output (2) (0x0002c4 data)
 Cycles: 165092842
@@ -2153,8 +2153,8 @@ transferring information in and out. The first
 the calculator attempted to obtain its first request.
 
 Upon receiving control back, the client prints input index 0 and the
-state hash `8daf5733…`. It loads `input-0.bin` as the next request,
-prints the modified state hash `e2398fc5…`, and resumes the machine. The
+state hash `a93f3c27…`. It loads `input-0.bin` as the next request,
+prints the modified state hash `97f3f4e0…`, and resumes the machine. The
 calculator evaluates `6*2^1024 + 3*2^512` and emits the result as a
 notice. That emission is an `automatic yield tx-output` at cycle
 `116430935`, which returns control to the client. The client collects
@@ -2175,7 +2175,7 @@ purposes, the client saves the notice contents as
 `rejected-output-1-input-1.bin`. The resulting
 `manual yield rx-rejected` at cycle `168121311` rolls the machine state
 back to what it was before the input was processed. The state hash
-before input 2, `dafa21c3…`, is identical to the hash after input 0 was
+before input 2, `8070ee14…`, is identical to the hash after input 0 was
 accepted, which confirms the rejected input left no trace.
 
 Input index 2, with payload `2^2048`, is accepted like the first, so the
@@ -2233,8 +2233,8 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 171623198
 
 Before input 3
-171623198: 0x02c16d87434c36fbd2c0144075e0f14364e03d9f0452abfcac16015ec565850f
-171623198: 0x30b475b7bd117422239868fcbaeefdaa09f3cd58234fc3ae1d6f80b941483eba
+171623198: 0x6a77129abd6457a1ef4f292070834eac2b989956c8277bd15ff324db1c828e99
+171623198: 0xcf0f223407f63c1e2c70746c18d742aa55aa0ed8e0f1805a56ac7c4cfea1366f
 
 Automatic yield tx-output (2) (0x0000e4 data)
 Cycles: 212178109
@@ -2246,8 +2246,8 @@ Storing input-3-outputs-merkle-root.bin
 Storing input-3-outputs-merkle-root-proof.lua
 
 Before input 4
-218891235: 0x69d50e4a5ee02ab256eb40bba5972292ccfc5091657ec9e0cde2993e60a10a3d
-218891235: 0x3a80c931ba735a069f867bb5975526d93e41b2a7a1e8309f267cb5937360da6f
+218891235: 0x50b00ddfd4f355c38b5c6d5b6f87bdd4379cccd5436d3aaf4cb61dce023cc263
+218891235: 0x0020b068271fe995ee6afc76d5197299e045db15e1ab1fe84c2874cc2f9f3a77
 
 Automatic yield tx-output (2) (0x0000a4 data)
 Cycles: 259759834
@@ -2259,8 +2259,8 @@ Storing input-4-outputs-merkle-root.bin
 Storing input-4-outputs-merkle-root-proof.lua
 
 Before input 5
-266512857: 0x94fd81945632507aa375d2d45243168f242b3dffdbde4b86770531c7c280e006
-266512857: 0xefe1ec0e4636c554664a668f88c47271c3071bcca3ed894a5ab0f38a2a10efff
+266512857: 0xbc38041ddf67ca854387f07611ed324bfee33c523ac291891eb2d39756a8d4a3
+266512857: 0xb80c17ff19ce6bc39b832bf932e3a4e5ecebb91b6411baba662dad99b40cc62e
 
 Automatic yield tx-output (2) (0x0000c4 data)
 Cycles: 307362118
@@ -2275,8 +2275,8 @@ Storing output-3-input-4-proof.lua
 Storing output-4-input-5-proof.lua
 
 Before query
-313706977: 0x74ef2a3a075e09f2034c6c5622f9bf49c6c848cc0abd4f1cd0a20f9210824e51
-313706977: 0xbad777b099451bdabd44a6b570b1712e9e00b2574091310055c142a021892338
+313706977: 0xf5abba2a94bcd4dcba220135396ee2b3696e2ead07d8632ed4ac54c8a31f81e0
+313706977: 0x68375ee762f645743dc2a76ce8603aa0820e93f3b869a15b3ada48b276b8df77
 
 Automatic yield tx-report (4) (0x000048 data)
 Cycles: 354447124
@@ -2395,7 +2395,7 @@ as follows
 
 Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 73222305
-73222305: 0x8daf573387b6879af156912125587addee3c090c57fa2ca5580b5b3255f8084e
+73222305: 0xa93f3c277e74e3061ae309d8523e0dcfaee3882ada535e9dc20aabcb2fce8e34
 Storing machine: please wait
 ```
 
@@ -2447,8 +2447,8 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 73222305
 
 Before input 0
-73222305: 0x8daf573387b6879af156912125587addee3c090c57fa2ca5580b5b3255f8084e
-73222305: 0xe2398fc56e3a79f780a35469b5853c3804185e10fa8e25f31bae1de2d86a7ee3
+73222305: 0xa93f3c277e74e3061ae309d8523e0dcfaee3882ada535e9dc20aabcb2fce8e34
+73222305: 0x97f3f4e04081270f9fa1da2dd69fadc0be59c84ff443d36c93fe0a4278b3ea06
 
 Automatic yield tx-output (2) (0x000184 data)
 Cycles: 116430935
@@ -2515,8 +2515,8 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 73222305
 
 Before input 0
-73222305: 0x8daf573387b6879af156912125587addee3c090c57fa2ca5580b5b3255f8084e
-73222305: 0xe2398fc56e3a79f780a35469b5853c3804185e10fa8e25f31bae1de2d86a7ee3
+73222305: 0xa93f3c277e74e3061ae309d8523e0dcfaee3882ada535e9dc20aabcb2fce8e34
+73222305: 0x97f3f4e04081270f9fa1da2dd69fadc0be59c84ff443d36c93fe0a4278b3ea06
 
 Automatic yield tx-output (2) (0x000184 data)
 Cycles: 116430935
@@ -2569,7 +2569,7 @@ cartesi-machine \
 The mcycle computation hash is printed at the end of the epoch
 
 ``` text
-Mcycle computation hash: 0x3d139a29f73cde88ac5f68efa134c3a89c2b02df5907f9d8e60ec45a5427fc13
+Mcycle computation hash: 0x2258668e6f010df4a60cbef6ae1b48a56d874f63d8001c3938950f5738c05949
 ```
 
 The `log2_mcycle_period` sub-key gives *p*, the log base 2 of the
@@ -2631,7 +2631,7 @@ after checking that the machine found in the server matches
 hash tree and prints
 
 ``` text
-Mcycle computation hash: 0x3d139a29f73cde88ac5f68efa134c3a89c2b02df5907f9d8e60ec45a5427fc13
+Mcycle computation hash: 0x2258668e6f010df4a60cbef6ae1b48a56d874f63d8001c3938950f5738c05949
 ```
 
 the same hash the single execution produced. An execution with both
@@ -2663,7 +2663,7 @@ cartesi-machine \
 The hash is printed as soon as the period completes
 
 ``` text
-Uarch cycle computation hash: 0x3fecd9581050a695e7321d55259175820d224ca2742f65a70c46c1c616dda54e
+Uarch cycle computation hash: 0x4a9aa89f8e33bc51c61efca525f6312bdfa77f1d35fbc66e6c8df7fa08ecc89c
 ```
 
 A period in a later input does not require running the epoch from its
@@ -2876,22 +2876,22 @@ The output is
 
 ``` text
 Loading machine: please wait
-0: 0x55aa355fcbfa77cb75712d19ca4ec90181c6536739cbaa89695dff8b494001c4
-70125387: 0x21ade3f80fd0bba420c3adabd4721b2af208ef1dbabadb70a6541504ee47de86
-70125388: 0x95d96e8ae45ef37e068c1180ffdbfb8ecb27cd587ea5401ad7e6a5a8a548f6e1
-70125389: 0x3bc374bf67ae14e00d11d4277e0455b23f3c1f1ea57205ae1bf2c234326c0e42
-70125390: 0xfcd196d90d7241cec88d9b3b56ccc0fdb3bd15af232adf15dfcad09ba7f0882e
-70125391: 0x64fadb8dbd121c762629f9fca5448cb33fddd0babd2451fcd5fe0e5eb938adfa
-70125392: 0xee42179f31a8ac8e2b1be62ea5f681d6fa840cfcf2957ce6fa88016e88c6e6a4
-70125393: 0x671bc962c5a48417086e870f05290f8210daf5a7e0032b5c0804d4fae7f1688a
-70125394: 0x50c4d9c5b821f4f6b31a10152a41ee385af9c43b792c676b3b52af785d692441
-70125395: 0xae4acb491785bcd3da82af3da4cc98a3152f1797677d933c0f4dadd33c49b2d2
-70125396: 0x83a0da756b8cb22a6032d089548f73861219e9a1ae9daf6f68cba6bc54370ab7
-70125397: 0xb106fef8016223bb89468a4caeedd1d8aef2310c1e586c0be5db4aa7e6ea1750
+0: 0x7be700a190f10cbb11239463c3cf7e8fd9ceae454b51714e356a39c3f856097b
+70125387: 0x5f14d8d61bb7686a9f36c470be27d02cc92468f3c1aff5d42804007e49c4fa0a
+70125388: 0xcc8af643cb11f88fb03190724663b40c63d28c3076e48f07c5e854b7c023d054
+70125389: 0x2d5d4f3d1c45a8c8e9ec038563e2001a092017402eb0e1a454eb321a66d709ee
+70125390: 0xd8410cef35b4031fbde0cf3e5e1db33e333da0e44b9913183b6e7ca2700c79f8
+70125391: 0xaadb26948f1ca2a1d074182a86e8dadf1ac60d5993aa819939c74f35e1794e26
+70125392: 0x821e37726af71f010fcfe0dd0772e6b299abb7c31a4942d8790cbf589ec347b7
+70125393: 0xc2711f2939d062e385a9b9e2362ab52f8e38512de436a72df4f78b2a532c0430
+70125394: 0xfe5f64d93913c247a401476609427656ea7db30b683d6db22724291281be6e1c
+70125395: 0x11026e39a50d8b5f8513f9ab1af60596edece24f86ef8bc9bca1f6d51ac1a3d0
+70125396: 0x4ea0b5510eee8542c448c9f121881302ffac71c4cc17cada506b0736ba8c60a4
+70125397: 0xf4e44646b51534779e14690be2ff8944edf26b78f12490a7bda440a7797db3b6
 
 Halted
 Cycles: 70125397
-70125397: 0xb106fef8016223bb89468a4caeedd1d8aef2310c1e586c0be5db4aa7e6ea1750
+70125397: 0xf4e44646b51534779e14690be2ff8944edf26b78f12490a7bda440a7797db3b6
 ```
 
 The command-line option `--dump-memory-ranges[=<dir>]` causes the
@@ -3523,7 +3523,7 @@ return {
       imcyclemax = 0xffffffffffffffff,
       iprv = 0x3,
       iunrep = 0x0,
-      marchid = 0x15,
+      marchid = 0x16,
       mcause = 0x0,
       mcounteren = 0x0,
       mcycle = 0x0,
@@ -3532,7 +3532,7 @@ return {
       mepc = 0x0,
       mideleg = 0x0,
       mie = 0x0,
-      mimpid = 0x15,
+      mimpid = 0x16,
       mip = 0x0,
       misa = 0x800000000014112d,
       mscratch = 0x0,
@@ -4416,7 +4416,7 @@ cartesi-machine \
 ```
 
 ``` text
-0: 0x23747d790660c8b03d5772e0670b6d6ab9fd36715460a24ccce1ee02acce18d9
+0: 0x946c0607b1e7ca6942ea527d7abd85a5dd37c49167a992675a15e6f15f601dde
 
          .
         / \
@@ -4432,7 +4432,7 @@ Nothing to do.
 
 Halted
 Cycles: 48435307
-48435307: 0xb7743dfd4256fdf59b8867e77c743ec882e43c832883d7355fedee63ed1441be
+48435307: 0x79fcc6469a74cdf9ac468f556b7fcb2b81bf8210d8f6343843f803d9c25db485
 ```
 
 Note that the initial state hashes and the final state hashes match, as
@@ -4823,7 +4823,7 @@ The client shell produces
 
 ``` text
 Connecting to remote cartesi machine at '127.0.0.1:8084'
-Connected: remote version is 0.7.0
+Connected: remote version is 0.8.0
 
 Halted
 Cycles: 48435307
@@ -5108,7 +5108,7 @@ exits and shuts down the server. The full transcript is
 
 ``` text
 Connecting to remote cartesi machine at '127.0.0.1:8085'
-Connected: remote version is 0.7.0
+Connected: remote version is 0.8.0
 feeding expression 0
 6*2^1024 + 3*2^512
 result is
@@ -5373,7 +5373,7 @@ transcript is
 
 ``` text
 Connecting to remote cartesi machine at '127.0.0.1:8089'
-Connected: remote version is 0.7.0
+Connected: remote version is 0.8.0
 feeding expression 0
 6*2^1024 + 3*2^512
 result is
@@ -5526,7 +5526,7 @@ scale=100; 355/113
 result is
 3.141592920353982300884955752212389380530973451327433628318584070796
 4601769911504424778761061946902654
-final state hash: 0x74ef2a3a075e09f2034c6c5622f9bf49c6c848cc0abd4f1cd0a20f9210824e51
+final state hash: 0xf5abba2a94bcd4dcba220135396ee2b3696e2ead07d8632ed4ac54c8a31f81e0
 ```
 
 The final state hash matches the command-line stored-mode run, so both
@@ -6841,8 +6841,8 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 55666445
 
 Before input 0
-55666445: 0x57a88c786e6497f3bd6190ecebdc1672e8183ac9702ab38ee106ddc56353becc
-55666445: 0x248bb7fa0e542c6325383c49ac905a391a803b4e55a04d9affeb90217a0599f9
+55666445: 0x11d8127402a8a26a43a091178b8394cbfd384188f19cc5670c488a31e9ff32f2
+55666445: 0xc5a963888a72a842612a1199002996cfff51af398c1cd8415c4a3c2094d6bded
 
 Automatic yield tx-output (2) (0x000064 data)
 Cycles: 55684665
@@ -6854,16 +6854,16 @@ Storing input-0-outputs-merkle-root.bin
 Storing input-0-outputs-merkle-root-proof.lua
 
 Before input 1
-57797934: 0x9490b96520daecb4482a598c24cebe77e2f16e8004735ff266f50a7423fa2a4a
-57797934: 0x22023460e79dd72aec3f33e9eac5e9db71baf87873b1ae19dba0e181ce8f58c1
+57797934: 0x992f6e5319d011e2c074a2ccd12a5bbb5f3daaaa7b7897ddd92d497bfad7b68b
+57797934: 0x4f0ea127c78bd789be3816998b50e127e6eb871fac927b95d8a54b9f24794db9
 
 Manual yield rx-rejected (2) (0x000000 data)
 Cycles: 57801931
 Storing output-0-input-0-proof.lua
 
 Before query
-57797934: 0x9490b96520daecb4482a598c24cebe77e2f16e8004735ff266f50a7423fa2a4a
-57797934: 0x3175541c2aa94b1768d6bb5c23d8c47752a2ec0b2e52a88591e5d107bda8061d
+57797934: 0x992f6e5319d011e2c074a2ccd12a5bbb5f3daaaa7b7897ddd92d497bfad7b68b
+57797934: 0x0cc8f430cbe49df65215e0a6fa73d54499d259e1d7c1bda98cd4508b2e547d23
 
 Automatic yield tx-report (4) (0x000011 data)
 Cycles: 57799194
@@ -6873,7 +6873,7 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 57800332
 
 After query
-57797934: 0x9490b96520daecb4482a598c24cebe77e2f16e8004735ff266f50a7423fa2a4a
+57797934: 0x992f6e5319d011e2c074a2ccd12a5bbb5f3daaaa7b7897ddd92d497bfad7b68b
 Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8086'
 ```
 
@@ -7852,7 +7852,7 @@ The result is
 	};
 
 	cartesi-machine {
-		version = "0.21";
+		version = "0.22";
 		init = [55 53 45 52 3d 72 6f 6f 74 0a];
 		entrypoint = [64 74 63 20 2d 49 20 64 74 62 20 2d 4f 20 64 74 73 20 2f 73 79 73 2f 66 69 72 6d 77 61 72 65 2f 66 64 74];
 	};
@@ -9880,7 +9880,7 @@ epoch’s input files. These files represent the inputs posted to the
 blockchain:
 
 ``` bash
-lua5.4 vg.lua referee 127.0.0.1:8090 "0x8daf573387b6879af156912125587addee3c090c57fa2ca5580b5b3255f8084e" \
+lua5.4 vg.lua referee 127.0.0.1:8090 "0xa93f3c277e74e3061ae309d8523e0dcfaee3882ada535e9dc20aabcb2fce8e34" \
     input-0.bin input-1.bin input-2.bin
 ```
 
@@ -9888,7 +9888,7 @@ Then connect the honest player, which processes the inputs announced by
 the referee:
 
 ``` bash
-lua5.4 vg.lua honest 127.0.0.1:8090 "0x8daf573387b6879af156912125587addee3c090c57fa2ca5580b5b3255f8084e"
+lua5.4 vg.lua honest 127.0.0.1:8090 "0xa93f3c277e74e3061ae309d8523e0dcfaee3882ada535e9dc20aabcb2fce8e34"
 ```
 
 The first dishonest player is the forger, which substitutes
@@ -9897,31 +9897,31 @@ whereas the posted input asks for `2^2048`. All other fields remain the
 same:
 
 ``` bash
-lua5.4 vg-dishonest.lua forger 127.0.0.1:8090 "0x8daf573387b6879af156912125587addee3c090c57fa2ca5580b5b3255f8084e" 2 fake-input-2.bin
+lua5.4 vg-dishonest.lua forger 127.0.0.1:8090 "0xa93f3c277e74e3061ae309d8523e0dcfaee3882ada535e9dc20aabcb2fce8e34" 2 fake-input-2.bin
 ```
 
 The second is the tamperer, which processes the posted inputs but
 corrupts memory at mcycle offset 100 within input 2:
 
 ``` bash
-lua5.4 vg-dishonest.lua tamperer 127.0.0.1:8090 "0x8daf573387b6879af156912125587addee3c090c57fa2ca5580b5b3255f8084e" 2 100
+lua5.4 vg-dishonest.lua tamperer 127.0.0.1:8090 "0xa93f3c277e74e3061ae309d8523e0dcfaee3882ada535e9dc20aabcb2fce8e34" 2 100
 ```
 
 The third is the no-rollback player, which keeps the rejecting machine
 when input 1 finishes instead of restoring the pre-input snapshot:
 
 ``` bash
-lua5.4 vg-dishonest.lua no-rollback 127.0.0.1:8090 "0x8daf573387b6879af156912125587addee3c090c57fa2ca5580b5b3255f8084e"
+lua5.4 vg-dishonest.lua no-rollback 127.0.0.1:8090 "0xa93f3c277e74e3061ae309d8523e0dcfaee3882ada535e9dc20aabcb2fce8e34"
 ```
 
 All four players start from the same machine state, but reach different
 final state hashes. The referee first collects their claims:
 
 ``` text
-Player honest claimed 0x02c16d87....
-Player forger claimed 0xdbbe058b....
-Player tamperer claimed 0xa1cf5717....
-Player no-rollback claimed 0x3c098767....
+Player honest claimed 0x6a77129a....
+Player forger claimed 0x5993207e....
+Player tamperer claimed 0xe824ec91....
+Player no-rollback claimed 0x9d53e0c5....
 ```
 
 The first round isolates a disagreement in input 1, at the reset that
@@ -10043,7 +10043,7 @@ result of the epoch, and the referee can verify outputs against it:
 
 ``` text
 Player honest wins.
-Final state hash is 0x02c16d87434c36fbd2c0144075e0f14364e03d9f0452abfcac16015ec565850f.
+Final state hash is 0x6a77129abd6457a1ef4f292070834eac2b989956c8277bd15ff324db1c828e99.
 ```
 
 ``` text
@@ -10080,7 +10080,7 @@ original claims differ.
 Start the referee as before:
 
 ``` bash
-lua5.4 vg.lua referee 127.0.0.1:8090 "0x8daf573387b6879af156912125587addee3c090c57fa2ca5580b5b3255f8084e" \
+lua5.4 vg.lua referee 127.0.0.1:8090 "0xa93f3c277e74e3061ae309d8523e0dcfaee3882ada535e9dc20aabcb2fce8e34" \
     input-0.bin input-1.bin input-2.bin
 ```
 
@@ -10089,26 +10089,26 @@ but lets its first bisection request time out, relying on the other
 player claiming the same hash:
 
 ``` bash
-lua5.4 vg-dishonest.lua idle 127.0.0.1:8090 "0x8daf573387b6879af156912125587addee3c090c57fa2ca5580b5b3255f8084e"
+lua5.4 vg-dishonest.lua idle 127.0.0.1:8090 "0xa93f3c277e74e3061ae309d8523e0dcfaee3882ada535e9dc20aabcb2fce8e34"
 ```
 
 Connect the adversary’s two players:
 
 ``` bash
-lua5.4 vg-dishonest.lua forger 127.0.0.1:8090 "0x8daf573387b6879af156912125587addee3c090c57fa2ca5580b5b3255f8084e" 2 fake-input-2.bin
+lua5.4 vg-dishonest.lua forger 127.0.0.1:8090 "0xa93f3c277e74e3061ae309d8523e0dcfaee3882ada535e9dc20aabcb2fce8e34" 2 fake-input-2.bin
 ```
 
 ``` bash
-lua5.4 vg-dishonest.lua fabulist 127.0.0.1:8090 "0x8daf573387b6879af156912125587addee3c090c57fa2ca5580b5b3255f8084e" \
-    2 fake-input-2.bin "0x02c16d87434c36fbd2c0144075e0f14364e03d9f0452abfcac16015ec565850f"
+lua5.4 vg-dishonest.lua fabulist 127.0.0.1:8090 "0xa93f3c277e74e3061ae309d8523e0dcfaee3882ada535e9dc20aabcb2fce8e34" \
+    2 fake-input-2.bin "0x6a77129abd6457a1ef4f292070834eac2b989956c8277bd15ff324db1c828e99"
 ```
 
 The idle player and the fabulist submit the same correct final hash:
 
 ``` text
-Player idle claimed 0x02c16d87....
-Player forger claimed 0xdbbe058b....
-Player fabulist claimed 0x02c16d87....
+Player idle claimed 0x6a77129a....
+Player forger claimed 0x5993207e....
+Player fabulist claimed 0x6a77129a....
 ```
 
 When the idle player fails to answer, the referee eliminates it after
@@ -10133,7 +10133,7 @@ Player fabulist failed to prove its transition and is eliminated.
 
 ``` text
 Player forger wins.
-Final state hash is 0xdbbe058be85b2e935bc2c93e7122791e7b6c6166175c3cad6e0d54658197e68e.
+Final state hash is 0x5993207e47c35765247eedffb59be71fa1b49b53594fc7fd98512f7d54e44fec.
 ```
 
 No invalid transition proof was accepted. The Sybils agreed on a false
@@ -10146,16 +10146,16 @@ Now repeat the game, replacing the idle player with the ordinary honest
 player:
 
 ``` bash
-lua5.4 vg.lua honest 127.0.0.1:8090 "0x8daf573387b6879af156912125587addee3c090c57fa2ca5580b5b3255f8084e"
+lua5.4 vg.lua honest 127.0.0.1:8090 "0xa93f3c277e74e3061ae309d8523e0dcfaee3882ada535e9dc20aabcb2fce8e34"
 ```
 
 It submits that same correct final hash and answers the referee for
 itself:
 
 ``` text
-Player honest claimed 0x02c16d87....
-Player forger claimed 0xdbbe058b....
-Player fabulist claimed 0x02c16d87....
+Player honest claimed 0x6a77129a....
+Player forger claimed 0x5993207e....
+Player fabulist claimed 0x6a77129a....
 ```
 
 Its tentative hashes expose the disagreement where the Sybils substitute
@@ -10170,7 +10170,7 @@ Player fabulist failed to prove its transition and is eliminated.
 
 ``` text
 Player honest wins.
-Final state hash is 0x02c16d87434c36fbd2c0144075e0f14364e03d9f0452abfcac16015ec565850f.
+Final state hash is 0x6a77129abd6457a1ef4f292070834eac2b989956c8277bd15ff324db1c828e99.
 ```
 
 The fabulist’s defeat eliminates only the fabulist, even though it

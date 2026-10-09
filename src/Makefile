@@ -14,11 +14,11 @@
 # with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 #
 
-EMULATOR_MARCHID=21
+EMULATOR_MARCHID=22
 
 # Every new emulator release should bump these constants
 EMULATOR_VERSION_MAJOR=0
-EMULATOR_VERSION_MINOR=21
+EMULATOR_VERSION_MINOR=22
 EMULATOR_VERSION_PATCH=0
 EMULATOR_VERSION_LABEL=
 

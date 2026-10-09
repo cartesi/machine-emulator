@@ -27,7 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced the computation hash sub-options of `--cmio-advance-state` with `--mcycle-computation-hash` and `--uarch-cycle-computation-hash`
 - Renamed `input_index_begin`/`input_index_end` to `input_file_index_begin`/`input_file_index_end`
 - Renamed `get_root_hash` in `cartesi.hash-tree` to `get_data_root_hash`
+- Bumped MARCHID version to 22
 - Bumped machine configuration archive version from 7 to 8
+- Bumped JSON-RPC protocol version to 0.8.0
 - Bumped test Linux image to kernel 6.18.38-ctsi-1, now downloaded from cartesi/linux
 
 ## [0.21.0] - 2026-08-04

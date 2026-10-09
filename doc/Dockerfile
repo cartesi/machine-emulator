@@ -1,7 +1,7 @@
 ARG TAG=devel
-ARG MACHINE_LINUX_IMAGE_TAG
-ARG MACHINE_LINUX_IMAGE_FILENAME
-ARG MACHINE_LINUX_IMAGE_SHA256
+ARG LINUX_TAG
+ARG LINUX_VERSION
+ARG LINUX_SHA256
 ARG GENEXT2FS_VERSION=v1.5.6
 # Base for the host-tool builder stage below. This stage compiles a binary
 # that is copied into the final emulator-based image, so the base must stay
@@ -26,11 +26,11 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     make -j"$(nproc)" install
 
 FROM scratch AS linux-image
-ARG MACHINE_LINUX_IMAGE_TAG
-ARG MACHINE_LINUX_IMAGE_FILENAME
-ARG MACHINE_LINUX_IMAGE_SHA256
-ADD --checksum=sha256:${MACHINE_LINUX_IMAGE_SHA256} --chmod=0644 \
-    https://github.com/cartesi/machine-linux-image/releases/download/${MACHINE_LINUX_IMAGE_TAG}/${MACHINE_LINUX_IMAGE_FILENAME} \
+ARG LINUX_TAG
+ARG LINUX_VERSION
+ARG LINUX_SHA256
+ADD --checksum=sha256:${LINUX_SHA256} --chmod=0644 \
+    https://github.com/cartesi/linux/releases/download/${LINUX_TAG}/linux-${LINUX_VERSION}.bin \
     /linux.bin
 
 FROM cartesi/machine-emulator:$TAG

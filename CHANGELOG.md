@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `protect` to `cartesi.util` for converting errors into `nil, error` results while preserving coroutine yields
 - Added fixed-length tuple schemas to `cartesi.tojson`/`cartesi.fromjson`: an array-valued `items` field assigns one schema type to each tuple position and requires the encoded array to have the same length
 
+### Changed
+- Bumped test Linux image to kernel 6.18.38-ctsi-1, now downloaded from cartesi/linux releases instead of machine-linux-image
+
 ## [0.21.0] - 2026-08-04
 ### Added
 - Added `--nvram` and `nvram` machine configuration for guest-visible UIO memory ranges

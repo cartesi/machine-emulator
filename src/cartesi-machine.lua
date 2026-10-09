@@ -994,9 +994,13 @@ where options are:
     dump all memory ranges to files under <dir>.
     If <dir> is omitted, files are written to the current directory.
 
-  --assert-rolling-template
+  --assert-rolling-template[=outputs_merkle_root:<filename>]
     exit with failure in case the generated machine is not compatible with
-    Rolling Cartesi Machine templates.
+    Rolling Cartesi Machine templates. Requires a manual rx-accepted yield
+    with the expected outputs Merkle root in the tx buffer.
+    By default, expects the empty outputs tree padded with zero leaves.
+    For a non-genesis template, outputs_merkle_root names a file containing
+    the expected root as exactly 32 raw bytes.
 
   --quiet
     suppress cartesi-machine.lua output.
@@ -1195,7 +1199,7 @@ local cmdline = {
     load_config_format = nil,
     gdb = nil,
     exec_arguments = {},
-    assert_rolling_template = false,
+    assert_rolling_template = nil,
     log_step_mcycle_count = nil,
     log_step_filename = nil,
 }
@@ -2171,9 +2175,17 @@ options = {
     {
         "--assert-rolling-template",
         function()
-            cmdline.assert_rolling_template = true
+            cmdline.assert_rolling_template = {}
             return true
         end,
+    },
+    {
+        "--assert-rolling-template=",
+        function(keys, all, opts)
+            cmdline.assert_rolling_template = util.parse_options(keys, all, opts)
+            return true
+        end,
+        { outputs_merkle_root = "file" },
     },
     {
         "--quiet",
@@ -4387,6 +4399,24 @@ local function report_stop(m, break_reason)
     end
 end
 
+local function assert_rolling_template(m, opts)
+    local break_reason = m:run(m:read_reg("mcycle"))
+    if not is_yielded_manual(break_reason) then
+        exit_code = 2
+        return
+    end
+    local cmd, yield_reason, data = m:receive_cmio_request()
+    if not (cmd == cartesi.HTIF_YIELD_CMD_MANUAL and is_rx_accepted(yield_reason)) then
+        exit_code = 2
+        return
+    end
+    local filename = opts.outputs_merkle_root
+    local expected_root = filename and util.read_file(filename)
+        or hash_tree.frontier_get_root_hash(hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256"))
+    assert(#expected_root == cartesi.HASH_SIZE, "invalid outputs_merkle_root size: expected 32 bytes")
+    if data ~= expected_root then exit_code = 2 end
+end
+
 -- The inner loop of a run with no cmio requests ignores automatic yields.
 local function ignore_yield_automatic() end
 
@@ -4671,10 +4701,7 @@ if cmdline.load_sync then
     stderr("Syncing machine: please wait\n")
     machine:sync_stored(cmdline.load_dir)
 end
-if cmdline.assert_rolling_template then
-    local cmd, yield_reason = machine:receive_cmio_request()
-    if not (cmd == cartesi.HTIF_YIELD_CMD_MANUAL and is_rx_accepted(yield_reason)) then exit_code = 2 end
-end
+if cmdline.assert_rolling_template then assert_rolling_template(machine, cmdline.assert_rolling_template) end
 if backup:has_snapshot() then backup:revert() end
 if not cmdline.remote_address or cmdline.remote_destroy then machine:destroy() end
 os.exit(exit_code, true)

@@ -1596,6 +1596,9 @@ cartesi-machine \
 ```
 
 The `--assert-rolling-template` option makes `cartesi-machine` exit with a status-code reporting failure if the generated machine is not a Rolling Cartesi Machine template, which helps catch errors.
+It requires a manual `rx-accepted` yield whose TX buffer contains the expected outputs Merkle root.
+By default, this is the root of the empty height-63 outputs tree padded with zero leaves (the root itself is not zero).
+For a non-genesis template, use `--assert-rolling-template=outputs_merkle_root:<filename>` to read the expected root from a file containing exactly 32 raw bytes.
 The result is as follows
 ```{replace=rolling_calc_template/template}
 ```

@@ -2054,7 +2054,7 @@ describe("cartesi-machine CLI", function()
                 .. "-outh-%i.bin,outputs_merkle_root_proof:",
             "--cmio-inspect-state=query:" .. prefix .. "-query.bin," .. "report:" .. prefix .. "-qrep-%o.bin",
             "--revert-mode=none",
-            "--assert-rolling-template",
+            "--assert-rolling-template=outputs_merkle_root:" .. prefix .. "-outh-1.bin",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
@@ -2107,6 +2107,7 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     it("output proof format", function()
         local prefix = filesystem.temp_pathname()
+        local _ <close>, root = scope_temp_pathname()
         local _ <close> = tests_util.scope_exit(function()
             for _, p in ipairs({
                 prefix .. "-input-0.bin",
@@ -2119,9 +2120,8 @@ describe("cartesi-machine CLI", function()
         end)
         filesystem.write_file(prefix .. "-input-0.bin", encode_advance(0, "hello"))
 
-        -- This test inspects only the output proof files. Disable outputs_merkle_root and
-        -- outputs_merkle_root_proof so their cwd-relative defaults are not written (a stray
-        -- relative write fails on a read-only CI working directory).
+        -- Save the root for the non-genesis rolling-template assertion and disable its proof
+        -- so no cwd-relative defaults are written on a read-only CI working directory.
         run_ok({
             "--cmio-advance-state=input:"
                 .. prefix
@@ -2130,12 +2130,14 @@ describe("cartesi-machine CLI", function()
                 .. "output:"
                 .. prefix
                 .. "-out-%i-%o.bin,"
-                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
+                .. "outputs_merkle_root:"
+                .. root
+                .. ",outputs_merkle_root_proof:,"
                 .. "output_proof:"
                 .. prefix
                 .. "-lua-%o-%i.lua",
             "--revert-mode=none",
-            "--assert-rolling-template",
+            "--assert-rolling-template=outputs_merkle_root:" .. root,
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
@@ -2159,13 +2161,15 @@ describe("cartesi-machine CLI", function()
                 .. "output:"
                 .. prefix
                 .. "-out-%i-%o.bin,"
-                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
+                .. "outputs_merkle_root:"
+                .. root
+                .. ",outputs_merkle_root_proof:,"
                 .. "output_proof:"
                 .. prefix
                 .. "-json-%o-%i.lua,"
                 .. "format:json",
             "--revert-mode=none",
-            "--assert-rolling-template",
+            "--assert-rolling-template=outputs_merkle_root:" .. root,
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
@@ -2264,7 +2268,7 @@ describe("cartesi-machine CLI", function()
                 .. prefix
                 .. "-oh-%i.bin,outputs_merkle_root_proof:",
             "--revert-mode=none",
-            "--assert-rolling-template",
+            "--assert-rolling-template=outputs_merkle_root:" .. prefix .. "-oh-1.bin",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
@@ -4681,6 +4685,94 @@ dofile(%q)
             "options that modify epoch files cannot be combined with options that modify the machine"
                 .. " after the last advance state input"
         )
+    end)
+
+    local function run_rolling_template(machine, option)
+        local _ <close>, stored = scope_stored_dirname()
+        machine:store(stored)
+        return run({
+            "--load=" .. stored,
+            "--max-mcycle=0",
+            "--quiet",
+            option or "--assert-rolling-template",
+        })
+    end
+
+    it("rolling template checks genesis and non-genesis outputs Merkle roots", function()
+        -- Genesis root from libcmt's test_merkle_get_root_pristine test vector.
+        local genesis = cartesi.fromhex("0x0a162946e56158bac0673e6dd3bdfdc1e4a0e7744a120fdb640050c8d7abe1c6")
+        local frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+        hash_tree.frontier_push_back(frontier, cartesi.keccak256("output"))
+        local non_genesis = hash_tree.frontier_get_root_hash(frontier)
+        local _ <close>, root_file = filesystem.write_scope_temp_file(non_genesis)
+        local option = "--assert-rolling-template=outputs_merkle_root:" .. root_file
+        for _, hash_function in ipairs({ "keccak256", "sha256" }) do
+            local machine <close> = cartesi.machine({
+                ram = { length = 4096 },
+                hash_tree = { hash_function = hash_function },
+            })
+            machine:write_reg("iflags_Y", 1)
+            machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+            machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+            machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+            for _, data in ipairs({ genesis, non_genesis, zeros(32), "", genesis:sub(1, 31), genesis .. "\0" }) do
+                machine:write_reg("htif_tohost_data", #data)
+                -- Keep the genesis root in memory even when the yield reports zero or fewer bytes.
+                machine:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, genesis)
+                if #data > 0 then
+                    machine:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, data)
+                end
+                expect.equal((run_rolling_template(machine)), data == genesis and 0 or 2)
+                expect.equal((run_rolling_template(machine, option)), data == non_genesis and 0 or 2)
+            end
+        end
+    end)
+
+    it("rolling template checks the yield before reading the expected root", function()
+        local _ <close>, missing = scope_temp_pathname()
+        for _, registers in ipairs({
+            { iflags_Y = 0 },
+            { iflags_H = 1 },
+            { iflags_Y = 0, iflags_X = 1, htif_tohost_cmd = cartesi.HTIF_YIELD_CMD_AUTOMATIC },
+            { htif_tohost_cmd = cartesi.HTIF_YIELD_CMD_AUTOMATIC },
+            { htif_tohost_reason = cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED },
+            { htif_tohost_reason = cartesi.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION },
+        }) do
+            local machine <close> = cartesi.machine({ ram = { length = 4096 } })
+            machine:write_reg("iflags_Y", 1)
+            machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+            machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+            machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+            for reg, value in pairs(registers) do
+                machine:write_reg(reg, value)
+            end
+            expect.equal(
+                (run_rolling_template(machine, "--assert-rolling-template=outputs_merkle_root:" .. missing)),
+                2
+            )
+        end
+    end)
+
+    it("rolling template rejects missing or malformed expected root files", function()
+        local machine <close> = cartesi.machine({ ram = { length = 4096 } })
+        machine:write_reg("iflags_Y", 1)
+        machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+        machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+        machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+        local _ <close>, filename = scope_temp_pathname()
+        local option = "--assert-rolling-template=outputs_merkle_root:" .. filename
+        expect.equal((run_rolling_template(machine, option)), 1)
+        for _, data in ipairs({ "", zeros(31), zeros(33), string.rep("0", 64) }) do
+            filesystem.write_file(filename, data)
+            machine:write_reg("htif_tohost_data", #data)
+            if #data > 0 then
+                machine:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, data)
+            end
+            local rc, _, log = run_rolling_template(machine, option)
+            expect.equal(rc, 1)
+            expect.truthy(log:find("invalid outputs_merkle_root size: expected 32 bytes", 1, true))
+        end
+        run_fail({ "--assert-rolling-template=unknown:value" }, "unknown option")
     end)
 
     -- -------------------------------------------------------------------------

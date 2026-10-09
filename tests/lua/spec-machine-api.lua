@@ -34,6 +34,47 @@ for _, variant in ipairs(variants) do
     describe("machine API (" .. variant.name .. ")", function()
         local machine <close> = variant.create({ ram = { length = 0x1000 } })
 
+        describe("move", function()
+            it("should return a machine from a closing scope", function()
+                local function create_moved()
+                    local source <close> = variant.create({ ram = { length = 0x1000 } })
+                    source:write_reg("x1", 42)
+                    local root_hash = source:get_root_hash()
+                    return source:move(), root_hash
+                end
+
+                local moved <close>, root_hash = create_moved()
+                collectgarbage("collect")
+                expect.equal(moved:get_root_hash(), root_hash)
+                expect.equal(moved:read_reg("x1"), 42)
+                moved:write_reg("x1", 43)
+                expect.equal(moved:read_reg("x1"), 43)
+            end)
+
+            it("should leave the source empty and reusable", function()
+                local source <close> = variant.create({ ram = { length = 0x1000 } })
+                source:write_reg("x1", 42)
+                local moved <close> = source:move()
+                expect.truthy(source ~= moved)
+                expect.truthy(source:is_empty())
+                source:create({ ram = { length = 0x1000 } })
+                source:write_reg("x1", 43)
+                expect.equal(moved:read_reg("x1"), 42)
+                expect.equal(source:read_reg("x1"), 43)
+            end)
+
+            it("should move an empty handle", function()
+                local source <close> = variant.create({ ram = { length = 0x1000 } })
+                source:destroy()
+                local moved <close> = source:move()
+                expect.truthy(source:is_empty())
+                expect.truthy(moved:is_empty())
+                moved:create({ ram = { length = 0x1000 } })
+                moved:write_reg("x1", 42)
+                expect.equal(moved:read_reg("x1"), 42)
+            end)
+        end)
+
         describe("get_address_name", function()
             -- Build table of reg name -> expected get_address_name output.
             -- Names follow shadow_registers_get_what_name / shadow_uarch_state_get_what_name strings.
@@ -288,6 +329,30 @@ for _, variant in ipairs(variants) do
         end)
     end)
 end
+
+describe("move remote cleanup", function()
+    it("should transfer the connection and cleanup policy to the returned handle", function()
+        local jsonrpc = require("cartesi.jsonrpc")
+        local server <close> = jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN)
+        server:create({ ram = { length = 0x1000 } })
+        local address = server:get_server_address()
+        local function connect_moved()
+            local source <close> = jsonrpc.connect_server(address):set_cleanup_call(jsonrpc.DESTROY):set_timeout(1234)
+            return source:move()
+        end
+
+        do
+            local moved <close> = connect_moved()
+            expect.equal(moved:get_server_address(), address)
+            expect.equal(moved:get_timeout(), 1234)
+            expect.equal(moved:get_cleanup_call(), jsonrpc.DESTROY)
+            expect.falsy(server:is_empty())
+            moved:write_reg("x1", 42)
+            expect.equal(server:read_reg("x1"), 42)
+        end
+        expect.truthy(server:is_empty())
+    end)
+end)
 
 lester.report()
 lester.exit()

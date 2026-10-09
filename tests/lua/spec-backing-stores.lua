@@ -282,6 +282,42 @@ describe("backing stores", function()
         end, "unable to read file")
     end)
 
+    for _, hash_function in ipairs({ "keccak256", "sha256" }) do
+        for _, operation in ipairs({ "sync", "clone" }) do
+            it("should preserve cached page hashes after " .. operation .. " (" .. hash_function .. ")", function()
+                local stored_dirname = filesystem.temp_pathname()
+                local cloned_dirname = filesystem.temp_pathname()
+                local _ <close> = tests_util.scope_exit(function()
+                    cartesi.machine:remove_stored(stored_dirname)
+                    if operation == "clone" then
+                        cartesi.machine:remove_stored(cloned_dirname)
+                    end
+                end)
+                local machine <close> = cartesi.machine({
+                    ram = { length = 0x20000 },
+                    hash_tree = { phtc_size = 32, hash_function = hash_function },
+                }, {}, stored_dirname)
+
+                -- Populate every cache entry with non-pristine data, including the final word of each page.
+                machine:write_memory(0x80000000, string.rep("A", 0x20000))
+                machine:get_root_hash()
+                if operation == "sync" then
+                    machine:sync_stored(stored_dirname)
+                else
+                    machine:destroy()
+                    machine:clone_stored(stored_dirname, cloned_dirname)
+                    machine:load(cloned_dirname, {}, cartesi.SHARING_ALL)
+                end
+
+                -- Rehash the penultimate word while reusing its cached sibling at the end of the page.
+                for page = 0x80000000, 0x8001f000, 0x1000 do
+                    machine:write_memory(page + 0xfc0, "B")
+                end
+                expect.equal(machine:get_root_hash(), tests_util.calculate_emulator_hash(machine))
+            end)
+        end
+    end
+
     it("should fail to remove a stored machine containing an extraneous file", function()
         local stored_dirname = filesystem.temp_pathname()
 

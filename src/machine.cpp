@@ -2518,12 +2518,15 @@ machine_hashes machine::collect_mcycle_bundle(uint64_t bundle_offset, uint64_t l
     // Collect the bundle without bundling, resuming after each automatic yield. A fixed point
     // reached on the way returns its state root hash here
     uint64_t mcycle_phase = 0;
-    do {
+    for (;;) {
         auto collected = collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period, mcycle_phase, 0);
         hashes.insert(hashes.end(), collected.hashes.begin(), collected.hashes.end());
         mcycle_phase = collected.mcycle_phase;
         break_reason = collected.break_reason;
-    } while (break_reason != interpreter_break_reason::reached_target_mcycle && !is_at_fixed_point(break_reason));
+        if (break_reason == interpreter_break_reason::reached_target_mcycle || is_at_fixed_point(break_reason)) {
+            break;
+        }
+    }
 
     // At a fixed point, the final entry is the fixed-point state root hash, which occupies the
     // remaining positions, including its own

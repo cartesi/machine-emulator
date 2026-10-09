@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added fixed-length tuple schemas to `cartesi.tojson`/`cartesi.fromjson`: an array-valued `items` field assigns one schema type to each tuple position and requires the encoded array to have the same length
 
 ### Changed
+- Added outputs Merkle root validation to `--assert-rolling-template`
 - Bumped test Linux image to kernel 6.18.38-ctsi-1, now downloaded from cartesi/linux releases instead of machine-linux-image
 
 ## [0.21.0] - 2026-08-04

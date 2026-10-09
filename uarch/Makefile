@@ -172,7 +172,7 @@ validate-instruction-set: uarch-ram.elf.insn.txt
 	fi
 
 uarch-ram.elf: $(EMULATOR_OBJS) $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) uarch-ram-entry.o uarch-ram.ld
-	$(CXX) $(CFLAGS) $(CXXFLAGS) -Wl,-Tuarch-ram.ld  -o $@ $(EMULATOR_OBJS) $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) uarch-ram-entry.o $(TOOLCHAIN_LIBS)
+	$(CXX) $(CFLAGS) $(CXXFLAGS) -Wl,-Tuarch-ram.ld -Wl,--no-warn-rwx-segments -o $@ $(EMULATOR_OBJS) $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) uarch-ram-entry.o $(TOOLCHAIN_LIBS)
 
 uarch-ram-entry.o: uarch-ram-entry.S
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -223,7 +223,7 @@ uarch-ram-coverage-entry.o: uarch-ram-entry.S
 	$(CC) $(COV_CFLAGS) -c -o $@ $<
 
 uarch-ram-coverage.elf: $(COV_EMULATOR_OBJS) $(COV_UARCH_OBJS) $(COV_THIRDPARTY_OBJS) uarch-ram-coverage-entry.o uarch-ram.ld
-	$(CXX) $(COV_CFLAGS) $(CXXFLAGS) -Wl,-Tuarch-ram.ld -o $@ $(COV_EMULATOR_OBJS) $(COV_UARCH_OBJS) $(COV_THIRDPARTY_OBJS) uarch-ram-coverage-entry.o $(TOOLCHAIN_LIBS)
+	$(CXX) $(COV_CFLAGS) $(CXXFLAGS) -Wl,-Tuarch-ram.ld -Wl,--no-warn-rwx-segments -o $@ $(COV_EMULATOR_OBJS) $(COV_UARCH_OBJS) $(COV_THIRDPARTY_OBJS) uarch-ram-coverage-entry.o $(TOOLCHAIN_LIBS)
 
 uarch-ram-coverage.bin: uarch-ram-coverage.elf
 	$(OBJCOPY) -S -O binary $^ $@

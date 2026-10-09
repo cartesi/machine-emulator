@@ -71,11 +71,17 @@ and proof encoding remain validator work.
 
 The companion [contract requirements](prt-lua-bridge-needs.md) specify the
 event fields needed to make this design possible and the fixtures that check
-them. Both documents describe work to implement.
+them. Both documents assume those event changes and Dave's planned switch to
+two levels. The contract owns response discounts and child-return refills;
+emitting their resulting deadlines keeps that accounting out of the bridge.
 
-The first milestone runs one honest player through the root and leaf
-tournaments of the two-level geometry, from EpochSealed to a staged root tournament
-result and recovered bonds. Sentries, several applications, and several
+The first implementation gate compares the player's root and child commitments
+with contract fixtures and verifies its encoded transition proofs through
+Solidity. The first end-to-end milestone then runs one honest player through
+the root and leaf tournaments, from EpochSealed to a staged root tournament
+result and recovered bonds for an epoch whose final state can be staged.
+Terminal epochs must still be defended and their bonds recovered, but their
+winning states cannot be staged. Sentries, several applications, and several
 signers are out of scope. The bridge imports no code, state model, or fixtures
 from other Dave clients. Contract tests supply event, view, and calldata
 fixtures. The documentation simulator keeps its existing scheduling model.
@@ -109,9 +115,10 @@ corresponds to log2Stride in creation events.
 
 The exact heights and strides remain a deployment choice. Derive the player's
 mcycle period exponent from the validated root tournament log2step minus
-ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE. Require each creation event's height,
-log2Stride, level, and kind to agree with that table, with a non-leaf root
-tournament at level zero and a leaf tournament at level one.
+ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE. For example, root stride exponent 37
+and root and leaf heights 55 and 37 use prt.new_geometry(17). Require each
+creation event's height, log2Stride, level, and kind to agree with that table,
+with a non-leaf root tournament at level zero and a leaf tournament at level one.
 
 These factory reads validate the deployment once. Descriptors and bond values
 for individual tournaments still come entirely from events. Waiting until the
@@ -119,10 +126,11 @@ first NewInnerTournament to check the leaf geometry would be too late, because
 the player could already have joined a root tournament it cannot defend.
 
 Pin the state-transition proof encoding with that deployment. The encoder is
-a pure function of the machine access logs and input bytes, wherever it lives.
-Contract fixtures must accept the player's proofs through CartesiStateTransition and
-reject malformed proofs. The selected encoding and its fixtures must be settled
-before implementing the proof adapter.
+a pure function of the transition coordinate, machine access logs, and input
+bytes. CartesiStateTransition already defines the encoding described below;
+the adapter must implement it and establish conformance against the pinned
+Solidity verifier. Contract fixtures must accept the player's proofs and
+reject malformed proofs before the bridge submits transactions.
 
 Provide the player with the contract's initial state hash and filenames containing the exact input payloads.
 The first harness may use pre-materialized input files checked against contract
@@ -223,7 +231,7 @@ tree's height rather than the child tournament's height.
 | NewInnerTournament(h, C, one, two, f1, f2, descriptor, bondValue) | Cancel parent's three match jobs. Record C -> (emitter, h), populate C's context with the emitted descriptor and bond, watch C. Install initial parent.eliminateInnerTournament(C). Holders of one or two join C with its bond | commit_uarch_claim(input_index, period_index from C.baseCycle, {f1, f2}) | Join before C's joining deadline. Initial elimination from C's joining deadline |
 | MatchDeleted(h, one, two, reason, winner) | Cancel match jobs and linked child tournament's propagation/elimination. Preserve its bond recovery | None | Immediate |
 | StandingChanged(n, d, pc, resultAt, expiresAt), child tournament C of P | Replace C's result group. With n > 0 install no result work. With n = 0 and d nonzero, holder of pc propagates, everyone eliminates at expiry, claimer(d) recovers. With n = 0 and d zero, everyone eliminates at resultAt | Propagation uses the root children of pc for P.winInnerTournament(C, children). Elimination and recovery need no computation | Propagate in [resultAt, expiresAt). Eliminate from expiresAt, or resultAt with no candidate. Recover from resultAt |
-| StandingChanged(n, d, 0, resultAt, 0), root tournament R of epoch e | Replace R's result group. With n = 0, own(d) installs the stage job and claimer(d) installs the recover job, as separate jobs. Otherwise install no transaction jobs | prove_outputs_merkle_root for staging | From resultAt |
+| StandingChanged(n, d, 0, resultAt, 0), root tournament R of epoch e | Replace R's result group. With n = 0, own(d) installs the stage job only if the winner's final state satisfies MachineValidityProof; claimer(d) independently installs the recover job. Report a terminal winner without scheduling staging. Otherwise install no transaction jobs | prove_outputs_merkle_root for staging and the final-state validity check | From resultAt |
 | CommitmentJoined | Complete our matching join job, including when another submitter joined the same commitment | None | Immediate |
 | EpochStaged | Complete the named epoch's stage job, regardless of sender. Preserve recovery | None | Immediate |
 | BondRecovered | Complete that tournament's recovery job, regardless of sender | None | Immediate |
@@ -234,9 +242,17 @@ specified in the table.
 
 For a finished child tournament, first try winInnerTournament on its parent
 tournament to submit the winner, then tryRecoveringBond on the child tournament
-to request the winning claimant's bond payment. For a finished root tournament,
-first try stageTournamentResult to submit the winning result and output proof,
-then tryRecoveringBond to request the winning claimant's bond payment.
+to request the winning claimant's bond payment. For a finished root tournament
+whose winning state satisfies MachineValidityProof, first try
+stageTournamentResult to submit the winning result and output proof, then
+tryRecoveringBond to request the winning claimant's bond payment.
+
+A correct commitment can win while proving that the application reached a
+terminal state that MachineValidityProof rejects. Check the player's final-state
+proof against the committed final state and the pinned validity rules. Report
+that terminal outcome, suppress staging, and continue bond recovery. Winning
+does not make an invalid final state stageable. This check uses the player's
+computation and needs no additional event field or tournament view.
 
 This order is a scheduling preference, not a contract requirement. The calls
 are independent. The tryRecoveringBond call remains eligible if someone else
@@ -298,11 +314,11 @@ player:prove_output(output_index). The demonstration offers the last output to t
 referee. Final-machine output-root proofs are generated from the cache on demand.
 
 There is no separate begin event. Each player and cache describe one epoch.
-At each seal, the bridge can spawn a player for the next epoch using the locally
-computed final state of the epoch just sealed, and concurrently drive the dispute
-with the player spawned at the previous seal. The first player is bootstrapped
-from the deployment's initial state. EpochSealed's initial hash describes the
-sealed epoch, not the next one.
+At each seal whose locally computed final state can start another epoch, the
+bridge can spawn a player for that next epoch and concurrently drive the
+sealed epoch's dispute. The first player is bootstrapped from the deployment's
+initial state. EpochSealed's initial hash describes the sealed epoch, not the
+next one.
 
 Call the remaining event_handler entries for commit_uarch_claim,
 reveal_bisection, seal_divergence, prove_state_transition,
@@ -318,6 +334,35 @@ deterministic results by deployment, epoch computation context, claim identity,
 and exact method arguments. Obsolete results can remain reusable computation
 data but cannot authorize a transaction. A reorg changing inputs or the initial
 state requires a different computation context.
+
+### State-transition proof encoding
+
+CartesiStateTransition interprets the coordinate as the output leaf of one
+transition, with agreeState as its predecessor. Encode the existing player's
+logs in the order the verifier consumes them.
+
+| Position | Witness segments, in order |
+|---|---|
+| Input-window opening, cycle modulo 2^68 = 0 | Eight-byte big-endian input length, the exact input bytes, the CMIO access log when an input exists, then the uarch-step access log |
+| Closing transition of a uarch span, cycle modulo 2^20 = 2^20 - 1 | Uarch-step access log, then uarch-reset access log |
+| Every other position | Uarch-step access log |
+
+At an absent input, encode a zero length and omit the CMIO log; the uarch step
+still executes. An existing empty input also has length zero but requires its
+CMIO log. The provider's input presence distinguishes them. Delivery to a
+terminal machine still requires the CMIO no-op proof when an input exists.
+
+For each access, encode its raw read value for an eight-byte word access; for
+a larger read, encode its 32-byte raw value followed by its read hash; for a
+larger write, encode its read hash. Append the access's sibling hashes in their
+existing order. Concatenate accesses and logs without ABI padding inside this
+witness, then encode the complete witness as winLeafMatch's bytes argument.
+The verifier requires exact access-log consumption and rejects trailing or
+truncated data, as well as input bytes supplied for an absent input.
+
+Fixtures must check the sealed agreeState and the claimed post-state, including
+the canonical root substituted by a rejecting reset. Ordinary steps, delivery,
+reset, and padding must agree across the player and Solidity before live use.
 
 ### Claim restoration and successive opponents
 
@@ -536,11 +581,17 @@ tests/lua/spec-evmu.lua         ABI codec tests
 
 Implement the components in this order.
 
-1. Add selectorless ABI tuple encoding/decoding. Define canonical signatures,
+1. Implement the transition-witness encoding above and establish the first
+   conformance gate: matching root and child commitments, accepted valid
+   proofs, and rejected malformed proofs through the pinned Solidity verifier.
+   Add selectorless ABI tuple encoding/decoding. Define canonical signatures,
    indexed fields, types, outputs, and Lua names once. Pin event, factory-table,
    result-view, and mutation fixtures from the contract tests. Descriptor and bond-value
    views are contract-test oracles for the emitted fields. Validate integer
    widths, addresses, enum values, padding, topic counts, and data lengths.
+   The factory parameter tuple includes commitmentBudget between responseBudget
+   and maxAllowance; fixture the complete tuple even though the bridge does
+   not reproduce that clock accounting.
 2. Implement the constrained cast adapter and direct player calls. Validate
    both factory levels before enabling claim computation or joins. Implement
    versioned claim storage, restoration of forests and collection callbacks,
@@ -609,7 +660,9 @@ commitments and encoded proofs to agree with the pinned Solidity verifier.
   heads and jobs without expiry. Reject stale computation before publication,
   and verify that inclusion at the first expired block fails even when the
   proof is correct. Propagate a won child only inside [resultAt,
-  winnerExpiresAt), ahead of old bond recovery.
+  winnerExpiresAt), ahead of old bond recovery. Cover the child-return refill
+  and the response-budget discount on leaf and timeout wins. The next emitted
+  deadlines must suffice without the bridge calculating either adjustment.
 - Cover an empty child tournament with no further events, a join replacing its initial
   elimination, later pairing canceling prospective results, and both sides of
   the last match eliminated while a third claim wins. Parent deletion must
@@ -663,9 +716,14 @@ commitments and encoded proofs to agree with the pinned Solidity verifier.
   and reject malformed proofs. Compare root and child commitments across the
   emulator and contract fixtures. Cover ordinary steps, input delivery including
   terminal no-ops, absent inputs, reset boundaries, rejecting resets, transitions
-  after rejection, and consecutive rejected inputs. Verify final-machine proofs
-  against the committed final state for staging. Never weaken verification to
-  make the bridge's proof format pass.
+  after rejection, and consecutive rejected inputs. Distinguish absent and
+  empty inputs, and reject trailing or truncated access-log witnesses. Verify
+  final-machine proofs against the committed final state for staging. Never
+  weaken verification to make the bridge's proof format pass.
+- Win a root tournament with an honest terminal-state commitment. Report the
+  terminal outcome, submit no staging transaction, and recover the winning
+  claimer's bond. Confirm that Solidity rejects its machine validity proof;
+  tournament victory must not bypass the validity check.
 - Run an honest player against adversarial counterparts in Anvil through missed
   turns, timeouts, unrelated elimination, child tournament propagation, root tournament staging,
   bond recovery, stuck transactions, and controlled reorgs.
@@ -677,6 +735,10 @@ commitments and encoded proofs to agree with the pinned Solidity verifier.
 Final acceptance requires event-only action derivation from fresh logs, direct
 player computation without simulator scheduling, restorable claims,
 stale-result rejection, nonce reconciliation, and an end-to-end
-staged result with recovered bonds. Timing and successive-opponent scenarios
-must pass against the contracts. Run an opt-in read-only smoke test, then a funded low-stakes
+staged result with recovered bonds for a stageable epoch. A terminal epoch
+must instead complete its dispute and bond recovery while reporting that its
+winning state cannot be staged. Timing and successive-opponent scenarios
+must pass against the contracts. Full-history fetching and one pending nonce
+remain implementation choices whose latency must meet those windows. Run an
+opt-in read-only smoke test, then a funded low-stakes
 testnet trial, only after fixtures and Anvil pass.

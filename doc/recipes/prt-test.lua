@@ -19,13 +19,19 @@ local keccak = cartesi.keccak256
 local LOG2_BUNDLE_MCYCLE_COUNT = prt.LOG2_BUNDLE_MCYCLE_COUNT
 local LOG2_BUNDLE_UARCH_CYCLE_COUNT = prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT
 
-local function new_fake_machine(root_hash, mcycle, counts)
+local function new_fake_machine(root_hash, mcycle, counts, outputs_root)
     counts = counts or { live = 0 }
     counts.live = counts.live + 1
-    local machine = { root_hash = root_hash, mcycle = mcycle or 0, counts = counts }
+    local machine = {
+        root_hash = root_hash,
+        mcycle = mcycle or 0,
+        counts = counts,
+        outputs_root = outputs_root
+            or hash_tree.frontier_get_root_hash(hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")),
+    }
     function machine:fork_server()
         assert(not self.fail_clone, "injected clone failure")
-        return new_fake_machine(self.root_hash, self.mcycle, counts)
+        return new_fake_machine(self.root_hash, self.mcycle, counts, self.outputs_root)
     end
     function machine.set_cleanup_call() end
     function machine.get_server_address()
@@ -56,6 +62,7 @@ local function new_fake_machine(root_hash, mcycle, counts)
     function machine:swap(other)
         self.root_hash, other.root_hash = other.root_hash, self.root_hash
         self.mcycle, other.mcycle = other.mcycle, self.mcycle
+        self.outputs_root, other.outputs_root = other.outputs_root, self.outputs_root
         self.shutdown, other.shutdown = other.shutdown, self.shutdown
     end
     function machine.run()
@@ -67,7 +74,10 @@ local function new_fake_machine(root_hash, mcycle, counts)
             cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED,
             hash_tree.frontier_get_root_hash(frontier)
     end
-    function machine.read_memory()
+    function machine:read_memory(address)
+        if address == cartesi.AR_CMIO_TX_BUFFER_START then
+            return self.outputs_root
+        end
         return string.rep("\0", 32)
     end
     function machine.get_proof()
@@ -693,12 +703,41 @@ do
     assert(initial.counts.live == #cache.checkpoints, "sealing leaked its execution")
 end
 
+-- A continuation proof must authenticate the last output of this machine.
+do
+    local frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+    local proofs = hash_tree.frontier_next_proofs(frontier, { keccak("first"), keccak("last") })
+    local corrupted = cartesi.fromjson(cartesi.tojson(proofs[2], 0, "Proof"), "Proof")
+    corrupted.target_hash = keccak("corrupted")
+    for _, case in ipairs({
+        { proof = proofs[2], root = keccak("other history") },
+        { proof = proofs[1], root = proofs[1].root_hash },
+        { proof = corrupted, root = corrupted.root_hash },
+        { root = proofs[2].root_hash },
+    }) do
+        local initial = new_fake_machine(keccak("fixture initial"), nil, nil, case.root)
+        local cache = prt.new_machine_cache(initial)
+        assert(
+            not pcall(new_test_player, nil, cache, "invalid continuation", case.proof),
+            "invalid or missing continuation proof was accepted"
+        )
+        assert(initial.counts.live == 0, "failed continuation leaked its machines")
+    end
+    local cache = prt.new_machine_cache(new_fake_machine(keccak("fixture initial"), nil, nil, proofs[2].root_hash))
+    local player = new_test_player(nil, cache, "empty continuation", proofs[2])
+    player.event_handler.epoch_sealed(player, 0)
+    assert(player.last_output_proof == proofs[2], "empty epoch discarded its inherited last-output proof")
+end
+
 -- One sealed epoch answers arbitrary client output requests without acquiring a machine.
 for _, previous_count in ipairs({ 0, 3 }) do
     local genesis = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
     local previous_hashes = { keccak("previous first"), keccak("previous second"), keccak("previous last") }
     local last_output_proof = hash_tree.frontier_next_proofs(genesis, previous_hashes)[previous_count]
-    local player = new_test_player(nil, nil, "output fixture", last_output_proof)
+    local cache = prt.new_machine_cache(
+        new_fake_machine(keccak("fixture initial"), nil, nil, last_output_proof and last_output_proof.root_hash)
+    )
+    local player = new_test_player(nil, cache, "output fixture", last_output_proof)
     assert(player.label == "output fixture", "constructor lost the player label")
     local outputs = { "first", "", "third" }
     player.outputs = outputs

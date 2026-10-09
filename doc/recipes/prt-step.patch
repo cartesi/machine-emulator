@@ -1,0 +1,13 @@
+diff --git a/src/EmulatorConstants.sol b/src/EmulatorConstants.sol
+index 74f4725..ee59e54 100644
+--- a/src/EmulatorConstants.sol
++++ b/src/EmulatorConstants.sol
+@@ -25,7 +25,7 @@ library EmulatorConstants {
+     // START OF AUTO-GENERATED CODE
+ 
+     bytes32 constant UARCH_PRISTINE_STATE_HASH =
+-        0x1187b59e3fe94897c23582998adb33d3df9e8c962f6d1696dfd91adcfabb3a23;
++        0xfa022ea739039235779f3cbd3bd5c053797ec3a7a98ee991f3b9167db5474805;
+     uint64 constant UARCH_CYCLE_ADDRESS = 0x400008;
+     uint64 constant UARCH_CYCLE_MAX = 0xfffff;
+     uint64 constant ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE = 48;

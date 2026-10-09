@@ -107,8 +107,8 @@ end
 
 -- Substitute an input filename as it arrives. Replay reads the forged file, while the
 -- referee still verifies input inclusion against the original contract inputs.
-local function new_forger(dapp_contract, epoch_input_offset, forged_path, label)
-    local player = prt.new_player(dapp_contract, label or "forger")
+local function new_forger(dapp_contract, epoch_input_offset, forged_path, label, last_output_proof)
+    local player = prt.new_player(dapp_contract, label or "forger", last_output_proof)
     clone_handlers(player)
     local input_added = player.event_handler.input_added
     player.event_handler.input_added = function(self, index, path)
@@ -120,7 +120,7 @@ end
 -- A checkpoint exactly at the corruption point still holds the agreed state.
 -- Corruption happens only when executing or collecting the transition out of it.
 -- Each execution has private strategy state, which its snapshot restores on rollback.
-local function new_tamperer(dapp_contract, epoch_input_offset, tamper_bundle_offset, label)
+local function new_tamperer(dapp_contract, epoch_input_offset, tamper_bundle_offset, label, last_output_proof)
     local geometry = dapp_contract.geometry
     local offset = tamper_bundle_offset << (prt.LOG2_BUNDLE_MCYCLE_COUNT + geometry.log2_mcycles_per_period)
     local function tamper_point(machine)
@@ -154,7 +154,7 @@ local function new_tamperer(dapp_contract, epoch_input_offset, tamper_bundle_off
         end
         return target
     end
-    return use_machine(prt.new_player(dapp_contract, label or "tamperer"), {
+    return use_machine(prt.new_player(dapp_contract, label or "tamperer", last_output_proof), {
         run = function(machine, target)
             local point = tamper_point(machine)
             if point and math.ult(machine:read_reg("mcycle"), point) and math.ult(point, target) then
@@ -361,9 +361,9 @@ local function falsify_bundle(forest, height, leaf, fake_hash)
     return replacement
 end
 
-local function new_fabulist(dapp_contract, epoch_input_offset, leaf_offset, label)
+local function new_fabulist(dapp_contract, epoch_input_offset, leaf_offset, label, last_output_proof)
     local geometry = dapp_contract.geometry
-    local player = prt.new_player(dapp_contract, label or "fabulist")
+    local player = prt.new_player(dapp_contract, label or "fabulist", last_output_proof)
     local target_epoch_period_offset =
         prt.combine_epoch_period_offset(geometry.periods_per_input, epoch_input_offset, leaf_offset)
     local fake_hash = keccak("fabulist")
@@ -429,9 +429,9 @@ end
 -- its builder substitutes a made-up state at every position, and it disconnects
 -- after posting that claim. The disconnect is its only protocol-level deviation. The made-up
 -- state derives from the label, so quitters with different labels post different claims.
-local function new_quitter(dapp_contract, label)
+local function new_quitter(dapp_contract, label, last_output_proof)
     label = label or "quitter"
-    local player = prt.new_player(dapp_contract, label)
+    local player = prt.new_player(dapp_contract, label, last_output_proof)
     use_machine(player, { send_cmio_response = function() end })
     local function insert(liar, _, count, height)
         local fake_hash = keccak(label)

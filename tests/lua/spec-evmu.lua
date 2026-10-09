@@ -845,5 +845,31 @@ describe("cartesi evmu", function()
     -- luacheck: pop
 end)
 
+describe("selectorless ABI", function()
+    local evmu = require("cartesi.evmu")
+    it("encodes nested event tuples and full-width coordinates", function()
+        local coordinate = evmu.bint(1) << 91
+        local types = "(uint256 cycle,(uint64 height,bytes payload) descriptor,bytes32[] siblings)"
+        local values = { coordinate, { 62, "0x1234" }, { "0x" .. string.rep("ab", 32) } }
+        local data = evmu.encode_abi(types, values)
+        assert(data == evmu.encode_calldata("eventData" .. types, values):sub(5))
+        local decoded = evmu.decode_abi(types, data)
+        assert(decoded.cycle == coordinate)
+        assert(decoded.descriptor.height == evmu.bint(62))
+        assert(decoded.descriptor.payload == "0x1234")
+        assert(decoded.siblings[1] == values[3][1])
+        assert(evmu.decode_abi(types, data, "raw").descriptor.payload == "\x12\x34")
+        assert(not pcall(evmu.decode_abi, types, data:sub(1, -2)))
+        assert(not pcall(evmu.decode_abi, types, data .. string.rep("\0", 32)))
+    end)
+    it("handles an empty tuple and rejects a non-tuple type", function()
+        assert(evmu.encode_abi("()", {}) == "")
+        assert(#evmu.decode_abi("()", "") == 0)
+        assert(not pcall(evmu.encode_abi, "uint256", {}))
+        assert(not pcall(evmu.decode_abi, "bytes32", string.rep("\0", 32)))
+        assert(not pcall(evmu.decode_abi, "()", string.rep("\0", 32)))
+    end)
+end)
+
 lester.report()
 lester.exit()

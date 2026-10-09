@@ -622,6 +622,16 @@ end
 -- returns the hex-encoded calldata for a 'func_sig' and the corresponpding 'args' table
 function _M.encode_calldata_hex(sig, args) return tohex(_M.encode_calldata(sig, args)) end
 
+-- ABI tuples without a function selector, as used by event data and return values.
+-- Values follow the same conventions as encode_calldata.
+function _M.encode_abi(tuple_spec, args)
+    local parsed = _M.parse_type_spec(tuple_spec)
+    assert(parsed.type_name == "tuple", "expected tuple type")
+    local output = {}
+    append_encoded_tuple(output, args, parsed)
+    return table.concat(output)
+end
+
 _M.encode_hex = tohex
 _M.decode_hex = fromhex
 
@@ -826,6 +836,15 @@ end
 function _M.decode_calldata_hex(func_sig_str, calldata_hex, prefer)
     local calldata_raw = assert(fromhex(calldata_hex))
     return _M.decode_calldata(func_sig_str, calldata_raw, prefer)
+end
+
+-- Decode a selectorless ABI tuple. Integer values retain all 256 bits.
+function _M.decode_abi(tuple_spec, data, prefer)
+    local parsed = _M.parse_type_spec(tuple_spec)
+    assert(parsed.type_name == "tuple", "expected tuple type")
+    local value, offset = decode_value(data, 0, parsed, prefer)
+    assert(offset == #data, "ABI data too long")
+    return value
 end
 
 return _M

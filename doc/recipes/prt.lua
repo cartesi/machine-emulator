@@ -996,12 +996,12 @@ local function fork_server(machine)
     return fork
 end
 
--- Loads the initial machine snapshot from content-addressed local storage into a freshly
+-- Loads an explicit snapshot directory or the content-addressed default into a freshly
 -- spawned server, and verifies that the stored machine actually has the requested state hash.
 -- A spawned server shuts down when its handle is closed or collected, including after an error.
-local function new_machine(initial_state_hash)
+local function new_machine(initial_state_hash, directory)
     local machine <close> = assert(cartesi_jsonrpc.spawn_server("127.0.0.1:0"))
-    machine:load(cartesi.tohex(initial_state_hash))
+    machine:load(directory or cartesi.tohex(initial_state_hash))
     assert(machine:get_root_hash() == initial_state_hash, "initial machine snapshot hash mismatch")
     return move_machine(machine)
 end
@@ -1885,11 +1885,10 @@ function event_handler.input_added(self, epoch_input_offset, path)
     self.epoch_pair, self.epoch_builder = pair:move(), builder
 end
 
--- A production bridge would spawn a player for the next epoch at each
--- epoch_sealed event, using this epoch's locally computed final state.
--- It could concurrently drive the dispute with the player spawned at
--- the previous seal. The first player is bootstrapped at construction.
-function event_handler.epoch_sealed(self)
+-- Retain the final machine before closing execution so the next player can
+-- accumulate inputs while this player disputes the sealed epoch.
+function event_handler.epoch_sealed(self, input_count, checkpoint_directory)
+    assert(input_count == nil or input_count == #self.input_paths, "sealed input count mismatch")
     local pair <close> = assert(self.epoch_pair, "epoch is not open")
     self.epoch_pair = nil
     assert(not pair.backup_machine, "cannot seal an unfinished input")
@@ -1901,6 +1900,36 @@ function event_handler.epoch_sealed(self)
     self.output_proofs = hash_tree.frontier_next_proofs(self.previous_outputs_frontier, leaves)
     self.previous_outputs_frontier = self.outputs_frontier
     self.outputs_frontier = nil
+    self.last_output_proof = self.output_proofs[#self.output_proofs] or self.last_output_proof
+    if checkpoint_directory then
+        -- Store while this player still owns the exact final machine. The manifest
+        -- is written last; an interrupted store cannot be loaded as a checkpoint.
+        assert_rolling_template(pair.machine)
+        local outputs_root = output_verifier.validate_outputs_merkle_root_response(
+            self.outputs_merkle_root_proof,
+            pair.machine:get_root_hash()
+        )
+        assert(
+            outputs_root == hash_tree.frontier_get_root_hash(self.previous_outputs_frontier),
+            "checkpoint output history does not match the machine"
+        )
+        pair.machine:store(checkpoint_directory)
+        if self.last_output_proof then
+            util.write_file(
+                cartesi.tojson(self.last_output_proof, 2, "Proof") .. "\n",
+                checkpoint_directory .. "/last-output-proof.json"
+            )
+        end
+        util.write_file(cartesi.tojson({
+            version = 1,
+            initial_state_hash = cartesi.tohex(self.dapp_contract.initial_state_hash),
+            final_state_hash = cartesi.tohex(pair.machine:get_root_hash()),
+            outputs_root = cartesi.tohex(outputs_root),
+            output_count = hash_tree.frontier_get_leaf_count(self.previous_outputs_frontier),
+            input_count = #self.input_paths,
+            log2_mcycles_per_period = self.geometry.log2_mcycles_per_period,
+        }, 2) .. "\n", checkpoint_directory .. "/epoch.json")
+    end
 end
 
 -- docs:begin collect_mcycle_bundle
@@ -2017,6 +2046,24 @@ end
 
 local prt
 
+-- The proof must name the rightmost populated leaf, not merely any valid leaf.
+local function new_outputs_frontier(last_output_proof)
+    if last_output_proof then
+        assert(
+            last_output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT
+                and last_output_proof.log2_target_size == 0,
+            "last_output_proof is not an outputs proof"
+        )
+        hash_tree.verify_slice(last_output_proof)
+    end
+    local frontier = hash_tree.frontier(last_output_proof or cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+    assert(
+        not last_output_proof or hash_tree.frontier_get_root_hash(frontier) == last_output_proof.root_hash,
+        "proof is not the last output"
+    )
+    return frontier
+end
+
 -- Each player owns its input filenames, cache, and open epoch computation.
 -- Default event handlers are shared and treated as read-only.
 -- The optional proof bootstraps output history after a previous epoch.
@@ -2029,27 +2076,54 @@ local function new_player(dapp_contract, label, last_output_proof)
         input_paths = {},
         trees = {},
     }, player_meta)
-    self.epoch_pair = new_machine_pair(prt.new_machine(dapp_contract.initial_state_hash))
+    self.epoch_pair =
+        new_machine_pair(prt.new_machine(dapp_contract.initial_state_hash, dapp_contract.machine_directory))
     local machine = self.epoch_pair.machine
     assert_rolling_template(machine)
     self.machine_cache = prt.new_machine_cache(fork_server(machine))
     self.epoch_builder = self:make_mcycle_computation_hash_builder()
     self.epoch_builder:begin_epoch(machine)
     self.outputs = {}
-    if last_output_proof then
-        assert(
-            last_output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT
-                and last_output_proof.log2_target_size == 0,
-            "last_output_proof is not an outputs proof"
-        )
-    end
-    self.previous_outputs_frontier =
-        hash_tree.frontier(last_output_proof or cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+    self.previous_outputs_frontier = new_outputs_frontier(last_output_proof)
+    assert(
+        machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE)
+            == hash_tree.frontier_get_root_hash(self.previous_outputs_frontier),
+        "output history does not match initial machine"
+    )
+    self.last_output_proof = last_output_proof
     self.outputs_frontier = hash_tree.frontier_copy(self.previous_outputs_frontier)
     return self:move()
 end
 
+-- Restore the public bootstrap inputs, leaving machine ownership to new_player.
+local function load_epoch(directory)
+    local manifest = cartesi.fromjson(util.read_file(directory .. "/epoch.json"))
+    assert(manifest.version == 1, "unsupported player checkpoint version")
+    assert(
+        math.type(manifest.output_count) == "integer" and manifest.output_count >= 0,
+        "invalid checkpoint output count"
+    )
+    local proof
+    if manifest.output_count > 0 then
+        proof = cartesi.fromjson(util.read_file(directory .. "/last-output-proof.json"), "Proof")
+    end
+    local frontier = new_outputs_frontier(proof)
+    assert(hash_tree.frontier_get_leaf_count(frontier) == manifest.output_count, "checkpoint output count mismatch")
+    assert(
+        cartesi.tohex(hash_tree.frontier_get_root_hash(frontier)) == manifest.outputs_root,
+        "checkpoint output root mismatch"
+    )
+    return {
+        initial_state_hash = cartesi.fromhex(manifest.final_state_hash),
+        machine_directory = directory,
+        geometry = new_geometry(manifest.log2_mcycles_per_period),
+    },
+        proof,
+        manifest
+end
+
 prt = {
+    load_epoch = load_epoch,
     LOG2_BUNDLE_MCYCLE_COUNT = LOG2_BUNDLE_MCYCLE_COUNT,
     LOG2_BUNDLE_UARCH_CYCLE_COUNT = LOG2_BUNDLE_UARCH_CYCLE_COUNT,
     new_player = new_player,

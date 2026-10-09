@@ -1,0 +1,798 @@
+diff --git a/cartesi-rollups/contracts/test/DaveAppFactory.t.sol b/cartesi-rollups/contracts/test/DaveAppFactory.t.sol
+index bd853f52..33f6ed01 100644
+--- a/cartesi-rollups/contracts/test/DaveAppFactory.t.sol
++++ b/cartesi-rollups/contracts/test/DaveAppFactory.t.sol
+@@ -231,6 +231,7 @@ contract DaveAppFactoryTest is ConsensusTestUtils {
+         Vm.Log[] memory logs = vm.getRecordedLogs();
+ 
+         uint256 numOfCommitmentJoinedEvents;
++        uint256 numOfStandingChangedEvents;
+ 
+         for (uint256 i; i < logs.length; ++i) {
+             Vm.Log memory log = logs[i];
+@@ -241,6 +242,19 @@ contract DaveAppFactoryTest is ConsensusTestUtils {
+                     assertEq(log.topics[2], bytes32(uint256(uint160(submitter))));
+                     bytes32 finalStateHash = abi.decode(log.data, (bytes32));
+                     assertEq(finalStateHash, machineMerkleRoot);
++                } else if (log.topics[0] == ITournament.StandingChanged.selector) {
++                    ++numOfStandingChangedEvents;
++                    (uint256 matches, bytes32 dangling, bytes32 parent, uint64 resultAt, uint64 expiresAt) =
++                        abi.decode(log.data, (uint256, bytes32, bytes32, uint64, uint64));
++                    ITournament.TournamentDescriptor memory descriptor = tournament.tournamentDescriptor();
++                    assertEq(matches, 0);
++                    assertEq(dangling, commitment);
++                    assertEq(parent, bytes32(0));
++                    assertEq(
++                        resultAt,
++                        Time.Instant.unwrap(descriptor.startInstant) + Time.Duration.unwrap(descriptor.allowance)
++                    );
++                    assertEq(expiresAt, 0);
+                 } else {
+                     revert UnexpectedLogTopic0(log);
+                 }
+@@ -250,6 +264,7 @@ contract DaveAppFactoryTest is ConsensusTestUtils {
+         }
+ 
+         assertEq(numOfCommitmentJoinedEvents, 1);
++        assertEq(numOfStandingChangedEvents, 1);
+ 
+         assertFalse(tournament.isFinished());
+         assertFalse(tournament.isClosed());
+diff --git a/prt/contracts/src/ITournament.sol b/prt/contracts/src/ITournament.sol
+index 7150f0ac..83d5d4df 100644
+--- a/prt/contracts/src/ITournament.sol
++++ b/prt/contracts/src/ITournament.sol
+@@ -243,6 +243,7 @@ interface ITournament {
+         Tree.Node indexed one,
+         Tree.Node indexed two,
+         Tree.Node leftOfTwo,
++        Time.Instant responderDeadline,
+         Time.Instant eliminableAt
+     );
+ 
+@@ -264,9 +265,13 @@ interface ITournament {
+     /// siblings).
+     event MatchAdvanced(
+         Match.IdHash indexed matchIdHash,
++        Tree.Node one,
++        Tree.Node two,
+         Tree.Node otherParent,
+         Tree.Node leftNode,
+         uint256 segmentStartPosition,
++        uint64 currentHeight,
++        Time.Instant responderDeadline,
+         Time.Instant eliminableAt
+     );
+ 
+@@ -275,7 +280,16 @@ interface ITournament {
+     /// @param eliminableAt The first inclusive instant at which both
+     /// commitments can be eliminated if the match remains unresolved
+     event LeafMatchSealed(
+-        Match.IdHash indexed matchIdHash, Time.Instant eliminableAt
++        Match.IdHash indexed matchIdHash,
++        Tree.Node one,
++        Tree.Node two,
++        Machine.Hash agreeState,
++        uint256 divergencePosition,
++        Machine.Hash finalStateOne,
++        Machine.Hash finalStateTwo,
++        Time.Instant deadlineOne,
++        Time.Instant deadlineTwo,
++        Time.Instant eliminableAt
+     );
+ 
+     /// @notice A match was deleted.
+@@ -333,7 +347,25 @@ interface ITournament {
+     /// @param matchIdHash The match ID hash
+     /// @param childTournament The inner/child tournament
+     event NewInnerTournament(
+-        Match.IdHash indexed matchIdHash, ITournament indexed childTournament
++        Match.IdHash indexed matchIdHash,
++        ITournament indexed childTournament,
++        Tree.Node one,
++        Tree.Node two,
++        Machine.Hash contestedFinalStateOne,
++        Machine.Hash contestedFinalStateTwo,
++        TournamentDescriptor descriptor,
++        uint256 bondValue
++    );
++
++    /// @notice Prospective result boundaries after a join or match deletion.
++    /// @dev Emitted once after all state effects. Result instants are zero
++    /// while matches remain, and otherwise hold until the next join.
++    event StandingChanged(
++        uint256 matchCount,
++        Tree.Node dangling,
++        Tree.Node parentCommitment,
++        Time.Instant resultAt,
++        Time.Instant winnerExpiresAt
+     );
+ 
+     //
+diff --git a/prt/contracts/src/ITournamentFactory.sol b/prt/contracts/src/ITournamentFactory.sol
+index c835bca5..50d73cdc 100644
+--- a/prt/contracts/src/ITournamentFactory.sol
++++ b/prt/contracts/src/ITournamentFactory.sol
+@@ -8,7 +8,11 @@ import {ITournament} from "prt-contracts/ITournament.sol";
+ import {Machine} from "prt-contracts/types/Machine.sol";
+ 
+ interface ITournamentFactory {
+-    event TournamentCreated(ITournament tournament);
++    event TournamentCreated(
++        ITournament tournament,
++        ITournament.TournamentDescriptor descriptor,
++        uint256 bondValue
++    );
+ 
+     function instantiate(Machine.Hash initialState, IDataProvider provider)
+         external
+diff --git a/prt/contracts/src/arbitration-config/ArbitrationConstants.sol b/prt/contracts/src/arbitration-config/ArbitrationConstants.sol
+index aef3948d..e3233437 100644
+--- a/prt/contracts/src/arbitration-config/ArbitrationConstants.sol
++++ b/prt/contracts/src/arbitration-config/ArbitrationConstants.sol
+@@ -4,19 +4,19 @@
+ pragma solidity ^0.8.17;
+ 
+ library ArbitrationConstants {
+-    // 3-level tournament
+-    uint64 constant LEVELS = 3;
++    // Recipe geometry: 2^10 mcycles per root leaf, 2^20 ucycles per mcycle.
++    uint64 constant LEVELS = 2;
+ 
+     /// @notice Wall-clock seconds granted to build one inner tournament's
+     /// commitment, the same at every inner level. A generated geometry is only
+     /// valid for the budget it was generated against (prt/measure_constants).
+-    /// The checked-in three-level table predates the generator and runs with
+-    /// 30 minutes as a conservative policy value (docs/dimensioning.md).
++    /// This experimental two-level deployment retains the existing budget;
++    /// the local-chain recipe does not establish production dimensioning.
+     uint64 constant COMMITMENT_BUDGET = 30 minutes;
+ 
+     /// @return base-2 stride between adjacent commitment leaves at `level`
+     function log2step(uint64 level) internal pure returns (uint64) {
+-        uint64[LEVELS] memory arr = [uint64(44), uint64(27), uint64(0)];
++        uint64[LEVELS] memory arr = [uint64(30), uint64(0)];
+         return arr[level];
+     }
+ 
+@@ -26,7 +26,7 @@ library ArbitrationConstants {
+     /// meta-cycle coordinate space.
+     /// @return configured commitment-tree height for `level`
+     function height(uint64 level) internal pure returns (uint64) {
+-        uint64[LEVELS] memory arr = [uint64(48), uint64(17), uint64(27)];
++        uint64[LEVELS] memory arr = [uint64(62), uint64(30)];
+         return arr[level];
+     }
+ }
+diff --git a/prt/contracts/src/state-transition/CartesiStateTransition.sol b/prt/contracts/src/state-transition/CartesiStateTransition.sol
+index 17a89b34..ed04cb31 100644
+--- a/prt/contracts/src/state-transition/CartesiStateTransition.sol
++++ b/prt/contracts/src/state-transition/CartesiStateTransition.sol
+@@ -35,6 +35,8 @@ contract CartesiStateTransition is IStateTransition {
+     /// @notice Cartesi Machine architecture ID qualified by this transition.
+     /// @dev Pinned to v0.21.0 until a released solidity-step exposes it.
+     uint64 public constant CM_MARCHID = 21;
++    bytes32 public constant UARCH_PRISTINE_STATE_HASH =
++        EmulatorConstants.UARCH_PRISTINE_STATE_HASH;
+ 
+     using SafeCast for uint256;
+ 
+diff --git a/prt/contracts/src/tournament/Tournament.sol b/prt/contracts/src/tournament/Tournament.sol
+index d6e9c120..9a536be9 100644
+--- a/prt/contracts/src/tournament/Tournament.sol
++++ b/prt/contracts/src/tournament/Tournament.sol
+@@ -240,6 +240,7 @@ contract Tournament is ITournament, ERC165 {
+         _emitCommitmentJoined(_commitmentRoot, _finalState, msg.sender);
+         pairCommitment(_commitmentRoot, _clock, _leftNode, _rightNode, current);
+         claimers[_commitmentRoot] = msg.sender;
++        _emitStandingChanged();
+     }
+ 
+     /// @inheritdoc ITournament
+@@ -266,9 +267,14 @@ contract Tournament is ITournament, ERC165 {
+ 
+         _emitMatchAdvanced(
+             matchIdHash,
++            _matchId,
+             _matchState.otherParent,
+             _matchState.leftNode,
+             _matchState.runningLeafPosition,
++            _matchState.currentHeight,
++            clockOne.isRunning()
++                ? clockOne.startInstant.add(clockOne.allowance)
++                : clockTwo.startInstant.add(clockTwo.allowance),
+             MatchClocks.eliminableAt(clockOne, clockTwo)
+         );
+     }
+@@ -541,7 +547,7 @@ contract Tournament is ITournament, ERC165 {
+             _agreeHash,
+             _agreeHashProof
+         );
+-        _emitLeafMatchSealed(matchIdHash, eliminableAt);
++        _emitLeafMatchSealed(matchIdHash, _matchId, eliminableAt);
+     }
+ 
+     /// @inheritdoc ITournament
+@@ -695,7 +701,7 @@ contract Tournament is ITournament, ERC165 {
+         );
+         matchIdFromInnerTournaments[_inner] = _matchId;
+ 
+-        _emitNewInnerTournament(_matchId.hashFromId(), _inner);
++        _emitNewInnerTournament(_matchId, _inner);
+     }
+ 
+     /// @inheritdoc ITournament
+@@ -763,10 +769,10 @@ contract Tournament is ITournament, ERC165 {
+             _commitmentRoot, _clock, _leftNode, _rightNode, Time.currentTime()
+         );
+ 
++        delete matchIdFromInnerTournaments[_childTournament];
+         deleteMatch(
+             _matchId, MatchDeletionReason.CHILD_TOURNAMENT, _winnerCommitment
+         );
+-        delete matchIdFromInnerTournaments[_childTournament];
+     }
+ 
+     /// @inheritdoc ITournament
+@@ -793,12 +799,12 @@ contract Tournament is ITournament, ERC165 {
+             ChildTournamentCannotBeEliminated()
+         );
+ 
++        delete matchIdFromInnerTournaments[_childTournament];
+         deleteMatch(
+             _matchId,
+             MatchDeletionReason.CHILD_TOURNAMENT,
+             WinnerCommitment.NONE
+         );
+-        delete matchIdFromInnerTournaments[_childTournament];
+     }
+ 
+     /// @notice Instantiate an inner tournament using the configured factory.
+@@ -1164,6 +1170,7 @@ contract Tournament is ITournament, ERC165 {
+                 _danglingCommitment,
+                 _rootHash,
+                 _leftNode,
++                _firstClock.startInstant.add(_firstClock.allowance),
+                 eliminableAt
+             );
+         } else {
+@@ -1190,6 +1197,7 @@ contract Tournament is ITournament, ERC165 {
+         Match.IdHash _matchIdHash = _matchId.hashFromId();
+         delete matches[_matchIdHash];
+         _emitMatchDeleted(_matchIdHash, _matchId, _reason, _winnerCommitment);
++        _emitStandingChanged();
+     }
+ 
+     function deleteClaimer(Tree.Node commitment) internal {
+@@ -1399,24 +1407,34 @@ contract Tournament is ITournament, ERC165 {
+         Tree.Node one,
+         Tree.Node two,
+         Tree.Node leftOfTwo,
++        Time.Instant responderDeadline,
+         Time.Instant eliminableAt
+     ) private {
+-        emit MatchCreated(matchIdHash, one, two, leftOfTwo, eliminableAt);
++        emit MatchCreated(
++            matchIdHash, one, two, leftOfTwo, responderDeadline, eliminableAt
++        );
+         ++matchCreatedCount;
+     }
+ 
+     function _emitMatchAdvanced(
+         Match.IdHash matchIdHash,
++        Match.Id memory matchId,
+         Tree.Node otherParent,
+         Tree.Node leftNode,
+         uint256 segmentStartPosition,
++        uint64 currentHeight,
++        Time.Instant responderDeadline,
+         Time.Instant eliminableAt
+     ) private {
+         emit MatchAdvanced(
+             matchIdHash,
++            matchId.commitmentOne,
++            matchId.commitmentTwo,
+             otherParent,
+             leftNode,
+             segmentStartPosition,
++            currentHeight,
++            responderDeadline,
+             eliminableAt
+         );
+         ++matchAdvancedCount;
+@@ -1424,9 +1442,24 @@ contract Tournament is ITournament, ERC165 {
+ 
+     function _emitLeafMatchSealed(
+         Match.IdHash matchIdHash,
++        Match.Id memory matchId,
+         Time.Instant eliminableAt
+     ) private {
+-        emit LeafMatchSealed(matchIdHash, eliminableAt);
++        Match.SealedView memory state = Match.sealedView(matches[matchIdHash]);
++        Clock.State memory one = clocks[matchId.commitmentOne];
++        Clock.State memory two = clocks[matchId.commitmentTwo];
++        emit LeafMatchSealed(
++            matchIdHash,
++            matchId.commitmentOne,
++            matchId.commitmentTwo,
++            state.agreeState,
++            state.divergencePosition,
++            state.finalStateOne,
++            state.finalStateTwo,
++            one.startInstant.add(one.allowance),
++            two.startInstant.add(two.allowance),
++            eliminableAt
++        );
+         ++leafMatchSealedCount;
+     }
+ 
+@@ -1447,10 +1480,49 @@ contract Tournament is ITournament, ERC165 {
+     }
+ 
+     function _emitNewInnerTournament(
+-        Match.IdHash matchIdHash,
++        Match.Id memory matchId,
+         ITournament childTournament
+     ) private {
+-        emit NewInnerTournament(matchIdHash, childTournament);
++        Match.SealedView memory state = Match.sealedView(
++            matches[matchId.hashFromId()]
++        );
++        emit NewInnerTournament(
++            matchId.hashFromId(),
++            childTournament,
++            matchId.commitmentOne,
++            matchId.commitmentTwo,
++            state.finalStateOne,
++            state.finalStateTwo,
++            childTournament.tournamentDescriptor(),
++            childTournament.bondValue()
++        );
+         ++newInnerTournamentCount;
+     }
++
++    function _emitStandingChanged() private {
++        TournamentArguments memory args = _tournamentArgs();
++        Tree.Node candidate = danglingCommitment;
++        Tree.Node parentCommitment = Tree.ZERO_NODE;
++        Time.Instant resultAt = Time.ZERO_INSTANT;
++        Time.Instant winnerExpiresAt = Time.ZERO_INSTANT;
++        bool innerCandidate =
++            !_isRootTournament(args) && !candidate.eq(Tree.ZERO_NODE);
++        if (innerCandidate) {
++            parentCommitment =
++                _parentCommitment(args.nestedDispute, finalStates[candidate]);
++        }
++        if (matchCount == 0) {
++            resultAt = args.startInstant.add(args.allowance);
++            if (lastMatchDeleted.gt(resultAt)) {
++                resultAt = lastMatchDeleted;
++            }
++            if (innerCandidate) {
++                winnerExpiresAt =
++                    resultAt.add(clocks[candidate].pausedAllowance());
++            }
++        }
++        emit StandingChanged(
++            matchCount, candidate, parentCommitment, resultAt, winnerExpiresAt
++        );
++    }
+ }
+diff --git a/prt/contracts/src/tournament/factories/MultiLevelTournamentFactory.sol b/prt/contracts/src/tournament/factories/MultiLevelTournamentFactory.sol
+index 16c1e893..345fba5c 100644
+--- a/prt/contracts/src/tournament/factories/MultiLevelTournamentFactory.sol
++++ b/prt/contracts/src/tournament/factories/MultiLevelTournamentFactory.sol
+@@ -81,7 +81,11 @@ contract MultiLevelTournamentFactory is IMultiLevelTournamentFactory, ERC165 {
+         returns (ITournament)
+     {
+         ITournament _tournament = instantiateTop(_initialHash, _provider);
+-        emit TournamentCreated(_tournament);
++        emit TournamentCreated(
++            _tournament,
++            _tournament.tournamentDescriptor(),
++            _tournament.bondValue()
++        );
+         return _tournament;
+     }
+ 
+diff --git a/prt/contracts/src/tournament/libs/Gas.sol b/prt/contracts/src/tournament/libs/Gas.sol
+index e5af8774..ab6529a3 100644
+--- a/prt/contracts/src/tournament/libs/Gas.sol
++++ b/prt/contracts/src/tournament/libs/Gas.sol
+@@ -25,12 +25,12 @@ library Gas {
+     /// floor pays more per byte than this.
+     uint256 constant CALLDATA_BYTE = 16;
+ 
+-    uint256 constant ADVANCE_MATCH = 103000 + TX;
+-    uint256 constant WIN_MATCH_BY_TIMEOUT = 238000 + TX;
+-    uint256 constant ELIMINATE_MATCH_BY_TIMEOUT = 110000 + TX;
+-    uint256 constant SEAL_INNER_MATCH_AND_CREATE_INNER_TOURNAMENT = 367000 + TX;
+-    uint256 constant WIN_INNER_TOURNAMENT = 273000 + TX;
+-    uint256 constant ELIMINATE_INNER_TOURNAMENT = 135000 + TX;
+-    uint256 constant SEAL_LEAF_MATCH = 127000 + TX;
+-    uint256 constant WIN_LEAF_MATCH = 5_543_000;
++    uint256 constant ADVANCE_MATCH = 102000 + TX;
++    uint256 constant WIN_MATCH_BY_TIMEOUT = 242000 + TX;
++    uint256 constant ELIMINATE_MATCH_BY_TIMEOUT = 117000 + TX;
++    uint256 constant SEAL_INNER_MATCH_AND_CREATE_INNER_TOURNAMENT = 351000 + TX;
++    uint256 constant WIN_INNER_TOURNAMENT = 278000 + TX;
++    uint256 constant ELIMINATE_INNER_TOURNAMENT = 143000 + TX;
++    uint256 constant SEAL_LEAF_MATCH = 108000 + TX;
++    uint256 constant WIN_LEAF_MATCH = 5_546_000;
+ }
+diff --git a/prt/contracts/test/Tournament.t.sol b/prt/contracts/test/Tournament.t.sol
+index e90400be..598710bf 100644
+--- a/prt/contracts/test/Tournament.t.sol
++++ b/prt/contracts/test/Tournament.t.sol
+@@ -81,6 +81,7 @@ contract TournamentTest is Util {
+             playerNodes[0][HistoricalGeometry.height(0)],
+             playerNodes[1][HistoricalGeometry.height(0)],
+             playerNodes[1][HistoricalGeometry.height(0) - 1],
++            Time.currentTime().add(MAX_ALLOWANCE),
+             Time.currentTime().add(MAX_ALLOWANCE).add(MAX_ALLOWANCE)
+         );
+ 
+diff --git a/prt/contracts/test/accounting/RefundReserve.t.sol b/prt/contracts/test/accounting/RefundReserve.t.sol
+index a78108b0..7fa8a397 100644
+--- a/prt/contracts/test/accounting/RefundReserve.t.sol
++++ b/prt/contracts/test/accounting/RefundReserve.t.sol
+@@ -99,20 +99,24 @@ contract RefundReserveTest is Test {
+         assertEq(Bond.REFUND_PRIORITY_FEE_CAP, 10 gwei);
+         uint256 leafTerminal = Bond.terminalAllocation(true);
+         uint256 nonLeafTerminal = Bond.terminalAllocation(false);
+-        assertEq(Gas.WIN_LEAF_MATCH, 5_543_000);
+-        assertEq(leafTerminal, 5_695_000);
+-        assertEq(nonLeafTerminal, 690_000);
+-        assertEq(Bond.actionRefundCap(Gas.WIN_LEAF_MATCH), 0.27715 ether);
+-        assertEq(Bond.matchWorkAllocation(48, false), 6_706_000);
+-        assertEq(Bond.matchWorkAllocation(17, false), 2_738_000);
+-        assertEq(Bond.matchWorkAllocation(27, true), 9_023_000);
+-        assertEq(Bond.matchWorkAllocation(55, false), 7_602_000);
+-        assertEq(Bond.matchWorkAllocation(37, true), 10_303_000);
+-        assertEq(Bond.bondValue(48, false), 0.3353 ether);
+-        assertEq(Bond.bondValue(17, false), 0.1369 ether);
+-        assertEq(Bond.bondValue(27, true), 0.45115 ether);
+-        assertEq(Bond.bondValue(55, false), 0.3801 ether);
+-        assertEq(Bond.bondValue(37, true), 0.51515 ether);
++        assertEq(Gas.WIN_LEAF_MATCH, 5_546_000);
++        assertEq(leafTerminal, 5_679_000);
++        assertEq(nonLeafTerminal, 679_000);
++        assertEq(Bond.actionRefundCap(Gas.WIN_LEAF_MATCH), 0.2773 ether);
++        assertEq(Bond.matchWorkAllocation(48, false), 6_648_000);
++        assertEq(Bond.matchWorkAllocation(17, false), 2_711_000);
++        assertEq(Bond.matchWorkAllocation(27, true), 8_981_000);
++        assertEq(Bond.matchWorkAllocation(55, false), 7_537_000);
++        assertEq(Bond.matchWorkAllocation(37, true), 10_251_000);
++        assertEq(Bond.matchWorkAllocation(62, false), 8_426_000);
++        assertEq(Bond.matchWorkAllocation(30, true), 9_362_000);
++        assertEq(Bond.bondValue(48, false), 0.3324 ether);
++        assertEq(Bond.bondValue(17, false), 0.13555 ether);
++        assertEq(Bond.bondValue(27, true), 0.44905 ether);
++        assertEq(Bond.bondValue(55, false), 0.37685 ether);
++        assertEq(Bond.bondValue(37, true), 0.51255 ether);
++        assertEq(Bond.bondValue(62, false), 0.4213 ether);
++        assertEq(Bond.bondValue(30, true), 0.4681 ether);
+ 
+         uint256 invalidZeroLeafWork = leafTerminal - Gas.ADVANCE_MATCH;
+         uint256 invalidZeroLeafBond = invalidZeroLeafWork * Bond.WORK_PRICE_CAP;
+diff --git a/prt/contracts/test/config/CanonicalTournamentGeometry.t.sol b/prt/contracts/test/config/CanonicalTournamentGeometry.t.sol
+index 6a6dbe2a..1fa57c10 100644
+--- a/prt/contracts/test/config/CanonicalTournamentGeometry.t.sol
++++ b/prt/contracts/test/config/CanonicalTournamentGeometry.t.sol
+@@ -41,13 +41,11 @@ contract CanonicalTournamentGeometryTest is Util {
+     }
+ 
+     function testCheckedInCanonicalTable() public pure {
+-        assertEq(ArbitrationConstants.LEVELS, 3);
+-        assertEq(ArbitrationConstants.log2step(0), 44);
+-        assertEq(ArbitrationConstants.height(0), 48);
+-        assertEq(ArbitrationConstants.log2step(1), 27);
+-        assertEq(ArbitrationConstants.height(1), 17);
+-        assertEq(ArbitrationConstants.log2step(2), 0);
+-        assertEq(ArbitrationConstants.height(2), 27);
++        assertEq(ArbitrationConstants.LEVELS, 2);
++        assertEq(ArbitrationConstants.log2step(0), 30);
++        assertEq(ArbitrationConstants.height(0), 62);
++        assertEq(ArbitrationConstants.log2step(1), 0);
++        assertEq(ArbitrationConstants.height(1), 30);
+         assertEq(ArbitrationConstants.COMMITMENT_BUDGET, 30 minutes);
+     }
+ 
+diff --git a/prt/contracts/test/fixtures/SmallSingleLevelTournament.t.sol b/prt/contracts/test/fixtures/SmallSingleLevelTournament.t.sol
+index c342b58e..b0027b50 100644
+--- a/prt/contracts/test/fixtures/SmallSingleLevelTournament.t.sol
++++ b/prt/contracts/test/fixtures/SmallSingleLevelTournament.t.sol
+@@ -197,6 +197,49 @@ contract SmallSingleLevelTournamentTest is Test {
+         );
+     }
+ 
++    function testStandingEventsDescribeJoinPairingAndLastDeletion() public {
++        InspectableTournament tournament = InspectableTournament(
++            address(
++                FACTORY.instantiate(INITIAL_STATE, IDataProvider(address(0)))
++            )
++        );
++        SmallFullTree.Data memory one =
++            SmallFullTree.build(bytes32(uint256(1)), HEIGHT);
++        SmallFullTree.Data memory two =
++            SmallFullTree.build(bytes32(uint256(2)), HEIGHT);
++        uint256 bond = tournament.bondValue();
++        Time.Instant close = Time.Instant.wrap(START_BLOCK + MAX_ALLOWANCE);
++        vm.expectEmit(false, false, false, true, address(tournament));
++        emit ITournament.StandingChanged(
++            0, one.root(), Tree.ZERO_NODE, close, Time.ZERO_INSTANT
++        );
++        _join(tournament, one, CLAIMER_ONE, bond);
++
++        vm.expectEmit(false, false, false, true, address(tournament));
++        emit ITournament.StandingChanged(
++            1,
++            Tree.ZERO_NODE,
++            Tree.ZERO_NODE,
++            Time.ZERO_INSTANT,
++            Time.ZERO_INSTANT
++        );
++        _join(tournament, two, CLAIMER_TWO, bond);
++
++        // Equality at the pair's elimination boundary produces no winner.
++        // The last deletion occurs after closing and becomes resultAt.
++        vm.roll(START_BLOCK + 2 * MAX_ALLOWANCE);
++        vm.expectEmit(false, false, false, true, address(tournament));
++        emit ITournament.StandingChanged(
++            0,
++            Tree.ZERO_NODE,
++            Tree.ZERO_NODE,
++            Time.currentTime(),
++            Time.ZERO_INSTANT
++        );
++        tournament.eliminateMatchByTimeout(Match.Id(one.root(), two.root()));
++        assertTrue(tournament.isFinished());
++    }
++
+     function testMatchAdvancedEventSupersedesCreationScheduleOnBothBranches()
+         public
+     {
+@@ -242,9 +285,13 @@ contract SmallSingleLevelTournamentTest is Test {
+         vm.expectEmit(true, false, false, true, address(tournament));
+         emit ITournament.MatchAdvanced(
+             id.hashFromId(),
++            one.root(),
++            two.root(),
+             expectedOtherParent,
+             newLeft,
+             expectedPosition,
++            HEIGHT - 1,
++            Time.currentTime().add(Time.Duration.wrap(MAX_ALLOWANCE)),
+             advancedEliminableAt
+         );
+         tournament.advanceMatch(id, oneLeft, oneRight, newLeft, newRight);
+@@ -294,7 +341,18 @@ contract SmallSingleLevelTournamentTest is Test {
+             .add(Time.Duration.wrap(MAX_ALLOWANCE));
+         (Tree.Node leftLeaf, Tree.Node rightLeaf) = one.children(HEIGHT - 2, 0);
+         vm.expectEmit(true, false, false, true, address(tournament));
+-        emit ITournament.LeafMatchSealed(id.hashFromId(), expectedEliminableAt);
++        emit ITournament.LeafMatchSealed(
++            id.hashFromId(),
++            one.root(),
++            two.root(),
++            INITIAL_STATE,
++            0,
++            one.leaf(0).toMachineHash(),
++            two.leaf(0).toMachineHash(),
++            Time.currentTime().add(Time.Duration.wrap(MAX_ALLOWANCE - 2)),
++            expectedEliminableAt,
++            expectedEliminableAt
++        );
+         tournament.sealLeafMatch(
+             id, leftLeaf, rightLeaf, INITIAL_STATE, new bytes32[](0)
+         );
+diff --git a/prt/contracts/test/gas/TournamentGas.t.sol b/prt/contracts/test/gas/TournamentGas.t.sol
+index 3aba83cf..e201700a 100644
+--- a/prt/contracts/test/gas/TournamentGas.t.sol
++++ b/prt/contracts/test/gas/TournamentGas.t.sol
+@@ -29,8 +29,11 @@ using TournamentInspector for ITournament;
+ 
+ library GasTestGeometry {
+     uint64 internal constant LEVELS = 2;
++    // Independent proof-length envelope, not a deployment table. Height 63
++    // bounds the recipe's height 62; retain the previous height-37 leaf paths.
++    // Odd heights keep the measured final responder and storage shape fixed.
+     uint64 internal constant ROOT_LOG2_STEP = 37;
+-    uint64 internal constant ROOT_HEIGHT = 55;
++    uint64 internal constant ROOT_HEIGHT = 63;
+     uint64 internal constant LEAF_LOG2_STEP = 0;
+     uint64 internal constant LEAF_HEIGHT = 37;
+     uint64 internal constant RESPONSE_BUDGET = 300;
+diff --git a/prt/contracts/test/properties/ConcurrentRecursivePopulation.t.sol b/prt/contracts/test/properties/ConcurrentRecursivePopulation.t.sol
+index b608b61a..b09fec21 100644
+--- a/prt/contracts/test/properties/ConcurrentRecursivePopulation.t.sol
++++ b/prt/contracts/test/properties/ConcurrentRecursivePopulation.t.sol
+@@ -445,10 +445,47 @@ contract ConcurrentRecursivePopulationTest is Test {
+ 
+             ++count;
+             assertEq(entry.topics[1], Match.IdHash.unwrap(origin.hashFromId()));
+-            assertEq(entry.data.length, 0);
+             child = InspectableTournament(
+                 address(uint160(uint256(entry.topics[2])))
+             );
++            (
++                Tree.Node one,
++                Tree.Node two,
++                Machine.Hash finalOne,
++                Machine.Hash finalTwo,
++                ITournament.TournamentDescriptor memory descriptor,
++                uint256 bond
++            ) = abi.decode(
++                entry.data,
++                (
++                    Tree.Node,
++                    Tree.Node,
++                    Machine.Hash,
++                    Machine.Hash,
++                    ITournament.TournamentDescriptor,
++                    uint256
++                )
++            );
++            assertEq(
++                Tree.Node.unwrap(one), Tree.Node.unwrap(origin.commitmentOne)
++            );
++            assertEq(
++                Tree.Node.unwrap(two), Tree.Node.unwrap(origin.commitmentTwo)
++            );
++            ITournament.TournamentArguments memory args =
++                child.tournamentArguments();
++            assertEq(
++                Machine.Hash.unwrap(finalOne),
++                Machine.Hash.unwrap(args.nestedDispute.contestedFinalStateOne)
++            );
++            assertEq(
++                Machine.Hash.unwrap(finalTwo),
++                Machine.Hash.unwrap(args.nestedDispute.contestedFinalStateTwo)
++            );
++            assertEq(
++                abi.encode(descriptor), abi.encode(child.tournamentDescriptor())
++            );
++            assertEq(bond, child.bondValue());
+         }
+         assertEq(count, 1);
+         assertNotEq(address(child), address(0));
+diff --git a/prt/contracts/test/properties/FourLevelRecursiveLifecycle.t.sol b/prt/contracts/test/properties/FourLevelRecursiveLifecycle.t.sol
+index 5bc8cf62..50909833 100644
+--- a/prt/contracts/test/properties/FourLevelRecursiveLifecycle.t.sol
++++ b/prt/contracts/test/properties/FourLevelRecursiveLifecycle.t.sol
+@@ -580,10 +580,48 @@ contract FourLevelRecursiveLifecycleTest is Test {
+ 
+             ++count;
+             assertEq(entry.topics[1], Match.IdHash.unwrap(origin.hashFromId()));
+-            assertEq(entry.data.length, 0);
+             recorded = InspectableTournament(
+                 address(uint160(uint256(entry.topics[2])))
+             );
++            (
++                Tree.Node one,
++                Tree.Node two,
++                Machine.Hash finalOne,
++                Machine.Hash finalTwo,
++                ITournament.TournamentDescriptor memory descriptor,
++                uint256 bond
++            ) = abi.decode(
++                entry.data,
++                (
++                    Tree.Node,
++                    Tree.Node,
++                    Machine.Hash,
++                    Machine.Hash,
++                    ITournament.TournamentDescriptor,
++                    uint256
++                )
++            );
++            assertEq(
++                Tree.Node.unwrap(one), Tree.Node.unwrap(origin.commitmentOne)
++            );
++            assertEq(
++                Tree.Node.unwrap(two), Tree.Node.unwrap(origin.commitmentTwo)
++            );
++            ITournament.TournamentArguments memory args =
++                recorded.tournamentArguments();
++            assertEq(
++                Machine.Hash.unwrap(finalOne),
++                Machine.Hash.unwrap(args.nestedDispute.contestedFinalStateOne)
++            );
++            assertEq(
++                Machine.Hash.unwrap(finalTwo),
++                Machine.Hash.unwrap(args.nestedDispute.contestedFinalStateTwo)
++            );
++            assertEq(
++                abi.encode(descriptor),
++                abi.encode(recorded.tournamentDescriptor())
++            );
++            assertEq(bond, recorded.bondValue());
+         }
+         assertEq(count, 1);
+         assertNotEq(address(recorded), address(0));
+diff --git a/prt/contracts/test/properties/RecursiveTournamentLifecycle.t.sol b/prt/contracts/test/properties/RecursiveTournamentLifecycle.t.sol
+index 3add87f7..a8e9a9f8 100644
+--- a/prt/contracts/test/properties/RecursiveTournamentLifecycle.t.sol
++++ b/prt/contracts/test/properties/RecursiveTournamentLifecycle.t.sol
+@@ -120,6 +120,31 @@ contract RecursiveTournamentLifecycleTest is Test {
+         _resolveFinalRootTimeout(SmallTwoLevelClaims.CLAIM_ONE, finalMatch);
+     }
+ 
++    function testSingleChildStandingReportsParentAndExactCarryoverWindow()
++        public
++    {
++        _sealParent();
++        SmallFullTree.Data memory tree =
++            _childTree(SmallTwoLevelClaims.CLAIM_ONE);
++        ITournament.TournamentArguments memory args =
++            child.tournamentArguments();
++        Time.Instant resultAt = args.startInstant.add(args.allowance);
++        vm.expectEmit(false, false, false, true, address(child));
++        emit ITournament.StandingChanged(
++            0, tree.root(), parentOne, resultAt, resultAt.add(args.allowance)
++        );
++        _join(child, tree, CLAIMER_ONE);
++        vm.roll(Time.Instant.unwrap(resultAt) - 1);
++        assertFalse(child.isFinished());
++        vm.roll(Time.Instant.unwrap(resultAt));
++        assertTrue(child.isFinished());
++        assertFalse(child.canBeEliminated());
++        vm.roll(Time.Instant.unwrap(resultAt.add(args.allowance)) - 1);
++        assertFalse(child.canBeEliminated());
++        vm.roll(Time.Instant.unwrap(resultAt.add(args.allowance)));
++        assertTrue(child.canBeEliminated());
++    }
++
+     function testChildWinnerTwoPropagatesAndWinsRoot() public {
+         _sealParent();
+         Tree.Node winningChild = _resolveChild(SmallTwoLevelClaims.CLAIM_TWO);
+@@ -831,10 +856,48 @@ contract RecursiveTournamentLifecycleTest is Test {
+ 
+             ++count;
+             assertEq(entry.topics[1], Match.IdHash.unwrap(origin.hashFromId()));
+-            assertEq(entry.data.length, 0);
+             recorded = InspectableTournament(
+                 address(uint160(uint256(entry.topics[2])))
+             );
++            (
++                Tree.Node one,
++                Tree.Node two,
++                Machine.Hash finalOne,
++                Machine.Hash finalTwo,
++                ITournament.TournamentDescriptor memory descriptor,
++                uint256 bond
++            ) = abi.decode(
++                entry.data,
++                (
++                    Tree.Node,
++                    Tree.Node,
++                    Machine.Hash,
++                    Machine.Hash,
++                    ITournament.TournamentDescriptor,
++                    uint256
++                )
++            );
++            assertEq(
++                Tree.Node.unwrap(one), Tree.Node.unwrap(origin.commitmentOne)
++            );
++            assertEq(
++                Tree.Node.unwrap(two), Tree.Node.unwrap(origin.commitmentTwo)
++            );
++            ITournament.TournamentArguments memory args =
++                recorded.tournamentArguments();
++            assertEq(
++                Machine.Hash.unwrap(finalOne),
++                Machine.Hash.unwrap(args.nestedDispute.contestedFinalStateOne)
++            );
++            assertEq(
++                Machine.Hash.unwrap(finalTwo),
++                Machine.Hash.unwrap(args.nestedDispute.contestedFinalStateTwo)
++            );
++            assertEq(
++                abi.encode(descriptor),
++                abi.encode(recorded.tournamentDescriptor())
++            );
++            assertEq(bond, recorded.bondValue());
+         }
+         assertEq(count, 1);
+         assertNotEq(address(recorded), address(0));

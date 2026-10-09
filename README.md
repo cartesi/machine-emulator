@@ -190,8 +190,8 @@ sudo make install PREFIX=/usr/local
 
 After installation, to boot a Linux system with the `cartesi-machine` command, you will need to also download:
 
-- Guest [Linux image](https://github.com/cartesi/machine-linux-image) and place it at `$PREFIX/share/cartesi/images/linux.bin`
-- Guest [rootfs image](https://github.com/cartesi/machine-rootfs-image) and place it at `$PREFIX/share/cartesi/images/rootfs.ext2`.
+- Guest [Linux image](https://github.com/cartesi/linux/releases) and place it at `$PREFIX/share/cartesi/images/linux.bin`
+- Guest [rootfs image](https://github.com/cartesi/machine-guest-tools/releases) and place it at `$PREFIX/share/cartesi/images/rootfs.ext2`.
 
 ### Usage
 
@@ -252,9 +252,8 @@ The following projects have been using the emulator:
 ## Related Projects
 
 The Cartesi Machine emulator is directly related to the following important projects that are also maintained by us:
-- [Cartesi Machine Guest Tools](https://github.com/cartesi/machine-guest-tools) - System utilities used inside guest machines.
-- [Cartesi Machine Linux Image](https://github.com/cartesi/machine-linux-image) - Linux kernel image used by guest machines.
-- [Cartesi Machine Rootfs Image](https://github.com/cartesi/machine-rootfs-image) - Root filesystem image used by guest machines.
+- [Cartesi Machine Guest Tools](https://github.com/cartesi/machine-guest-tools) - System utilities used inside guest machines, and the root filesystem image that includes them.
+- [Cartesi Linux](https://github.com/cartesi/linux) - Linux kernel image used by guest machines.
 - [Cartesi Machine Solidity Step](https://github.com/cartesi/machine-solidity-step) - Solidity smart contracts of machine microarchitecture step for on-chain fraud-proofs validation.
 
 ## Benchmarks

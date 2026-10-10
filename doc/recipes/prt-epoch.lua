@@ -135,11 +135,31 @@ end
 function M.new(args)
     assert(args.chain and args.abi and args.app and args.input_box and args.consensus)
     assert(args.actors and #args.actors > 0 and args.directory and args.initial_hash)
-    args.input_policy = cast.policy(args.input_policy or "finalized")
-    args.dispute_policy = cast.policy(args.dispute_policy or 4)
+    local input_policy = cast.policy(args.input_policy or "finalized")
+    local dispute_policy = cast.policy(args.dispute_policy or 4)
     cast.run({ "mkdir", "-p", args.directory })
-    args.input_paths, args.inputs, args.applied = {}, {}, {}
-    return setmetatable(args, { __index = methods })
+    return setmetatable({
+        chain = args.chain,
+        transactions = args.transactions,
+        abi = args.abi,
+        app = args.app,
+        input_box = args.input_box,
+        consensus = args.consensus,
+        factory = args.factory,
+        epoch = args.epoch,
+        input_begin = args.input_begin,
+        initial_hash = args.initial_hash,
+        previous_outputs_root = args.previous_outputs_root,
+        actors = args.actors,
+        cleaner = args.cleaner,
+        directory = args.directory,
+        claim_staging_period = args.claim_staging_period,
+        input_policy = input_policy,
+        dispute_policy = dispute_policy,
+        input_paths = {},
+        inputs = {},
+        applied = {},
+    }, { __index = methods })
 end
 
 return M

@@ -60,6 +60,23 @@ of player and keeper nonces across epochs. Only the honest
 player exports a checkpoint, selected explicitly by the harness. The epoch
 listener passes each actor's configured checkpoint destination to its player.
 
+The design follows the ownership corrections in `feature/prt-backup-6`:
+
+- `21248a9e` moved bundle preparation behind the query that needs it;
+  `2137fb32` queried child hashes directly instead of constructing proofs.
+  Here the transaction journal returns the current candidate directly, and
+  owns nonce reconciliation for both scheduling and submission.
+- `729727e3` made role constructors return usable players; `e57bc36d` moved
+  captured execution into shared methods. Bridge and epoch constructors now
+  allocate their own runtime state without modifying the configuration table.
+- `89d0a1cb` removed caller access to forest internals. The bridge likewise
+  leaves nonce slots and candidate history inside the journal.
+
+These changes establish ownership and interface rules for the bridge.
+Keep authoritative events, reusable computation, address associations, and
+persisted transaction candidates distinct. An operation should maintain its
+own invariants, and a query should not conceal execution or persistence.
+
 ## Image build and patches
 
 The Dockerfile fetches the Dave revision pinned by `DAVE_REF`, initializes its
@@ -260,6 +277,12 @@ its contested states are checked again. Earlier computations remain reusable,
 but an address association is dropped when the new match does not involve that
 actor's parent claim.
 
+The bridge's `refresh()` operation observes the chain and updates claim
+associations. If it computes a new claim, it observes again before scheduling,
+since computation can outlive the joining window. `jobs()` only derives actions
+from that view and the available claims; it does not run players or write files.
+Both binding and unbinding a claim update the diagnostic claim file.
+
 | Observed information | Action derived by the bridge |
 | --- | --- |
 | Tournament creation, descriptor, and bond | Ask the player for a commitment and join |
@@ -293,6 +316,10 @@ complete authenticated 32-byte machine-tree leaf.
 For a due action, the bridge prepares or reuses its response, rebuilds the
 observation under the same policy, and requires the job and claim still to be
 eligible. It rechecks the live inclusion window and the observation block hash.
+An attempt owns preparation, revalidation, proof checking, and submission;
+the scheduler owns job selection and retry timing. If a waiting attempt returns
+a different head, the scheduler starts over before reusing pending-job choices
+or cancellation decisions from the earlier view.
 `prt-transactions.lua` preflights against the current canonical execution state,
 excluding its own pending transaction. It estimates gas with a 20% allowance,
 bounded by the block gas limit. A call that first becomes valid in the next
@@ -427,6 +454,13 @@ records the replaced tip and observation height.
 
 ## Validation results
 
+The ownership refactor passed the focused bridge tests and Anvil transaction
+suite in `cache/prt-chain/run.fweis9/`. The smoke run in
+`cache/prt-chain/run.kx61De/` accepted both calculator epochs after an observed
+root-join reorg, with 16, 21, and 16 observations for epochs zero, one, and two.
+These runs mounted the edited recipe sources into the existing image. Lua
+formatting and lint passed in the Makefile-managed toolchain.
+
 On 2026-10-10, the transaction tracker passed the controlled Anvil tests in
 `cache/prt-chain/run.8CLmbJ/`. The rebuilt image `81f9f42af710` passed the
 same tests using its packaged scripts in `cache/prt-chain/run.Y1lMAY/`, and
@@ -471,6 +505,10 @@ Validation also passed for:
   rebroadcast at the fee ceiling. Bridge fixtures also check that failed
   replacements do not strand obsolete work and useful pending jobs do not
   oscillate between competing actions from the same account.
+- The bridge ownership refactor also checks read-only job derivation, expiry
+  during claim computation, refreshing cancellation decisions after a head
+  change, and consistent rejection of nonce advances beyond the journal's
+  owned range.
 - The existing PRT protocol suite, including the added checks for invalid,
   missing, or non-last continuation proofs and preservation through an empty
   epoch.

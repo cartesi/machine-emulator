@@ -17,15 +17,11 @@ local function match_key(event)
     return event.address .. ":" .. event.matchIdHash
 end
 
-local function block_number(value)
-    return eth.small(evmu.bint(value))
-end
-
 local function log_less(a, b)
     if a.blockNumber ~= b.blockNumber then
-        return block_number(a.blockNumber) < block_number(b.blockNumber)
+        return eth.small(a.blockNumber) < eth.small(b.blockNumber)
     end
-    return block_number(a.logIndex) < block_number(b.logIndex)
+    return eth.small(a.logIndex) < eth.small(b.logIndex)
 end
 
 function methods:observe()
@@ -47,7 +43,7 @@ function methods:observe()
                 if log.removed then
                     return nil
                 end
-                assert(block_number(log.blockNumber) <= head, "log is past sampled head")
+                assert(eth.small(log.blockNumber) <= head, "log is past sampled head")
                 logs[#logs + 1] = log
                 local event = self.abi:event(log)
                 if event and event.name == "NewInnerTournament" then
@@ -60,8 +56,8 @@ function methods:observe()
         return nil
     end
     table.sort(logs, log_less)
-    local matches, deleted, recovered, events, staged, sealed = {}, {}, {}, {}, false, false
-    local staged_event, settled
+    local matches, deleted, recovered, events, sealed = {}, {}, {}, {}, false
+    local staged, settled
     local blocks, seen = {}, {}
     for _, log in ipairs(logs) do
         if blocks[log.blockNumber] and blocks[log.blockNumber] ~= log.blockHash then
@@ -122,7 +118,7 @@ function methods:observe()
             elseif name == "BondRecovered" then
                 recovered[event.address] = true
             elseif name == "EpochStaged" and event.address == self.consensus and event.epochNumber == self.epoch then
-                staged, staged_event = true, event
+                staged = event
             end
         end
     end
@@ -147,7 +143,6 @@ function methods:observe()
         events = events,
         logs = logs,
         staged = staged,
-        staged_event = staged_event,
         settled = settled,
     }
 end
@@ -158,7 +153,6 @@ local function holds(actor, address, root)
 end
 
 local function build_claim(actor, context)
-    local address = context.address
     local descriptor, response = context.descriptor
     local height = eth.small(descriptor.height)
     local key = table.concat({
@@ -199,13 +193,64 @@ local function build_claim(actor, context)
         )
     end
     actor.computations[key] = claim
+    return claim, response ~= nil
+end
+
+local function bind_claim(actor, address, claim)
     if actor.claims[address] == claim then
-        return claim
+        return
     end
     actor.claims[address] = claim
     local file <close> = assert(io.open((actor.directory or ".") .. "/" .. actor.label .. "-claims.json", "w"))
     assert(file:write(json.encode(actor.claims, { indent = true })))
-    return claim
+end
+
+local function can_join(actor, context, snapshot)
+    local event, d = context.creation, context.descriptor
+    return snapshot.tip + 1 < eth.small(d.startInstant) + eth.small(d.allowance)
+        and not snapshot.deleted[context.parent_match]
+        and (
+            not context.parent
+            or (
+                not actor.player.done
+                and (holds(actor, context.parent, event.one) or holds(actor, context.parent, event.two))
+            )
+        )
+end
+
+-- Claims belong to computations; tournament addresses are only associations
+-- reconstructed from the current branch. Keep computation out of job queries.
+function methods:update_claims(snapshot)
+    local computed = false
+    for _, context in ipairs(snapshot.order) do
+        local event = context.creation
+        for _, actor in ipairs(self.actors) do
+            local bound_child = context.parent and actor.claims[context.address]
+            if
+                bound_child and not (holds(actor, context.parent, event.one) or holds(actor, context.parent, event.two))
+            then
+                bind_claim(actor, context.address, nil)
+                bound_child = nil
+            end
+            if bound_child or can_join(actor, context, snapshot) then
+                local claim, built = build_claim(actor, context)
+                bind_claim(actor, context.address, claim)
+                computed = computed or built
+            end
+        end
+    end
+    return computed
+end
+
+-- Player computation can take many blocks. Refresh before scheduling ANY
+-- transaction, including cancellation, until claims match a fresh observation.
+function methods:refresh()
+    while true do
+        local snapshot = self:observe()
+        if not snapshot or not snapshot.ready or not self:update_claims(snapshot) then
+            return snapshot
+        end
+    end
 end
 
 function methods:jobs(snapshot)
@@ -226,32 +271,10 @@ function methods:jobs(snapshot)
     for _, context in ipairs(snapshot.order) do
         local event, d = context.creation, context.descriptor
         local close = eth.small(d.startInstant) + eth.small(d.allowance)
-        if context.parent then
-            for _, actor in ipairs(self.actors) do
-                if actor.claims[context.address] then
-                    if holds(actor, context.parent, event.one) or holds(actor, context.parent, event.two) then
-                        build_claim(actor, context)
-                    else
-                        -- The replacement child's match need not involve us.
-                        -- Keep its computations, but remove the old association.
-                        actor.claims[context.address] = nil
-                    end
-                end
-            end
-        end
-        if not context.parent_match or not snapshot.deleted[context.parent_match] then
-            for _, actor in ipairs(self.actors) do
-                local eligible = not context.parent
-                    or (
-                        not actor.player.done
-                        and (holds(actor, context.parent, event.one) or holds(actor, context.parent, event.two))
-                    )
-                if eligible and snapshot.tip + 1 < close then
-                    local claim = build_claim(actor, context)
-                    if not context.joined[claim.root] then
-                        add("joinTournament", context, event, actor, 0, close, claim.root)
-                    end
-                end
+        for _, actor in ipairs(self.actors) do
+            local claim = actor.claims[context.address]
+            if claim and can_join(actor, context, snapshot) and not context.joined[claim.root] then
+                add("joinTournament", context, event, actor, 0, close, claim.root)
             end
         end
     end
@@ -345,9 +368,9 @@ function methods:jobs(snapshot)
         add(
             "acceptStagedTournamentResult",
             snapshot.contexts[self.root],
-            snapshot.staged_event,
+            snapshot.staged,
             nil,
-            block_number(snapshot.staged_event.log.blockNumber) + self.claim_staging_period
+            eth.small(snapshot.staged.log.blockNumber) + self.claim_staging_period
         )
     end
     return jobs
@@ -440,7 +463,7 @@ end
 function methods:awaiting_observation(job, snapshot)
     local receipt = self.transactions:receipt(job.key)
     if receipt then
-        local number = block_number(receipt.blockNumber)
+        local number = eth.small(receipt.blockNumber)
         return snapshot.head < number, receipt
     end
     return false
@@ -477,8 +500,108 @@ function methods:report_blocked(actor, result)
     self.blocked[actor.label] = result.blocked
 end
 
+-- A nil result means the observation or job changed: the scheduler must
+-- start over. Otherwise return the transaction outcome and next retry block.
+function methods:attempt(job, snapshot)
+    local transaction = self.prepared[job.key] or self:prepare(job)
+    self.prepared[job.key] = transaction
+    if not transaction then
+        return snapshot, { waiting = true }, snapshot.tip + 1
+    end
+    -- Computation may take many blocks. Rebuild eligibility at
+    -- the configured observation head, then use the real tip
+    -- for the inclusion window, never observation.head + 1.
+    local refreshed = self:refresh()
+    if not refreshed or not refreshed.ready then
+        return refreshed, nil
+    end
+    local current
+    for _, candidate in ipairs(self:jobs(refreshed)) do
+        if candidate.key == job.key and candidate.root == job.root then
+            current = candidate
+            break
+        end
+    end
+    if not current or refreshed.tip + 1 < current.first or refreshed.tip + 1 >= current.last then
+        return refreshed, nil, refreshed.tip + 1
+    end
+    snapshot = refreshed
+    -- Verify the proof against the observed leaf event. A
+    -- later execution-state revert can mean that someone else
+    -- already answered; it is not evidence of a bad proof.
+    local proof_failure
+    if transaction.proof_check then
+        local _, failure = self.chain:simulate(
+            transaction.signer,
+            transaction.to,
+            transaction.data,
+            transaction.value,
+            { blockHash = snapshot.hash, requireCanonical = true }
+        )
+        if not self.chain:is_canonical(snapshot.head, snapshot.hash) then
+            return nil, nil
+        end
+        assert(not failure or failure.code == 3, "proof simulation RPC failure")
+        assert(
+            transaction.proof_check.valid == (failure == nil),
+            "native and Solidity transition verification disagree"
+        )
+        if not transaction.proof_check.valid then
+            self.invalid[job.key] = true
+            proof_failure = failure
+        end
+    end
+    local tip = self.chain:head()
+    if
+        tip + 1 < current.first
+        or tip + 1 >= current.last
+        or not self.chain:is_canonical(snapshot.head, snapshot.hash)
+    then
+        return snapshot, nil, tip + 1
+    end
+    local result
+    if proof_failure then
+        result = { rejected = proof_failure }
+    else
+        result = self.transactions:submit(transaction.signer, {
+            key = job.key,
+            kind = job.kind,
+            first = current.first,
+            last = current.last,
+            to = transaction.to,
+            data = transaction.data,
+            value = transaction.value,
+            context = {
+                epoch = tostring(self.epoch),
+                root = self.root,
+                claim = job.root,
+                tournament = job.context.address,
+                event = event_key(job.event),
+            },
+        }, snapshot)
+    end
+    self:report_blocked(job.actor, result)
+    if result.published or result.rejected then
+        self:record_attempt(job, transaction, result, snapshot)
+    end
+    if result.rejected then
+        self.rejected[job.key] = snapshot.tip_hash
+        io.stderr:write(job.actor.label, ": ", job.kind, " preflight reverted.\n")
+    end
+    return snapshot, result, tip + 1
+end
+
+function methods:cancel(actor, snapshot)
+    local result = self.transactions:submit(actor.signer, nil, snapshot)
+    self:report_blocked(actor, result)
+    if result.published then
+        self:record_attempt({ kind = "cancel", actor = actor }, nil, result, snapshot)
+    end
+    return result
+end
+
 function methods:tick()
-    local snapshot = self:observe()
+    local snapshot = self:refresh()
     if not snapshot then
         return nil, false
     end
@@ -497,10 +620,9 @@ function methods:tick()
     end
     local actors = { self.cleaner, table.unpack(self.actors) }
     for _, actor in ipairs(actors) do
-        local record = self.transactions:pending(actor.signer)
-        if record then
+        local candidate = self.transactions:pending(actor.signer.address)
+        if candidate then
             next_block = snapshot.tip + 1
-            local candidate = record.candidates[#record.candidates]
             local eligible = due[actor.signer.address] or {}
             local selected = eligible[1]
             for _, job in ipairs(eligible) do
@@ -516,13 +638,8 @@ function methods:tick()
                 if selected.key ~= candidate.job then
                     obsolete[#obsolete + 1] = actor
                 end
-            else
-                local result = self.transactions:submit(actor.signer, nil, snapshot)
-                self:report_blocked(actor, result)
-                if result.published then
-                    self:record_attempt({ kind = "cancel", actor = actor }, nil, result, snapshot)
-                    return snapshot, true
-                end
+            elseif self:cancel(actor, snapshot).published then
+                return snapshot, true
             end
         end
     end
@@ -534,7 +651,7 @@ function methods:tick()
             if awaiting or rejected == snapshot.tip_hash then
                 local observable = snapshot.tip + 1
                 if awaiting and type(self.observation_policy) == "number" then
-                    observable = block_number(receipt.blockNumber) + self.observation_policy
+                    observable = eth.small(receipt.blockNumber) + self.observation_policy
                 end
                 next_block = math.min(next_block or observable, observable)
             end
@@ -545,94 +662,19 @@ function methods:tick()
                 and not awaiting
                 and (not selected or selected == job.key)
             then
-                local transaction = self.prepared[job.key] or self:prepare(job)
-                self.prepared[job.key] = transaction
-                if transaction then
-                    -- Computation may take many blocks. Rebuild eligibility at
-                    -- the configured observation head, then use the real tip
-                    -- for the inclusion window, never observation.head + 1.
-                    local refreshed = self:observe()
-                    if not refreshed or not refreshed.ready then
-                        return refreshed, false
-                    end
-                    local current
-                    for _, candidate in ipairs(self:jobs(refreshed)) do
-                        if candidate.key == job.key and candidate.root == job.root then
-                            current = candidate
-                            break
-                        end
-                    end
-                    if not current or refreshed.tip + 1 < current.first or refreshed.tip + 1 >= current.last then
-                        return refreshed, false, refreshed.tip + 1
-                    end
-                    snapshot = refreshed
-                    -- Verify the proof against the observed leaf event. A
-                    -- later execution-state revert can mean that someone else
-                    -- already answered; it is not evidence of a bad proof.
-                    local proof_failure
-                    if transaction.proof_check then
-                        local _, failure = self.chain:simulate(
-                            transaction.signer,
-                            transaction.to,
-                            transaction.data,
-                            transaction.value,
-                            { blockHash = snapshot.hash, requireCanonical = true }
-                        )
-                        if not self.chain:is_canonical(snapshot.head, snapshot.hash) then
-                            return nil, false
-                        end
-                        assert(not failure or failure.code == 3, "proof simulation RPC failure")
-                        assert(
-                            transaction.proof_check.valid == (failure == nil),
-                            "native and Solidity transition verification disagree"
-                        )
-                        if not transaction.proof_check.valid then
-                            self.invalid[job.key] = true
-                            proof_failure = failure
-                        end
-                    end
-                    local tip = self.chain:head()
-                    if
-                        tip + 1 < current.first
-                        or tip + 1 >= current.last
-                        or not self.chain:is_canonical(snapshot.head, snapshot.hash)
-                    then
-                        return snapshot, false, tip + 1
-                    end
-                    local result
-                    if proof_failure then
-                        result = { rejected = proof_failure }
-                    else
-                        result = self.transactions:submit(transaction.signer, {
-                            key = job.key,
-                            kind = job.kind,
-                            first = current.first,
-                            last = current.last,
-                            to = transaction.to,
-                            data = transaction.data,
-                            value = transaction.value,
-                            context = {
-                                epoch = tostring(self.epoch),
-                                root = self.root,
-                                claim = job.root,
-                                tournament = job.context.address,
-                                event = event_key(job.event),
-                            },
-                        }, snapshot)
-                    end
-                    self:report_blocked(job.actor, result)
-                    if result.published or result.rejected then
-                        self:record_attempt(job, transaction, result, snapshot)
-                    end
-                    if result.rejected then
-                        self.rejected[job.key] = snapshot.tip_hash
-                        io.stderr:write(job.actor.label, ": ", job.kind, " preflight reverted.\n")
-                    end
-                    if result.published or result.rejected then
-                        return snapshot, true
-                    end
-                    next_block = math.min(next_block or tip + 1, tip + 1)
+                local refreshed, result, retry_at = self:attempt(job, snapshot)
+                if not result then
+                    return refreshed, false, retry_at
                 end
+                if result.published or result.rejected then
+                    return refreshed, true
+                end
+                if refreshed.hash ~= snapshot.hash or refreshed.tip_hash ~= snapshot.tip_hash then
+                    -- Pending-job preference and cancellation decisions belong
+                    -- to the original view. Recompute them after a head change.
+                    return refreshed, false, retry_at
+                end
+                next_block = math.min(next_block or retry_at, retry_at)
             end
         elseif inclusion < job.first and job.first < job.last then
             next_block = math.min(next_block or job.first - 1, job.first - 1)
@@ -641,10 +683,7 @@ function methods:tick()
     -- A due replacement can become unusable during preparation or preflight.
     -- Its predecessor is still obsolete; do not leave that candidate unattended.
     for _, actor in ipairs(obsolete) do
-        local result = self.transactions:submit(actor.signer, nil, snapshot)
-        self:report_blocked(actor, result)
-        if result.published then
-            self:record_attempt({ kind = "cancel", actor = actor }, nil, result, snapshot)
+        if self:cancel(actor, snapshot).published then
             return snapshot, true
         end
     end
@@ -655,10 +694,28 @@ function M.new(args)
     assert(args.chain and args.abi and args.root and args.factory and args.consensus)
     assert(args.transactions, "missing shared transaction journal")
     assert(args.actors and #args.actors > 0)
-    args.cleaner = assert(args.cleaner)
-    args.observation_policy = cast.policy(args.observation_policy or 4)
-    args.rejected, args.invalid, args.prepared, args.blocked = {}, {}, {}, {}
-    return setmetatable(args, { __index = methods })
+    return setmetatable({
+        chain = args.chain,
+        abi = args.abi,
+        root = args.root,
+        factory = args.factory,
+        consensus = args.consensus,
+        transactions = args.transactions,
+        actors = args.actors,
+        cleaner = assert(args.cleaner),
+        epoch = args.epoch,
+        initial_hash = args.initial_hash,
+        input_paths = args.input_paths,
+        directory = args.directory,
+        claim_staging_period = args.claim_staging_period,
+        observation_policy = cast.policy(args.observation_policy or 4),
+        seal_block = args.seal_block,
+        seal_hash = args.seal_hash,
+        rejected = {},
+        invalid = {},
+        prepared = {},
+        blocked = {},
+    }, { __index = methods })
 end
 
 return M

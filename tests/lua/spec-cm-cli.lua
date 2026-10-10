@@ -966,7 +966,10 @@ describe("cartesi-machine CLI", function()
         local _ <close>, input = filesystem.write_scope_temp_file(encode_advance(0, "budget"))
         local _, log = run_ok({
             "--load-config=" .. yield_cfg_file,
-            "--cmio-advance-state=input:" .. input .. ",input_file_index_end:1",
+            "--cmio-advance-state=input:"
+                .. input
+                .. ",input_file_index_end:1,output:,rejected_output:,output_proof:,report:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:",
             "--revert-mode=none",
             "--console-io=output_destination:to_null",
             "--no-init-splash",
@@ -3191,7 +3194,10 @@ describe("cartesi-machine CLI", function()
             "--load=" .. stored,
             "--revert-mode=none",
             "--max-mcycle=0",
-            "--cmio-advance-state=input:" .. input .. ",input_file_index_end:1,output_proof:",
+            "--cmio-advance-state=input:"
+                .. input
+                .. ",input_file_index_end:1,output:,rejected_output:,output_proof:,report:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:",
         })
         expect.truthy(log:find("Input " .. input .. " exceeds the rx buffer and its delivery is a no-op", 1, true))
     end)

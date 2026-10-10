@@ -77,9 +77,15 @@ build-prt-image:
 		-t $(PRT_IMAGE):$(TAG) -f Dockerfile.prt .
 
 PRT_OUTPUT_DIR ?= $(REPLACE_CACHE_DIR)/prt-chain
+PRT_INPUT_CONFIRMATIONS ?= 8
+PRT_DISPUTE_CONFIRMATIONS ?= 4
+PRT_TEST_REORG ?= no
+PRT_OBSERVATION_ENV = -e PRT_INPUT_CONFIRMATIONS=$(PRT_INPUT_CONFIRMATIONS) \
+    -e PRT_DISPUTE_CONFIRMATIONS=$(PRT_DISPUTE_CONFIRMATIONS) -e PRT_TEST_REORG=$(PRT_TEST_REORG)
 run-prt-bridge:
 	mkdir -p "$(PRT_OUTPUT_DIR)"
 	docker run --rm $(DOCKER_PLATFORM) --user "$$(id -u):$$(id -g)" \
+		$(PRT_OBSERVATION_ENV) \
 		-v "$(PRT_OUTPUT_DIR):/work" $(PRT_IMAGE):$(TAG) $(PRT_MODE)
 
 prt-contracts-exec:
@@ -90,14 +96,20 @@ prt-contracts-exec:
 		$(PRT_IMAGE):tools bash -c '$(PRT_CONTRACT_COMMAND)'
 
 PRT_MODE ?= story
-.PHONY: test-prt-bridge
+PRT_TEST_COMMAND ?= bash recipes/prt-demo.sh $(PRT_MODE)
+.PHONY: test-prt-bridge test-prt-bridge-unit
+test-prt-bridge-unit: PRT_TEST_COMMAND = lua5.4 recipes/prt-bridge-test.lua
+test-prt-bridge-unit: test-prt-bridge
+
 test-prt-bridge:
 	docker run --rm $(DOCKER_PLATFORM) --entrypoint bash --user "$$(id -u):$$(id -g)" \
+		$(PRT_OBSERVATION_ENV) \
 		-e RECIPES_DIR=/work/recipes -e PRT_OUTPUT_DIR=/work/recipes/cache/prt-chain \
+		-e 'LUA_PATH=/work/recipes/?.lua;;' \
 		-v "$(DEPENDENCIES_LOCK):/dependencies.lock:ro" \
 		-v "$(CURDIR):/work" \
 		-v "$(abspath ../src/cartesi/evmu.lua):/usr/local/share/lua/5.4/cartesi/evmu.lua:ro" \
-		-w /work $(PRT_IMAGE):$(TAG) recipes/prt-demo.sh $(PRT_MODE)
+		-w /work $(PRT_IMAGE):$(TAG) -c '$(PRT_TEST_COMMAND)'
 
 ROOTFS_DOCS_INPUTS := \
     $(RECIPES_DIR)/Dockerfile.rootfs-docs \
@@ -324,7 +336,7 @@ template.d: README.md.template replace.lua | $(REPLACE_CACHE_DIR)
 	    -M docs_image_id="$(DOCS_IMAGE_ID)" \
 	    --lua-filter replace.lua README.md.template -o $@
 
-ifeq (,$(filter clean prt-demo-fixture build-prt-tools-image build-prt-calibration-image measure-prt-gas test-prt-contracts prt-contracts-exec test-prt-bridge build-prt-image run-prt-bridge test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat,$(MAKECMDGOALS)))
+ifeq (,$(filter clean prt-demo-fixture build-prt-tools-image build-prt-calibration-image measure-prt-gas test-prt-contracts prt-contracts-exec test-prt-bridge test-prt-bridge-unit build-prt-image run-prt-bridge test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat,$(MAKECMDGOALS)))
 -include template.d
 endif
 

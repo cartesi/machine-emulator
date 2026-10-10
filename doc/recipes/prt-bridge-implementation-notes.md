@@ -139,7 +139,7 @@ calculator example, numbered one and two on Dave to preserve its empty epoch zer
 Before submitting a group's inputs, the harness constructs its players from
 the preceding epoch's final machine and last-output proof. It submits each
 payload through `InputBox.addInput(application, payload)` using the deployer
-account, then polls the epoch listener immediately. Inputs for epoch one arrive
+account, then waits for the input observation policy before delivering it. Inputs for epoch one arrive
 while epoch zero awaits settlement; inputs for epoch two arrive while epoch one
 awaits settlement. Thus input execution is complete before the corresponding
 seal arrives; sealing finalizes commitments and output proofs.
@@ -149,9 +149,9 @@ The harness follows this order:
 | Step | Computation and persistence | Chain progress |
 | --- | --- | --- |
 | Deploy | Seal the empty bootstrap player and save checkpoint 0 | DaveAppFactory creates the app and consensus; epoch 0 is sealed |
-| Accumulate epoch 1 | Load checkpoint 0 and process inputs 0-2 as they arrive | Inputs enter InputBox while epoch 0 is unsettled |
+| Accumulate epoch 1 | Load checkpoint 0 and process inputs 0-2 as they become confirmed | Inputs enter InputBox while epoch 0 is unsettled |
 | Settle epoch 0 | On the new seal, finalize epoch 1 and save checkpoint 1 | Stage and accept epoch 0; consensus seals epoch 1 |
-| Accumulate epoch 2 | Load checkpoint 1 and process inputs 3-5 as they arrive | Inputs enter InputBox while epoch 1 is unsettled |
+| Accumulate epoch 2 | Load checkpoint 1 and process inputs 3-5 as they become confirmed | Inputs enter InputBox while epoch 1 is unsettled |
 | Settle epoch 1 | On the new seal, finalize epoch 2 and save checkpoint 2 | Resolve epoch 1's disputes, stage, and accept; consensus seals epoch 2 |
 | Settle epoch 2 | Check its accepted result against checkpoint 2 | Resolve epoch 2's disputes, stage, and accept; consensus seals empty epoch 3 |
 
@@ -160,7 +160,8 @@ state before that state is accepted on-chain. The later seal must authenticate
 that starting state. Accumulation and disputes overlap in the epoch lifecycle;
 the demo drives their handlers synchronously in one Lua process.
 
-`prt-epoch.lua` fetches InputBox and consensus logs through one sampled head and
+`prt-epoch.lua` fetches InputBox and consensus logs through one block selected
+by the input policy and
 sorts them together by block and log index. For this application's `InputAdded`,
 it requires consecutive global indices, writes the exact `input` bytes to a
 file, and calls every player's `input_added(index - input_begin, filename)`.
@@ -173,7 +174,10 @@ root, and both input bounds against its bootstrap and processed inputs. It calls
 the other players without saving them. It then constructs the dispute bridge.
 Logs after the seal cannot feed more inputs to that player. Repeated observations
 check their already-applied prefix and never execute an input twice. A changed
-history aborts; automatic reorg recovery is not implemented.
+input history aborts. Once sealed, the listener checks the saved seal's block
+hash instead of extending its input history with later dispute events. A reorg
+crossing this stronger stability boundary requires rebuilding the epoch;
+ordinary dispute reorgs do not roll back the player.
 
 ## Machine and output continuation
 
@@ -218,8 +222,16 @@ restore a partially completed dispute or a pending transaction.
 
 ## Event observation and scheduling
 
-The bridge polls HTTP JSON-RPC. Each tick samples the latest block number and
-hash, then requests `eth_getLogs` from block zero through that head for the
+The bridge polls HTTP JSON-RPC. Input and dispute observation policies each
+accept a nonnegative successor-block depth or the `safe`/`finalized` RPC tag.
+A depth of four selects block 100 when the tip is 104. Missing consensus tags
+fail rather than silently reading latest. Standalone listeners default to
+`finalized` for inputs and four blocks for disputes. The Anvil recipe uses eight
+and four blocks so the confirmation behavior is exercised explicitly.
+
+Each dispute tick samples the live tip and selects its observation block,
+retaining their heights separately. It requests `eth_getLogs` from block zero
+through the selected observation block for the
 factory, consensus, and root tournament. Each `NewInnerTournament` event adds
 the child address to the set of streams fetched during the same observation.
 
@@ -228,14 +240,19 @@ uses `cartesi.evmu` to decode indexed fields and event data, preserving full
 256-bit coordinates. Its selectorless `encode_abi` and `decode_abi` operations
 also encode constructor arguments and decode view results. The bridge sorts
 logs by block and log index, rejects duplicate
-positions, removed logs, and inconsistent block hashes, and rechecks the
-sampled head. It also checks that the observed epoch seal binds the configured
+positions. Removed logs, inconsistent block hashes, and a changed observation
+hash discard the observation for retry. It also checks that the observed epoch seal binds the configured
 root tournament to the expected initial machine hash.
 
 Every tick reconstructs temporary tournament contexts, latest match events,
 standings, and eligible actions from those logs. Later events replace or cancel
 earlier actions. Player computations and local claims survive ticks; the
-observed dispute state is reconstructed afresh.
+observed dispute state is reconstructed afresh. Computation caches are scoped
+to the epoch's player and keyed by initial hash, base cycle, geometry, and kind.
+A child recreated at the same address is bound to its replacement descriptor;
+its contested states are checked again. Earlier computations remain reusable,
+but an address association is dropped when the new match does not involve that
+actor's parent claim.
 
 | Observed information | Action derived by the bridge |
 | --- | --- |
@@ -250,7 +267,9 @@ observed dispute state is reconstructed afresh.
 | Next `EpochSealed` | Confirm acceptance and check the stored final machine and outputs root |
 
 The bridge uses the emitted response, timeout, result, and expiry boundaries.
-Eligible windows include their start and exclude their end. It performs the
+Eligible windows include their start and exclude their end. Inclusion is tested
+at the actual tip plus one, never at the delayed observation height plus one.
+Confirmation lag consumes part of the available response window. It performs the
 necessary interface translation, including selecting the responder from
 bisection parity, but does not reproduce the contracts' clock discounts or
 child-return refill accounting. A separate keeper account handles permissionless
@@ -265,8 +284,9 @@ Transition witnesses combine input delivery when applicable, a uarch step,
 and a reset at the appropriate boundary. Eight-byte accesses serialize their
 complete authenticated 32-byte machine-tree leaf.
 
-For a due action, the bridge prepares the response and rechecks the chain head.
-If the head changed during computation, it returns to observation. Otherwise,
+For a due action, the bridge prepares or reuses its response, rebuilds the
+observation under the same policy, and requires the job and claim still to be
+eligible. It rechecks the live inclusion window and the observation block hash.
 `prt-cast.lua` preflights the transaction with `eth_call` against `pending`,
 then invokes `cast send` with the actor's keystore and password file. Command
 arguments are shell-quoted, and process exit status is checked.
@@ -277,14 +297,21 @@ destination, calldata, and value. The local setup assumes exclusive signing
 accounts and synchronous Anvil mining; cast handles transaction construction
 and signing.
 
-Anvil EVM rejections suppress the actor's attempted action for that event.
-Other provider or transport errors abort the run. Dishonest moves can therefore
+A mined receipt suppresses duplicate publication while its event is awaiting
+confirmation. The bridge checks the receipt's block hash; an orphaned receipt
+releases that suppression. Completion still comes from observed events.
+Anvil EVM rejections suppress an attempt only for the same live tip. A new tip
+or replacement branch can make it eligible again. Other provider or transport
+errors abort the run. Dishonest moves can therefore
 be rejected during preflight without broadcasting a reverting transaction.
 Attempts and results are recorded in `transactions.jsonl`.
 
 Transition proofs also run through the native verifier, using the emitted
 agreed state and authoritative InputBox bytes. The bridge requires native
-validity to agree with the Solidity outcome. Before the tournament, the proof
+validity to agree with an `eth_call` pinned to the observed block hash. Proven
+invalid witnesses are retained as invalid for that exact event and actor. A
+later pending-state rejection can instead mean another actor already answered,
+so it is not treated as a native/Solidity disagreement. Before the tournament, the proof
 checks exercise input delivery, an ordinary step, an instruction reset, a late
 period reset, and absent input. Each class also checks rejection of corrupted,
 truncated, and trailing witnesses. This comparison exposed the pristine-uarch
@@ -294,7 +321,9 @@ mismatch; no verification check was removed to make resets pass.
 
 Anvil mines submitted transactions immediately. When no action is eligible,
 the harness mines empty blocks so the next transaction can reach the next
-emitted deadline. Mining policy belongs to the harness; the bridge never mines.
+emitted deadline or a receipt's observation boundary. It also mines the blocks
+needed to confirm each input and epoch seal. Mining policy belongs to the
+harness; the bridge never mines.
 
 The harness narrates observed contract events into `story.txt`: joins,
 pairings, child creation, isolated transitions, proof and timeout wins,
@@ -332,11 +361,40 @@ epoch on Anvil.
 
 For development, `make -C doc test-prt-bridge` mounts current recipe sources
 into the existing runtime image. `run-prt-bridge` tests the packaged sources.
+`make -C doc test-prt-bridge-unit` runs only the bridge fixtures.
+
+Both run targets accept `PRT_INPUT_CONFIRMATIONS` (default `8`) and
+`PRT_DISPUTE_CONFIRMATIONS` (default `4`). Either also accepts `safe` or
+`finalized`; depth zero explicitly uses the tip. These demo defaults are not
+a quantified reorg-risk guarantee. Anvil's consensus tags do not reproduce
+Ethereum's consensus process; numeric depths exercise delayed observation here.
+
+`PRT_TEST_REORG=yes` injects a dispute reorg in epoch one. The harness snapshots
+after its input context is established, waits until a child tournament is
+observed (a root join in smoke mode), then restores the snapshot and mines a
+replacement block. It retains the same players and bridge. The run must still
+accept both calculator epochs and recover the root bonds. `epoch-1/reorg.json`
+records the replaced tip and observation height.
 
 ## Validation results
 
-On 2026-10-09, the rebuilt `cartesi/machine-emulator-prt:devel` completed the
-default story using its packaged scripts and contracts, without mounting the
+On 2026-10-10, the confirmation-policy fixtures and toolchain formatting/lint
+checks passed. The source-mounted eight-player run `cache/prt-chain/run.GhQB3O/`
+used input depth eight and dispute depth four and replaced an already-observed
+child-tournament branch in epoch one. Both calculator epochs then accepted the
+honest claim and recovered their root bonds with the original players retained.
+All six inputs waited eight blocks and were processed before their epoch's
+on-chain seal. Every mined bridge transaction used an observation at least
+four blocks behind its inclusion predecessor. Both native/Solidity proof suites
+passed, and the final continuation retained the identical last-output proof.
+
+The rebuilt image `84b855f72162` also passed its packaged smoke run with a
+root-join reorg, `cache/prt-chain/run.9H90Og/`, at the same observation depths.
+That run accepted all three epochs and recovered the root bonds in 11, 14, and
+11 observations respectively. Generated run directories are local artifacts.
+
+Before adding observation delays, the 2026-10-09 build of
+`cartesi/machine-emulator-prt:devel` completed the default story using its packaged scripts and contracts, without mounting the
 working recipe sources. The recorded run was `cache/prt-chain/run.51AIeY/`
 relative to this file; its `story.txt` contains the complete narration. These
 generated artifacts are local and are not part of the source distribution.
@@ -361,6 +419,10 @@ Validation also passed for:
 - The bridge's independent Foundry ABI comparison, shell quoting and exit
   status checks, deadline boundaries, ordered input delivery, replay protection,
   mismatched seals, and changed input history.
+- Confirmation depths and consensus tags without fallback, delayed replacement
+  inputs, actual-tip deadline checks, receipt suppression and orphaning, retry
+  after branch changes, and child replacement at the same address, including
+  replacement matches in which the actor no longer participates.
 - The existing PRT protocol suite, including the added checks for invalid,
   missing, or non-last continuation proofs and preservation through an empty
   epoch.
@@ -386,8 +448,11 @@ The geometry, deployment, and actor population are fixed for this recipe.
 Reading complete log histories is suitable for the disposable local chain;
 log pagination and a general deployment-discovery interface are not implemented.
 Saved claim files and transaction records are diagnostic artifacts, not an
-implemented restart protocol. Pending-transaction reconciliation, replacement,
-and reorg recovery remain part of the broader validator design.
+implemented restart protocol. The bridge handles changed dispute observations
+and orphaned mined receipts within a running local session. Durable restart,
+pending-transaction reconciliation and fee replacement remain part of the
+broader validator design. Reorgs crossing accepted input history or its seal
+still fail closed. A confirmation depth is a policy, not absolute finality.
 
 The packaged story validates the Lua players against the patched contracts. It
 does not qualify the Rust node against this emulator's uarch pin; release-pinned

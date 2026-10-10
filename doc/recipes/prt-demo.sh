@@ -22,7 +22,7 @@ umask 077
 printf '%s\n' 'test test test test test test test test test test test junk' > wallets/mnemonic
 printf '%s\n' 'local-prt-demo' > wallets/password
 export CAST_UNSAFE_PASSWORD=local-prt-demo
-for index in {0..8}; do
+for index in {0..9}; do
     cast wallet import "player-$index" --keystore-dir wallets --mnemonic wallets/mnemonic \
         --mnemonic-index "$index" > /dev/null
 done
@@ -39,4 +39,8 @@ for _ in {1..100}; do
     sleep 0.1
 done
 cast block-number --rpc-url http://127.0.0.1:8545 > /dev/null
-lua5.4 "$RECIPES_DIR/prt-demo.lua" "$initial_hash" "${1:-story}"
+if [[ ${1:-story} == transactions ]]; then
+    lua5.4 "$RECIPES_DIR/prt-transactions-test.lua"
+else
+    lua5.4 "$RECIPES_DIR/prt-demo.lua" "$initial_hash" "${1:-story}"
+fi

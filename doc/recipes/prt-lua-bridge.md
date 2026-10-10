@@ -3,7 +3,7 @@
 ## Local chain recipe
 
 The experimental implementation lives in `prt-epoch.lua`, `prt-bridge.lua`,
-`prt-ethereum.lua`, and `prt-cast.lua`. `prt-demo.lua` deploys a fresh local
+`prt-ethereum.lua`, `prt-transactions.lua`, and `prt-cast.lua`. `prt-demo.lua` deploys a fresh local
 chain and drives the recipe players from `prt.lua` and `prt-dishonest.lua`. It uses real InputBox
 event bytes, DaveConsensus, tournament clones, and the Solidity state transition.
 The harness advances Anvil blocks to the next emitted deadline when no move is
@@ -29,7 +29,8 @@ The image includes the emulator, calculator snapshot, contracts, Foundry, and
 Lua scripts. Each invocation starts a fresh Anvil and creates a directory under
 `doc/recipes/cache/prt-chain/`. `story.txt` narrates the contract events;
 `deployment.json` records the addresses. Each `epoch-N/` directory retains
-its inputs, checkpoint, observations, transaction journal, and story; calculator
+its inputs, checkpoint, observations, transaction attempt log, and story. The
+shared signed-candidate journal is `signed-transactions.json` in the run directory; calculator
 epochs also retain native/Solidity proof comparisons in `proof-vectors.json`. `PRT_OUTPUT_DIR` overrides the host output
 directory. Anvil uses public development accounts and listens only inside the
 container. The eight-player story covers false claims, forged input, corrupted
@@ -43,15 +44,25 @@ not establish that reset states match: the bridge checks the deployed pristine
 hash before playing, then compares native and Solidity verification. The proof
 tests also reject corrupted, truncated, and trailing witnesses.
 
-`cast` reads local keystores and signs one transaction at a time. Its exit status,
-receipt status, sender, destination, calldata, and value are checked. The bridge
-retains mined receipts while their completion events await
-confirmation, retries orphaned work, and refreshes the observation after player
-computation. Simulation reverts suppress an attempt only at the same live tip;
-proofs independently shown invalid against the observed event need not be retried.
-The local harness uses exclusive accounts and synchronous mining. It does not
-implement durable dispute restart or pending-transaction replacement. Those
-requirements below remain implementation work for a long-lived validator.
+`cast mktx` reads local keystores and signs transactions with explicit nonces,
+gas limits, and EIP-1559 fees. The adapter checks its exit status and decodes the
+signed transaction to verify its fields and signer. The shared transaction
+tracker persists each candidate before publication and returns without waiting
+for mining. It replaces pending actions at the same nonce, raises both fee
+fields within configurable ceilings, and cancels obsolete work. A journal reload
+recovers all candidate hashes and the highest allocated nonce, including nonces
+reopened by a reorg. Receipt checks identify whichever candidate was actually
+mined; only canonical events complete jobs. See the implementation notes for
+fee settings and `make -C doc test-prt-transactions` for controlled Anvil tests.
+
+The bridge suppresses duplicates while mined events await confirmation, retries
+orphaned work, and refreshes its observation after player computation.
+Simulation reverts suppress an attempt only at the same live tip; proofs
+independently shown invalid against the observed event need not be retried.
+The harness uses exclusive player and keeper accounts, separate from its
+deployer/input account. It still lacks the complete dispute/player relaunch
+flow described below; transaction journal reload alone does not restore that
+execution context.
 
 ## Validator design
 
@@ -641,9 +652,9 @@ window has closed, it reports that the correct claim can no longer enter this
 epoch. Pin one exclusive signing account, so no other sender consumes its
 nonces.
 
-Only prt-cast.lua invokes cast. Use cast rpc for headers, blockchain events,
-calls, nonces, and receipts, and cast mktx/cast publish for signing and
-publication. Pin output
+Only prt-cast.lua invokes cast. The implemented transport uses HTTP JSON-RPC
+for headers, events, calls, nonces, receipts, and raw transaction publication;
+cast mktx signs and cast decode-transaction checks the resulting fields. Pin output
 formats, capture stdout and stderr separately, and check exit status. Read the
 endpoint from ETH_RPC_URL. Use a keystore or external signer. Never put raw
 private keys on command lines. Redact endpoint, credentials, account, and signer
@@ -658,6 +669,8 @@ The implementation uses these components.
 doc/recipes/prt-bridge.lua       tick, log discovery, action selection, claim restoration
 doc/recipes/prt-ethereum.lua     ABI definitions and event-to-job table
 doc/recipes/prt-cast.lua         RPC, signer, and publisher adapter
+doc/recipes/prt-transactions.lua signed-candidate journal, nonce reconciliation, fee replacement
+doc/recipes/prt-transactions-test.lua Anvil fee, cancellation, restart, and nonce reorg tests
 doc/recipes/prt-bridge-test.lua  fixture, tick, restart, and Anvil tests
 src/cartesi/evmu.lua            selectorless ABI value codec additions
 tests/lua/spec-evmu.lua         ABI codec tests

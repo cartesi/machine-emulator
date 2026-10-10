@@ -30,27 +30,33 @@ function methods:save()
     assert(os.rename(self.path .. ".tmp", self.path))
 end
 
-function methods:nonce(signer, block)
-    return eth.small(assert(self.chain:rpc("eth_getTransactionCount", { signer.address, block or "latest" })))
+function methods:nonce(address, block)
+    return eth.small(assert(self.chain:rpc("eth_getTransactionCount", { address, block or "latest" })))
 end
 
 -- Never allocate past the current chain nonce, even when pending RPC reports
 -- later candidates. A reorg can resurrect every nonce up to high_water.
-function methods:pending(signer)
-    local account = self.state.accounts[signer.address:lower()]
+local function nonce_record(account, nonce)
+    assert(nonce >= account.first_nonce, "signer nonce moved before its journal; stop and reconcile the account")
+    assert(nonce <= account.high_water + 1, "exclusive signer nonce was consumed outside its journal")
+    if nonce <= account.high_water then
+        return assert(account.nonces[tostring(nonce)], "missing owned nonce")
+    end
+end
+
+-- Expose the current signed action, not the journal's nonce-slot structure.
+function methods:pending(address)
+    local account = self.state.accounts[address:lower()]
     if not account then
         return nil
     end
-    local nonce = self:nonce(signer)
-    assert(nonce >= account.first_nonce, "signer nonce moved before its journal; stop and reconcile the account")
-    if nonce <= account.high_water then
-        return assert(account.nonces[tostring(nonce)], "missing owned nonce"), nonce
-    end
+    local record = nonce_record(account, self:nonce(address))
+    return record and record.candidates[#record.candidates]
 end
 
 function methods:idle()
     for address in pairs(self.state.accounts) do
-        if self:pending({ address = address }) then
+        if self:pending(address) then
             return false
         end
     end
@@ -99,17 +105,11 @@ function methods:submit(signer, intent, observation)
     local address = signer.address:lower()
     local block = assert(self.chain:rpc("eth_getBlockByNumber", { "latest", false }))
     local tip = eth.small(block.number)
-    local nonce = self:nonce(signer, { blockHash = block.hash, requireCanonical = true })
+    local nonce = self:nonce(address, { blockHash = block.hash, requireCanonical = true })
     local account = self.state.accounts[address]
-    local record
-    if account then
-        assert(nonce >= account.first_nonce, "signer nonce moved before its journal")
-        assert(nonce <= account.high_water + 1, "exclusive signer nonce was consumed outside its journal")
-        if nonce <= account.high_water then
-            record = assert(account.nonces[tostring(nonce)], "missing owned nonce")
-        end
-    else
-        assert(self:nonce(signer, "pending") == nonce, "exclusive signer already has untracked pending transactions")
+    local record = account and nonce_record(account, nonce)
+    if not account then
+        assert(self:nonce(address, "pending") == nonce, "exclusive signer already has untracked pending transactions")
     end
     local previous = record and record.candidates[#record.candidates]
     if not intent and not previous then

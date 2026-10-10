@@ -210,8 +210,7 @@ streams.consensus = {}
 assert(not pcall(reader.observe, reader), "missing epoch seal was accepted")
 -- Acceptance waits for the staging block plus the configured delay, including equality.
 scheduler.claim_staging_period = 10
-snapshot.staged = true
-snapshot.staged_event = { log = { blockHash = "staging", blockNumber = "0x14", logIndex = "0x0" } }
+snapshot.staged = { log = { blockHash = "staging", blockNumber = "0x14", logIndex = "0x0" } }
 assert(ready_at(29) == "")
 assert(ready_at(30) == "acceptStagedTournamentResult:keeper")
 snapshot.settled = {}
@@ -422,7 +421,7 @@ end
 -- permanently suppressed across replacement branches.
 do
     local sends = 0
-    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true }
+    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true, order = {} }
     local actor = { label = "test", signer = { address = "alice" } }
     local job = {
         key = "job",
@@ -585,13 +584,20 @@ do
         cleaner = {},
         transactions = {},
     })
-    client:jobs(view)
+    assert(#client:jobs(view) == 0 and builds == 0 and not actor.claims.child, "job query computed or bound a claim")
+    client:update_claims(view)
     local original = actor.claims.child
+    local queries = client:jobs(view)
+    assert(
+        #queries == 1 and queries[1].root == original.root and builds == 1,
+        "job query did not use the existing claim"
+    )
     assert(builds == 1 and original.final_state == child.creation.contestedFinalStateOne)
     child.descriptor.baseCycle = evmu.bint(2) << 30
     child.creation.contestedFinalStateOne = eth.hex(cartesi.keccak256("2"))
     child.creation.log.blockHash = "child2"
     child.bond = 17
+    client:update_claims(view)
     local replacement = client:jobs(view)
     assert(builds == 2 and actor.claims.child ~= original)
     assert(actor.claims.child.final_state == child.creation.contestedFinalStateOne)
@@ -599,30 +605,48 @@ do
     child.descriptor.baseCycle = evmu.bint(1) << 30
     child.creation.contestedFinalStateOne = original.final_state
     child.creation.log.blockHash = "child1"
-    client:jobs(view)
+    client:update_claims(view)
     assert(builds == 2 and actor.claims.child == original, "earlier child computation was lost")
     child.creation.contestedFinalStateOne = hash
-    assert(not pcall(client.jobs, client, view), "cached claim bypassed contested-state validation")
+    assert(not pcall(client.update_claims, client, view), "cached claim bypassed contested-state validation")
     child.creation.one, child.creation.two = "unrelated1", "unrelated2"
-    client:jobs(view)
+    client:update_claims(view)
     assert(not actor.claims.child, "replacement match retained an ineligible claim association")
     child.creation.one, child.creation.contestedFinalStateOne = "parent", original.final_state
-    client:jobs(view)
+    client:update_claims(view)
     assert(builds == 2 and actor.claims.child == original, "ineligible replacement erased reusable computation")
+
+    -- Claim execution can outlive the joining window. Refresh must observe
+    -- again before scheduling or deciding that pending work needs cancellation.
+    child.descriptor.baseCycle = evmu.bint(3) << 30
+    child.creation.contestedFinalStateOne = eth.hex(cartesi.keccak256("3"))
+    local observations = 0
+    function client.observe()
+        observations = observations + 1
+        local current = {}
+        for k, v in pairs(view) do
+            current[k] = v
+        end
+        current.ready, current.tip = true, observations == 1 and 8 or 100
+        return current
+    end
+    local refreshed = client:refresh()
+    assert(observations == 2 and builds == 3 and refreshed.tip == 100)
+    assert(#client:jobs(refreshed) == 0, "claim execution scheduled an expired join")
 end
 
 -- Pending actions are revalidated on every observation, including when no new
 -- action can be prepared. A failed replacement cannot strand obsolete work.
 do
     local actor = { label = "pending", signer = { address = "alice" } }
-    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true }
-    local pending = { candidates = { { job = "live" } } }
+    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true, order = {} }
+    local pending = { job = "live" }
     local calls = {}
     local jobs = {}
     local publisher = {
         receipt = function() end,
-        pending = function(_, signer)
-            return signer.address == "alice" and pending or nil
+        pending = function(_, address)
+            return address == "alice" and pending or nil
         end,
         submit = function(_, _, intent)
             calls[#calls + 1] = intent and intent.key or "cancel"
@@ -638,7 +662,7 @@ do
     local client = bridge.new({
         chain = {
             head = function()
-                return 8, "block8"
+                return observed.tip, observed.tip_hash
             end,
             is_canonical = function()
                 return true
@@ -686,6 +710,23 @@ do
     jobs[1].last = 9
     client:tick()
     assert(table.concat(calls, ",") == "cancel", "expired pending work was not canceled")
+
+    -- A waiting attempt can discover a new head. Do not apply cancellation
+    -- decisions made before that observation to its replacement branch.
+    calls = {}
+    jobs = { job("other") }
+    function client.prepare()
+        observed = { head = 5, hash = "block5", tip = 9, tip_hash = "block9", ready = true, order = {} }
+        return { signer = actor.signer, to = "root", data = "0x" }
+    end
+    client.prepared, client.rejected = {}, {}
+    function publisher.submit(_, _, intent)
+        calls[#calls + 1] = intent and intent.key or "cancel"
+        return { waiting = true }
+    end
+    jobs[1].last = 20
+    client:tick()
+    assert(table.concat(calls, ",") == "other", "head change reused obsolete cancellation decisions")
 end
 
 print("PRT bridge encoding, scheduling, input streaming, and process-boundary tests passed.")

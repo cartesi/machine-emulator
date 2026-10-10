@@ -68,6 +68,7 @@ do
     local manager, args = fresh()
     local first = submit(manager, intent())
     assert(first.published and first.candidate.nonce == 0)
+    assert(manager:pending(signer.address).hash == first.candidate.hash)
     assert(not manager:idle() and not manager:receipt("work"))
     assert(not submit(manager, intent()).published, "same-block retry published again")
     mine(1, 50000000000)
@@ -77,6 +78,7 @@ do
     manager = transactions.new(args)
     local second = submit(manager, intent())
     assert(second.published and second.candidate.nonce == 0)
+    assert(manager:pending(signer.address).hash == second.candidate.hash)
     assert(evmu.bint(second.candidate.max_fee) > evmu.bint(first.candidate.max_fee))
     assert(evmu.bint(second.candidate.priority_fee) > evmu.bint(first.candidate.priority_fee))
     mine()
@@ -84,7 +86,7 @@ do
     local delayed = { head = 0, hash = manager.state.genesis }
     assert(not manager:submit(signer, intent(), delayed).published, "unobserved mined work was submitted twice")
     assert(rpc("eth_getTransactionReceipt", { first.candidate.hash }) == json.null)
-    assert(manager:idle() and manager:nonce(signer) == 1)
+    assert(manager:idle() and manager:nonce(signer.address) == 1)
 end
 print("PRT transactions: gas surge, same-nonce replacement, and journal reload passed.")
 
@@ -96,7 +98,7 @@ do
     mine(2, 50000000000)
     local capped = submit(manager, intent())
     assert(capped.blocked == "fee ceiling" and not capped.published)
-    assert(not manager:idle() and manager:nonce(signer) == 0)
+    assert(not manager:idle() and manager:nonce(signer.address) == 0)
     mine(1, 1000000000)
     if not manager:receipt("work") then
         local resumed = assert(submit(manager, intent()).candidate)
@@ -122,7 +124,7 @@ do
         return nil, { code = -32000, message = "replacement transaction underpriced" }
     end
     local rejected = submit(manager, intent())
-    assert(rejected.published and rejected.publication_error == -32000 and manager:nonce(signer) == 0)
+    assert(rejected.published and rejected.publication_error == -32000 and manager:nonce(signer.address) == 0)
     chain.publish = publish
     mine(2)
     local retried = submit(manager, intent()).candidate
@@ -183,7 +185,7 @@ do
     local cancel1 = submit(manager, nil).candidate
     assert(cancel1.nonce == 1)
     mine()
-    assert(manager:idle() and manager:nonce(signer) == 2)
+    assert(manager:idle() and manager:nonce(signer.address) == 2)
 end
 print("PRT transactions: immediate cancellation, older-candidate race, and multi-nonce reorg recovery passed.")
 
@@ -198,7 +200,7 @@ do
     assert(not pcall(submit, manager, intent()))
     chain.publish = publish
     manager = transactions.new(args)
-    assert(not manager:idle() and manager:nonce(signer) == 0)
+    assert(not manager:idle() and manager:nonce(signer.address) == 0)
     mine(2)
     local resumed = submit(manager, intent()).candidate
     assert(resumed.nonce == 0)
@@ -257,5 +259,16 @@ do
     assert(not submit(manager, intent()).published)
     chain.sign = sign
     assert(manager:idle() and not io.open(manager.path, "r"))
+end
+-- All nonce consumers enforce exclusive ownership, including idle queries.
+-- Otherwise an external transaction could make a pending journal appear done.
+do
+    local manager = fresh()
+    assert(submit(manager, intent()).published)
+    mine()
+    rpc("anvil_setNonce", { signer.address, "0x2" })
+    assert(not pcall(manager.pending, manager, signer.address), "pending accepted an unowned nonce")
+    assert(not pcall(manager.idle, manager), "idle accepted an unowned nonce")
+    assert(not pcall(submit, manager, intent()), "submission accepted an unowned nonce")
 end
 print("PRT transaction tests passed.")

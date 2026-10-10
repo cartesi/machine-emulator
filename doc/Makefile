@@ -11,9 +11,9 @@ include $(DEPENDENCIES_LOCK)
 export MACHINE_GUEST_TOOLS_TAG
 export MACHINE_GUEST_TOOLS_DEB_SHA256
 export MACHINE_GUEST_TOOLS_TARBALL_SHA256
-export MACHINE_LINUX_IMAGE_TAG
-export MACHINE_LINUX_IMAGE_FILENAME
-export MACHINE_LINUX_IMAGE_SHA256
+export LINUX_TAG
+export LINUX_VERSION
+export LINUX_SHA256
 
 # Docker image platform
 BUILD_PLATFORM ?=
@@ -150,9 +150,9 @@ docs-image-exec: check-docs-image
 		-e MACHINE_GUEST_TOOLS_TAG \
 		-e MACHINE_GUEST_TOOLS_DEB_SHA256 \
 		-e MACHINE_GUEST_TOOLS_TARBALL_SHA256 \
-		-e MACHINE_LINUX_IMAGE_TAG \
-		-e MACHINE_LINUX_IMAGE_FILENAME \
-		-e MACHINE_LINUX_IMAGE_SHA256 \
+		-e LINUX_TAG \
+		-e LINUX_VERSION \
+		-e LINUX_SHA256 \
 		-v $(CURDIR):/work \
 		-v $(DEPENDENCIES_LOCK):/dependencies.lock:ro \
 		-w /work \
@@ -172,9 +172,9 @@ run-docs-image: check-docs-image
 		-e MACHINE_GUEST_TOOLS_TAG \
 		-e MACHINE_GUEST_TOOLS_DEB_SHA256 \
 		-e MACHINE_GUEST_TOOLS_TARBALL_SHA256 \
-		-e MACHINE_LINUX_IMAGE_TAG \
-		-e MACHINE_LINUX_IMAGE_FILENAME \
-		-e MACHINE_LINUX_IMAGE_SHA256 \
+		-e LINUX_TAG \
+		-e LINUX_VERSION \
+		-e LINUX_SHA256 \
 		-v $(CURDIR):/work \
 		-v $(DEPENDENCIES_LOCK):/dependencies.lock:ro \
 		-w /work \
@@ -189,9 +189,9 @@ build-docs-image: | ensure-rootfs-docs
 	base=$$(docker image inspect --format '{{ index .Config.Labels "io.cartesi.machine-emulator.base-image" }}' cartesi/machine-emulator:$(TAG)); \
 	docker build $(DOCKER_PLATFORM) \
 	    --build-arg TAG=$(TAG) \
-	    --build-arg MACHINE_LINUX_IMAGE_TAG=$(MACHINE_LINUX_IMAGE_TAG) \
-	    --build-arg MACHINE_LINUX_IMAGE_FILENAME=$(MACHINE_LINUX_IMAGE_FILENAME) \
-	    --build-arg MACHINE_LINUX_IMAGE_SHA256=$(MACHINE_LINUX_IMAGE_SHA256) \
+	    --build-arg LINUX_TAG=$(LINUX_TAG) \
+	    --build-arg LINUX_VERSION=$(LINUX_VERSION) \
+	    --build-arg LINUX_SHA256=$(LINUX_SHA256) \
 	    $${base:+--build-arg BUILDER_BASE=$$base} \
 	    -t $(DOCS_IMAGE):$(TAG) .
 

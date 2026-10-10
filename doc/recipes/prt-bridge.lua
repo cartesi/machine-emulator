@@ -1,5 +1,6 @@
 -- Event-driven adapter for the doc/recipes players.
--- Contracts own pairing, clocks, and results. Only local claims survive a tick.
+-- Contracts own pairing, clocks, and results. Claims and prepared proofs survive
+-- observations; the shared transaction journal owns account nonces and fees.
 local evmu = require("cartesi.evmu")
 local eth = require("prt-ethereum")
 local json = require("dkjson")
@@ -437,15 +438,43 @@ end
 -- Receipts suppress duplicate publication while their events are still behind
 -- the observation policy. An orphaned receipt never completes or suppresses work.
 function methods:awaiting_observation(job, snapshot)
-    local receipt = self.submitted[job.key]
+    local receipt = self.transactions:receipt(job.key)
     if receipt then
         local number = block_number(receipt.blockNumber)
-        if self.chain:is_canonical(number, receipt.blockHash) then
-            return snapshot.head < number
-        end
-        self.submitted[job.key] = nil
+        return snapshot.head < number, receipt
     end
     return false
+end
+
+function methods:record_attempt(job, transaction, result, snapshot)
+    local file <close> = assert(io.open((self.directory or ".") .. "/transactions.jsonl", "a"))
+    local candidate = result.candidate
+    assert(file:write(
+        json.encode({
+            action = job.kind,
+            actor = job.actor.label,
+            hash = candidate and candidate.hash,
+            nonce = candidate and candidate.nonce,
+            max_fee = candidate and candidate.max_fee,
+            priority_fee = candidate and candidate.priority_fee,
+            rejected = result.rejected,
+            publication_error = result.publication_error,
+            rebroadcast = result.rebroadcast,
+            data = transaction and transaction.data,
+            to = transaction and transaction.to,
+            proof_check = transaction and transaction.proof_check,
+            observation_block = snapshot.head,
+            observation_hash = snapshot.hash,
+        }),
+        "\n"
+    ))
+end
+
+function methods:report_blocked(actor, result)
+    if result.blocked and self.blocked[actor.label] ~= result.blocked then
+        io.stderr:write(actor.label, ": transaction waiting at ", result.blocked, "; observing continues.\n")
+    end
+    self.blocked[actor.label] = result.blocked
 end
 
 function methods:tick()
@@ -457,19 +486,65 @@ function methods:tick()
     if not snapshot.ready then
         return snapshot, false, snapshot.tip + 1
     end
-    for _, job in ipairs(self:jobs(snapshot)) do
+    local jobs = self:jobs(snapshot)
+    local due, preferred, obsolete = {}, {}, {}
+    for _, job in ipairs(jobs) do
+        if snapshot.tip + 1 >= job.first and snapshot.tip + 1 < job.last and not self.invalid[job.key] then
+            local address = job.actor.signer.address
+            due[address] = due[address] or {}
+            table.insert(due[address], job)
+        end
+    end
+    local actors = { self.cleaner, table.unpack(self.actors) }
+    for _, actor in ipairs(actors) do
+        local record = self.transactions:pending(actor.signer)
+        if record then
+            next_block = snapshot.tip + 1
+            local candidate = record.candidates[#record.candidates]
+            local eligible = due[actor.signer.address] or {}
+            local selected = eligible[1]
+            for _, job in ipairs(eligible) do
+                if job.key == candidate.job then
+                    selected = job
+                    break
+                end
+            end
+            if selected then
+                -- Keep working on a useful pending action. Do not oscillate
+                -- between two eligible actions belonging to the same account.
+                preferred[actor.signer.address] = selected.key
+                if selected.key ~= candidate.job then
+                    obsolete[#obsolete + 1] = actor
+                end
+            else
+                local result = self.transactions:submit(actor.signer, nil, snapshot)
+                self:report_blocked(actor, result)
+                if result.published then
+                    self:record_attempt({ kind = "cancel", actor = actor }, nil, result, snapshot)
+                    return snapshot, true
+                end
+            end
+        end
+    end
+    for _, job in ipairs(jobs) do
         local inclusion = snapshot.tip + 1
         if inclusion >= job.first and inclusion < job.last then
             local rejected = self.rejected[job.key]
-            local awaiting = self:awaiting_observation(job, snapshot)
+            local awaiting, receipt = self:awaiting_observation(job, snapshot)
             if awaiting or rejected == snapshot.tip_hash then
                 local observable = snapshot.tip + 1
                 if awaiting and type(self.observation_policy) == "number" then
-                    observable = block_number(self.submitted[job.key].blockNumber) + self.observation_policy
+                    observable = block_number(receipt.blockNumber) + self.observation_policy
                 end
                 next_block = math.min(next_block or observable, observable)
             end
-            if not self.invalid[job.key] and rejected ~= snapshot.tip_hash and not awaiting then
+            local selected = preferred[job.actor.signer.address]
+            if
+                not self.invalid[job.key]
+                and rejected ~= snapshot.tip_hash
+                and not awaiting
+                and (not selected or selected == job.key)
+            then
                 local transaction = self.prepared[job.key] or self:prepare(job)
                 self.prepared[job.key] = transaction
                 if transaction then
@@ -492,7 +567,7 @@ function methods:tick()
                     end
                     snapshot = refreshed
                     -- Verify the proof against the observed leaf event. A
-                    -- later pending-state revert can mean that someone else
+                    -- later execution-state revert can mean that someone else
                     -- already answered; it is not evidence of a bad proof.
                     local proof_failure
                     if transaction.proof_check then
@@ -524,39 +599,53 @@ function methods:tick()
                     then
                         return snapshot, false, tip + 1
                     end
-                    local receipt, failure
+                    local result
                     if proof_failure then
-                        failure = proof_failure
+                        result = { rejected = proof_failure }
                     else
-                        receipt, failure =
-                            self.chain:send(transaction.signer, transaction.to, transaction.data, transaction.value)
-                    end
-                    local file <close> = assert(io.open((self.directory or ".") .. "/transactions.jsonl", "a"))
-                    assert(file:write(
-                        json.encode({
-                            action = job.kind,
-                            actor = job.actor.label,
-                            receipt = receipt,
-                            rejected = failure,
-                            data = transaction.data,
+                        result = self.transactions:submit(transaction.signer, {
+                            key = job.key,
+                            kind = job.kind,
+                            first = current.first,
+                            last = current.last,
                             to = transaction.to,
-                            proof_check = transaction.proof_check,
-                            observation_block = snapshot.head,
-                            observation_hash = snapshot.hash,
-                        }),
-                        "\n"
-                    ))
-                    if failure then
-                        self.rejected[job.key] = snapshot.tip_hash
-                        io.stderr:write(job.actor.label, ": ", job.kind, " rejected: ", failure.message, "\n")
-                    else
-                        self.submitted[job.key] = receipt
+                            data = transaction.data,
+                            value = transaction.value,
+                            context = {
+                                epoch = tostring(self.epoch),
+                                root = self.root,
+                                claim = job.root,
+                                tournament = job.context.address,
+                                event = event_key(job.event),
+                            },
+                        }, snapshot)
                     end
-                    return snapshot, true
+                    self:report_blocked(job.actor, result)
+                    if result.published or result.rejected then
+                        self:record_attempt(job, transaction, result, snapshot)
+                    end
+                    if result.rejected then
+                        self.rejected[job.key] = snapshot.tip_hash
+                        io.stderr:write(job.actor.label, ": ", job.kind, " preflight reverted.\n")
+                    end
+                    if result.published or result.rejected then
+                        return snapshot, true
+                    end
+                    next_block = math.min(next_block or tip + 1, tip + 1)
                 end
             end
         elseif inclusion < job.first and job.first < job.last then
             next_block = math.min(next_block or job.first - 1, job.first - 1)
+        end
+    end
+    -- A due replacement can become unusable during preparation or preflight.
+    -- Its predecessor is still obsolete; do not leave that candidate unattended.
+    for _, actor in ipairs(obsolete) do
+        local result = self.transactions:submit(actor.signer, nil, snapshot)
+        self:report_blocked(actor, result)
+        if result.published then
+            self:record_attempt({ kind = "cancel", actor = actor }, nil, result, snapshot)
+            return snapshot, true
         end
     end
     return snapshot, false, next_block
@@ -564,10 +653,11 @@ end
 
 function M.new(args)
     assert(args.chain and args.abi and args.root and args.factory and args.consensus)
+    assert(args.transactions, "missing shared transaction journal")
     assert(args.actors and #args.actors > 0)
     args.cleaner = assert(args.cleaner)
     args.observation_policy = cast.policy(args.observation_policy or 4)
-    args.rejected, args.invalid, args.prepared, args.submitted = {}, {}, {}, {}
+    args.rejected, args.invalid, args.prepared, args.blocked = {}, {}, {}, {}
     return setmetatable(args, { __index = methods })
 end
 

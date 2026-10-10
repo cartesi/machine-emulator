@@ -97,6 +97,7 @@ function methods:poll()
             self.seal_block, self.seal_hash = eth.small(log.blockNumber), log.blockHash
             self.dispute = bridge.new({
                 chain = self.chain,
+                transactions = self.transactions,
                 abi = self.abi,
                 root = event.tournament,
                 epoch = event.epochNumber,

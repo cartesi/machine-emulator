@@ -13,6 +13,14 @@ local initial_hash = assert(arg[1], "missing template hash")
 assert(#assert(eth.raw(initial_hash)) == 32, "invalid template hash")
 local mode = arg[2] or "story"
 local chain = cast.new("http://127.0.0.1:8545")
+local transactions = require("prt-transactions").new({
+    chain = chain,
+    path = "signed-transactions.json",
+    bump_blocks = assert(tonumber(os.getenv("PRT_FEE_BUMP_BLOCKS") or "3"), "invalid fee bump interval"),
+    bump_percent = assert(tonumber(os.getenv("PRT_FEE_BUMP_PERCENT") or "15"), "invalid fee bump percent"),
+    max_fee = os.getenv("PRT_MAX_FEE_PER_GAS") or "100000000000",
+    max_priority_fee = os.getenv("PRT_MAX_PRIORITY_FEE_PER_GAS") or "10000000000",
+})
 local input_policy = cast.policy(os.getenv("PRT_INPUT_CONFIRMATIONS") or "8")
 local dispute_policy = cast.policy(os.getenv("PRT_DISPUTE_CONFIRMATIONS") or "4")
 local test_reorg = os.getenv("PRT_TEST_REORG") == "yes"
@@ -34,6 +42,7 @@ local function signer(index)
     return { address = address, keystore = key, password_file = "wallets/password" }
 end
 local deployer = signer(0)
+local keeper = signer(9)
 local function deploy(name, directory, types, args)
     local compiled = artifact(name, directory)
     local code = compiled.bytecode.object
@@ -151,6 +160,7 @@ local function open_epoch(number, previous)
     end
     local session = epoch.new({
         chain = chain,
+        transactions = transactions,
         abi = abi,
         app = app,
         input_box = input_box,
@@ -161,7 +171,7 @@ local function open_epoch(number, previous)
         initial_hash = eth.hex(dapp.initial_state_hash),
         previous_outputs_root = manifest and manifest.outputs_root or eth.zero,
         actors = actors,
-        cleaner = { label = "keeper", signer = deployer },
+        cleaner = { label = "keeper", signer = keeper },
         directory = directory,
         claim_staging_period = staging_period,
         input_policy = input_policy,
@@ -327,7 +337,7 @@ local function play(session, accumulating)
         if not progressed then
             local context = snapshot and snapshot.contexts[coordinator.root]
             local standing = context and context.standing
-            if snapshot and snapshot.settled and snapshot.recovered[coordinator.root] then
+            if snapshot and snapshot.settled and snapshot.recovered[coordinator.root] and transactions:idle() then
                 assert(not test_reorg or session.epoch ~= 1 or reorganized, "dispute reorg was not exercised")
                 assert(
                     standing and standing.dangling == session.honest_actor.claims[coordinator.root].root,

@@ -17,10 +17,13 @@ function M.run(arguments)
         assert(not tostring(value):find("\0", 1, true), "NUL in command argument")
         command[i] = quote(value)
     end
-    local pipe = assert(io.popen(table.concat(command, " ") .. " 2>&1", "r"))
+    local errors = os.tmpname()
+    local pipe = assert(io.popen(table.concat(command, " ") .. " 2>" .. quote(errors), "r"))
     local output = pipe:read("a")
     local ok, why, status = pipe:close()
-    assert(ok, string.format("%s failed (%s %s): %s", arguments[1], why, status, output))
+    os.remove(errors)
+    -- Tool diagnostics may contain endpoints, signer paths, or credentials.
+    assert(ok, string.format("%s failed (%s %s)", arguments[1], why, status))
     return output
 end
 
@@ -102,6 +105,60 @@ function methods:simulate(signer, to, data, value, block)
         { from = signer.address, to = to, data = data, value = "0x" .. evmu.bint.tobase(evmu.bint(value), 16) },
         block or "pending",
     })
+end
+
+-- All fields are explicit: signing must not choose a nonce or estimate fees.
+function methods:sign(signer, transaction)
+    local arguments = {
+        "cast",
+        "mktx",
+        "--keystore",
+        signer.keystore,
+        "--password-file",
+        signer.password_file,
+        "--chain",
+        tostring(evmu.bint(transaction.chain_id)),
+        "--nonce",
+        transaction.nonce,
+        "--gas-limit",
+        transaction.gas,
+        "--gas-price",
+        transaction.max_fee,
+        "--priority-gas-price",
+        transaction.priority_fee,
+        "--value",
+        transaction.value,
+        transaction.to,
+        transaction.data,
+    }
+    local raw = M.run(arguments):gsub("%s+$", ""):lower()
+    return raw, self:verify_signed(signer, transaction, raw)
+end
+
+function methods.verify_signed(_, signer, transaction, raw)
+    assert(raw:match("^0x02%x+$") and #raw % 2 == 0, "invalid signed EIP-1559 transaction")
+    local decoded = decode_json(M.run({ "cast", "decode-transaction", raw }))
+    assert(decoded.signer:lower() == signer.address:lower(), "transaction used the wrong signer")
+    assert(decoded.to:lower() == transaction.to:lower(), "transaction has the wrong destination")
+    assert(decoded.input:lower() == transaction.data:lower(), "transaction calldata differs from the prepared action")
+    for field, expected in pairs({
+        type = 2,
+        chainId = transaction.chain_id,
+        nonce = transaction.nonce,
+        gas = transaction.gas,
+        value = transaction.value,
+        maxFeePerGas = transaction.max_fee,
+        maxPriorityFeePerGas = transaction.priority_fee,
+    }) do
+        assert(evmu.bint(decoded[field]) == evmu.bint(expected), "signed transaction field mismatch: " .. field)
+    end
+    assert(#decoded.accessList == 0, "unexpected transaction access list")
+    assert(type(decoded.hash) == "string" and #decoded.hash == 66, "invalid signed transaction hash")
+    return decoded.hash:lower()
+end
+
+function methods:publish(raw)
+    return self:rpc("eth_sendRawTransaction", { raw })
 end
 
 function methods:send(signer, to, data, value)

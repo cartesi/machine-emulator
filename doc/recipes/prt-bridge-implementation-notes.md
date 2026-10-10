@@ -35,11 +35,13 @@ The harness owns deployment, actor selection, local mining, and narration.
 | [prt-demo.lua](prt-demo.lua) | Deploy the application, deliver inputs, construct actors, drive the run, and narrate events |
 | [prt-epoch.lua](prt-epoch.lua) | Deliver the ordered input stream, validate the seal, and start the dispute |
 | [prt-bridge.lua](prt-bridge.lua) | Observe the dispute, derive eligible actions, call players, and submit responses |
+| [prt-transactions.lua](prt-transactions.lua) | Journal signed candidates, reconcile exclusive account nonces, and replace pending transactions within fee limits |
 | [prt-ethereum.lua](prt-ethereum.lua) | Decode ABI events, encode calls, translate coordinates, and serialize proofs |
 | [prt-cast.lua](prt-cast.lua) | Make HTTP JSON-RPC requests and invoke cast for signing and submission |
 | [prt.lua](prt.lua) | Execute inputs, build commitments and proofs, and save or load epoch checkpoints |
 | [prt-dishonest.lua](prt-dishonest.lua) | Apply the existing dishonest strategies to the same player implementation |
 | [prt-bridge-test.lua](prt-bridge-test.lua) | Check ABI encoding, process boundaries, event ordering, and scheduling |
+| [prt-transactions-test.lua](prt-transactions-test.lua) | Exercise gas surges, dropped transactions, cancellation, journal reload, and nonce reorgs on Anvil |
 | [prt-proof-test.lua](prt-proof-test.lua) | Compare native and deployed Solidity transition verification |
 
 All actors currently run in one Lua process. Each has its own player object,
@@ -51,7 +53,10 @@ or the simulated referee's scheduling callbacks.
 Each calculator epoch has eight actors: the honest player, a forger that
 substitutes an input, a tamperer that corrupts execution, two fabulists that
 alter claimed hashes, and three quitters that post claims and disconnect.
-A separate keeper account handles cleanup and acceptance. Only the honest
+A separate keeper account handles cleanup and acceptance. The deployer and
+input sender use account zero, players use accounts one through eight, and
+the keeper uses account nine. The transaction journal has exclusive ownership
+of player and keeper nonces across epochs. Only the honest
 player exports a checkpoint, selected explicitly by the harness. The epoch
 listener passes each actor's configured checkpoint destination to its player.
 
@@ -218,7 +223,8 @@ agree with its final machine and outputs root. The demo checks that agreement
 for every epoch. It also opens the epoch-two checkpoint in a fresh player and
 seals an empty continuation, checking that the final machine and inherited proof
 remain unchanged. Checkpoints bootstrap later epoch execution; they do not
-restore a partially completed dispute or a pending transaction.
+restore a partially completed dispute. Signed transactions have a separate
+journal described below.
 
 ## Event observation and scheduling
 
@@ -287,22 +293,62 @@ complete authenticated 32-byte machine-tree leaf.
 For a due action, the bridge prepares or reuses its response, rebuilds the
 observation under the same policy, and requires the job and claim still to be
 eligible. It rechecks the live inclusion window and the observation block hash.
-`prt-cast.lua` preflights the transaction with `eth_call` against `pending`,
-then invokes `cast send` with the actor's keystore and password file. Command
-arguments are shell-quoted, and process exit status is checked.
+`prt-transactions.lua` preflights against the current canonical execution state,
+excluding its own pending transaction. It estimates gas with a 20% allowance,
+bounded by the block gas limit. A call that first becomes valid in the next
+block can be retried once that block arrives. `prt-cast.lua` invokes `cast mktx`
+with explicit chain ID, nonce, gas, value, and both EIP-1559 fee fields, using
+the actor's keystore and password file. It decodes the signed bytes with cast
+and verifies the signer and every requested field before publication. Arguments
+are shell-quoted; stdout and stderr are separated, and failures do not print
+signer paths or endpoint configuration.
 
-The bridge submits at most one transaction per tick and waits for its receipt.
-It checks receipt success and fetches the transaction to verify its sender,
-destination, calldata, and value. The local setup assumes exclusive signing
-accounts and synchronous Anvil mining; cast handles transaction construction
-and signing.
+The bridge publishes at most one transaction per tick and never waits for
+mining. Before each publication, the tracker writes all signed candidates,
+their hashes, nonce, fee fields, job context, and observation to
+`signed-transactions.json` using a temporary file and rename. It then publishes
+the raw bytes with `eth_sendRawTransaction`. The journal is shared across epoch
+coordinators and contains no signer credentials. Setup deployments and input
+posting still use synchronous `cast send` on the separate deployer account.
+
+The initial fee cap targets twice the current base fee plus the suggested tip,
+within configured limits. The tip has a 1 gwei floor. If a transaction is still
+pending after `PRT_FEE_BUMP_BLOCKS` blocks (default 3), the tracker replaces it
+at the same nonce. Both fee fields increase by at least
+`PRT_FEE_BUMP_PERCENT` (default 15, rounded up); current network estimates can
+raise them further. `PRT_MAX_FEE_PER_GAS` defaults to 100000000000 wei (100 gwei),
+and `PRT_MAX_PRIORITY_FEE_PER_GAS` to 10000000000 wei (10 gwei). These are demo
+defaults, not a guarantee of timely inclusion. Hitting a ceiling reports the
+blocked account while observation continues. The tracker retains the nonce and
+can resume if fees fall. All four settings can be passed as Make variables.
+If an affordable candidate is missing from the node at the fee ceiling, the
+tracker can republish its identical signed bytes after revalidation, using the
+same retry interval. This also recovers a crash before the original broadcast.
+
+Every tick revalidates pending work against the dispute observation and actual
+inclusion deadline. Useful pending work keeps its nonce; another action for
+that signer cannot silently queue behind it. Obsolete work is immediately
+replaced by an eligible action, or by a zero-value self-transfer cancellation.
+A replacement that cannot be prepared or simulated falls back to cancellation.
+Cancellation obeys the same fee ceilings and cannot revoke a transaction
+already distributed to block producers. An older candidate can still win.
+Signed candidates survive underpriced or ambiguous publication responses;
+later attempts raise fees at the retained nonce.
+
+Nonce reconciliation reads current chain state, independently of delayed event
+observation. The journal retains a high-water nonce and every candidate even
+after mining. If a reorg retreats the account nonce, every recorded nonce up to
+that high-water mark must be consumed or replaced again. Future queued
+candidates may race that reconciliation. The bridge does not defend a stale
+claim merely because one of its own older transactions joined it.
 
 A mined receipt suppresses duplicate publication while its event is awaiting
 confirmation. The bridge checks the receipt's block hash; an orphaned receipt
 releases that suppression. Completion still comes from observed events.
 Anvil EVM rejections suppress an attempt only for the same live tip. A new tip
 or replacement branch can make it eligible again. Other provider or transport
-errors abort the run. Dishonest moves can therefore
+errors during observation, simulation, or signing abort the run; a publication
+RPC rejection instead retains the signed attempt for retry. Dishonest moves can therefore
 be rejected during preflight without broadcasting a reverting transaction.
 Attempts and results are recorded in `transactions.jsonl`.
 
@@ -310,7 +356,7 @@ Transition proofs also run through the native verifier, using the emitted
 agreed state and authoritative InputBox bytes. The bridge requires native
 validity to agree with an `eth_call` pinned to the observed block hash. Proven
 invalid witnesses are retained as invalid for that exact event and actor. A
-later pending-state rejection can instead mean another actor already answered,
+later execution-state rejection can instead mean another actor already answered,
 so it is not treated as a native/Solidity disagreement. Before the tournament, the proof
 checks exercise input delivery, an ordinary step, an instruction reset, a late
 period reset, and absent input. Each class also checks rejection of corrupted,
@@ -351,7 +397,8 @@ honest player; the default story uses eight actors for each calculator epoch
 and one honest player for bootstrap. Each run creates a fresh directory under
 `doc/recipes/cache/prt-chain/`, or the absolute host path supplied through
 `PRT_OUTPUT_DIR`. Top-level `story.txt` combines the three epoch stories and
-`deployment.json` records deployed addresses. Each `epoch-N/` retains its input
+`deployment.json` records deployed addresses. `signed-transactions.json` retains
+the shared signer journals across epochs. Each `epoch-N/` retains its input
 files, `epoch.json`, checkpoint, `story.txt`, `chain-logs.json`,
 `transactions.jsonl`, and local claim artifacts. Calculator epochs also retain
 `proof-vectors.json` with native/Solidity comparisons. The run also retains
@@ -362,6 +409,8 @@ epoch on Anvil.
 For development, `make -C doc test-prt-bridge` mounts current recipe sources
 into the existing runtime image. `run-prt-bridge` tests the packaged sources.
 `make -C doc test-prt-bridge-unit` runs only the bridge fixtures.
+`make -C doc test-prt-transactions` runs the controlled Anvil transaction tests;
+`make -C doc run-prt-bridge PRT_MODE=transactions` runs their packaged version.
 
 Both run targets accept `PRT_INPUT_CONFIRMATIONS` (default `8`) and
 `PRT_DISPUTE_CONFIRMATIONS` (default `4`). Either also accepts `safe` or
@@ -378,39 +427,31 @@ records the replaced tip and observation height.
 
 ## Validation results
 
-On 2026-10-10, the confirmation-policy fixtures and toolchain formatting/lint
-checks passed. The source-mounted eight-player run `cache/prt-chain/run.GhQB3O/`
-used input depth eight and dispute depth four and replaced an already-observed
-child-tournament branch in epoch one. Both calculator epochs then accepted the
-honest claim and recovered their root bonds with the original players retained.
-All six inputs waited eight blocks and were processed before their epoch's
-on-chain seal. Every mined bridge transaction used an observation at least
-four blocks behind its inclusion predecessor. Both native/Solidity proof suites
-passed, and the final continuation retained the identical last-output proof.
+On 2026-10-10, the transaction tracker passed the controlled Anvil tests in
+`cache/prt-chain/run.8CLmbJ/`. The rebuilt image `81f9f42af710` passed the
+same tests using its packaged scripts in `cache/prt-chain/run.Y1lMAY/`, and
+its packaged two-epoch smoke story with a root-join reorg in
+`cache/prt-chain/run.k09tgN/` (16, 21, and 16 observations for epochs zero,
+one, and two).
 
-The rebuilt image `84b855f72162` also passed its packaged smoke run with a
-root-join reorg, `cache/prt-chain/run.9H90Og/`, at the same observation depths.
-That run accepted all three epochs and recovered the root bonds in 11, 14, and
-11 observations respectively. Generated run directories are local artifacts.
-
-Before adding observation delays, the 2026-10-09 build of
-`cartesi/machine-emulator-prt:devel` completed the default story using its packaged scripts and contracts, without mounting the
-working recipe sources. The recorded run was `cache/prt-chain/run.51AIeY/`
-relative to this file; its `story.txt` contains the complete narration. These
-generated artifacts are local and are not part of the source distribution.
+The source-mounted eight-player run `cache/prt-chain/run.jgtOkG/` used input
+depth eight and dispute depth four, and replaced an already-observed child
+tournament in epoch one. The same players retained their computations and
+both calculator epochs accepted the honest result and recovered their root
+bonds. The final receipt-race and fee-ceiling refinements were separately
+covered by the final Anvil fixtures and packaged smoke run.
 
 | Epoch | Input range, end excluded | Cumulative outputs | Dispute observations | Invalid transition proofs rejected |
 | --- | --- | --- | --- | --- |
-| 0 | [0, 0) | 0 | 7 | 0 |
-| 1 | [0, 3) | 2 | 412 | 4 |
-| 2 | [3, 6) | 5 | 412 | 4 |
+| 0 | [0, 0) | 0 | 16 | 0 |
+| 1 | [0, 3) | 2 | 1106 | 4 |
+| 2 | [3, 6) | 5 | 819 | 4 |
 
-All three results were staged and accepted, and their winning root bonds were
-recovered. The input records show every calculator input was processed before
-its epoch's sealing block. The checkpoint chain preserved the preceding final
-machine hash as the next initial hash. The empty continuation preserved the
-final machine hash, output count, and outputs root; its last-output proof file
-was identical byte for byte.
+All six calculator inputs waited eight blocks and were processed before their
+on-chain seal. Both native/Solidity proof suites passed. Settlement matched the
+checkpoint chain, and the final empty continuation retained the identical
+last-output proof, final machine hash, output count, and outputs root.
+Generated run directories are local artifacts, not source distribution files.
 
 Validation also passed for:
 
@@ -423,6 +464,13 @@ Validation also passed for:
   inputs, actual-tip deadline checks, receipt suppression and orphaning, retry
   after branch changes, and child replacement at the same address, including
   replacement matches in which the actor no longer participates.
+- Anvil gas surges with mining disabled, same-nonce fee replacement, fee ceilings
+  and subsequent recovery, dropped candidates, underpriced replacement errors,
+  write-before-publication, cancellation and older-candidate races, reverted
+  receipts, multi-nonce reorgs, process-crash journal reload, and identical-byte
+  rebroadcast at the fee ceiling. Bridge fixtures also check that failed
+  replacements do not strand obsolete work and useful pending jobs do not
+  oscillate between competing actions from the same account.
 - The existing PRT protocol suite, including the added checks for invalid,
   missing, or non-last continuation proofs and preservation through an empty
   epoch.
@@ -434,6 +482,7 @@ image:
 ```sh
 PATH=/opt/local/bin:$PATH GIT_CONFIG_GLOBAL=/dev/null make -C doc test-prt-protocol
 PATH=/opt/local/bin:$PATH GIT_CONFIG_GLOBAL=/dev/null make -C doc test-prt-bridge
+PATH=/opt/local/bin:$PATH GIT_CONFIG_GLOBAL=/dev/null make -C doc test-prt-transactions
 ```
 
 ## Current limits
@@ -447,11 +496,14 @@ full staging period; sentry-driven early acceptance is outside this demo.
 The geometry, deployment, and actor population are fixed for this recipe.
 Reading complete log histories is suitable for the disposable local chain;
 log pagination and a general deployment-discovery interface are not implemented.
-Saved claim files and transaction records are diagnostic artifacts, not an
-implemented restart protocol. The bridge handles changed dispute observations
-and orphaned mined receipts within a running local session. Durable restart,
-pending-transaction reconciliation and fee replacement remain part of the
-broader validator design. Reorgs crossing accepted input history or its seal
+Saved claim files are diagnostic artifacts, not a complete dispute restart
+protocol. The transaction tracker can reload its journal and reconcile pending
+or orphaned candidates, but callers must restore the corresponding player and
+observation context before submitting work. The demo does not yet implement
+that complete relaunch flow. Its journal assumes one writer and process-crash
+atomic rename; it does not provide an fsync-based power-loss guarantee. It keeps
+all signed candidates for the bounded run, without journal compaction.
+Reorgs crossing accepted input history or its seal
 still fail closed. A confirmation depth is a policy, not absolute finality.
 
 The packaged story validates the Lua players against the patched contracts. It

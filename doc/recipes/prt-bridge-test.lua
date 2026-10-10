@@ -40,6 +40,7 @@ assert(not pcall(cast.run, { "sh", "-c", "exit 23" }))
 -- Cleanup has no machine, local commitment, or claim ownership requirement.
 local captured
 local coordinator = bridge.new({
+    transactions = {},
     chain = {},
     abi = {
         calldata = function(_, name, args)
@@ -67,6 +68,7 @@ assert(captured[2][1][1] == "one" and captured[2][1][2] == "two")
 local one = { label = "one", player = {}, signer = { address = "alice" }, claims = { root = { root = "one" } } }
 local two = { label = "two", player = {}, signer = { address = "bob" }, claims = { root = { root = "two" } } }
 local scheduler = bridge.new({
+    transactions = {},
     chain = {},
     abi = {},
     root = "root",
@@ -170,6 +172,7 @@ local seal = log(
 )
 local canonical = "head"
 local reader = bridge.new({
+    transactions = {},
     chain = {
         head = function()
             return 3, "head", 7, "tip"
@@ -258,6 +261,7 @@ local function accumulating(policy)
         return result
     end
     local session = epoch.new({
+        transactions = {},
         chain = source,
         input_policy = policy or 0,
         abi = {
@@ -392,13 +396,14 @@ end
 -- Receipts remain distinct from confirmed completion events. A canonical
 -- but unobserved receipt suppresses resending; an orphaned receipt does not.
 do
-    local source = {
-        is_canonical = function()
-            return true
-        end,
-    }
+    local mined = { blockNumber = "0xa", blockHash = "block10" }
     local client = bridge.new({
-        chain = source,
+        chain = {},
+        transactions = {
+            receipt = function()
+                return mined
+            end,
+        },
         abi = {},
         root = "root",
         factory = "factory",
@@ -406,14 +411,10 @@ do
         actors = { {} },
         cleaner = {},
     })
-    client.submitted.work = { blockNumber = "0xa", blockHash = "block10" }
     assert(client:awaiting_observation({ key = "work" }, { head = 8 }))
     assert(not client:awaiting_observation({ key = "work" }, { head = 10 }))
-    function source.is_canonical()
-        return false
-    end
+    mined = nil
     assert(not client:awaiting_observation({ key = "work" }, { head = 8 }))
-    assert(client.submitted.work == nil)
 end
 
 -- Tick scheduling must not mistake a delayed observation for the current
@@ -422,7 +423,16 @@ end
 do
     local sends = 0
     local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true }
-    local job = { key = "job", first = 0, last = 10, actor = { label = "test" }, kind = "test" }
+    local actor = { label = "test", signer = { address = "alice" } }
+    local job = {
+        key = "job",
+        first = 0,
+        last = 10,
+        actor = actor,
+        kind = "test",
+        context = { address = "root" },
+        event = { log = { blockHash = "block4", logIndex = "0x0" } },
+    }
     local source = {
         head = function()
             return observed.tip, observed.tip_hash
@@ -430,19 +440,24 @@ do
         is_canonical = function()
             return true
         end,
-        send = function()
+    }
+    local publisher = {
+        receipt = function() end,
+        pending = function() end,
+        submit = function()
             sends = sends + 1
-            return nil, { code = 3, message = "fixture revert" }
+            return { rejected = { code = 3, message = "fixture revert" } }
         end,
     }
     local client = bridge.new({
         chain = source,
+        transactions = publisher,
         abi = {},
         root = "root",
         factory = "factory",
         consensus = "consensus",
-        actors = { {} },
-        cleaner = {},
+        actors = { actor },
+        cleaner = actor,
         directory = temporary,
     })
     function client.observe()
@@ -452,7 +467,7 @@ do
         return { job }
     end
     function client.prepare()
-        return { signer = {}, to = "root", data = "0x" }
+        return { signer = actor.signer, to = "root", data = "0x" }
     end
     client:tick()
     client:tick()
@@ -558,6 +573,7 @@ do
     local client = bridge.new({
         chain = {},
         abi = {
+            -- This fixture exercises job derivation without publication.
             calldata = function()
                 return "0x"
             end,
@@ -567,6 +583,7 @@ do
         consensus = "consensus",
         actors = { actor },
         cleaner = {},
+        transactions = {},
     })
     client:jobs(view)
     local original = actor.claims.child
@@ -592,6 +609,83 @@ do
     child.creation.one, child.creation.contestedFinalStateOne = "parent", original.final_state
     client:jobs(view)
     assert(builds == 2 and actor.claims.child == original, "ineligible replacement erased reusable computation")
+end
+
+-- Pending actions are revalidated on every observation, including when no new
+-- action can be prepared. A failed replacement cannot strand obsolete work.
+do
+    local actor = { label = "pending", signer = { address = "alice" } }
+    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true }
+    local pending = { candidates = { { job = "live" } } }
+    local calls = {}
+    local jobs = {}
+    local publisher = {
+        receipt = function() end,
+        pending = function(_, signer)
+            return signer.address == "alice" and pending or nil
+        end,
+        submit = function(_, _, intent)
+            calls[#calls + 1] = intent and intent.key or "cancel"
+            if not intent then
+                return { published = true }
+            end
+            if intent.key == "live" then
+                return { waiting = true }
+            end
+            return { rejected = { code = 3, message = "replacement is already done at the live tip" } }
+        end,
+    }
+    local client = bridge.new({
+        chain = {
+            head = function()
+                return 8, "block8"
+            end,
+            is_canonical = function()
+                return true
+            end,
+        },
+        transactions = publisher,
+        abi = {},
+        root = "root",
+        factory = "factory",
+        consensus = "consensus",
+        actors = { actor },
+        cleaner = { signer = { address = "keeper" } },
+        directory = temporary,
+    })
+    function client.observe()
+        return observed
+    end
+    function client.jobs()
+        return jobs
+    end
+    function client.prepare()
+        return { signer = actor.signer, to = "root", data = "0x" }
+    end
+    local function job(key)
+        return {
+            key = key,
+            kind = key,
+            actor = actor,
+            first = 0,
+            last = 10,
+            context = { address = "root" },
+            event = { log = { blockHash = "block4", logIndex = "0x0" } },
+        }
+    end
+    jobs = { job("other"), job("live") }
+    client:tick()
+    assert(table.concat(calls, ",") == "live", "pending work oscillated between eligible jobs")
+    jobs = { job("other") }
+    client:tick()
+    assert(calls[#calls] == "other")
+    client:tick()
+    assert(calls[#calls] == "cancel", "failed replacement stranded obsolete work")
+    calls = {}
+    jobs = { job("live") }
+    jobs[1].last = 9
+    client:tick()
+    assert(table.concat(calls, ",") == "cancel", "expired pending work was not canceled")
 end
 
 print("PRT bridge encoding, scheduling, input streaming, and process-boundary tests passed.")

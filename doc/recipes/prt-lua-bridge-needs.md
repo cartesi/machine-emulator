@@ -358,6 +358,15 @@ Emission fixtures.
 - winMatchByTimeout and winInnerTournament accept the winner's children
   whether the winner is commitment one or two, and reject any other pair.
 
+Client observation may deliberately lag the tip by a configured confirmation
+depth, or follow a consensus safe/finalized marker. Inputs and epoch boundaries
+can use a stronger policy than dispute events. This needs no additional
+contract event: the existing absolute deadlines remain authoritative. Delay
+from confirmations, computation, and transaction inclusion must fit those
+windows. Test a delayed observer against the actual inclusion height, including
+a response that expires while its event still looks actionable in the delayed
+history.
+
 Timing fixtures. The clock keeps running while a client computes, expiry is
 inclusive, and a won child must be propagated before the winner's remaining
 allowance runs out.

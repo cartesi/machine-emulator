@@ -13,6 +13,9 @@ local initial_hash = assert(arg[1], "missing template hash")
 assert(#assert(eth.raw(initial_hash)) == 32, "invalid template hash")
 local mode = arg[2] or "story"
 local chain = cast.new("http://127.0.0.1:8545")
+local input_policy = cast.policy(os.getenv("PRT_INPUT_CONFIRMATIONS") or "8")
+local dispute_policy = cast.policy(os.getenv("PRT_DISPUTE_CONFIRMATIONS") or "4")
+local test_reorg = os.getenv("PRT_TEST_REORG") == "yes"
 local zero_address = "0x" .. string.rep("00", 20)
 local prt_out = "/opt/dave/prt/contracts/out"
 local rollups_out = "/opt/dave/cartesi-rollups/contracts/out"
@@ -97,6 +100,8 @@ util.write_file(
         consensus = consensus,
         initial_hash = initial_hash,
         uarch_pristine_hash = encoded_hash,
+        input_policy = input_policy,
+        dispute_policy = dispute_policy,
     }, { indent = true }),
     "deployment.json"
 )
@@ -159,6 +164,8 @@ local function open_epoch(number, previous)
         cleaner = { label = "keeper", signer = deployer },
         directory = directory,
         claim_staging_period = staging_period,
+        input_policy = input_policy,
+        dispute_policy = dispute_policy,
     })
     session.honest_actor = honest_actor
     sessions[#sessions + 1] = session
@@ -185,7 +192,9 @@ local function narrate(session, snapshot)
             .. input.block
             .. ": input "
             .. input.index
-            .. " processed while the epoch was open.\n"
+            .. " added; processed at block "
+            .. input.processed_at
+            .. " after the input observation policy.\n"
     end
     lines[#lines + 1] = "Block "
         .. eth.small(session.seal.log.blockNumber)
@@ -241,6 +250,35 @@ local function narrate(session, snapshot)
     util.write_file(json.encode(snapshot.logs, { indent = true }), session.directory .. "/chain-logs.json")
 end
 
+local function mine_to(number)
+    local tip = chain:head()
+    if number > tip then
+        assert(chain:rpc("anvil_mine", { string.format("0x%x", number - tip) }))
+    end
+end
+
+-- Only the disposable-chain harness advances time to satisfy confirmations.
+local function await_inputs(session, count)
+    for _ = 1, 1000 do
+        session:poll()
+        if #session.input_paths == count then
+            return
+        end
+        mine_to(chain:head() + 1)
+    end
+    error("input observation policy did not advance")
+end
+
+local function await_seal(session)
+    for _ = 1, 1000 do
+        if session:poll() then
+            return
+        end
+        mine_to(chain:head() + 1)
+    end
+    error("epoch seal observation policy did not advance")
+end
+
 local function play(session, accumulating)
     local coordinator = assert(session.dispute)
     if session.epoch > 0 then
@@ -253,15 +291,44 @@ local function play(session, accumulating)
             session.directory
         )
     end
+    local rewind = test_reorg and session.epoch == 1 and assert(chain:rpc("evm_snapshot", {}))
+    local reorganized = false
     for tick = 1, 10000 do
+        session:poll()
         local snapshot, progressed, next_block = coordinator:tick()
-        narrate(session, snapshot)
+        if snapshot and snapshot.ready then
+            narrate(session, snapshot)
+        end
         if accumulating then
             accumulating:poll()
         end
+        if rewind and snapshot then
+            for _, event in ipairs(snapshot.events) do
+                if event.name == "NewInnerTournament" or (mode == "smoke" and event.name == "CommitmentJoined") then
+                    local old_tip, old_hash = chain:head()
+                    assert(chain:rpc("evm_revert", { rewind }))
+                    mine_to(chain:head() + 1)
+                    util.write_file(
+                        json.encode({
+                            old_tip = old_tip,
+                            old_hash = old_hash,
+                            replacement_tip = chain:head(),
+                            observation_block = snapshot.head,
+                        }, { indent = true }),
+                        session.directory .. "/reorg.json"
+                    )
+                    io.stderr:write("Epoch 1: replaced the observed dispute branch; players retained.\n")
+                    rewind, reorganized = nil, true
+                    progressed = true
+                    break
+                end
+            end
+        end
         if not progressed then
-            local standing = snapshot.contexts[coordinator.root].standing
-            if snapshot.settled and snapshot.recovered[coordinator.root] then
+            local context = snapshot and snapshot.contexts[coordinator.root]
+            local standing = context and context.standing
+            if snapshot and snapshot.settled and snapshot.recovered[coordinator.root] then
+                assert(not test_reorg or session.epoch ~= 1 or reorganized, "dispute reorg was not exercised")
                 assert(
                     standing and standing.dangling == session.honest_actor.claims[coordinator.root].root,
                     "winning commitment differs from the honest claim"
@@ -285,8 +352,7 @@ local function play(session, accumulating)
                 return
             end
             assert(not coordinator.terminal, coordinator.terminal)
-            assert(next_block and next_block > snapshot.head + 1, "bridge idle without a future action")
-            assert(chain:rpc("anvil_mine", { string.format("0x%x", next_block - snapshot.head - 1) }))
+            mine_to(math.max(next_block or 0, chain:head() + 1))
         end
     end
     error("epoch exceeded the observation limit")
@@ -298,21 +364,21 @@ local function post_inputs(session, expressions)
             chain:send(deployer, input_box, abi:calldata("addInput", { app, eth.hex(expression .. "\n") }))
         assert(submitted, err and json.encode(err))
         local count = #session.input_paths
-        session:poll()
+        await_inputs(session, count + 1)
         assert(not session.dispute and #session.input_paths == count + 1, "input was not processed before sealing")
     end
 end
 
 local bootstrap = open_epoch(0)
-assert(bootstrap:poll(), "missing bootstrap seal")
+await_seal(bootstrap)
 local first = open_epoch(1, bootstrap)
 post_inputs(first, { "6*2^1024 + 3*2^512", "invalid input", "2^2048" })
 play(bootstrap, first)
-assert(first.dispute, "epoch one was not sealed")
+await_seal(first)
 local second = open_epoch(2, first)
 post_inputs(second, { "(2^256 - 1) * (2^256 - 1)", "scale=80; sqrt(2)", "scale=100; 355/113" })
 play(first, second)
-assert(second.dispute, "epoch two was not sealed")
+await_seal(second)
 play(second)
 
 -- Loading the final checkpoint in a fresh player also covers a subsequent epoch

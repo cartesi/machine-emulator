@@ -11,7 +11,7 @@ ready. The bridge itself never mines or reproduces clock accounting.
 
 Deployment uses DaveAppFactory and preserves the empty epoch zero. The two
 calculator input groups run as epochs one and two. The bridge delivers each
-InputAdded before sealing, stores the final machine and last-output proof at
+InputAdded after its input confirmation policy, before processing the confirmed seal, stores the final machine and last-output proof at
 the seal, and bootstraps the next player from that checkpoint while the sealed
 epoch is disputed. It stages and accepts each result and checks it against the
 checkpoint. See [implementation notes](prt-bridge-implementation-notes.md) for
@@ -44,13 +44,14 @@ hash before playing, then compares native and Solidity verification. The proof
 tests also reject corrupted, truncated, and trailing witnesses.
 
 `cast` reads local keystores and signs one transaction at a time. Its exit status,
-receipt status, sender, destination, calldata, and value are checked. Anvil EVM
-reverts suppress that actor's attempted response to the observed event; transport
-and provider failures abort the run. The journal includes native proof results.
+receipt status, sender, destination, calldata, and value are checked. The bridge
+retains mined receipts while their completion events await
+confirmation, retries orphaned work, and refreshes the observation after player
+computation. Simulation reverts suppress an attempt only at the same live tip;
+proofs independently shown invalid against the observed event need not be retried.
 The local harness uses exclusive accounts and synchronous mining. It does not
-implement the restart, pending-transaction replacement, and reorg recovery
-requirements described below for a long-lived validator. The documents retain
-those requirements as the intended design beyond this disposable-chain demo.
+implement durable dispute restart or pending-transaction replacement. Those
+requirements below remain implementation work for a long-lived validator.
 
 ## Validator design
 
@@ -84,7 +85,7 @@ The validator can compute that opening directly, without replaying earlier
 moves to reconstruct the match. This keeps dispute complexity where it is
 unavoidable and avoids implementing another copy in each validator.
 
-Each tick fetches the relevant epoch's logs through a selected latest head and
+Each tick fetches the relevant epoch's logs through a selected observation head and
 applies the table to an initially empty action set. Later events replace or
 cancel earlier actions. The node persists its own claims and computation
 context, and its one tracked transaction. Event logs, discovered identities,
@@ -190,6 +191,9 @@ Provide the player with the contract's initial state hash and filenames containi
 The first harness may use pre-materialized input files checked against contract
 fixtures. Live ingestion must reconstruct and verify each input commitment before
 delivering its filename, then check the EpochSealed bounds before finalizing the claim.
+Apply the stronger input observation policy to both InputAdded and EpochSealed,
+so the initial state and input boundaries share the same stability requirement.
+The player still processes inputs incrementally as they cross that boundary.
 
 ## Actions and player computation
 
@@ -201,7 +205,8 @@ delivering its filename, then check the EpochSealed bounds before finalizing the
 - The one tracked transaction, if any, with its signed bytes, hash, nonce,
   fee fields, owning job identity, and computation context, and the highest
   nonce ever published. The record is cleared once its nonce is consumed at
-  the accepted head. The high-water mark is persisted before each publication
+  the current execution head. Completion events still use the observation policy.
+  The high-water mark is persisted before each publication
   and never lowered, since consumption on an unfinalized branch can be undone.
 - For this tick, the calls that events authorize. Each entry holds the contract
   address, method, arguments supplied by events, first eligible block, any expiry block,
@@ -472,10 +477,28 @@ must not prevent the player from committing or answering for the next child clai
 
 ## Tick, log discovery, and restarts
 
+Input delivery and dispute observation have separate policies. A policy is a
+nonnegative number of successor blocks, or the RPC tag safe or finalized.
+Depth k selects max(0, tip - k); it does not count the selected block itself.
+There is no automatic fallback from an unavailable consensus tag to latest.
+Use a stronger policy for inputs and epoch boundaries, and a shorter delay for
+disputes. The recipe defaults to depths eight and four respectively; these are
+demo settings, not a quantified mainnet risk guarantee. The epoch listener's
+standalone default is finalized; the dispute bridge's default is four blocks.
+
+The observation number and hash authorize jobs. The current execution head
+supplies the clock and account nonce: a transaction will be included after that
+head, not after the delayed observation block. Confirmation delay, computation,
+RPC latency, and inclusion delay must together fit the emitted response windows.
+A lag policy does not remove the need to recover from deeper dispute reorgs.
+If a reorg crosses the accepted input history or epoch seal, stop and rebuild
+from a matching checkpoint; ordinary dispute reorgs leave the player intact.
+
 A tick performs the following steps. Its observation starts empty every time.
 
-1. Select the latest head by number and hash. Fetch the relevant consensus and
-   factory logs from the epoch's discovery range, including its creation
+1. Sample the current tip and select the observation block using the dispute
+   policy, retaining its number and hash separately from the tip. Fetch the
+   relevant consensus and factory logs from the epoch's discovery range, including its creation
    transaction, through that fixed head number. Fetch the root tournament's
    logs from creation. Use address/topic filters and bounded chunks, bisecting
    rejected ranges, and do not restrict cleanup discovery to our own claims.
@@ -490,7 +513,7 @@ A tick performs the following steps. Its observation starts empty every time.
    the selected head is still canonical and the fetched ranges belong to that
    branch before accepting the observation. Discard inconsistent reads and
    retry on a later tick. Range requests must not independently use "latest".
-4. Read the signing account's nonce at the accepted head and reconcile the
+4. Read the signing account's nonce at the current execution head and reconcile the
    tracked transaction. A tracked nonce below the account nonce was consumed
    and its record is cleared. A tracked nonce equal to it is still pending. A
    tracked nonce above it means a reorg orphaned mined transactions, and the
@@ -501,21 +524,26 @@ A tick performs the following steps. Its observation starts empty every time.
    selects the nonce and the proposed action. When the account nonce is at or
    below the high-water mark and no tracked transaction is pending at it, the
    proposed action is the due job, or a cancel when none is due. Filter jobs
-   by their windows at the accepted head. Choose due work
+   by their windows at the expected inclusion block after the current tip.
+   Retain canonical receipts awaiting observation to avoid publishing a completed
+   action again while its event is still behind the confirmation boundary.
+   An orphaned receipt cannot suppress a job. Choose due work
    deterministically, prioritizing expiring joins, responses, timeout wins,
    and child propagation by earliest expiry ahead of work without expiry.
    Prefer staging before recovery for the same root tournament. Use stable
    job-key ordering for remaining ties, and ensure unrelated cleanup and
    recovery make progress when urgent work permits.
 5. Compute the selected job's missing data. Refresh the observation from a new
-   selected latest head, applying steps 1-4 again, before preparing a transaction.
+   selected observation head, applying the same policy and steps 1-4 again,
+   before preparing a transaction.
    Reuse the result only for a currently eligible job with the same computation
    context and arguments. If that job disappeared or expired, end this tick.
    Cached computation may be useful on a later one. Also defer the transaction
    if more urgent work appeared during computation.
-6. Simulate the exact eligible call at the accepted head hash, recheck that the
-   head remains canonical, and persist and publish at most one transaction at
-   the nonce selected in step 4. Publication happens only here. Replacements,
+6. Simulate the exact eligible call against current execution state, since
+   timeout and expiry checks must see the actual clock. Recheck the observation
+   block's canonical hash and the current inclusion window, and persist and
+   publish at most one transaction at the nonce selected in step 4. Publication happens only here. Replacements,
    rebroadcasts, and nonce cancellations count toward that limit, and each is
    an attempt to out-bid whatever candidate holds the nonce. A pending
    transaction can be handled without starting new machine work.
@@ -540,9 +568,9 @@ tick. An interrupted computation can restart from durable claim data.
 This removes special recovery machinery for dispute observation, not the need
 for consistent chain reads or transaction reconciliation. Retain pending bond
 recoveries in the epoch's discovery scope after staging, since staging alone
-does not finish the validator's work. Act on latest heads rather than waiting for
-finality before each response. Contract validation remains authoritative if
-the chain changes after preparation, and simulation does not guarantee inclusion
+does not finish the validator's work. Dispute events follow the configured
+observation delay; they need not come from the latest head. Contract validation
+remains authoritative if the chain changes after preparation, and simulation does not guarantee inclusion
 before a deadline. Measure full-history fetch and computation latency against
 the deployment's windows as part of acceptance.
 
@@ -559,9 +587,10 @@ false without reverting, so a successful receipt alone does not prove recovery.
 
 Track one transaction and keep one pending nonce per signer. Reorgs can leave
 additional candidates of ours in the network. For each eligible job, simulate
-the exact call, signer, and bond value against the accepted head hash. Check
-that the
-head remains canonical and the job remains current before signing. A
+the exact call, signer, and bond value against current execution state. Check
+that the selected observation block remains canonical, that the job remains
+current under its observation policy, and that its window allows inclusion
+beyond the actual tip before signing. A
 simulation revert ends that attempt. A later tick derives the job again if the
 events and window still permit it. Simulation is cheap, so another due job
 may be tried in the same tick, with the same refresh and simulation checks,
@@ -735,6 +764,11 @@ commitments and encoded proofs to agree with the pinned Solidity verifier.
 - Associate a root tournament's factory creation event with EpochSealed before joining.
   Discovery of root tournaments and child tournaments must provide geometry, joining deadline, and join bond from
   events alone. Assert that no descriptor or bond-value view calls occur.
+- Cover zero and positive confirmation depths, safe/finalized tags, and missing
+  consensus markers without fallback. Replace an input before confirmation and
+  require only the replacement to reach the player. Keep epoch seals behind
+  the same input policy. Test deadline expiry at the real tip, including expiry
+  while a player method runs, and receipt suppression until events are observed.
 - Start each tick with empty observation state. At the same head, ordinary and
   restarted ticks must derive identical actions. Change branches during range
   fetching and reject mixed observations. Include replacement child discovery,

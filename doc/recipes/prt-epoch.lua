@@ -18,25 +18,35 @@ local function less(a, b)
 end
 
 function methods:poll()
-    local head, hash = self.chain:head()
+    if self.dispute then
+        assert(self.chain:is_canonical(self.seal_block, self.seal_hash), "stable epoch seal was reorganized")
+        return self.dispute
+    end
+    local head, hash, tip = self.chain:head(self.input_policy)
     local logs = {}
     for _, address in ipairs({ self.input_box, self.consensus }) do
         for _, log in ipairs(self.chain:logs(address, head)) do
-            assert(log.address == address and log.removed == false, "invalid epoch log")
+            assert(log.address == address and type(log.removed) == "boolean", "invalid epoch log")
+            if log.removed then
+                return nil
+            end
             assert(eth.small(log.blockNumber) <= head, "epoch log past sampled head")
             logs[#logs + 1] = log
         end
     end
     table.sort(logs, less)
-    local canonical = assert(self.chain:rpc("eth_getBlockByNumber", { string.format("0x%x", head), false }))
-    assert(canonical.hash == hash, "epoch head changed during observation")
+    if not self.chain:is_canonical(head, hash) then
+        return nil
+    end
     assert(#logs >= #self.applied, "epoch log history was truncated")
     local positions, blocks = {}, {}
     for i, log in ipairs(logs) do
         local identity = key(log)
         assert(not positions[identity], "duplicate epoch log")
         positions[identity] = true
-        assert(not blocks[log.blockNumber] or blocks[log.blockNumber] == log.blockHash, "mixed epoch branches")
+        if blocks[log.blockNumber] and blocks[log.blockNumber] ~= log.blockHash then
+            return nil
+        end
         blocks[log.blockNumber] = log.blockHash
         if self.applied[i] then
             assert(self.applied[i] == identity, "epoch history changed; restart from a matching checkpoint")
@@ -55,8 +65,13 @@ function methods:poll()
                     actor.player.event_handler.input_added(actor.player, index - self.input_begin, path)
                 end
                 self.input_paths[#self.input_paths + 1] = path
-                self.inputs[#self.inputs + 1] = { index = index, block = eth.small(log.blockNumber) }
-                io.stderr:write("Epoch ", self.epoch, ": processed InputAdded ", index, " before sealing.\n")
+                self.inputs[#self.inputs + 1] = {
+                    index = index,
+                    block = eth.small(log.blockNumber),
+                    observation_block = head,
+                    processed_at = tip,
+                }
+                io.stderr:write("Epoch ", self.epoch, ": processed confirmed InputAdded ", index, ".\n")
             end
         elseif
             event
@@ -79,6 +94,7 @@ function methods:poll()
                 actor.player.event_handler.epoch_sealed(actor.player, #self.input_paths, actor.checkpoint_directory)
             end
             self.seal = event
+            self.seal_block, self.seal_hash = eth.small(log.blockNumber), log.blockHash
             self.dispute = bridge.new({
                 chain = self.chain,
                 abi = self.abi,
@@ -92,6 +108,9 @@ function methods:poll()
                 input_paths = self.input_paths,
                 directory = self.directory,
                 claim_staging_period = self.claim_staging_period,
+                observation_policy = self.dispute_policy,
+                seal_block = self.seal_block,
+                seal_hash = self.seal_hash,
             })
             util.write_file(cartesi.tojson({
                 epoch = self.epoch,
@@ -100,6 +119,10 @@ function methods:poll()
                 initial_hash = self.initial_hash,
                 root = event.tournament,
                 seal_block = eth.small(log.blockNumber),
+                seal_hash = log.blockHash,
+                seal_processed_at = tip,
+                input_policy = self.input_policy,
+                dispute_policy = self.dispute_policy,
                 inputs = self.inputs,
             }, 2) .. "\n", self.directory .. "/epoch.json")
         end
@@ -111,6 +134,8 @@ end
 function M.new(args)
     assert(args.chain and args.abi and args.app and args.input_box and args.consensus)
     assert(args.actors and #args.actors > 0 and args.directory and args.initial_hash)
+    args.input_policy = cast.policy(args.input_policy or "finalized")
+    args.dispute_policy = cast.policy(args.dispute_policy or 4)
     cast.run({ "mkdir", "-p", args.directory })
     args.input_paths, args.inputs, args.applied = {}, {}, {}
     return setmetatable(args, { __index = methods })

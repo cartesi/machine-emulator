@@ -49,9 +49,37 @@ function methods:rpc(method, params)
     return response.result
 end
 
-function methods:head()
-    local block = assert(self:rpc("eth_getBlockByNumber", { "latest", false }))
-    return assert(tonumber(block.number)), block.hash
+-- A numeric policy is a number of successor blocks, not a count including
+-- the observed block. Consensus tags deliberately have no numeric fallback.
+function M.policy(value)
+    if type(value) == "string" and value:match("^%d+$") then
+        value = tonumber(value)
+    end
+    assert(
+        value == "safe" or value == "finalized" or (math.type(value) == "integer" and value >= 0),
+        "observation policy must be a nonnegative block depth, safe, or finalized"
+    )
+    return value
+end
+
+function methods:head(policy)
+    local tip = assert(self:rpc("eth_getBlockByNumber", { "latest", false }))
+    assert(tip ~= json.null, "latest block unavailable")
+    local number = assert(tonumber(tip.number))
+    local block = tip
+    if policy ~= nil then
+        policy = M.policy(policy)
+        local selector = type(policy) == "number" and string.format("0x%x", math.max(0, number - policy)) or policy
+        block = assert(self:rpc("eth_getBlockByNumber", { selector, false }))
+        assert(block ~= json.null, "observation block unavailable: " .. selector)
+    end
+    assert(tonumber(block.number) <= number, "observation block is ahead of sampled tip")
+    return assert(tonumber(block.number)), assert(block.hash), number, assert(tip.hash)
+end
+
+function methods:is_canonical(number, hash)
+    local block = assert(self:rpc("eth_getBlockByNumber", { string.format("0x%x", number), false }))
+    return block ~= json.null and block.hash == hash
 end
 
 function methods:logs(address, last_block)
@@ -68,12 +96,17 @@ function methods:call(to, data, block)
     return self:rpc("eth_call", { { to = to, data = data }, block or "latest" })
 end
 
+function methods:simulate(signer, to, data, value, block)
+    value = value or "0"
+    return self:rpc("eth_call", {
+        { from = signer.address, to = to, data = data, value = "0x" .. evmu.bint.tobase(evmu.bint(value), 16) },
+        block or "pending",
+    })
+end
+
 function methods:send(signer, to, data, value)
     value = value or "0"
-    local _, failure = self:rpc("eth_call", {
-        { from = signer.address, to = to, data = data, value = "0x" .. evmu.bint.tobase(evmu.bint(value), 16) },
-        "pending",
-    })
+    local _, failure = self:simulate(signer, to, data, value)
     if failure then
         -- Anvil reports EVM reverts with code 3. Provider failures must stop the
         -- run instead of permanently suppressing a potentially legal action.

@@ -117,7 +117,7 @@ brew install cartesi-machine
 
 ##### System Requirements
 
-- C++ Compiler with support for C++23 (tested with GCC >= 14.x and Clang >= 19.x).
+- C++ Compiler with support for C++23 (tested with GCC >= 14.x and Clang >= 20.x).
 - GNU Make >= 3.81
 - Boost >= 1.83
 - Lua >= 5.4.6 (optional, required for scripting support and interactive terminal)
@@ -133,7 +133,8 @@ sudo apt-get install build-essential git wget libgomp-dev libboost1.83-dev liblu
 ###### MacPorts Requirements
 
 ```sh
-sudo port install clang libomp boost181 wget pkgconfig lua54 libslirp
+sudo port install clang-20 libomp boost187 wget pkgconfig lua54 libslirp
+sudo port select --set clang mp-clang-20
 ```
 
 ###### Homebrew Requirements

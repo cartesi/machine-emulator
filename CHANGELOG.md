@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped machine configuration archive version from 7 to 8
 - Bumped JSON-RPC protocol version to 0.8.0
 - Bumped test Linux image to kernel 6.18.56-ctsi-1, now downloaded from cartesi/linux
+- Bumped minimum Clang version to 20
 
 ## [0.21.0] - 2026-08-04
 ### Added

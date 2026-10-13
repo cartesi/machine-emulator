@@ -155,6 +155,66 @@ describe("backing stores", function()
         end
     end)
 
+    for _, hash_function in ipairs({ "keccak256", "sha256" }) do
+        for _, operation in ipairs({ "store", "close" }) do
+            it(
+                "should preserve pending write TLB dirty marks on " .. operation .. " (" .. hash_function .. ")",
+                function()
+                    local stored_dirname = filesystem.temp_pathname()
+                    local cloned_dirname = filesystem.temp_pathname()
+                    local _ <close> = tests_util.scope_exit(function()
+                        cartesi.machine:remove_stored(stored_dirname)
+                        if operation == "store" then
+                            cartesi.machine:remove_stored(cloned_dirname)
+                        end
+                    end)
+                    local drive_start = 0x90000000
+                    local value = 0x0102030405060708
+                    local _ <close>, drive_filename = filesystem.write_scope_temp_file(string.rep("A", 0x1000))
+                    -- sd a1,0(a0)
+                    local _ <close>, ram_filename = filesystem.write_scope_temp_file(string.pack("<I4", 0x00b53023))
+
+                    do
+                        local machine <close> = cartesi.machine({
+                            ram = { length = 0x1000, backing_store = { data_filename = ram_filename } },
+                            flash_drive = {
+                                {
+                                    start = drive_start,
+                                    length = 0x1000,
+                                    backing_store = { data_filename = drive_filename, shared = true },
+                                },
+                            },
+                            hash_tree = { phtc_size = 32, hash_function = hash_function },
+                        })
+                        machine:get_root_hash() -- Persist clean dirty-page trees before the guest write.
+                        machine:store(stored_dirname)
+                    end
+
+                    do
+                        local machine <close> = cartesi.machine(stored_dirname, {}, cartesi.SHARING_CONFIG)
+                        machine:write_reg("x10", drive_start)
+                        machine:write_reg("x11", value)
+                        machine:run(1)
+                        expect.equal(machine:read_memory(drive_start, 8), string.pack("<I8", value))
+                        -- Do not hash or flush the TLB before storing or closing.
+                        if operation == "store" then
+                            machine:store(cloned_dirname, cartesi.SHARING_CONFIG)
+                            local restored <close> = cartesi.machine(cloned_dirname)
+                            expect.equal(restored:read_memory(drive_start, 8), string.pack("<I8", value))
+                            expect.equal(restored:get_root_hash(), tests_util.calculate_emulator_hash(restored))
+                        end
+                    end
+
+                    if operation == "close" then
+                        local restored <close> = cartesi.machine(stored_dirname)
+                        expect.equal(restored:read_memory(drive_start, 8), string.pack("<I8", value))
+                        expect.equal(restored:get_root_hash(), tests_util.calculate_emulator_hash(restored))
+                    end
+                end
+            )
+        end
+    end
+
     it("should clone a stored machine", function()
         local stored_dirname = filesystem.temp_pathname()
         local cloned_dirname = filesystem.temp_pathname()

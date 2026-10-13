@@ -400,6 +400,8 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
     if (is_unreproducible()) {
         throw std::runtime_error{"cannot store unreproducible machines"};
     }
+    // Persist pending dirty marks even when the processor state is rolled back by the sharing mode.
+    mark_write_tlb_dirty_pages();
     scope_remove remover;
 
     // Create directory
@@ -728,6 +730,14 @@ void machine::dump_stats() {
 }
 
 machine::~machine() {
+    try {
+        // Shared backing stores may outlive the processor state that tracks pending writes.
+        mark_write_tlb_dirty_pages();
+    } catch (...) {
+        // Corrupt TLB entries must not prevent machine destruction.
+        std::ignore =
+            std::fputs("could not preserve pending write TLB dirty marks during machine destruction\n", stderr);
+    }
     dump_insn_hist();
     dump_stats();
 }

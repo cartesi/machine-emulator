@@ -675,6 +675,7 @@ void machine::replace_memory_range(const memory_range_config &config) {
     m_ars.replace(resolved);
     // Cached host pointers must be rebuilt for the new mapping.
     init_hot_tlb_contents();
+    m_ht.evict_clean_pages(m_ars.find(resolved.start, resolved.length));
 }
 
 void machine::dump_insn_hist() {

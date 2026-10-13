@@ -563,6 +563,13 @@ machine_hash hash_tree::get_root_hash() const noexcept {
     return m_sparse_nodes[1].hash;
 }
 
+void hash_tree::evict_clean_pages(const address_range &ar) {
+    m_page_cache.evict_entries_if([&ar](uint64_t paddr_page) {
+        return ar.contains_absolute(paddr_page, HASH_TREE_PAGE_SIZE) &&
+            !ar.get_dirty_page_tree().is_node_dirty(paddr_page - ar.get_start(), HASH_TREE_LOG2_PAGE_SIZE);
+    });
+}
+
 machine_hash hash_tree::get_dense_node_hash(address_range &ar, uint64_t address, int log2_size) {
     assert(ar.contains_absolute(address, HASH_TREE_WORD_SIZE) && "address not in expected address range");
     if (log2_size < HASH_TREE_LOG2_PAGE_SIZE) {
@@ -974,7 +981,13 @@ hash_tree::hash_tree(const hash_tree_config &config, uint64_t concurrency, machi
 
             return c;
         }(),
-        concurrency, create_nodes(mars)) {}
+        concurrency, create_nodes(mars)) {
+    // Reuse stored page hashes only when their ranges share the cache's persistence behavior.
+    m_page_cache.evict_entries_if([&mars, shared = m_mapped_memory.get_flags().shared](uint64_t paddr_page) {
+        const auto &ar = mars.find(paddr_page, HASH_TREE_PAGE_SIZE);
+        return ar.is_empty() || ar.is_backing_store_shared() != shared;
+    });
+}
 
 void hash_tree::check_address_ranges(const_address_ranges ars) {
     for (int ar_i = 0; auto &&ar : ars) {

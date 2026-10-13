@@ -167,6 +167,9 @@ public:
 
     bool update_page(address_ranges ars, uint64_t paddr_page);
 
+    /// \brief Evicts cached pages that are clean in the address range's dirty-page tree
+    void evict_clean_pages(const address_range &ar);
+
     bool verify(address_ranges ars) const;
 
     machine_hash get_root_hash() const noexcept;

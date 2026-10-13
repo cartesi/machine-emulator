@@ -591,6 +591,33 @@ public:
         return m_entries.size();
     }
 
+    /// \brief Evicts entries whose page addresses satisfy a predicate
+    /// \param predicate Predicate over physical page addresses
+    template <typename Predicate>
+    void evict_entries_if(Predicate predicate) {
+        for (size_t i = 0; i < m_lru.size();) {
+            auto &e = m_entries[i];
+            if (!predicate(e.get_paddr_page())) {
+                ++i;
+                continue;
+            }
+            auto &last = m_entries[m_lru.size() - 1];
+            if (e.get_borrowed() || last.get_borrowed()) {
+                throw std::runtime_error{"page hash-tree cache entry already borrowed"};
+            }
+            m_map.erase(e.get_paddr_page());
+            m_lru.erase(m_lru.iterator_to(e));
+            if (&e != &last) {
+                // Keep active entries in the array prefix used by borrow_entry().
+                e.m_page = last.m_page;
+                e.m_hash_tree = last.m_hash_tree;
+                m_lru.insert(m_lru.iterator_to(last), e);
+                m_lru.erase(m_lru.iterator_to(last));
+                m_map.at(e.get_paddr_page()) = std::ref(e);
+            }
+        }
+    }
+
     /// \brief Clear entire cache
     void clear() noexcept {
         m_lru.clear();

@@ -154,7 +154,10 @@ AR &machine_address_ranges::push_back(std::unique_ptr<AR> &&ar_ptr, register_whe
     return ar_ref; // Return reference to object in heap
 }
 
-static void prepare_ar_backing_store(const backing_store_config &c, uint64_t length, scope_remove &remover) {
+static void prepare_ar_backing_store(backing_store_config &c, uint64_t length, scope_remove &remover) {
+    // Only an existing pair can preserve the supplied dirty-page flags.
+    c.mark_pages_dirty = c.mark_pages_dirty || c.dht_filename.empty() || c.dpt_filename.empty() ||
+        !os::exists(c.dht_filename) || !os::exists(c.dpt_filename);
     if (!c.shared) {
         return;
     }
@@ -188,6 +191,7 @@ static void prepare_ar_backing_store_for_share(const backing_store_config &from_
     const uint64_t dht_length = memory_address_range::get_dht_storage_length(length);
     const uint64_t dpt_length = memory_address_range::get_dpt_storage_length(length);
     if (from_c.newly_created()) { // Nothing to copy
+        to_c.mark_pages_dirty = true;
         // Prepare data storage
         os::truncate_file(to_c.data_filename, length, true);
         remover.add_file(to_c.data_filename);
@@ -208,7 +212,9 @@ static void prepare_ar_backing_store_for_share(const backing_store_config &from_
         remover.add_file(to_c.data_filename);
 
         // Prepare dht storage
-        if (os::exists(from_c.dht_filename) && os::file_size(from_c.dht_filename) == dht_length) {
+        const bool copy_dht = !from_c.dht_filename.empty() && os::exists(from_c.dht_filename) &&
+            os::file_size(from_c.dht_filename) == dht_length;
+        if (copy_dht) {
             os::copy_file(from_c.dht_filename, to_c.dht_filename, dht_length);
         } else {
             os::truncate_file(to_c.dht_filename, dht_length, true);
@@ -216,18 +222,21 @@ static void prepare_ar_backing_store_for_share(const backing_store_config &from_
         remover.add_file(to_c.dht_filename);
 
         // Prepare dpt storage
-        if (os::exists(from_c.dpt_filename) && os::file_size(from_c.dpt_filename) == dpt_length) {
+        const bool copy_dpt = !from_c.dpt_filename.empty() && os::exists(from_c.dpt_filename) &&
+            os::file_size(from_c.dpt_filename) == dpt_length;
+        if (copy_dpt) {
             os::copy_file(from_c.dpt_filename, to_c.dpt_filename, dpt_length);
         } else {
             os::truncate_file(to_c.dpt_filename, dpt_length, true);
         }
         remover.add_file(to_c.dpt_filename);
 
+        to_c.mark_pages_dirty = from_c.mark_pages_dirty || !copy_dht || !copy_dpt;
         os::change_writable(to_c.data_filename, !read_only);
     }
 }
 
-static void prepare_ar_backing_stores(const machine_config &c, scope_remove &remover) {
+static void prepare_ar_backing_stores(machine_config &c, scope_remove &remover) {
     prepare_ar_backing_store(c.processor.backing_store, AR_SHADOW_STATE_LENGTH, remover);
     prepare_ar_backing_store(c.pmas.backing_store, AR_PMAS_LENGTH, remover);
     prepare_ar_backing_store(c.dtb.backing_store, AR_DTB_LENGTH, remover);
@@ -236,10 +245,10 @@ static void prepare_ar_backing_stores(const machine_config &c, scope_remove &rem
     prepare_ar_backing_store(c.cmio.tx_buffer.backing_store, AR_CMIO_TX_BUFFER_LENGTH, remover);
     prepare_ar_backing_store(c.uarch.processor.backing_store, AR_SHADOW_UARCH_STATE_LENGTH, remover);
     prepare_ar_backing_store(c.uarch.ram.backing_store, AR_UARCH_RAM_LENGTH, remover);
-    for (const auto &f : c.flash_drive) {
+    for (auto &f : c.flash_drive) {
         prepare_ar_backing_store(f.backing_store, f.length, remover);
     }
-    for (const auto &n : c.nvram) {
+    for (auto &n : c.nvram) {
         prepare_ar_backing_store(n.backing_store, n.length, remover);
     }
 }

@@ -196,6 +196,7 @@ where options are:
         shared
         create
         truncate
+        mark_pages_dirty
         read_only
         mke2fs
         mount:<string>
@@ -254,6 +255,11 @@ where options are:
         in case of shared flash drive, then it also truncates the underlying backing file.
         by default, when a length is present it must also match the backing storage length.
 
+        mark_pages_dirty (optional)
+        mark all pages dirty on initialization, forcing their hashes to be recomputed.
+        by default, existing dense and dirty page trees are reused when both files exist.
+        pages are automatically marked dirty when either tree file is omitted or missing.
+
         read_only (optional)
         mark flash drive as read-only, disallowing write attempts from the host or the guest.
         by default, flash drives are not read-only, thus writable.
@@ -294,6 +300,7 @@ where options are:
         shared
         create
         truncate
+        mark_pages_dirty
         read_only
         user:<string>
 
@@ -328,7 +335,7 @@ where options are:
         gives the name of the file containing the data for the NVRAM.
         when omitted or set to empty, the NVRAM starts filled with 0.
 
-        dht_filename, dpt_filename, shared, create, truncate, read_only
+        dht_filename, dpt_filename, shared, create, truncate, mark_pages_dirty, read_only
         semantics are the same as for the --flash-drive option.
 
         user (optional)
@@ -348,6 +355,7 @@ where options are:
         dht_filename:<filename>
         dpt_filename:<filename>
         shared
+        mark_pages_dirty
 
     the memory range can be identified by label, by start and length, or both.
     when both label and start/length are given, they must be consistent with
@@ -371,6 +379,7 @@ where options are:
         shared
         create
         truncate
+        mark_pages_dirty
 
     semantics are the same as for the --flash-drive option.
 
@@ -1226,6 +1235,7 @@ local function parse_memory_range(keys, all, opts)
         shared = f.shared,
         create = f.create,
         truncate = f.truncate,
+        mark_pages_dirty = f.mark_pages_dirty,
     }
     f.data_filename = nil
     f.dht_filename = nil
@@ -1233,6 +1243,7 @@ local function parse_memory_range(keys, all, opts)
     f.shared = nil
     f.create = nil
     f.truncate = nil
+    f.mark_pages_dirty = nil
     return f
 end
 
@@ -1279,6 +1290,7 @@ local function override_memory_range(entry, opts)
     entry_bs.shared = override_bool(entry_bs.shared, opts_bs.shared)
     entry_bs.create = override_bool(entry_bs.create, opts_bs.create)
     entry_bs.truncate = override_bool(entry_bs.truncate, opts_bs.truncate)
+    entry_bs.mark_pages_dirty = override_bool(entry_bs.mark_pages_dirty, opts_bs.mark_pages_dirty)
 end
 
 -- Backing-store sub-keys shared by every plain backing-store option (--ram=,
@@ -1292,6 +1304,7 @@ local backing_store_keys = {
     shared = "boolean",
     create = "boolean",
     truncate = "boolean",
+    mark_pages_dirty = "boolean",
 }
 
 local function parse_backing_store(keys, all, opts, def)
@@ -1910,6 +1923,7 @@ options = {
             shared = "boolean",
             create = "boolean",
             truncate = "boolean",
+            mark_pages_dirty = "boolean",
             length = "number",
             start = "number",
             read_only = "boolean",
@@ -1941,6 +1955,7 @@ options = {
             shared = "boolean",
             create = "boolean",
             truncate = "boolean",
+            mark_pages_dirty = "boolean",
             length = "number",
             start = "number",
             read_only = "boolean",
@@ -1960,6 +1975,7 @@ options = {
             dht_filename = "file",
             dpt_filename = "file",
             shared = "boolean",
+            mark_pages_dirty = "boolean",
             length = "number",
             start = "number",
             read_only = "boolean",

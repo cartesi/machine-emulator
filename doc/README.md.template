@@ -2125,6 +2125,7 @@ backing_store_config ::= {
     shared ::= boolean,
     create ::= boolean,
     truncate ::= boolean,
+    mark_pages_dirty ::= boolean,
     dht_filename ::= string,
     dpt_filename ::= string
 }
@@ -2253,6 +2254,10 @@ When `backing_store.truncate` is set to `true` (default is `false`), the emulato
 Once again, in that case, `shared` must be set to `true`.
 Fields `backing_store.dht_filename` (for _dense hash-tree_) and `backing_store.dpt_filename` (for _dirty-page tree_) support the efficient computation of state hashes and proofs.
 When instantiating a machine from scratch, these are normally left empty.
+When both tree filenames are supplied and both files already exist, the emulator reuses the dirty-page flags to avoid recomputing unchanged page hashes.
+Otherwise, it marks all pages dirty.
+Setting `backing_store.mark_pages_dirty` to `true` forces all pages to be marked dirty even when both tree files exist, so their hashes are recomputed on the next hash-tree update.
+The default is `false`; the emulator enables it automatically when either tree backing file is omitted or missing before backing stores are prepared.
 In fact, for many of the entries in the `machine_config`, the `backing_store` field is populated and consumed automatically by the emulator when storing and loading persistent machines.
 I.e., when using `cartesi-machine` command-line options `--load=<directory>` and `--store=<directory>`, or when using the Lua API methods `machine:store(<directory>)` and `machine:load(<directory>)` on which they are based.
 The multiple instances of field `backing_store` will not be described individually.

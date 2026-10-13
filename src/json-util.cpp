@@ -1756,6 +1756,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, backing_store_confi
     ju_get_opt_field(jconfig, "shared"s, value.shared, new_path);
     ju_get_opt_field(jconfig, "create"s, value.create, new_path);
     ju_get_opt_field(jconfig, "truncate"s, value.truncate, new_path);
+    ju_get_opt_field(jconfig, "mark_pages_dirty"s, value.mark_pages_dirty, new_path);
     ju_get_opt_field(jconfig, "data_filename"s, value.data_filename, new_path);
     ju_get_opt_field(jconfig, "dht_filename"s, value.dht_filename, new_path);
     ju_get_opt_field(jconfig, "dpt_filename"s, value.dpt_filename, new_path);
@@ -2321,8 +2322,8 @@ void to_json(nlohmann::json &j, const access_log &log) {
 
 void to_json(nlohmann::json &j, const backing_store_config &config) {
     j = nlohmann::json{{"shared", config.shared}, {"create", config.create}, {"truncate", config.truncate},
-        {"data_filename", config.data_filename}, {"dht_filename", config.dht_filename},
-        {"dpt_filename", config.dpt_filename}};
+        {"mark_pages_dirty", config.mark_pages_dirty}, {"data_filename", config.data_filename},
+        {"dht_filename", config.dht_filename}, {"dpt_filename", config.dpt_filename}};
 }
 
 void to_json(nlohmann::json &j, const backing_store_config_only &config) {

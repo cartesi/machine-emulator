@@ -362,6 +362,32 @@ describe("cartesi-machine CLI", function()
         end
     end)
 
+    it("mark_pages_dirty backing-store options", function()
+        local cfg = config_for({
+            "--ram=mark_pages_dirty",
+            "--no-root-flash-drive",
+            "--flash-drive=label:data,length:4Ki,mark_pages_dirty",
+            "--nvram=label:state,length:4Ki,mark_pages_dirty",
+        })
+        expect.equal(cfg.ram.backing_store.mark_pages_dirty, true)
+        expect.equal(cfg.flash_drive[1].backing_store.mark_pages_dirty, true)
+        expect.equal(cfg.nvram[1].backing_store.mark_pages_dirty, true)
+
+        cfg = config_for({
+            "--ram=mark_pages_dirty",
+            "--ram=mark_pages_dirty:false",
+            "--no-root-flash-drive",
+            "--flash-drive=label:data,length:4Ki,mark_pages_dirty",
+            "--flash-drive=label:data,mark_pages_dirty:false",
+            "--nvram=label:state,length:4Ki,mark_pages_dirty",
+            "--nvram=label:state,mark_pages_dirty:false",
+            "--replace-memory-range=label:data,mark_pages_dirty",
+        })
+        expect.equal(cfg.ram.backing_store.mark_pages_dirty, false)
+        expect.equal(cfg.flash_drive[1].backing_store.mark_pages_dirty, false)
+        expect.equal(cfg.nvram[1].backing_store.mark_pages_dirty, false)
+    end)
+
     -- -------------------------------------------------------------------------
     -- Flash drive options
     --

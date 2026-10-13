@@ -639,6 +639,115 @@ describe("backing stores", function()
         end
     end)
 
+    for _, hash_function in ipairs({ "keccak256", "sha256" }) do
+        for _, creation in ipairs({
+            "anonymous",
+            "shared",
+            "directory",
+            "directory-invalid-size",
+            "load",
+            "anonymous-dpt",
+            "shared-dpt",
+            "directory-dpt",
+            "load-dpt",
+            "reuse",
+            "forced",
+            "directory-forced",
+        }) do
+            it(
+                "should initialize dirty pages for backing trees (" .. creation .. ", " .. hash_function .. ")",
+                function()
+                    local filename_prefix = filesystem.temp_pathname()
+                    local stored_dirname = filesystem.temp_pathname()
+                    local in_directory = creation:find("^directory") ~= nil
+                    local load_stored = creation:find("^load") ~= nil
+                    local backing_store = {
+                        data_filename = filename_prefix .. ".bin",
+                        dht_filename = filename_prefix .. ".dht",
+                        dpt_filename = filename_prefix .. ".dpt",
+                        shared = true,
+                        create = true,
+                        mark_pages_dirty = false,
+                    }
+                    local _ <close> = tests_util.scope_exit(function()
+                        for _, suffix in ipairs({ ".bin", ".dht", ".dpt" }) do
+                            filesystem.remove_file(filename_prefix .. suffix)
+                        end
+                        if in_directory or load_stored or creation == "forced" then
+                            cartesi.machine:remove_stored(stored_dirname)
+                        end
+                    end)
+                    local drive_start = 0x90000000
+                    local drive_data = string.rep("A", 0x3000) -- Include power-of-two padding in the dense tree.
+                    local config = {
+                        ram = { length = 0x1000 },
+                        flash_drive = { { start = drive_start, length = #drive_data, backing_store = backing_store } },
+                        hash_tree = { phtc_size = 32, hash_function = hash_function },
+                    }
+
+                    do
+                        local machine <close> = cartesi.machine(config)
+                        machine:write_memory(drive_start, drive_data)
+                        machine:get_root_hash() -- Leave an existing, initialized, clean dirty-page tree.
+                        if load_stored then
+                            machine:store(stored_dirname)
+                        end
+                    end
+
+                    backing_store.create = false
+                    local clean_dpt = filesystem.read_file(backing_store.dpt_filename)
+                    backing_store.shared = creation == "shared"
+                        or creation == "shared-dpt"
+                        or creation == "reuse"
+                        or creation == "forced"
+                    if creation == "anonymous" or creation == "directory" then
+                        backing_store.dht_filename = ""
+                    elseif creation == "shared" then
+                        filesystem.remove_file(backing_store.dht_filename)
+                    elseif creation == "directory-invalid-size" then
+                        filesystem.write_file(backing_store.dht_filename, "\0")
+                    elseif creation == "anonymous-dpt" or creation == "directory-dpt" then
+                        backing_store.dpt_filename = ""
+                    elseif creation == "shared-dpt" then
+                        filesystem.remove_file(backing_store.dpt_filename)
+                    elseif creation == "forced" or creation == "directory-forced" then
+                        backing_store.mark_pages_dirty = true
+                        drive_data = string.rep("B", #drive_data)
+                        filesystem.write_file(backing_store.data_filename, drive_data)
+                    end
+
+                    if load_stored then
+                        local tree_filename
+                        do
+                            local stored <close> = cartesi.machine(stored_dirname)
+                            local stored_bs = stored:get_initial_config().flash_drive[1].backing_store
+                            tree_filename = creation == "load" and stored_bs.dht_filename or stored_bs.dpt_filename
+                        end
+                        filesystem.remove_file(tree_filename)
+                    end
+                    local directory = in_directory and stored_dirname or nil
+                    local machine <close> = load_stored and cartesi.machine(stored_dirname, {}, cartesi.SHARING_ALL)
+                        or cartesi.machine(config, {}, directory)
+                    if creation == "reuse" then
+                        expect.equal(filesystem.read_file(backing_store.dpt_filename), clean_dpt)
+                    end
+                    expect.equal(
+                        machine:get_initial_config().flash_drive[1].backing_store.mark_pages_dirty,
+                        backing_store.mark_pages_dirty
+                    )
+                    expect.equal(machine:read_memory(drive_start, #drive_data), drive_data)
+                    expect.equal(machine:get_root_hash(), tests_util.calculate_emulator_hash(machine))
+                    if creation == "forced" then
+                        machine:store(stored_dirname)
+                        local stored <close> = cartesi.machine(stored_dirname)
+                        expect.equal(stored:get_initial_config().flash_drive[1].backing_store.mark_pages_dirty, true)
+                        expect.equal(stored:get_root_hash(), machine:get_root_hash())
+                    end
+                end
+            )
+        end
+    end
+
     it("should truncate backing store file to a bigger size", function()
         local ram_data = string.rep("\x00", 0x1000)
         local _ <close>, ram_filename = filesystem.write_scope_temp_file(ram_data)

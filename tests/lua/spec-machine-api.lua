@@ -50,6 +50,25 @@ for _, variant in ipairs(variants) do
     describe("machine API (" .. variant.name .. ")", function()
         local machine <close> = variant.create({ ram = { length = 0x1000 } })
 
+        describe("mark_pages_dirty backing-store config", function()
+            it("should default to false and preserve an explicit true", function()
+                expect.equal(machine:get_initial_config().ram.backing_store.mark_pages_dirty, false)
+                local source <close> = variant.create({
+                    ram = { length = 0x1000, backing_store = { mark_pages_dirty = true } },
+                })
+                expect.equal(source:get_initial_config().ram.backing_store.mark_pages_dirty, true)
+                expect.equal(source:get_root_hash(), tests_util.calculate_emulator_hash(source))
+            end)
+
+            it("should reject a value that is not a boolean", function()
+                expect.fail(function()
+                    local _ <close> = variant.create({
+                        ram = { length = 0x1000, backing_store = { mark_pages_dirty = "true" } },
+                    })
+                end, "mark_pages_dirty")
+            end)
+        end)
+
         describe("get_uarch_pristine_hash", function()
             it("should accept the pristine hash in a reset log and reject a changed hash", function()
                 local source <close> = variant.create({ ram = { length = 0x1000 } })

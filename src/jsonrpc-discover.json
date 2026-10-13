@@ -2031,6 +2031,11 @@
           },
           "truncate": {
             "type": "boolean"
+          },
+          "mark_pages_dirty": {
+            "type": "boolean",
+            "default": false,
+            "description": "Mark all pages dirty on initialization, forcing their hashes to be recomputed. Enabled automatically when either tree backing file is omitted or missing."
           }
         }
       },

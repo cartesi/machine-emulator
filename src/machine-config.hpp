@@ -47,12 +47,13 @@ enum machine_config_constants {
 
 /// \brief Backing store config
 struct backing_store_config final {
-    bool shared{false};        ///< Should changes be reflected in backing store?
-    bool create{false};        ///< Should backing store be created?
-    bool truncate{false};      ///< Should backing store be truncated to correct size?
-    std::string data_filename; ///< Backing store for associated memory address range
-    std::string dht_filename;  ///< Backing store for corresponding dense hash-tree
-    std::string dpt_filename;  ///< Backing store for corresponding dirty-page tree
+    bool shared{false};           ///< Should changes be reflected in backing store?
+    bool create{false};           ///< Should backing store be created?
+    bool truncate{false};         ///< Should backing store be truncated to correct size?
+    bool mark_pages_dirty{false}; ///< Should all dirty-page tree leaves be marked dirty on initialization?
+    std::string data_filename;    ///< Backing store for associated memory address range
+    std::string dht_filename;     ///< Backing store for corresponding dense hash-tree
+    std::string dpt_filename;     ///< Backing store for corresponding dirty-page tree
 
     /// \brief Returns true if the backing store was just created.
     /// Indicates the backing store is zero-initialized and may require further initialization.

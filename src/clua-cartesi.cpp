@@ -163,7 +163,7 @@ static int cartesi_mod_fromhex(lua_State *L) try {
 
 static int cartesi_mod_tojson(lua_State *L) try {
     lua_settop(L, 4);
-    const int indent = static_cast<int>(luaL_optinteger(L, 2, -1));
+    const int indent = clua_opt_integer<int>(L, 2, -1);
     const char *schema_name = luaL_optstring(L, 3, nullptr);
     clua_tojson(L, 1, indent, schema_name, clua_tojsonschemadict(L, 4));
     lua_settop(L, 1);

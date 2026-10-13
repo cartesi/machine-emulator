@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed outputs Merkle root proofs being rejected on SHA-256 machines
 - Fixed progress output with VirtIO consoles
 - Fixed halt and manual yield precedence over an exhausted input budget
+- Fixed out-of-range integer arguments being silently truncated by the Lua and JSON-RPC bindings
 
 ### Changed
 - Changed `send_cmio_response` to perform no-op transitions as logged and verified ones do

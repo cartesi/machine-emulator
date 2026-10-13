@@ -204,6 +204,30 @@ T &clua_check(lua_State *L, int idx, int ctxidx = lua_upvalueindex(1)) {
     return clua_to<T>(L, idx);
 }
 
+/// \brief Checks if Lua argument is an integer that fits in the given type and returns it converted
+/// \tparam T Target integer type
+/// \param L Lua state.
+/// \param idx Index of argument in stack
+template <typename T>
+T clua_check_integer(lua_State *L, int idx) {
+    const lua_Integer val = luaL_checkinteger(L, idx);
+    luaL_argcheck(L, std::in_range<T>(val), idx, "out of range");
+    return static_cast<T>(val);
+}
+
+/// \brief Like clua_check_integer, but returns a default value if the argument is absent or nil
+/// \tparam T Target integer type
+/// \param L Lua state.
+/// \param idx Index of argument in stack
+/// \param def Default value
+template <typename T>
+T clua_opt_integer(lua_State *L, int idx, T def) {
+    if (lua_isnoneornil(L, idx)) {
+        return def;
+    }
+    return clua_check_integer<T>(L, idx);
+}
+
 /// \brief Sets the metatable of the object to that of a previously
 /// created Lua type
 /// \tparam T Associated C++ type

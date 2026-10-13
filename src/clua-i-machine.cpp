@@ -639,8 +639,8 @@ static int machine_obj_index_get_proof(lua_State *L) {
     lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
-    const int log2_target_size = static_cast<int>(luaL_checkinteger(L, 3));
-    const int log2_root_size = static_cast<int>(luaL_optinteger(L, 4, cartesi::HASH_TREE_LOG2_ROOT_SIZE));
+    const int log2_target_size = clua_check_integer<int>(L, 3);
+    const int log2_root_size = clua_opt_integer<int>(L, 4, cartesi::HASH_TREE_LOG2_ROOT_SIZE);
     const char *proof = nullptr;
     if (cm_get_proof(m.get(), address, log2_target_size, log2_root_size, &proof) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
@@ -737,7 +737,7 @@ static int machine_obj_index_write_revert_root_hash(lua_State *L) {
 static int machine_obj_index_get_node_hash(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
-    const int log2_size = static_cast<int>(luaL_checkinteger(L, 3));
+    const int log2_size = clua_check_integer<int>(L, 3);
     cm_hash node_hash{};
     if (cm_get_node_hash(m.get(), address, log2_size, &node_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
@@ -865,7 +865,7 @@ static int machine_obj_index_get_address_ranges(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_log_reset_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int log_type = static_cast<int>(luaL_optinteger(L, 2, 0));
+    const int log_type = clua_opt_integer<int>(L, 2, 0);
     const char *log = nullptr;
     if (cm_log_reset_uarch(m.get(), log_type, &log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
@@ -891,7 +891,7 @@ static int machine_obj_index_run_uarch(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_log_step_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int log_type = static_cast<int>(luaL_optinteger(L, 2, 0));
+    const int log_type = clua_opt_integer<int>(L, 2, 0);
     const char *log = nullptr;
     if (cm_log_step_uarch(m.get(), log_type, &log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
@@ -1165,7 +1165,7 @@ static int machine_obj_index_receive_cmio_request(lua_State *L) try {
 /// \param L Lua state.
 static int machine_obj_index_send_cmio_response(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const auto reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
+    const auto reason = clua_check_integer<uint16_t>(L, 2);
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
@@ -1186,14 +1186,14 @@ static int machine_obj_index_send_cmio_response(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_log_send_cmio_response(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const auto reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
+    const auto reason = clua_check_integer<uint16_t>(L, 2);
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
     luaL_argcheck(L, length <= UINT32_MAX, 3, "CMIO response data length exceeds uint32_t");
     cm_hash revert_root_hash{};
     clua_check_cm_hash(L, 4, &revert_root_hash);
-    const int log_type = static_cast<int>(luaL_optinteger(L, 5, 0));
+    const int log_type = clua_opt_integer<int>(L, 5, 0);
     const char *log = nullptr;
     if (cm_log_send_cmio_response(m.get(), reason, data, static_cast<uint32_t>(length), &revert_root_hash, log_type,
             &log) != 0) {
@@ -1239,7 +1239,7 @@ static int machine_obj_index_collect_mcycle_root_hashes(lua_State *L) {
     const uint64_t mcycle_end = luaL_checkinteger(L, 2);
     const uint64_t log2_mcycle_period = luaL_checkinteger(L, 3);
     const uint64_t mcycle_phase = luaL_optinteger(L, 4, 0);
-    const auto log2_bundle_uarch_cycle_count = static_cast<int32_t>(luaL_optinteger(L, 5, 0));
+    const auto log2_bundle_uarch_cycle_count = clua_opt_integer<int32_t>(L, 5, 0);
     const char *previous_partial_bundle = !lua_isnil(L, 6) ? clua_tojson(L, 6, -1, "PartialBundle") : nullptr;
     const char *result = nullptr;
     if (cm_collect_mcycle_root_hashes(m.get(), mcycle_end, log2_mcycle_period, mcycle_phase,
@@ -1257,7 +1257,7 @@ static int machine_obj_index_collect_mcycle_bundle(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t bundle_offset = luaL_checkinteger(L, 2);
     const uint64_t log2_mcycle_period = luaL_checkinteger(L, 3);
-    const auto log2_bundle_mcycle_count = static_cast<int32_t>(luaL_checkinteger(L, 4));
+    const auto log2_bundle_mcycle_count = clua_check_integer<int32_t>(L, 4);
     const char *result = nullptr;
     if (cm_collect_mcycle_bundle(m.get(), bundle_offset, log2_mcycle_period, log2_bundle_mcycle_count, &result) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
@@ -1272,7 +1272,7 @@ static int machine_obj_index_collect_uarch_cycle_root_hashes(lua_State *L) {
     lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t mcycle_end = luaL_checkinteger(L, 2);
-    const auto log2_bundle_uarch_cycle_count = static_cast<int32_t>(luaL_optinteger(L, 3, 0));
+    const auto log2_bundle_uarch_cycle_count = clua_opt_integer<int32_t>(L, 3, 0);
     const char *revert_uarch_tail = !lua_isnil(L, 4) ? clua_tojson(L, 4, -1, "Base64Array") : nullptr;
     const char *result = nullptr;
     if (cm_collect_uarch_cycle_root_hashes(m.get(), mcycle_end, log2_bundle_uarch_cycle_count, revert_uarch_tail,
@@ -1289,7 +1289,7 @@ static int machine_obj_index_collect_uarch_cycle_bundle(lua_State *L) {
     lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t bundle_offset = luaL_checkinteger(L, 2);
-    const auto log2_bundle_uarch_cycle_count = static_cast<int32_t>(luaL_checkinteger(L, 3));
+    const auto log2_bundle_uarch_cycle_count = clua_check_integer<int32_t>(L, 3);
     const char *revert_uarch_tail = !lua_isnil(L, 4) ? clua_tojson(L, 4, -1, "Base64Array") : nullptr;
     const char *result = nullptr;
     if (cm_collect_uarch_cycle_bundle(m.get(), bundle_offset, log2_bundle_uarch_cycle_count, revert_uarch_tail,
@@ -1402,7 +1402,7 @@ static int machine_obj_index_verify_reset_uarch(lua_State *L) {
 static int machine_obj_index_verify_send_cmio_response(lua_State *L) {
     lua_settop(L, 6);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const auto reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
+    const auto reason = clua_check_integer<uint16_t>(L, 2);
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));

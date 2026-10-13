@@ -209,7 +209,18 @@ local function narrate(session, snapshot)
     lines[#lines + 1] = "Block "
         .. eth.small(session.seal.log.blockNumber)
         .. ": epoch sealed; player checkpoint saved.\n"
+    -- A win that re-pairs its survivor logs the new match before deleting the old one.
+    -- Narrate matches created by a transaction after its other events.
+    local created, created_tx = {}, nil
+    local function flush_created()
+        table.move(created, 1, #created, #lines + 1, lines)
+        created = {}
+    end
     for _, event in ipairs(snapshot.events) do
+        if event.log.transactionHash ~= created_tx then
+            flush_created()
+            created_tx = event.log.transactionHash
+        end
         local prefix = "Block " .. eth.small(event.log.blockNumber) .. ": "
         if event.name == "CommitmentJoined" then
             lines[#lines + 1] = prefix
@@ -218,7 +229,7 @@ local function narrate(session, snapshot)
                 .. event.address
                 .. ".\n"
         elseif event.name == "MatchCreated" then
-            lines[#lines + 1] = prefix
+            created[#created + 1] = prefix
                 .. claim_label(session, event.address, event.one)
                 .. " meets "
                 .. claim_label(session, event.address, event.two)
@@ -238,8 +249,15 @@ local function narrate(session, snapshot)
                 .. ".\n"
         elseif event.name == "MatchDeleted" then
             local winner = eth.small(event.winnerCommitment)
-            local label = winner == 0 and "both claims eliminated"
-                or (claim_label(session, event.address, winner == 1 and event.one or event.two) .. " wins")
+            local label
+            if winner == 0 then
+                label = claim_label(session, event.address, event.one)
+                    .. " and "
+                    .. claim_label(session, event.address, event.two)
+                    .. " are eliminated"
+            else
+                label = claim_label(session, event.address, winner == 1 and event.one or event.two) .. " wins"
+            end
             lines[#lines + 1] = prefix .. label .. " " .. assert(reasons[eth.small(event.reason) + 1]) .. ".\n"
         elseif event.name == "EpochStaged" and eth.small(event.epochNumber) == session.epoch then
             lines[#lines + 1] = prefix .. "The consensus stages the proven epoch result.\n"
@@ -249,6 +267,7 @@ local function narrate(session, snapshot)
                 .. " recovers its winning bond.\n"
         end
     end
+    flush_created()
     if snapshot.settled then
         lines[#lines + 1] = "Block "
             .. eth.small(snapshot.settled.log.blockNumber)

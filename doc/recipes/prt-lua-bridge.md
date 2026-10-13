@@ -1,23 +1,16 @@
-# Lua PRT bridge implementation plan
+# Lua PRT bridge
 
-## Local chain recipe
+The Docker recipe runs the two calculator epochs against Dave contracts on
+Anvil, using the existing players from [prt.lua](prt.lua) and
+[prt-dishonest.lua](prt-dishonest.lua). The image compiles the pinned Dave
+contracts during its build (see Image build and patches). Each invocation starts
+a fresh chain, deploys an application, streams the two calculator epochs,
+settles their results, and records a story from the contract events. Epoch zero
+stays empty, as in the normal Dave deployment.
 
-The experimental implementation lives in `prt-epoch.lua`, `prt-bridge.lua`,
-`prt-ethereum.lua`, `prt-transactions.lua`, and `prt-cast.lua`. `prt-demo.lua` deploys a fresh local
-chain and drives the recipe players from `prt.lua` and `prt-dishonest.lua`. It uses real InputBox
-event bytes, DaveConsensus, tournament clones, and the Solidity state transition.
-The harness advances Anvil blocks to the next emitted deadline when no move is
-ready. The bridge itself never mines or reproduces clock accounting.
+## Running the recipe
 
-Deployment uses DaveAppFactory and preserves the empty epoch zero. The two
-calculator input groups run as epochs one and two. The bridge delivers each
-InputAdded after its input confirmation policy, before processing the confirmed seal, stores the final machine and last-output proof at
-the seal, and bootstraps the next player from that checkpoint while the sealed
-epoch is disputed. It stages and accepts each result and checks it against the
-checkpoint. See [implementation notes](prt-bridge-implementation-notes.md) for
-the exact lifecycle and artifact layout.
-
-From the emulator repository:
+Run these from the emulator repository.
 
 ```sh
 make -C doc build-prt-image
@@ -25,44 +18,49 @@ make -C doc run-prt-bridge PRT_MODE=smoke
 make -C doc run-prt-bridge
 ```
 
-The image includes the emulator, calculator snapshot, contracts, Foundry, and
-Lua scripts. Each invocation starts a fresh Anvil and creates a directory under
-`doc/recipes/cache/prt-chain/`. `story.txt` narrates the contract events;
-`deployment.json` records the addresses. Each `epoch-N/` directory retains
-its inputs, checkpoint, observations, transaction attempt log, and story. The
-shared signed-candidate journal is `signed-transactions.json` in the run directory; calculator
-epochs also retain native/Solidity proof comparisons in `proof-vectors.json`. `PRT_OUTPUT_DIR` overrides the host output
-directory. Anvil uses public development accounts and listens only inside the
-container. The eight-player story covers false claims, forged input, corrupted
-execution, disconnected players, child propagation, timeout cleanup, staging,
-acceptance, and independent bond recovery. The smoke mode uses one honest player.
+If the matching emulator image has already been built, `EMULATOR_IMAGE_READY=yes`
+on `build-prt-image` reuses it. The target still builds the uarch binary and the
+docs and PRT runtime images.
 
-`prt-contracts.patch` records the proposed Dave changes against the revision
-pinned in `Dockerfile.prt`. `prt-step.patch` records upstream-generated constants
-for this emulator's pristine uarch state. A matching architecture ID alone does
-not establish that reset states match: the bridge checks the deployed pristine
-hash before playing, then compares native and Solidity verification. The proof
-tests also reject corrupted, truncated, and trailing witnesses.
+The runtime image `cartesi/machine-emulator-prt:devel` includes the emulator,
+calculator snapshot, contracts, Foundry, and Lua scripts. Each invocation starts
+a fresh Anvil, which uses public development accounts and listens only inside
+the container. Smoke mode uses one honest player. The default story uses eight
+actors for each calculator epoch and one honest player for the empty epoch zero.
+Its actors post false claims, forge input, corrupt execution, and disconnect.
+The story exercises child propagation, timeout cleanup, staging, acceptance, and
+independent bond recovery.
 
-`cast mktx` reads local keystores and signs transactions with explicit nonces,
-gas limits, and EIP-1559 fees. The adapter checks its exit status and decodes the
-signed transaction to verify its fields and signer. The shared transaction
-tracker persists each candidate before publication and returns without waiting
-for mining. It replaces pending actions at the same nonce, raises both fee
-fields within configurable ceilings, and cancels obsolete work. A journal reload
-recovers all candidate hashes and the highest allocated nonce, including nonces
-reopened by a reorg. Receipt checks identify whichever candidate was actually
-mined; only canonical events complete jobs. See the implementation notes for
-fee settings and `make -C doc test-prt-transactions` for controlled Anvil tests.
+Each run creates a fresh directory under `doc/recipes/cache/prt-chain/` (or
+under the absolute host path supplied through `PRT_OUTPUT_DIR`). Top-level
+`story.txt` combines the three epoch stories and `deployment.json` records
+deployed addresses. `signed-transactions.json` retains the shared signer
+journals across epochs. Each `epoch-N/` retains its input files, `epoch.json`,
+checkpoint, `story.txt`, `chain-logs.json`, `transactions.jsonl`, and local
+claim artifacts. Calculator epochs also retain `proof-vectors.json` with
+native/Solidity comparisons. The run also retains `continuation-checkpoint/`,
+produced by loading the epoch-2 checkpoint in a fresh player and sealing an
+empty continuation. This is an off-chain persistence check, not another settled
+epoch on Anvil.
 
-The bridge suppresses duplicates while mined events await confirmation, retries
-orphaned work, and refreshes its observation after player computation.
-Simulation reverts suppress an attempt only at the same live tip; proofs
-independently shown invalid against the observed event need not be retried.
-The harness uses exclusive player and keeper accounts, separate from its
-deployer/input account. It still lacks the complete dispute/player relaunch
-flow described below; transaction journal reload alone does not restore that
-execution context.
+For development, `make -C doc test-prt-bridge` mounts current recipe sources
+into the existing runtime image. `run-prt-bridge` tests the packaged sources.
+`make -C doc test-prt-bridge-unit` runs only the bridge fixtures.
+`make -C doc test-prt-transactions` runs the controlled Anvil transaction tests;
+`make -C doc run-prt-bridge PRT_MODE=transactions` runs their packaged version.
+
+Both run targets accept `PRT_INPUT_CONFIRMATIONS` (default `8`) and
+`PRT_DISPUTE_CONFIRMATIONS` (default `4`). Either also accepts `safe` or
+`finalized`; depth zero explicitly uses the tip. These demo defaults are not
+a quantified reorg-risk guarantee. Anvil's consensus tags do not reproduce
+Ethereum's consensus process; numeric depths exercise delayed observation here.
+
+`PRT_TEST_REORG=yes` injects a dispute reorg in epoch one. The harness snapshots
+after its input context is established, waits until a child tournament is
+observed (a root join in smoke mode), then restores the snapshot and mines a
+replacement block. It retains the same players and bridge. The run must still
+accept both calculator epochs and recover the root bonds. `epoch-1/reorg.json`
+records the replaced tip and observation height.
 
 ## Validator design
 
@@ -135,78 +133,324 @@ The simplification is confined to observation. Discovery still follows child
 event streams, and log fetching, signing, input retrieval, machine execution,
 and proof encoding remain validator work.
 
-The companion [contract requirements](prt-lua-bridge-needs.md) specify the
-event fields needed to make this design possible and the fixtures that check
-them. Both documents assume those event changes and Dave's planned switch to
-two levels. The contract owns response discounts and child-return refills;
-emitting their resulting deadlines keeps that accounting out of the bridge.
+## Responsibilities
 
-The first implementation gate compares the player's root and child commitments
-with contract fixtures and verifies its encoded transition proofs through
-Solidity. The first end-to-end milestone then runs one honest player through
-the root and leaf tournaments, from EpochSealed to a staged root tournament
-result and recovered bonds for an epoch whose final state can be staged.
-Terminal epochs must still be defended and their bonds recovered, but their
-winning states cannot be staged. Sentries, several applications, and several
-signers are out of scope. The bridge imports no code, state model, or fixtures
-from other Dave clients. Contract tests supply event, view, and calldata
-fixtures. The documentation simulator keeps its existing scheduling model.
+```mermaid
+flowchart LR
+    H["Demo harness"] -->|"deploys, posts inputs, advances blocks"| A["Anvil / Dave contracts"]
+    A -->|"JSON-RPC events"| B["Lua bridge"]
+    B -->|"computation requests"| P["Existing recipe players"]
+    P -->|"claims, openings, proofs"| B
+    B -->|"cast-signed transactions"| A
+    A -->|"observed contract events"| N["Story narration"]
+```
 
-## Prerequisites
+The contracts own pairing, clocks, move validity, and tournament results. The
+players own machine execution, computation hash trees, and proof generation.
+The bridge translates contract events into player requests and transactions.
+The harness owns deployment, actor selection, local mining, and narration.
 
-Pin the Dave commit, deployment, chain ID, consensus and factory addresses,
-ABI hash, event/view/calldata fixtures, supported cast version, and signer
-configuration together.
-Live integration requires all fields in the companion event proposal. The
-match rows need the proposed ordered pairs, heights, and deadlines as well as
-the result rows needing StandingChanged. We can test the bridge with example
-events and expected contract calls before the updated contracts are deployed.
-TournamentCreated and NewInnerTournament must carry the complete descriptor
-and bond value. The bridge obtains these values from creation events and makes
-no tournamentDescriptor() or bondValue() calls.
+| File | Responsibility |
+| --- | --- |
+| [Dockerfile.prt](../Dockerfile.prt) | Fetch, patch, and compile contracts; package the emulator and recipe |
+| [prt-demo.sh](prt-demo.sh) | Prepare the run directory and keystores; start and stop Anvil |
+| [prt-demo.lua](prt-demo.lua) | Deploy the application, deliver inputs, construct actors, drive the run, and narrate events |
+| [prt-epoch.lua](prt-epoch.lua) | Deliver the ordered input stream, validate the seal, and start the dispute |
+| [prt-bridge.lua](prt-bridge.lua) | Observe the dispute, derive eligible actions, call players, and submit responses |
+| [prt-transactions.lua](prt-transactions.lua) | Journal signed candidates, reconcile exclusive account nonces, and replace pending transactions within fee limits |
+| [prt-ethereum.lua](prt-ethereum.lua) | Decode ABI events, encode calls, translate coordinates, and serialize proofs |
+| [prt-cast.lua](prt-cast.lua) | Make HTTP JSON-RPC requests and invoke cast for signing and submission |
+| [prt.lua](prt.lua) | Execute inputs, build commitments and proofs, and save or load epoch checkpoints |
+| [prt-dishonest.lua](prt-dishonest.lua) | Apply the existing dishonest strategies to the same player implementation |
+| [prt-bridge-test.lua](prt-bridge-test.lua) | Check ABI encoding, process boundaries, event ordering, and scheduling |
+| [prt-transactions-test.lua](prt-transactions-test.lua) | Exercise gas surges, dropped transactions, cancellation, journal reload, and nonce reorgs on Anvil |
+| [prt-proof-test.lua](prt-proof-test.lua) | Compare native and deployed Solidity transition verification |
 
-Validate the factory's complete tournament table when pinning the deployment,
-before asking the player to compute a root claim or submitting a join. Read
-tournamentLevelCount() once and require two levels. Then read
-tournamentParameters(0) and tournamentParameters(1) once, for the root and leaf
-tournaments respectively. The table calls the stride exponent log2step, which
-corresponds to log2Stride in creation events.
+All actors currently run in one Lua process. Each has its own player object,
+claim state, and signing account. These are the recipe players, with checkpoint
+export at sealing and authenticated continuation from the previous last-output
+proof. Their computation handlers are called directly, without a socket protocol
+or the simulated referee's scheduling callbacks.
 
-- Both parameter rows must report levels equal to two.
-- The root tournament's height plus log2step must equal 92.
-- The leaf tournament's log2step must be zero.
-- The leaf tournament's height must equal the root tournament's log2step.
-- Both heights must be below 63, so the player's leaf counts fit in signed
-  64-bit integers.
+Each calculator epoch has eight actors: the honest player, a forger that
+substitutes an input, a tamperer that corrupts execution, two fabulists that
+alter claimed hashes, and three quitters that post claims and disconnect.
+A separate keeper account handles cleanup and acceptance. The deployer and
+input sender use account zero, players use accounts one through eight, and
+the keeper uses account nine. The transaction journal has exclusive ownership
+of player and keeper nonces across epochs. Only the honest
+player exports a checkpoint, selected explicitly by the harness. The epoch
+listener passes each actor's configured checkpoint destination to its player.
 
-The exact heights and strides remain a deployment choice. Derive the player's
-mcycle period exponent from the validated root tournament log2step minus
-ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE. For example, root stride exponent 37
-and root and leaf heights 55 and 37 use prt.new_geometry(17). Require each
-creation event's height, log2Stride, level, and kind to agree with that table,
-with a non-leaf root tournament at level zero and a leaf tournament at level one.
+Keep authoritative events, reusable computation, address associations, and
+persisted transaction candidates distinct. An operation should maintain its
+own invariants, and a query should not conceal execution or persistence.
 
-These factory reads validate the deployment once. Descriptors and bond values
-for individual tournaments still come entirely from events. Waiting until the
-first NewInnerTournament to check the leaf geometry would be too late, because
-the player could already have joined a root tournament it cannot defend.
+## Image build and patches
 
-Pin the state-transition proof encoding with that deployment. The encoder is
-a pure function of the transition coordinate, machine access logs, and input
-bytes. CartesiStateTransition already defines the encoding described below;
-the adapter must implement it and establish conformance against the pinned
-Solidity verifier. Contract fixtures must accept the player's proofs and
-reject malformed proofs before the bridge submits transactions.
+The Dockerfile fetches the Dave revision pinned by the `DAVE_REF` build argument
+in `doc/Dockerfile.prt`, initializes its `machine/step` submodule, and installs
+the locked Solidity dependencies. The pinned revision comes from
+[Dave pull request 297](https://github.com/cartesi/dave/pull/297),
+which adds the events the bridge consumes. These include creation descriptors
+and bonds, ordered match participants, computation coordinates and states, and
+the deadlines needed to respond or clean up. `StandingChanged` exposes the
+current candidate and its result and expiry boundaries.
 
-Provide the player with the contract's initial state hash and filenames containing the exact input payloads.
-The first harness may use pre-materialized input files checked against contract
-fixtures. Live ingestion must reconstruct and verify each input commitment before
-delivering its filename, then check the EpochSealed bounds before finalizing the claim.
-Apply the stronger input observation policy to both InputAdded and EpochSealed,
-so the initial state and input boundaries share the same stability requirement.
-The player still processes inputs incrementally as they cross that boundary.
+Both patches live beside this file, in `doc/recipes/`.
 
-## Actions and player computation
+- [prt-contracts.patch](prt-contracts.patch) applies to the Dave checkout. It
+  only replaces Dave's two-level table with the recipe geometry and keeps
+  Dave's events, gas allocations, and commitment budget. Deployment uses the
+  existing `DaveAppFactory`.
+- [prt-step.patch](prt-step.patch) applies inside `machine/step`. It changes the
+  generated `UARCH_PRISTINE_STATE_HASH` to match this emulator build. It changes
+  no instruction semantics or verification rules.
+
+The build checks patch applicability with `git apply --check`, applies the
+patches, records them in the container's Git checkouts, and compiles through
+Dave's `just build-smart-contracts`. The final image contains the resulting
+creation bytecode and ABI artifacts under `/opt/dave`, together with Foundry,
+the emulator, Lua scripts, and the calculator machine snapshot. A run deploys
+these packaged artifacts. It does not fetch or compile contracts at startup.
+
+The recipe root has height 62 and stride 2^30, and its leaf tournaments have
+height 30 and stride 1. This matches the players' `prt.new_geometry(10)`
+(2^10-mcycle periods). The recipe keeps 2^10-mcycle periods because Dave's
+canonical table (root height 54 at stride 2^38, so 2^18-mcycle periods) makes
+each leaf claim about 256 times more expensive to compute. The bridge checks
+creation descriptors against the player's geometry when building claims.
+
+The pristine-uarch patch is necessary because a matching `CM_MARCHID` alone does
+not guarantee a matching pristine uarch state. Startup compares the deployed
+verifier's pristine hash with the emulator's hash before playing.
+
+## Deployment and InputBox
+
+`prt-demo.sh` creates keystores from Anvil's public development mnemonic and
+starts Anvil with funded accounts, the Prague hardfork, and RPC listening on
+`127.0.0.1:8545` inside the container. The shell stops Anvil when the run exits.
+
+`prt-demo.lua` reads each compiled artifact, appends ABI-encoded constructor
+arguments to its creation bytecode, and submits a deployment through
+`cast send --create`. It deploys:
+
+1. The `Tournament` implementation and `CartesiStateTransition` verifier.
+2. `CanonicalTournamentParametersProvider` and `MultiLevelTournamentFactory`.
+3. The real Rollups `InputBox` and `ApplicationFactory`.
+4. Dave's existing `DaveAppFactory`, then calls `newDaveApp`.
+
+`newDaveApp` creates the Application and DaveConsensus, migrates the Application's
+validator to that consensus, and renounces ownership in one transaction. The
+harness learns both addresses from `DaveAppCreated`. There is no custom
+application deployment helper. The calculator configures no withdrawals,
+refund portals, or sentries; its staging period is ten blocks.
+
+DaveConsensus immediately seals empty epoch zero. The honest bootstrap player
+joins that tournament, proves its unchanged final machine and empty outputs
+root, and stages the result. The keeper accepts it after the staging period.
+Acceptance seals epoch one from the InputBox bounds at that moment. Every later
+acceptance follows the same contract lifecycle.
+
+## Streaming the two calculator epochs
+
+| Dave epoch | Global input indices | Calculator payloads | New global output indices |
+| --- | --- | --- | --- |
+| 0 | none | empty bootstrap | none |
+| 1 | 0-2 | `6*2^1024 + 3*2^512`, `invalid input`, `2^2048` | 0-1 |
+| 2 | 3-5 | `(2^256 - 1) * (2^256 - 1)`, `scale=80; sqrt(2)`, `scale=100; 355/113` | 2-4 |
+
+Each payload ends with a newline. The invalid input is rejected by the
+calculator and adds no output. These are the two input groups from the README
+calculator example, numbered one and two on Dave to preserve its empty epoch zero.
+
+Before submitting a group's inputs, the harness constructs its players from
+the preceding epoch's final machine and last-output proof. It submits each
+payload through `InputBox.addInput(application, payload)` using the deployer
+account, then waits for the input observation policy before delivering it. Inputs for epoch one arrive
+while epoch zero awaits settlement; inputs for epoch two arrive while epoch one
+awaits settlement. Thus input execution is complete before the corresponding
+seal arrives; sealing finalizes commitments and output proofs.
+
+The harness follows this order:
+
+| Step | Computation and persistence | Chain progress |
+| --- | --- | --- |
+| Deploy | Seal the empty bootstrap player and save checkpoint 0 | DaveAppFactory creates the app and consensus; epoch 0 is sealed |
+| Accumulate epoch 1 | Load checkpoint 0 and process inputs 0-2 as they become confirmed | Inputs enter InputBox while epoch 0 is unsettled |
+| Settle epoch 0 | On the new seal, finalize epoch 1 and save checkpoint 1 | Stage and accept epoch 0; consensus seals epoch 1 |
+| Accumulate epoch 2 | Load checkpoint 1 and process inputs 3-5 as they become confirmed | Inputs enter InputBox while epoch 1 is unsettled |
+| Settle epoch 1 | On the new seal, finalize epoch 2 and save checkpoint 2 | Resolve epoch 1's disputes, stage, and accept; consensus seals epoch 2 |
+| Settle epoch 2 | Check its accepted result against checkpoint 2 | Resolve epoch 2's disputes, stage, and accept; consensus seals empty epoch 3 |
+
+The next player's execution starts from the preceding player's computed final
+state before that state is accepted on-chain. The later seal must authenticate
+that starting state. Accumulation and disputes overlap in the epoch lifecycle;
+the demo drives their handlers synchronously in one Lua process.
+
+`prt-epoch.lua` fetches InputBox and consensus logs through one block selected
+by the input policy and
+sorts them together by block and log index. For this application's `InputAdded`,
+it requires consecutive global indices, writes the exact `input` bytes to a
+file, and calls every player's `input_added(index - input_begin, filename)`.
+The bytes include InputBox metadata. Proof encoding always uses these original
+bytes, even when a dishonest player privately substitutes a forged input.
+
+On `EpochSealed`, the listener checks the initial machine hash, preceding outputs
+root, and both input bounds against its bootstrap and processed inputs. It calls
+`epoch_sealed(input_count, checkpoint_directory)` on the honest player and seals
+the other players without saving them. It then constructs the dispute bridge.
+Logs after the seal cannot feed more inputs to that player. Repeated observations
+check their already-applied prefix and never execute an input twice. A changed
+input history aborts. Once sealed, the listener checks the saved seal's block
+hash instead of extending its input history with later dispute events. A reorg
+crossing this stronger stability boundary requires rebuilding the epoch;
+ordinary dispute reorgs do not roll back the player.
+
+## Machine and output continuation
+
+The player owns checkpoint persistence. At sealing it stores its exact final
+machine before closing execution. Each honest `epoch-N/checkpoint/` contains:
+
+- The emulator's stored machine.
+- `last-output-proof.json` when output history is nonempty.
+- `epoch.json`, written last, with format version, initial and final machine
+  hashes, outputs root and count, input count, and period geometry.
+
+The last-output proof authenticates the global last leaf and lets the next
+player reconstruct the output frontier. It is distinct from the machine proof
+that binds the outputs root to the final machine for on-chain staging. If an
+epoch produces no new outputs, it preserves the inherited last-output proof.
+The empty bootstrap has no last-output proof.
+
+`prt.load_epoch(directory)` reads and validates the manifest and output proof,
+returning the arguments for `prt.new_player(dapp, label, last_output_proof)`.
+Player construction loads and checks the machine hash, verifies that the proof
+is the last output, and binds its root to the machine's CMIO tx buffer. A missing
+proof is valid only when that buffer contains the empty output-tree root.
+
+The bootstrap API for a saved checkpoint is:
+
+```lua
+local prt = require("prt")
+local dapp, last_output_proof = prt.load_epoch(checkpoint_directory)
+local player <close> = prt.new_player(dapp, "honest", last_output_proof)
+```
+
+The returned `dapp` contains the stored machine directory, its expected initial
+hash, and the geometry. The bridge supplies this new epoch's global input lower
+bound separately and converts incoming indices to player-local offsets.
+
+A checkpoint initially records the player's computation. Later settlement must
+agree with its final machine and outputs root. The demo checks that agreement
+for every epoch. It also opens the epoch-two checkpoint in a fresh player and
+seals an empty continuation, checking that the final machine and inherited proof
+remain unchanged. Checkpoints bootstrap later epoch execution; they do not
+restore a partially completed dispute. Signed transactions have a separate
+journal described below.
+
+Load [prt.lua](prt.lua) as a module and construct the player with
+new_player(dapp_contract, label, last_output_proof), using the contract context with
+its validated geometry and initial state hash. The player loads the initial
+machine and owns its cache and initially empty filename table. Keep the player in a
+<close> local; its __close method releases the cache and any unfinished execution.
+Construction checks the initial machine and initializes the open epoch computation.
+As InputAdded events arrive, verify and materialize each input in a local file and
+call input_added(epoch_local_index, filename) in order. The player retains the
+filename and reads the file whenever delivery or proof generation needs its bytes.
+Files must remain readable and unchanged throughout the player's lifetime, including
+disputes. The player owns a working machine pair, accumulated claim forest, and
+outputs between calls. Its cache retains thinned historical input boundaries
+for later proof replay. Each input handler advances the owned pair, handles
+rollback for rejected input, and offers the next boundary to the cache through
+consider(next_input_index, machine). Sealing closes the working pair after
+capturing the final-machine proofs and optional persistent checkpoint.
+Builders retain computation state only. Their methods receive the working machine
+explicitly when needed; no machine is attached to a builder.
+At sealing, check the initial state and exact input bounds, then call
+epoch_sealed(input_count, checkpoint_directory) to finalize the computation and
+output proofs and optionally store the final machine and last-output proof. Call commit_mcycle_claim
+only after epoch_sealed; do not defer input processing until EpochSealed.
+The player retains every accepted output and its proof, and answers client requests through
+player:prove_output(output_index). The demonstration offers the last output to the
+referee. Final-machine output-root proofs are captured at sealing. A later
+player loads the saved bootstrap inputs with prt.load_epoch(directory); its
+constructor checks the machine hash and authenticates the output frontier.
+
+There is no separate begin event. Each player and cache describe one epoch.
+At each seal whose locally computed final state can start another epoch, the
+bridge can spawn a player for that next epoch and concurrently drive the
+sealed epoch's dispute. The first player is bootstrapped from the deployment's
+initial state. EpochSealed's initial hash describes the sealed epoch, not the
+next one.
+
+Call the remaining event_handler entries for commit_uarch_claim,
+reveal_bisection, seal_divergence, prove_state_transition,
+and prove_outputs_merkle_root, passing the player as the first argument.
+Coordinates passed to these handlers are zero-based. Read claim children through
+player.trees[claim]:get_child_hashes(position, height). The prove_output handler
+and output selection are not needed for staging.
+
+## Event observation and scheduling
+
+The bridge polls HTTP JSON-RPC. Input and dispute observation policies each
+accept a nonnegative successor-block depth or the `safe`/`finalized` RPC tag.
+A depth of four selects block 100 when the tip is 104. Missing consensus tags
+fail rather than silently reading latest. Standalone listeners default to
+`finalized` for inputs and four blocks for disputes. The Anvil recipe uses eight
+and four blocks so the confirmation behavior is exercised explicitly.
+
+Each dispute tick samples the live tip and selects its observation block,
+retaining their heights separately. It requests `eth_getLogs` from block zero
+through the selected observation block for the
+factory, consensus, and root tournament. Each `NewInnerTournament` event adds
+the child address to the set of streams fetched during the same observation.
+
+Event signatures and layouts come from the compiled contract ABIs. The bridge
+uses `cartesi.evmu` to decode indexed fields and event data, preserving full
+256-bit coordinates. Its selectorless `encode_abi` and `decode_abi` operations
+also encode constructor arguments and decode view results. The bridge sorts
+logs by block and log index, rejects duplicate
+positions. Removed logs, inconsistent block hashes, and a changed observation
+hash discard the observation for retry. It also checks that the observed epoch seal binds the configured
+root tournament to the expected initial machine hash.
+
+Every tick reconstructs temporary tournament contexts, latest match events,
+standings, and eligible actions from those logs. Later events replace or cancel
+earlier actions. Player computations and local claims survive ticks; the
+observed dispute state is reconstructed afresh. Computation caches are scoped
+to the epoch's player and keyed by initial hash, base cycle, geometry, and kind.
+A child recreated at the same address is bound to its replacement descriptor;
+its contested states are checked again. Earlier computations remain reusable,
+but an address association is dropped when the new match does not involve that
+actor's parent claim.
+
+The bridge's `refresh()` operation observes the chain and updates claim
+associations. If it computes a new claim, it observes again before scheduling,
+since computation can outlive the joining window. `jobs()` only derives actions
+from that view and the available claims; it does not run players or write files.
+Both binding and unbinding a claim update the diagnostic claim file.
+
+| Observed information | Action derived by the bridge |
+| --- | --- |
+| Tournament creation, descriptor, and bond | Ask the player for a commitment and join |
+| `MatchCreated` or `MatchAdvanced` | Request a bisection opening or divergence seal |
+| `NewInnerTournament` | Build the relevant uarch commitment and join the child |
+| `LeafMatchSealed` | Request and encode a state-transition proof |
+| Emitted timeout boundaries | Claim a timeout win or eliminate the match |
+| `StandingChanged` | Propagate a child result, stage the root result, or recover a bond |
+| `MatchDeleted` | Cancel pending actions for that match |
+| `EpochStaged` | Schedule acceptance after the configured staging period |
+| Next `EpochSealed` | Confirm acceptance and check the stored final machine and outputs root |
+
+The bridge uses the emitted response, timeout, result, and expiry boundaries.
+Eligible windows include their start and exclude their end. Inclusion is tested
+at the actual tip plus one, never at the delayed observation height plus one.
+Confirmation lag consumes part of the available response window. It performs the
+necessary interface translation, including selecting the responder from
+bisection parity, but does not reproduce the contracts' clock discounts or
+child-return refill accounting. A separate keeper account handles permissionless
+cleanup without owning a player or computation claim.
 
 ### What the bridge keeps
 
@@ -274,13 +518,13 @@ a transaction without a currently eligible job with matching context and argumen
 
 ### Event to job conversion
 
+Event fields follow the tournament ABI of the pinned Dave revision.
 H is the emitted descriptor height. own(x) means the player holds commitment
 x in the relevant context. claimer(x) means our own join established x, which
 the submitter on CommitmentJoined shows. The joining deadline is
 descriptor.startInstant + descriptor.allowance.
 New claims are accepted only before that block. An expiry at block d means d
 is the first expired block, so the transaction must be included before d.
-The companion document defines the complete event fields and deadline rules.
 
 Each claim is identified by its computation hash. To read its root children,
 look up `tree = assert(player.trees[computation_hash], "event concerns a claim this player does not hold")`
@@ -331,7 +575,7 @@ Use the link from the child tournament to its parent match to cancel calls to
 the parent tournament after a MatchDeleted event for that match. Preserve bond
 recovery on the child tournament.
 
-### Coordinates and computation
+### Coordinates
 
 Before constructing a bisection request, require 1 <= currentHeight <= H,
 0 <= pos < 2^H, and alignment to 2^currentHeight. Leaf divergence positions
@@ -356,47 +600,7 @@ The state-transition request remains prove_state_transition(input_index,
 period_index, state_transition_offset). Its machine access logs and input bytes
 are encoded for the pinned proofs argument of winLeafMatch.
 
-Load [prt.lua](prt.lua) as a module and construct the player with
-new_player(dapp_contract, label, last_output_proof), using the contract context with
-its validated geometry and initial state hash. The player loads the initial
-machine and owns its cache and initially empty filename table. Keep the player in a
-<close> local; its __close method releases the cache and any unfinished execution.
-Construction checks the initial machine and initializes the open epoch computation.
-As InputAdded events arrive, verify and materialize each input in a local file and
-call input_added(epoch_local_index, filename) in order. The player retains the
-filename and reads the file whenever delivery or proof generation needs its bytes.
-Files must remain readable and unchanged throughout the player's lifetime, including
-disputes. The player owns a working machine pair, accumulated claim forest, and
-outputs between calls. Its cache retains thinned historical input boundaries
-for later proof replay. Each input handler advances the owned pair, handles
-rollback for rejected input, and offers the next boundary to the cache through
-consider(next_input_index, machine). Sealing closes the working pair after
-capturing the final-machine proofs and optional persistent checkpoint.
-Builders retain computation state only. Their methods receive the working machine
-explicitly when needed; no machine is attached to a builder.
-At sealing, check the initial state and exact input bounds, then call
-epoch_sealed(input_count, checkpoint_directory) to finalize the computation and
-output proofs and optionally store the final machine and last-output proof. Call commit_mcycle_claim
-only after epoch_sealed; do not defer input processing until EpochSealed.
-The player retains every accepted output and its proof, and answers client requests through
-player:prove_output(output_index). The demonstration offers the last output to the
-referee. Final-machine output-root proofs are captured at sealing. A later
-player loads the saved bootstrap inputs with prt.load_epoch(directory); its
-constructor checks the machine hash and authenticates the output frontier.
-
-There is no separate begin event. Each player and cache describe one epoch.
-At each seal whose locally computed final state can start another epoch, the
-bridge can spawn a player for that next epoch and concurrently drive the
-sealed epoch's dispute. The first player is bootstrapped from the deployment's
-initial state. EpochSealed's initial hash describes the sealed epoch, not the
-next one.
-
-Call the remaining event_handler entries for commit_uarch_claim,
-reveal_bisection, seal_divergence, prove_state_transition,
-and prove_outputs_merkle_root, passing the player as the first argument.
-Coordinates passed to these handlers are zero-based. Read claim children through
-player.trees[claim]:get_child_hashes(position, height). The prove_output handler
-and output selection are not needed for staging.
+### Computation and refresh
 
 Compute for an eligible job, then refresh the head and derive the action set
 again before using the result. Blocks continue advancing while a method runs,
@@ -406,87 +610,7 @@ and exact method arguments. Obsolete results can remain reusable computation
 data but cannot authorize a transaction. A reorg changing inputs or the initial
 state requires a different computation context.
 
-### State-transition proof encoding
-
-CartesiStateTransition interprets the coordinate as the output leaf of one
-transition, with agreeState as its predecessor. Encode the existing player's
-logs in the order the verifier consumes them.
-
-| Position | Witness segments, in order |
-|---|---|
-| Input-window opening, cycle modulo 2^68 = 0 | Eight-byte big-endian input length, the exact input bytes, the CMIO access log when an input exists, then the uarch-step access log |
-| Closing transition of a uarch span, cycle modulo 2^20 = 2^20 - 1 | Uarch-step access log, then uarch-reset access log |
-| Every other position | Uarch-step access log |
-
-At an absent input, encode a zero length and omit the CMIO log; the uarch step
-still executes. An existing empty input also has length zero but requires its
-CMIO log. The provider's input presence distinguishes them. Delivery to a
-terminal machine still requires the CMIO no-op proof when an input exists.
-
-For each access, encode its raw read value for an eight-byte word access; for
-a larger read, encode its 32-byte raw value followed by its read hash; for a
-larger write, encode its read hash. Append the access's sibling hashes in their
-existing order. Concatenate accesses and logs without ABI padding inside this
-witness, then encode the complete witness as winLeafMatch's bytes argument.
-The verifier requires exact access-log consumption and rejects trailing or
-truncated data, as well as input bytes supplied for an absent input.
-
-Fixtures must check the sealed agreeState and the claimed post-state, including
-the canonical root substituted by a rejecting reset. Ordinary steps, delivery,
-reset, and padding must agree across the player and Solidity before live use.
-
-### Claim restoration and successive opponents
-
-The player's trees in `prt.lua` contain frontier forests of bundle roots and
-bundle-collection callbacks. `tree:get_node_hash` and `tree:get_proof` open a
-bundle implicitly when the forest query reaches an opaque hash;
-`tree:get_child_hashes` uses two node-hash queries. The local `open_bundle` helper
-invokes the tree's collector, backed by `collect_mcycle_bundle` or
-`collect_uarch_cycle_bundle`, to reconstruct the bundle by machine replay.
-`hash_tree.frontier_forest_expand_leaf` checks the reconstructed subtree against
-the committed leaf hash before installing it. The query then retries, and later
-queries within that bundle reuse the installed subtree without machine replay.
-Saving a computation hash, commit response, or Lua object handle alone does not
-restore this ability.
-
-Persist a versioned claim record containing the forest, tree and bundle
-heights, expected computation root, root children, and final-state proof.
-Bind it to the deployment, epoch initial hash, exact verified input payloads
-and bounds, geometry, and, for a child claim, input and period coordinates.
-Store immutable inputs and the initial machine snapshot locally, or references
-to durable content-addressed copies. On restart, recreate the player and its
-bundle-collection callbacks from this context, wrap the restored forest with
-`prt.new_tree(height, bundle_height, forest, collect_bundle)`, and verify the
-root and saved proofs before storing it in `player.trees[computation_hash]`.
-Never deserialize callbacks or assume that saving their Lua handles preserves
-machine resources.
-The record format and restoration code are implementation work in this plan.
-
-Machine checkpoints and expanded bundles are optional accelerators. With only
-the initial snapshot and stored forest, replay must reconstruct the same
-claim. Validate both that equality and the time needed to answer after a cold
-restart. Checkpoint persistence is required for a deployment whose response
-windows cold replay cannot meet.
-
-The player stores mcycle and uarch trees in `player.trees`, indexed by computation
-hash. The `commit_mcycle_claim` and `commit_uarch_claim` event handlers add their
-trees to that table; committing a different uarch claim retains earlier claims.
-Keep durable claim records bound to their computation context as described above.
-Each new opponent can open a child tournament over a different period, requiring
-the corresponding child commitment and contested final-state check. Check the emitted geometry, coordinates, and contested final
-states even when reusing a previously computed claim for the same period.
-Restore the tree for the selected job's context before
-calling a handler. Never resolve a claim solely by tournament address or by
-the most recently committed uarch claim.
-
-Retain claims for earlier children until the root settlement is finalized, so
-a reorg can make their dispute work current again. Recovery remains discoverable
-from those children's event streams until it succeeds and is finalized. It
-needs the tournament and winning-claim/claimer identities, not the old child's
-full tree. Parent propagation uses the parent claim's children. Pending recovery
-must not prevent the player from committing or answering for the next child claim.
-
-## Tick, log discovery, and restarts
+### Ticks, log discovery, and restarts
 
 Input delivery and dispute observation have separate policies. A policy is a
 nonnegative number of successor blocks, or the RPC tag safe or finalized.
@@ -585,7 +709,122 @@ remains authoritative if the chain changes after preparation, and simulation doe
 before a deadline. Measure full-history fetch and computation latency against
 the deployment's windows as part of acceptance.
 
-## Bonds and transactions
+## Proofs and transactions
+
+The bridge calls the existing handlers for commitments, bisection openings,
+divergence seals, transition proofs, and outputs-root proofs. `prt-ethereum.lua`
+converts their results into ABI arguments and the Solidity witness format.
+Transition witnesses combine input delivery when applicable, a uarch step,
+and a reset at the appropriate boundary. Eight-byte accesses serialize their
+complete authenticated 32-byte machine-tree leaf.
+
+For a due action, the bridge prepares or reuses its response, rebuilds the
+observation under the same policy, and requires the job and claim still to be
+eligible. It rechecks the live inclusion window and the observation block hash.
+An attempt owns preparation, revalidation, proof checking, and submission;
+the scheduler owns job selection and retry timing. If a waiting attempt returns
+a different head, the scheduler starts over before reusing pending-job choices
+or cancellation decisions from the earlier view.
+`prt-transactions.lua` preflights against the current canonical execution state,
+excluding its own pending transaction. It estimates gas with a 20% allowance,
+bounded by the block gas limit. A call that first becomes valid in the next
+block can be retried once that block arrives. `prt-cast.lua` invokes `cast mktx`
+with explicit chain ID, nonce, gas, value, and both EIP-1559 fee fields, using
+the actor's keystore and password file. It decodes the signed bytes with cast
+and verifies the signer and every requested field before publication. Arguments
+are shell-quoted; stdout and stderr are separated, and failures do not print
+signer paths or endpoint configuration.
+
+The bridge publishes at most one transaction per tick and never waits for
+mining. Before each publication, the tracker writes all signed candidates,
+their hashes, nonce, fee fields, job context, and observation to
+`signed-transactions.json` using a temporary file and rename. It then publishes
+the raw bytes with `eth_sendRawTransaction`. The journal is shared across epoch
+coordinators and contains no signer credentials. Setup deployments and input
+posting still use synchronous `cast send` on the separate deployer account.
+
+The initial fee cap targets twice the current base fee plus the suggested tip,
+within configured limits. The tip has a 1 gwei floor. If a transaction is still
+pending after `PRT_FEE_BUMP_BLOCKS` blocks (default 3), the tracker replaces it
+at the same nonce. Both fee fields increase by at least
+`PRT_FEE_BUMP_PERCENT` (default 15, rounded up); current network estimates can
+raise them further. `PRT_MAX_FEE_PER_GAS` defaults to 100000000000 wei (100 gwei),
+and `PRT_MAX_PRIORITY_FEE_PER_GAS` to 10000000000 wei (10 gwei). These are demo
+defaults, not a guarantee of timely inclusion. Hitting a ceiling reports the
+blocked account while observation continues. The tracker retains the nonce and
+can resume if fees fall. All four settings can be passed as Make variables.
+If an affordable candidate is missing from the node at the fee ceiling, the
+tracker can republish its identical signed bytes after revalidation, using the
+same retry interval. This also recovers a crash before the original broadcast.
+
+Every tick revalidates pending work against the dispute observation and actual
+inclusion deadline. Useful pending work keeps its nonce; another action for
+that signer cannot silently queue behind it. Obsolete work is immediately
+replaced by an eligible action, or by a zero-value self-transfer cancellation.
+A replacement that cannot be prepared or simulated falls back to cancellation.
+Cancellation obeys the same fee ceilings and cannot revoke a transaction
+already distributed to block producers. An older candidate can still win.
+Signed candidates survive underpriced or ambiguous publication responses;
+later attempts raise fees at the retained nonce.
+
+Nonce reconciliation reads current chain state, independently of delayed event
+observation. The journal retains a high-water nonce and every candidate even
+after mining. If a reorg retreats the account nonce, every recorded nonce up to
+that high-water mark must be consumed or replaced again. Future queued
+candidates may race that reconciliation. The bridge does not defend a stale
+claim merely because one of its own older transactions joined it.
+
+A mined receipt suppresses duplicate publication while its event is awaiting
+confirmation. The bridge checks the receipt's block hash; an orphaned receipt
+releases that suppression. Completion still comes from observed events.
+Anvil EVM rejections suppress an attempt only for the same live tip. A new tip
+or replacement branch can make it eligible again. Other provider or transport
+errors during observation, simulation, or signing abort the run; a publication
+RPC rejection instead retains the signed attempt for retry. Dishonest moves can therefore
+be rejected during preflight without broadcasting a reverting transaction.
+Attempts and results are recorded in `transactions.jsonl`.
+
+Transition proofs also run through the native verifier, using the emitted
+agreed state and authoritative InputBox bytes. The bridge requires native
+validity to agree with an `eth_call` pinned to the observed block hash. Proven
+invalid witnesses are retained as invalid for that exact event and actor. A
+later execution-state rejection can instead mean another actor already answered,
+so it is not treated as a native/Solidity disagreement. Before the tournament, the proof
+checks exercise input delivery, an ordinary step, an instruction reset, a late
+period reset, and absent input. Each class also checks rejection of corrupted,
+truncated, and trailing witnesses. This comparison exposed the pristine-uarch
+mismatch; no verification check was removed to make resets pass.
+
+### State-transition proof encoding
+
+CartesiStateTransition interprets the coordinate as the output leaf of one
+transition, with agreeState as its predecessor. Encode the existing player's
+logs in the order the verifier consumes them.
+
+| Position | Witness segments, in order |
+|---|---|
+| Input-window opening, cycle modulo 2^68 = 0 | Eight-byte big-endian input length, the exact input bytes, the CMIO access log when an input exists, then the uarch-step access log |
+| Closing transition of a uarch span, cycle modulo 2^20 = 2^20 - 1 | Uarch-step access log, then uarch-reset access log |
+| Every other position | Uarch-step access log |
+
+At an absent input, encode a zero length and omit the CMIO log; the uarch step
+still executes. An existing empty input also has length zero but requires its
+CMIO log. The provider's input presence distinguishes them. Delivery to a
+terminal machine still requires the CMIO no-op proof when an input exists.
+
+For each access, encode its raw read value for an eight-byte word access; for
+a larger read, encode its 32-byte raw value followed by its read hash; for a
+larger write, encode its read hash. Append the access's sibling hashes in their
+existing order. Concatenate accesses and logs without ABI padding inside this
+witness, then encode the complete witness as winLeafMatch's bytes argument.
+The verifier requires exact access-log consumption and rejects trailing or
+truncated data, as well as input bytes supplied for an absent input.
+
+Fixtures must check the sealed agreeState and the claimed post-state, including
+the canonical root substituted by a rejecting reset. Ordinary steps, delivery,
+reset, and padding must agree across the player and Solidity before live use.
+
+### Bonds and transactions
 
 Attach the creation event's bondValue as msg.value to every join. Budget for the
 root tournament's bond, the active child tournament's bond, transaction gas, and further joins before
@@ -661,134 +900,213 @@ private keys on command lines. Redact endpoint, credentials, account, and signer
 paths from diagnostics. Signed transaction records must not contain credentials
 or endpoint configuration.
 
-## Implementation and validation
+## Mining and narration
 
-The implementation uses these components.
+Anvil mines submitted transactions immediately. When no action is eligible,
+the harness mines empty blocks so the next transaction can reach the next
+emitted deadline or a receipt's observation boundary. It also mines the blocks
+needed to confirm each input and epoch seal. Mining policy belongs to the
+harness; the bridge never mines.
 
-```text
-doc/recipes/prt-bridge.lua       tick, log discovery, action selection, claim restoration
-doc/recipes/prt-ethereum.lua     ABI definitions and event-to-job table
-doc/recipes/prt-cast.lua         RPC, signer, and publisher adapter
-doc/recipes/prt-transactions.lua signed-candidate journal, nonce reconciliation, fee replacement
-doc/recipes/prt-transactions-test.lua Anvil fee, cancellation, restart, and nonce reorg tests
-doc/recipes/prt-bridge-test.lua  fixture, tick, restart, and Anvil tests
-src/cartesi/evmu.lua            selectorless ABI value codec additions
-tests/lua/spec-evmu.lua         ABI codec tests
+The harness narrates observed contract events into `story.txt`: joins,
+pairings, child creation, isolated transitions, proof and timeout wins,
+staging, acceptance, and bond recovery. Player labels are associated with their
+submitted commitments; the contract events supply the outcomes and reasons.
+Success requires the winning commitment to equal the honest player's claim,
+the accepted machine and outputs root to match its checkpoint, and the root
+bond to have been recovered. Staging alone does not complete an epoch.
+
+## Validation
+
+A passing story run produces these epochs.
+
+| Epoch | Input range, end excluded | Cumulative outputs | Invalid transition proofs rejected |
+| --- | --- | --- | --- |
+| 0 | [0, 0) | 0 | 0 |
+| 1 | [0, 3) | 2 | 4 |
+| 2 | [3, 6) | 5 | 4 |
+
+All six calculator inputs wait for the input confirmation depth and are
+processed before their on-chain seal. Rejected proofs fail the Solidity
+preflight check and are never broadcast. The native/Solidity proof suite must
+pass in both calculator epochs. Settlement must match the checkpoint chain, and the final empty
+continuation must retain the identical last-output proof, final machine hash,
+output count, and outputs root. With `PRT_TEST_REORG=yes`, the same players
+keep their computations across the replaced branch, and both calculator epochs
+still accept the honest result and recover their root bonds.
+
+The fixtures and suites also cover the following.
+
+- Five native/Solidity proof classes per calculator epoch, with corrupted,
+  truncated, and extended proofs rejected.
+- The bridge's independent Foundry ABI comparison, shell quoting and exit
+  status checks, deadline boundaries, ordered input delivery, replay protection,
+  mismatched seals, and changed input history.
+- Confirmation depths and consensus tags without fallback, delayed replacement
+  inputs, actual-tip deadline checks, receipt suppression and orphaning, retry
+  after branch changes, and child replacement at the same address, including
+  replacement matches in which the actor no longer participates.
+- Anvil gas surges with mining disabled, same-nonce fee replacement, fee ceilings
+  and subsequent recovery, dropped candidates, underpriced replacement errors,
+  write-before-publication, cancellation and older-candidate races, reverted
+  receipts, multi-nonce reorgs, process-crash journal reload, and identical-byte
+  rebroadcast at the fee ceiling. Bridge fixtures also check that failed
+  replacements do not strand obsolete work and useful pending jobs do not
+  oscillate between competing actions from the same account.
+- Read-only job derivation, expiry during claim computation, refreshing
+  cancellation decisions after a head change, and consistent rejection of nonce
+  advances beyond the journal's owned range.
+- The existing PRT protocol suite, including the added checks for invalid,
+  missing, or non-last continuation proofs and preservation through an empty
+  epoch.
+
+These targets rerun the protocol suite or test edited bridge sources against
+the existing image.
+
+```sh
+make -C doc test-prt-protocol
+make -C doc test-prt-bridge
+make -C doc test-prt-transactions
 ```
 
-Implement the components in this order.
+## Current limits
 
-1. Implement the transition-witness encoding above and establish the first
-   conformance gate: matching root and child commitments, accepted valid
-   proofs, and rejected malformed proofs through the pinned Solidity verifier.
-   Add selectorless ABI tuple encoding/decoding. Define canonical signatures,
-   indexed fields, types, outputs, and Lua names once. Pin event, factory-table,
-   result-view, and mutation fixtures from the contract tests. Descriptor and bond-value
-   views are contract-test oracles for the emitted fields. Validate integer
-   widths, addresses, enum values, padding, topic counts, and data lengths.
-   The factory parameter tuple includes commitmentBudget between responseBudget
-   and maxAllowance; fixture the complete tuple even though the bridge does
-   not reproduce that clock accounting.
-2. Implement the constrained cast adapter and direct player calls. Validate
-   both factory levels before enabling claim computation or joins. Implement
-   versioned claim storage, restoration of forests and collection callbacks,
-   and context-bound computation reuse across successive child tournaments.
-3. Implement temporary job groups and the event-to-action table, including
-   replacement and cancellation. Derive jobs directly from events, emitted
-   descriptors, learned identities, and own claims. Cover the optional standing
-   adapter separately from the final event path.
-4. Implement full-history log fetching, child discovery, consistent-head
-   validation, and tick selection. Use the same path for ordinary ticks,
-   restarts, and replacement branches. Refresh observation after computation,
-   and execute only after every relevant stream has been processed through the
-   accepted head.
-5. Implement bonds, simulation, tracked-transaction persistence with the
-   high-water mark, publication, replacement, and nonce reconciliation. Enforce
-   at most one publication per tick.
+The recipe streams and accepts the two fixed calculator groups. Accepting epoch
+two also seals the normal empty epoch three; the demo stops there and shuts down
+Anvil. It does not expose a persistent chain for interactive use or run an
+unbounded epoch service. The configured zero-sentry settlement path waits the
+full staging period; sentry-driven early acceptance is outside this demo.
 
-Use repository Make targets for builds, checks, and tests.
+The geometry, deployment, and actor population are fixed for this recipe.
+Reading complete log histories is suitable for the disposable local chain;
+log pagination and a general deployment-discovery interface are not implemented.
+Saved claim files are diagnostic artifacts, not a complete dispute restart
+protocol. The transaction tracker can reload its journal and reconcile pending
+or orphaned candidates, but callers must restore the corresponding player and
+observation context before submitting work. The demo does not yet implement
+that complete relaunch flow. Its journal assumes one writer and process-crash
+atomic rename; it does not provide an fsync-based power-loss guarantee. It keeps
+all signed candidates for the bounded run, without journal compaction.
+Reorgs crossing accepted input history or its seal
+still fail closed. A confirmation depth is a policy, not absolute finality.
 
-For testing before StandingChanged is available, the bridge may temporarily
-call tournamentStanding() for each watched tournament after processing the
-events at an accepted head. Pin each view call to that head hash. Use the
-returned result to schedule propagation, elimination, staging, and recovery.
-The view supplies no prospective resultAt before the joining deadline, so schedule these
-calls when it reports that a result is available. The initial call to eliminate
-an empty child tournament still uses the descriptor supplied by its creation
-event.
+The packaged story validates the Lua players against the pinned contracts. It
+does not qualify the Rust node against this emulator's uarch pin; release-pinned
+Rust proof fixtures require their own coordinated update.
 
-Preserve completion established by events in the current tick's action set.
-This workaround supplies none of the missing fields in match events.
-Remove it before accepting the implementation as complete. The
-proposed bridge gets this information entirely from events.
+## TODO
 
-The existing [prt-time-test.lua](prt-time-test.lua) and
-[prt-deadline-test.lua](prt-deadline-test.lua) cover logical-block queues,
-deadline rejection, timeout responses, cancellation, and delayed replies.
-They do not establish real-chain timing. The simulator's response barrier
-prevents computation time from consuming allowance, and its referee propagates
-child results immediately. The propagation and expiry exchange sketched in
-prt.lua's propagate_uarch_result is commented out, not executed. Its sorted
-rounds also do not reproduce the
-contracts' arrival-driven re-pairing or full MatchClocks accounting.
+### Factory table validation
 
-The current player shares input delivery and rollback between sampled builds,
-bundle collection, and proof replay. [prt-test.lua](prt-test.lua) includes
-rejected-input, post-rejection, terminal-state, and checkpoint-replay cases.
-These are emulator-side evidence. Acceptance below requires the same
-commitments and encoded proofs to agree with the pinned Solidity verifier.
+The bridge currently checks each creation descriptor against the player's
+geometry. It should also validate the factory's complete tournament table
+when pinning the deployment, before asking the player to compute a root claim
+or submitting a join. Read tournamentLevelCount() once and require two levels.
+Then read tournamentParameters(0) and tournamentParameters(1) once, for the root
+and leaf tournaments respectively. The table calls the stride exponent log2step,
+which corresponds to log2Stride in creation events.
 
-- Test ABI encoding for selectorless tuples, indexed fields, dynamic bytes,
-  92-bit coordinates, malformed padding/truncation, and byte-exact calldata.
-- Validate the complete factory table before any claim computation or join.
-  Accept different compatible two-level tables. Reject a level count other
-  than two, inconsistent levels fields, a root height and stride sum other
-  than 92, a nonzero leaf stride, a leaf height different from the root stride,
-  or either height at or above 63. These checks must run without waiting for a
-  NewInnerTournament event. Reject creation events that disagree with the
-  validated geometry, level, or kind. Check that factory parameters are read
-  once when pinning the deployment, not for each tournament.
+- Both parameter rows must report levels equal to two.
+- The root tournament's height plus log2step must equal 92.
+- The leaf tournament's log2step must be zero.
+- The leaf tournament's height must equal the root tournament's log2step.
+- Both heights must be below 63, so the player's leaf counts fit in signed
+  64-bit integers.
+
+Derive the player's mcycle period exponent from the validated root tournament
+log2step minus ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE. For example, root stride
+exponent 30 and root and leaf heights 62 and 30 use prt.new_geometry(10).
+Require each creation event's height, log2Stride, level, and kind to agree with
+that table, with a non-leaf root tournament at level zero and a leaf tournament
+at level one. Waiting until the first NewInnerTournament to check the leaf
+geometry would be too late, because the player could already have joined a root
+tournament it cannot defend. These factory reads validate the deployment once.
+Descriptors and bond values for individual tournaments still come entirely from
+events.
+
+### Claim restoration and successive opponents
+
+The player's trees in `prt.lua` contain frontier forests of bundle roots and
+bundle-collection callbacks. `tree:get_node_hash` and `tree:get_proof` open a
+bundle implicitly when the forest query reaches an opaque hash;
+`tree:get_child_hashes` uses two node-hash queries. The local `open_bundle` helper
+invokes the tree's collector, backed by `collect_mcycle_bundle` or
+`collect_uarch_cycle_bundle`, to reconstruct the bundle by machine replay.
+`hash_tree.frontier_forest_expand_leaf` checks the reconstructed subtree against
+the committed leaf hash before installing it. The query then retries, and later
+queries within that bundle reuse the installed subtree without machine replay.
+Saving a computation hash, commit response, or Lua object handle alone does not
+restore this ability.
+
+Persist a versioned claim record containing the forest, tree and bundle
+heights, expected computation root, root children, and final-state proof.
+Bind it to the deployment, epoch initial hash, exact verified input payloads
+and bounds, geometry, and, for a child claim, input and period coordinates.
+Store immutable inputs and the initial machine snapshot locally, or references
+to durable content-addressed copies. On restart, recreate the player and its
+bundle-collection callbacks from this context, wrap the restored forest with
+`prt.new_tree(height, bundle_height, forest, collect_bundle)`, and verify the
+root and saved proofs before storing it in `player.trees[computation_hash]`.
+Never deserialize callbacks or assume that saving their Lua handles preserves
+machine resources.
+
+Machine checkpoints and expanded bundles are optional accelerators. With only
+the initial snapshot and stored forest, replay must reconstruct the same
+claim. Validate both that equality and the time needed to answer after a cold
+restart. Checkpoint persistence is required for a deployment whose response
+windows cold replay cannot meet.
+
+The player stores mcycle and uarch trees in `player.trees`, indexed by computation
+hash. The `commit_mcycle_claim` and `commit_uarch_claim` event handlers add their
+trees to that table; committing a different uarch claim retains earlier claims.
+Keep durable claim records bound to their computation context as described above.
+Each new opponent can open a child tournament over a different period, requiring
+the corresponding child commitment and contested final-state check. Check the emitted geometry, coordinates, and contested final
+states even when reusing a previously computed claim for the same period.
+Restore the tree for the selected job's context before
+calling a handler. Never resolve a claim solely by tournament address or by
+the most recently committed uarch claim.
+
+Retain claims for earlier children until the root settlement is finalized, so
+a reorg can make their dispute work current again. Recovery remains discoverable
+from those children's event streams until it succeeds and is finalized. It
+needs the tournament and winning-claim/claimer identities, not the old child's
+full tree. Parent propagation uses the parent claim's children. Pending recovery
+must not prevent the player from committing or answering for the next child claim.
+
+### Remaining tests
+
 - Exercise every event-table row with both orientations and responder parities,
   sealing at height one, equal tree children, invalid coordinates, and unrelated
   cleanup.
-- Run the timing fixtures of the companion document against the bridge in
-  Anvil. Advance blocks during claim builds, bundle opening, proof generation,
-  and pending inclusion, so computation consumes allowance. Include skipped
-  heads and jobs without expiry. Reject stale computation before publication,
-  and verify that inclusion at the first expired block fails even when the
-  proof is correct. Propagate a won child only inside [resultAt,
-  winnerExpiresAt), ahead of old bond recovery. Cover the child-return refill
-  and the response-budget discount on leaf and timeout wins. The next emitted
-  deadlines must suffice without the bridge calculating either adjustment.
-- Cover an empty child tournament with no further events, a join replacing its initial
-  elimination, later pairing canceling prospective results, and both sides of
-  the last match eliminated while a third claim wins. Parent deletion must
-  cancel propagation and elimination of the child tournament while preserving recovery.
-  EpochStaged and BondRecovered from other participants must complete their
-  respective jobs.
-- Discover child tournament creation and activity within one transaction, one block, and
-  one polling range. Arbitrary range partitioning must produce the same action set.
-- Run the re-pairing fixtures of the companion document against the bridge.
-  Carry one claim through successive opponents A and B with children over
+- Advance blocks during claim builds, bundle opening, proof generation, and
+  pending inclusion, so computation consumes allowance. Include skipped heads
+  and jobs without expiry. Reject stale computation before publication, and
+  verify that inclusion at the first expired block fails even when the proof is
+  correct. Propagate a won child only inside [resultAt, winnerExpiresAt), ahead
+  of old bond recovery. Cover the child-return refill and the response-budget
+  discount on leaf and timeout wins. The next emitted deadlines must suffice
+  without the bridge calculating either adjustment.
+- Cover an empty child tournament with no further events, a join replacing its
+  initial elimination, later pairing canceling prospective results, and both
+  sides of the last match eliminated while a third claim wins. Parent deletion
+  must cancel propagation and elimination of the child tournament while
+  preserving recovery. EpochStaged and BondRecovered from other participants
+  must complete their respective jobs.
+- Discover child tournament creation and activity within one transaction, one
+  block, and one polling range. Arbitrary range partitioning must produce the
+  same action set.
+- Carry one claim through successive opponents A and B with children over
   different periods. Keep B's jobs when A's MatchDeleted arrives after the new
   MatchCreated, answer with B's child commitment while A's child recovery is
   pending, restore A's child claim if a reorg makes it active again, and
   recover its bond independently.
-- Associate a root tournament's factory creation event with EpochSealed before joining.
-  Discovery of root tournaments and child tournaments must provide geometry, joining deadline, and join bond from
-  events alone. Assert that no descriptor or bond-value view calls occur.
-- Cover zero and positive confirmation depths, safe/finalized tags, and missing
-  consensus markers without fallback. Replace an input before confirmation and
-  require only the replacement to reach the player. Keep epoch seals behind
-  the same input policy. Test deadline expiry at the real tip, including expiry
-  while a player method runs, and receipt suppression until events are observed.
+- Assert that discovering root and child tournaments makes no descriptor or
+  bond-value view calls.
 - Start each tick with empty observation state. At the same head, ordinary and
   restarted ticks must derive identical actions. Change branches during range
-  fetching and reject mixed observations. Include replacement child discovery,
-  disappeared completion events, and deadline filtering at the replacement head.
-- Replace a child tournament's creation with another at the same factory nonce and address
-  but different immutable arguments. Require the next tick to use the
-  descriptor and bond value from the replacement event without contract reads.
+  fetching and reject mixed observations. Include disappeared completion events
+  and deadline filtering at the replacement head.
 - Broadcast a root join, then replace the branch so the epoch's inputs change
   while the root descriptor stays the same, and let the original join win the
   replacement race. The next tick must recognize the unintended join from
@@ -796,51 +1114,27 @@ commitments and encoded proofs to agree with the pinned Solidity verifier.
   schedule elimination of its matches. With the joining window open it must
   join with the correct claim and a second bond. With the window closed it
   must report that the correct claim can no longer enter. Test both.
-- Change heads and branches while a direct player method runs. The refreshed
-  action set must reject stale results. Matching context and arguments may reuse
-  deterministic computation. The player receives no time or reorg requests.
+- Change branches, not only heads, while a direct player method runs. The
+  refreshed action set must reject stale results. Matching context and
+  arguments may reuse deterministic computation.
 - Stop and relaunch during claim construction, after claim persistence, and
   before a previously unopened bundle is needed. Restore forests and callbacks
   with only the initial machine snapshot, check the same roots and proofs,
   and measure cold-replay latency. Reject corrupt records, incompatible record
   versions, or reuse after inputs, initial state, geometry, or child coordinates
   change. A cached commit response alone must not count as a restored tree.
-- Exercise transaction crashes before and after persistence and publication,
-  fee bumps, either same-nonce candidate winning inclusion, failed simulation,
-  reverted and orphaned receipts, payment failure without a revert, recovery
-  continuing when another participant stages first, and one publication per
-  tick.
-- Orphan several mined nonces at once, leaving an older higher-fee candidate
-  queued at one of them, and restart in the middle of recovery. Every nonce up
-  to the high-water mark must be replaced or observed consumed, and an
-  underpriced-replacement rejection must escalate the fee rather than stall.
-- Accept every supported state-transition proof through CartesiStateTransition
-  and reject malformed proofs. Compare root and child commitments across the
-  emulator and contract fixtures. Cover ordinary steps, input delivery including
-  terminal no-ops, absent inputs, reset boundaries, rejecting resets, transitions
-  after rejection, and consecutive rejected inputs. Distinguish absent and
-  empty inputs, and reject trailing or truncated access-log witnesses. Verify
-  final-machine proofs against the committed final state for staging. Never
-  weaken verification to make the bridge's proof format pass.
+- Cover a bond payment that fails without reverting, and recovery continuing
+  when another participant stages first.
+- Extend the proof classes to terminal no-ops, rejecting resets, transitions
+  after rejection, consecutive rejected inputs, and an existing empty input
+  distinguished from an absent one.
 - Win a root tournament with an honest terminal-state commitment. Report the
   terminal outcome, submit no staging transaction, and recover the winning
-  claimer's bond. Confirm that Solidity rejects its machine validity proof;
-  tournament victory must not bypass the validity check.
-- Run an honest player against adversarial counterparts in Anvil through missed
-  turns, timeouts, unrelated elimination, child tournament propagation, root tournament staging,
-  bond recovery, stuck transactions, and controlled reorgs.
+  claimer's bond. Confirm that Solidity rejects its machine validity proof.
+  Tournament victory must not bypass the validity check.
 - Measure full-history fetching and response computation with many reachable
   children and pending recoveries. Check deadline priority, eventual unrelated
   cleanup and recovery, and the deployment's response windows with one pending
-  nonce. A passing sorted-bracket example alone is not a latency acceptance test.
-
-Final acceptance requires event-only action derivation from fresh logs, direct
-player computation without simulator scheduling, restorable claims,
-stale-result rejection, nonce reconciliation, and an end-to-end
-staged result with recovered bonds for a stageable epoch. A terminal epoch
-must instead complete its dispute and bond recovery while reporting that its
-winning state cannot be staged. Timing and successive-opponent scenarios
-must pass against the contracts. Full-history fetching and one pending nonce
-remain implementation choices whose latency must meet those windows. Run an
-opt-in read-only smoke test, then a funded low-stakes
-testnet trial, only after fixtures and Anvil pass.
+  nonce.
+- After fixtures and Anvil pass, run an opt-in read-only smoke test, then a
+  funded low-stakes testnet trial.

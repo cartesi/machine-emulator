@@ -673,6 +673,8 @@ void machine::replace_memory_range(const memory_range_config &config) {
         }
     }
     m_ars.replace(resolved);
+    // Cached host pointers must be rebuilt for the new mapping.
+    init_hot_tlb_contents();
 }
 
 void machine::dump_insn_hist() {

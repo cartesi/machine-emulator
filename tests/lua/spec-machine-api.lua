@@ -11,6 +11,7 @@ Specifically, it provides test coverage for:
 local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 local cartesi = require("cartesi")
+local filesystem = require("cartesi.filesystem")
 local tests_util = require("cartesi.tests.util")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
@@ -67,6 +68,65 @@ for _, variant in ipairs(variants) do
                     })
                 end, "mark_pages_dirty")
             end)
+        end)
+
+        describe("memory range replacement", function()
+            for _, access in ipairs({ "code", "read", "write" }) do
+                it("should refresh the hot TLB after memory replacement (" .. access .. ")", function()
+                    local drive_start = 0x90000000
+                    local old_value = 0x0102030405060708
+                    local new_value = 0x0807060504030201
+                    -- addi a2,zero,1; ld a2,0(a0); sd a1,0(a0)
+                    local instruction = access == "code" and 0x00100613 or access == "read" and 0x00053603 or 0x00b53023
+                    local program = string.pack("<I4I4", instruction, instruction)
+                    -- Replacement code: addi a2,zero,2.
+                    local replacement_data = access == "code" and string.pack("<I4I4", 0x00200613, 0x00200613)
+                        or string.pack("<I8", new_value)
+                    replacement_data = replacement_data .. string.rep("\0", 0x1000 - #replacement_data)
+                    local _ <close>, replacement_filename = filesystem.write_scope_temp_file(replacement_data)
+                    local source <close> = variant.create({
+                        ram = { length = 0x1000 },
+                        flash_drive = { { start = drive_start, length = 0x1000 } },
+                    })
+                    source:write_memory(cartesi.AR_RAM_START, program)
+                    source:write_memory(drive_start, string.pack("<I8", old_value))
+                    source:write_reg("x10", drive_start)
+                    source:write_reg("x11", old_value)
+                    source:run(1) -- Populate the hot code, read, or write entry before replacing its mapping.
+                    expect.equal(source:read_reg("mcycle"), 1)
+                    if access == "code" then
+                        expect.equal(source:read_reg("x12"), 1)
+                    elseif access == "read" then
+                        expect.equal(source:read_reg("x12"), old_value)
+                    else
+                        source:write_reg("x11", old_value + 1)
+                    end
+
+                    local shadow_tlb = source:read_memory(cartesi.AR_SHADOW_TLB_START, cartesi.AR_SHADOW_TLB_LENGTH)
+                    local range_start = access == "code" and cartesi.AR_RAM_START or drive_start
+                    source:replace_memory_range({
+                        start = range_start,
+                        length = 0x1000,
+                        backing_store = { data_filename = replacement_filename },
+                    })
+                    expect.equal(source:read_memory(range_start, 0x1000), replacement_data)
+                    expect.equal(
+                        source:read_memory(cartesi.AR_SHADOW_TLB_START, cartesi.AR_SHADOW_TLB_LENGTH),
+                        shadow_tlb
+                    )
+
+                    source:run(2) -- Use the cached guest translation with the new host mapping.
+                    expect.equal(source:read_reg("mcycle"), 2)
+                    if access == "code" then
+                        expect.equal(source:read_reg("x12"), 2)
+                    elseif access == "read" then
+                        expect.equal(source:read_reg("x12"), new_value)
+                    else
+                        expect.equal(source:read_memory(drive_start, 8), string.pack("<I8", old_value + 1))
+                    end
+                    expect.equal(source:get_root_hash(), tests_util.calculate_emulator_hash(source))
+                end)
+            end
         end)
 
         describe("get_uarch_pristine_hash", function()

@@ -1000,6 +1000,12 @@ uint64_t jsonrpc_machine::do_get_reg_address(reg r) const {
     return result;
 }
 
+machine_hash jsonrpc_machine::do_get_uarch_pristine_hash() const {
+    machine_hash hash;
+    request("machine.get_uarch_pristine_hash", std::tie(), hash);
+    return hash;
+}
+
 machine_config jsonrpc_machine::do_get_default_config() const {
     machine_config result;
     request("machine.get_default_config", std::tie(), result);

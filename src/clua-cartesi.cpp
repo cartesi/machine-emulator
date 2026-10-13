@@ -355,9 +355,10 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, HTIF_CONSOLE_CMD_PUTCHAR_MASK, "HTIF_CONSOLE_CMD_PUTCHAR_MASK", -1);
     clua_setintegerfield(L, HTIF_YIELD_CMD_MANUAL_MASK, "HTIF_YIELD_CMD_MANUAL_MASK", -1);
     clua_setintegerfield(L, HTIF_YIELD_CMD_AUTOMATIC_MASK, "HTIF_YIELD_CMD_AUTOMATIC_MASK", -1);
+    clua_setintegerfield(L, CM_UARCH_STATE_START_ADDRESS, "UARCH_STATE_START_ADDRESS", -1);
+    clua_setintegerfield(L, CM_UARCH_STATE_LOG2_SIZE, "UARCH_STATE_LOG2_SIZE", -1);
+    clua_setintegerfield(L, CM_UARCH_STATE_LENGTH, "UARCH_STATE_LENGTH", -1);
     // Set other constants used by internal tests
-    clua_setintegerfield(L, UARCH_STATE_START_ADDRESS, "UARCH_STATE_START_ADDRESS", -1);
-    clua_setintegerfield(L, UARCH_STATE_LOG2_SIZE, "UARCH_STATE_LOG2_SIZE", -1);
     clua_setintegerfield(L, UARCH_SHADOW_START_ADDRESS, "UARCH_SHADOW_START_ADDRESS", -1);
     clua_setintegerfield(L, UARCH_SHADOW_LENGTH, "UARCH_SHADOW_LENGTH", -1);
     clua_setintegerfield(L, UARCH_RAM_LENGTH, "UARCH_RAM_LENGTH", -1);

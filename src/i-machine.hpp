@@ -340,6 +340,11 @@ public:
         return do_get_reg_address(r);
     }
 
+    /// \brief Gets the Keccak-256 hash of the pristine uarch state (shadow and RAM).
+    machine_hash get_uarch_pristine_hash() const {
+        return do_get_uarch_pristine_hash();
+    }
+
     /// \brief Returns copy of default machine config
     machine_config get_default_config() const {
         return do_get_default_config();
@@ -433,6 +438,7 @@ private:
     virtual access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
         const_machine_hash_view revert_root_hash, const access_log::type &log_type) = 0;
     virtual uint64_t do_get_reg_address(reg r) const = 0;
+    virtual machine_hash do_get_uarch_pristine_hash() const = 0;
     virtual machine_config do_get_default_config() const = 0;
     virtual std::string do_get_address_name(uint64_t paddr) const = 0;
     virtual machine_hash do_verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,

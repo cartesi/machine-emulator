@@ -45,6 +45,7 @@
 #include <cm.h>
 #include <riscv-constants.hpp>
 #include <uarch-constants.hpp>
+#include <uarch-pristine.hpp>
 
 #include "test-utils.h"
 #include "uarch-solidity-compat.hpp"
@@ -921,6 +922,48 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_root_hash_null_machine_test) {
     cm_hash restored_hash;
     cm_error error_code = cm_get_root_hash(nullptr, &restored_hash);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(get_uarch_pristine_hash_null_machine_test) {
+    cm_hash hash{};
+    BOOST_REQUIRE_EQUAL(cm_get_uarch_pristine_hash(nullptr, &hash), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
+    BOOST_CHECK_EQUAL_COLLECTIONS(hash, hash + sizeof(cm_hash), uarch_pristine_hash,
+        uarch_pristine_hash + uarch_pristine_hash_len);
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(get_uarch_pristine_hash_empty_machine_test) {
+    cm_machine *m{};
+    BOOST_REQUIRE_EQUAL(cm_new(&m), CM_ERROR_OK);
+    cm_hash hash{};
+    BOOST_CHECK_EQUAL(cm_get_uarch_pristine_hash(m, &hash), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL_COLLECTIONS(hash, hash + sizeof(cm_hash), uarch_pristine_hash,
+        uarch_pristine_hash + uarch_pristine_hash_len);
+    cm_delete(m);
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(get_uarch_pristine_hash_null_hash_test) {
+    BOOST_CHECK_EQUAL(cm_get_uarch_pristine_hash(nullptr, nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), std::string("invalid hash output"));
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(get_uarch_pristine_hash_reset_test, ordinary_machine_fixture) {
+    cm_hash pristine_hash{};
+    BOOST_REQUIRE_EQUAL(cm_get_uarch_pristine_hash(_machine, &pristine_hash), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_write_reg(_machine, CM_REG_UARCH_X1, 123), CM_ERROR_OK);
+    cm_hash state_hash{};
+    BOOST_REQUIRE_EQUAL(cm_get_node_hash(_machine, CM_UARCH_STATE_START_ADDRESS, CM_UARCH_STATE_LOG2_SIZE, &state_hash),
+        CM_ERROR_OK);
+    BOOST_CHECK_NE(memcmp(pristine_hash, state_hash, sizeof(cm_hash)), 0);
+    cm_hash hash{};
+    BOOST_REQUIRE_EQUAL(cm_get_uarch_pristine_hash(_machine, &hash), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL_COLLECTIONS(hash, hash + sizeof(cm_hash), pristine_hash, pristine_hash + sizeof(cm_hash));
+    BOOST_REQUIRE_EQUAL(cm_reset_uarch(_machine), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_get_node_hash(_machine, CM_UARCH_STATE_START_ADDRESS, CM_UARCH_STATE_LOG2_SIZE, &state_hash),
+        CM_ERROR_OK);
+    BOOST_CHECK_EQUAL_COLLECTIONS(state_hash, state_hash + sizeof(cm_hash), pristine_hash,
+        pristine_hash + sizeof(cm_hash));
+    BOOST_CHECK_EQUAL(cm_get_uarch_pristine_hash(_machine, nullptr), CM_ERROR_INVALID_ARGUMENT);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_null_test) {

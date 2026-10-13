@@ -1098,6 +1098,18 @@
       }
     },
     {
+      "name": "machine.get_uarch_pristine_hash",
+      "summary": "Returns the Keccak-256 hash of the pristine uarch state (shadow and RAM)",
+      "params": [],
+      "result": {
+        "name": "hash",
+        "description": "Pristine uarch state hash",
+        "schema": {
+          "$ref": "#/components/schemas/Base64Hash"
+        }
+      }
+    },
+    {
       "name": "machine.reset_uarch",
       "summary": "Reset uarch to pristine state",
       "params": [],

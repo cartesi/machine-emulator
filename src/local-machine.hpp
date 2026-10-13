@@ -105,6 +105,7 @@ private:
     access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
         const_machine_hash_view revert_root_hash, const access_log::type &log_type) override;
     uint64_t do_get_reg_address(reg r) const override;
+    machine_hash do_get_uarch_pristine_hash() const override;
     machine_config do_get_default_config() const override;
     std::string do_get_address_name(uint64_t paddr) const override;
     machine_hash do_verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,

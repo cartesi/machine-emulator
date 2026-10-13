@@ -658,6 +658,23 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_before_create_test, spawned_server_
     BOOST_CHECK_NE(err, CM_ERROR_OK);
 }
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(get_uarch_pristine_hash_before_create_test, spawned_server_fixture) {
+    cm_hash local_hash{};
+    BOOST_REQUIRE_EQUAL(cm_get_uarch_pristine_hash(nullptr, &local_hash), CM_ERROR_OK);
+    cm_hash remote_hash{};
+    BOOST_REQUIRE_EQUAL(cm_get_uarch_pristine_hash(m, &remote_hash), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL_COLLECTIONS(remote_hash, remote_hash + sizeof(cm_hash), local_hash, local_hash + sizeof(cm_hash));
+    bool empty{};
+    BOOST_REQUIRE_EQUAL(cm_is_empty(m, &empty), CM_ERROR_OK);
+    BOOST_CHECK(empty);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(get_uarch_pristine_hash_invalid_params_test, spawned_server_fixture) {
+    auto response = jsonrpc_post(bound_address,
+        R"({"jsonrpc":"2.0","id":1,"method":"machine.get_uarch_pristine_hash","params":[1]})");
+    BOOST_CHECK_EQUAL(response["error"]["code"].get<int>(), -32602);
+}
+
 // ---------------------------------------------------------------------------
 // Group E: raw HTTP/JSON-RPC error branches in jsonrpc-remote-machine.cpp
 // ---------------------------------------------------------------------------

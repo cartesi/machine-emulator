@@ -1585,6 +1585,16 @@ static json jsonrpc_machine_get_reg_address_handler(const json &j, const std::sh
     return jsonrpc_response_ok(j, cartesi::machine::get_reg_address(std::get<0>(args)));
 }
 
+/// \brief JSONRPC handler for the machine.get_uarch_pristine_hash method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_get_uarch_pristine_hash_handler(const json &j,
+    const std::shared_ptr<http_session> & /*session*/) {
+    jsonrpc_check_no_params(j);
+    return jsonrpc_response_ok(j, cartesi::base64_machine_hash(cartesi::machine::get_uarch_pristine_hash()));
+}
+
 /// \brief JSONRPC handler for the machine.reset_uarch method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -1841,6 +1851,7 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.read_reg", jsonrpc_machine_read_reg_handler},
         {"machine.write_reg", jsonrpc_machine_write_reg_handler},
         {"machine.get_reg_address", jsonrpc_machine_get_reg_address_handler},
+        {"machine.get_uarch_pristine_hash", jsonrpc_machine_get_uarch_pristine_hash_handler},
         {"machine.get_initial_config", jsonrpc_machine_get_initial_config_handler},
         {"machine.get_default_config", jsonrpc_machine_get_default_config_handler},
         {"machine.get_address_name", jsonrpc_machine_get_address_name_handler},

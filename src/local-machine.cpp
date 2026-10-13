@@ -254,6 +254,10 @@ uint64_t local_machine::do_get_reg_address(reg r) const {
     return machine::get_reg_address(r);
 }
 
+machine_hash local_machine::do_get_uarch_pristine_hash() const {
+    return machine::get_uarch_pristine_hash();
+}
+
 machine_config local_machine::do_get_default_config() const {
     return machine::get_default_config();
 }

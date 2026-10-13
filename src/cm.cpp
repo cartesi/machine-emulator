@@ -64,6 +64,7 @@
 #include "rtc-defines.h"
 #include "send-cmio-response.hpp"
 #include "sha-256-hasher.hpp"
+#include "uarch-constants.hpp"
 #include "uarch-defines.h"
 
 static std::string &get_last_err_msg_storage() {
@@ -120,6 +121,9 @@ static_assert(std::string_view{DTB_BOOTARGS_INIT_PART} == std::string_view{CM_DT
 static_assert(std::string_view{DTB_BOOTARGS_INIT} == std::string_view{CM_DTB_BOOTARGS_INIT});
 
 static_assert(UARCH_CYCLE_MAX_DEF == CM_UARCH_CYCLE_MAX);
+static_assert(UARCH_STATE_START_ADDRESS_DEF == CM_UARCH_STATE_START_ADDRESS);
+static_assert(UARCH_STATE_LOG2_SIZE_DEF == CM_UARCH_STATE_LOG2_SIZE);
+static_assert(static_cast<uint64_t>(cartesi::UARCH_STATE_LENGTH) == CM_UARCH_STATE_LENGTH);
 static_assert(RTC_FREQ_DIV_DEF == CM_RTC_FREQ_DIV);
 
 static_assert(HTIF_DEV_SHIFT_DEF == CM_HTIF_DEV_SHIFT);
@@ -1075,6 +1079,18 @@ cm_error cm_get_reg_address(const cm_machine *m, cm_reg reg, uint64_t *val) try 
     if (val != nullptr) {
         *val = 0;
     }
+    return cm_result_failure();
+}
+
+cm_error cm_get_uarch_pristine_hash(const cm_machine *m, cm_hash *hash) try {
+    if (m != nullptr) {
+        const auto *cpp_m = convert_from_c(m);
+        convert_to_c(cpp_m->get_uarch_pristine_hash(), hash);
+    } else {
+        convert_to_c(cartesi::machine::get_uarch_pristine_hash(), hash);
+    }
+    return cm_result_success();
+} catch (...) {
     return cm_result_failure();
 }
 

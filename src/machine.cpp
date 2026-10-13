@@ -2111,6 +2111,12 @@ machine_hash machine::verify_step_uarch(const_machine_hash_view root_hash_before
     return a.finish();
 }
 
+machine_hash machine::get_uarch_pristine_hash() {
+    machine_hash hash;
+    std::memcpy(hash.data(), uarch_pristine_hash, hash.size());
+    return hash;
+}
+
 machine_config machine::get_default_config() {
     return machine_config{};
 }

@@ -399,7 +399,6 @@ LIBCARTESI_OBJS:= \
 	is-pristine.o \
 	uarch-pristine-hash.o \
 	uarch-pristine-ram.o \
-	uarch-pristine-state-hash.o \
 	uarch-reset-state.o \
 	uarch-step.o \
 	local-machine.o \
@@ -415,7 +414,6 @@ CARTESI_CLUA_OBJS:= \
 	clua.o \
 	clua-i-machine.o \
 	uarch-pristine-ram.o \
-	uarch-pristine-state-hash.o \
 	uarch-pristine-hash.o
 
 LUACARTESI_OBJS:= \

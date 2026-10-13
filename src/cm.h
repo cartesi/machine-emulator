@@ -93,6 +93,9 @@ typedef enum cm_pmas_constant {
     CM_AR_CMIO_TX_BUFFER_LENGTH = 0x200000,
     CM_AR_DTB_START = 0x7ff00000,
     CM_AR_DTB_LENGTH = 0x100000,
+    CM_UARCH_STATE_START_ADDRESS = 0x400000,
+    CM_UARCH_STATE_LOG2_SIZE = 22,
+    CM_UARCH_STATE_LENGTH = 0x400000,
 } cm_pmas_constant;
 
 /// \brief Driver IDs for PMA entries.
@@ -429,6 +432,12 @@ CM_API cm_error cm_get_default_config(const cm_machine *m, const char **config);
 /// \param val Receives address of the register.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_reg_address(const cm_machine *m, cm_reg reg, uint64_t *val);
+
+/// \brief Gets the Keccak-256 hash of the pristine uarch state (shadow and RAM).
+/// \param m Pointer to a machine object. Can be NULL (for local machines).
+/// \param hash Valid pointer to cm_hash structure that receives the hash.
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_get_uarch_pristine_hash(const cm_machine *m, cm_hash *hash);
 
 /// \brief Gets a description of what is at a given target physical address
 /// \param m Pointer to a machine object. Can be NULL (for local machines).

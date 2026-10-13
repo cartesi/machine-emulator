@@ -45,7 +45,6 @@
 #include "shadow-tlb.hpp"
 #include "shadow-uarch-state.hpp"
 #include "uarch-constants.hpp"
-#include "uarch-pristine-state-hash.hpp"
 
 namespace cartesi {
 
@@ -367,7 +366,7 @@ private:
     }
 
     void do_reset_uarch() const {
-        check_write_access(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, get_uarch_pristine_state_hash(),
+        check_write_access(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, machine::get_uarch_pristine_hash(),
             "uarch.state");
     }
 

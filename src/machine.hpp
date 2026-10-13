@@ -354,6 +354,9 @@ public:
     /// \brief Resets the entire uarch state to pristine values.
     void reset_uarch();
 
+    /// \brief Gets the Keccak-256 hash of the pristine uarch state (shadow and RAM).
+    static machine_hash get_uarch_pristine_hash();
+
     /// \brief Resets the microarchitecture state and returns an access log
     /// \param log_type Type of access log to generate.
     /// \param log_data If true, access data is recorded in the log, otherwise only hashes. The default is false.

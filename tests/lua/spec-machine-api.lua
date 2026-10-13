@@ -14,6 +14,22 @@ local cartesi = require("cartesi")
 local tests_util = require("cartesi.tests.util")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
+describe("uarch constants", function()
+    it("should expose the full uarch state range", function()
+        expect.equal(cartesi.UARCH_STATE_START_ADDRESS, 0x400000)
+        expect.equal(cartesi.UARCH_STATE_LOG2_SIZE, 22)
+        expect.equal(cartesi.UARCH_STATE_LENGTH, 1 << cartesi.UARCH_STATE_LOG2_SIZE)
+    end)
+end)
+
+describe("get_uarch_pristine_hash static method", function()
+    it("should return the embedded hash without a machine instance", function()
+        local hash = cartesi.machine:get_uarch_pristine_hash()
+        expect.equal(#hash, cartesi.HASH_SIZE)
+        expect.equal(hash, cartesi.UARCH_PRISTINE_STATE_HASH)
+    end)
+end)
+
 local variants = {
     {
         name = "local",
@@ -33,6 +49,41 @@ local variants = {
 for _, variant in ipairs(variants) do
     describe("machine API (" .. variant.name .. ")", function()
         local machine <close> = variant.create({ ram = { length = 0x1000 } })
+
+        describe("get_uarch_pristine_hash", function()
+            it("should accept the pristine hash in a reset log and reject a changed hash", function()
+                local source <close> = variant.create({ ram = { length = 0x1000 } })
+                source:write_reg("uarch_x1", 123)
+                local hash = source:get_uarch_pristine_hash()
+                local before = source:get_root_hash()
+                local log = source:log_reset_uarch()
+                expect.equal(log.accesses[1].written_hash, hash)
+                expect.equal(source:verify_reset_uarch(before, log), source:get_root_hash())
+                log.accesses[1].written_hash = string.char(hash:byte(1) ~ 1) .. hash:sub(2)
+                expect.fail(function()
+                    source:verify_reset_uarch(before, log)
+                end, "written hash for uarch.state does not match expected hash")
+            end)
+
+            it("should match the full uarch subtree after reset", function()
+                local hash = machine:get_uarch_pristine_hash()
+                machine:write_reg("uarch_x1", 123)
+                expect.equal(machine:get_uarch_pristine_hash(), hash)
+                machine:reset_uarch()
+                expect.equal(
+                    machine:get_node_hash(cartesi.UARCH_STATE_START_ADDRESS, cartesi.UARCH_STATE_LOG2_SIZE),
+                    hash
+                )
+            end)
+
+            it("should work on an empty handle", function()
+                local source <close> = variant.create({ ram = { length = 0x1000 } })
+                source:destroy()
+                expect.truthy(source:is_empty())
+                expect.equal(source:get_uarch_pristine_hash(), cartesi.machine:get_uarch_pristine_hash())
+                expect.truthy(source:is_empty())
+            end)
+        end)
 
         describe("move", function()
             it("should return a machine from a closing scope", function()

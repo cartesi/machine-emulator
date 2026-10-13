@@ -1352,6 +1352,18 @@ static int machine_obj_index_get_reg_address(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:get_uarch_pristine_hash() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_get_uarch_pristine_hash(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    cm_hash hash{};
+    if (cm_get_uarch_pristine_hash(m.get(), &hash) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    clua_push_cm_hash(L, &hash);
+    return 1;
+}
+
 /// \brief This is the machine.verify_step() method implementation.
 static int machine_obj_index_verify_step(lua_State *L) {
     lua_settop(L, 4);
@@ -1458,6 +1470,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {.name = "get_proof", .func = machine_obj_index_get_proof},
     {.name = "get_hash_tree_stats", .func = machine_obj_index_get_hash_tree_stats},
     {.name = "get_reg_address", .func = machine_obj_index_get_reg_address},
+    {.name = "get_uarch_pristine_hash", .func = machine_obj_index_get_uarch_pristine_hash},
     {.name = "get_root_hash", .func = machine_obj_index_get_root_hash},
     {.name = "read_revert_root_hash", .func = machine_obj_index_read_revert_root_hash},
     {.name = "write_revert_root_hash", .func = machine_obj_index_write_revert_root_hash},

@@ -2,6 +2,8 @@ local eth = require("prt-ethereum")
 local evmu = require("cartesi.evmu")
 local cast = require("prt-cast")
 local bridge = require("prt-bridge")
+local prt = require("prt")
+local geometry = prt.new_geometry(10)
 
 -- Independent Foundry ABI encoding, including a coordinate outside Lua's range.
 local signature = "eventData(uint256,(uint64,bytes),bytes32[])"
@@ -11,9 +13,10 @@ local expected = cast.run({ "cast", "abi-encode", signature, tostring(coordinate
 local actual =
     eth.hex(evmu.encode_abi("(uint256,(uint64,bytes),bytes32[])", { coordinate, { 62, "0x1234" }, { hash } }))
 assert(actual == expected:gsub("%s+$", ""), "ABI encoding differs from Foundry")
-local input, period, offset = eth.coordinates((evmu.bint(7) << 68) + (evmu.bint(12345) << 30) + 54321)
+local input, period, offset =
+    eth.coordinates((evmu.bint(7) << 68) + (evmu.bint(12345) << geometry.uarch_height) + 54321, geometry)
 assert(input == 7 and period == 12345 and offset == 54321)
-assert(not pcall(eth.coordinates, evmu.bint(1) << 92))
+assert(not pcall(eth.coordinates, evmu.bint(1) << 92, geometry))
 
 -- A uint64 access includes the WHOLE authenticated leaf, then bottom-up siblings.
 local leaf, sibling = string.rep("L", 32), string.rep("S", 32)
@@ -81,7 +84,7 @@ local creation = { log = { blockHash = "block0", logIndex = "0x0" } }
 local context = {
     address = "root",
     creation = creation,
-    descriptor = { height = 62, kind = 1, startInstant = 0, allowance = 1 },
+    descriptor = { height = geometry.mcycle_height, kind = 1, startInstant = 0, allowance = 1 },
     joined = {},
     standing = { matchCount = 1 },
 }
@@ -503,24 +506,24 @@ do
         signer = { address = "alice" },
         directory = temporary,
         claims = { root = { root = "parent" } },
-        player = { event_handler = {} },
+        player = { event_handler = {}, geometry = geometry },
     }
     function actor.player.event_handler.commit_uarch_claim(_, input_index, period_index)
         assert(input_index == 0)
         builds = builds + 1
         local state_hash = cartesi.keccak256(tostring(period_index))
         local root, siblings = state_hash, {}
-        for i = 1, 30 do
+        for i = 1, geometry.uarch_height do
             siblings[i] = root
             root = cartesi.keccak256(root, root)
         end
         return {
-            computation_hash_left = siblings[30],
-            computation_hash_right = siblings[30],
+            computation_hash_left = siblings[geometry.uarch_height],
+            computation_hash_right = siblings[geometry.uarch_height],
             final_state_hash_proof = {
-                target_address = (1 << 30) - 1,
+                target_address = (1 << geometry.uarch_height) - 1,
                 log2_target_size = 0,
-                log2_root_size = 30,
+                log2_root_size = geometry.uarch_height,
                 target_hash = state_hash,
                 root_hash = root,
                 sibling_hashes = siblings,
@@ -541,8 +544,8 @@ do
         bond = 10,
         descriptor = {
             initialHash = hash,
-            baseCycle = evmu.bint(1) << 30,
-            height = 30,
+            baseCycle = evmu.bint(1) << geometry.uarch_height,
+            height = geometry.uarch_height,
             log2Stride = 0,
             level = 1,
             kind = 0,
@@ -593,7 +596,7 @@ do
         "job query did not use the existing claim"
     )
     assert(builds == 1 and original.final_state == child.creation.contestedFinalStateOne)
-    child.descriptor.baseCycle = evmu.bint(2) << 30
+    child.descriptor.baseCycle = evmu.bint(2) << geometry.uarch_height
     child.creation.contestedFinalStateOne = eth.hex(cartesi.keccak256("2"))
     child.creation.log.blockHash = "child2"
     child.bond = 17
@@ -602,7 +605,7 @@ do
     assert(builds == 2 and actor.claims.child ~= original)
     assert(actor.claims.child.final_state == child.creation.contestedFinalStateOne)
     assert(client:prepare(replacement[1]).value == "17", "replacement bond was not used")
-    child.descriptor.baseCycle = evmu.bint(1) << 30
+    child.descriptor.baseCycle = evmu.bint(1) << geometry.uarch_height
     child.creation.contestedFinalStateOne = original.final_state
     child.creation.log.blockHash = "child1"
     client:update_claims(view)
@@ -618,7 +621,7 @@ do
 
     -- Claim execution can outlive the joining window. Refresh must observe
     -- again before scheduling or deciding that pending work needs cancellation.
-    child.descriptor.baseCycle = evmu.bint(3) << 30
+    child.descriptor.baseCycle = evmu.bint(3) << geometry.uarch_height
     child.creation.contestedFinalStateOne = eth.hex(cartesi.keccak256("3"))
     local observations = 0
     function client.observe()

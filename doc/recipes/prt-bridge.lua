@@ -165,20 +165,25 @@ local function build_claim(actor, context)
     }, ":")
     actor.computations = actor.computations or {}
     local claim = actor.computations[key]
+    local geometry = actor.player.geometry
     if not context.parent then
         assert(
-            height == 62 and eth.small(descriptor.log2Stride) == 30 and eth.small(descriptor.level) == 0,
-            "root does not match recipe geometry"
+            height == geometry.mcycle_height
+                and eth.small(descriptor.log2Stride) == geometry.uarch_height
+                and eth.small(descriptor.level) == 0,
+            "root does not match player geometry"
         )
         if not claim then
             response = actor.player.event_handler.commit_mcycle_claim(actor.player)
         end
     else
         assert(
-            height == 30 and eth.small(descriptor.log2Stride) == 0 and eth.small(descriptor.level) == 1,
-            "child does not match recipe geometry"
+            height == geometry.uarch_height
+                and eth.small(descriptor.log2Stride) == 0
+                and eth.small(descriptor.level) == 1,
+            "child does not match player geometry"
         )
-        local input, period, offset = eth.coordinates(descriptor.baseCycle)
+        local input, period, offset = eth.coordinates(descriptor.baseCycle, geometry)
         assert(offset == 0, "child starts inside a period")
         if not claim then
             response = actor.player.event_handler.commit_uarch_claim(actor.player, input, period)
@@ -418,7 +423,7 @@ function methods:prepare(job)
     elseif kind == "winLeafMatch" then
         local cycle = context.descriptor.baseCycle
             + (event.divergencePosition << eth.small(context.descriptor.log2Stride))
-        local input, period, offset = eth.coordinates(cycle)
+        local input, period, offset = eth.coordinates(cycle, player.geometry)
         local response = player.event_handler.prove_state_transition(player, input, period, offset)
         local path = self.input_paths[input + 1]
         local input_data = path and util.read_file(path)

@@ -13,12 +13,20 @@ function M.small(value)
     return evmu.bint.tointeger(n)
 end
 
-function M.coordinates(cycle)
+function M.coordinates(cycle, geometry)
     cycle = evmu.bint(cycle)
     assert(cycle >= 0 and cycle < evmu.bint(1) << 92, "cycle outside epoch")
+    local offset_bits = geometry.uarch_height
     return M.small(cycle >> 68),
-        M.small((cycle >> 30) & ((evmu.bint(1) << 38) - 1)),
-        M.small(cycle & ((evmu.bint(1) << 30) - 1))
+        M.small((cycle >> offset_bits) & ((evmu.bint(1) << (68 - offset_bits)) - 1)),
+        M.small(cycle & ((evmu.bint(1) << offset_bits) - 1))
+end
+
+-- Input-relative mcycle and uarch cycle, which fix the transition's shape for any geometry.
+local function input_position(cycle)
+    cycle = evmu.bint(cycle)
+    assert(cycle >= 0 and cycle < evmu.bint(1) << 92, "cycle outside epoch")
+    return M.small((cycle >> 20) & ((evmu.bint(1) << 48) - 1)), M.small(cycle & ((evmu.bint(1) << 20) - 1))
 end
 
 local function type_spec(parameter, names)
@@ -137,13 +145,10 @@ local function append_log(parts, log)
 end
 
 function M.transition_proof(response, cycle, input_data)
-    local _, period, offset = M.coordinates(cycle)
-    assert(
-        (response.reset_uarch_log ~= nil) == (offset % (1 << 20) == (1 << 20) - 1),
-        "transition has the wrong reset shape"
-    )
+    local mcycle, ucycle = input_position(cycle)
+    assert((response.reset_uarch_log ~= nil) == (ucycle == (1 << 20) - 1), "transition has the wrong reset shape")
     local parts = {}
-    if period == 0 and offset == 0 then
+    if mcycle == 0 and ucycle == 0 then
         parts[1] = string.pack(">I8", input_data and #input_data or 0) .. (input_data or "")
         assert((response.send_cmio_log ~= nil) == (input_data ~= nil), "wrong input-delivery proof")
     else
@@ -154,7 +159,7 @@ function M.transition_proof(response, cycle, input_data)
     end
     append_log(parts, assert(response.step_log))
     if response.reset_uarch_log then
-        assert(offset % (1 << 20) == (1 << 20) - 1, "reset outside instruction boundary")
+        assert(ucycle == (1 << 20) - 1, "reset outside instruction boundary")
         append_log(parts, response.reset_uarch_log)
     end
     return M.hex(table.concat(parts))
@@ -163,9 +168,9 @@ end
 -- An independent native verifier checks the encoding seam against Solidity.
 -- The caller supplies InputBox bytes, never a player's private input file.
 function M.verify_transition(response, cycle, input_data, before)
-    local _, period, offset = M.coordinates(cycle)
+    local mcycle, ucycle = input_position(cycle)
     local root = assert(M.raw(before))
-    if period == 0 and offset == 0 and input_data ~= nil then
+    if mcycle == 0 and ucycle == 0 and input_data ~= nil then
         root = cartesi.machine:verify_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             input_data,
@@ -175,7 +180,7 @@ function M.verify_transition(response, cycle, input_data, before)
         )
     end
     root = cartesi.machine:verify_step_uarch(root, response.step_log)
-    if offset % (1 << 20) == (1 << 20) - 1 then
+    if ucycle == (1 << 20) - 1 then
         root = cartesi.machine:verify_reset_uarch(root, response.reset_uarch_log)
     end
     return M.hex(root)

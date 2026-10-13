@@ -224,7 +224,7 @@ local function narrate(session, snapshot)
                 .. claim_label(session, event.address, event.two)
                 .. ".\n"
         elseif event.name == "NewInnerTournament" then
-            local input, period = eth.coordinates(event.descriptor.baseCycle)
+            local input, period = eth.coordinates(event.descriptor.baseCycle, session.honest_actor.player.geometry)
             lines[#lines + 1] = prefix
                 .. "A uarch tournament opens over local input "
                 .. input

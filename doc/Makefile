@@ -6,9 +6,6 @@ TAG ?= devel
 
 DOCS_IMAGE = cartesi/machine-emulator-docs
 PRT_IMAGE = cartesi/machine-emulator-prt
-PRT_DAVE_DIR ?= $(abspath ../../dave-prt-bridge)
-PRT_DAVE_GIT_DIR ?= $(abspath ../../dave/.git)
-PRT_CONTRACT_COMMAND ?= just build-smart-contracts
 
 DEPENDENCIES_LOCK ?= $(abspath ../dependencies.lock)
 include $(DEPENDENCIES_LOCK)
@@ -50,24 +47,6 @@ check-format-lua:
 check-lua:
 	luacheck . --exclude-files '$(REPLACE_CACHE_DIR)/**'
 
-.PHONY: build-prt-tools-image prt-contracts-exec
-build-prt-tools-image:
-	docker build $(DOCKER_PLATFORM) --build-arg TOOLS_BASE=$(DOCS_IMAGE):$(TAG) --target tools \
-		-t $(PRT_IMAGE):tools -f Dockerfile.prt .
-
-.PHONY: build-prt-calibration-image measure-prt-gas
-build-prt-calibration-image:
-	docker build $(DOCKER_PLATFORM) --build-arg TOOLS_BASE=cartesi/machine-emulator:0.21.0 \
-		--target calibration -t $(PRT_IMAGE):calibration -f Dockerfile.prt .
-
-measure-prt-gas:
-	docker run --rm $(DOCKER_PLATFORM) $(PRT_IMAGE):calibration
-
-.PHONY: test-prt-contracts
-test-prt-contracts:
-	docker run --rm $(DOCKER_PLATFORM) $(PRT_IMAGE):calibration \
-		bash -c 'just test-smart-contracts && just test-prt-gas && just bind && just prt-contracts::compatibility-hashes'
-
 .PHONY: build-prt-image run-prt-bridge
 build-prt-image:
 	$(MAKE) -C .. uarch-with-toolchain
@@ -93,13 +72,6 @@ run-prt-bridge:
 	docker run --rm $(DOCKER_PLATFORM) --user "$$(id -u):$$(id -g)" \
 		$(PRT_OBSERVATION_ENV) \
 		-v "$(PRT_OUTPUT_DIR):/work" $(PRT_IMAGE):$(TAG) $(PRT_MODE)
-
-prt-contracts-exec:
-	docker run --rm $(DOCKER_PLATFORM) -v "$(PRT_DAVE_DIR):/opt/dave" \
-		-v "$(PRT_DAVE_DIR):$(PRT_DAVE_DIR)" -w "$(PRT_DAVE_DIR)" \
-		-v "$(PRT_DAVE_GIT_DIR):$(PRT_DAVE_GIT_DIR):ro" \
-		-e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0="$(PRT_DAVE_DIR)" \
-		$(PRT_IMAGE):tools bash -c '$(PRT_CONTRACT_COMMAND)'
 
 PRT_MODE ?= story
 PRT_TEST_COMMAND ?= bash recipes/prt-demo.sh $(PRT_MODE)

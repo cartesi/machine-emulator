@@ -58,6 +58,92 @@ describe("backing stores", function()
         },
     }
 
+    for _, storage in ipairs({
+        { "RAM", "ram", "data_filename" },
+        { "dense hash tree", "ram", "dht_filename" },
+        { "dirty page tree", "ram", "dpt_filename" },
+        { "sparse hash tree", "hash_tree", "sht_filename" },
+        { "page hash-tree cache", "hash_tree", "phtc_filename" },
+    }) do
+        for _, make_writable in ipairs({ false, true }) do
+            it(
+                "should reject shared writes to "
+                    .. (make_writable and "a hard-linked " or "a read-only ")
+                    .. storage[1]
+                    .. " backing file",
+                function()
+                    local stored_dirname = filesystem.temp_pathname()
+                    local cloned_dirname = filesystem.temp_pathname()
+                    local _ <close> = tests_util.scope_exit(function()
+                        pcall(cartesi.machine.remove_stored, cartesi.machine, cloned_dirname)
+                        cartesi.machine:remove_stored(stored_dirname)
+                    end)
+                    local expected_root_hash
+                    do
+                        local machine <close> = cartesi.machine({
+                            ram = { length = 0x1000 },
+                            hash_tree = { phtc_size = 32 },
+                        })
+                        expected_root_hash = machine:get_root_hash()
+                        machine:store(stored_dirname)
+                    end
+
+                    local backing_filename
+                    do
+                        local machine <close> = cartesi.machine(stored_dirname)
+                        local config = machine:get_initial_config()
+                        local section = config[storage[2]]
+                        backing_filename = (section.backing_store or section)[storage[3]]
+                    end
+                    local quoted_filename = "'" .. backing_filename:gsub("'", "'\\''") .. "'"
+                    assert(os.execute("chmod a-w " .. quoted_filename))
+                    local load_dirname = stored_dirname
+                    local stored_dirs = { stored_dirname }
+                    if make_writable then
+                        cartesi.machine:clone_stored(stored_dirname, cloned_dirname)
+                        -- chmod through the template also changes the clone's shared inode.
+                        assert(os.execute("chmod u+w " .. quoted_filename))
+                        load_dirname = cloned_dirname
+                        stored_dirs[#stored_dirs + 1] = cloned_dirname
+                    end
+                    expect.fail(function()
+                        local _ <close> = cartesi.machine(load_dirname, {}, cartesi.SHARING_ALL)
+                    end, make_writable and "multiple hard links" or "backing file")
+
+                    -- Private execution remains safe and leaves both stored machines unchanged.
+                    do
+                        local machine <close> = cartesi.machine(load_dirname, {}, cartesi.SHARING_NONE)
+                        expect.equal(machine:get_root_hash(), expected_root_hash)
+                        machine:write_memory(0x80000000, string.rep("B", 8))
+                        expect.equal(machine:read_memory(0x80000000, 8), string.rep("B", 8))
+                    end
+                    for _, dirname in ipairs(stored_dirs) do
+                        local machine <close> = cartesi.machine(dirname, {}, cartesi.SHARING_NONE)
+                        expect.equal(machine:read_memory(0x80000000, 8), string.rep("\0", 8))
+                        expect.equal(machine:get_root_hash(), expected_root_hash)
+                    end
+                end
+            )
+        end
+    end
+
+    it("should allow shared read-only mappings of hard-linked backing files", function()
+        local stored_dirname = filesystem.temp_pathname()
+        local cloned_dirname = filesystem.temp_pathname()
+        local _ <close> = tests_util.scope_exit(function()
+            pcall(cartesi.machine.remove_stored, cartesi.machine, cloned_dirname)
+            cartesi.machine:remove_stored(stored_dirname)
+        end)
+        do
+            local machine <close> = cartesi.machine(base_machine_config)
+            machine:store(stored_dirname)
+        end
+        cartesi.machine:clone_stored(stored_dirname, cloned_dirname)
+        local machine <close> = cartesi.machine(cloned_dirname, {}, cartesi.SHARING_ALL)
+        local drive = machine:get_initial_config().flash_drive[2]
+        expect.equal(machine:read_memory(drive.start, #b_data), b_data)
+    end)
+
     it("should store a machine with sharing mode all", function()
         local stored_dirname = filesystem.temp_pathname()
         local expected_root_hash

@@ -19,10 +19,11 @@
 // Must be included before
 #include "os-posix-compat.hpp" // IWYU pragma: keep
 
+#include <sys/stat.h> // fstat
+
 #if defined(HAVE_MMAP)
 #include <fcntl.h>    // open
 #include <sys/mman.h> // mmap/munmap
-#include <sys/stat.h> // fstat
 #include <unistd.h>   // write/read/close
 #else
 #include <cstdio>  // fopen/fclose/fread/fwrite/fflush
@@ -53,6 +54,18 @@ namespace cartesi::os {
 using namespace std::string_literals;
 
 constexpr uint64_t DEFAULT_MMAP_PAGE_SIZE = 4096;
+
+static void check_shared_write_backing_file(const std::string &backing_filename, bool read_only, uint64_t link_count) {
+    // Privileged processes can bypass read-only permissions, and chmod affects every name of a hard-linked file.
+    if (read_only) {
+        throw std::runtime_error{
+            "backing file '"s + backing_filename + "' is read-only and cannot be shared for writing"s};
+    }
+    if (link_count > 1) {
+        throw std::runtime_error{
+            "backing file '"s + backing_filename + "' has multiple hard links and cannot be shared for writing"s};
+    }
+}
 
 /// \brief Retrieves the system's memory page size.
 /// \details Typically 4KB, but may vary (e.g., 8KB on Solaris, 16KB on macOS arm64).
@@ -135,11 +148,15 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
         }
 #endif // HAVE_FLOCK
 
-        // Get backing file size
+        // Get backing file permissions, link count and size from the opened file.
         struct stat statbuf{};
         if (fstat(backing_fd, &statbuf) != 0) {
             throw std::system_error{errno, std::generic_category(),
                 "unable to obtain length of backing file '"s + backing_filename + "'"s};
+        }
+        if (shared_write) {
+            check_shared_write_backing_file(backing_filename, (statbuf.st_mode & (S_IWUSR | S_IWGRP | S_IWOTH)) == 0,
+                statbuf.st_nlink);
         }
         backing_file_length = static_cast<uint64_t>(statbuf.st_size);
 
@@ -300,13 +317,17 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
                 "unable to lock backing file '" + backing_filename + "'"};
         }
 
-        // Get backing file size
-        LARGE_INTEGER size{};
-        if (!GetFileSizeEx(backing_fh, &size)) {
+        // Get backing file permissions, link count and size from the opened file.
+        BY_HANDLE_FILE_INFORMATION file_info{};
+        if (!GetFileInformationByHandle(backing_fh, &file_info)) {
             throw std::system_error{static_cast<int>(GetLastError()), std::system_category(),
-                "unable to obtain length of backing file '"s + backing_filename + "'"s};
+                "unable to obtain attributes of backing file '"s + backing_filename + "'"s};
         }
-        backing_file_length = static_cast<uint64_t>(size.QuadPart);
+        if (shared_write) {
+            check_shared_write_backing_file(backing_filename,
+                (file_info.dwFileAttributes & FILE_ATTRIBUTE_READONLY) != 0, file_info.nNumberOfLinks);
+        }
+        backing_file_length = (static_cast<uint64_t>(file_info.nFileSizeHigh) << 32) | file_info.nFileSizeLow;
 
         // Check backing file length mismatch
         if (backing_file_length != desired_backing_length) {
@@ -440,6 +461,16 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
         if (backing_fp == nullptr) {
             throw std::system_error{errno, std::generic_category(),
                 "unable to open backing file '"s + backing_filename + "'"s};
+        }
+
+        if (shared_write) {
+            struct stat statbuf{};
+            if (fstat(fileno(backing_fp), &statbuf) != 0) {
+                throw std::system_error{errno, std::generic_category(),
+                    "unable to obtain attributes of backing file '"s + backing_filename + "'"s};
+            }
+            check_shared_write_backing_file(backing_filename, (statbuf.st_mode & (S_IWUSR | S_IWGRP | S_IWOTH)) == 0,
+                statbuf.st_nlink);
         }
 
         // Get backing file size

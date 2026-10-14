@@ -86,6 +86,7 @@ public:
     /// \returns Structure containing the memory mapping information.
     /// \details The memory is guaranteed to be aligned to 4096-byte boundaries.
     /// Memory above backing file length are zereod, and modifications to that region are not written out to the file.
+    /// Shared writable mappings require a writable backing file with at most one hard link.
     explicit mapped_memory(uint64_t length, const mapped_memory_flags &flags = {},
         const std::string &backing_filename = {}, std::optional<uint64_t> backing_length = {});
 

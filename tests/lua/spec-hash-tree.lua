@@ -10,6 +10,7 @@ local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 local describe, it, expect = lester.describe, lester.it, lester.expect
 local cartesi = require("cartesi")
+local filesystem = require("cartesi.filesystem")
 local hash_tree = require("cartesi.hash-tree")
 local tests_util = require("cartesi.tests.util")
 
@@ -101,7 +102,7 @@ describe("hash tree", function()
                     length = 0x10000,
                 },
                 flash_drive = {
-                    { start = 0x90000000, length = 0x20000 },
+                    { start = 0x90000000, length = o and o.flash_drive_length or 0x20000 },
                     { start = 0xa0000000, length = 0x200000 },
                 },
             }
@@ -131,6 +132,59 @@ describe("hash tree", function()
                     return variant.make_machine(o)
                 end
                 local machine <close> = make_machine()
+
+                it("should return pristine node hashes for range padding", function()
+                    local start = 0x90000000
+                    for _, page_count in ipairs({ 3, 5 }) do
+                        local length = page_count * PAGE_SIZE
+                        local padded <close> = make_machine({ flash_drive_length = length, phtc_size = 1 })
+                        padded:write_memory(start, string.rep("\x01", length))
+                        local root_hash = padded:get_root_hash()
+                        expect.equal(root_hash, tests_util.calculate_emulator_hash(padded))
+                        for log2_size = LOG2_PAGE_SIZE, 14 do
+                            local size = 1 << log2_size
+                            local first = get_aligned_address(start + length + size - 1, log2_size)
+                            local pristine =
+                                hash_tree.get_data_root_hash(string.rep("\0", WORD_SIZE), log2_size, hash_function)
+                            for address = first, start + bit_ceil(length) - 1, size do
+                                expect.equal(padded:get_node_hash(address, log2_size), pristine)
+                                local proof = padded:get_proof(address, log2_size)
+                                expect.equal(proof.target_hash, pristine)
+                                expect.equal(proof.root_hash, root_hash)
+                                expect_consistent_proof(proof, hash_function)
+                            end
+                        end
+                        expect.equal(padded:get_root_hash(), root_hash)
+                    end
+                end)
+
+                it("should log and verify a load beside range padding", function()
+                    for _, page_count in ipairs({ 3, 5 }) do
+                        local length = page_count * PAGE_SIZE
+                        local reference <close> = make_machine({ flash_drive_length = length, phtc_size = 1 })
+                        local logged <close> = make_machine({ flash_drive_length = length, phtc_size = 1 })
+                        local address = 0x90000000 + length - PAGE_SIZE
+                        for _, m in ipairs({ reference, logged }) do
+                            -- ld t0,0(a0); jal zero,0
+                            m:write_memory(cartesi.AR_RAM_START, string.pack("<I4I4", 0x00053283, 0x0000006f))
+                            m:write_memory(address, string.pack("<I8", 42))
+                            m:write_reg("pc", cartesi.AR_RAM_START)
+                            m:write_reg("x10", address)
+                        end
+                        local initial_hash = logged:get_root_hash()
+                        expect.equal(reference:get_root_hash(), initial_hash)
+                        expect.equal(reference:run(1), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+                        local final_hash = reference:get_root_hash()
+                        local filename = filesystem.temp_pathname()
+                        local _ <close> = tests_util.scope_exit(function()
+                            os.remove(filename)
+                        end)
+                        expect.equal(logged:log_step(1, filename), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+                        expect.equal(logged:read_reg("x5"), 42)
+                        expect.equal(logged:get_root_hash(), final_hash)
+                        expect.equal(logged:verify_step(initial_hash, filename, 1), final_hash)
+                    end
+                end)
 
                 it("should have consistent root hash", function()
                     expect_consistent_root_hash(machine)

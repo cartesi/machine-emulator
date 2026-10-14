@@ -571,8 +571,8 @@ void hash_tree::evict_clean_pages(const address_range &ar) {
 }
 
 machine_hash hash_tree::get_dense_node_hash(address_range &ar, uint64_t address, int log2_size) {
-    assert(ar.contains_absolute(address, HASH_TREE_WORD_SIZE) && "address not in expected address range");
     if (log2_size < HASH_TREE_LOG2_PAGE_SIZE) {
+        assert(ar.contains_absolute(address, HASH_TREE_WORD_SIZE) && "address not in expected address range");
         assert(log2_size >= HASH_TREE_LOG2_WORD_SIZE && "invalid log2_size");
         const auto paddr_page = address & ~(HASH_TREE_PAGE_SIZE - 1);
         bool hit = false;

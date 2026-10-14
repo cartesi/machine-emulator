@@ -272,7 +272,7 @@ uint64_t machine::init_hot_tlb_slot(TLB_set_index set_index, uint64_t slot_index
     const auto pma_index = shadow_slot.pma_index;
     const auto zero_padding = shadow_slot.zero_padding_;
     const auto &ar = read_pma(pma_index);
-    if (shadow_tlb_verify_slot(vaddr_page, vp_offset, zero_padding, ar) == TLB_INVALID_PAGE) {
+    if (shadow_tlb_verify_slot(set_index, vaddr_page, vp_offset, zero_padding, ar) == TLB_INVALID_PAGE) {
         hot_slot.vaddr_page = TLB_INVALID_PAGE;
         return TLB_INVALID_PAGE;
     }

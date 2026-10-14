@@ -183,7 +183,7 @@ private:
         const auto pma_index = bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::pma_index);
         const auto zero_padding = bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::zero_padding_);
         const auto &ar = do_read_pma(pma_index);
-        return shadow_tlb_verify_slot(vaddr_page, vp_offset, zero_padding, ar) != TLB_INVALID_PAGE;
+        return shadow_tlb_verify_slot(SET, vaddr_page, vp_offset, zero_padding, ar) != TLB_INVALID_PAGE;
     }
 
     template <TLB_set_index SET>

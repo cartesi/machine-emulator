@@ -143,15 +143,16 @@ static constexpr const char *shadow_tlb_get_what_name(shadow_tlb_what what) {
     return "tlb.unknown_";
 }
 
-/// \brief Verifies a shadow TLB slot against PMA bounds
+/// \brief Verifies a shadow TLB slot against PMA permissions and bounds
+/// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
 /// \param vaddr_page Virtual address of page start
 /// \param vp_offset Offset from virtual to physical address
 /// \param zero_padding Padding field (must be zero)
 /// \param ar Address range for the PMA where physical page falls
 /// \returns vaddr_page if valid, TLB_INVALID_PAGE otherwise
 template <typename ADDRESS_RANGE>
-[[maybe_unused]] static uint64_t shadow_tlb_verify_slot(uint64_t vaddr_page, uint64_t vp_offset, uint64_t zero_padding,
-    const ADDRESS_RANGE &ar) {
+[[maybe_unused]] static uint64_t shadow_tlb_verify_slot(TLB_set_index set_index, uint64_t vaddr_page,
+    uint64_t vp_offset, uint64_t zero_padding, const ADDRESS_RANGE &ar) {
     // Invalid entry
     if (vaddr_page == TLB_INVALID_PAGE) {
         return TLB_INVALID_PAGE;
@@ -171,6 +172,11 @@ template <typename ADDRESS_RANGE>
     }
     // Stored TLB is corrupt: pma_index does not point to memory range
     if (!ar.is_memory()) {
+        return TLB_INVALID_PAGE;
+    }
+    // Stored TLB is corrupt: PMA does not permit this access
+    if ((set_index == TLB_CODE && !ar.is_executable()) || (set_index == TLB_READ && !ar.is_readable()) ||
+        (set_index == TLB_WRITE && !ar.is_writeable())) {
         return TLB_INVALID_PAGE;
     }
     const auto pmas_end = ar.get_start() + (ar.get_length() - AR_PAGE_SIZE);

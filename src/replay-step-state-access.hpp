@@ -557,7 +557,7 @@ private:
         const auto pma_index = check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::pma_index);
         const auto zero_padding = check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::zero_padding_);
         const auto &ar = do_read_pma(pma_index);
-        if (shadow_tlb_verify_slot(vaddr_page, vp_offset, zero_padding, ar) == TLB_INVALID_PAGE) {
+        if (shadow_tlb_verify_slot(SET, vaddr_page, vp_offset, zero_padding, ar) == TLB_INVALID_PAGE) {
             hot_slot.vaddr_page = TLB_INVALID_PAGE;
             return TLB_INVALID_PAGE;
         }

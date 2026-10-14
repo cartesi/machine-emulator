@@ -99,13 +99,21 @@ static inline uint64_t get_aligned_address(uint64_t address, int log2_size) {
 }
 
 void hash_tree::get_page_proof(address_range &ar, uint64_t address, proof_type &proof) {
+    if (address >= ar.get_end()) {
+        get_pristine_proof(HASH_TREE_LOG2_PAGE_SIZE, proof);
+        return;
+    }
     const auto paddr_page = address & ~(HASH_TREE_PAGE_SIZE - 1);
     bool hit = false;
     auto opt_br = m_page_cache.borrow_entry(paddr_page, hit);
     assert(opt_br && "page hash-tree cache has no entries to lend");
     if (!hit) {
         [[maybe_unused]] bool changed = false;
-        update_dirty_page(ar, opt_br->get(), changed);
+        if (!update_dirty_page(ar, opt_br->get(), changed)) {
+            page_hash_tree_cache::return_entry(*opt_br);
+            m_page_cache.clear();
+            throw std::runtime_error{"update dirty page failed"};
+        }
     }
     const auto log2_target_size = proof.get_log2_target_size();
     const auto log2_root_size = proof.get_log2_root_size();
@@ -572,15 +580,22 @@ void hash_tree::evict_clean_pages(const address_range &ar) {
 
 machine_hash hash_tree::get_dense_node_hash(address_range &ar, uint64_t address, int log2_size) {
     if (log2_size < HASH_TREE_LOG2_PAGE_SIZE) {
-        assert(ar.contains_absolute(address, HASH_TREE_WORD_SIZE) && "address not in expected address range");
         assert(log2_size >= HASH_TREE_LOG2_WORD_SIZE && "invalid log2_size");
+        if (address >= ar.get_end()) {
+            return m_pristine_hashes[log2_size];
+        }
+        assert(ar.contains_absolute(address, HASH_TREE_WORD_SIZE) && "address not in expected address range");
         const auto paddr_page = address & ~(HASH_TREE_PAGE_SIZE - 1);
         bool hit = false;
         auto opt_br = m_page_cache.borrow_entry(paddr_page, hit);
         assert(opt_br && "page hash-tree cache has no entries to lend");
         if (!hit) {
             [[maybe_unused]] bool changed = false;
-            update_dirty_page(ar, *opt_br, changed);
+            if (!update_dirty_page(ar, *opt_br, changed)) {
+                page_hash_tree_cache::return_entry(*opt_br);
+                m_page_cache.clear();
+                throw std::runtime_error{"update dirty page failed"};
+            }
         }
         auto node_offset = address - paddr_page;
         auto hash = to_hash(opt_br->get().node_hash_view(node_offset, log2_size));

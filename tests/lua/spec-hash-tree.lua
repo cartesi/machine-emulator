@@ -89,6 +89,12 @@ end
 
 describe("hash tree", function()
     for _, hash_function in ipairs({ "keccak256", "sha256" }) do
+        local pristine_hashes = { [LOG2_WORD_SIZE] = cartesi[hash_function](string.rep("\0", WORD_SIZE)) }
+        for log2_size = LOG2_WORD_SIZE + 1, LOG2_ROOT_SIZE do
+            local previous = pristine_hashes[log2_size - 1]
+            pristine_hashes[log2_size] = cartesi[hash_function](previous, previous)
+        end
+
         local function make_machine_config(o)
             return {
                 hash_tree = {
@@ -132,6 +138,72 @@ describe("hash tree", function()
                     return variant.make_machine(o)
                 end
                 local machine <close> = make_machine()
+
+                it("should return pristine word proofs for range padding", function()
+                    local start = 0x90000000
+                    for _, page_count in ipairs({ 3, 5 }) do
+                        local length = page_count * PAGE_SIZE
+                        local log2_span = page_count == 3 and 14 or 15
+                        local data = string.rep("\x01", length)
+                        local padded <close> = make_machine({ flash_drive_length = length, phtc_size = 1 })
+                        padded:write_memory(cartesi.AR_RAM_START, string.rep("\xa5", PAGE_SIZE))
+                        padded:write_memory(start, data)
+                        local root_hash = padded:get_root_hash()
+                        expect.equal(root_hash, tests_util.calculate_emulator_hash(padded))
+                        local drive_hash = hash_tree.get_data_root_hash(data, log2_span, hash_function)
+                        local real_proof = padded:get_proof(cartesi.AR_RAM_START, LOG2_WORD_SIZE)
+                        expect.equal(real_proof.target_hash, cartesi[hash_function](string.rep("\xa5", WORD_SIZE)))
+                        expect.equal(real_proof.root_hash, root_hash)
+                        expect_consistent_proof(real_proof, hash_function)
+                        for log2_size = LOG2_WORD_SIZE, LOG2_PAGE_SIZE - 1 do
+                            for _, offset in ipairs({ length + 2 * WORD_SIZE, bit_ceil(length) - WORD_SIZE }) do
+                                local address = get_aligned_address(start + offset, log2_size)
+                                for _, log2_root in ipairs({
+                                    log2_size,
+                                    LOG2_PAGE_SIZE - 1,
+                                    LOG2_PAGE_SIZE,
+                                    log2_span,
+                                    LOG2_ROOT_SIZE,
+                                }) do
+                                    -- Fill the only cache entry with non-pristine data before each proof.
+                                    padded:get_node_hash(cartesi.AR_RAM_START, LOG2_WORD_SIZE)
+                                    local proof = padded:get_proof(address, log2_size, log2_root)
+                                    expect.equal(proof.target_hash, pristine_hashes[log2_size])
+                                    local expected_root = log2_root <= LOG2_PAGE_SIZE and pristine_hashes[log2_root]
+                                        or log2_root == log2_span and drive_hash
+                                        or root_hash
+                                    expect.equal(proof.root_hash, expected_root)
+                                    expect_consistent_proof(proof, hash_function)
+                                end
+                            end
+                        end
+                        expect.equal(padded:get_root_hash(), root_hash)
+                    end
+                end)
+
+                it("should return pristine sub-page node hashes for range padding", function()
+                    local start = 0x90000000
+                    for _, page_count in ipairs({ 3, 5 }) do
+                        local length = page_count * PAGE_SIZE
+                        local padded <close> = make_machine({ flash_drive_length = length, phtc_size = 1 })
+                        local data = string.rep("\xa5", PAGE_SIZE)
+                        padded:write_memory(cartesi.AR_RAM_START, data)
+                        padded:write_memory(start, string.rep("\x01", length))
+                        local root_hash = padded:get_root_hash()
+                        for log2_size = LOG2_WORD_SIZE, LOG2_PAGE_SIZE - 1 do
+                            for _, offset in ipairs({ length + 2 * WORD_SIZE, bit_ceil(length) - WORD_SIZE }) do
+                                local address = get_aligned_address(start + offset, log2_size)
+                                padded:get_node_hash(cartesi.AR_RAM_START, LOG2_WORD_SIZE)
+                                expect.equal(padded:get_node_hash(address, log2_size), pristine_hashes[log2_size])
+                            end
+                        end
+                        expect.equal(
+                            padded:get_node_hash(cartesi.AR_RAM_START, LOG2_WORD_SIZE),
+                            cartesi[hash_function](data:sub(1, WORD_SIZE))
+                        )
+                        expect.equal(padded:get_root_hash(), root_hash)
+                    end
+                end)
 
                 it("should return pristine node hashes for range padding", function()
                     local start = 0x90000000

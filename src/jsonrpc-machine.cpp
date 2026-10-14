@@ -90,6 +90,13 @@
 using namespace std::string_literals;
 using json = nlohmann::json;
 
+static bool jsonrpc_parse_callback(int depth, json::parse_event_t /*event*/, json & /*parsed*/) {
+    if (depth > 256) {
+        throw std::runtime_error{"JSON nesting depth exceeds 256"};
+    }
+    return true;
+}
+
 namespace beast = boost::beast; // from <boost/beast.hpp>
 namespace http = beast::http;   // from <boost/beast/http.hpp>
 namespace asio = boost::asio;   // from <boost/asio.hpp>
@@ -294,7 +301,7 @@ static void jsonrpc_request(std::unique_ptr<boost::asio::io_context> &ioc, std::
     }
     json response;
     try {
-        response = json::parse(response_s);
+        response = json::parse(response_s, jsonrpc_parse_callback);
     } catch (const std::exception &x) {
         throw std::runtime_error("jsonrpc server error: invalid response ("s + x.what() + ")"s);
     }

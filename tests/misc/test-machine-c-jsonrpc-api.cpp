@@ -26,6 +26,9 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
 #include <boost/test/included/unit_test.hpp>
 #pragma GCC diagnostic pop
 
@@ -102,7 +105,11 @@ static std::pair<int, std::string> http_raw(const std::string &address, const st
     }
     req << "\r\n" << body;
     auto req_str = req.str();
-    ::send(fd, req_str.c_str(), req_str.size(), 0);
+    for (size_t sent = 0; sent < req_str.size();) {
+        const auto written = ::send(fd, req_str.data() + sent, req_str.size() - sent, 0);
+        BOOST_REQUIRE_GT(written, 0);
+        sent += static_cast<size_t>(written);
+    }
 
     std::string response;
     std::array<char, 4096> buf{};
@@ -130,6 +137,36 @@ static nlohmann::json jsonrpc_post(const std::string &address, const std::string
     auto [status, resp] = http_raw(address, "POST", "/", body);
     BOOST_REQUIRE_EQUAL(status, 200);
     return nlohmann::json::parse(resp);
+}
+
+static std::string nested_json(size_t depth, bool objects) {
+    std::string value;
+    value.reserve(depth * (objects ? 10 : 2) + 2);
+    for (size_t i = 0; i < depth; ++i) {
+        value += objects ? R"({"child":)" : "[";
+    }
+    value += "42";
+    value.append(depth, objects ? '}' : ']');
+    return value;
+}
+
+// Serve one response to the client's version handshake. Report errors after joining the worker.
+static void serve_jsonrpc_response(boost::asio::ip::tcp::acceptor &listener, const std::string &body,
+    std::string &error) {
+    try {
+        auto socket = listener.accept();
+        boost::beast::flat_buffer buffer;
+        boost::beast::http::request<boost::beast::http::string_body> request;
+        boost::beast::http::read(socket, buffer, request);
+        boost::beast::http::response<boost::beast::http::string_body> response{boost::beast::http::status::ok,
+            request.version()};
+        response.keep_alive(false);
+        response.body() = body;
+        response.prepare_payload();
+        boost::beast::http::write(socket, response);
+    } catch (const std::exception &e) {
+        error = e.what();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -701,6 +738,76 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_parse_error_test, spawned_server_fixture)
     auto j = jsonrpc_post(bound_address, "{not valid json");
     BOOST_REQUIRE(j.contains("error"));
     BOOST_CHECK_EQUAL(j["error"]["code"].get<int>(), -32700);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_nesting_request_test, spawned_server_fixture) {
+    BOOST_REQUIRE_EQUAL(cm_create(m, minimal_machine_config().c_str(), nullptr, nullptr), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_write_reg(m, CM_REG_X1, 42), CM_ERROR_OK);
+    const auto parse_error = jsonrpc_post(bound_address, "{not valid json");
+    for (bool objects : {false, true}) {
+        for (bool batch : {false, true}) {
+            const size_t boundary = batch ? 254 : 255;
+            for (size_t depth : {boundary, boundary + 1, size_t{200000}}) {
+                const auto request = depth == boundary ?
+                    R"({"jsonrpc":"2.0","method":"machine.read_reg","id":1,"params":["x1"],"ignored":)" :
+                    R"({"jsonrpc":"2.0","method":"machine.write_reg","id":1,"params":["x1",99],"ignored":)";
+                auto body = std::string{request} + nested_json(depth, objects) + "}";
+                if (batch) {
+                    body = "[" + body + "]";
+                }
+                auto response = jsonrpc_post(bound_address, body);
+                if (depth == boundary) {
+                    if (batch) {
+                        BOOST_REQUIRE(response.is_array());
+                        BOOST_REQUIRE_EQUAL(response.size(), 1);
+                        response = response[0];
+                    }
+                    BOOST_CHECK_EQUAL(response["result"].get<uint64_t>(), 42);
+                } else {
+                    BOOST_REQUIRE(response.contains("error"));
+                    BOOST_CHECK_EQUAL(response["error"]["code"].get<int>(), -32700);
+                    BOOST_CHECK(
+                        response["error"]["message"].get<std::string>().find("nesting depth") != std::string::npos);
+                    BOOST_CHECK(response["id"] == parse_error["id"]);
+                }
+                uint64_t value{};
+                BOOST_REQUIRE_EQUAL(cm_read_reg(m, CM_REG_X1, &value), CM_ERROR_OK);
+                BOOST_CHECK_EQUAL(value, 42);
+            }
+        }
+    }
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_nesting_response_test, spawned_server_fixture) {
+    const char *version{};
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_get_server_version(m, &version), CM_ERROR_OK);
+    const std::string version_json = version;
+    for (bool objects : {false, true}) {
+        for (size_t depth : {size_t{255}, size_t{256}, size_t{200000}}) {
+            const auto body = std::string{R"({"jsonrpc":"2.0","id":0,"result":)"} + version_json + R"(,"ignored":)" +
+                nested_json(depth, objects) + "}";
+            boost::asio::io_context ioc;
+            boost::asio::ip::tcp::acceptor listener{ioc, {boost::asio::ip::address_v4::loopback(), 0}};
+            const auto address = "127.0.0.1:" + std::to_string(listener.local_endpoint().port());
+            std::string server_error;
+            std::jthread worker{serve_jsonrpc_response, std::ref(listener), std::cref(body), std::ref(server_error)};
+            cm_machine *connected{};
+            const auto err = cm_jsonrpc_connect_server(address.c_str(), 5000, &connected);
+            const machine_ptr owner{connected, cm_delete};
+            worker.join();
+            BOOST_REQUIRE_MESSAGE(server_error.empty(), server_error);
+            if (depth == 255) {
+                BOOST_CHECK_EQUAL(err, CM_ERROR_OK);
+                BOOST_CHECK(connected != nullptr);
+            } else {
+                BOOST_CHECK_NE(err, CM_ERROR_OK);
+                BOOST_CHECK(connected == nullptr);
+                const std::string message = cm_get_last_error_message();
+                BOOST_CHECK(message.find("invalid response") != std::string::npos);
+                BOOST_CHECK(message.find("nesting depth") != std::string::npos);
+            }
+        }
+    }
 }
 
 // What: an empty batch array yields invalid_request (-32600).

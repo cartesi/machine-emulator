@@ -127,6 +127,13 @@ static std::ostream &operator<<(std::ostream &out, log_prefix prefix) {
 using namespace std::string_literals;
 using json = nlohmann::json;
 
+static bool jsonrpc_parse_callback(int depth, json::parse_event_t /*event*/, json & /*parsed*/) {
+    if (depth > 256) {
+        throw std::runtime_error{"JSON nesting depth exceeds 256"};
+    }
+    return true;
+}
+
 /// \brief Formats a beast::error_code for log messages.
 /// At trace/debug level includes Boost's source_location suffix; otherwise returns just the message.
 static std::string format_ec(const beast::error_code &ec) {
@@ -1923,7 +1930,7 @@ http::message_generator handle_request(HTTP_REQ &&rreq, const std::shared_ptr<ht
     // Parse request body into a JSON object
     json j;
     try {
-        j = json::parse(req.body().data());
+        j = json::parse(req.body().data(), jsonrpc_parse_callback);
     } catch (const std::exception &x) {
         return jsonrpc_http_reply(req, jsonrpc_response_parse_error(x.what()), session);
     }

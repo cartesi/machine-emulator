@@ -624,6 +624,57 @@ describe("JSON-RPC fork", function()
     end
 end)
 
+describe("remote clone cleanup", function()
+    local jsonrpc = require("cartesi.jsonrpc")
+    for _, policy in ipairs({ jsonrpc.NOTHING, jsonrpc.DESTROY, jsonrpc.SHUTDOWN }) do
+        for _, operation in ipairs({ "create", "load" }) do
+            it("should own a " .. operation .. " clone (source cleanup=" .. tostring(policy) .. ")", function()
+                local config = { ram = { length = 0x1000 }, hash_tree = { phtc_size = 32 } }
+                local server <close> = jsonrpc.spawn_server():create(config)
+                server:write_reg("x1", 42)
+                local source <close> =
+                    jsonrpc.connect_server(server:get_server_address()):set_cleanup_call(policy):set_timeout(1234)
+                local dirname = filesystem.temp_pathname()
+                local _ <close> = tests_util.scope_exit(function()
+                    if operation == "load" then
+                        cartesi.machine:remove_stored(dirname)
+                    end
+                end)
+                local input = config
+                if operation == "load" then
+                    local machine <close> = cartesi.machine(config)
+                    machine:write_reg("x1", 7)
+                    machine:store(dirname)
+                    input = dirname
+                end
+
+                local clone = source(input)
+                -- The observer also cleans up if a regression leaves the clone's server running.
+                local observer <close> = jsonrpc
+                    .connect_server(clone:get_server_address())
+                    :set_cleanup_call(jsonrpc.SHUTDOWN)
+                    :set_timeout(1234)
+                do
+                    local scoped_clone <close> = clone
+                    expect.equal(scoped_clone:get_timeout(), 1234)
+                    expect.equal(scoped_clone:get_cleanup_call(), jsonrpc.SHUTDOWN)
+                    expect.not_equal(scoped_clone:get_server_address(), source:get_server_address())
+                    expect.falsy(scoped_clone:is_empty())
+                    if operation == "load" then
+                        expect.equal(scoped_clone:read_reg("x1"), 7)
+                    end
+                    expect.equal(scoped_clone:get_root_hash(), tests_util.calculate_emulator_hash(scoped_clone))
+                    scoped_clone:write_reg("x1", 99)
+                end
+                expect.fail(function()
+                    observer:get_server_version()
+                end)
+                expect.equal(server:read_reg("x1"), 42)
+            end)
+        end
+    end
+end)
+
 describe("move remote cleanup", function()
     it("should transfer the connection and cleanup policy to the returned handle", function()
         local jsonrpc = require("cartesi.jsonrpc")

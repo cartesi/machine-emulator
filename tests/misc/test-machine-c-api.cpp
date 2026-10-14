@@ -38,6 +38,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -164,6 +165,73 @@ BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_null_test) {
     BOOST_CHECK_NO_THROW(cm_delete(nullptr));
 }
 
+BOOST_AUTO_TEST_CASE_NOLINT(clone_empty_remote_cleanup_test) {
+    using machine_ptr = std::unique_ptr<cm_machine, decltype(&cm_delete)>;
+    const char *config = R"({"ram":{"length":4096},"hash_tree":{"phtc_size":32}})";
+    for (const auto policy : {CM_JSONRPC_NOTHING, CM_JSONRPC_DESTROY, CM_JSONRPC_SHUTDOWN}) {
+        for (const bool source_empty : {false, true}) {
+            for (const std::string operation : {"create", "failed_create", "failed_load"}) {
+                BOOST_TEST_CONTEXT("cleanup=" << policy << ", empty=" << source_empty << ", operation=" << operation) {
+                    cm_machine *raw_parent = nullptr;
+                    const char *address = nullptr;
+                    BOOST_REQUIRE_EQUAL(cm_jsonrpc_spawn_server("127.0.0.1:0", 5000, &raw_parent, &address, nullptr),
+                        CM_ERROR_OK);
+                    machine_ptr parent{raw_parent, &cm_delete};
+                    const std::string parent_address = address;
+                    if (!source_empty) {
+                        BOOST_REQUIRE_EQUAL(cm_create(parent.get(), config, nullptr, nullptr), CM_ERROR_OK);
+                    }
+
+                    cm_machine *raw_source = nullptr;
+                    BOOST_REQUIRE_EQUAL(cm_jsonrpc_connect_server(parent_address.c_str(), 5000, &raw_source),
+                        CM_ERROR_OK);
+                    machine_ptr source{raw_source, &cm_delete};
+                    BOOST_REQUIRE_EQUAL(cm_jsonrpc_set_cleanup_call(source.get(), policy), CM_ERROR_OK);
+                    BOOST_REQUIRE_EQUAL(cm_jsonrpc_set_timeout(source.get(), 1234), CM_ERROR_OK);
+
+                    cm_machine *raw_clone = nullptr;
+                    BOOST_REQUIRE_EQUAL(cm_clone_empty(source.get(), &raw_clone), CM_ERROR_OK);
+                    machine_ptr clone{raw_clone, &cm_delete};
+                    BOOST_REQUIRE_EQUAL(cm_jsonrpc_get_server_address(clone.get(), &address), CM_ERROR_OK);
+                    const std::string clone_address = address;
+                    BOOST_CHECK_NE(clone_address, parent_address);
+
+                    // Ensure a regression cannot leave the clone's server running after the test.
+                    cm_machine *raw_observer = nullptr;
+                    BOOST_REQUIRE_EQUAL(cm_jsonrpc_connect_server(clone_address.c_str(), 5000, &raw_observer),
+                        CM_ERROR_OK);
+                    machine_ptr observer{raw_observer, &cm_delete};
+                    BOOST_REQUIRE_EQUAL(cm_jsonrpc_set_cleanup_call(observer.get(), CM_JSONRPC_SHUTDOWN), CM_ERROR_OK);
+                    BOOST_REQUIRE_EQUAL(cm_jsonrpc_set_timeout(observer.get(), 1234), CM_ERROR_OK);
+
+                    int64_t timeout = -1;
+                    cm_jsonrpc_cleanup_call cleanup = CM_JSONRPC_NOTHING;
+                    BOOST_REQUIRE_EQUAL(cm_jsonrpc_get_timeout(clone.get(), &timeout), CM_ERROR_OK);
+                    BOOST_REQUIRE_EQUAL(cm_jsonrpc_get_cleanup_call(clone.get(), &cleanup), CM_ERROR_OK);
+                    BOOST_CHECK_EQUAL(timeout, 1234);
+                    BOOST_CHECK_EQUAL(cleanup, CM_JSONRPC_SHUTDOWN);
+                    bool empty = false;
+                    BOOST_REQUIRE_EQUAL(cm_is_empty(clone.get(), &empty), CM_ERROR_OK);
+                    BOOST_CHECK(empty);
+                    if (operation == "create") {
+                        BOOST_REQUIRE_EQUAL(cm_create(clone.get(), config, nullptr, nullptr), CM_ERROR_OK);
+                    } else if (operation == "failed_create") {
+                        BOOST_CHECK_EQUAL(cm_create(clone.get(), R"({"ram":{"length":0}})", nullptr, nullptr),
+                            CM_ERROR_INVALID_ARGUMENT);
+                    } else {
+                        BOOST_CHECK_EQUAL(cm_load(clone.get(), "/unknown_dir", nullptr, CM_SHARING_NONE),
+                            CM_ERROR_RUNTIME_ERROR);
+                    }
+                    clone.reset();
+                    BOOST_CHECK_NE(cm_is_empty(observer.get(), &empty), CM_ERROR_OK);
+                    BOOST_REQUIRE_EQUAL(cm_is_empty(parent.get(), &empty), CM_ERROR_OK);
+                    BOOST_CHECK_EQUAL(empty, source_empty);
+                }
+            }
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE_NOLINT(get_default_machine_config_basic_test) {
     const char *config{};
     cm_error error_code = cm_get_default_config(nullptr, &config);
@@ -274,8 +342,8 @@ public:
         _machine_config["flash_drive"] = {
             {{"label", "mydrive"}, {"start", 0x80000000000000}, {"length", 0x3c00000}, {"read_only", false},
                 {"backing_store",
-                    {{"shared", false}, {"create", false}, {"truncate", false}, {"data_filename", ""},
-                        {"dht_filename", ""}, {"dpt_filename", ""}}}}};
+                    {{"shared", false}, {"create", false}, {"truncate", false}, {"mark_pages_dirty", false},
+                        {"data_filename", ""}, {"dht_filename", ""}, {"dpt_filename", ""}}}}};
     }
     ~machine_flash_simple_fixture() = default;
 
@@ -1749,8 +1817,8 @@ public:
         _machine_config["nvram"] = {
             {{"label", "nvramtest"}, {"start", 0x70000000}, {"length", _nvram_size}, {"read_only", false},
                 {"backing_store",
-                    {{"shared", false}, {"create", false}, {"truncate", false}, {"data_filename", ""},
-                        {"dht_filename", ""}, {"dpt_filename", ""}}}}};
+                    {{"shared", false}, {"create", false}, {"truncate", false}, {"mark_pages_dirty", false},
+                        {"data_filename", ""}, {"dht_filename", ""}, {"dpt_filename", ""}}}}};
         const auto dumped_config = _machine_config.dump();
         cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
         BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);

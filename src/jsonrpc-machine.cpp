@@ -604,21 +604,13 @@ bool jsonrpc_machine::do_is_empty() const {
 
 i_machine *jsonrpc_machine::do_clone_empty() const {
     auto fork_result = fork_server();
-    auto *clone = new jsonrpc_machine(fork_result.address);
-    try {
-        if (!clone->is_empty()) {
-            clone->destroy();
-        }
-    } catch (...) {
-        try {
-            clone->shutdown_server();
-        } catch (...) { // NOLINT(bugprone-empty-catch)
-            // We guard against exceptions here, so clone doesn't leak
-        }
-        delete clone;
-        throw;
+    auto clone = std::make_unique<jsonrpc_machine>(fork_result.address);
+    clone->set_timeout(m_timeout);
+    clone->set_cleanup_call(cleanup_call::shutdown);
+    if (!clone->is_empty()) {
+        clone->destroy();
     }
-    return clone;
+    return clone.release();
 }
 
 void jsonrpc_machine::do_create(const machine_config &config, const machine_runtime_config &runtime,

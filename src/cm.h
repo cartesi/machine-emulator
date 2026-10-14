@@ -474,6 +474,9 @@ CM_API cm_error cm_new(cm_machine **new_m);
 /// Regardless, a newly created object is empty (does not hold a machine instance).
 /// Use cm_create() or cm_load() to instantiate a machine into the object.
 /// Use cm_delete() to delete the object.
+/// \details A remote clone owns a newly forked server and inherits the communication timeout from \p m.
+/// Deleting the clone implicitly shuts its server down, regardless of the cleanup policy of \p m.
+/// Use cm_jsonrpc_set_timeout() and cm_jsonrpc_set_cleanup_call() to change these settings.
 CM_API cm_error cm_clone_empty(const cm_machine *m, cm_machine **new_m);
 
 /// \brief Checks if an object is empty (does not hold a machine instance).

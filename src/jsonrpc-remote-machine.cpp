@@ -436,7 +436,7 @@ enum class jsonrpc_error_code : int {
 /// \param result Result to send in response (defaults to true)
 /// \returns JSON object with response
 static json jsonrpc_response_ok(const json &j, const json &result = true) {
-    return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : json{nullptr}}, {"result", result}};
+    return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : json(nullptr)}, {"result", result}};
 }
 
 /// \brief Returns a failed JSONRPC response as a JSON object
@@ -445,7 +445,7 @@ static json jsonrpc_response_ok(const json &j, const json &result = true) {
 /// \param message Error message
 /// \returns JSON object with response
 static json jsonrpc_response_error(const json &j, jsonrpc_error_code code, const std::string &message) {
-    return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : json{nullptr}},
+    return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : json(nullptr)},
         {"error", {{"code", code}, {"message", message}}}};
 }
 
@@ -488,7 +488,7 @@ static json jsonrpc_response_method_not_found(const json &j, const std::string &
 /// \returns JSON object with response
 static json jsonrpc_response_machine_error(const json &j, jsonrpc_error_code code, const std::string &message,
     int cm_error_code) {
-    return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : json{nullptr}},
+    return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : json(nullptr)},
         {"error", {{"code", code}, {"message", message}, {"data", cm_error_code}}}};
 }
 

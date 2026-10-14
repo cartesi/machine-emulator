@@ -733,17 +733,17 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(http_wrong_uri_rejected_test, spawned_server_fixt
 
 // What: a body that is not valid JSON yields JSON-RPC parse_error (-32700).
 // How:  POST a clearly broken body ("{not valid json") and assert the reply
-//       contains an "error" with code -32700.
+//       contains an "error" with code -32700 and a null "id".
 BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_parse_error_test, spawned_server_fixture) {
     auto j = jsonrpc_post(bound_address, "{not valid json");
     BOOST_REQUIRE(j.contains("error"));
     BOOST_CHECK_EQUAL(j["error"]["code"].get<int>(), -32700);
+    BOOST_CHECK(j["id"].is_null());
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_nesting_request_test, spawned_server_fixture) {
     BOOST_REQUIRE_EQUAL(cm_create(m, minimal_machine_config().c_str(), nullptr, nullptr), CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(cm_write_reg(m, CM_REG_X1, 42), CM_ERROR_OK);
-    const auto parse_error = jsonrpc_post(bound_address, "{not valid json");
     for (bool objects : {false, true}) {
         for (bool batch : {false, true}) {
             const size_t boundary = batch ? 254 : 255;
@@ -768,7 +768,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_nesting_request_test, spawned_server_fixt
                     BOOST_CHECK_EQUAL(response["error"]["code"].get<int>(), -32700);
                     BOOST_CHECK(
                         response["error"]["message"].get<std::string>().find("nesting depth") != std::string::npos);
-                    BOOST_CHECK(response["id"] == parse_error["id"]);
+                    BOOST_CHECK(response["id"].is_null());
                 }
                 uint64_t value{};
                 BOOST_REQUIRE_EQUAL(cm_read_reg(m, CM_REG_X1, &value), CM_ERROR_OK);
@@ -811,11 +811,12 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_nesting_response_test, spawned_server_fix
 }
 
 // What: an empty batch array yields invalid_request (-32600).
-// How:  POST "[]" and assert the reply contains an "error" with code -32600.
+// How:  POST "[]" and assert the reply contains an "error" with code -32600 and a null "id".
 BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_empty_batch_test, spawned_server_fixture) {
     auto j = jsonrpc_post(bound_address, "[]");
     BOOST_REQUIRE(j.contains("error"));
     BOOST_CHECK_EQUAL(j["error"]["code"].get<int>(), -32600);
+    BOOST_CHECK(j["id"].is_null());
 }
 
 // What: a request with no "jsonrpc" field yields invalid_request (-32600).
@@ -891,6 +892,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_batch_non_object_element_test, spawned_se
     BOOST_REQUIRE(j.is_array());
     BOOST_REQUIRE_EQUAL(j.size(), 1U);
     BOOST_CHECK_EQUAL(j[0]["error"]["code"].get<int>(), -32600);
+    BOOST_CHECK(j[0]["id"].is_null());
 }
 
 // What: a request whose "id" is not a string/number/null is still answered,

@@ -463,6 +463,82 @@ end
 describe("JSON-RPC fork", function()
     local jsonrpc = require("cartesi.jsonrpc")
 
+    local function request_batch(server, requests)
+        local http = require("socket.http")
+        local ltn12 = require("ltn12")
+        local body = cartesi.tojson(requests)
+        local response = {}
+        local _, status = assert(http.request({
+            url = "http://" .. server:get_server_address() .. "/",
+            method = "POST",
+            headers = { ["content-type"] = "application/json", ["content-length"] = tostring(#body) },
+            source = ltn12.source.string(body),
+            sink = ltn12.sink.table(response),
+        }))
+        expect.equal(status, 200)
+        return cartesi.fromjson(table.concat(response))
+    end
+
+    for _, hash_function in ipairs({ "keccak256", "sha256" }) do
+        for _, notification in ipairs({ false, true }) do
+            it(
+                "should preserve the fork snapshot in a batch ("
+                    .. hash_function
+                    .. ", notification="
+                    .. tostring(notification)
+                    .. ")",
+                function()
+                    local server <close> = jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN):create({
+                        ram = { length = 0x1000 },
+                        hash_tree = { hash_function = hash_function, phtc_size = 32 },
+                    })
+                    -- addi a2,zero,42; jal zero,0
+                    server:write_memory(cartesi.AR_RAM_START, string.pack("<I4I4", 0x02a00613, 0x0000006f))
+                    server:write_reg("x12", 0)
+                    local responses = request_batch(server, {
+                        { jsonrpc = "2.0", id = 1, method = "machine.write_reg", params = { "x1", 10 } },
+                        { jsonrpc = "2.0", id = 2, method = "fork" },
+                        {
+                            jsonrpc = "2.0",
+                            id = not notification and 3 or nil,
+                            method = "machine.write_reg",
+                            params = { "x1", 20 },
+                        },
+                        { jsonrpc = "2.0", id = 4, method = "machine.run", params = { 2 } },
+                        { jsonrpc = "2.0", id = 5, method = "machine.read_reg", params = { "x1" } },
+                    })
+                    local by_id = {}
+                    for _, response in ipairs(responses) do
+                        by_id[response.id] = response
+                    end
+                    local child <close> =
+                        jsonrpc.connect_server(by_id[2].result.address):set_cleanup_call(jsonrpc.SHUTDOWN)
+                    expect.equal(#responses, notification and 4 or 5)
+                    for _, response in ipairs(responses) do
+                        expect.equal(response.error, nil)
+                    end
+                    expect.truthy(by_id[2].result.pid > 0)
+                    expect.equal(by_id[5].result, 20)
+                    expect.equal(server:read_reg("x1"), 20)
+                    expect.equal(server:read_reg("x12"), 42)
+                    expect.equal(server:read_reg("mcycle"), 2)
+                    expect.equal(child:read_reg("x1"), 10)
+                    expect.equal(child:read_reg("x12"), 0)
+                    expect.equal(child:read_reg("mcycle"), 0)
+                    expect.equal(server:get_root_hash(), tests_util.calculate_emulator_hash(server))
+                    expect.equal(child:get_root_hash(), tests_util.calculate_emulator_hash(child))
+
+                    child:write_reg("x1", 30)
+                    child:run(1)
+                    expect.equal(child:read_reg("mcycle"), 1)
+                    expect.equal(child:read_reg("x12"), 42)
+                    expect.equal(server:read_reg("x1"), 20)
+                    expect.equal(server:read_reg("mcycle"), 2)
+                end
+            )
+        end
+    end
+
     it("should fork an empty server", function()
         local server <close> = jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN)
         local child <close>, address, pid = server:fork_server()

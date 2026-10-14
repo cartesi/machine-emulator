@@ -1937,6 +1937,7 @@ http::message_generator handle_request(HTTP_REQ &&rreq, const std::shared_ptr<ht
         return jsonrpc_http_reply(req, jsonrpc_response_invalid_request(j, "empty batch request array"), session);
     }
     json jr;
+    const auto request_pid = getpid();
     // Obtain response to each request in batch
     for (auto ji : j) {
         if (!ji.is_object()) {
@@ -1973,6 +1974,10 @@ http::message_generator handle_request(HTTP_REQ &&rreq, const std::shared_ptr<ht
             session->handler->delay = 0;
         }
         json jri = jsonrpc_dispatch_method(ji, session);
+        // The forked child must stop processing the parent's request.
+        if (getpid() != request_pid) {
+            break;
+        }
         // Except for errors, do not add result of "notification" requests
         if (ji.contains("id")) {
             jr.push_back(std::move(jri));

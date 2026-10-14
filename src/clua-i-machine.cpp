@@ -361,8 +361,20 @@ static void clua_check_array_schema_size(const std::size_t size, const nlohmann:
     }
 }
 
+// Bound native recursion in conversion and serialization; the root has depth zero.
+static bool clua_json_parse_callback(int depth, nlohmann::json::parse_event_t /*event*/, nlohmann::json & /*parsed*/) {
+    if (depth > 256) {
+        throw std::runtime_error{"JSON nesting depth exceeds 256"};
+    }
+    return true;
+}
+
 static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx, const nlohmann::json &schema,
-    const nlohmann::json &user_schema_dict, int ctxidx) {
+    const nlohmann::json &user_schema_dict, int ctxidx, int depth = 0) {
+    luaL_checkstack(L, 8, "JSON conversion");
+    if (depth > 256) {
+        throw std::runtime_error{"JSON nesting depth exceeds 256"};
+    }
     nlohmann::json &j = *clua_push_new_managed_toclose_ptr(L, nlohmann::json(), ctxidx);
     idx -= idx < 0 ? 1 : 0; // adjust offset after pushing j reference
     switch (lua_type(L, idx)) {
@@ -375,7 +387,8 @@ static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx,
                     lua_geti(L, idx, i);
                     const auto &item_schema =
                         clua_get_array_item_schema(L, static_cast<std::size_t>(i - 1), schema, user_schema_dict);
-                    j.push_back(clua_push_managed_toclose_json_ref(L, -1, item_schema, user_schema_dict, ctxidx));
+                    j.push_back(
+                        clua_push_managed_toclose_json_ref(L, -1, item_schema, user_schema_dict, ctxidx, depth + 1));
                     lua_pop(L, 2); // pop value, child j reference
                 }
             } else { // object
@@ -388,7 +401,8 @@ static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx,
                     }
                     const char *field_name = lua_tostring(L, -2);
                     const auto &field_schema = clua_get_field_schema(L, field_name, schema, user_schema_dict);
-                    j[field_name] = clua_push_managed_toclose_json_ref(L, -1, field_schema, user_schema_dict, ctxidx);
+                    j[field_name] =
+                        clua_push_managed_toclose_json_ref(L, -1, field_schema, user_schema_dict, ctxidx, depth + 1);
                     lua_pop(L, 2); // pop value, child j reference
                 }
                 lua_pop(L, 1); // pop table
@@ -434,7 +448,11 @@ static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx,
 }
 
 static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nlohmann::json &schema,
-    const nlohmann::json &user_schema_dict, int ctxidx) {
+    const nlohmann::json &user_schema_dict, int ctxidx, int depth = 0) {
+    luaL_checkstack(L, 8, "JSON conversion");
+    if (depth > 256) {
+        throw std::runtime_error{"JSON nesting depth exceeds 256"};
+    }
     switch (j.type()) {
         case nlohmann::json::value_t::array: {
             clua_check_array_schema_size(j.size(), schema);
@@ -443,7 +461,7 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nl
             for (auto it = j.begin(); it != j.end(); ++it, ++i) {
                 const auto &item_schema =
                     clua_get_array_item_schema(L, static_cast<std::size_t>(i - 1), schema, user_schema_dict);
-                clua_push_json_value(L, *it, item_schema, user_schema_dict, ctxidx);
+                clua_push_json_value(L, *it, item_schema, user_schema_dict, ctxidx, depth + 1);
                 lua_rawseti(L, -2, i);
             }
             break;
@@ -453,7 +471,7 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nl
             for (const auto &el : j.items()) {
                 const auto &field_name = el.key();
                 const auto &field_schema = clua_get_field_schema(L, field_name, schema, user_schema_dict);
-                clua_push_json_value(L, el.value(), field_schema, user_schema_dict, ctxidx);
+                clua_push_json_value(L, el.value(), field_schema, user_schema_dict, ctxidx, depth + 1);
                 lua_setfield(L, -2, field_name.c_str());
             }
             break;
@@ -474,7 +492,7 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nl
                 lua_pop(L, 1);      // pop binary_data reference
             } else if (schema.is_object() && schema.contains(data)) {
                 static const nlohmann::json empty_schema;
-                clua_push_json_value(L, schema.at(data), empty_schema, user_schema_dict, ctxidx);
+                clua_push_json_value(L, schema.at(data), empty_schema, user_schema_dict, ctxidx, depth + 1);
             } else {
                 lua_pushlstring(L, data.data(), data.length());
             }
@@ -624,7 +642,8 @@ void clua_fromjson(lua_State *L, const char *s, const char *schema_name, const n
     try {
         const nlohmann::json &schema = clua_get_type_schema(L, schema_name, user_schema_dict);
         lua_pushnil(L); // reserve a slot in the stack (needed because of lua_toclose semantics)
-        const nlohmann::json &j = *clua_push_new_managed_toclose_ptr(L, nlohmann::json::parse(s), ctxidx);
+        const nlohmann::json &j =
+            *clua_push_new_managed_toclose_ptr(L, nlohmann::json::parse(s, clua_json_parse_callback), ctxidx);
         clua_push_json_value(L, j, schema, user_schema_dict, ctxidx);
         lua_replace(L, -3); // move into the placeholder slot
         lua_pop(L, 1);      // pop j reference

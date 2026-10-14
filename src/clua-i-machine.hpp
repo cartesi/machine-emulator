@@ -173,10 +173,12 @@ const nlohmann::json &clua_tojsonschemadict(lua_State *L, int idx, int ctxidx = 
 /// \returns It traverses the Lua value while converting to a JSON object
 /// \details The value may be a table, string, number, boolean or nil, allowing a bare hash or scalar to
 /// be serialized (e.g. a binary string under the "Base64" or "Hex" schema), not only a table
+/// Nesting depth is limited to 256, with the root at depth zero.
 const char *clua_tojson(lua_State *L, int idx, int indent = -1, const char *schema_name = nullptr,
     const nlohmann::json &user_schema_dict = nlohmann::json(), int ctxidx = lua_upvalueindex(1));
 
 /// \brief Parses a JSON from a string and pushes it as a Lua table
+/// \details Nesting depth is limited to 256, with the root at depth zero.
 /// \param L Lua state
 /// \param s JSON string
 /// \param schema_name Name of the root type, resolved in user_schema_dict then the machine dictionary

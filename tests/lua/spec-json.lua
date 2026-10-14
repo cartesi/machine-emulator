@@ -10,6 +10,70 @@ lester.parse_args()
 local cartesi = require("cartesi")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
+describe("JSON nesting", function()
+    for _, kind in ipairs({ "arrays", "objects" }) do
+        local opening = kind == "arrays" and "[" or '{"child":'
+        local closing = kind == "arrays" and "]" or "}"
+        local function nested_table(depth)
+            local value = 42
+            for _ = 1, depth do
+                value = kind == "arrays" and { value } or { child = value }
+            end
+            return value
+        end
+        local function nested_json(depth)
+            return string.rep(opening, depth) .. "42" .. string.rep(closing, depth)
+        end
+
+        it("should roundtrip nested " .. kind .. " at the depth limit", function()
+            local encoded = nested_json(256)
+            expect.equal(cartesi.tojson(nested_table(256)), encoded)
+            local decoded = cartesi.fromjson(encoded)
+            for _ = 1, 256 do
+                expect.equal(type(decoded), "table")
+                decoded = kind == "arrays" and decoded[1] or decoded.child
+            end
+            expect.equal(decoded, 42)
+        end)
+
+        it("should reject Lua " .. kind .. " beyond the nesting limit", function()
+            expect.fail(function()
+                cartesi.tojson(nested_table(257))
+            end, "nesting depth")
+            expect.equal(cartesi.tojson({ 42 }), "[42]")
+        end)
+
+        it("should reject JSON " .. kind .. " beyond the nesting limit", function()
+            for _, depth in ipairs({ 257, 200000 }) do
+                expect.fail(function()
+                    cartesi.fromjson(nested_json(depth))
+                end, "nesting depth")
+            end
+            expect.equal(cartesi.fromjson("[42]"), { 42 })
+        end)
+    end
+
+    it("should reject cyclic Lua tables", function()
+        local value = {}
+        value.child = value
+        expect.fail(function()
+            cartesi.tojson(value)
+        end, "nesting depth")
+        expect.equal(cartesi.fromjson(cartesi.tojson({ 42 })), { 42 })
+    end)
+
+    it("should reject cyclic schema dictionaries in both directions", function()
+        local schema = {}
+        schema.Node = schema
+        expect.fail(function()
+            cartesi.tojson({}, nil, "Node", schema)
+        end, "nesting depth")
+        expect.fail(function()
+            cartesi.fromjson("{}", "Node", schema)
+        end, "nesting depth")
+    end)
+end)
+
 describe("tojson / fromjson schema dictionary", function()
     local machine <close> = cartesi.machine({ ram = { length = 0x1000 } })
     local HASH = string.rep("\xa5", 32)

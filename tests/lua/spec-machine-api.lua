@@ -460,6 +460,94 @@ for _, variant in ipairs(variants) do
     end)
 end
 
+describe("JSON-RPC fork", function()
+    local jsonrpc = require("cartesi.jsonrpc")
+
+    it("should fork an empty server", function()
+        local server <close> = jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN)
+        local child <close>, address, pid = server:fork_server()
+        child:set_cleanup_call(jsonrpc.SHUTDOWN)
+        expect.truthy(server:is_empty())
+        expect.truthy(child:is_empty())
+        expect.truthy(pid > 0)
+        expect.not_equal(address, server:get_server_address())
+    end)
+
+    it("should reject a shared memory range", function()
+        local _ <close>, filename = filesystem.write_scope_temp_file(string.rep("\0", 0x1000))
+        local server <close> = jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN):create({
+            ram = { length = 0x1000, backing_store = { data_filename = filename, shared = true } },
+        })
+        local root_hash = server:get_root_hash()
+        expect.fail(function()
+            local child <close> = server:fork_server()
+            child:set_cleanup_call(jsonrpc.SHUTDOWN)
+        end, "cannot fork machines with shared backing stores")
+        expect.equal(server:get_root_hash(), root_hash)
+    end)
+
+    for _, hash_function in ipairs({ "keccak256", "sha256" }) do
+        for _, shared in ipairs({ false, true }) do
+            it(
+                "should handle a disk-backed hash tree (" .. hash_function .. ", shared=" .. tostring(shared) .. ")",
+                function()
+                    local prefix = filesystem.temp_pathname()
+                    local config = {
+                        ram = { length = 0x1000 },
+                        hash_tree = {
+                            hash_function = hash_function,
+                            phtc_size = 32,
+                            shared = true,
+                            create = true,
+                            sht_filename = prefix .. ".sht",
+                            phtc_filename = prefix .. ".phtc",
+                        },
+                    }
+                    do
+                        local _ <close> = cartesi.machine(config)
+                    end
+                    local _ <close> = tests_util.scope_exit(function()
+                        filesystem.remove_file(config.hash_tree.sht_filename)
+                        filesystem.remove_file(config.hash_tree.phtc_filename)
+                    end)
+                    config.hash_tree.shared = shared
+                    config.hash_tree.create = false
+                    local server <close> = jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN):create(config)
+                    server:write_reg("x1", 10)
+                    local root_hash = server:get_root_hash()
+                    if shared then
+                        expect.fail(function()
+                            local child <close> = server:fork_server()
+                            child:set_cleanup_call(jsonrpc.SHUTDOWN)
+                        end, "cannot fork machines with shared backing stores")
+                        expect.equal(server:read_reg("x1"), 10)
+                        expect.equal(server:get_root_hash(), root_hash)
+                    else
+                        do
+                            local child <close> = server:fork_server()
+                            child:set_cleanup_call(jsonrpc.SHUTDOWN)
+                            expect.equal(child:get_root_hash(), root_hash)
+                            server:write_reg("x1", 20)
+                            child:write_reg("x1", 30)
+                            server:write_memory(cartesi.AR_RAM_START, string.rep("A", 0x1000))
+                            child:write_memory(cartesi.AR_RAM_START, string.rep("B", 0x1000))
+                            expect.equal(server:read_reg("x1"), 20)
+                            expect.equal(child:read_reg("x1"), 30)
+                            expect.equal(server:read_memory(cartesi.AR_RAM_START, 0x1000), string.rep("A", 0x1000))
+                            expect.equal(child:read_memory(cartesi.AR_RAM_START, 0x1000), string.rep("B", 0x1000))
+                            expect.equal(server:get_root_hash(), tests_util.calculate_emulator_hash(server))
+                            expect.equal(child:get_root_hash(), tests_util.calculate_emulator_hash(child))
+                            expect.not_equal(server:get_root_hash(), child:get_root_hash())
+                        end
+                        expect.equal(server:read_reg("x1"), 20)
+                        expect.equal(server:get_root_hash(), tests_util.calculate_emulator_hash(server))
+                    end
+                end
+            )
+        end
+    end
+end)
+
 describe("move remote cleanup", function()
     it("should transfer the connection and cleanup policy to the returned handle", function()
         local jsonrpc = require("cartesi.jsonrpc")

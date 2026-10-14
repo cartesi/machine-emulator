@@ -832,9 +832,10 @@ public:
         return m_c.hash_tree.hash_function;
     }
 
-    /// \brief Returns whether the machine contains a shared address range
-    bool has_shared_address_range() const {
-        return std::ranges::any_of(m_ars.all(), [](const auto &ar) { return ar.is_backing_store_shared(); });
+    /// \brief Returns whether the machine contains a shared backing store
+    bool has_shared_backing_store() const {
+        return m_ht.has_shared_backing_store() ||
+            std::ranges::any_of(m_ars.all(), [](const auto &ar) { return ar.has_shared_backing_store(); });
     }
 
     /// \brief Writes a character to console output.

@@ -983,9 +983,9 @@ hash_tree::hash_tree(const hash_tree_config &config, uint64_t concurrency, machi
         }(),
         concurrency, create_nodes(mars)) {
     // Reuse stored page hashes only when their ranges share the cache's persistence behavior.
-    m_page_cache.evict_entries_if([&mars, shared = m_mapped_memory.get_flags().shared](uint64_t paddr_page) {
+    m_page_cache.evict_entries_if([&mars, shared = has_shared_backing_store()](uint64_t paddr_page) {
         const auto &ar = mars.find(paddr_page, HASH_TREE_PAGE_SIZE);
-        return ar.is_empty() || ar.is_backing_store_shared() != shared;
+        return ar.is_empty() || ar.has_shared_backing_store() != shared;
     });
 }
 

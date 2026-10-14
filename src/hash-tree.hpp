@@ -161,6 +161,11 @@ public:
         return m_page_cache.get_storage_data();
     }
 
+    /// \brief Returns whether the hash-tree backing stores are shared with the host
+    bool has_shared_backing_store() const noexcept {
+        return m_mapped_memory.get_flags().shared;
+    }
+
     bool update(address_ranges ars);
 
     bool update_words(address_ranges ars, const dirty_words_type &dirty_words);

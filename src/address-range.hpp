@@ -324,8 +324,8 @@ public:
 
     /// \brief Returns true if the mapped memory is shared with a backing store in the host
     /// \returns True if the memory is shared in the host
-    bool is_backing_store_shared() const noexcept {
-        return do_is_backing_store_shared();
+    bool has_shared_backing_store() const noexcept {
+        return do_has_shared_backing_store();
     }
 
 protected:
@@ -366,7 +366,7 @@ private:
         return false;
     }
 
-    virtual bool do_is_backing_store_shared() const noexcept {
+    virtual bool do_has_shared_backing_store() const noexcept {
         return false;
     }
 

@@ -100,7 +100,7 @@ private:
         return m_config.host_read_only;
     }
 
-    bool do_is_backing_store_shared() const noexcept override {
+    bool do_has_shared_backing_store() const noexcept override {
         return m_backing_store.shared;
     }
 

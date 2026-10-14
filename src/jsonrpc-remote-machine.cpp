@@ -822,8 +822,8 @@ static std::string endpoint_to_string(const tcp::endpoint &endpoint) {
 /// server.
 static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_session> &session) {
     jsonrpc_check_no_params(j);
-    if (session->handler->machine && session->handler->machine->has_shared_address_range()) {
-        throw std::domain_error("cannot fork machines with shared address ranges");
+    if (session->handler->machine && session->handler->machine->has_shared_backing_store()) {
+        throw std::domain_error("cannot fork machines with shared backing stores");
     }
     // Listen in desired port before fork so failures happen still in parent,
     // who can directly report them to client

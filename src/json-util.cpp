@@ -810,7 +810,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uint64_t &value, co
     if (jk.is_number_float()) {
         auto f = jk.template get<nlohmann::json::number_float_t>();
         if (f < 0 || std::fmod(f, static_cast<nlohmann::json::number_float_t>(1.0)) != 0 ||
-            f > static_cast<nlohmann::json::number_float_t>(UINT64_MAX)) {
+            f >= static_cast<nlohmann::json::number_float_t>(UINT64_MAX)) {
             throw std::invalid_argument("\""s + path + to_string(key) + "\" not an unsigned integer");
         }
         value = static_cast<uint64_t>(f);
@@ -843,7 +843,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, int64_t &value, con
     if (jk.is_number_float()) {
         auto f = jk.template get<nlohmann::json::number_float_t>();
         if (f < static_cast<nlohmann::json::number_float_t>(INT64_MIN) ||
-            f > static_cast<nlohmann::json::number_float_t>(INT64_MAX) ||
+            f >= static_cast<nlohmann::json::number_float_t>(INT64_MAX) ||
             std::fmod(f, static_cast<nlohmann::json::number_float_t>(1.0)) != 0) {
             throw std::invalid_argument("\""s + path + to_string(key) + "\" not an integer");
         }

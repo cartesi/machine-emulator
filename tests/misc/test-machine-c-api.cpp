@@ -165,6 +165,38 @@ BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_null_test) {
     BOOST_CHECK_NO_THROW(cm_delete(nullptr));
 }
 
+BOOST_AUTO_TEST_CASE_NOLINT(json_uint64_float_boundary_test) {
+    const std::string key = "value";
+    for (const std::string literal : {"18446744073709551616", "18446744073709551616.0", "18446744073709552000"}) {
+        const auto json = nlohmann::json::parse("{\"value\":" + literal + "}");
+        uint64_t value = 42;
+        BOOST_CHECK_THROW(cartesi::ju_get_opt_field(json, key, value), std::invalid_argument);
+        BOOST_CHECK_EQUAL(value, 42);
+    }
+    uint64_t value = 0;
+    cartesi::ju_get_opt_field(nlohmann::json::parse(R"({"value":18446744073709551615})"), key, value);
+    BOOST_CHECK_EQUAL(value, UINT64_MAX);
+    cartesi::ju_get_opt_field(nlohmann::json::parse(R"({"value":18446744073709549568.0})"), key, value);
+    BOOST_CHECK_EQUAL(value, UINT64_C(18446744073709549568));
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(json_int64_float_boundary_test) {
+    const std::string key = "value";
+    for (const std::string literal : {"9223372036854775808.0", "9.223372036854776e18"}) {
+        const auto json = nlohmann::json::parse("{\"value\":" + literal + "}");
+        int64_t value = 42;
+        BOOST_CHECK_THROW(cartesi::ju_get_opt_field(json, key, value), std::invalid_argument);
+        BOOST_CHECK_EQUAL(value, 42);
+    }
+    int64_t value = 0;
+    cartesi::ju_get_opt_field(nlohmann::json::parse(R"({"value":9223372036854775807})"), key, value);
+    BOOST_CHECK_EQUAL(value, INT64_MAX);
+    cartesi::ju_get_opt_field(nlohmann::json::parse(R"({"value":9223372036854774784.0})"), key, value);
+    BOOST_CHECK_EQUAL(value, INT64_C(9223372036854774784));
+    cartesi::ju_get_opt_field(nlohmann::json::parse(R"({"value":-9223372036854775808.0})"), key, value);
+    BOOST_CHECK_EQUAL(value, INT64_MIN);
+}
+
 BOOST_AUTO_TEST_CASE_NOLINT(clone_empty_remote_cleanup_test) {
     using machine_ptr = std::unique_ptr<cm_machine, decltype(&cm_delete)>;
     const char *config = R"({"ram":{"length":4096},"hash_tree":{"phtc_size":32}})";

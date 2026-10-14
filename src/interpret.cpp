@@ -5721,7 +5721,9 @@ template <typename STATE_ACCESS>
 static inline uint64_t raise_interrupt_if_any(const STATE_ACCESS a, uint64_t pc, uint64_t &fetch_vaddr_page) {
     const uint32_t mask = get_pending_irq_mask(a);
     if (mask != 0) [[unlikely]] {
-        const uint64_t irq_num = get_highest_priority_irq_num(mask);
+        // Prefer interrupts destined for M-mode.
+        const uint32_t m_mask = mask & ~static_cast<uint32_t>(a.read_mideleg());
+        const uint64_t irq_num = get_highest_priority_irq_num(m_mask != 0 ? m_mask : mask);
         const uint64_t new_pc = raise_exception(a, pc, irq_num | MCAUSE_INTERRUPT_FLAG, 0);
         fetch_vaddr_page = ensure_fetch_cache_miss(new_pc);
         return new_pc;

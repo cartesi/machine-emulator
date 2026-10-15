@@ -122,6 +122,15 @@ local function cmio_should_fail(expected_error, corrupt, options)
     end, expected_error)
 end
 
+local function change_sibling_count(log, adjustment)
+    local siblings = log.accesses[1].sibling_hashes
+    if adjustment < 0 then
+        table.remove(siblings)
+    else
+        siblings[#siblings + 1] = bad_hash
+    end
+end
+
 -- Find the index of an access to a TLB slot (by address range)
 local function find_tlb_access(log)
     for i = 1, #log.accesses do
@@ -688,6 +697,35 @@ describe("verify_send_cmio_response", function()
             end, { data = "" })
         end)
     end)
+end)
+
+describe("access proof sibling count", function()
+    for _, adjustment in ipairs({ -1, 1 }) do
+        local count = adjustment < 0 and "missing" or "extra"
+        local expected_error = "access sibling hash count is inconsistent with proof size"
+
+        it("should reject " .. count .. " siblings in uarch step logs", function()
+            step_should_fail(build_default_machine, expected_error, function(log)
+                change_sibling_count(log, adjustment)
+            end)
+        end)
+
+        it("should reject " .. count .. " siblings in CMIO response logs", function()
+            cmio_should_fail(expected_error, function(log)
+                change_sibling_count(log, adjustment)
+            end)
+        end)
+
+        it("should reject " .. count .. " siblings in uarch reset logs", function()
+            local machine <close> = build_cmio_machine()
+            local initial_hash = machine:get_root_hash()
+            local log = machine:log_reset_uarch()
+            change_sibling_count(log, adjustment)
+            expect.fail(function()
+                machine:verify_reset_uarch(initial_hash, log)
+            end, expected_error)
+        end)
+    end
 end)
 
 lester.report()

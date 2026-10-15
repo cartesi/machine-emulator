@@ -183,11 +183,18 @@ public:
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         const auto &sibling_hashes = m_sibling_hashes.value();
-        const int log2_root_size = proof_log2_size + static_cast<int>(sibling_hashes.size());
-        if (m_read.has_value() && m_read.value().size() != (static_cast<uint64_t>(1) << proof_log2_size)) {
+        const int log2_root_size = HASH_TREE_LOG2_ROOT_SIZE;
+        if (!std::cmp_equal(sibling_hashes.size(), log2_root_size - proof_log2_size)) {
+            throw std::runtime_error("access sibling hash count is inconsistent with proof size");
+        }
+        if (m_read.has_value() &&
+            (proof_log2_size == log2_root_size ||
+                m_read.value().size() != (static_cast<uint64_t>(1) << proof_log2_size))) {
             throw std::runtime_error("access read data size is inconsistent with proof size");
         }
-        if (m_written.has_value() && m_written.value().size() != (static_cast<uint64_t>(1) << proof_log2_size)) {
+        if (m_written.has_value() &&
+            (proof_log2_size == log2_root_size ||
+                m_written.value().size() != (static_cast<uint64_t>(1) << proof_log2_size))) {
             throw std::runtime_error("access written data size is inconsistent with proof size");
         }
         proof_type proof(log2_root_size, proof_log2_size);

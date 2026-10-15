@@ -2000,6 +2000,10 @@ void machine::check_cmio_response_revert_root_hash(uint16_t reason,
 
 void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
     std::optional<const_machine_hash_view> revert_root_hash) {
+    // Oversized responses do not consume the data buffer.
+    if (data == nullptr && length > 0 && length <= AR_CMIO_RX_BUFFER_LENGTH) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     check_cmio_response_revert_root_hash(reason, revert_root_hash);
     const state_access a(*this);
     const machine_hash zero{};
@@ -2008,6 +2012,10 @@ void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uin
 
 access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
     const_machine_hash_view revert_root_hash, const access_log::type &log_type) {
+    // Oversized responses do not consume the data buffer.
+    if (data == nullptr && length > 0 && length <= AR_CMIO_RX_BUFFER_LENGTH) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
         throw std::runtime_error{
             "access logs can only be used with hash tree configured with Keccak-256 hash function"};

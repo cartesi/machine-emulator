@@ -179,4 +179,81 @@ describe("shadow TLB permissions", function()
     end
 end)
 
+local MPRV_TARGET = RAM_START + 0x5000
+local MPRV_TRANSLATED = RAM_START + 0x6000
+
+local function create_mprv_machine(trap, store)
+    local root, middle, leaf = RAM_START + 0x1000, RAM_START + 0x2000, RAM_START + 0x3000
+    local machine = cartesi.machine({
+        ram = { length = 0x10000 },
+        processor = {
+            registers = {
+                pc = RAM_START,
+                mtvec = MTVEC,
+                mepc = RAM_START + 8,
+                mstatus = (1 << 17) | ((trap and 1 or 3) << 11), -- MPRV=1, MPP=S or M
+                satp = (8 << 60) | (root >> 12), -- Sv39
+                x10 = MPRV_TARGET,
+                x11 = STORE_VALUE,
+            },
+        },
+    })
+    local access = store and 0x00b53023 or 0x00053603 -- sd a1,0(a0) or ld a2,0(a0)
+    machine:write_memory(RAM_START, string.pack("<I4I4I4", access, trap and 0x00000073 or 0x30200073, access))
+    machine:write_memory(MTVEC, string.pack("<I4", access))
+    machine:write_memory(root + 2 * 8, string.pack("<I8", ((middle >> 12) << 10) | 1))
+    machine:write_memory(middle, string.pack("<I8", ((leaf >> 12) << 10) | 1))
+    -- Map the target to a different physical page, with S-mode read/write permissions only.
+    machine:write_memory(leaf + 5 * 8, string.pack("<I8", ((MPRV_TRANSLATED >> 12) << 10) | 0xc7))
+    machine:write_memory(MPRV_TARGET, string.pack("<I8", VALUE))
+    machine:write_memory(MPRV_TRANSLATED, string.pack("<I8", STORE_VALUE))
+    return machine
+end
+
+describe("MPRV TLB invalidation", function()
+    for _, trap in ipairs({ true, false }) do
+        for _, store in ipairs({ false, true }) do
+            it((trap and "M-to-M trap" or "M-to-M MRET") .. (store and " store" or " load"), function()
+                local native <close> = create_mprv_machine(trap, store)
+                local initial_hash = native:get_root_hash()
+                -- Populate the data TLB, change MPP implicitly, then access the same address again.
+                expect.equal(native:run(3), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+                if trap then
+                    expect.equal(native:read_reg("mcause"), 11) -- M-mode ECALL
+                    expect.equal(native:read_reg("pc"), MTVEC + 4)
+                    if store then
+                        expect.equal(native:read_memory(MPRV_TARGET, 8), string.pack("<I8", STORE_VALUE))
+                    else
+                        expect.equal(native:read_reg("x12"), VALUE)
+                    end
+                else
+                    expect.equal(native:read_reg("mcause"), store and 15 or 13) -- U-mode page fault
+                    expect.equal(native:read_reg("mtval"), MPRV_TARGET)
+                    expect.equal(native:read_reg("mepc"), RAM_START + 8)
+                    expect.equal(native:read_reg("pc"), MTVEC)
+                end
+                expect.equal(native:read_memory(MPRV_TRANSLATED, 8), string.pack("<I8", STORE_VALUE))
+                local expected_hash = native:get_root_hash()
+                expect.equal(expected_hash, tests_util.calculate_emulator_hash(native))
+
+                local logged <close> = create_mprv_machine(trap, store)
+                local filename = filesystem.temp_pathname()
+                local _ <close> = tests_util.scope_exit(function()
+                    os.remove(filename)
+                end)
+                expect.equal(logged:log_step(3, filename), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+                expect.equal(logged:get_root_hash(), expected_hash)
+                expect.equal(logged:verify_step(initial_hash, filename, 3), expected_hash)
+
+                local uarch <close> = create_mprv_machine(trap, store)
+                for _ = 1, 3 do
+                    expect.equal(uarch:run_uarch(math.maxinteger), cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
+                    uarch:reset_uarch()
+                end
+                expect.equal(uarch:get_root_hash(), expected_hash)
+            end)
+        end
+    end
+end)
+
 os.exit(lester.report())

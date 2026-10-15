@@ -479,12 +479,20 @@ static NO_INLINE uint64_t raise_exception(const STATE_ACCESS a, uint64_t pc, uin
         a.write_mepc(pc);
         a.write_mtval(tval);
         uint64_t mstatus = a.read_mstatus();
+        const auto mpp = (mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
         mstatus = (mstatus & ~MSTATUS_MPIE_MASK) | (((mstatus >> MSTATUS_MIE_SHIFT) & 1) << MSTATUS_MPIE_SHIFT);
         mstatus = (mstatus & ~MSTATUS_MPP_MASK) | (prv << MSTATUS_MPP_SHIFT);
         mstatus &= ~MSTATUS_MIE_MASK;
         a.write_mstatus(mstatus);
         if (prv != PRV_M) {
             set_prv(a, PRV_M);
+        } else if ((mstatus & MSTATUS_MPRV_MASK) && mpp != PRV_M) {
+            // MPP changed the effective data privilege while execution stayed in M.
+            flush_tlb_set<TLB_READ>(a);
+            flush_tlb_set<TLB_WRITE>(a);
+            DUMP_STATS_INCR(a, "tlb.flush_read");
+            DUMP_STATS_INCR(a, "tlb.flush_write");
+            DUMP_STATS_INCR(a, "tlb.flush_mstatus");
         }
         new_pc = a.read_mtvec();
 #ifdef DUMP_STATS
@@ -2810,6 +2818,13 @@ static FORCE_INLINE execute_status execute_MRET(const STATE_ACCESS a, uint64_t &
     a.write_mstatus(mstatus);
     if (prv != mpp) {
         set_prv(a, mpp);
+    } else if (mstatus & MSTATUS_MPRV_MASK) {
+        // Returning to M leaves MPRV set, but MPP changed from M to U.
+        flush_tlb_set<TLB_READ>(a);
+        flush_tlb_set<TLB_WRITE>(a);
+        DUMP_STATS_INCR(a, "tlb.flush_read");
+        DUMP_STATS_INCR(a, "tlb.flush_write");
+        DUMP_STATS_INCR(a, "tlb.flush_mstatus");
     }
     pc = a.read_mepc();
     return execute_status::success_and_serve_interrupts;

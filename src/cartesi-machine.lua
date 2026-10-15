@@ -3068,8 +3068,9 @@ echo "
         config.dtb.entrypoint = config.dtb.entrypoint .. table.concat(cmdline.exec_arguments, " ")
     end
 
+    local loaded_config
     if cmdline.load_config and cmdline.load_config_format == "json" then
-        config = setmetatable(cartesi.fromjson(util.read_file(cmdline.load_config)), { __index = config })
+        loaded_config = cartesi.fromjson(util.read_file(cmdline.load_config))
     elseif cmdline.load_config then
         local env = {}
         local chunk, err = loadfile(cmdline.load_config, "t", env)
@@ -3082,7 +3083,13 @@ echo "
             stderr("Failed to load machine config (%s):\n", cmdline.load_config)
             error(ret)
         end
-        config = setmetatable(ret, { __index = config })
+        loaded_config = ret
+    end
+    if cmdline.load_config then
+        for key, value in pairs(config) do
+            if loaded_config[key] == nil then loaded_config[key] = value end
+        end
+        config = loaded_config
     end
 
     main_machine = main_machine:create(config, runtime_config, cmdline.create_dir)

@@ -1286,6 +1286,57 @@ describe("cartesi-machine CLI", function()
     --       read back (via dofile, config_for, or filesystem existence checks)
     --       and key field values are asserted to survive the round-trip.
     -- -------------------------------------------------------------------------
+    for _, format in ipairs({ "lua", "json" }) do
+        it("load config command-line fallbacks (" .. format .. ")", function()
+            local partial = format == "lua" and "return {ram = {length = 1048576}, flash_drive = {}}"
+                or [[{"ram":{"length":1048576},"flash_drive":[]}]]
+            local _ <close>, partial_file = filesystem.write_scope_temp_file(partial)
+            local cfg = config_for({
+                "--load-config=" .. partial_file .. ",format:" .. format,
+                "--ram-length=2Mi",
+                "--no-ram-image",
+                "--no-root-flash-drive",
+                "--hash-tree=hash_function:sha256,phtc_size:1",
+                "--no-htif-yield-automatic",
+            })
+            expect.equal(cfg.ram.length, 1048576)
+            expect.equal(#cfg.flash_drive, 0)
+            expect.equal(cfg.hash_tree.hash_function, "sha256")
+            expect.equal(cfg.hash_tree.phtc_size, 1)
+            expect.equal(cfg.processor.registers.htif.iyield, cartesi.HTIF_YIELD_CMD_MANUAL_MASK)
+
+            -- Supplied tables stay authoritative, including their omitted nested fields.
+            local supplied = format == "lua"
+                    and [[return {
+                ram = {length = 1048576}, flash_drive = {},
+                hash_tree = {hash_function = "keccak256", shared = false},
+                processor = {registers = {x1 = 42}}
+            }]]
+                or [[{
+                "ram":{"length":1048576},"flash_drive":[],
+                "hash_tree":{"hash_function":"keccak256","shared":false},
+                "processor":{"registers":{"x1":42}}
+            }]]
+            local _ <close>, supplied_file = filesystem.write_scope_temp_file(supplied)
+            cfg = config_for({
+                "--load-config=" .. supplied_file .. ",format:" .. format,
+                "--ram-length=2Mi",
+                "--no-ram-image",
+                "--no-root-flash-drive",
+                "--hash-tree=hash_function:sha256,phtc_size:1,shared:true",
+                "--no-htif-yield-automatic",
+            })
+            local defaults = cartesi.machine:get_default_config()
+            expect.equal(cfg.ram.length, 1048576)
+            expect.equal(#cfg.flash_drive, 0)
+            expect.equal(cfg.hash_tree.hash_function, "keccak256")
+            expect.equal(cfg.hash_tree.shared, false)
+            expect.equal(cfg.hash_tree.phtc_size, defaults.hash_tree.phtc_size)
+            expect.equal(cfg.processor.registers.x1, 42)
+            expect.equal(cfg.processor.registers.htif.iyield, defaults.processor.registers.htif.iyield)
+        end)
+    end
+
     it("persistence: --store, --load, --create", function()
         -- --store-config to file and --load-config round-trip
         local _ <close>, cfg_file = scope_temp_pathname()

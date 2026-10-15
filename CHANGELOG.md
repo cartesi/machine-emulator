@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added frontier forests to `cartesi.hash-tree`
 - Added `machine:move()` to the Lua API
 - Added outputs Merkle root validation to `--assert-rolling-template`
+- Added `get_uarch_pristine_hash` and the uarch state range constants to the C, Lua, and JSON-RPC APIs
+- Added `mark_pages_dirty` to backing store configurations, forcing page hashes to be recomputed
 
 ### Fixed
 - Fixed stored machines whose page hash-tree cache could be corrupted by sync or clone
@@ -21,6 +23,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed progress output with VirtIO consoles
 - Fixed halt and manual yield precedence over an exhausted input budget
 - Fixed out-of-range integer arguments being silently truncated by the Lua and JSON-RPC bindings
+- Fixed pending write TLB dirty marks being lost when a machine is stored or closed
+- Fixed pages not being marked dirty when backing hash trees cannot be reused
+- Fixed stale host pointers being used after `replace_memory_range`
+- Fixed stale page hash-tree cache entries surviving range replacement or sharing changes
+- Fixed JSON-RPC `fork` accepting machines with shared hash-tree storage
+- Fixed execution depending on run boundaries when interrupts are partially delegated
+- Fixed cached shadow TLB entries bypassing PMA access permissions
+- Fixed shared writable mappings of read-only or hard-linked backing files breaking clone isolation
+- Fixed forked JSON-RPC servers continuing the parent's request batch
+- Fixed remote empty clones leaking their forked server
+- Fixed JSON floats at 2^63 and 2^64 being accepted as 64-bit integers
+- Fixed unbounded nesting depth in Lua JSON conversion and JSON-RPC parsing
+- Fixed JSON-RPC error responses carrying a one-element array instead of a null ID
+- Fixed range padding hash queries failing at page level and reading stale page cache hashes below it
+- Fixed the JSON-RPC server hanging on SIGBUS
+- Fixed command-line fallbacks missing from serialized configurations loaded from files
+- Fixed `--replace-memory-range` being accepted with `--revert-mode=stored`
+- Fixed cyclic VirtIO descriptor chains hanging the host
+- Fixed stale data TLB entries when a trap or `MRET` changes MPP while MPRV is set in M-mode
+- Fixed partial bundle trees being allocated before their size was validated
+- Fixed access proofs with the wrong number of sibling hashes being accepted
+- Fixed `send_cmio_response` accepting a null data buffer with a nonzero length
 
 ### Changed
 - Changed `send_cmio_response` to perform no-op transitions as logged and verified ones do

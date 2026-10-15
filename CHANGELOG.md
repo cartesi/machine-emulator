@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.22.0] - 2026-10-15
 ### Added
 - Added `collect_mcycle_bundle` and `collect_uarch_cycle_bundle` to all machine APIs
 - Added `protect` to `cartesi.util`
@@ -818,7 +820,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.2.0]
 - [0.1.0]
 
-[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.22.0
 [0.21.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.21.0
 [0.20.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.20.0
 [0.19.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.19.0

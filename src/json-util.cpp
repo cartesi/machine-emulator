@@ -2209,6 +2209,9 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, std::optional<back_
     uint64_t leaf_count{};
     machine_hashes context;
     ju_get_field(jconfig, "log2_max_leaves"s, log2_max_leaves, new_path);
+    if (log2_max_leaves > INT_MAX) {
+        throw std::domain_error("\""s + new_path + "log2_max_leaves\" is out of bounds");
+    }
     ju_get_field(jconfig, "hash_function"s, hash_function, new_path);
     ju_get_field(jconfig, "leaf_count"s, leaf_count, new_path);
     ju_get_vector_like_field(jconfig, "context"s, context, new_path);

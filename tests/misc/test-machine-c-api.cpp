@@ -38,7 +38,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -195,6 +197,35 @@ BOOST_AUTO_TEST_CASE_NOLINT(json_int64_float_boundary_test) {
     BOOST_CHECK_EQUAL(value, INT64_C(9223372036854774784));
     cartesi::ju_get_opt_field(nlohmann::json::parse(R"({"value":-9223372036854775808.0})"), key, value);
     BOOST_CHECK_EQUAL(value, INT64_MIN);
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(back_merkle_tree_size_validation_test) {
+    const auto hash_function = cartesi::hash_function_type::keccak256;
+    for (const int log2_max_leaves : {-1, 64, std::numeric_limits<int>::max()}) {
+        BOOST_CHECK_THROW(cartesi::back_merkle_tree(log2_max_leaves, hash_function), std::out_of_range);
+    }
+    const std::string key = "partial_bundle";
+    nlohmann::json json = {{key,
+        {{"log2_max_leaves", 0}, {"hash_function", "keccak256"}, {"leaf_count", 0},
+            {"context", nlohmann::json::array()}}}};
+    for (const int log2_max_leaves : {0, 63}) {
+        cartesi::back_merkle_tree tree{log2_max_leaves, hash_function};
+        BOOST_CHECK_EQUAL(tree.get_log2_max_leaves(), log2_max_leaves);
+        BOOST_CHECK_EQUAL(tree.get_max_leaves(), UINT64_C(1) << log2_max_leaves);
+        json[key]["log2_max_leaves"] = log2_max_leaves;
+        std::optional<cartesi::back_merkle_tree> parsed;
+        BOOST_REQUIRE_NO_THROW(cartesi::ju_get_opt_field(json, key, parsed));
+        BOOST_REQUIRE(parsed.has_value());
+        BOOST_CHECK_EQUAL(parsed->get_log2_max_leaves(), log2_max_leaves);
+    }
+    json[key]["log2_max_leaves"] = 64;
+    std::optional<cartesi::back_merkle_tree> parsed;
+    BOOST_CHECK_THROW(cartesi::ju_get_opt_field(json, key, parsed), std::out_of_range);
+    for (const uint64_t log2_max_leaves :
+        {uint64_t{std::numeric_limits<int>::max()} + 1, UINT64_C(1) << 32, (UINT64_C(1) << 32) + 63, UINT64_MAX}) {
+        json[key]["log2_max_leaves"] = log2_max_leaves;
+        BOOST_CHECK_THROW(cartesi::ju_get_opt_field(json, key, parsed), std::domain_error);
+    }
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(clone_empty_remote_cleanup_test) {

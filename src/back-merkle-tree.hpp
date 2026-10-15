@@ -17,7 +17,6 @@
 #ifndef BACK_MERKLE_TREE_HPP
 #define BACK_MERKLE_TREE_HPP
 
-#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
@@ -44,14 +43,14 @@ public:
     back_merkle_tree(int log2_max_leaves, hash_function_type hash_function, uint64_t leaf_count = 0,
         machine_hashes context = {}) :
         m_hash_function(hash_function),
-        m_leaf_count{leaf_count},
-        m_context(std::max(1, log2_max_leaves + 1)) {
+        m_leaf_count{leaf_count} {
         if (log2_max_leaves < 0) {
             throw std::out_of_range{"log2_max_leaves is negative"};
         }
         if (log2_max_leaves >= std::numeric_limits<uint64_t>::digits) {
             throw std::out_of_range{"log2_max_leaves is too large"};
         }
+        m_context.resize(log2_max_leaves + 1);
         if (leaf_count >= get_max_leaves()) {
             throw std::out_of_range{"leaf count is greater than or equal to max leaves"};
         }

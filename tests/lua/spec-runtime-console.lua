@@ -20,6 +20,47 @@ local function create_local_machine(...)
     return cartesi.machine(...)
 end
 
+-- Execute one guest MMIO load or store; the host memory API cannot access devices.
+local function virtio_mmio(machine, offset, value)
+    local instruction = value == nil and (0x00056603 | (offset << 20)) -- lwu a2, offset(a0)
+        or (0x00b52023 | ((offset >> 5) << 25) | ((offset & 31) << 7)) -- sw a1, offset(a0)
+    machine:write_memory(cartesi.AR_RAM_START, string.pack("<I4", instruction))
+    machine:write_reg("pc", cartesi.AR_RAM_START)
+    machine:write_reg("x10", cartesi.AR_FIRST_VIRTIO_START)
+    if value ~= nil then
+        machine:write_reg("x11", value)
+    end
+    local cycle_end = machine:read_reg("mcycle") + 1
+    machine:run(cycle_end)
+    expect.equal(machine:read_reg("mcycle"), cycle_end)
+    return machine:read_reg("x12")
+end
+
+local function configure_virtio_console_queue(machine, num, descriptors)
+    local ram = cartesi.AR_RAM_START
+    machine:write_memory(ram + 0x1000, descriptors)
+    machine:write_memory(ram + 0x2000, string.pack("<I2I2I2", 0, 1, 0)) -- One available chain, headed by descriptor 0.
+    machine:write_memory(ram + 0x3000, string.rep("\0", 4 + 8 * math.max(num, 1)))
+    for _, register in ipairs({
+        { 0x070, 0 }, -- Reset.
+        { 0x070, 3 }, -- ACKNOWLEDGE | DRIVER.
+        { 0x024, 0 },
+        { 0x020, 1 }, -- Negotiate VIRTIO_CONSOLE_F_SIZE.
+        { 0x024, 1 },
+        { 0x020, 1 }, -- Negotiate VIRTIO_F_VERSION_1.
+        { 0x070, 11 }, -- FEATURES_OK.
+        { 0x030, 1 }, -- Transmit queue.
+        { 0x038, num },
+        { 0x080, ram + 0x1000 }, -- Descriptor table.
+        { 0x090, ram + 0x2000 }, -- Available ring.
+        { 0x0a0, ram + 0x3000 }, -- Used ring.
+        { 0x044, 1 }, -- QueueReady.
+        { 0x070, 15 }, -- DRIVER_OK.
+    }) do
+        virtio_mmio(machine, register[1], register[2])
+    end
+end
+
 describe("runtime console io", function()
     for _, desc in ipairs({
         {
@@ -51,6 +92,62 @@ describe("runtime console io", function()
                     },
                 },
             })
+
+            describe("VirtIO descriptor chains", function()
+                local function make_machine()
+                    return create_machine({
+                        ram = { length = 0x10000 },
+                        processor = { registers = { iunrep = 1 } },
+                        virtio = { { type = "console" } },
+                    }, { console = { output_destination = "to_buffer" } })
+                end
+
+                it("should reject cyclic chains without exceeding the run limit", function()
+                    for _, num in ipairs({ 1, 2 }) do
+                        local machine <close> = make_machine()
+                        local descriptors = {}
+                        for index = 0, num - 1 do
+                            descriptors[#descriptors + 1] = string.pack("<I8I4I2I2", 0, 0, 1, (index + 1) % num)
+                        end
+                        configure_virtio_console_queue(machine, num, table.concat(descriptors))
+                        virtio_mmio(machine, 0x050, 1)
+                        expect.equal(virtio_mmio(machine, 0x070) & 64, 64) -- DEVICE_NEEDS_RESET.
+                        expect.equal(string.unpack("<I2", machine:read_memory(cartesi.AR_RAM_START + 0x3002, 2)), 0)
+                    end
+                end)
+
+                it("should process chains using every configured descriptor", function()
+                    local probe <close> = make_machine()
+                    local maximum = virtio_mmio(probe, 0x034) -- QueueNumMax is supplied by the device.
+                    for _, num in ipairs({ 1, 2, maximum }) do
+                        local machine <close> = make_machine()
+                        local descriptors = {}
+                        for index = 0, num - 1 do
+                            descriptors[#descriptors + 1] = string.pack(
+                                "<I8I4I2I2",
+                                cartesi.AR_RAM_START + 0x4000 + index,
+                                1,
+                                index + 1 < num and 1 or 0,
+                                index + 1
+                            )
+                        end
+                        machine:write_memory(cartesi.AR_RAM_START + 0x4000, string.rep("x", num))
+                        configure_virtio_console_queue(machine, num, table.concat(descriptors))
+                        virtio_mmio(machine, 0x050, 1)
+                        expect.equal(virtio_mmio(machine, 0x070) & 64, 0)
+                        expect.equal(string.unpack("<I2", machine:read_memory(cartesi.AR_RAM_START + 0x3002, 2)), 1)
+                        expect.equal(machine:read_console_output(), string.rep("x", num))
+                    end
+                end)
+
+                it("should reject a ready queue with zero descriptors", function()
+                    local machine <close> = make_machine()
+                    configure_virtio_console_queue(machine, 0, string.pack("<I8I4I2I2", 0, 0, 0, 0))
+                    virtio_mmio(machine, 0x050, 1)
+                    expect.equal(virtio_mmio(machine, 0x070) & 64, 64)
+                    expect.equal(string.unpack("<I2", machine:read_memory(cartesi.AR_RAM_START + 0x3002, 2)), 0)
+                end)
+            end)
 
             it("should fail when attempting to use unsupported redirect configurations", function()
                 local machine <close> = create_machine(base_machine_config)

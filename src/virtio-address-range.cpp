@@ -36,7 +36,7 @@
 namespace cartesi {
 
 static inline bool is_power_of_2(uint32_t val) {
-    return (val & (val - 1)) == 0;
+    return val != 0 && (val & (val - 1)) == 0;
 }
 
 static inline void set_low32(uint64_t *paddr, uint32_t val) {
@@ -154,7 +154,7 @@ bool virtq::get_desc_rw_avail_len(i_device_state_access *a, uint16_t desc_idx, u
     uint32_t write_len = 0;
     bool write_part = false;
     bool ret = false;
-    while (true) {
+    for (uint32_t count = 0; count < num; ++count) {
         virtq_desc desc{};
         // Retrieve queue buffer description
         if (!virtq_get_desc(*this, a, desc_idx, &desc)) {
@@ -197,7 +197,7 @@ bool virtq::read_desc_mem(i_device_state_access *a, uint16_t desc_idx, uint32_t 
     const uint32_t end_off = start_off + len;
     uint32_t buf_start_off = 0;
     // Traverse all buffers in queue
-    while (true) {
+    for (uint32_t count = 0; count < num; ++count) {
         virtq_desc desc{};
         // Retrieve queue buffer description
         if (!virtq_get_desc(*this, a, desc_idx, &desc)) {
@@ -233,6 +233,7 @@ bool virtq::read_desc_mem(i_device_state_access *a, uint16_t desc_idx, uint32_t 
         // Move to the next buffer description
         desc_idx = desc.next;
     }
+    return false;
 }
 
 bool virtq::write_desc_mem(i_device_state_access *a, uint16_t desc_idx, uint32_t start_off, const unsigned char *data,
@@ -244,7 +245,7 @@ bool virtq::write_desc_mem(i_device_state_access *a, uint16_t desc_idx, uint32_t
     const uint32_t end_off = start_off + len;
     uint32_t buf_start_off = 0;
     // Traverse all buffers in queue
-    while (true) {
+    for (uint32_t count = 0; count < num; ++count) {
         virtq_desc desc{};
         // Retrieve queue buffer description
         if (!virtq_get_desc(*this, a, desc_idx, &desc)) {
@@ -280,6 +281,7 @@ bool virtq::write_desc_mem(i_device_state_access *a, uint16_t desc_idx, uint32_t
         // Move to the next buffer description
         desc_idx = desc.next;
     }
+    return false;
 }
 
 bool virtq::consume_desc(i_device_state_access *a, uint16_t desc_idx, uint32_t written_len, uint16_t used_flags) {

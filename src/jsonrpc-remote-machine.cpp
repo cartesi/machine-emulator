@@ -325,7 +325,7 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
     void install_termination_signal_handlers() {
         signals.add(SIGINT);
         signals.add(SIGTERM);
-        signals.add(SIGBUS);
+        // Do not defer SIGBUS through Asio: returning from a memory fault handler retries the faulting instruction.
         signals.async_wait(beast::bind_front_handler(&http_handler::on_signal, shared_from_this()));
     }
 

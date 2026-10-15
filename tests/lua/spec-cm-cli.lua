@@ -1647,6 +1647,17 @@ describe("cartesi-machine CLI", function()
         run_ok({ "--no-revert", "--max-mcycle=0", "--no-init-splash", "--quiet" })
         run_fail({ "--revert-mode=invalid" }, "invalid value")
         run_fail({ "--revert-mode=stored" }, "requires")
+
+        local _ <close>, machine_dir = scope_stored_dirname()
+        for _, source in ipairs({ "--load=" .. machine_dir .. ",sharing:all", "--create=" .. machine_dir }) do
+            run_fail({
+                source,
+                "--revert-mode=stored",
+                "--replace-memory-range=label:input",
+                "--max-mcycle=0",
+                "--no-init-splash",
+            }, "cannot be combined with %-%-replace%-memory%-range")
+        end
     end)
 
     it("stored mode rejects a stale backup before boot", function()

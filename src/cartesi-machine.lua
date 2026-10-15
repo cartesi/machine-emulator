@@ -153,6 +153,7 @@ where options are:
 
     stored snapshots a machine loaded from <directory> with sharing:all or
     created with --create=<directory> by cloning it to <directory>.revert.
+    this mode cannot be combined with --replace-memory-range.
     accepted state is synced before the snapshot is removed, and rejected or
     inspected state is replaced by the synced snapshot.
 
@@ -2825,6 +2826,7 @@ if cmdline.revert_mode == "stored" then
     if cmdline.load_dir then
         assert(cmdline.load_sharing == cartesi.SHARING_ALL, "--revert-mode=stored requires --load sharing:all")
     end
+    assert(#cmdline.memory_range_replace == 0, "--revert-mode=stored cannot be combined with --replace-memory-range")
 end
 
 local function wants_computation_hash()

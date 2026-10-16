@@ -804,7 +804,7 @@ public:
     /// \param log Binary step log produced by log_send_cmio_response.
     /// \param revert_root_hash The revert root hash recorded when the log was generated.
     /// \details No caller claim is checked. The dump is for people: its format is not part of the API.
-    static std::string dump_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    static std::string dump_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
         std::span<const unsigned char> log, const_machine_hash_view revert_root_hash);
 
     /// \brief Returns a description of what is at a given target physical address

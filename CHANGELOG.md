@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduced the binary step log to a pure witness: verifiers recompute the root hash before from the log, take the cycle count from the caller where the operation has one, and return the root hash after for the caller to compare
 - Changed `log_step_uarch` and `verify_step_uarch` to take a uarch cycle count, so one log can cover several uarch cycles, and gave `--log-step-uarch` a matching `count:` sub-key
 - Changed `--log-step-uarch` and `--log-reset-uarch` to take a filename and write a binary step log, instead of printing an access log
-- Changed the shared `send_cmio_response` core to take a 64-bit response length, matching the C, Lua, and JSON-RPC APIs
+- Changed the shared `send_cmio_response` core to take a 64-bit response length, matching the Solidity verifier's `uint64 dataLength`; public C, Lua, and JSON-RPC APIs retain 32-bit lengths
 - Changed user-visible wording from "micro" and "microarchitecture" to "uarch", except where the microarchitecture is introduced
 
 ## [0.22.0] - 2026-10-15

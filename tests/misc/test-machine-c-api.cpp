@@ -1611,15 +1611,16 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(send_cmio_response_oversized_length_test, cmio_re
         cm_hash after{};
         BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &after), CM_ERROR_OK);
         BOOST_CHECK_EQUAL(0, memcmp(before, after, sizeof(cm_hash)));
-        const char *log{};
+        const uint8_t *log{};
+        uint64_t log_length{};
         BOOST_REQUIRE_EQUAL(cm_log_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, length,
-                                &before, CM_ACCESS_LOG_TYPE_ANNOTATIONS, &log),
+                                &before, &log, &log_length),
             CM_ERROR_OK);
-        const std::string saved_log(log);
+        const std::vector<uint8_t> saved_log(log, log + log_length);
         BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &after), CM_ERROR_OK);
         BOOST_CHECK_EQUAL(0, memcmp(before, after, sizeof(cm_hash)));
         BOOST_REQUIRE_EQUAL(cm_verify_send_cmio_response(nullptr, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, length,
-                                &before, saved_log.c_str(), &before, &after),
+                                &before, saved_log.data(), saved_log.size(), &before, &after),
             CM_ERROR_OK);
         BOOST_CHECK_EQUAL(0, memcmp(before, after, sizeof(cm_hash)));
     }
@@ -1634,10 +1635,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(send_cmio_response_null_data_test, cmio_request_m
         for (const uint32_t length : {uint32_t{1}, uint32_t{CM_AR_CMIO_RX_BUFFER_LENGTH}}) {
             cm_hash before{};
             BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &before), CM_ERROR_OK);
-            const char *log{};
+            const uint8_t *log{};
+            uint64_t log_length{};
             const auto error = logged ?
-                cm_log_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, length, &before,
-                    CM_ACCESS_LOG_TYPE_ANNOTATIONS, &log) :
+                cm_log_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, length, &before, &log,
+                    &log_length) :
                 cm_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, length, &before);
             BOOST_CHECK_EQUAL(error, CM_ERROR_INVALID_ARGUMENT);
             BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), "invalid data buffer");
@@ -1651,10 +1653,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(send_cmio_response_null_data_test, cmio_request_m
         BOOST_REQUIRE_EQUAL(cm_write_reg(_machine, CM_REG_IFLAGS_Y, 1), CM_ERROR_OK);
         cm_hash before{};
         BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &before), CM_ERROR_OK);
-        const char *log{};
+        const uint8_t *log{};
+        uint64_t log_length{};
         const auto error = logged ?
-            cm_log_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, 0, &before,
-                CM_ACCESS_LOG_TYPE_ANNOTATIONS, &log) :
+            cm_log_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, 0, &before, &log,
+                &log_length) :
             cm_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, 0, &before);
         BOOST_CHECK_EQUAL(error, CM_ERROR_OK);
     }
@@ -1721,9 +1724,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_send_cmio_response_oversized_data_noop_test, 
     BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &root_hash_before), CM_ERROR_OK);
     const std::vector<uint8_t> data(CM_AR_CMIO_RX_BUFFER_LENGTH + 1, 0x5a);
     // The jsonrpc client sends the data itself, so a length the buffer cannot back is local-only
-    std::vector<uint64_t> lengths{data.size()};
+    std::vector<uint32_t> lengths{static_cast<uint32_t>(data.size())};
     if (g_server == nullptr) {
-        lengths.push_back(UINT64_C(1) << 33);
+        lengths.push_back(UINT32_MAX);
     }
     for (const auto length : lengths) {
         const uint8_t *log{};

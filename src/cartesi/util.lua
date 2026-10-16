@@ -14,6 +14,8 @@
 -- with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 --
 
+local cartesi = require("cartesi")
+
 local _M = {}
 
 -- Follows the explicit links of a runner chain to its terminal machine.

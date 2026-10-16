@@ -1435,10 +1435,7 @@ do_test("send_cmio_response is a no-op if iflags.Y is not set", function(machine
     assert(machine:get_root_hash() == root_hash_before)
     local log = machine:log_send_cmio_response(reason, data, revert_root_hash)
     assert(machine:get_root_hash() == root_hash_before)
-    assert(
-        machine:verify_send_cmio_response(reason, data, root_hash_before, log, revert_root_hash)
-            == root_hash_before
-    )
+    assert(machine:verify_send_cmio_response(reason, data, root_hash_before, log, revert_root_hash) == root_hash_before)
 end)
 
 do_test("send_cmio_response is a no-op if data is too big", function(machine)

@@ -32,6 +32,7 @@
 #include "i-uarch-state-access.hpp"
 #include "machine-hash.hpp"
 #include "machine-reg.hpp"
+#include "machine.hpp"
 #include "no-step-log-dumper.hpp"
 #include "scoped-note.hpp"
 #include "shadow-tlb.hpp"
@@ -40,7 +41,6 @@
 #include "strict-aliasing.hpp"
 #include "throw.hpp"
 #include "uarch-constants.hpp"
-#include "uarch-pristine-state-hash.hpp"
 
 namespace cartesi {
 
@@ -151,8 +151,8 @@ private:
     void do_reset_uarch() const {
         auto *node = m_context.log.find_node(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE);
         m_context.dumper.write_hash("uarch.state", UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, node->hash,
-            get_uarch_pristine_state_hash());
-        node->hash = get_uarch_pristine_state_hash();
+            machine::get_uarch_pristine_hash());
+        node->hash = machine::get_uarch_pristine_hash();
     }
 
     void do_revert_state() const {

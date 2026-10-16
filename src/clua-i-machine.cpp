@@ -1439,17 +1439,19 @@ static int machine_obj_index_dump_reset_uarch(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_dump_send_cmio_response(lua_State *L) {
     lua_settop(L, 5);
-    const auto reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
+    const auto reason = clua_check_integer<uint16_t>(L, 2);
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const uint8_t *>(luaL_checklstring(L, 3, &length));
+    luaL_argcheck(L, length <= UINT32_MAX, 3, "CMIO response data length exceeds uint32_t");
     size_t log_length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *log = reinterpret_cast<const uint8_t *>(luaL_checklstring(L, 4, &log_length));
     cm_hash revert_root_hash{};
     clua_check_cm_hash(L, 5, &revert_root_hash);
     const char *dump{};
-    if (cm_dump_send_cmio_response(reason, data, length, log, log_length, &revert_root_hash, &dump) != 0) {
+    if (cm_dump_send_cmio_response(reason, data, static_cast<uint32_t>(length), log, log_length, &revert_root_hash,
+            &dump) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     lua_pushstring(L, dump);

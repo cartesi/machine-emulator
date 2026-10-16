@@ -2177,7 +2177,7 @@ if arg[1] then
         local preceding_leaf = dapp_contract.geometry.periods_per_input + period - 1
         dense_tree:get_proof(preceding_leaf)
         assert(
-            cartesi.machine:verify_step_uarch(dense_tree:get_node_hash(preceding_leaf, 0), logs.step_log)
+            cartesi.machine:verify_step_uarch(dense_tree:get_node_hash(preceding_leaf, 0), logs.step_log, 1)
                 == uarch:get_node_hash(0, 0),
             "cached transition does not match the uarch claim"
         )
@@ -2185,7 +2185,7 @@ if arg[1] then
         uarch:get_proof(reset_offset)
         local reset_logs = dense.event_handler.prove_state_transition(dense, 1, period, reset_offset)
         local after_step =
-            cartesi.machine:verify_step_uarch(uarch:get_node_hash(reset_offset - 1, 0), reset_logs.step_log)
+            cartesi.machine:verify_step_uarch(uarch:get_node_hash(reset_offset - 1, 0), reset_logs.step_log, 1)
         assert(
             cartesi.machine:verify_reset_uarch(after_step, reset_logs.reset_uarch_log)
                 == uarch:get_node_hash(reset_offset, 0),
@@ -2313,7 +2313,7 @@ if arg[1] then
         before
     )
     assert(
-        cartesi.machine:verify_step_uarch(after_send, logs.step_log) == after_chain:get_node_hash(0, 0),
+        cartesi.machine:verify_step_uarch(after_send, logs.step_log, 1) == after_chain:get_node_hash(0, 0),
         "post-chain transition does not authenticate against the claim"
     )
 
@@ -2333,7 +2333,7 @@ if arg[1] then
     final_machine:set_cleanup_call(require("cartesi.jsonrpc").SHUTDOWN)
     final_machine:run_uarch(1)
     assert(
-        cartesi.machine:verify_step_uarch(final_hash, final_logs.step_log) == final_machine:get_root_hash(),
+        cartesi.machine:verify_step_uarch(final_hash, final_logs.step_log, 1) == final_machine:get_root_hash(),
         "sparse recovery lost the accepted input's final state"
     )
     chain_cache.checkpoints = all_checkpoints
@@ -2383,18 +2383,20 @@ if arg[1] then
         "forger lost its replay dependencies"
     )
     local forged_logs = forger.event_handler.prove_state_transition(forger, 0, 0, 0)
-    assert(
-        not pcall(
-            cartesi.machine.verify_send_cmio_response,
-            cartesi.machine,
+    -- A binary CMIO log computes the post-state for the supplied input. The forged
+    -- next-step log must reject that state, exactly as the referee's proof chain does.
+    local ok, err = pcall(function()
+        local contract_after_send = cartesi.machine:verify_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             original_input,
             initial_state_hash,
             forged_logs.send_cmio_log,
             initial_state_hash
-        ),
-        "forged input passed verification against the contract"
-    )
+        )
+        cartesi.machine:verify_step_uarch(contract_after_send, forged_logs.step_log, 1)
+    end)
+    local expected = "root hash before does not match step log"
+    assert(not ok and err:find(expected, 1, true), "forged input did not fail at the proof-chain boundary")
     local forged_state = cartesi.machine:verify_send_cmio_response(
         cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
         util.read_file(forger.input_paths[1]),
@@ -2402,7 +2404,10 @@ if arg[1] then
         forged_logs.send_cmio_log,
         initial_state_hash
     )
-    assert(cartesi.machine:verify_step_uarch(forged_state, forged_logs.step_log), "forged execution proof is malformed")
+    assert(
+        cartesi.machine:verify_step_uarch(forged_state, forged_logs.step_log, 1),
+        "forged execution proof is malformed"
+    )
     do
         local owner <close> = tamperer_cache:nearest_not_past_epoch_input_offset(0)
         local machine = owner.machine
@@ -2449,7 +2454,7 @@ if arg[1] then
             root
         )
         assert(
-            cartesi.machine:verify_step_uarch(payload_after_send, payload_logs.step_log)
+            cartesi.machine:verify_step_uarch(payload_after_send, payload_logs.step_log, 1)
                 == uarch_tree:get_node_hash(0, 0),
             "outgoing length changed the reconstructed input transition"
         )
@@ -2596,14 +2601,14 @@ if arg[1] then
         assert(counts.uarch == 3, terminal .. " opening called the wrong number of uarch builders")
         local terminal_logs = player.event_handler.prove_state_transition(player, 2, 60000, 0)
         assert(
-            cartesi.machine:verify_step_uarch(terminal_root, terminal_logs.step_log) == uarch:get_node_hash(0, 0),
+            cartesi.machine:verify_step_uarch(terminal_root, terminal_logs.step_log, 1) == uarch:get_node_hash(0, 0),
             "terminal step does not authenticate against the claim"
         )
         local reset_offset = cartesi.UARCH_CYCLE_MAX
         uarch:get_proof(reset_offset)
         local reset_logs = player.event_handler.prove_state_transition(player, 2, 60000, reset_offset)
         local after_step =
-            cartesi.machine:verify_step_uarch(uarch:get_node_hash(reset_offset - 1, 0), reset_logs.step_log)
+            cartesi.machine:verify_step_uarch(uarch:get_node_hash(reset_offset - 1, 0), reset_logs.step_log, 1)
         assert(
             cartesi.machine:verify_reset_uarch(after_step, reset_logs.reset_uarch_log)
                 == uarch:get_node_hash(reset_offset, 0),
@@ -2626,7 +2631,7 @@ if arg[1] then
             assert(not boundary_logs.send_cmio_log, "empty epoch invented an input-inclusion log")
         end
         assert(
-            cartesi.machine:verify_step_uarch(boundary_root, boundary_logs.step_log) == boundary:get_node_hash(0, 0),
+            cartesi.machine:verify_step_uarch(boundary_root, boundary_logs.step_log, 1) == boundary:get_node_hash(0, 0),
             "terminal input-boundary proof does not authenticate against the claim"
         )
     end

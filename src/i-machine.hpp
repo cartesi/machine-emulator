@@ -440,8 +440,8 @@ private:
     virtual machine_cmio_request do_receive_cmio_request(std::span<uint8_t> data) const = 0;
     virtual void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
         std::optional<const_machine_hash_view> revert_root_hash) = 0;
-    virtual step_log_data do_log_send_cmio_response(uint16_t reason, const unsigned char *data,
-        uint32_t length, const_machine_hash_view revert_root_hash) = 0;
+    virtual step_log_data do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
+        const_machine_hash_view revert_root_hash) = 0;
     virtual uint64_t do_get_reg_address(reg r) const = 0;
     virtual machine_hash do_get_uarch_pristine_hash() const = 0;
     virtual machine_config do_get_default_config() const = 0;

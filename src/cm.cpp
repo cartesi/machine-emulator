@@ -1469,7 +1469,7 @@ cm_error cm_dump_reset_uarch(const uint8_t *log, uint64_t log_length, const char
     return cm_result_failure();
 }
 
-cm_error cm_dump_send_cmio_response(uint16_t reason, const uint8_t *data, uint64_t length, const uint8_t *log,
+cm_error cm_dump_send_cmio_response(uint16_t reason, const uint8_t *data, uint32_t length, const uint8_t *log,
     uint64_t log_length, const cm_hash *revert_root_hash, const char **dump) try {
     if (dump == nullptr) {
         throw std::invalid_argument("invalid dump output");

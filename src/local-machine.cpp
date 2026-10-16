@@ -244,8 +244,8 @@ void local_machine::do_send_cmio_response(uint16_t reason, const unsigned char *
     get_machine()->send_cmio_response(reason, data, length, revert_root_hash);
 }
 
-step_log_data local_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data,
-    uint32_t length, const_machine_hash_view revert_root_hash) {
+step_log_data local_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
+    const_machine_hash_view revert_root_hash) {
     return get_machine()->log_send_cmio_response(reason, data, length, revert_root_hash);
 }
 

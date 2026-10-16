@@ -2044,7 +2044,7 @@ machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned 
     return a.finish(false);
 }
 
-std::string machine::dump_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+std::string machine::dump_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
     std::span<const unsigned char> log, const_machine_hash_view revert_root_hash) {
     step_log_data image(log.begin(), log.end()); // the replay mutates the image in place
     replay_step_state_access<step_log_dumper>::context context;

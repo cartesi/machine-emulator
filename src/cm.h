@@ -1191,7 +1191,7 @@ CM_API cm_error cm_dump_reset_uarch(const uint8_t *log, uint64_t log_length, con
 /// called from the same thread. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
 /// \details No caller claim is checked. The dump is meant for people: its format is not part of the stable API.
-CM_API cm_error cm_dump_send_cmio_response(uint16_t reason, const uint8_t *data, uint64_t length, const uint8_t *log,
+CM_API cm_error cm_dump_send_cmio_response(uint16_t reason, const uint8_t *data, uint32_t length, const uint8_t *log,
     uint64_t log_length, const cm_hash *revert_root_hash, const char **dump);
 
 // ------------------------------------

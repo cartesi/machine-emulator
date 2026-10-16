@@ -976,8 +976,8 @@ void jsonrpc_machine::do_send_cmio_response(uint16_t reason, const unsigned char
     }
 }
 
-step_log_data jsonrpc_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data,
-    uint32_t length, const_machine_hash_view revert_root_hash) {
+step_log_data jsonrpc_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
+    const_machine_hash_view revert_root_hash) {
     step_log_data result;
     std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
     auto b64_revert_root_hash = encode_base64(revert_root_hash);

@@ -194,10 +194,10 @@ for _, case in ipairs({
     if case.last then
         pair.machine:run_uarch(cartesi.UARCH_CYCLE_MAX)
     elseif case.agree then
-        pair.machine:log_step_uarch()
+        pair.machine:log_step_uarch(1)
     end
     local root_hash_before = pair.machine:get_root_hash()
-    local log = { step_log = pair.machine:log_step_uarch() }
+    local log = { step_log = pair.machine:log_step_uarch(1) }
     if case.last then
         log.reset_uarch_log = pair.machine:log_reset_uarch()
     end
@@ -648,7 +648,7 @@ for uarch_cycle = 0, 1 do
     )
     local uarch <close> = player:new_machine_pair_at_epoch_input_offset(0)
     vg.load_cmio_input(uarch.machine, player.inputs[1], initial_hash)
-    uarch.machine:log_step_uarch()
+    uarch.machine:log_step_uarch(1)
     local after_uarch = uarch.machine:get_root_hash()
     assert(
         vg.event_handler.reveal_bisection(
@@ -660,7 +660,7 @@ for uarch_cycle = 0, 1 do
     local root_hash_before = initial_hash
     if uarch_cycle == 1 then
         root_hash_before = after_uarch
-        uarch.machine:log_step_uarch()
+        uarch.machine:log_step_uarch(1)
         after_uarch = uarch.machine:get_root_hash()
     end
     local agreed, tentative = player.agreed_pair, player.tentative_pair
@@ -702,7 +702,7 @@ do
             logs.send_cmio_log =
                 machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input, root_hash_before)
         end
-        logs.step_log = machine:log_step_uarch()
+        logs.step_log = machine:log_step_uarch(1)
         if cycle == cartesi.UARCH_CYCLE_MAX then
             logs.reset_uarch_log = machine:log_reset_uarch()
         end
@@ -760,7 +760,7 @@ do
     -- period still has its halted tail and reset, even at a fixed mcycle state.
     local absent <close> = player:new_machine_pair_at_epoch_input_offset(0)
     local root_hash_before = absent.machine:get_root_hash()
-    local step = absent.machine:log_step_uarch()
+    local step = absent.machine:log_step_uarch(1)
     assert(
         vg.validate_state_transition_response({ inputs = {} }, root_hash_before, 0, 0, 0, { step_log = step })
             == absent.machine:get_root_hash()

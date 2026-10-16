@@ -312,8 +312,8 @@ do_test("proof  and root hash should match", function(machine)
 
     machine:write_memory(0x8000000F, "mydataol12345678", 0x10)
 
-    local verify = machine:verify_hash_tree()
-    assert(verify, "verify hash tree failed")
+    local verified_root_hash = machine:verify_hash_tree()
+    assert(verified_root_hash == machine:get_root_hash(), "verify hash tree failed")
 
     -- Find proof for first KB of ram
     local ram_proof = machine:get_proof(ram_address_start, 10)

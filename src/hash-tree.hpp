@@ -175,7 +175,17 @@ public:
     /// \brief Evicts cached pages that are clean in the address range's dirty-page tree
     void evict_clean_pages(const address_range &ar);
 
-    bool verify(address_ranges ars) const;
+    /// \brief Verifies what an update could repair before it is detected
+    /// \details Throws if any dirty page tree has a dirty node with a clean parent, or if any page hash-tree cache
+    /// entry has a hash tree that does not match its page data, or page data that does not match memory while its
+    /// page is clean.
+    void verify_before_update(address_ranges ars) const;
+
+    /// \brief Verifies every node against the contents of the address ranges
+    /// \details Throws if any node in the sparse tree, the dense trees, or the page hash-tree cache does not match
+    /// memory, or if any dirty page tree has a dirty node with a clean parent.
+    /// All pages must have been updated.
+    void verify(address_ranges ars) const;
 
     machine_hash get_root_hash() const noexcept;
     machine_hash get_node_hash(address_ranges ars, uint64_t address, int log2_size);
@@ -210,6 +220,9 @@ private:
     void update_and_clear_dense_node_entries(dense_node_entries &batch, int log2_size);
 
     const_machine_hash_view get_sparse_node_hash_view(index_type node_index, int log2_size) const noexcept;
+
+    /// \brief Verifies page hash-tree cache entries against their page data, and against memory for clean pages
+    void verify_page_cache(address_ranges ars) const;
     bool update_sparse_tree(address_ranges ars, const changed_address_ranges &changed_ars);
 
     template <std::random_access_iterator Iter, std::sentinel_for<Iter> Sent>

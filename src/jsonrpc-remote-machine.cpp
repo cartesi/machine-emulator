@@ -1304,7 +1304,8 @@ static json jsonrpc_machine_verify_hash_tree_handler(const json &j, const std::s
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, session->handler->machine->verify_hash_tree());
+    auto hash = session->handler->machine->verify_hash_tree();
+    return jsonrpc_response_ok(j, cartesi::base64_machine_hash(hash));
 }
 
 /// \brief JSONRPC handler for the machine.get_root_hash method

@@ -78,10 +78,10 @@ local function expect_consistent_proof(proof, hash_fn)
 end
 
 local function expect_consistent_root_hash(machine)
-    expect.truthy(machine:verify_hash_tree())
-    local root_hash = machine:get_root_hash()
+    local root_hash = machine:verify_hash_tree()
+    expect.equal(machine:get_root_hash(), root_hash)
     local external_root_hash = tests_util.calculate_emulator_hash(machine)
-    expect.truthy(machine:verify_hash_tree())
+    expect.equal(machine:verify_hash_tree(), root_hash)
     local node_hash = machine:get_node_hash(0, cartesi.HASH_TREE_LOG2_ROOT_SIZE)
     expect.truthy(root_hash == node_hash)
     expect.equal(root_hash, external_root_hash)
@@ -272,6 +272,197 @@ describe("hash tree", function()
                             expect_consistent_root_hash(temp_machine)
                             temp_machine:run()
                             expect_consistent_root_hash(temp_machine)
+                        end
+                    end)
+
+                    describe("verify_hash_tree with corrupted stored hash tree", function()
+                        local HASH_SIZE = 32
+                        -- left, right, parent, log2_size, marked, hash
+                        local SPARSE_NODE_SIZE = 64
+                        -- tag and LRU list
+                        local PHTC_HEADER_SIZE = 32
+                        -- LRU list hook, page, page hash tree
+                        local PHTC_ENTRY_SIZE = 16 + PAGE_SIZE + 2 * (PAGE_SIZE // WORD_SIZE) * HASH_SIZE
+                        local ram_length = 0x10000
+                        local flash_drive_start = 0x90000000
+                        local flash_drive_length = 3 * PAGE_SIZE
+                        local target_page = cartesi.AR_RAM_START + PAGE_SIZE
+                        local stored_dirname = filesystem.temp_pathname()
+                        local _ <close> = tests_util.scope_exit(function()
+                            cartesi.machine:remove_stored(stored_dirname)
+                        end)
+                        local root_hash
+                        do
+                            local stored <close> = make_machine({ flash_drive_length = flash_drive_length })
+                            stored:write_memory(target_page, "target page")
+                            -- Brings target page into page hash-tree cache
+                            stored:get_proof(target_page, LOG2_WORD_SIZE)
+                            root_hash = stored:get_root_hash()
+                            stored:store(stored_dirname, cartesi.SHARING_ALL)
+                        end
+
+                        local function range_filename(start, length, extension)
+                            return string.format("%016x-%x.%s", start, length, extension)
+                        end
+                        local ram_dht = range_filename(cartesi.AR_RAM_START, ram_length, "dht")
+                        local ram_dpt = range_filename(cartesi.AR_RAM_START, ram_length, "dpt")
+                        local flash_drive_dht = range_filename(flash_drive_start, flash_drive_length, "dht")
+
+                        local function find_cache_entry(dirname, paddr_page)
+                            local f <close> = assert(io.open(dirname .. "/hash_tree.phtc", "rb"))
+                            local data = f:read("a")
+                            for offset = PHTC_HEADER_SIZE, #data - PHTC_ENTRY_SIZE, PHTC_ENTRY_SIZE do
+                                -- Page address is stored in unused first hash of page hash tree
+                                if string.unpack("<I8", data, offset + 16 + PAGE_SIZE + 1) == paddr_page then
+                                    return offset
+                                end
+                            end
+                            error("page not in page hash-tree cache")
+                        end
+
+                        local function overwrite(dirname, filename, offset, data)
+                            local f <close> = assert(io.open(dirname .. "/" .. filename, "r+b"))
+                            assert(f:seek("set", offset))
+                            assert(f:write(data))
+                        end
+
+                        local function load_corrupted(corruption)
+                            local dirname = filesystem.temp_pathname()
+                            local _ <close> = tests_util.scope_exit(function()
+                                cartesi.machine:remove_stored(dirname)
+                            end)
+                            cartesi.machine:clone_stored(stored_dirname, dirname)
+                            if corruption then
+                                overwrite(dirname, corruption(dirname))
+                            end
+                            return cartesi.machine(dirname)
+                        end
+
+                        local bad_hash = string.rep("\xaa", HASH_SIZE)
+                        local function cache_tree_offset(dirname)
+                            return find_cache_entry(dirname, target_page) + 16 + PAGE_SIZE
+                        end
+
+                        it("should return root hash of uncorrupted machine", function()
+                            local loaded <close> = load_corrupted()
+                            expect.equal(loaded:verify_hash_tree(), root_hash)
+                        end)
+
+                        it("should repair sparse leaf node from dense root", function()
+                            local loaded <close> = load_corrupted(function()
+                                return "hash_tree.sht", 2 * SPARSE_NODE_SIZE + 32, bad_hash
+                            end)
+                            expect.equal(loaded:verify_hash_tree(), root_hash)
+                        end)
+
+                        for _, case in ipairs({
+                            {
+                                what = "dense root",
+                                corruption = function()
+                                    return ram_dht, HASH_SIZE, bad_hash
+                                end,
+                                message = "dense hash tree node at address 0x80000000 with log2_size 16 (in RAM) "
+                                    .. "does not match its children",
+                            },
+                            {
+                                what = "dense inner node",
+                                corruption = function()
+                                    return ram_dht, 2 * HASH_SIZE, bad_hash
+                                end,
+                                message = "dense hash tree node at address 0x80000000 with log2_size 15 (in RAM) "
+                                    .. "does not match its children",
+                            },
+                            {
+                                what = "dense page node",
+                                corruption = function()
+                                    return ram_dht, (16 + 1) * HASH_SIZE, bad_hash
+                                end,
+                                message = "dense hash tree node at address 0x80001000 with log2_size 12 (in RAM) "
+                                    .. "does not match memory",
+                            },
+                            {
+                                what = "dense padding page node",
+                                corruption = function()
+                                    return flash_drive_dht, (4 + 3) * HASH_SIZE, bad_hash
+                                end,
+                                message = "dense hash tree node at address 0x90003000 with log2_size 12 "
+                                    .. "(in flash drive 0) does not match memory",
+                            },
+                            {
+                                what = "dirty node under clean parent",
+                                corruption = function()
+                                    return ram_dpt, 8, "\1"
+                                end,
+                                message = "dirty page tree node at address 0x80000000 with log2_size 13 (in RAM) "
+                                    .. "is dirty but its parent is clean",
+                            },
+                            {
+                                what = "dirty page under clean parent",
+                                corruption = function()
+                                    return ram_dpt, 16, "\1"
+                                end,
+                                message = "dirty page tree node at address 0x80000000 with log2_size 12 (in RAM) "
+                                    .. "is dirty but its parent is clean",
+                            },
+                            {
+                                what = "sparse root",
+                                corruption = function()
+                                    return "hash_tree.sht", SPARSE_NODE_SIZE + 32, bad_hash
+                                end,
+                                message = "sparse hash tree node 1 with log2_size 64 does not match its children",
+                            },
+                            {
+                                what = "cached page data",
+                                corruption = function(dirname)
+                                    return "hash_tree.phtc", find_cache_entry(dirname, target_page) + 16, "\xaa"
+                                end,
+                                message = "page hash-tree cache entry for page 0x80001000 "
+                                    .. "has page data that does not match memory",
+                            },
+                            {
+                                what = "cached page data of dirty page",
+                                corruption = function(dirname)
+                                    -- Marks target page and its ancestors dirty
+                                    for _, index in ipairs({ 1, 2, 4, 8, 16 + 1 }) do
+                                        overwrite(dirname, ram_dpt, index, "\1")
+                                    end
+                                    return "hash_tree.phtc", find_cache_entry(dirname, target_page) + 16, "\xaa"
+                                end,
+                                message = "page hash-tree cache entry for page 0x80001000 "
+                                    .. "has a word hash that does not match its page data",
+                            },
+                            {
+                                what = "cached page root",
+                                corruption = function(dirname)
+                                    return "hash_tree.phtc", cache_tree_offset(dirname) + HASH_SIZE, bad_hash
+                                end,
+                                message = "page hash-tree cache entry for page 0x80001000 "
+                                    .. "has an inner hash that does not match its children",
+                            },
+                            {
+                                what = "cached word hash",
+                                corruption = function(dirname)
+                                    local first_leaf_offset = (PAGE_SIZE // WORD_SIZE) * HASH_SIZE
+                                    return "hash_tree.phtc", cache_tree_offset(dirname) + first_leaf_offset, bad_hash
+                                end,
+                                message = "page hash-tree cache entry for page 0x80001000 "
+                                    .. "has a word hash that does not match its page data",
+                            },
+                            {
+                                what = "cached borrowed flag",
+                                corruption = function(dirname)
+                                    -- Borrowed flag is stored after page address
+                                    return "hash_tree.phtc", cache_tree_offset(dirname) + 8, "\1"
+                                end,
+                                message = "page hash-tree cache entry for page 0x80001000 is borrowed",
+                            },
+                        }) do
+                            it("should fail on corrupted " .. case.what, function()
+                                local loaded <close> = load_corrupted(case.corruption)
+                                expect.fail(function()
+                                    loaded:verify_hash_tree()
+                                end, case.message)
+                            end)
                         end
                     end)
                 end

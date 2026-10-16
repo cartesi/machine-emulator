@@ -982,11 +982,11 @@ static int machine_obj_index_sync_stored(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_verify_hash_tree(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    bool result{};
-    if (cm_verify_hash_tree(m.get(), &result) != 0) {
+    cm_hash root_hash{};
+    if (cm_verify_hash_tree(m.get(), &root_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    lua_pushboolean(L, static_cast<int>(result));
+    clua_push_cm_hash(L, &root_hash);
     return 1;
 }
 

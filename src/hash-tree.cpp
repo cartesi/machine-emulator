@@ -26,10 +26,13 @@
 #include <functional>
 #include <iostream>
 #include <iterator>
+#include <optional>
 #include <queue>
 #include <ranges>
 #include <span>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -647,70 +650,121 @@ machine_hash hash_tree::get_node_hash(address_ranges ars, uint64_t address, int 
     }
 }
 
-bool hash_tree::verify(address_ranges ars) const {
-    variant_hasher h{m_hash_function};
-    bool ret = true;
-    for (auto ar_node_index = get_ar_sparse_node_index(0); const auto &ar : ars) {
-        const std::span<const unsigned char> mem{ar.get_host_memory(), static_cast<size_t>(ar.get_length())};
-        const auto &dht = ar.get_dense_hash_tree();
-        const auto &dpt = ar.get_dirty_page_tree();
-        auto ar_actually_dirty = false;
-        for (uint64_t offset = 0; offset < ar.get_length(); offset += HASH_TREE_PAGE_SIZE) {
-            auto paddr_page = ar.get_start() + offset;
-            auto page = mem.subspan(offset, HASH_TREE_PAGE_SIZE);
-            auto page_hash = get_merkle_tree_hash(h, page, HASH_TREE_WORD_SIZE);
-            auto actually_dirty = !std::ranges::equal(page_hash, dht.node_hash_view(offset, HASH_TREE_LOG2_PAGE_SIZE));
-            ar_actually_dirty = ar_actually_dirty || actually_dirty;
-            auto marked_dirty = dpt.is_node_dirty(offset, HASH_TREE_LOG2_PAGE_SIZE);
-            // LCOV_EXCL_START
-            if (actually_dirty != marked_dirty) {
-                if (!marked_dirty) {
-                    ret = false;
-                    std::cerr << "page 0x" << std::hex << std::uppercase << paddr_page << " (in "
-                              << ar.get_description() << ") is " << (marked_dirty ? "" : "not ")
-                              << "marked dirty but is " << (actually_dirty ? "" : "not ") << "dirty\n";
-                    // check page in cache it is there
-                    auto opt_br = m_page_cache.borrow_entry_if_hit(paddr_page);
-                    if (opt_br) {
-                        auto &cache_entry = opt_br->get();
+static std::string describe_node(std::string_view tree, uint64_t address, int log2_size) {
+    return std::string{tree}
+        .append(" node at address ")
+        .append(to_hex_string(address))
+        .append(" with log2_size ")
+        .append(std::to_string(log2_size));
+}
 
-                        if (!std::ranges::equal(page_hash, cache_entry.root_hash_view())) {
-                            std::cerr << "    cached page root hash mismatch\n";
-                        }
-                        const page_hash_tree_cache::page_view entry_page{cache_entry.get_page()};
-                        for (auto word_offset = 0UL; word_offset < HASH_TREE_PAGE_SIZE;
-                            word_offset += HASH_TREE_WORD_SIZE) {
-                            const auto page_word = page.subspan(word_offset, HASH_TREE_WORD_SIZE);
-                            const auto entry_word = entry_page.subspan(word_offset, HASH_TREE_WORD_SIZE);
-                            if (!std::ranges::equal(page_word, entry_word)) {
-                                std::cerr << "    word 0x" << std::hex << std::uppercase << (paddr_page + word_offset)
-                                          << " differs\n";
-                            }
-                        }
-                        page_hash_tree_cache::return_entry(cache_entry);
-                    }
-                    std::cerr << "! FAILED!\n";
+// Marking a page dirty stops at the first dirty ancestor, so dirty nodes must have dirty parents
+static void verify_dirty_page_tree(const address_range &ar) {
+    const auto &dpt = ar.get_dirty_page_tree();
+    const int ar_log2_size = HASH_TREE_LOG2_PAGE_SIZE + ar.get_level_count() - 1;
+    const auto ar_size = UINT64_C(1) << ar_log2_size;
+    for (int log2_size = HASH_TREE_LOG2_PAGE_SIZE; log2_size < ar_log2_size; ++log2_size) {
+        const auto node_size = UINT64_C(1) << log2_size;
+        for (uint64_t offset = 0; offset < ar_size; offset += node_size) {
+            if (dpt.is_node_dirty(offset, log2_size) &&
+                !dpt.is_node_dirty(get_aligned_address(offset, log2_size + 1), log2_size + 1)) {
+                throw std::runtime_error{describe_node("dirty page tree", ar.get_start() + offset, log2_size)
+                        .append(" (in ")
+                        .append(ar.get_description())
+                        .append(") is dirty but its parent is clean")};
+            }
+        }
+    }
+}
+
+void hash_tree::verify_page_cache(address_ranges ars) const {
+    variant_hasher h{m_hash_function};
+    m_page_cache.verify(h, [&ars](uint64_t paddr_page) -> std::optional<std::span<const unsigned char>> {
+        for (const auto &ar : ars) {
+            if (ar.contains_absolute(paddr_page, HASH_TREE_PAGE_SIZE)) {
+                const auto offset = paddr_page - ar.get_start();
+                if (ar.get_dirty_page_tree().is_node_dirty(offset, HASH_TREE_LOG2_PAGE_SIZE)) {
+                    return std::span<const unsigned char>{};
+                }
+                return std::span{ar.get_host_memory() + offset, HASH_TREE_PAGE_SIZE};
+            }
+        }
+        return {};
+    });
+}
+
+void hash_tree::verify_before_update(address_ranges ars) const {
+    for (const auto &ar : ars) {
+        verify_dirty_page_tree(ar);
+    }
+    verify_page_cache(ars);
+}
+
+void hash_tree::verify(address_ranges ars) const {
+    variant_hasher h{m_hash_function};
+    for (int ar_index = 0; const auto &ar : ars) {
+        const auto start = ar.get_start();
+        const auto length = ar.get_length();
+        const auto *base = ar.get_host_memory();
+        if (base == nullptr) {
+            throw std::runtime_error{"hash tree address range "s.append(ar.get_description()).append(" has no memory")};
+        }
+        const auto &dht = ar.get_dense_hash_tree();
+        const int ar_log2_size = HASH_TREE_LOG2_PAGE_SIZE + ar.get_level_count() - 1;
+        const auto ar_size = UINT64_C(1) << ar_log2_size;
+        // Pages hash to their contents in memory, or to pristine past the end of the address range
+        for (uint64_t offset = 0; offset < ar_size; offset += HASH_TREE_PAGE_SIZE) {
+            const auto expected = offset < length ?
+                get_merkle_tree_hash(h, std::span{base + offset, HASH_TREE_PAGE_SIZE}, HASH_TREE_WORD_SIZE) :
+                m_pristine_hashes[HASH_TREE_LOG2_PAGE_SIZE];
+            if (!std::ranges::equal(expected, dht.node_hash_view(offset, HASH_TREE_LOG2_PAGE_SIZE))) {
+                throw std::runtime_error{describe_node("dense hash tree", start + offset, HASH_TREE_LOG2_PAGE_SIZE)
+                        .append(" (in ")
+                        .append(ar.get_description())
+                        .append(") does not match memory")};
+            }
+        }
+        // Inner nodes hash to their children
+        for (int log2_size = HASH_TREE_LOG2_PAGE_SIZE + 1; log2_size <= ar_log2_size; ++log2_size) {
+            const auto child_size = UINT64_C(1) << (log2_size - 1);
+            for (uint64_t offset = 0; offset < ar_size; offset += 2 * child_size) {
+                const auto expected = get_concat_hash(h, dht.node_hash_view(offset, log2_size - 1),
+                    dht.node_hash_view(offset + child_size, log2_size - 1));
+                if (!std::ranges::equal(expected, dht.node_hash_view(offset, log2_size))) {
+                    throw std::runtime_error{describe_node("dense hash tree", start + offset, log2_size)
+                            .append(" (in ")
+                            .append(ar.get_description())
+                            .append(") does not match its children")};
                 }
             }
         }
-        const int ar_log2_size = HASH_TREE_LOG2_PAGE_SIZE + ar.get_level_count() - 1;
-        auto ar_marked_dirty = dpt.is_node_dirty(0, ar_log2_size);
-        if (ar_actually_dirty != ar_marked_dirty) {
-            if (!ar_marked_dirty) {
-                ret = false;
-                std::cerr << ar.get_description() << " is " << (ar_marked_dirty ? "" : "not ") << "marked dirty but is "
-                          << (ar_actually_dirty ? "" : "not ") << "dirty";
-                std::cerr << "! FAILED!\n";
-            }
+        verify_dirty_page_tree(ar);
+        // Address-range leaf-nodes in the sparse tree hold the roots of the dense trees
+        if (!std::ranges::equal(m_sparse_nodes[get_ar_sparse_node_index(ar_index)].hash, dht.root_hash_view())) {
+            throw std::runtime_error{describe_node("sparse hash tree", start, ar_log2_size)
+                    .append(" (in ")
+                    .append(ar.get_description())
+                    .append(") does not match dense hash tree root")};
         }
-        const auto &ar_node = m_sparse_nodes[ar_node_index];
-        if (!std::ranges::equal(ar_node.hash, dht.node_hash_view(0, ar_log2_size))) {
-            std::cerr << ar.get_description() << " dense hash tree root does not match sparse node hash\n";
-        }
-        // LCOV_EXCL_STOP
-        ++ar_node_index;
+        ++ar_index;
     }
-    return ret;
+    // Inner nodes in the sparse tree hash to their children, or to pristine where they have none
+    for (index_type node_index = 1; std::cmp_less(node_index, m_sparse_nodes.size()); ++node_index) {
+        const auto &node = m_sparse_nodes[node_index];
+        if (is_ar_node(node)) {
+            continue;
+        }
+        const int log2_size = static_cast<int>(node.log2_size);
+        const auto expected = get_concat_hash(h, get_sparse_node_hash_view(node.left, log2_size - 1),
+            get_sparse_node_hash_view(node.right, log2_size - 1));
+        if (!std::ranges::equal(expected, node.hash)) {
+            throw std::runtime_error{"sparse hash tree node "s.append(std::to_string(node_index))
+                    .append(" with log2_size ")
+                    .append(std::to_string(log2_size))
+                    .append(" does not match its children")};
+        }
+    }
+    verify_page_cache(ars);
 }
 
 bool hash_tree::update(address_ranges ars) {

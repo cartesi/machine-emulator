@@ -174,8 +174,8 @@ public:
         return do_get_node_hash(address, log2_size);
     }
 
-    /// \brief Verifies integrity of hash tree.
-    bool verify_hash_tree() const {
+    /// \brief Verifies integrity of hash tree and obtains its root hash.
+    machine_hash verify_hash_tree() const {
         return do_verify_hash_tree();
     }
 
@@ -450,7 +450,7 @@ private:
     virtual machine_hash do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
         const_machine_hash_view root_hash_before, const access_log &log,
         const_machine_hash_view revert_root_hash) const = 0;
-    virtual bool do_verify_hash_tree() const = 0;
+    virtual machine_hash do_verify_hash_tree() const = 0;
     virtual bool do_is_jsonrpc_machine() const {
         return false;
     }

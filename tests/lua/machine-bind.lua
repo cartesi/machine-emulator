@@ -545,9 +545,9 @@ do_test("should return default machine config", function(machine)
 end)
 
 print("\n\n test verifying integrity of the hash tree")
-do_test("verify_hash_tree should return true", function(machine)
+do_test("verify_hash_tree should return root hash", function(machine)
     -- Verify starting hash tree
-    assert(machine:verify_hash_tree(), "error, non consistent hash tree")
+    assert(machine:verify_hash_tree() == machine:get_root_hash(), "error, non consistent hash tree")
 end)
 
 print("\n\n test calculation of initial root hash")

@@ -1189,13 +1189,13 @@
     },
     {
       "name": "machine.verify_hash_tree",
-      "summary": "Verifies sanity of hash tree",
+      "summary": "Updates the hash tree, verifies it against the current machine state, and obtains its root hash",
       "params": [],
       "result": {
-        "name": "valid",
-        "description": "True if hash tree is sane",
+        "name": "hash",
+        "description": "Root hash",
         "schema": {
-          "type": "boolean"
+          "$ref": "#/components/schemas/Base64Hash"
         }
       }
     },

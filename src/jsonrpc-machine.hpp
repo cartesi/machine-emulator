@@ -152,7 +152,7 @@ private:
     void do_write_word(uint64_t address, uint64_t value) override;
     machine_config do_get_initial_config() const override;
     hash_tree_stats do_get_hash_tree_stats(bool clear) override;
-    bool do_verify_hash_tree() const override;
+    machine_hash do_verify_hash_tree() const override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
     uarch_cycle_root_hashes do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
         int32_t log2_bundle_uarch_cycle_count, const machine_hashes &revert_uarch_tail) override;

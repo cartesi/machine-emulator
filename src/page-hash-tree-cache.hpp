@@ -31,6 +31,9 @@
 #include <optional>
 #include <ranges>
 #include <span>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -378,35 +381,57 @@ public:
         return true;
     }
 
-    template <IHasher H>
+    /// \brief Verifies all entries against memory
+    /// \tparam H Hasher type
+    /// \tparam F Function type
+    /// \param h Hasher object
+    /// \param get_clean_memory_page Function that returns the page in memory at a given address, an empty span if the
+    /// page is dirty and may differ from memory, or nothing if no address range contains the page
+    /// \details Throws if any entry is borrowed, is not indexed by its page address, has page data that does not
+    /// match memory while its page is clean, or has a hash tree that does not match its page data.
+    template <IHasher H, typename F>
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
-    bool verify_entry(H &&h, entry &e) noexcept {
-        std::cerr << "verifying entry\n";
-        const page_view entry_page{e.get_page()};
-        auto &page_tree = e.get_page_hash_tree();
-        for (int offset = 0, index = m_page_word_count; offset < m_page_size; offset += m_word_size, ++index) {
-            const auto page_word = std::span<const unsigned char, m_word_size>{entry_page.subspan(offset, m_word_size)};
-            const auto page_word_hash = get_hash(h, page_word);
-            if (page_word_hash != page_tree[index]) {
-                const int log2_size = HASH_TREE_LOG2_WORD_SIZE;
-                std::cerr << "hash mismatch in index " << std::dec << index << ":" << log2_size << '\n';
-                return false;
-            }
+    void verify(H &&h, F &&get_clean_memory_page) const {
+        if (m_map.size() != m_lru.size()) {
+            throw std::runtime_error{"page hash-tree cache index does not match its entries"};
         }
-        int start = m_page_word_count / 2;
-        const int log2_size = HASH_TREE_LOG2_WORD_SIZE + 1;
-        while (start != 0) {
-            for (int index = start; index < 2 * start; ++index) {
-                const auto node_hash =
-                    get_concat_hash(h, page_tree[entry::left_child(index)], page_tree[entry::right_child(index)]);
-                if (node_hash != page_tree[index]) {
-                    std::cerr << "hash mismatch in index " << std::dec << index << ":" << log2_size << '\n';
-                    return false;
+        for (const auto &e : m_lru) {
+            const auto paddr_page = e.get_paddr_page();
+            const auto error = [paddr_page](std::string_view problem) {
+                return std::runtime_error{std::string{"page hash-tree cache entry for page "}
+                        .append(to_hex_string(paddr_page))
+                        .append(" ")
+                        .append(problem)};
+            };
+            if (e.get_borrowed()) {
+                throw error("is borrowed");
+            }
+            if (auto it = m_map.find(paddr_page); it == m_map.end() || &it->second.get() != &e) {
+                throw error("is not indexed by its page address");
+            }
+            const auto memory_page = get_clean_memory_page(paddr_page);
+            if (!memory_page) {
+                throw error("is not in any address range");
+            }
+            const const_page_view entry_page{e.get_page()};
+            if (!memory_page->empty() && !std::ranges::equal(entry_page, *memory_page)) {
+                throw error("has page data that does not match memory");
+            }
+            const auto &page_tree = e.get_page_hash_tree();
+            for (int offset = 0, index = m_page_word_count; offset < m_page_size; offset += m_word_size, ++index) {
+                const auto page_word =
+                    std::span<const unsigned char, m_word_size>{entry_page.subspan(offset, m_word_size)};
+                if (get_hash(h, page_word) != page_tree[index]) {
+                    throw error("has a word hash that does not match its page data");
                 }
             }
-            start /= 2;
+            for (int index = m_page_word_count - 1; index > 0; --index) {
+                if (get_concat_hash(h, page_tree[entry::left_child(index)], page_tree[entry::right_child(index)]) !=
+                    page_tree[index]) {
+                    throw error("has an inner hash that does not match its children");
+                }
+            }
         }
-        return true;
     }
 
     /// \brief Constructor from hasher and number of entries

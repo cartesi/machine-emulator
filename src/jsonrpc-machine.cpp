@@ -911,10 +911,10 @@ hash_tree_stats jsonrpc_machine::do_get_hash_tree_stats(bool clear) {
     return result;
 }
 
-bool jsonrpc_machine::do_verify_hash_tree() const {
-    bool result = false;
-    request("machine.verify_hash_tree", std::tie(), result);
-    return result;
+machine_hash jsonrpc_machine::do_verify_hash_tree() const {
+    machine_hash hash;
+    request("machine.verify_hash_tree", std::tie(), hash);
+    return hash;
 }
 
 uarch_interpreter_break_reason jsonrpc_machine::do_run_uarch(uint64_t uarch_cycle_end) {

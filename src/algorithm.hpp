@@ -17,8 +17,11 @@
 #ifndef ALGORITHM_HPP
 #define ALGORITHM_HPP
 
+#include <array>
+#include <charconv>
 #include <concepts>
 #include <limits>
+#include <string>
 #include <type_traits>
 
 #include "concepts.hpp"
@@ -66,6 +69,18 @@ static constexpr T saturating_mul(T a, T b, T max = std::numeric_limits<T>::max(
         return max;
     }
     return a * b;
+}
+
+/// \brief Converts an unsigned integer to lowercase, 0x-prefixed hexadecimal, analogous to std::to_string
+/// \tparam T Unsigned integer type
+/// \param value Value to convert
+/// \returns String with hexadecimal representation of value, without leading zeros
+template <typename T>
+    requires std::is_unsigned_v<T>
+std::string to_hex_string(T value) {
+    std::array<char, 2 + (2 * sizeof(T))> buffer{'0', 'x'};
+    auto *end = std::to_chars(buffer.data() + 2, buffer.data() + buffer.size(), value, 16).ptr;
+    return {buffer.data(), end};
 }
 
 } // namespace cartesi

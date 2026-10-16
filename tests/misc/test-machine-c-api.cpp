@@ -2149,8 +2149,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_reg_basic_test, ordinary_machine_fixtu
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(verify_hash_tree_null_machine_test) {
-    bool ret{};
-    cm_error error_code = cm_verify_hash_tree(nullptr, &ret);
+    cm_hash verified_hash{};
+    cm_error error_code = cm_verify_hash_tree(nullptr, &verified_hash);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
@@ -2160,11 +2160,15 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_hash_tree_null_output_test, ordinary_machi
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_hash_tree_basic_test, ordinary_machine_fixture) {
-    bool ret{};
-    cm_error error_code = cm_verify_hash_tree(_machine, &ret);
+    cm_hash verified_hash{};
+    cm_error error_code = cm_verify_hash_tree(_machine, &verified_hash);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    BOOST_CHECK(ret);
+    cm_hash root_hash{};
+    error_code = cm_get_root_hash(_machine, &root_hash);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verified_hash, verified_hash + sizeof(cm_hash), root_hash,
+        root_hash + sizeof(cm_hash));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_log_null_log_test, default_machine_fixture) {

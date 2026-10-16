@@ -1025,17 +1025,15 @@ cm_error cm_get_node_hash(const cm_machine *m, uint64_t address, int log2_size, 
     return cm_result_failure();
 }
 
-cm_error cm_verify_hash_tree(cm_machine *m, bool *result) try {
-    if (result == nullptr) {
-        throw std::invalid_argument("invalid result output");
+cm_error cm_verify_hash_tree(cm_machine *m, cm_hash *hash) try {
+    if (hash == nullptr) {
+        throw std::invalid_argument("invalid hash output");
     }
     auto *cpp_m = convert_from_c(m);
-    *result = cpp_m->verify_hash_tree();
+    const cartesi::machine_hash cpp_hash = cpp_m->verify_hash_tree();
+    convert_to_c(cpp_hash, hash);
     return cm_result_success();
 } catch (...) {
-    if (result != nullptr) {
-        *result = false;
-    }
     return cm_result_failure();
 }
 

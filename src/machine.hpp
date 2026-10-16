@@ -503,9 +503,11 @@ public:
         return m_ht.get_node_hash(m_ars, address, log2_size);
     }
 
-    /// \brief Verifies integrity of hash tree without making any modifications to it tree.
-    /// \returns True if tree is self-consistent, false otherwise.
-    bool verify_hash_tree() const;
+    /// \brief Updates the hash tree, verifies it against the machine state, and obtains its root hash.
+    /// \returns The root hash.
+    /// \details Throws if any node in the sparse tree, the dense trees, or the page hash-tree cache does not match
+    /// the machine state, or if any dirty page tree has a dirty node with a clean parent.
+    machine_hash verify_hash_tree() const;
 
     /// \brief Validate integrity of processor shadow.
     void validate_processor_shadow(bool skip_version_check) const;

@@ -1148,12 +1148,14 @@ CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reaso
 // Integrity checking
 // ------------------------------------
 
-/// \brief Verifies integrity of hash tree against current machine state.
+/// \brief Updates the hash tree, verifies it against current machine state, and obtains its root hash.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param result True if tree is self-consistent, false otherwise.
+/// \param hash Valid pointer to cm_hash structure that receives the root hash.
 /// \returns 0 for success, non zero code for error.
-/// \details This method is used only for emulator internal tests.
-CM_API cm_error cm_verify_hash_tree(cm_machine *m, bool *result);
+/// \details Fails if any node in the sparse tree, the dense trees, or the page hash-tree cache does not match the
+/// machine state, or if any dirty page tree has a dirty node with a clean parent.
+/// On success, every hash the machine reports matches the machine state.
+CM_API cm_error cm_verify_hash_tree(cm_machine *m, cm_hash *hash);
 
 /// \brief Obtains hash tree statistics
 /// \param m Pointer to a non-empty machine object (holds a machine instance).

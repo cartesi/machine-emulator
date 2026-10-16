@@ -137,7 +137,7 @@ machine_hash local_machine::do_get_node_hash(uint64_t address, int log2_size) co
     return get_machine()->get_node_hash(address, log2_size);
 }
 
-bool local_machine::do_verify_hash_tree() const {
+machine_hash local_machine::do_verify_hash_tree() const {
     return get_machine()->verify_hash_tree();
 }
 

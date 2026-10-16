@@ -73,7 +73,7 @@ private:
     machine_hash do_read_revert_root_hash() const override;
     void do_write_revert_root_hash(const_machine_hash_view hash) override;
     machine_hash do_get_node_hash(uint64_t address, int log2_size) const override;
-    bool do_verify_hash_tree() const override;
+    machine_hash do_verify_hash_tree() const override;
     uint64_t do_read_reg(reg r) const override;
     void do_write_reg(reg w, uint64_t val) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const override;

@@ -1614,10 +1614,16 @@ machine_hash machine::get_node_hash(uint64_t address, int log2_size) const {
     return get_node_hash(address, log2_size, skip_hash_tree_update);
 }
 
-bool machine::verify_hash_tree() const {
+machine_hash machine::verify_hash_tree() const {
+    // Check before updating, so the update cannot repair inconsistencies before they are detected
     mark_write_tlb_dirty_pages();
     m_ars.mark_always_dirty_pages();
-    return m_ht.verify(m_ars);
+    m_ht.verify_before_update(m_ars);
+    if (!update_hash_tree()) {
+        throw std::runtime_error{"update hash tree failed"};
+    }
+    m_ht.verify(m_ars);
+    return m_ht.get_root_hash();
 }
 
 machine::proof_type machine::get_proof(uint64_t address, int log2_target_size, int log2_root_size) const {

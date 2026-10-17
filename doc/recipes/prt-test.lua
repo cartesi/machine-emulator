@@ -2385,7 +2385,7 @@ if arg[1] then
     local forged_logs = forger.event_handler.prove_state_transition(forger, 0, 0, 0)
     -- A binary CMIO log computes the post-state for the supplied input. The forged
     -- next-step log must reject that state, exactly as the referee's proof chain does.
-    local ok, err = pcall(function()
+    local chain_ok, chain_err = pcall(function()
         local contract_after_send = cartesi.machine:verify_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             original_input,
@@ -2395,8 +2395,11 @@ if arg[1] then
         )
         cartesi.machine:verify_step_uarch(contract_after_send, forged_logs.step_log, 1)
     end)
-    local expected = "root hash before does not match step log"
-    assert(not ok and err:find(expected, 1, true), "forged input did not fail at the proof-chain boundary")
+    local expected_chain_error = "root hash before does not match step log"
+    assert(
+        not chain_ok and chain_err:find(expected_chain_error, 1, true),
+        "forged input did not fail at the proof-chain boundary"
+    )
     local forged_state = cartesi.machine:verify_send_cmio_response(
         cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
         util.read_file(forger.input_paths[1]),

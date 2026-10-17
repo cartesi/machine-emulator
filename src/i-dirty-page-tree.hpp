@@ -244,7 +244,7 @@ protected:
         const auto lp = level_positions_view(level);
         offset >>= log2_size;
         if (offset < lp.size()) {
-            return lp.begin() + offset;
+            return lp.begin() + static_cast<std::iter_difference_t<position_iterator>>(offset);
         }
         return invalid_position;
     }

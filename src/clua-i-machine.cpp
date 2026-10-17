@@ -22,6 +22,7 @@
 #include <cstring>
 #include <exception>
 #include <new>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -562,31 +563,6 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
                 {"root_hash", "Base64"},
                 {"sibling_hashes", "Base64Array"},
             }},
-        {"Access",
-            {
-                {"read", "Base64"},
-                {"read_hash", "Base64"},
-                {"written", "Base64"},
-                {"written_hash", "Base64"},
-                {"sibling_hashes", "Base64Array"},
-            }},
-        {"AccessArray",
-            {
-                {"items", "Access"},
-            }},
-        {"Bracket",
-            {
-                {"where", "ArrayIndex"},
-            }},
-        {"BracketArray",
-            {
-                {"items", "Bracket"},
-            }},
-        {"AccessLog",
-            {
-                {"accesses", "AccessArray"},
-                {"brackets", "BracketArray"},
-            }},
         {"McycleRootHashes",
             {
                 {"hashes", "Base64Array"},
@@ -850,12 +826,16 @@ static int machine_obj_index_run(lua_State *L) {
 
 static int machine_obj_index_log_step(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const uint8_t *log = nullptr;
+    uint64_t log_length = 0;
     cm_break_reason break_reason = CM_BREAK_REASON_FAILED;
-    if (cm_log_step(m.get(), luaL_checkinteger(L, 2), luaL_checkstring(L, 3), &break_reason) != 0) {
+    if (cm_log_step(m.get(), luaL_checkinteger(L, 2), &log, &log_length, &break_reason) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    lua_pushlstring(L, reinterpret_cast<const char *>(log), log_length);
     lua_pushinteger(L, static_cast<lua_Integer>(break_reason));
-    return 1;
+    return 2;
 }
 
 /// \brief This is the machine:reset_uarch() method implementation.
@@ -884,12 +864,13 @@ static int machine_obj_index_get_address_ranges(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_log_reset_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int log_type = clua_opt_integer<int>(L, 2, 0);
-    const char *log = nullptr;
-    if (cm_log_reset_uarch(m.get(), log_type, &log) != 0) {
+    const uint8_t *log = nullptr;
+    uint64_t log_length = 0;
+    if (cm_log_reset_uarch(m.get(), &log, &log_length) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_fromjson(L, log, "AccessLog");
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    lua_pushlstring(L, reinterpret_cast<const char *>(log), log_length);
     return 1;
 }
 
@@ -910,13 +891,17 @@ static int machine_obj_index_run_uarch(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_log_step_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int log_type = clua_opt_integer<int>(L, 2, 0);
-    const char *log = nullptr;
-    if (cm_log_step_uarch(m.get(), log_type, &log) != 0) {
+    const uint64_t uarch_cycle_count = luaL_checkinteger(L, 2);
+    const uint8_t *log = nullptr;
+    uint64_t log_length = 0;
+    cm_uarch_break_reason uarch_break_reason = CM_UARCH_BREAK_REASON_FAILED;
+    if (cm_log_step_uarch(m.get(), uarch_cycle_count, &log, &log_length, &uarch_break_reason) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_fromjson(L, log, "AccessLog");
-    return 1;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    lua_pushlstring(L, reinterpret_cast<const char *>(log), log_length);
+    lua_pushinteger(L, static_cast<lua_Integer>(uarch_break_reason));
+    return 2;
 }
 
 /// \brief This is the machine:store() method implementation.
@@ -1212,13 +1197,14 @@ static int machine_obj_index_log_send_cmio_response(lua_State *L) {
     luaL_argcheck(L, length <= UINT32_MAX, 3, "CMIO response data length exceeds uint32_t");
     cm_hash revert_root_hash{};
     clua_check_cm_hash(L, 4, &revert_root_hash);
-    const int log_type = clua_opt_integer<int>(L, 5, 0);
-    const char *log = nullptr;
-    if (cm_log_send_cmio_response(m.get(), reason, data, static_cast<uint32_t>(length), &revert_root_hash, log_type,
-            &log) != 0) {
+    const uint8_t *log = nullptr;
+    uint64_t log_length = 0;
+    if (cm_log_send_cmio_response(m.get(), reason, data, static_cast<uint32_t>(length), &revert_root_hash, &log,
+            &log_length) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_fromjson(L, log, "AccessLog");
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    lua_pushlstring(L, reinterpret_cast<const char *>(log), log_length);
     return 1;
 }
 
@@ -1388,8 +1374,11 @@ static int machine_obj_index_verify_step(lua_State *L) {
     lua_settop(L, 4);
     cm_hash root_hash_before{};
     clua_check_cm_hash(L, 2, &root_hash_before);
+    size_t log_length{0};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *log = reinterpret_cast<const uint8_t *>(luaL_checklstring(L, 3, &log_length));
     cm_hash obtained_root_hash{};
-    if (cm_verify_step(&root_hash_before, luaL_checkstring(L, 3), luaL_checkinteger(L, 4), &obtained_root_hash) != 0) {
+    if (cm_verify_step(&root_hash_before, log, log_length, luaL_checkinteger(L, 4), &obtained_root_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_cm_hash(L, &obtained_root_hash);
@@ -1399,16 +1388,73 @@ static int machine_obj_index_verify_step(lua_State *L) {
 /// \brief This is the machine:verify_step_uarch() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_verify_step_uarch(lua_State *L) {
-    lua_settop(L, 3);
+    lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     cm_hash root_hash_before{};
     clua_check_cm_hash(L, 2, &root_hash_before);
-    const char *log = clua_tojson(L, 3, -1, "AccessLog");
+    const uint64_t uarch_cycle_count = luaL_checkinteger(L, 4);
+    size_t log_length{0};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *log = reinterpret_cast<const uint8_t *>(luaL_checklstring(L, 3, &log_length));
     cm_hash obtained_root_hash{};
-    if (cm_verify_step_uarch(m.get(), &root_hash_before, log, &obtained_root_hash) != 0) {
+    if (cm_verify_step_uarch(m.get(), &root_hash_before, log, log_length, uarch_cycle_count, &obtained_root_hash) !=
+        0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_cm_hash(L, &obtained_root_hash);
+    return 1;
+}
+
+/// \brief This is the machine:dump_step_uarch() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_dump_step_uarch(lua_State *L) {
+    lua_settop(L, 4);
+    size_t log_length{0};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *log = reinterpret_cast<const uint8_t *>(luaL_checklstring(L, 2, &log_length));
+    const char *dump{};
+    if (cm_dump_step_uarch(log, log_length, luaL_checkinteger(L, 3), luaL_checkinteger(L, 4), &dump) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    lua_pushstring(L, dump);
+    return 1;
+}
+
+/// \brief This is the machine:dump_reset_uarch() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_dump_reset_uarch(lua_State *L) {
+    lua_settop(L, 2);
+    size_t log_length{0};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *log = reinterpret_cast<const uint8_t *>(luaL_checklstring(L, 2, &log_length));
+    const char *dump{};
+    if (cm_dump_reset_uarch(log, log_length, &dump) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    lua_pushstring(L, dump);
+    return 1;
+}
+
+/// \brief This is the machine:dump_send_cmio_response() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_dump_send_cmio_response(lua_State *L) {
+    lua_settop(L, 5);
+    const auto reason = clua_check_integer<uint16_t>(L, 2);
+    size_t length{0};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *data = reinterpret_cast<const uint8_t *>(luaL_checklstring(L, 3, &length));
+    luaL_argcheck(L, length <= UINT32_MAX, 3, "CMIO response data length exceeds uint32_t");
+    size_t log_length{0};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *log = reinterpret_cast<const uint8_t *>(luaL_checklstring(L, 4, &log_length));
+    cm_hash revert_root_hash{};
+    clua_check_cm_hash(L, 5, &revert_root_hash);
+    const char *dump{};
+    if (cm_dump_send_cmio_response(reason, data, static_cast<uint32_t>(length), log, log_length, &revert_root_hash,
+            &dump) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    lua_pushstring(L, dump);
     return 1;
 }
 
@@ -1419,9 +1465,11 @@ static int machine_obj_index_verify_reset_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     cm_hash root_hash_before{};
     clua_check_cm_hash(L, 2, &root_hash_before);
-    const char *log = clua_tojson(L, 3, -1, "AccessLog");
+    size_t log_length{0};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *log = reinterpret_cast<const uint8_t *>(luaL_checklstring(L, 3, &log_length));
     cm_hash obtained_root_hash{};
-    if (cm_verify_reset_uarch(m.get(), &root_hash_before, log, &obtained_root_hash) != 0) {
+    if (cm_verify_reset_uarch(m.get(), &root_hash_before, log, log_length, &obtained_root_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_cm_hash(L, &obtained_root_hash);
@@ -1440,12 +1488,14 @@ static int machine_obj_index_verify_send_cmio_response(lua_State *L) {
     luaL_argcheck(L, length <= UINT32_MAX, 3, "CMIO response data length exceeds uint32_t");
     cm_hash root_hash_before{};
     clua_check_cm_hash(L, 4, &root_hash_before);
-    const char *log = clua_tojson(L, 5, -1, "AccessLog");
     cm_hash revert_root_hash{};
     clua_check_cm_hash(L, 6, &revert_root_hash);
+    size_t log_length{0};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *log = reinterpret_cast<const uint8_t *>(luaL_checklstring(L, 5, &log_length));
     cm_hash obtained_root_hash{};
     if (cm_verify_send_cmio_response(m.get(), reason, data, static_cast<uint32_t>(length), &root_hash_before, log,
-            &revert_root_hash, &obtained_root_hash) != 0) {
+            log_length, &revert_root_hash, &obtained_root_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_cm_hash(L, &obtained_root_hash);
@@ -1526,6 +1576,9 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {.name = "verify_send_cmio_response", .func = machine_obj_index_verify_send_cmio_response},
     {.name = "verify_step", .func = machine_obj_index_verify_step},
     {.name = "verify_step_uarch", .func = machine_obj_index_verify_step_uarch},
+    {.name = "dump_step_uarch", .func = machine_obj_index_dump_step_uarch},
+    {.name = "dump_reset_uarch", .func = machine_obj_index_dump_reset_uarch},
+    {.name = "dump_send_cmio_response", .func = machine_obj_index_dump_send_cmio_response},
     {.name = "write_console_input", .func = machine_obj_index_write_console_input},
     {.name = "write_memory", .func = machine_obj_index_write_memory},
     {.name = "write_reg", .func = machine_obj_index_write_reg},

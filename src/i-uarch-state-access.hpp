@@ -53,7 +53,7 @@
 
 namespace cartesi {
 
-// Interface for microarchitecture state access
+// Interface for uarch state access
 template <typename DERIVED>
 class i_uarch_state_access { // CRTP
     i_uarch_state_access() = default;

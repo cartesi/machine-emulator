@@ -721,11 +721,11 @@ return function(run_with_server, new_test_player)
     -- The first uarch step is a small real proof, independent of guest execution.
     local machine <close> = cartesi.machine({ ram = { length = 4096 } })
     local initial = machine:get_root_hash()
-    local logs = { step_log = machine:log_step_uarch() }
+    local logs = { step_log = machine:log_step_uarch(1) }
     local after = machine:get_root_hash()
-    assert(cartesi.machine:verify_step_uarch(initial, logs.step_log) == after)
-    local invalid_logs = { step_log = machine:log_step_uarch() }
-    assert(not pcall(cartesi.machine.verify_step_uarch, cartesi.machine, initial, invalid_logs.step_log))
+    assert(cartesi.machine:verify_step_uarch(initial, logs.step_log, 1) == after)
+    local invalid_logs = { step_log = machine:log_step_uarch(1) }
+    assert(not pcall(cartesi.machine.verify_step_uarch, cartesi.machine, initial, invalid_logs.step_log, 1))
     local geometry = { mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }
     local max_allowance = 4
     -- Every claim joins one block after its tournament opens, and a uarch tournament inherits

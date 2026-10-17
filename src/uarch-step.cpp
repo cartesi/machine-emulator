@@ -15,15 +15,16 @@
 //
 
 /// \file
-/// \brief This file is be converted to Solidity by the machine-solidity-step.
+/// \brief Transpiled to Solidity by solidity-step/tools/transpile-uarch.lua.
 
 // NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,modernize-avoid-c-style-cast)
 
 #include "uarch-step.hpp"
 
 #include "collect-uarch-cycle-hashes-state-access.hpp" // IWYU pragma: keep
-#include "uarch-record-state-access.hpp"               // IWYU pragma: keep
-#include "uarch-replay-state-access.hpp"               // IWYU pragma: keep
+#include "step-log-dumper.hpp"                         // IWYU pragma: keep
+#include "uarch-record-step-state-access.hpp"          // IWYU pragma: keep
+#include "uarch-replay-step-state-access.hpp"          // IWYU pragma: keep
 #include "uarch-state-access.hpp"                      // IWYU pragma: keep
 
 #include "uarch-constants.hpp"
@@ -886,6 +887,10 @@ static inline void executeECALL(const UarchState a, uint32 insn, uint64 pc) {
         uint64 vaddr_page = readX(a, 12); // a2 contains vaddr_page to write
         uint64 vp_offset = readX(a, 13);  // a3 contains vp_offset to write
         uint64 pma_index = readX(a, 14);  // a4 contains index of PMA where page falls
+        // The slot address arithmetic must not wrap: every replayer refuses the same indices
+        if (set_index >= TLB_SET_COUNT || slot_index >= TLB_SET_SIZE) {
+            throwRuntimeError(a, "TLB index out of range");
+        }
         writeTlbECALL(a, set_index, slot_index, vaddr_page, vp_offset,
             pma_index); // WARNING: This CANNOT be a NOOP in Solidity
         return advancePc(a, pc);
@@ -1087,6 +1092,7 @@ static inline void executeInsn(const UarchState a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 UArchStepStatus uarch_step(const UarchState a) {
+    [[maybe_unused]] auto note = a.make_scoped_note("uarch_step");
     // Report the derived overflow fixed point before all other break reasons.
     uint64 cycle = readCycle(a);
     if (cycle >= UARCH_CYCLE_MAX) {
@@ -1118,14 +1124,15 @@ UArchStepStatus uarch_step(const UarchState a) {
 // Explicit instantiation for uarch_state_access
 template UArchStepStatus uarch_step(const uarch_state_access a);
 
-// Explicit instantiation for uarch_record_state_access
-template UArchStepStatus uarch_step(const uarch_record_state_access a);
-
-// Explicit instantiation for uarch_replay_state_access
-template UArchStepStatus uarch_step(const uarch_replay_state_access a);
-
 // Explicit instantiation for collect_uarch_cycle_hashes_state_access
 template UArchStepStatus uarch_step(const collect_uarch_cycle_hashes_state_access a);
+
+// Explicit instantiation for uarch_record_step_state_access
+template UArchStepStatus uarch_step(const uarch_record_step_state_access a);
+
+// Explicit instantiation for uarch_replay_step_state_access (replay/verify and the host dump)
+template UArchStepStatus uarch_step(const uarch_replay_step_state_access<no_step_log_dumper> a);
+template UArchStepStatus uarch_step(const uarch_replay_step_state_access<step_log_dumper> a);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,modernize-avoid-c-style-cast)

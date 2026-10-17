@@ -648,12 +648,12 @@ function event_handler:prove_state_transition(epoch_input_offset, input_mcycle_o
     if input_mcycle_offset == 0 and uarch_cycle == 0 and input_data then
         local send =
             machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input_data, pair.revert_root_hash)
-        proof = { send_cmio_log = send, step_log = machine:log_step_uarch() }
+        proof = { send_cmio_log = send, step_log = machine:log_step_uarch(1) }
     elseif uarch_cycle == cartesi.UARCH_CYCLE_MAX then
-        local step = machine:log_step_uarch()
+        local step = machine:log_step_uarch(1)
         proof = { step_log = step, reset_uarch_log = machine:log_reset_uarch() }
     else
-        proof = { step_log = machine:log_step_uarch() }
+        proof = { step_log = machine:log_step_uarch(1) }
     end
     self:reset_bisection()
     return proof
@@ -764,7 +764,7 @@ local function validate_state_transition_response(
             root_hash_before
         )
     end
-    obtained_root_hash = cartesi.machine:verify_step_uarch(obtained_root_hash, response.step_log)
+    obtained_root_hash = cartesi.machine:verify_step_uarch(obtained_root_hash, response.step_log, 1)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
         obtained_root_hash = cartesi.machine:verify_reset_uarch(obtained_root_hash, response.reset_uarch_log)
     end

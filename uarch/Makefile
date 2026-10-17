@@ -29,7 +29,7 @@ CXX := $(TOOLCHAIN_PREFIX)g++
 OBJCOPY := $(TOOLCHAIN_PREFIX)objcopy
 OBJDUMP := $(TOOLCHAIN_PREFIX)objdump
 
-# Instructions supported by the microarchitecture interpreter (rv64ui)
+# Instructions supported by the uarch interpreter (rv64ui)
 SUPPORTED_UARCH_INSN := add|addi|addiw|addw|and|andi|auipc|beq|bge|bgeu|blt|bltu|bne|ebreak|ecall|fence|jal|jalr|lb|lbu|ld|lh|$\
 	lhu|lui|lw|lwu|or|ori|sb|sd|sh|sll|slli|slliw|sllw|slt|slti|sltiu|sltu|sra|srai|sraiw|sraw|srl|srli|srliw|srlw|sub|$\
 	subw|sw|xor|xori
@@ -78,7 +78,6 @@ CXXFLAGS := -std=c++23 -fno-rtti \
 
 UARCH_SOURCES=\
 	uarch-run.cpp \
-	uarch-ecall.c \
 	uarch-runtime.cpp
 
 UARCH_THIRDPARTY_SOURCES_C=\

@@ -5011,6 +5011,9 @@ Such a raw hash can be opened later with `frontier_forest_expand_leaf`:
 It replaces the opaque hash at `<position>` with a completed forest of the same height, after checking that the forest's root is the hash it replaces.
 No ancestor hash changes, so the forest's root is unaffected.
 When the opaque hash is the repeated last value of a fixed-point tree, every repetition reads the same entry, so all of them share the expansion.
+A forest stored with `frontier_forest_store` keeps its trees in a directory, one file per tree named by its hash, and `frontier_forest_load` reopens it.
+Queries and expansions then load the stored tree in place of a raw hash when they reach one, and an expansion also stores its new trees there.
+A stored or loaded forest cannot be appended to another forest or used in an expansion, since some of its trees may exist only as files in its own directory.
 
 ## Verification game
 

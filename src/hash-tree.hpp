@@ -162,6 +162,10 @@ public:
         return m_mapped_memory.get_flags().shared;
     }
 
+    /// \brief Resets cached hashes and dirty-page tracking to freshly initialized values.
+    /// \details Keeps the sparse tree topology, backing-store mappings, and statistics.
+    void clear(address_ranges ars) noexcept;
+
     bool update(address_ranges ars);
 
     bool update_words(address_ranges ars, const dirty_words_type &dirty_words);

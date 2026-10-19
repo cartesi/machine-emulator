@@ -712,6 +712,15 @@ where options are:
 
     DON'T USE THIS OPTION IN PRODUCTION
 
+  --clear-hash-tree[=<mode>]
+    clear all cached hash-tree data.
+    hashes are rebuilt lazily on the next hash or proof request.
+
+    <mode> is one of
+        once: clear only after initially creating or loading the machine.
+        always: also clear when reloading during stored snapshots and reverts.
+    the default mode is "once".
+
   --max-mcycle=<number>
     stop at a given mcycle (default: 2^64-1).
 
@@ -1179,6 +1188,7 @@ local cmdline = {
     concurrency_update_hash_tree = 0,
     skip_version_check = false,
     no_reserve = false,
+    clear_hash_tree = false,
     initial_hash = false,
     final_hash = false,
     initial_proof = {},
@@ -2119,6 +2129,24 @@ options = {
         end,
     },
     {
+        "--clear-hash-tree",
+        function()
+            cmdline.clear_hash_tree = "once"
+            return true
+        end,
+    },
+    {
+        "--clear-hash-tree=",
+        function(keys, all, opts)
+            cmdline.clear_hash_tree = util.parse_options(keys, all, opts).mode
+            return true
+        end,
+        {
+            "mode",
+            mode = { once = "once", always = "always" },
+        },
+    },
+    {
         "--no-reserve",
         function()
             cmdline.no_reserve = true
@@ -2793,6 +2821,7 @@ local runtime_config = {
     console = cmdline.console,
     skip_version_check = cmdline.skip_version_check,
     no_reserve = cmdline.no_reserve,
+    clear_hash_tree = not not cmdline.clear_hash_tree,
 }
 
 if cmdline.remote_spawn then
@@ -3096,6 +3125,9 @@ echo "
 
     main_machine = main_machine:create(config, runtime_config, cmdline.create_dir)
 end
+
+-- Subsequent stored snapshot/revert loads clear caches only when explicitly requested.
+runtime_config.clear_hash_tree = cmdline.clear_hash_tree == "always"
 
 local function serialize_config(out, config, format)
     if format == "json" then

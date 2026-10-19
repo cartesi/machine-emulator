@@ -714,6 +714,19 @@ bool hash_tree::verify(address_ranges ars) const {
     return ret;
 }
 
+void hash_tree::clear(address_ranges ars) noexcept {
+    m_page_cache.clear();
+    for (auto &ar : ars) {
+        ar.get_dense_hash_tree().clear();
+        // Include padding leaves in ranges whose length is not a power of two.
+        ar.get_dirty_page_tree().mark_dirty_pages_and_up(0, std::bit_ceil(ar.get_length()));
+    }
+    for (auto &node : m_sparse_nodes) {
+        node.hash = {};
+        node.marked = 0;
+    }
+}
+
 bool hash_tree::update(address_ranges ars) {
     changed_address_ranges changed_ars{&m_memory_pool};
     changed_ars.reserve(ars.size());

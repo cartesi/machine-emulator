@@ -28,6 +28,7 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -49,9 +50,7 @@
 #include "os-mapped-memory.hpp"
 #include "page-hash-tree-cache-stats.hpp"
 #include "ranges.hpp"
-#include "signposts.hpp"
 #include "simd-hasher.hpp"
-#include "strict-aliasing.hpp"
 #include "unordered_dense.h"
 
 namespace cartesi {
@@ -80,69 +79,81 @@ public:
 
     enum initialized_tag : uint64_t {
         uninitialized = 0,
-        initialized = 0x50485443, // PHCT
+        initialized = 0x0250485443, // PHTC, layout version 2
     };
 
-    /// \class entry
-    /// \brief Page hash-tree cache entry implementation
-    class alignas(sizeof(uint64_t)) entry final :
+    /// \class entry_metadata
+    /// \brief Metadata for a page hash-tree cache entry
+    class alignas(sizeof(uint64_t)) entry_metadata final :
         public boost::intrusive::list_base_hook<boost::intrusive::void_pointer<
             boost::interprocess::offset_ptr<void, int64_t, uint64_t, sizeof(uint64_t)>>> {
-        using ref = std::reference_wrapper<entry>;
+        using ref = std::reference_wrapper<entry_metadata>;
 
-        page m_page{};                ///< Page data for entry
-        page_hash_tree m_hash_tree{}; ///< Hash-tree of data
-
-        // First hash is not used, so we use its storage for some fields
-        static constexpr uint64_t m_paddr_page_offset = 0;              ///< Offset where paddr_page is stored
-        static constexpr uint64_t m_borrowed_offset = sizeof(uint64_t); ///< Offset where borrowed flag is stored
+        address_type m_paddr_page{}; ///< Physical page address
+        uint64_t m_borrowed{};       ///< Whether entry is borrowed
+        uint64_t m_payload_index{};  ///< Index in the separate payload array
 
         friend page_hash_tree_cache;
 
-        /// \brief Sets page address for entry
-        /// \param paddr_page Target physical address of page
-        /// \returns Reference to entry (for composition of operations)
-        entry &set_paddr_page(address_type paddr_page) noexcept {
-            aliased_aligned_write<uint64_t>(&m_hash_tree[0][m_paddr_page_offset], static_cast<uint64_t>(paddr_page));
+        /// \brief Sets physical page address for entry
+        /// \param paddr_page Physical page address
+        /// \returns Reference to entry
+        entry_metadata &set_paddr_page(address_type paddr_page) noexcept {
+            m_paddr_page = paddr_page;
             return *this;
         }
 
         /// \brief Sets borrowed flag for entry
-        /// \param borrowed True if entry was borrowed
-        /// \returns Reference to entry (for composition of operations)
-        entry &set_borrowed(bool borrowed) noexcept {
-            aliased_aligned_write<uint64_t>(&m_hash_tree[0][m_borrowed_offset], static_cast<uint64_t>(borrowed));
+        /// \param borrowed Whether entry is borrowed
+        /// \returns Reference to entry
+        entry_metadata &set_borrowed(bool borrowed) noexcept {
+            m_borrowed = static_cast<uint64_t>(borrowed);
             return *this;
         }
 
-        /// \brief Gets borrowed flag for entry
-        /// \returns Reference true if entry is borrowed
+        /// \brief Returns whether entry is borrowed
         bool get_borrowed() const noexcept {
-            return static_cast<bool>(aliased_aligned_read<uint64_t>(&m_hash_tree[0][m_borrowed_offset]));
+            return m_borrowed != 0;
         }
 
-        /// \brief Make entry's page pristine
+    public:
+        entry_metadata() = default;
+        entry_metadata(const entry_metadata &other) = delete;
+        entry_metadata(entry_metadata &&other) = delete;
+        entry_metadata &operator=(const entry_metadata &other) = delete;
+        entry_metadata &operator=(entry_metadata &&other) = delete;
+        ~entry_metadata() = default;
+
+        /// \brief Returns physical page address for entry
+        address_type get_paddr_page() const noexcept {
+            return m_paddr_page;
+        }
+    };
+
+    /// \class entry_payload
+    /// \brief Cached page and its page hash tree
+    class alignas(m_page_size) entry_payload final {
+        page m_page{};
+        page_hash_tree m_hash_tree{};
+
+        friend page_hash_tree_cache;
+
+        /// \brief Makes cached page pristine
         void clear_page() noexcept {
             std::ranges::fill(m_page, 0);
         }
 
-        /// \brief Make entry's hash tree pristine
-        /// \param pristine Pristine hash tree
+        /// \brief Makes cached page hash tree pristine
+        /// \param pristine Pristine page hash tree
         void clear_hash_tree(const page_hash_tree &pristine) noexcept {
-            auto paddr_page = get_paddr_page();
-            auto borrowed = get_borrowed();
             m_hash_tree = pristine;
-            set_paddr_page(paddr_page);
-            set_borrowed(borrowed);
         }
 
-        /// \brief Make entry's page and hash tree pristine, clear page address and borrowed flag
-        /// \param pristine Pristine hash tree
+        /// \brief Makes cached page and its hash tree pristine
+        /// \param pristine Pristine page hash tree
         void clear(const page_hash_tree &pristine) noexcept {
             clear_page();
             clear_hash_tree(pristine);
-            set_paddr_page(0);
-            set_borrowed(false);
         }
 
         /// \brief Returns index of left child of node in page hash tree
@@ -188,50 +199,37 @@ public:
         }
 
     public:
-        entry() = default;
-        entry(const entry &other) = delete;
-        entry(entry &&other) = delete;
-        entry &operator=(const entry &other) = delete;
-        entry &operator=(entry &&other) = delete;
-        ~entry() = default;
-
-        /// \brief Returns page address for entry
-        /// \returns Target physical address of page
-        address_type get_paddr_page() const noexcept {
-            return static_cast<address_type>(aliased_aligned_read<uint64_t>(&m_hash_tree[0][m_paddr_page_offset]));
-        }
-
-        /// \brief Returns entry's page hash tree
-        /// \returns Reference to entry's page hash tree
+        /// \brief Returns cached page hash tree
+        /// \returns Reference to cached page hash tree
         const auto &get_page_hash_tree() const noexcept {
             return m_hash_tree;
         }
 
-        /// \brief Returns entry's page hash tree
-        /// \returns Reference to entry's page hash tree
+        /// \brief Returns cached page hash tree
+        /// \returns Reference to cached page hash tree
         auto &get_page_hash_tree() noexcept {
             return m_hash_tree;
         }
 
-        /// \brief Returns entry's page
-        /// \returns Reference to entry's page
+        /// \brief Returns cached page
+        /// \returns Reference to cached page
         const auto &get_page() const noexcept {
             return m_page;
         }
 
-        /// \brief Returns entry's page
-        /// \returns Reference to entry's page
+        /// \brief Returns cached page
+        /// \returns Reference to cached page
         auto &get_page() noexcept {
             return m_page;
         }
 
-        /// \brief Returns view to root hash from entry's page hash tree
+        /// \brief Returns view to root hash from cached page hash tree
         /// \returns View to root hash
         const_machine_hash_view root_hash_view() const noexcept {
             return m_hash_tree[1];
         }
 
-        /// \brief Returns view to node hash from entry's page hash tree
+        /// \brief Returns view to node hash from cached page hash tree
         /// \param offset Node offset within page
         /// \param log2_size Log<sub>2</sub> of node size. Must be between log<sub>2</sub> of word and page sizes
         /// \returns View to node hash
@@ -256,12 +254,13 @@ public:
     /// - An offset pointer to the list head
     /// - An offset pointer to the list tail
     /// - The current size of the list
-    using lru = boost::intrusive::list<entry, boost::intrusive::size_type<uint64_t>>;
+    using lru = boost::intrusive::list<entry_metadata, boost::intrusive::size_type<uint64_t>>;
 
-    // Ensure LRU and entry sizes are the same across all platforms we support
+    // Ensure LRU, entry, and payload sizes are the same across all platforms we support
     static_assert(sizeof(lru) == 3 * sizeof(uint64_t), "unexpected LRU size");
-    static_assert(sizeof(entry) == ((2 * sizeof(uint64_t)) + m_page_size + (m_page_hash_tree_size * MACHINE_HASH_SIZE)),
-        "unexpected entry size");
+    static_assert(sizeof(entry_metadata) == 5 * sizeof(uint64_t), "unexpected entry size");
+    static_assert(sizeof(entry_payload) == m_page_size + (m_page_hash_tree_size * MACHINE_HASH_SIZE),
+        "unexpected payload size");
 
     template <IHasher hasher_type>
     class simd_page_hasher {
@@ -300,7 +299,8 @@ public:
         // NOLINTNEXTLINE(bugprone-exception-escape)
         void enqueue_leaf(const_hash_tree_word_view data, page_hash_tree_view page_tree, int word_index) noexcept {
             m_leaves_queue.enqueue(data, page_tree[word_index]);
-            try_push_back(m_dirty_queue, dirty_entry{.page_tree = page_tree, .node_index = entry::parent(word_index)});
+            try_push_back(m_dirty_queue,
+                dirty_entry{.page_tree = page_tree, .node_index = entry_payload::parent(word_index)});
         }
 
         /// \brief Flushes the entire queue
@@ -313,11 +313,11 @@ public:
             while (!m_dirty_queue.empty()) {
                 for (const dirty_entry &d : m_dirty_queue) {
                     ++hashes;
-                    m_concat_queue.enqueue(d.page_tree[entry::left_child(d.node_index)],
-                        d.page_tree[entry::right_child(d.node_index)], d.page_tree[d.node_index]);
+                    m_concat_queue.enqueue(d.page_tree[entry_payload::left_child(d.node_index)],
+                        d.page_tree[entry_payload::right_child(d.node_index)], d.page_tree[d.node_index]);
                     if (d.node_index > 1) [[likely]] {
                         try_push_back(next_dirty_queue,
-                            dirty_entry{.page_tree = d.page_tree, .node_index = entry::parent(d.node_index)});
+                            dirty_entry{.page_tree = d.page_tree, .node_index = entry_payload::parent(d.node_index)});
                     }
                 }
                 m_concat_queue.flush();
@@ -337,30 +337,26 @@ public:
     /// \returns True if update succeeded, false otherwise
     template <IHasher H, ContiguousRangeOfByteLike D>
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
-    bool enqueue_hash_entry(page_hash_tree_cache::simd_page_hasher<H> &queue, D &&d, entry &e,
+    bool enqueue_hash_entry(page_hash_tree_cache::simd_page_hasher<H> &queue, D &&d, entry_metadata &e,
         page_hash_tree_cache_stats &stats) noexcept {
         if (std::ranges::size(d) != m_page_size) [[unlikely]] {
             return false;
         }
-        {
-            SCOPED_SIGNPOST(m_log, m_spid_pristine_check_and_update, "phtc: pristine check and update", "");
-            if (is_pristine(d)) {
-                SCOPED_SIGNPOST(m_log, m_spid_pristine_update, "phtc: pristine update", "");
-                e.clear_hash_tree(m_pristine_page_hash_tree);
-                e.clear_page();
-                ++stats.pristine_pages;
-                return true;
-            }
+        auto &payload = get_payload(e);
+        if (is_pristine(d)) {
+            payload.clear_hash_tree(m_pristine_page_hash_tree);
+            payload.clear_page();
+            ++stats.pristine_pages;
+            return true;
         }
-        SCOPED_SIGNPOST(m_log, m_spid_non_pristine_update, "phtc: non-pristine update", "");
         const const_page_view page{std::ranges::data(d), std::ranges::size(d)};
         // Go over all words in the entry page, comparing with updated page,
         // and updating the hashes for the modified words
         //??D In C++23, we would use std::views::slide and std::views::zip to write this in declarative style.
-        const page_view entry_page{e.get_page()};
+        const page_view entry_page{payload.get_page()};
         int hit = 0;
         int miss = 0;
-        auto &page_tree = e.get_page_hash_tree();
+        auto &page_tree = payload.get_page_hash_tree();
         for (int offset = 0, index = m_page_word_count; offset < m_page_size; offset += m_word_size, ++index) {
             const auto entry_word = std::span<unsigned char, m_word_size>{entry_page.subspan(offset, m_word_size)};
             const auto page_word = std::span<const unsigned char, m_word_size>{page.subspan(offset, m_word_size)};
@@ -380,10 +376,11 @@ public:
 
     template <IHasher H>
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
-    bool verify_entry(H &&h, entry &e) noexcept {
+    bool verify_entry(H &&h, entry_metadata &e) noexcept {
         std::cerr << "verifying entry\n";
-        const page_view entry_page{e.get_page()};
-        auto &page_tree = e.get_page_hash_tree();
+        const auto &payload = get_payload(e);
+        const const_page_view entry_page{payload.get_page()};
+        const auto &page_tree = payload.get_page_hash_tree();
         for (int offset = 0, index = m_page_word_count; offset < m_page_size; offset += m_word_size, ++index) {
             const auto page_word = std::span<const unsigned char, m_word_size>{entry_page.subspan(offset, m_word_size)};
             const auto page_word_hash = get_hash(h, page_word);
@@ -397,8 +394,8 @@ public:
         const int log2_size = HASH_TREE_LOG2_WORD_SIZE + 1;
         while (start != 0) {
             for (int index = start; index < 2 * start; ++index) {
-                const auto node_hash =
-                    get_concat_hash(h, page_tree[entry::left_child(index)], page_tree[entry::right_child(index)]);
+                const auto node_hash = get_concat_hash(h, page_tree[entry_payload::left_child(index)],
+                    page_tree[entry_payload::right_child(index)]);
                 if (node_hash != page_tree[index]) {
                     std::cerr << "hash mismatch in index " << std::dec << index << ":" << log2_size << '\n';
                     return false;
@@ -414,38 +411,32 @@ public:
     /// \param h Hasher object
     /// \param num_entries Number of entries in cache
     template <IHasher H>
-#ifndef HAS_SIGNPOSTS
     page_hash_tree_cache(H &&h, size_t num_entries, const std::string &backing_filename, bool shared) :
-#else
-    page_hash_tree_cache(os_log_t log, H &&h, size_t num_entries, const std::string &backing_filename, bool shared) :
-        m_log{log},
-        m_spid_borrow{os_signpost_id_generate(m_log)},
-        m_spid_pristine_check_and_update{os_signpost_id_generate(m_log)},
-        m_spid_pristine_update{os_signpost_id_generate(m_log)},
-        m_spid_non_pristine_update{os_signpost_id_generate(m_log)},
-#endif
         m_mapped_memory{get_storage_length(num_entries), os::mapped_memory_flags{.shared = shared}, backing_filename},
+        // get_storage_length() checks all layout arithmetic before mapping, and mapped_memory
+        // requires an exact backing-file length. All following regions fit within that mapping.
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         m_initialized{*reinterpret_cast<initialized_tag *>(m_mapped_memory.get_ptr())},
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         m_lru{*reinterpret_cast<lru *>(m_mapped_memory.get_ptr() + sizeof(initialized_tag))},
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        m_entries{reinterpret_cast<entry *>(m_mapped_memory.get_ptr() + sizeof(initialized_tag) + sizeof(lru)),
+        m_entries{reinterpret_cast<entry_metadata *>(m_mapped_memory.get_ptr() + sizeof(initialized_tag) + sizeof(lru)),
             num_entries},
-        m_pristine_page_hash_tree{entry::get_pristine_page_hash_tree(std::forward<H>(h))} {
-        if (num_entries == 0) {
-            throw std::invalid_argument{"page hash-tree cache must have at least one entry"};
-        }
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        m_payloads{reinterpret_cast<entry_payload *>(m_mapped_memory.get_ptr() + get_payloads_offset(num_entries)),
+            num_entries},
+        m_pristine_page_hash_tree{entry_payload::get_pristine_page_hash_tree(std::forward<H>(h))} {
         m_map.reserve(num_entries);
 
         // Initialize mapped memory if needed
         if (m_initialized == initialized_tag::uninitialized) {
-            // Use placement new to explicit initialize boost instrusive list internal fields
+            // Use placement new to initialize the mapped list, entries, and payloads.
             new (&m_lru) lru;
-            new (m_entries.data()) entry[num_entries];
-            // Set all entries hashes to pristine page
-            for (auto &e : m_entries) {
-                e.clear_hash_tree(m_pristine_page_hash_tree);
+            new (m_entries.data()) entry_metadata[num_entries];
+            new (m_payloads.data()) entry_payload[num_entries];
+            for (size_t i = 0; i < num_entries; ++i) {
+                m_entries[i].m_payload_index = i;
+                m_payloads[i].clear_hash_tree(m_pristine_page_hash_tree);
             }
             m_initialized = initialized_tag::initialized;
         } else {
@@ -454,41 +445,12 @@ public:
                 throw std::runtime_error{"corrupted page hash-tree cache: file tag mismatch"};
             }
 
-            // Validate list size
-            if (m_lru.size() > num_entries) {
-                throw std::runtime_error{"corrupted page hash-tree cache: LRU size exceeds capacity"};
-            }
-
-            // The mapped memory contains relative (offset) pointers.
-            // To ensure safety, we must validate all pointers before using them.
-            // Otherwise, dereferencing invalid pointers from corrupted files could result in undefined behavior.
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            const auto entries_begin = reinterpret_cast<uintptr_t>(m_entries.data());
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            const auto entries_end = reinterpret_cast<uintptr_t>(m_entries.data() + m_entries.size());
-            uint64_t list_size = 0;
-            // Validate that all entries in LRU are within the valid entries array range
-            for (auto &e : m_lru) {
-                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-                const auto entry_addr = reinterpret_cast<uintptr_t>(&e);
-                // Check if entry pointer is within valid range
-                if (entry_addr < entries_begin || entry_addr >= entries_end) {
-                    throw std::runtime_error{"corrupted page hash-tree cache: LRU contains invalid entry pointer"};
+            check_metadata();
+            // The active entries occupy an array prefix, regardless of their LRU order.
+            for (auto &e : m_entries.first(m_lru.size())) {
+                if (!m_map.emplace(e.get_paddr_page(), e).second) {
+                    throw std::runtime_error{"corrupted page hash-tree cache: duplicate page address"};
                 }
-                // Check if entry is properly aligned
-                if ((entry_addr & (alignof(entry) - 1)) != 0) {
-                    throw std::runtime_error{"corrupted page hash-tree cache: LRU contains unaligned entry pointer"};
-                }
-                list_size++;
-            }
-            // Validate actual list size
-            if (m_lru.size() != list_size) {
-                throw std::runtime_error{"corrupted page hash-tree cache: LRU size mismatch"};
-            }
-
-            // Reconstruct entries map
-            for (auto &e : m_lru) {
-                m_map.emplace(e.get_paddr_page(), e);
             }
         }
     }
@@ -499,20 +461,44 @@ public:
     page_hash_tree_cache &operator=(page_hash_tree_cache &&other) = delete;
 
     static uint64_t get_storage_length(size_t num_entries) {
-        return sizeof(initialized_tag) + sizeof(lru) + (num_entries * sizeof(entry));
+        constexpr auto header_length = sizeof(initialized_tag) + sizeof(lru);
+        constexpr auto entry_length = sizeof(entry_metadata) + sizeof(entry_payload);
+        // Bound allocation size and pointer differences, including padding before the payload array.
+        constexpr auto max_length = static_cast<size_t>(std::numeric_limits<ptrdiff_t>::max());
+        if (num_entries == 0) {
+            throw std::invalid_argument{"page hash-tree cache must have at least one entry"};
+        }
+        if (num_entries > (max_length - header_length - (m_page_size - 1)) / entry_length) {
+            throw std::invalid_argument{"invalid page hash-tree cache capacity"};
+        }
+        return get_payloads_offset(num_entries) + (num_entries * sizeof(entry_payload));
     }
 
     std::span<const unsigned char> get_storage_data() const noexcept {
         return m_mapped_memory.get_storage_data();
     }
 
+    /// \brief Returns payload for a cache entry
+    /// \param e Cache entry
+    /// \returns Reference to entry payload
+    entry_payload &get_payload(entry_metadata &e) noexcept {
+        return m_payloads[e.m_payload_index];
+    }
+
+    /// \brief Returns payload for a cache entry
+    /// \param e Cache entry
+    /// \returns Reference to entry payload
+    const entry_payload &get_payload(const entry_metadata &e) const noexcept {
+        return m_payloads[e.m_payload_index];
+    }
+
     /// \brief Tries to borrow a cache entry
     /// \param paddr_page Target physical address of page to borrow
     /// \returns Entry for page if in cache, nothing otherwise
-    std::optional<entry::ref> borrow_entry_if_hit(address_type paddr_page) {
+    std::optional<entry_metadata::ref> borrow_entry_if_hit(address_type paddr_page) {
         // Found entry for page in map?
         if (auto it = m_map.find(paddr_page); it != m_map.end()) {
-            entry &e = it->second;
+            entry_metadata &e = it->second;
             if (e.get_borrowed()) {
                 throw std::runtime_error{"page hash-tree cache entry already borrowed"};
             }
@@ -526,11 +512,10 @@ public:
     /// \param paddr_page Target physical address of page to borrow
     /// \param hit Receives true if page was found in cache, false if another page was evicted and its entry returned
     /// \returns Entry for page, nothing if all pages have already been borrowed
-    std::optional<entry::ref> borrow_entry(address_type paddr_page, bool &hit) {
-        SCOPED_SIGNPOST(m_log, m_spid_borrow, "phtc: borrow", "");
+    std::optional<entry_metadata::ref> borrow_entry(address_type paddr_page, bool &hit) {
         // Found entry for page in map?
         if (auto it = m_map.find(paddr_page); it != m_map.end()) {
-            entry &e = it->second;
+            entry_metadata &e = it->second;
             if (e.get_borrowed()) {
                 throw std::runtime_error{"page hash-tree cache entry already borrowed"};
             }
@@ -545,7 +530,7 @@ public:
         // Not in map, but we still have unused entries to lend
         if (m_lru.size() < m_entries.size()) {
             ++m_stats.page_misses;
-            entry &e = m_entries[m_lru.size()];
+            entry_metadata &e = m_entries[m_lru.size()];
             if (e.get_borrowed()) {
                 throw std::runtime_error{"page hash-tree cache entry already borrowed"};
             }
@@ -578,7 +563,7 @@ public:
 
     /// \brief Returns entry that has been borrowed
     /// \param e Entry to return
-    static bool return_entry(entry &e) {
+    static bool return_entry(entry_metadata &e) {
         if (!e.get_borrowed()) {
             throw std::runtime_error{"returning page hash-tree cache entry that is not borrowed"};
         }
@@ -609,8 +594,8 @@ public:
             m_lru.erase(m_lru.iterator_to(e));
             if (&e != &last) {
                 // Keep active entries in the array prefix used by borrow_entry().
-                e.m_page = last.m_page;
-                e.m_hash_tree = last.m_hash_tree;
+                std::swap(e.m_payload_index, last.m_payload_index);
+                e.set_paddr_page(last.get_paddr_page());
                 m_lru.insert(m_lru.iterator_to(last), e);
                 m_lru.erase(m_lru.iterator_to(last));
                 m_map.at(e.get_paddr_page()) = std::ref(e);
@@ -618,12 +603,13 @@ public:
         }
     }
 
-    /// \brief Clear entire cache
+    /// \brief Clears entire cache
     void clear() noexcept {
         m_lru.clear();
         m_map.clear();
         for (auto &e : m_entries) {
-            e.clear(m_pristine_page_hash_tree);
+            get_payload(e).clear(m_pristine_page_hash_tree);
+            e.set_paddr_page(0).set_borrowed(false);
         }
     }
 
@@ -673,6 +659,70 @@ public:
     }
 
 private:
+    /// \brief Returns the payload array offset aligned to the machine page size for a checked capacity
+    static size_t get_payloads_offset(size_t num_entries) noexcept {
+        const auto metadata_length = sizeof(initialized_tag) + sizeof(lru) + (num_entries * sizeof(entry_metadata));
+        constexpr auto page_mask = static_cast<size_t>(m_page_size - 1);
+        return (metadata_length + page_mask) & ~page_mask;
+    }
+
+    /// \brief Checks that a link points to the LRU sentinel or an active entry node
+    /// \param link Link from a known LRU node
+    /// \returns Checked link
+    lru::node_ptr check_lru_link(const lru::node_ptr &link) const {
+        const auto sentinel = m_lru.end().pointed_node();
+        if (link == sentinel) {
+            return link;
+        }
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        const auto node_address = reinterpret_cast<uintptr_t>(link.get());
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        const auto nodes_begin = reinterpret_cast<uintptr_t>(lru::value_traits::to_node_ptr(m_entries.front()).get());
+        if (node_address < nodes_begin || (node_address - nodes_begin) % sizeof(entry_metadata) != 0 ||
+            (node_address - nodes_begin) / sizeof(entry_metadata) >= m_lru.size()) {
+            throw std::runtime_error{"corrupted page hash-tree cache: invalid LRU link"};
+        }
+        return link;
+    }
+
+    /// \brief Checks persisted entry metadata and LRU links before accessing the cache
+    void check_metadata() const {
+        if (m_lru.size() > m_entries.size()) {
+            throw std::runtime_error{"corrupted page hash-tree cache: LRU size exceeds capacity"};
+        }
+        // Distinct payloads are required because borrowed entries can be hashed in parallel.
+        std::vector<bool> used_payloads(m_payloads.size());
+        for (size_t i = 0; i < m_entries.size(); ++i) {
+            const auto &e = m_entries[i];
+            if (e.m_payload_index >= m_payloads.size() || used_payloads[e.m_payload_index]) {
+                throw std::runtime_error{"corrupted page hash-tree cache: invalid payload index"};
+            }
+            used_payloads[e.m_payload_index] = true;
+            if (e.get_borrowed()) {
+                throw std::runtime_error{"corrupted page hash-tree cache: borrowed entry"};
+            }
+            if (i >= m_lru.size()) {
+                const auto node = lru::value_traits::to_node_ptr(m_entries[i]);
+                if (lru::node_traits::get_next(node) || lru::node_traits::get_previous(node)) {
+                    throw std::runtime_error{"corrupted page hash-tree cache: linked unused entry"};
+                }
+            }
+        }
+        const auto sentinel = m_lru.end().pointed_node();
+        auto previous = sentinel;
+        auto current = check_lru_link(lru::node_traits::get_next(sentinel));
+        for (uint64_t i = 0; i < m_lru.size(); ++i) {
+            if (current == sentinel || check_lru_link(lru::node_traits::get_previous(current)) != previous) {
+                throw std::runtime_error{"corrupted page hash-tree cache: inconsistent LRU links"};
+            }
+            previous = current;
+            current = check_lru_link(lru::node_traits::get_next(current));
+        }
+        if (current != sentinel || check_lru_link(lru::node_traits::get_previous(sentinel)) != previous) {
+            throw std::runtime_error{"corrupted page hash-tree cache: inconsistent LRU size or tail"};
+        }
+    }
+
     void dump_lru() const {
         std::cerr << "lru: " << std::hex;
         for (const auto &p : m_lru) {
@@ -699,24 +749,18 @@ private:
         std::cerr << "\n";
     }
 
-#ifdef HAS_SIGNPOSTS
-    os_log_t m_log;
-    os_signpost_id_t m_spid_borrow;
-    os_signpost_id_t m_spid_pristine_check_and_update;
-    os_signpost_id_t m_spid_pristine_update;
-    os_signpost_id_t m_spid_non_pristine_update;
-#endif
-
-    os::mapped_memory m_mapped_memory; ///< Mapped memory containing the LRU and entries
+    os::mapped_memory m_mapped_memory; ///< Mapped memory containing the header, entries, and payloads
 
     // The following fields may already be initialized by existing mapped memory
-    initialized_tag &m_initialized; ///< Whether cache has been initialized
-    lru &m_lru;                     ///< Recently used entries
-    std::span<entry> m_entries;     ///< Array of page hash-tree cache entries
+    initialized_tag &m_initialized;      ///< Whether cache has been initialized
+    lru &m_lru;                          ///< Recently used entries
+    std::span<entry_metadata> m_entries; ///< Compact metadata, with active entries in a prefix
+    std::span<entry_payload> m_payloads; ///< Cached pages and hashes
 
     // The following fields are always initialized from scratch
-    ankerl::unordered_dense::map<address_type, entry::ref> m_map; ///< Map from page addresses to corresponding entries
-    page_hash_tree_cache_stats m_stats;                           ///< Statistics
+    ankerl::unordered_dense::map<address_type, entry_metadata::ref>
+        m_map;                          ///< Map from page addresses to corresponding entries
+    page_hash_tree_cache_stats m_stats; ///< Statistics
 
     // ??(edubart): we could compute this on demand (on first use)
     const page_hash_tree m_pristine_page_hash_tree; ///< Pristine page hash tree for hasher in use

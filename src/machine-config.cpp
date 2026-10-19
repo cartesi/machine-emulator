@@ -32,7 +32,7 @@
 #include "os-filesystem.hpp"
 #include "riscv-constants.hpp"
 
-static constexpr uint32_t archive_version = 8;
+static constexpr uint32_t archive_version = 9;
 
 namespace cartesi {
 

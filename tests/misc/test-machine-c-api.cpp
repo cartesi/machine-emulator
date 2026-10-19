@@ -34,6 +34,7 @@
 #include <json.hpp>
 
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -43,9 +44,12 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include <cm-jsonrpc.h>
 #include <cm.h>
+#include <keccak-256-hasher.hpp>
+#include <page-hash-tree-cache.hpp>
 #include <riscv-constants.hpp>
 #include <uarch-constants.hpp>
 #include <uarch-pristine.hpp>
@@ -918,7 +922,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_machine_config_version_test, store_file_fix
     auto j = nlohmann::json::parse(ifs);
     BOOST_REQUIRE(j.contains("archive_version"));
     BOOST_REQUIRE(j["archive_version"].is_number_integer());
-    BOOST_CHECK_EQUAL(j["archive_version"].get<int>(), 8);
+    BOOST_CHECK_EQUAL(j["archive_version"].get<int>(), 9);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_machine_test, ordinary_machine_fixture) {
@@ -2128,6 +2132,31 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_reg_null_output_test, ordinary_machine_fixtu
 BOOST_AUTO_TEST_CASE_NOLINT(write_reg_null_machine_test) {
     cm_error error_code = cm_write_reg(nullptr, CM_REG_MCYCLE, 3);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(page_hash_tree_cache_payload_alignment_test) {
+    constexpr std::array<std::pair<size_t, size_t>, 5> layouts{
+        {{1, 4096}, {101, 4096}, {102, 8192}, {204, 8192}, {205, 12288}}};
+    for (const auto &[capacity, payloads_offset] : layouts) {
+        cartesi::page_hash_tree_cache cache{cartesi::keccak_256_hasher{}, capacity, "", false};
+        const auto storage = cache.get_storage_data();
+        const auto storage_address = reinterpret_cast<uintptr_t>(storage.data());
+        BOOST_CHECK_EQUAL(storage.size(), payloads_offset + (capacity * 12288));
+        for (size_t i = 0; i < capacity; ++i) {
+            bool hit = false;
+            auto borrowed = cache.borrow_entry(i * cartesi::HASH_TREE_PAGE_SIZE, hit);
+            BOOST_REQUIRE(borrowed.has_value());
+            BOOST_CHECK(!hit);
+            auto &metadata = borrowed->get();
+            const auto &payload = cache.get_payload(metadata);
+            const auto page_address = reinterpret_cast<uintptr_t>(payload.get_page().data());
+            const auto tree_address = reinterpret_cast<uintptr_t>(payload.get_page_hash_tree().data());
+            BOOST_CHECK_EQUAL(page_address % cartesi::HASH_TREE_PAGE_SIZE, 0);
+            BOOST_CHECK_EQUAL(tree_address % cartesi::HASH_TREE_PAGE_SIZE, 0);
+            BOOST_CHECK_EQUAL(page_address - storage_address, payloads_offset + (i * 12288));
+            BOOST_CHECK(cache.return_entry(metadata));
+        }
+    }
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_reg_basic_test, ordinary_machine_fixture) {

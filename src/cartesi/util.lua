@@ -334,16 +334,4 @@ function _M.find_drive(config, what, label)
     return nil, string.format("missing %s %s", label, what)
 end
 
--- Reads the entire contents of a file as a binary string.
-function _M.read_file(filename)
-    local f <close> = assert(io.open(filename, "rb"))
-    return assert(f:read("a"))
-end
-
--- Writes a binary string as the entire contents of a file.
-function _M.write_file(contents, filename)
-    local f <close> = assert(io.open(filename, "wb"))
-    assert(f:write(contents))
-end
-
 return _M

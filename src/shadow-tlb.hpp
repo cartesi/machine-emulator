@@ -154,8 +154,8 @@ static constexpr const char *shadow_tlb_get_what_name(shadow_tlb_what what) {
 /// \param ar Address range for the PMA where physical page falls
 /// \returns vaddr_page if valid, TLB_INVALID_PAGE otherwise
 template <typename ADDRESS_RANGE>
-[[maybe_unused]] static uint64_t shadow_tlb_verify_slot(TLB_set_index set_index, uint64_t vaddr_page, uint64_t vp_offset, uint64_t zero_padding,
-    const ADDRESS_RANGE &ar) {
+[[maybe_unused]] static uint64_t shadow_tlb_verify_slot(TLB_set_index set_index, uint64_t vaddr_page,
+    uint64_t vp_offset, uint64_t zero_padding, const ADDRESS_RANGE &ar) {
     // Invalid entry
     if (vaddr_page == TLB_INVALID_PAGE) {
         return TLB_INVALID_PAGE;

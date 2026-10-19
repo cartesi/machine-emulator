@@ -131,32 +131,15 @@ end
 -- creates a synthetic pair of children. Emit the new sibling stream and pre-root
 -- together, so an access-time failure cannot be masked by a stale Merkle proof.
 local function refold_witness(log, edit)
-    local pi, ni, si = 1, 1, 1
-    local function read_tree(first, height)
-        local limit = first + (1 << height)
-        local page = log.pages[pi]
-        local node = log.nodes[ni]
-        local page_in = page and page.index < limit
-        local node_in = node and (node.address >> 12) < limit
-        if not page_in and not node_in then
-            local tree = { hash = assert(log.siblings[si]) }
-            si = si + 1
-            return tree
-        end
-        if node_in and node.address == (first << 12) and node.log2_size == height + 12 then
-            ni = ni + 1
-            return { node = node, hash = node.hash }
-        end
-        if height == 0 then
-            pi = pi + 1
-            return { page = page, hash = test_util.merkle_hash(page.data, 0, 12, "keccak256") }
-        end
-        local left = read_tree(first, height - 1)
-        local right = read_tree(first + (1 << (height - 1)), height - 1)
+    local tree = test_util.walk_step_log(log, function(hash)
+        return { hash = assert(hash) }
+    end, function(page)
+        return { page = page, hash = test_util.merkle_hash(page.data, 0, page.log2_size, "keccak256") }
+    end, function(node)
+        return { node = node, hash = node.hash }
+    end, function(left, right)
         return { left = left, right = right, hash = cartesi.keccak256(left.hash, right.hash) }
-    end
-    local tree = read_tree(0, 52)
-    assert(pi == #log.pages + 1 and ni == #log.nodes + 1 and si == #log.siblings + 1)
+    end)
 
     local edits = 0
     local function change(t)
@@ -229,6 +212,7 @@ local cases = {
         base = UARCH_BASE,
         mutate = function(log)
             log.pages[#log.pages].index = log.pages[#log.pages - 1].index
+            log.pages[#log.pages].offset = log.pages[#log.pages - 1].offset
         end,
     },
     {
@@ -305,11 +289,12 @@ local cases = {
         end,
     },
     {
-        tag = "too_many_pages",
+        tag = "page_index_not_increasing",
+        name = "page_address_wrap",
         kind = "cycle",
         base = UARCH_BASE,
-        -- An in-range unused page is legal. Index 2^52 is beyond the 64-bit
-        -- address space, so the root fold leaves this extra entry unconsumed.
+        -- Slice entries carry a uint64 byte address. The old out-of-range page
+        -- index 2^52 now wraps to address zero and is rejected as out of order.
         mutate = function(log)
             log.pages[#log.pages + 1] = {
                 index = 1 << 52,

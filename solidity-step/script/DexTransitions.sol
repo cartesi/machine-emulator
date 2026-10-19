@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.30;
+
 import {StepLog} from "../src/StepLog.sol";
 import {Verify} from "../src/Verify.sol";
 
@@ -12,9 +13,8 @@ contract DexTransitions {
         bytes32 beforeRoot,
         bytes32 afterRoot
     ) external pure returns (bytes32) {
-        bytes32 mid = Verify.verifySendCmioResponse(
-            StepLog.decode(cmioLog), beforeRoot, 0, data, beforeRoot
-        );
+        bytes32 mid =
+            Verify.verifySendCmioResponse(StepLog.decode(cmioLog), beforeRoot, 0, data, beforeRoot);
         require(Verify.verifyStep(StepLog.decode(stepLog), mid) == afterRoot, "input boundary root");
         return afterRoot;
     }

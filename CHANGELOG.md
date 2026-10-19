@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added the `cartesi.filesystem` Lua module, with `sync_file` and `sync_directory` for durable writes
 
+### Removed
+- Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`
+
 ## [0.22.0] - 2026-10-15
 ### Added
 - Added `collect_mcycle_bundle` and `collect_uarch_cycle_bundle` to all machine APIs

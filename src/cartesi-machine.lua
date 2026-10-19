@@ -18,7 +18,7 @@
 
 local bash = require("cartesi.bash")
 -- forward compiled package declarations so handle_bash_completion can run clean
-local cartesi, util, hash_tree
+local cartesi, util, hash_tree, fs
 local MCYCLE_MAX
 
 local function stderr_unsilenceable(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
@@ -2577,7 +2577,7 @@ options = {
     {
         "--append-init-file=",
         function(_, _, opts)
-            local contents = util.read_file(opts)
+            local contents = fs.read_file(opts)
             if not contents:find("\n$") then contents = contents .. "\n" end
             cmdline.append_init = cmdline.append_init .. contents
             return true
@@ -2594,7 +2594,7 @@ options = {
     {
         "--append-entrypoint-file=",
         function(_, _, opts)
-            local contents = util.read_file(opts)
+            local contents = fs.read_file(opts)
             if not contents:find("\n$") then contents = contents .. "\n" end
             cmdline.append_entrypoint = cmdline.append_entrypoint .. contents
             return true
@@ -2674,6 +2674,7 @@ if #arg == 1 and arg[1] == "--bash-completion" then handle_bash_completion() end
 cartesi = require("cartesi")
 util = require("cartesi.util")
 hash_tree = require("cartesi.hash-tree")
+fs = require("cartesi.filesystem")
 
 -- And perform the dependent initializations
 MCYCLE_MAX = cartesi.MCYCLE_MAX
@@ -3085,7 +3086,7 @@ echo "
 
     local loaded_config
     if cmdline.load_config and cmdline.load_config_format == "json" then
-        loaded_config = cartesi.fromjson(util.read_file(cmdline.load_config))
+        loaded_config = cartesi.fromjson(fs.read_file(cmdline.load_config))
     elseif cmdline.load_config then
         local env = {}
         local chunk, err = loadfile(cmdline.load_config, "t", env)
@@ -3210,7 +3211,7 @@ local function save_cmio_data(advance, data, filename_pattern, index)
     local values = { i = advance.input_file_index, o = index }
     local name = instantiate_filename(filename_pattern, values)
     stderr("Storing %s\n", name)
-    util.write_file(data, name)
+    fs.write_file(data, name)
 end
 
 local function save_cmio_report(advance, data)
@@ -3281,7 +3282,7 @@ end
 
 local function store_frontier(filename, frontier)
     if filename == "" then return end
-    util.write_file(cartesi.tojson(table.move(frontier, 1, #frontier, 1, {}), 2, "Base64Array") .. "\n", filename)
+    fs.write_file(cartesi.tojson(table.move(frontier, 1, #frontier, 1, {}), 2, "Base64Array") .. "\n", filename)
 end
 
 -- State files are written independently. Validation can detect inconsistent files
@@ -3292,7 +3293,7 @@ local function persist_cmio_epoch_state(builder, runner)
     if advance.state_hash_filename ~= "" and runner:read_reg("iflags_Y") ~= 0 and runner:read_reg("iflags_H") == 0 then
         local cmd, reason = runner:receive_cmio_request()
         if cmd == cartesi.HTIF_YIELD_CMD_MANUAL and is_rx_accepted(reason) then
-            util.write_file(runner:get_root_hash(), advance.state_hash_filename)
+            fs.write_file(runner:get_root_hash(), advance.state_hash_filename)
         end
     end
     advance.saved_machine_hash = runner:get_root_hash()
@@ -3311,7 +3312,7 @@ end
 -- Reads back a Proof written by serialize_proof, in the resolved format (explicit format wins,
 -- else the filename extension).
 local function read_proof(filename, format)
-    local contents = util.read_file(filename)
+    local contents = fs.read_file(filename)
     if resolve_format(format, filename) == "json" then return cartesi.fromjson(contents, "Proof") end
     return assert(load(contents, filename, "t", {}))()
 end
@@ -3491,7 +3492,7 @@ local function save_cmio_output_proofs(advance)
         local values = { i = input_indices[i], o = proof.target_address }
         local name = instantiate_filename(advance.output_proof, values)
         stderr("Storing %s\n", name)
-        util.write_file(serialize_proof(proof, format), name)
+        fs.write_file(serialize_proof(proof, format), name)
     end
 end
 
@@ -3505,7 +3506,7 @@ local function save_cmio_outputs_merkle_root_proof(advance, proof)
     local name = instantiate_filename(advance.outputs_merkle_root_proof, values)
     local format = resolve_format(advance.format, advance.outputs_merkle_root_proof)
     stderr("Storing %s\n", name)
-    util.write_file(serialize_proof(proof, format), name)
+    fs.write_file(serialize_proof(proof, format), name)
 end
 
 local function save_cmio_hashes_and_indices(advance, hashes)
@@ -3571,7 +3572,7 @@ end
 local function load_cmio_input(machine, advance, input_file_index, revert_root_hash)
     local values = { i = input_file_index }
     local filename = instantiate_filename(advance.input, values)
-    local data = util.read_file(filename)
+    local data = fs.read_file(filename)
     -- Delivering data that does not fit the rx buffer is a no-op transition, as in the EVM
     -- verifier. It is still delivered so the run follows the same transition.
     if #data > 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE then
@@ -3583,7 +3584,7 @@ local function load_cmio_input(machine, advance, input_file_index, revert_root_h
 end
 
 local function load_cmio_query(machine, inspect)
-    local data = util.read_file(inspect.query)
+    local data = fs.read_file(inspect.query)
     machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_INSPECT_STATE, data)
 end
 
@@ -3592,7 +3593,7 @@ local function save_cmio_inspect_state_report(inspect, data)
     local values = { o = inspect.report_index }
     local name = instantiate_filename(inspect.report, values)
     stderr("Storing %s\n", name)
-    util.write_file(data, name)
+    fs.write_file(data, name)
 end
 
 local function store_machine(machine, config, dir, sharing)
@@ -3611,7 +3612,7 @@ local function dump_memory_ranges(machine, dir)
         -- Only memory ranges hold state. Device ranges are always pristine, so skip them.
         if v.is_memory then
             local filename = prefix .. string.format("%016x--%016x.bin", v.start, v.length)
-            util.write_file(machine:read_memory(v.start, v.length), filename)
+            fs.write_file(machine:read_memory(v.start, v.length), filename)
         end
     end
 end
@@ -3674,7 +3675,7 @@ end
 if cmdline.initial_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     if type(cmdline.initial_hash) == "string" then
-        util.write_file(machine:get_root_hash(), cmdline.initial_hash)
+        fs.write_file(machine:get_root_hash(), cmdline.initial_hash)
     else
         print_root_hash(machine, stderr_unsilenceable)
     end
@@ -4370,7 +4371,7 @@ local function report_computation_hash(root)
     stderr("\n%s computation hash: %s\n", name, cartesi.tohex(root))
     if filename ~= "" then
         stderr("Storing %s\n", filename)
-        util.write_file(root, filename)
+        fs.write_file(root, filename)
     end
 end
 
@@ -4449,7 +4450,7 @@ local function assert_rolling_template(m, opts)
         return
     end
     local filename = opts.outputs_merkle_root
-    local expected_root = filename and util.read_file(filename)
+    local expected_root = filename and fs.read_file(filename)
         or hash_tree.frontier_get_root_hash(hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256"))
     assert(#expected_root == cartesi.HASH_SIZE, "invalid outputs_merkle_root size: expected 32 bytes")
     if data ~= expected_root then exit_code = 2 end
@@ -4722,7 +4723,7 @@ if cmdline.dump_memory_ranges_dir then dump_memory_ranges(machine, cmdline.dump_
 if cmdline.final_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     if type(cmdline.final_hash) == "string" then
-        util.write_file(machine:get_root_hash(), cmdline.final_hash)
+        fs.write_file(machine:get_root_hash(), cmdline.final_hash)
     else
         print_root_hash(machine, stderr_unsilenceable)
     end

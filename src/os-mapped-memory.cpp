@@ -21,6 +21,10 @@
 
 #include <sys/stat.h> // fstat
 
+#ifdef HAVE_FALLOCATE
+#include <linux/falloc.h> // FALLOC_FL_PUNCH_HOLE/FALLOC_FL_KEEP_SIZE
+#endif
+
 #if defined(HAVE_MMAP)
 #include <fcntl.h>    // open
 #include <sys/mman.h> // mmap/munmap
@@ -40,6 +44,7 @@
 #include "scope-exit.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
@@ -526,6 +531,38 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
     m_backing_fp = backing_fp;
     m_unaligned_host_memory = unaligned_host_memory;
 #endif // HAVE_MMAP
+}
+
+void mapped_memory::clear() noexcept {
+    assert(!m_flags.read_only && "cannot clear a read-only mapping");
+    auto data = get_storage_data();
+#if defined(HAVE_FALLOCATE) || defined(HAVE_F_PUNCHHOLE)
+    if (m_backing_sync_length > 0) {
+        // Use the already opened and locked file, preserving the mapping and file length.
+        while (true) {
+#ifdef HAVE_FALLOCATE
+            const auto result = fallocate(m_backing_fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, 0,
+                static_cast<off_t>(m_backing_sync_length));
+#else
+            fpunchhole_t hole{.fp_flags = 0,
+                .reserved = 0,
+                .fp_offset = 0,
+                .fp_length = static_cast<off_t>(m_backing_sync_length)};
+            const auto result = fcntl(m_backing_fd, F_PUNCHHOLE, &hole);
+#endif
+            if (result == 0) {
+                // A mapping may extend past its backing file into anonymous memory.
+                std::ranges::fill(data.subspan(static_cast<size_t>(m_backing_sync_length)), 0);
+                return;
+            }
+            if (errno != EINTR) {
+                break;
+            }
+        }
+    }
+#endif
+    // Includes private mappings, whose backing files must remain unchanged.
+    std::ranges::fill(data, 0);
 }
 
 mapped_memory::~mapped_memory() noexcept {

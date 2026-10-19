@@ -749,6 +749,19 @@
       }
     },
     {
+      "name": "machine.clear_hash_tree",
+      "summary": "Clears all cached hash-tree data, preserving machine state and statistics",
+      "description": "Resets tree storage to freshly initialized values, updating shared backing stores in place. Hashes are rebuilt lazily on the next hash or proof request.",
+      "params": [],
+      "result": {
+        "name": "result",
+        "description": "True if successful",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
       "name": "machine.get_hash_tree_stats",
       "summary": "Returns statistics for the hash tree",
       "params": [
@@ -1637,6 +1650,11 @@
           },
           "no_reserve": {
             "type": "boolean"
+          },
+          "clear_hash_tree": {
+            "type": "boolean",
+            "default": false,
+            "description": "Clear all cached hash-tree data after creating or loading the machine. Only applied during construction."
           }
         }
       },

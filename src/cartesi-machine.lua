@@ -712,6 +712,10 @@ where options are:
 
     DON'T USE THIS OPTION IN PRODUCTION
 
+  --clear-hash-tree
+    clear all cached hash-tree data after creating or loading the machine.
+    hashes are rebuilt lazily on the next hash or proof request.
+
   --max-mcycle=<number>
     stop at a given mcycle (default: 2^64-1).
 
@@ -1179,6 +1183,7 @@ local cmdline = {
     concurrency_update_hash_tree = 0,
     skip_version_check = false,
     no_reserve = false,
+    clear_hash_tree = false,
     initial_hash = false,
     final_hash = false,
     initial_proof = {},
@@ -2119,6 +2124,13 @@ options = {
         end,
     },
     {
+        "--clear-hash-tree",
+        function()
+            cmdline.clear_hash_tree = true
+            return true
+        end,
+    },
+    {
         "--no-reserve",
         function()
             cmdline.no_reserve = true
@@ -2793,6 +2805,7 @@ local runtime_config = {
     console = cmdline.console,
     skip_version_check = cmdline.skip_version_check,
     no_reserve = cmdline.no_reserve,
+    clear_hash_tree = cmdline.clear_hash_tree,
 }
 
 if cmdline.remote_spawn then

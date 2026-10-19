@@ -174,6 +174,12 @@ public:
         return do_get_node_hash(address, log2_size);
     }
 
+    /// \brief Clears cached hash-tree data, preserving machine state and statistics.
+    /// \details Hashes are rebuilt lazily on the next hash or proof request.
+    void clear_hash_tree() {
+        do_clear_hash_tree();
+    }
+
     /// \brief Verifies integrity of hash tree.
     bool verify_hash_tree() const {
         return do_verify_hash_tree();
@@ -421,6 +427,7 @@ private:
     virtual void do_write_word(uint64_t address, uint64_t value) = 0;
     virtual machine_config do_get_initial_config() const = 0;
     virtual hash_tree_stats do_get_hash_tree_stats(bool clear) = 0;
+    virtual void do_clear_hash_tree() = 0;
     virtual machine_runtime_config do_get_runtime_config() const = 0;
     virtual void do_set_runtime_config(const machine_runtime_config &r) = 0;
     virtual void do_destroy() = 0;

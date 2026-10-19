@@ -935,6 +935,23 @@ describe("cartesi-machine CLI", function()
         run_ok({ "--no-reserve", "--max-mcycle=0", "--no-init-splash", "--quiet" })
     end)
 
+    it("clears hash-tree caches when loading", function()
+        local _ <close>, dirname = scope_stored_dirname()
+        local source <close> = cartesi.machine({ ram = { length = 0x3000 }, hash_tree = { phtc_size = 32 } })
+        source:write_memory(cartesi.AR_RAM_START, string.rep("A", 0x1000))
+        local root = source:get_root_hash()
+        source:store(dirname)
+        local rc, _, stderr = run({
+            "--load=" .. dirname,
+            "--clear-hash-tree",
+            "--initial-hash",
+            "--max-mcycle=0",
+            "--no-init-splash",
+        })
+        expect.equal(rc, 0)
+        expect.truthy(stderr:find(cartesi.tohex(root), 1, true))
+    end)
+
     -- -------------------------------------------------------------------------
     -- Mcycle overflow
     --

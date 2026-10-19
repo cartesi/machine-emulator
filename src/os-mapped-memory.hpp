@@ -125,6 +125,11 @@ public:
             static_cast<size_t>(m_length)};
     }
 
+    /// \brief Clears a writable mapping's contents to zero, preserving its address and length.
+    /// \details Punches holes in shared backing files when supported, otherwise writes zeros.
+    /// Private backing files are never modified. The mapping must not be read-only.
+    void clear() noexcept;
+
     /// \brief Returns the total length of the mapped memory region.
     uint64_t get_length() const noexcept {
         return m_length;

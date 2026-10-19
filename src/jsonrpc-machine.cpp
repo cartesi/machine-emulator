@@ -905,6 +905,11 @@ void jsonrpc_machine::do_write_word(uint64_t address, uint64_t value) {
     request("machine.write_word", std::tie(address, value), result);
 }
 
+void jsonrpc_machine::do_clear_hash_tree() {
+    bool result = false;
+    request("machine.clear_hash_tree", std::tie(), result);
+}
+
 hash_tree_stats jsonrpc_machine::do_get_hash_tree_stats(bool clear) {
     hash_tree_stats result{};
     request("machine.get_hash_tree_stats", std::tie(clear), result);

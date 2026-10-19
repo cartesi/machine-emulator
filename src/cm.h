@@ -47,7 +47,7 @@ static const uint64_t CM_MCYCLE_MAX = -1ULL;
 
 /// Binary step log signature: "CTSI" magic + version byte + 3 reserved bytes.
 /// Must stay in sync with cartesi::STEP_LOG_SIGNATURE in step-log.hpp.
-#define CM_STEP_LOG_SIGNATURE "CTSI\x03\x00\x00\x00"
+#define CM_STEP_LOG_SIGNATURE "CTSI\x04\x00\x00\x00"
 #define CM_STEP_LOG_SIGNATURE_SIZE 8
 
 // -----------------------------------------------------------------------------

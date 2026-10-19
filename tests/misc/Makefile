@@ -100,7 +100,7 @@ ifeq ($(slirp),yes)
 LIBCARTESI_LIBS+=$(SLIRP_LIB)
 endif
 
-all: $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api $(BUILDDIR)/test-uarch-address-range $(BUILDDIR)/test-uarch-pma-cache
+all: $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api $(BUILDDIR)/test-uarch-address-range $(BUILDDIR)/test-uarch-pma-cache $(BUILDDIR)/test-step-log
 
 ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a:
 	$(info libcartesi.a and/or libcartesi_hash_tree.a were not found! Build them first.)
@@ -125,6 +125,12 @@ test-uarch-pma-cache.o: CXXFLAGS += -I../../uarch
 test-uarch-pma-cache.o: ../../uarch/uarch-pma-cache.hpp ../../uarch/uarch-address-range.hpp ../../src/mock-address-range.hpp ../../src/find-pma.hpp
 
 $(BUILDDIR)/test-uarch-pma-cache: test-uarch-pma-cache.o ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
+	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
+
+test-step-log.o: CXXFLAGS += -I../../third-party/llvm-flang-uint128
+test-step-log.o: ../../src/step-log.hpp ../../src/step-log-recorder.hpp ../../src/step-log-slice.hpp ../../src/replay-step-state-access.hpp
+
+$(BUILDDIR)/test-step-log: test-step-log.o ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
 
 %.o: %.c
@@ -155,6 +161,6 @@ clean-objs:
 clean: clean-tidy clean-objs
 	@rm -f $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api
 	@rm -f $(BUILDDIR)/test-uarch-address-range
-	@rm -f $(BUILDDIR)/test-uarch-pma-cache
+	@rm -f $(BUILDDIR)/test-uarch-pma-cache $(BUILDDIR)/test-step-log
 
 .SUFFIXES:

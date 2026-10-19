@@ -67,13 +67,19 @@ library StateAccess {
             }
         }
         bytes memory pd = ctx.pageData;
-        uint256 pageSize = EmulatorConstants.PAGE_SIZE;
-        uint256 pageMask = EmulatorConstants.PAGE_OFFSET_MASK;
+        uint256[] memory slices = ctx.slices;
         uint64 value;
-        // Inline swapBytes64 twin: its callee size exceeds solc's hot-path inlining budget.
-        // Decoded cache positions are in 0..63; the aligned word fits its page.
+        // The cache selects a decoded descriptor. Check the entire aligned word
+        // before deriving its pointer, including on cache hits. One load unpacks
+        // address (bits 5..63), log2 size (0..4) and content offset (64..255).
         assembly ("memory-safe") {
-            let ptr := add(add(pd, 32), add(mul(lo, pageSize), and(paddr, pageMask)))
+            let slice := mload(add(add(slices, 32), shl(5, lo)))
+            let off := sub(and(paddr, 0xffffffffffffffff), and(slice, 0xffffffffffffffe0))
+            if gt(off, sub(shl(and(slice, 31), 1), 8)) {
+                mstore(0, shl(224, 0x10d24160)) // AccessOutsideSlice()
+                revert(0, 4)
+            }
+            let ptr := add(add(pd, 32), add(shr(64, slice), off))
             let v := shr(192, mload(ptr))
             v := or(and(shr(8, v), 0x00ff00ff00ff00ff), and(shl(8, v), 0xff00ff00ff00ff00))
             v := or(and(shr(16, v), 0x0000ffff0000ffff), and(shl(16, v), 0xffff0000ffff0000))
@@ -118,14 +124,18 @@ library StateAccess {
         }
         bytes memory pd = ctx.pageData;
         bytes32[] memory hashes = ctx.pageHashes;
-        uint256 pageSize = EmulatorConstants.PAGE_SIZE;
-        uint256 pageMask = EmulatorConstants.PAGE_OFFSET_MASK;
+        uint256[] memory slices = ctx.slices;
         uint256 ptr;
-        // A matching tag or successful miss resolves an existing page. decode
-        // caps positions at 63 and sizes both arrays equally; the aligned word fits.
+        // Decode validates positions and slice sizes; the entire 8-byte write must fit.
         assembly ("memory-safe") {
+            let slice := mload(add(add(slices, 32), shl(5, lo)))
+            let off := sub(and(paddr, 0xffffffffffffffff), and(slice, 0xffffffffffffffe0))
+            if gt(off, sub(shl(and(slice, 31), 1), 8)) {
+                mstore(0, shl(224, 0x10d24160)) // AccessOutsideSlice()
+                revert(0, 4)
+            }
             mstore(add(add(hashes, 32), shl(5, lo)), 0)
-            ptr := add(add(pd, 32), add(mul(lo, pageSize), and(paddr, pageMask)))
+            ptr := add(add(pd, 32), add(shr(64, slice), off))
         }
         StepLog.writeLE64Memory(ptr, val);
     }
@@ -221,14 +231,14 @@ library StateAccess {
     // page bytes match the C++/RISC0 replayers. The slot ends exactly at the page boundary.
     function writeRevertRootHash(StepLog.Context memory ctx, bytes32 h) internal pure {
         uint256 ptr =
-            StepLog.findPageForWrite(ctx, EmulatorConstants.AR_SHADOW_REVERT_ROOT_HASH_START);
+            StepLog.findPageForWrite(ctx, EmulatorConstants.AR_SHADOW_REVERT_ROOT_HASH_START, 32);
         assembly ("memory-safe") {
             mstore(ptr, h)
         }
     }
 
     function readRevertRootHash(StepLog.Context memory ctx) internal pure returns (bytes32 h) {
-        uint256 ptr = StepLog.findPage(ctx, EmulatorConstants.AR_SHADOW_REVERT_ROOT_HASH_START);
+        uint256 ptr = StepLog.findPage(ctx, EmulatorConstants.AR_SHADOW_REVERT_ROOT_HASH_START, 32);
         assembly ("memory-safe") {
             h := mload(ptr)
         }
@@ -266,7 +276,7 @@ library StateAccess {
     ) internal pure {
         if (writeLengthLog2Size <= EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE) {
             // Mirrors copy_n + fill_n in do_write_memory_with_padding (replay-step-state-access.hpp).
-            uint256 dstPtr = StepLog.findPageForWrite(ctx, paddr);
+            uint256 dstPtr = StepLog.findPageForWrite(ctx, paddr, uint256(1) << writeLengthLog2Size);
             uint256 len = uint256(dataLength);
             uint256 padLen = (uint256(1) << writeLengthLog2Size) - len;
             assembly ("memory-safe") {
@@ -352,14 +362,18 @@ library StateAccess {
         }
         bytes memory pd = ctx.pageData;
         bytes32[] memory hashes = ctx.pageHashes;
-        uint256 pageSize = EmulatorConstants.PAGE_SIZE;
-        uint256 pageMask = EmulatorConstants.PAGE_OFFSET_MASK;
+        uint256[] memory slices = ctx.slices;
         uint256 ptr;
-        // A cache hit/miss resolves an existing position in both decoded arrays;
-        // positions fit six bits and the aligned 32-byte slot stays within its page.
+        // Decode validates positions and slice sizes; the entire 32-byte write must fit.
         assembly ("memory-safe") {
+            let slice := mload(add(add(slices, 32), shl(5, lo)))
+            let off := sub(and(slotAddr, 0xffffffffffffffff), and(slice, 0xffffffffffffffe0))
+            if gt(off, sub(shl(and(slice, 31), 1), 32)) {
+                mstore(0, shl(224, 0x10d24160)) // AccessOutsideSlice()
+                revert(0, 4)
+            }
             mstore(add(add(hashes, 32), shl(5, lo)), 0)
-            ptr := add(add(pd, 32), add(mul(lo, pageSize), and(slotAddr, pageMask)))
+            ptr := add(add(pd, 32), add(shr(64, slice), off))
         }
         uint256 slot = (uint256(StepLog.swapBytes64(vaddrPage)) << 192)
             | (uint256(StepLog.swapBytes64(vpOffset)) << 128)

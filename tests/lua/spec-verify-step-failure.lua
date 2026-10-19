@@ -65,7 +65,7 @@ local function build_machine(hash_fn)
                 },
             },
         },
-    }, {})
+    })
 end
 
 -- Produce a fresh valid log + endpoint hashes.
@@ -87,35 +87,24 @@ local function verify_corrupted(log, mutate, root_hash_before, mcycle_count, roo
     end)
 end
 
--- Three-cursor sibling computation: replicates replay_step_state_access's tree
--- walk for an arbitrary subset of present page indices, using a pristine
--- machine's node hashes for subtrees that contain none of those pages.
-local function get_siblings_for_pages(machine, page_indices)
-    table.sort(page_indices)
-    local log2_page_count = LOG2_ROOT_SIZE - LOG2_PAGE_SIZE
+-- Build the sibling stream for the retained slices from the pre-state machine.
+local function get_siblings_for_slices(machine, pages)
     local siblings = {}
     local next_page = 1
-
-    local function walk(first_page_index, lpc)
-        local range_size = 1 << lpc
-        local has_page = next_page <= #page_indices
-            and page_indices[next_page] >= first_page_index
-            and page_indices[next_page] < first_page_index + range_size
-        if not has_page then
-            local addr = first_page_index << LOG2_PAGE_SIZE
-            local log2_size = lpc + LOG2_PAGE_SIZE
-            table.insert(siblings, machine:get_node_hash(addr, log2_size))
-            return
-        end
-        if lpc > 0 then
-            walk(first_page_index, lpc - 1)
-            walk(first_page_index + (range_size >> 1), lpc - 1)
-        else
+    local function walk(first_leaf, height)
+        local page = pages[next_page]
+        local leaf = page and (((page.index << LOG2_PAGE_SIZE) + page.offset) >> 5)
+        if not leaf or leaf >= first_leaf + (1 << height) then
+            siblings[#siblings + 1] = machine:get_node_hash(first_leaf << 5, height + 5)
+        elseif leaf == first_leaf and page.log2_size == height + 5 then
             next_page = next_page + 1
+        else
+            assert(height > 0)
+            walk(first_leaf, height - 1)
+            walk(first_leaf + (1 << (height - 1)), height - 1)
         end
     end
-
-    walk(0, log2_page_count)
+    walk(0, LOG2_ROOT_SIZE - 5)
     return siblings
 end
 
@@ -193,7 +182,7 @@ describe("verify_step", function()
         end)
 
         it("rejects page_count overflow against file size", function()
-            expect_corruption_error("page count exceeds step log size", function(log_data)
+            expect_corruption_error("slice count exceeds step log size", function(log_data)
                 log_data.override_page_count = cartesi.MCYCLE_MAX
             end)
         end)
@@ -205,7 +194,7 @@ describe("verify_step", function()
         end)
 
         it("rejects sibling_count that does not match file size", function()
-            expect_corruption_error("sibling count does not match step log size", function(log_data)
+            expect_corruption_error("step log byte length does not match counts", function(log_data)
                 log_data.override_sibling_count = 0xffffffff
             end)
         end)
@@ -213,7 +202,7 @@ describe("verify_step", function()
         it("rejects sibling_count whose byte size overflows uint64", function()
             -- 2^59 siblings * 32 bytes == 2^64 wraps to 0, so a header claiming siblings
             -- with no sibling bytes present must still be rejected by the size check.
-            expect_corruption_error("sibling count does not match step log size", function(log_data)
+            expect_corruption_error("step log byte length does not match counts", function(log_data)
                 log_data.siblings = {}
                 log_data.override_sibling_count = 1 << 59
             end)
@@ -283,19 +272,19 @@ describe("verify_step", function()
 
     describe("page validation", function()
         it("rejects an empty page list", function()
-            expect_corruption_error("page count is zero", function(log_data)
+            expect_corruption_error("slice count is zero", function(log_data)
                 log_data.pages = {}
             end)
         end)
 
         it("rejects page indices not in ascending order", function()
-            expect_corruption_error("invalid log format: page index is not in increasing order", function(log_data)
+            expect_corruption_error("invalid log format: slice addresses not in increasing order", function(log_data)
                 log_data.pages[2].index = log_data.pages[1].index
             end)
         end)
 
         it("rejects a non-zero page scratch hash area", function()
-            expect_corruption_error("invalid log format: page scratch hash area is not zero", function(log_data)
+            expect_corruption_error("invalid log format: slice scratch hash area is not zero", function(log_data)
                 log_data.pages[1].scratch_hash = string.rep("\1", HASH_SIZE)
             end)
         end)
@@ -305,31 +294,16 @@ describe("verify_step", function()
                 log_data.pages[1].data = string.reverse(log_data.pages[1].data)
             end)
         end)
-
-        -- A page at index 2^52 is beyond the tree's page-index range; the
-        -- walk visits root, finds nothing in range, consumes one sibling and
-        -- returns -- leaving the extra page unconsumed.
-        it("rejects a page with an out-of-range index", function()
-            expect_corruption_error("too many pages in log", function(log_data)
-                local last = log_data.pages[#log_data.pages]
-                log_data.pages = {
-                    {
-                        index = 1 << (LOG2_ROOT_SIZE - LOG2_PAGE_SIZE),
-                        data = last.data,
-                        scratch_hash = last.scratch_hash,
-                    },
-                }
-                log_data.siblings = { BAD_HASH }
-            end)
-        end)
     end)
 
     describe("sibling validation", function()
-        it("rejects an extra page that consumes a missing sibling slot", function()
-            expect_corruption_error("too many sibling hashes in log", function(log_data)
+        it("rejects an extra slice that needs missing sibling hashes", function()
+            expect_corruption_error("too few sibling hashes in log", function(log_data)
                 local last = log_data.pages[#log_data.pages]
                 table.insert(log_data.pages, {
                     index = last.index + 1,
+                    offset = last.offset,
+                    log2_size = last.log2_size,
                     data = last.data,
                     scratch_hash = last.scratch_hash,
                 })
@@ -398,7 +372,7 @@ describe("verify_step", function()
         end)
 
         it("rejects a node overlapping a witnessed page", function()
-            expect_corruption_error("page or node overlaps a previous entry", function(log_data)
+            expect_corruption_error("slice or node overlaps a previous entry", function(log_data)
                 -- A two-page-aligned node covering the first witnessed page's pair overlaps it.
                 local pair_index = log_data.pages[1].index & ~1
                 log_data.nodes = {
@@ -419,12 +393,9 @@ describe("verify_step", function()
             assert(#log_data.pages >= 2, "test needs a machine that produces at least 2 pages per step")
 
             table.remove(log_data.pages)
-            local kept_indices = {}
-            for i, p in ipairs(log_data.pages) do
-                kept_indices[i] = p.index
-            end
             local fresh <close> = build_machine()
-            log_data.siblings = get_siblings_for_pages(fresh, kept_indices)
+            log_data.siblings = get_siblings_for_slices(fresh, log_data.pages)
+            assert(test_util.recompute_step_log_root(log_data) == root_hash_before)
 
             local adversarial = test_util.serialize_step_log(log_data)
             local ok, err = pcall(function()
@@ -471,17 +442,14 @@ describe("verify_step", function()
                 end
             end
             assert(page, "PMA page not found in log -- machine config must touch it")
-            local offset = index * 16 + 8
+            local offset = index * 16 + 8 - page.offset
             page.data = page.data:sub(1, offset) .. string.pack("<I8", BAD_LENGTH) .. page.data:sub(offset + 9)
             local fresh <close> = build_machine()
-            local indices = {}
-            for i, p in ipairs(log_data.pages) do
-                indices[i] = p.index
-            end
-            log_data.siblings = get_siblings_for_pages(fresh, indices)
+            local full_page = fresh:read_memory(cartesi.AR_PMAS_START, PAGE_SIZE)
+            full_page = full_page:sub(1, page.offset) .. page.data .. full_page:sub(page.offset + #page.data + 1)
             return test_util.serialize_step_log(log_data),
-                root_with_pma_page(fresh, page.data, hash_fn),
-                page.data,
+                root_with_pma_page(fresh, full_page, hash_fn),
+                full_page,
                 hash_fn
         end
 

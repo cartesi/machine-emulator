@@ -132,15 +132,26 @@ local cases = {
 -- Claimed roots for the reject rows come from the base fixture's row in the positive manifest.
 local base_claims = manifest.read_claims(fixtures_dir .. "/cartesi-machine-tests", BASE_NAME)
 
+for _, case in ipairs(require("cartesi.tests.step-log-slice-rejections")) do
+    cases[#cases + 1] = case
+end
+
 test_util.prepare_empty_output_dir(output_dir)
 local out <close> = assert(io.open(output_dir .. "/" .. manifest.MANIFEST_NAME, "w"))
 out:write(manifest.HEADER)
 
 for _, case in ipairs(cases) do
     local log = test_util.read_step_log_file(BASE)
-    case.mutate(log)
+    if case.mutate then
+        case.mutate(log)
+    end
     local name = case.tag .. ".log"
-    test_util.write_step_log_file(log, output_dir .. "/" .. name)
+    local bytes = test_util.serialize_step_log(log)
+    if case.wire then
+        bytes = case.wire(bytes)
+    end
+    local file <close> = assert(io.open(output_dir .. "/" .. name, "wb"))
+    file:write(bytes)
     manifest.write_row(out, {
         kind = "machine",
         name = name,

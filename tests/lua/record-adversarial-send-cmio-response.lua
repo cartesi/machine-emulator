@@ -81,7 +81,8 @@ local IFLAGS_OFF = IFLAGS_Y_ADDR & 0xfff
 local function clear_iflags_y(log)
     for _, page in ipairs(log.pages) do
         if page.index == IFLAGS_PAGE then
-            page.data = page.data:sub(1, IFLAGS_OFF) .. string.rep("\0", 8) .. page.data:sub(IFLAGS_OFF + 9)
+            local off = IFLAGS_OFF - (page.offset or 0)
+            page.data = page.data:sub(1, off) .. string.rep("\0", 8) .. page.data:sub(off + 9)
             return
         end
     end

@@ -5624,51 +5624,58 @@ reverts the state of the uarch to its pristine form. Note that the
 functions indeed perform the action, and therefore modify the uarch
 state, in addition to recording the log.
 
-The binary format of the step log is as follows:
+The binary step log uses the slices format (version 4):
 
-    step_log ::= header page_entry^page_count node_entry^node_count sibling_entry^sibling_count
+    step_log ::= header slice_entry^page_count node_entry^node_count sibling_entry^sibling_count
 
     header ::= {                        -- 40 bytes
-      signature     ::= "CTSI" 3 0 0 0, -- magic + version + reserved
+      signature     ::= "CTSI" 4 0 0 0, -- magic + version + reserved
       hash_function ::= uint64,         -- 0 for Keccak-256, 1 for SHA-256
-      page_count    ::= uint64,
+      page_count    ::= uint64,          -- number of slices
       node_count    ::= uint64,
       sibling_count ::= uint64
     }
 
-    page_entry ::= {                    -- 4136 bytes, strictly ascending by index
-      index ::= uint64,                 -- byte address >> log2 of the page size
-      data  ::= byte^4096,              -- page contents as of first touch
-      hash  ::= hash                    -- scratch slot, must be zero on the wire
+    slice_entry ::= {                   -- 48 + 2^log2_size bytes
+      address   ::= uint64,             -- byte address, aligned to 2^log2_size
+      log2_size ::= uint64,             -- 5..12 (32..4096 bytes)
+      data      ::= byte^(2^log2_size),  -- slice contents as of first touch
+      hash      ::= hash                -- scratch slot, must be zero on the wire
     }
 
     node_entry ::= {                    -- 48 bytes: a bulk write spanning > 1 page
       address   ::= uint64,             -- subtree start, aligned to 2^log2_size
-      log2_size ::= uint64,
+      log2_size ::= uint64,             -- 13..64
       hash      ::= hash                -- subtree hash before the bulk write; the replay
                                         -- overwrites it with the hash of what it writes
     }
 
-    sibling_entry ::= hash              -- hashes of the subtrees not covered by pages
-                                        -- or nodes, in the order a depth-first walk of
-                                        -- the state hash tree consumes them
+    sibling_entry ::= hash              -- untouched subtrees, in depth-first walk order
 
-All integers are little-endian and every `hash` is 32 bytes. A verifier
-whose protocol fixes the hash function (the on-chain replayer is
-Keccak-256 only) rejects a log that declares the other. The page entries
-record, as of first touch, every page of machine state the step read or
-wrote. The node entries record bulk writes that replace whole subtrees
-at once, as the uarch reset and the input-inclusion transitions do. A
-node is a subtree whose contents are not witnessed, only its hash: it
-spans more than a page and no more than the whole state, and its address
-is aligned to its size. Decoding rejects a log whose page scratch slots
-are not zero, or whose pages and nodes, read as a single address-ordered
-stream, are not strictly ascending and disjoint. Combined with the
-hashes of the pages and nodes, the siblings reconstruct the machine’s
-root hash: the reconstruction walks the state hash tree depth first,
-left before right, and takes the next sibling hash whenever the subtree
-it reaches holds no page and no node. Decoding also rejects a log with
-too few siblings, or with any page, node, or sibling left unconsumed.
+All integers are little-endian and every `hash` is 32 bytes. Version 3
+logs are rejected. A verifier whose protocol fixes the hash function
+(the on-chain replayer is Keccak-256 only) rejects a log that declares
+the other. Each witnessed 4 KiB page contributes at most one slice,
+containing every byte the step read or wrote. The recorder starts with
+the full page and repeatedly selects one half only when the other half
+was untouched, stopping at its fixed 512-byte floor or when both halves
+were touched. Decoders accept every legal slice size, independently of
+that recorder floor. The uarch register cache's whole load and flush
+window counts as touched.
+
+Slices must be aligned, strictly ascending by address, disjoint, and
+unique by enclosing page. Nodes represent bulk writes replacing whole
+subtrees, as in uarch reset and input inclusion, and cannot overlap a
+slice or another node. Decoding rejects nonzero slice scratch hashes,
+truncated entries and bytes left beyond the declared contents. Replay
+rejects a read or write outside its witnessed slice, including accesses
+through cached address translations.
+
+The verifier hashes each slice and reconstructs the root by walking the
+state hash tree depth first, left before right. It descends to each
+slice's size, consuming a sibling hash for every untouched subtree, and
+rejects missing or unconsumed entries. Written slices are rehashed for
+the post-state root; bulk writes update their node hashes in place.
 The root hash before is recomputed from the witnessed tree and the root
 hash after is whatever the replay produces, returned for the caller to
 compare. Besides the log, `verify_step` and `verify_step_uarch` take the

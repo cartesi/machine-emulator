@@ -35,12 +35,18 @@ contract StateAccessCacheTest is Test {
     function testCacheLastPositionAndMaximumPhysicalPage() public pure {
         StepLog.Context memory ctx;
         ctx.pageIndices = new uint64[](64);
+        ctx.slices = new uint256[](64);
+        for (uint256 si; si < ctx.slices.length; ++si) {
+            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
+        }
         ctx.pageData = new bytes(64 * 4096);
         ctx.pageHashes = new bytes32[](64);
         for (uint64 i; i < 63; ++i) {
             ctx.pageIndices[i] = i;
+            ctx.slices[i] = StepLog.packSlice(ctx.pageIndices[i] << 12, 12, uint256(i) * 4096);
         }
         ctx.pageIndices[63] = type(uint64).max >> 12;
+        ctx.slices[63] = StepLog.packSlice(ctx.pageIndices[63] << 12, 12, uint256(63) * 4096);
         for (uint64 i; i < 64; ++i) {
             uint64 paddr = (ctx.pageIndices[i] << 12) | 4088;
             StateAccess.writeWord(ctx, paddr, 100 + i);
@@ -63,7 +69,12 @@ contract StateAccessCacheTest is Test {
             + slotIndex * EmulatorConstants.SHADOW_TLB_SLOT_SIZE;
         StepLog.Context memory ctx;
         ctx.pageIndices = new uint64[](1);
+        ctx.slices = new uint256[](1);
+        for (uint256 si; si < ctx.slices.length; ++si) {
+            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
+        }
         ctx.pageIndices[0] = slotAddr >> 12;
+        ctx.slices[0] = StepLog.packSlice(ctx.pageIndices[0] << 12, 12, uint256(0) * 4096);
         ctx.pageData = new bytes(4096);
         ctx.pageHashes = new bytes32[](1);
         ctx.pageHashes[0] = bytes32(uint256(1));
@@ -110,7 +121,12 @@ contract StateAccessCacheTest is Test {
 
     function registerContext() private pure returns (StepLog.Context memory ctx) {
         ctx.pageIndices = new uint64[](1);
+        ctx.slices = new uint256[](1);
+        for (uint256 si; si < ctx.slices.length; ++si) {
+            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
+        }
         ctx.pageIndices[0] = EmulatorConstants.UARCH_HALT_ADDR >> 12;
+        ctx.slices[0] = StepLog.packSlice(ctx.pageIndices[0] << 12, 12, uint256(0) * 4096);
         ctx.pageData = new bytes(4096);
         ctx.pageData[280] = 0xa5;
         ctx.pageData[4095] = 0x7e;
@@ -210,8 +226,14 @@ contract StateAccessCacheTest is Test {
 
     function collidingPages() private pure returns (StepLog.Context memory ctx) {
         ctx.pageIndices = new uint64[](3);
+        ctx.slices = new uint256[](3);
+        for (uint256 si; si < ctx.slices.length; ++si) {
+            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
+        }
         ctx.pageIndices[1] = 61;
+        ctx.slices[1] = StepLog.packSlice(ctx.pageIndices[1] << 12, 12, uint256(1) * 4096);
         ctx.pageIndices[2] = 122;
+        ctx.slices[2] = StepLog.packSlice(ctx.pageIndices[2] << 12, 12, uint256(2) * 4096);
         ctx.pageData = new bytes(3 * 4096);
         ctx.pageHashes = new bytes32[](3);
     }
@@ -240,6 +262,7 @@ contract StateAccessCacheTest is Test {
     function readUnwitnessedPageZero() external pure returns (uint64) {
         StepLog.Context memory ctx = collidingPages();
         ctx.pageIndices[0] = 1;
+        ctx.slices[0] = StepLog.packSlice(ctx.pageIndices[0] << 12, 12, uint256(0) * 4096);
         return StateAccess.readWord(ctx, 0);
     }
 

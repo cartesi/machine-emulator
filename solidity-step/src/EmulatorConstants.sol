@@ -169,5 +169,5 @@ library EmulatorConstants {
     uint64 internal constant IMCYCLEMAX_ADDRESS = 0x2f8;
 
     // Step log signature (cartesi.STEP_LOG_SIGNATURE).
-    bytes8 internal constant STEP_LOG_SIGNATURE = 0x4354534903000000;
+    bytes8 internal constant STEP_LOG_SIGNATURE = 0x4354534904000000;
 }

@@ -8,14 +8,14 @@ import {EmulatorConstants} from "src/EmulatorConstants.sol";
 import {HashTree} from "src/HashTree.sol";
 
 contract PageHashDifferentialTest is Test {
-    function comparePage(bytes memory data, uint256 start) private pure {
+    function comparePage(bytes memory data, uint256 start, uint256 size) private pure {
         bytes32 contentsBefore = keccak256(data);
-        bytes32 expected = HashTree.merkleTreeHash(data, start, EmulatorConstants.PAGE_SIZE);
+        bytes32 expected = HashTree.merkleTreeHash(data, start, size);
         uint256 freeBefore;
         assembly ("memory-safe") {
             freeBefore := mload(0x40)
         }
-        bytes32 actual = HashTree.merkleTreeHashAsm(data, start);
+        bytes32 actual = HashTree.merkleTreeHashAsm(data, start, size);
         uint256 freeAfter;
         uint256 zeroSlot;
         assembly ("memory-safe") {
@@ -26,14 +26,14 @@ contract PageHashDifferentialTest is Test {
         assertEq(freeAfter, freeBefore, "temporary space became an allocation");
         assertEq(zeroSlot, 0, "zero slot");
         assertEq(keccak256(data), contentsBefore, "input or neighbors changed");
-        assertEq(HashTree.merkleTreeHashAsm(data, start), expected, "reused scratch");
+        assertEq(HashTree.merkleTreeHashAsm(data, start, size), expected, "reused scratch");
         // Subsequent Solidity allocation must initialize memory even where scratch
         // hashes were left above the free pointer.
         bytes memory later = new bytes(96);
         for (uint256 i; i < later.length; ++i) {
             assertEq(later[i], bytes1(0));
         }
-        assertEq(HashTree.merkleTreeHashAsm(data, start), expected, "moved scratch");
+        assertEq(HashTree.merkleTreeHashAsm(data, start, size), expected, "moved scratch");
     }
 
     function testEveryFixturePage() public view {
@@ -60,21 +60,27 @@ contract PageHashDifferentialTest is Test {
     }
 
     function compareLogPages(bytes calldata log) external pure returns (uint256 pages) {
-        // Read page bodies independently of decode. This includes complete page
-        // entries in malformed/rejected logs; truncated bodies cannot supply 4 KiB.
-        uint256 header = 40;
-        uint256 entrySize = 8 + EmulatorConstants.PAGE_SIZE + 32;
-        if (log.length < header) return 0;
-        uint256 declared;
-        for (uint256 i; i < 8; ++i) {
-            declared |= uint256(uint8(log[16 + i])) << (i * 8);
+        // Parse slice bodies independently, including complete entries in rejected logs.
+        if (log.length < 40) return 0;
+        uint256 declared = le64(log, 16);
+        uint256 cursor = 40;
+        for (uint256 i; i < declared; ++i) {
+            if (log.length - cursor < 16) break;
+            uint256 log2Size = le64(log, cursor + 8);
+            if (log2Size < 5 || log2Size > 12) break;
+            uint256 size = uint256(1) << log2Size;
+            cursor += 16;
+            if (log.length - cursor < size + 32) break;
+            bytes memory slice = log[cursor:cursor + size];
+            comparePage(slice, 0, size);
+            cursor += size + 32;
+            ++pages;
         }
-        uint256 available = (log.length - header) / entrySize;
-        pages = declared < available ? declared : available;
-        for (uint256 i; i < pages; ++i) {
-            uint256 offset = header + i * entrySize + 8;
-            bytes memory page = log[offset:offset + EmulatorConstants.PAGE_SIZE];
-            comparePage(page, 0);
+    }
+
+    function le64(bytes calldata data, uint256 off) private pure returns (uint256 v) {
+        for (uint256 i; i < 8; ++i) {
+            v |= uint256(uint8(data[off + i])) << (i * 8);
         }
     }
 
@@ -94,23 +100,25 @@ contract PageHashDifferentialTest is Test {
                 mstore(add(add(data, 32), add(prefix, shl(5, i))), word)
             }
         }
-        comparePage(data, prefix);
+        for (uint256 log2Size = 5; log2Size <= 12; ++log2Size) {
+            comparePage(data, prefix, uint256(1) << log2Size);
+        }
     }
 
     function testKnownPatterns() public pure {
         bytes memory data = new bytes(EmulatorConstants.PAGE_SIZE);
-        comparePage(data, 0);
+        comparePage(data, 0, EmulatorConstants.PAGE_SIZE);
         for (uint256 i; i < data.length; ++i) {
             data[i] = 0xff;
         }
-        comparePage(data, 0);
+        comparePage(data, 0, EmulatorConstants.PAGE_SIZE);
         for (uint256 i; i < data.length; ++i) {
             data[i] = bytes1(uint8(i));
         }
-        comparePage(data, 0);
+        comparePage(data, 0, EmulatorConstants.PAGE_SIZE);
         for (uint256 i; i < data.length; ++i) {
             data[i] = i % 2 == 0 ? bytes1(0x55) : bytes1(0xaa);
         }
-        comparePage(data, 0);
+        comparePage(data, 0, EmulatorConstants.PAGE_SIZE);
     }
 }

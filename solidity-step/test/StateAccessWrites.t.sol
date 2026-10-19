@@ -37,7 +37,7 @@ contract StateAccessWritesTest is ManifestParser {
         uint64 addr = EmulatorConstants.AR_SHADOW_TLB_START
             + setIndex * EmulatorConstants.SHADOW_TLB_SET_LENGTH
             + slotIndex * EmulatorConstants.SHADOW_TLB_SLOT_SIZE;
-        uint256 ptr = StepLog.findPageForWrite(ctx, addr);
+        uint256 ptr = StepLog.findPageForWrite(ctx, addr, 32);
         uint256 word = (uint256(StepLog.swapBytes64(fields[0])) << 192)
             | (uint256(StepLog.swapBytes64(fields[1])) << 128)
             | (uint256(StepLog.swapBytes64(fields[2])) << 64);
@@ -132,16 +132,17 @@ contract StateAccessWritesTest is ManifestParser {
         StepLog.Context memory actual = StepLog.decode(log);
         StepLog.Context memory expected = StepLog.decode(log);
         for (uint256 i; i < actual.pageIndices.length; ++i) {
-            uint64 start = actual.pageIndices[i] << 12;
+            uint64 start = StepLog.sliceAddress(actual.slices[i]);
+            uint64 size = uint64(1) << StepLog.sliceLog2Size(actual.slices[i]);
             uint64 value = uint64(uint256(keccak256(abi.encode(sample, start))));
             compareColdWarmWord(actual, expected, start, value);
-            compareColdWarmWord(actual, expected, start + 4088, value);
-            compareColdWarmWord(actual, expected, start + uint64(sample % 512) * 8, value);
+            compareColdWarmWord(actual, expected, start + size - 8, value);
+            compareColdWarmWord(actual, expected, start + uint64(sample % (size / 8)) * 8, value);
             if (start >= 0x1000 && start < 0x7000) {
                 // Every TLB slot in every witnessed TLB page, including page/set edges.
                 uint64 setIndex = (start - 0x1000) / 0x2000;
                 uint64 firstSlot = ((start - 0x1000) % 0x2000) / 32;
-                for (uint64 j; j < 128; ++j) {
+                for (uint64 j; j < size / 32; ++j) {
                     uint256 cacheSlot = (start >> 12) % 61;
                     actual.pageLookupCache[cacheSlot] = 0;
                     expected.pageLookupCache[cacheSlot] = 0;
@@ -162,10 +163,15 @@ contract StateAccessWritesTest is ManifestParser {
 
     function physicalContext(uint64 base) private pure returns (StepLog.Context memory ctx) {
         ctx.pageIndices = new uint64[](3);
+        ctx.slices = new uint256[](3);
+        for (uint256 si; si < ctx.slices.length; ++si) {
+            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
+        }
         ctx.pageData = new bytes(3 * 4096);
         ctx.pageHashes = new bytes32[](3);
         for (uint64 i; i < 3; ++i) {
             ctx.pageIndices[i] = base + i * 61;
+            ctx.slices[i] = StepLog.packSlice(ctx.pageIndices[i] << 12, 12, uint256(i) * 4096);
             ctx.pageHashes[i] = bytes32(uint256(i) + 1);
             ctx.pageData[uint256(i) * 4096] = 0xa5;
             ctx.pageData[uint256(i) * 4096 + 4095] = 0x5a;
@@ -222,10 +228,15 @@ contract StateAccessWritesTest is ManifestParser {
 
     function maximumContext() private pure returns (StepLog.Context memory ctx) {
         ctx.pageIndices = new uint64[](64);
+        ctx.slices = new uint256[](64);
+        for (uint256 si; si < ctx.slices.length; ++si) {
+            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
+        }
         ctx.pageData = new bytes(64 * 4096);
         ctx.pageHashes = new bytes32[](64);
         for (uint64 i; i < 64; ++i) {
             ctx.pageIndices[i] = i == 63 ? type(uint64).max >> 12 : i;
+            ctx.slices[i] = StepLog.packSlice(ctx.pageIndices[i] << 12, 12, uint256(i) * 4096);
             ctx.pageHashes[i] = bytes32(uint256(i) + 1);
         }
     }
@@ -362,8 +373,14 @@ contract StateAccessWritesTest is ManifestParser {
     function invalidEcall(uint64 selector, uint64 setIndex, uint64 slotIndex) external pure {
         StepLog.Context memory ctx;
         ctx.pageIndices = new uint64[](2);
+        ctx.slices = new uint256[](2);
+        for (uint256 si; si < ctx.slices.length; ++si) {
+            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
+        }
         ctx.pageIndices[0] = EmulatorConstants.UARCH_HALT_ADDR >> 12;
+        ctx.slices[0] = StepLog.packSlice(ctx.pageIndices[0] << 12, 12, uint256(0) * 4096);
         ctx.pageIndices[1] = 0x600;
+        ctx.slices[1] = StepLog.packSlice(ctx.pageIndices[1] << 12, 12, uint256(1) * 4096);
         ctx.pageHashes = new bytes32[](2);
         ctx.pageData = new bytes(8192);
         ctx.pageData[4096] = 0x73; // ECALL

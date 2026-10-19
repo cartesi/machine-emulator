@@ -46,24 +46,22 @@ library HashTree {
         }
     }
 
-    /// Page-sized twin of merkleTreeHash; the readable recursion remains the reference.
-    /// Callers provide a complete PAGE_SIZE region starting at `start` in `data`.
-    function merkleTreeHashAsm(bytes memory data, uint256 start)
+    /// Slice-sized twin of merkleTreeHash; the readable recursion remains the reference.
+    /// Callers provide an aligned power-of-two region of 32..4096 bytes at `start`.
+    function merkleTreeHashAsm(bytes memory data, uint256 start, uint256 size)
         internal
         pure
         returns (bytes32 result)
     {
-        uint256 pageSize = EmulatorConstants.PAGE_SIZE;
         uint256 leafSize = EmulatorConstants.LEAF_SIZE;
-        // The generated layout has 128 32-byte leaves per page; each hash is 32 bytes.
-        // PAGE_SIZE / LEAF_SIZE is a power of two, so every combine level has pairs.
+        // Decode validates the power-of-two slice size, so every combine level has pairs.
         assert(leafSize == 32);
         assembly ("memory-safe") {
             // Temporary space above the free pointer: no allocation or inner calls,
             // and no live input overlaps it. Reuse it for every page without moving 0x40.
             let scratch := mload(0x40)
             let input := add(add(data, 32), start)
-            let count := div(pageSize, leafSize)
+            let count := div(size, leafSize)
             for { let i := 0 } lt(i, count) { i := add(i, 1) } {
                 mstore(add(scratch, shl(5, i)), keccak256(add(input, mul(i, leafSize)), leafSize))
             }

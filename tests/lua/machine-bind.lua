@@ -840,8 +840,8 @@ local function assert_dump_lines(text, expected)
 end
 
 do_test("dump_step_uarch writes a readable printout", function(machine)
-    -- The log records 2 cycles, but its pages carry full contents, so the third (halting) cycle
-    -- of the default program ("li a0,123", "li a7,halt", "ecall") replays from the same witness.
+    -- The log records 2 cycles, but the slices also cover the third (halting)
+    -- instruction of the default program: "li a0,123", "li a7,halt", "ecall".
     local log = machine:log_step_uarch(2)
     local text = cartesi.machine:dump_step_uarch(log, 0, 3)
     local expected = {
@@ -1180,14 +1180,16 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
 )
 
 tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
-    "log_reset_uarch witnesses the revert root hash shadow page into the step log",
+    "a rejected reset witnesses the revert root hash in its slice",
     function(machine)
-        -- The reset accesses the revert root hash (seeded here) and htif.tohost, forcing their shadow
-        -- page into the log so a consumer can read both straight off the reset proof.
+        -- Only a rejected manual yield reads the revert root; an ordinary reset
+        -- need not witness that part of the shadow page.
+        machine:write_reg("iflags_Y", 1)
+        machine:write_reg("htif_tohost", (2 << 56) | (1 << 48) | (cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED << 32))
         machine:write_memory(cartesi.AR_SHADOW_REVERT_ROOT_HASH_START, CMIO_REVERT_HASH)
         local initial_hash = machine:get_root_hash()
         local log = machine:log_reset_uarch()
-        local final_hash = machine:get_root_hash()
+        local final_hash = CMIO_REVERT_HASH
         local log_data = parse_step_log(log)
         local page_idx = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START >> cartesi.HASH_TREE_LOG2_PAGE_SIZE
         local offset = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START & ((1 << cartesi.HASH_TREE_LOG2_PAGE_SIZE) - 1)
@@ -1199,7 +1201,7 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
         end
         assert(found, "reset log must record the shadow page holding the revert root hash")
         assert(
-            found.data:sub(offset + 1, offset + cartesi.HASH_SIZE) == CMIO_REVERT_HASH,
+            found.data:sub(offset - found.offset + 1, offset - found.offset + cartesi.HASH_SIZE) == CMIO_REVERT_HASH,
             "revert root hash not found at its shadow slot in the reset log"
         )
         assert(machine:verify_reset_uarch(initial_hash, log) == final_hash)
@@ -1683,7 +1685,7 @@ do_test("advance-state response sets a saturating mcycle limit", function(machin
 end)
 
 -- log_send_cmio_response writes (data || zero pad) to the rx buffer and logs it as:
--- no entry (data_len 0), a page entry (write_len <= page size), or a node entry at
+-- no entry (data_len 0), a slice entry (write_len <= page size), or a node entry at
 -- AR_CMIO_RX_BUFFER_START carrying the subtree hash before the write.
 do_test("send_cmio_response across data-size boundaries: machine state + log content", function(machine)
     local PAGE_LOG2 = cartesi.HASH_TREE_LOG2_PAGE_SIZE
@@ -1726,7 +1728,7 @@ do_test("send_cmio_response across data-size boundaries: machine state + log con
         )
 
         -- Log content: zero-length writes touch no rx page/node; sub-page writes
-        -- emit a page entry at the rx page index; supra-page writes emit a node
+        -- emit a slice covering the padded write; supra-page writes emit a node
         -- entry at rx_start carrying the pre-write subtree hash.
         local log_data = parse_step_log(log)
         if c.write_log2 == nil then
@@ -1759,7 +1761,9 @@ do_test("send_cmio_response across data-size boundaries: machine state + log con
             end
             assert(found, string.format("missing rx page for data_len=%d", c.data_len))
             assert(
-                found.data == string.rep("x", PAGE_SIZE),
+                found.offset == 0
+                    and found.log2_size == math.max(c.write_log2, 9)
+                    and found.data == string.rep("x", 1 << found.log2_size),
                 string.format("rx page pre-state mismatch for data_len=%d", c.data_len)
             )
         end
@@ -1811,7 +1815,7 @@ do_test("verify_send_cmio_response rejects mismatched claim args and node malfor
         })
     end)
     _, err = pcall(machine.verify_send_cmio_response, machine, reason, data, hash_before, corrupted, CMIO_REVERT_HASH)
-    check_error_find(err, "page or node overlaps a previous entry")
+    check_error_find(err, "slice or node overlaps a previous entry")
     -- node log2_size == HASH_TREE_LOG2_ROOT_SIZE spans the whole address space, so the
     -- parser requires address 0; the rx-buffer node's nonzero address trips "not aligned".
     corrupted = mutate_step_log(log, function(log_data)

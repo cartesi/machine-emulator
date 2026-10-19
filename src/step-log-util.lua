@@ -25,15 +25,13 @@ do
 end
 
 local HASH_SIZE = cartesi and cartesi.HASH_SIZE or 32
-local PAGE_LOG2_SIZE = cartesi and cartesi.HASH_TREE_LOG2_PAGE_SIZE or 12
-local PAGE_DATA_SIZE = 1 << PAGE_LOG2_SIZE
-local STEP_LOG_SIGNATURE = cartesi and cartesi.STEP_LOG_SIGNATURE or "CTSI\x03\x00\x00\x00"
+local STEP_LOG_SIGNATURE = cartesi and cartesi.STEP_LOG_SIGNATURE or "CTSI\x04\x00\x00\x00"
 local SIGNATURE_SIZE = #STEP_LOG_SIGNATURE
 
 -- step_log_header layout (see src/step-log.hpp):
 --   signature(8) + hash_function(8) + page_count(8) + node_count(8) + sibling_count(8)
 local HEADER_SIZE = SIGNATURE_SIZE + 4 * 8
-local PAGE_ENTRY_SIZE = 8 + PAGE_DATA_SIZE + HASH_SIZE
+local SLICE_HEADER_SIZE = 16
 local NODE_ENTRY_SIZE = 8 + 8 + HASH_SIZE
 local SIBLING_SIZE = HASH_SIZE
 
@@ -103,16 +101,7 @@ local function parse_header(data)
     return hdr
 end
 
-local function read_header(path)
-    local f <close> = assert(io.open(path, "rb"))
-    local data = f:read(HEADER_SIZE)
-    assert(data, "step log is empty: " .. path)
-    local hdr = parse_header(data)
-    hdr.path = path
-    return hdr
-end
-
--- Reads page indices but skips page bodies + scratch hashes to keep memory bounded.
+-- Read slice descriptors, skipping contents and scratch hashes to keep memory bounded.
 local function read_full(path)
     local f <close> = assert(io.open(path, "rb"))
     local file_size = assert(f:seek("end"))
@@ -124,12 +113,20 @@ local function read_full(path)
     info.path = path
     info.file_size = file_size
 
-    info.page_indices = {}
+    info.slices = {}
+    info.slice_bytes = 0
+    info.pages_bytes = 0
     for i = 1, info.page_count do
-        local idx_bytes = f:read(8)
-        assert(idx_bytes and #idx_bytes == 8, string.format("step log truncated at page %d/%d", i, info.page_count))
-        info.page_indices[i] = string.unpack("<I8", idx_bytes)
-        f:seek("cur", PAGE_DATA_SIZE + HASH_SIZE)
+        local entry = f:read(SLICE_HEADER_SIZE)
+        assert(entry and #entry == SLICE_HEADER_SIZE, string.format("step log truncated at slice %d", i))
+        local address, log2_size = string.unpack("<I8I8", entry)
+        assert(log2_size >= 5 and log2_size <= 12, "invalid slice log2_size")
+        local size = 1 << log2_size
+        assert(address & (size - 1) == 0, "unaligned slice address")
+        info.slices[i] = { address = address, log2_size = log2_size }
+        info.slice_bytes = info.slice_bytes + size
+        info.pages_bytes = info.pages_bytes + SLICE_HEADER_SIZE + size + HASH_SIZE
+        assert(f:seek("cur", size + HASH_SIZE) <= file_size, "truncated slice data or hash")
     end
 
     info.nodes = {}
@@ -147,16 +144,17 @@ local function read_full(path)
     end
 
     info.header_bytes = HEADER_SIZE
-    info.pages_bytes = info.page_count * PAGE_ENTRY_SIZE
     info.nodes_bytes = info.node_count * NODE_ENTRY_SIZE
     info.siblings_bytes = info.sibling_count * SIBLING_SIZE
+    assert(f:seek() + info.siblings_bytes == file_size, "step log byte length does not match counts")
     return info
 end
 
 local function print_header(info)
     print("Step log: " .. info.path)
     print("  hash_function:    " .. hash_function_name(info.hash_function))
-    print("  page_count:       " .. info.page_count)
+    print("  slice_count:      " .. info.page_count)
+    print("  slice_data_bytes: " .. info.slice_bytes)
     print("  node_count:       " .. info.node_count)
     print("  sibling_count:    " .. info.sibling_count)
 end
@@ -175,8 +173,8 @@ local function print_stats(info)
     )
     if REGIONS and info.page_count > 0 then
         local region_counts = {}
-        for _, idx in ipairs(info.page_indices) do
-            local region = classify_address(idx << PAGE_LOG2_SIZE)
+        for _, slice in ipairs(info.slices) do
+            local region = classify_address(slice.address)
             region_counts[region] = (region_counts[region] or 0) + 1
         end
         local sorted = {}
@@ -209,7 +207,18 @@ local commands = {}
 
 function commands.info(args)
     local path = assert(args[1], "usage: step-log-util.lua info <step-log>")
-    print_header(read_header(path))
+    local info = read_full(path)
+    print_header(info)
+    for _, slice in ipairs(info.slices) do
+        print(
+            string.format(
+                "  slice: 0x%016x  size=%d  %s",
+                slice.address,
+                1 << slice.log2_size,
+                classify_address(slice.address)
+            )
+        )
+    end
 end
 
 function commands.signature(args)
@@ -304,11 +313,17 @@ end
 function commands.pages(args)
     local path = assert(args[1], "usage: step-log-util.lua pages <step-log>")
     local info = read_full(path)
-    print(string.format("%-8s %-18s %s", "index", "address", "region"))
-    print(string.rep("-", 50))
-    for _, idx in ipairs(info.page_indices) do
-        local addr = idx << PAGE_LOG2_SIZE
-        print(string.format("%-8d 0x%016x %s", idx, addr, classify_address(addr)))
+    print(string.format("%-18s %-9s %-8s %s", "address", "log2_size", "bytes", "region"))
+    for _, slice in ipairs(info.slices) do
+        print(
+            string.format(
+                "0x%016x %-9d %-8d %s",
+                slice.address,
+                slice.log2_size,
+                1 << slice.log2_size,
+                classify_address(slice.address)
+            )
+        )
     end
 end
 
@@ -328,6 +343,12 @@ function commands.nodes(args)
     end
 end
 
+function commands.dump(args)
+    commands.stats(args)
+    commands.pages(args)
+    commands.nodes(args)
+end
+
 local function help()
     io.stderr:write(string.format(
         [=[
@@ -337,11 +358,12 @@ Usage:
 
 Commands:
 
-  info <step-log>              Human-readable header summary
+  info <step-log>              Header and slice addresses/sizes
+  dump <step-log>              Size breakdown, slices and nodes
   signature <step-log>         Verify the step log signature (exit non-zero on mismatch)
   stats <step-log> [...]       Full structural breakdown (sizes, regions)
   batch-stats <dir>            Aggregate stats table for all .log files in <dir>
-  pages <step-log>             List page indices, addresses, regions
+  pages <step-log>             List slice addresses, sizes, regions
   nodes <step-log>             List logged subtree-write nodes
 
 Region classification needs the cartesi shared library; if not available,

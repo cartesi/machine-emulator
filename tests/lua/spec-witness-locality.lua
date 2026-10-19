@@ -4,6 +4,7 @@
 local cartesi = require("cartesi")
 local lester = require("cartesi.third-party.lester")
 local cases = require("cartesi.tests.witness-locality")
+local test_util = require("cartesi.tests.util")
 local expectations = require("cartesi.tests.witness-locality-expectations")
 lester.parse_args()
 
@@ -29,9 +30,16 @@ lester.describe("whole-mcycle witness locality", function()
             local before = m:get_root_hash()
             local log = m:log_step_uarch(1 << 20)
             assert(m:read_reg("uarch_halt") ~= 0 and m:read_reg("mcycle") == case.mcycle + 1, "incomplete mcycle")
-            assert(log:sub(1, 8) == "CTSI\3\0\0\0", "step-log format changed; review locality parser")
-            local pages, nodes, siblings = string.unpack("<I8I8I8", log, 17)
-            assert(nodes == 0 and #log == 40 + pages * 4136 + siblings * 32, "unexpected log geometry")
+            assert(log:sub(1, 8) == "CTSI\4\0\0\0", "step-log format changed; review locality parser")
+            local parsed = test_util.parse_step_log(log)
+            local pages, slice_bytes = #parsed.pages, 0
+            for _, slice in ipairs(parsed.pages) do
+                slice_bytes = slice_bytes + #slice.data
+            end
+            assert(
+                #parsed.nodes == 0 and #log == 40 + pages * 48 + slice_bytes + #parsed.siblings * 32,
+                "unexpected log geometry"
+            )
             assert(cartesi.machine:verify_step_uarch(before, log, 1 << 20) == m:get_root_hash())
             if case.name == "trap-tlb-flush" then
                 assert(
@@ -39,8 +47,8 @@ lester.describe("whole-mcycle witness locality", function()
                     "expected delegated instruction page fault"
                 )
                 local tlb_pages = 0
-                for i = 0, pages - 1 do
-                    local page = string.unpack("<I8", log, 41 + i * 4136) << 12
+                for _, slice in ipairs(parsed.pages) do
+                    local page = slice.index << 12
                     if
                         page >= cartesi.AR_SHADOW_TLB_START
                         and page < cartesi.AR_SHADOW_TLB_START + cartesi.AR_SHADOW_TLB_LENGTH
@@ -64,16 +72,19 @@ lester.describe("whole-mcycle witness locality", function()
                 end
             end
             assert(
-                pages <= expected.pages and #log <= expected.log_bytes,
+                pages <= expected.pages and #log <= expected.log_bytes and slice_bytes <= expected.slice_bytes,
                 string.format(
-                    "%s locality regression: pages %d (limit %d, delta %+d); log bytes %d (limit %d, delta %+d)",
+                    "%s locality regression: pages %d (limit %d, delta %+d); "
+                        .. "log bytes %d (limit %d, delta %+d); slice bytes %d (limit %d)",
                     case.name,
                     pages,
                     expected.pages,
                     pages - expected.pages,
                     #log,
                     expected.log_bytes,
-                    #log - expected.log_bytes
+                    #log - expected.log_bytes,
+                    slice_bytes,
+                    expected.slice_bytes
                 )
             )
         end)

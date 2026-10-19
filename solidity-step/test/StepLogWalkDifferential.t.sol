@@ -11,9 +11,7 @@ import {ManifestParser} from "./ManifestParser.sol";
 /// Keep the assembly walk equivalent to the readable recursion, including cursor
 /// consumption and the current (possibly rewritten) hash in every NodeEntry.
 contract StepLogWalkDifferentialTest is ManifestParser {
-    uint8 constant LOG2_PAGE_COUNT = uint8(
-        EmulatorConstants.HASH_TREE_LOG2_ROOT_SIZE - EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE
-    );
+    uint8 constant ROOT_LOG2_SIZE = EmulatorConstants.HASH_TREE_LOG2_ROOT_SIZE;
 
     function testWalkTwinMatchesReferenceOnAllFixtures() public {
         vm.pauseGasMetering();
@@ -38,7 +36,7 @@ contract StepLogWalkDifferentialTest is ManifestParser {
 
     function assertWalksAgree(bytes calldata log) external pure {
         StepLog.Context memory ctx = StepLog.decode(log);
-        assertEq(compareWalks(ctx, 0, LOG2_PAGE_COUNT), ctx.rootHashBefore, "decoded root");
+        assertEq(compareWalks(ctx, 0, ROOT_LOG2_SIZE), ctx.rootHashBefore, "decoded root");
         // There is no before/after flag in the current format. Replay updates the
         // same hash slots. Exercise that distinction with different page/node hashes.
         for (uint256 i; i < ctx.pageHashes.length; ++i) {
@@ -47,7 +45,7 @@ contract StepLogWalkDifferentialTest is ManifestParser {
         for (uint256 i; i < ctx.nodes.length; ++i) {
             ctx.nodes[i].hash = keccak256(abi.encode(ctx.nodes[i].hash, i));
         }
-        compareWalks(ctx, 0, LOG2_PAGE_COUNT);
+        compareWalks(ctx, 0, ROOT_LOG2_SIZE);
     }
 
     function compareWalks(StepLog.Context memory ctx, uint64 pageIndex, uint8 log2PageCount)
@@ -55,8 +53,9 @@ contract StepLogWalkDifferentialTest is ManifestParser {
         pure
         returns (bytes32 expected)
     {
-        bytes32 inputBefore =
-            keccak256(abi.encode(ctx.pageIndices, ctx.pageHashes, ctx.nodes, ctx.siblings));
+        bytes32 inputBefore = keccak256(
+            abi.encode(ctx.pageIndices, ctx.slices, ctx.pageHashes, ctx.nodes, ctx.siblings)
+        );
         StepLog.TreeWalkCursors memory cRef;
         StepLog.TreeWalkCursors memory cAsm;
         expected = StepLog.computeSubtreeHash(ctx, cRef, pageIndex, log2PageCount);
@@ -71,7 +70,9 @@ contract StepLogWalkDifferentialTest is ManifestParser {
         assertEq(cAsm.nextSibling, cRef.nextSibling, "sibling cursor");
         assertEq(zeroSlot, 0, "zero slot");
         assertEq(
-            keccak256(abi.encode(ctx.pageIndices, ctx.pageHashes, ctx.nodes, ctx.siblings)),
+            keccak256(
+                abi.encode(ctx.pageIndices, ctx.slices, ctx.pageHashes, ctx.nodes, ctx.siblings)
+            ),
             inputBefore,
             "walk changed input arrays"
         );
@@ -108,19 +109,34 @@ contract StepLogWalkDifferentialTest is ManifestParser {
             c.nextSibling = ctx.siblings.length;
         }
         if (useTwin) {
-            StepLog.computeSubtreeHashAsm(ctx, c, 0, LOG2_PAGE_COUNT);
+            StepLog.computeSubtreeHashAsm(ctx, c, 0, ROOT_LOG2_SIZE);
         } else {
-            StepLog.computeSubtreeHash(ctx, c, 0, LOG2_PAGE_COUNT);
+            StepLog.computeSubtreeHash(ctx, c, 0, ROOT_LOG2_SIZE);
         }
     }
 
     function testFuzzWalkWithBoundaryPagesAndNodes(bytes32 seed) public pure {
         StepLog.Context memory ctx;
         ctx.pageIndices = new uint64[](4);
+        ctx.slices = new uint256[](4);
+        for (uint256 si; si < ctx.slices.length; ++si) {
+            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
+        }
         ctx.pageIndices[0] = 0;
+        ctx.slices[0] = StepLog.packSlice(ctx.pageIndices[0] << 12, 12, uint256(0) * 4096);
         ctx.pageIndices[1] = 1;
+        ctx.slices[1] = StepLog.packSlice(ctx.pageIndices[1] << 12, 12, uint256(1) * 4096);
         ctx.pageIndices[2] = uint64(1) << 51;
+        ctx.slices[2] = StepLog.packSlice(ctx.pageIndices[2] << 12, 12, uint256(2) * 4096);
         ctx.pageIndices[3] = (uint64(1) << 52) - 1;
+        ctx.slices[3] = StepLog.packSlice(ctx.pageIndices[3] << 12, 12, uint256(3) * 4096);
+        for (uint256 i; i < ctx.slices.length; ++i) {
+            uint64 log2Size = 5 + uint64(uint256(seed) >> (i * 8)) % 8;
+            uint64 addr = StepLog.sliceAddress(ctx.slices[i])
+                | (uint64(uint256(seed) >> (i * 16)) & (4095 ^ ((uint64(1) << log2Size) - 1)));
+            ctx.slices[i] =
+                StepLog.packSlice(addr, log2Size, StepLog.sliceDataOffset(ctx.slices[i]));
+        }
         ctx.pageHashes = new bytes32[](4);
         for (uint256 i; i < ctx.pageHashes.length; ++i) {
             ctx.pageHashes[i] = keccak256(abi.encode(seed, i));
@@ -135,20 +151,24 @@ contract StepLogWalkDifferentialTest is ManifestParser {
         for (uint256 i; i < ctx.siblings.length; ++i) {
             ctx.siblings[i] = keccak256(abi.encode(i, seed));
         }
-        compareWalks(ctx, 0, LOG2_PAGE_COUNT);
+        compareWalks(ctx, 0, ROOT_LOG2_SIZE);
     }
 
     function testRootNodeAndEmptySubtree() public pure {
         StepLog.Context memory ctx;
         ctx.pageIndices = new uint64[](0);
+        ctx.slices = new uint256[](0);
+        for (uint256 si; si < ctx.slices.length; ++si) {
+            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
+        }
         ctx.pageHashes = new bytes32[](0);
         ctx.nodes = new StepLog.NodeEntry[](1);
         ctx.nodes[0] = StepLog.NodeEntry(0, 64, bytes32(uint256(0x1234)));
         ctx.siblings = new bytes32[](1);
         ctx.siblings[0] = bytes32(uint256(0x5678));
-        assertEq(compareWalks(ctx, 0, LOG2_PAGE_COUNT), ctx.nodes[0].hash, "root node");
+        assertEq(compareWalks(ctx, 0, ROOT_LOG2_SIZE), ctx.nodes[0].hash, "root node");
         ctx.nodes = new StepLog.NodeEntry[](0);
-        assertEq(compareWalks(ctx, 0, LOG2_PAGE_COUNT), ctx.siblings[0], "empty root");
-        assertEq(compareWalks(ctx, (uint64(1) << 52) - 1, 0), ctx.siblings[0], "last leaf");
+        assertEq(compareWalks(ctx, 0, ROOT_LOG2_SIZE), ctx.siblings[0], "empty root");
+        assertEq(compareWalks(ctx, type(uint64).max & ~uint64(31), 5), ctx.siblings[0], "last leaf");
     }
 }

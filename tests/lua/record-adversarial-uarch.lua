@@ -71,6 +71,7 @@ local UARCH_SHADOW_PAGE = cartesi.UARCH_SHADOW_START_ADDRESS >> 12
 local function inject_uarch_register(log, off, value)
     for _, page in ipairs(log.pages) do
         if page.index == UARCH_SHADOW_PAGE then
+            off = off - (page.offset or 0)
             page.data = page.data:sub(1, off) .. string.pack("<I8", value) .. page.data:sub(off + 9)
             return
         end
@@ -82,8 +83,9 @@ end
 local function inject_uarch_instruction(log, insn)
     for _, page in ipairs(log.pages) do
         if page.index == PC_PAGE then
+            local off = PC_OFF - (page.offset or 0)
             local le = string.pack("<I4", insn)
-            page.data = page.data:sub(1, PC_OFF) .. le .. page.data:sub(PC_OFF + 5)
+            page.data = page.data:sub(1, off) .. le .. page.data:sub(off + 5)
             return
         end
     end
@@ -96,8 +98,8 @@ local function base_claims(base_path)
     return manifest.read_claims(dir, name)
 end
 
--- The uarch reset accesses the revert root hash (0xfe0) and htif.tohost, both in shadow page 0,
--- recording that page into the log. htif.tohost has no exported address constant; resolve it from a
+-- A rejected manual-yield reset reads the revert root hash (0xfe0) and htif.tohost,
+-- witnessing both in shadow page 0. htif.tohost has no exported address constant; resolve it from a
 -- throwaway machine.
 local SHADOW_PAGE = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START >> 12
 local REVERT_OFF = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START & 0xfff
@@ -116,6 +118,7 @@ end
 local function tamper_page_byte(log, page_idx, off)
     for _, page in ipairs(log.pages) do
         if page.index == page_idx then
+            off = off - (page.offset or 0)
             page.data = page.data:sub(1, off) .. string.char(page.data:byte(off + 1) ~ 0xff) .. page.data:sub(off + 2)
             return
         end
@@ -364,7 +367,7 @@ local cases = {
         tag = "root_before_mismatch",
         name = "reset_revert_hash_tampered",
         kind = "reset_uarch",
-        base = RESET_BASE,
+        base = fixtures_dir .. "/reset-uarch/reset-uarch-rejected.log",
         mutate = function(log)
             tamper_page_byte(log, SHADOW_PAGE, REVERT_OFF)
         end,
@@ -373,7 +376,7 @@ local cases = {
         tag = "root_before_mismatch",
         name = "reset_htif_tohost_tampered",
         kind = "reset_uarch",
-        base = RESET_BASE,
+        base = fixtures_dir .. "/reset-uarch/reset-uarch-accepted.log",
         mutate = function(log)
             tamper_page_byte(log, SHADOW_PAGE, HTIF_TOHOST_OFF)
         end,
@@ -456,6 +459,22 @@ local cases = {
     },
 }
 
+for _, case in ipairs(require("cartesi.tests.step-log-slice-rejections")) do
+    case.kind, case.base = "cycle", UARCH_BASE
+    cases[#cases + 1] = case
+end
+cases[#cases + 1] = {
+    tag = "access_outside_slice",
+    kind = "cycle",
+    base = UARCH_BASE,
+    error = "access outside witnessed slice",
+    mutate = function(log)
+        -- Keep the next leaf and put the fetched instruction's leaf in the proof.
+        -- The pre-root is unchanged, but replay must refuse that fetch.
+        test_util.restrict_step_log_slice(log, PC_PAGE, PC_OFF + 32, 5)
+    end,
+}
+
 for _, args in ipairs({
     { "set", 3, 0 },
     { "wrap", 1 << 51, 0 },
@@ -488,7 +507,16 @@ for _, case in ipairs(cases) do
     assert(reject_errors.errors[case.tag], "unmapped reject tag: " .. case.tag)
     local log = test_util.read_step_log_file(case.base)
     local claims = base_claims(case.base)
-    local claim = case.mutate(log) or {}
+    local claim = (case.mutate and case.mutate(log)) or {}
+    local bytes = test_util.serialize_step_log(log)
+    if case.wire then
+        bytes = case.wire(bytes)
+    end
+    if case.error then
+        local ok, err =
+            pcall(cartesi.machine.verify_step_uarch, cartesi.machine, claim.before or claims.before, bytes, 1)
+        assert(not ok and tostring(err):find(case.error, 1, true), tostring(err))
+    end
     if case.tag == "tlb_batch_index" then
         local ok, err = pcall(
             cartesi.machine.verify_step_uarch,
@@ -501,7 +529,8 @@ for _, case in ipairs(cases) do
     end
     -- Distinct filename when several cases share a tag (same rejection on different entrypoints).
     local name = (case.name or case.tag) .. ".log"
-    test_util.write_step_log_file(log, output_dir .. "/" .. name)
+    local file <close> = assert(io.open(output_dir .. "/" .. name, "wb"))
+    file:write(bytes)
     manifest.write_row(out, {
         kind = case.kind,
         name = name,

@@ -27,6 +27,12 @@ library StepLog {
     /// A valid step log always witnesses at least one page; a zero page count is malformed.
     error PageCountZero();
     error PagesNotInOrder();
+    error SliceLog2SizeOutOfRange(uint64 log2Size);
+    error SliceNotAligned(uint64 addr, uint64 log2Size);
+    error SlicesOverlap();
+    error MultipleSlicesInPage();
+    error AccessOutsideSlice();
+    error InvalidSliceSubtree();
     /// A page entry's scratch_hash field is reserved and must be zero on the wire.
     error NonZeroScratchHash();
     error NodeLog2SizeOutOfRange(uint64 log2Size);
@@ -49,7 +55,8 @@ library StepLog {
         bytes32 rootHashBefore;
         uint8 hashFunction;
         uint64[] pageIndices; // strictly ascending
-        bytes pageData; // page i at i * PAGE_SIZE; register writes materialize before hashing/raw access
+        uint256[] slices; // same order as pageIndices; one aligned region per page
+        bytes pageData; // concatenated slice contents; writes materialize before hashing/raw access
         bytes32[] pageHashes; // filled by computeRootHash
         NodeEntry[] nodes; // internal nodes covering regions > PAGE_SIZE; strictly ascending by addr, no overlaps with pages
         bytes32[] siblings; // hash values for subtrees not covered by pages or nodes; left-to-right order
@@ -74,9 +81,31 @@ library StepLog {
         + U64_SIZE // nodeCount
         + U64_SIZE; // siblingCount
 
-    uint256 internal constant PAGE_ENTRY_SIZE = U64_SIZE // page index
-        + EmulatorConstants.PAGE_SIZE // data
-        + HASH_SIZE; // scratch_hash
+    uint256 internal constant SLICE_HEADER_SIZE = 2 * U64_SIZE;
+    uint256 internal constant MIN_SLICE_ENTRY_SIZE = SLICE_HEADER_SIZE + 32 + HASH_SIZE;
+
+    // Slices are 32-byte aligned: pack log2 size in the address's spare low
+    // five bits, and content offset above bit 63. Decode validates size/alignment
+    // and bounds the offset by 64 * 4096 bytes. The wire is unchanged.
+    function packSlice(uint64 addr, uint64 log2Size, uint256 dataOffset)
+        internal
+        pure
+        returns (uint256)
+    {
+        return uint256(addr) | uint256(log2Size) | (dataOffset << 64);
+    }
+
+    function sliceAddress(uint256 slice) internal pure returns (uint64) {
+        return uint64(slice) & ~uint64(31);
+    }
+
+    function sliceLog2Size(uint256 slice) internal pure returns (uint8) {
+        return uint8(slice & 31);
+    }
+
+    function sliceDataOffset(uint256 slice) internal pure returns (uint256) {
+        return slice >> 64;
+    }
 
     /// A subtree whose contents are not witnessed, only its hash. The wire value is the
     /// subtree hash before the step; a replayed bulk write overwrites the slot with the
@@ -91,16 +120,11 @@ library StepLog {
         + U64_SIZE // log2_size
         + HASH_SIZE; // hash
 
-    // Witness-size caps. These only bound the decode work and reject pathological logs
-    // early: the operation actually performed is whatever Verify.verifyXXX runs, and the
-    // caller's root comparison is what constrains it. A single uarch step touches <=3
-    // pages and reset/cmio <=1 node (corpus max 3/1/69), so any cap at or above that is
-    // sound; the values below leave headroom rather than tracking the corpus.
-    // Sibling cap must stay >= 52 (tree depth) * MAX_PAGE_COUNT so a maximally-spread
-    // log is not wrongly rejected.
+    // Decode caps bound work and memory. Slice siblings can occur down to the
+    // 32-byte leaf: 59 levels per slice, plus at most 51 per bulk-write node.
     uint64 internal constant MAX_PAGE_COUNT = 64;
     uint64 internal constant MAX_NODE_COUNT = 4;
-    uint64 internal constant MAX_SIBLING_COUNT = 3328;
+    uint64 internal constant MAX_SIBLING_COUNT = 59 * MAX_PAGE_COUNT + 51 * MAX_NODE_COUNT;
 
     /// Decode a standalone step log that must occupy the entire buffer; reverts on
     /// trailing bytes. Use `decodeAt` for multi-log cursor composition.
@@ -150,27 +174,16 @@ library StepLog {
         if (nodeCount > MAX_NODE_COUNT) revert NodeCountExceedsLimit(nodeCount);
         if (siblingCount > MAX_SIBLING_COUNT) revert SiblingCountExceedsLimit(siblingCount);
 
-        // Counts are capped (MAX_*_COUNT), so total cannot overflow; offset <= data.length
-        // holds from the header bound above, so the subtraction is safe.
-        uint256 total = HEADER_SIZE + uint256(pageCount) * PAGE_ENTRY_SIZE
+        uint256 minimum = uint256(pageCount) * MIN_SLICE_ENTRY_SIZE
             + uint256(nodeCount) * NODE_ENTRY_SIZE + uint256(siblingCount) * HASH_SIZE;
-        if (data.length - offset < total) revert LogTruncated();
+        if (data.length - cursor < minimum) revert LogTruncated();
 
-        ctx.pageIndices = new uint64[](pageCount);
-        ctx.pageData = new bytes(uint256(pageCount) * EmulatorConstants.PAGE_SIZE);
-        ctx.pageHashes = new bytes32[](pageCount);
-
-        for (uint64 i = 0; i < pageCount; i++) {
-            uint64 idx = readLE64(data, cursor);
-            cursor += U64_SIZE;
-            if (i > 0 && idx <= ctx.pageIndices[i - 1]) revert PagesNotInOrder();
-            ctx.pageIndices[i] = idx;
-
-            copyPageData(data, cursor, ctx.pageData, i);
-            cursor += EmulatorConstants.PAGE_SIZE;
-
-            if (bytes32(data[cursor:cursor + HASH_SIZE]) != bytes32(0)) revert NonZeroScratchHash();
-            cursor += HASH_SIZE;
+        cursor = decodeSlices(data, cursor, pageCount, ctx);
+        if (
+            data.length - cursor
+                < uint256(nodeCount) * NODE_ENTRY_SIZE + uint256(siblingCount) * HASH_SIZE
+        ) {
+            revert LogTruncated();
         }
 
         ctx.nodes = new NodeEntry[](nodeCount);
@@ -214,12 +227,65 @@ library StepLog {
         newOffset = cursor;
     }
 
+    function decodeSlices(bytes calldata data, uint256 cursor, uint64 pageCount, Context memory ctx)
+        private
+        pure
+        returns (uint256)
+    {
+        ctx.pageIndices = new uint64[](pageCount);
+        ctx.slices = new uint256[](pageCount);
+        ctx.pageHashes = new bytes32[](pageCount);
+        uint256 sliceStart = cursor;
+        uint256 contentBytes;
+        for (uint256 i; i < pageCount; ++i) {
+            if (data.length - cursor < SLICE_HEADER_SIZE) revert LogTruncated();
+            uint64 addr = readLE64(data, cursor);
+            uint64 log2Size = readLE64(data, cursor + U64_SIZE);
+            cursor += SLICE_HEADER_SIZE;
+            if (log2Size < 5 || log2Size > 12) revert SliceLog2SizeOutOfRange(log2Size);
+            uint256 size = uint256(1) << log2Size;
+            if (uint256(addr) & (size - 1) != 0) revert SliceNotAligned(addr, log2Size);
+            if (data.length - cursor < size + HASH_SIZE) revert LogTruncated();
+            uint64 idx = addr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
+            if (i != 0) {
+                uint256 prev = ctx.slices[i - 1];
+                if (addr <= sliceAddress(prev)) revert PagesNotInOrder();
+                if (
+                    uint256(addr)
+                        < uint256(sliceAddress(prev)) + (uint256(1) << sliceLog2Size(prev))
+                ) {
+                    revert SlicesOverlap();
+                }
+                if (idx == ctx.pageIndices[i - 1]) revert MultipleSlicesInPage();
+            }
+            ctx.pageIndices[i] = idx;
+            ctx.slices[i] = packSlice(addr, log2Size, contentBytes);
+            contentBytes += size;
+            cursor += size;
+            if (bytes32(data[cursor:cursor + HASH_SIZE]) != bytes32(0)) {
+                revert NonZeroScratchHash();
+            }
+            cursor += HASH_SIZE;
+        }
+        // Size the allocation to the witnessed contents, not the enclosing pages.
+        ctx.pageData = new bytes(contentBytes);
+        uint256 copyCursor = sliceStart;
+        for (uint256 i; i < pageCount; ++i) {
+            uint256 slice = ctx.slices[i];
+            uint256 size = uint256(1) << sliceLog2Size(slice);
+            copySliceData(
+                data, copyCursor + SLICE_HEADER_SIZE, ctx.pageData, sliceDataOffset(slice), size
+            );
+            copyCursor += SLICE_HEADER_SIZE + size + HASH_SIZE;
+        }
+        return cursor;
+    }
+
     /// Combined pages+nodes stream must be strictly ascending and disjoint.
     function validateEntriesOrderedAndDisjoint(Context memory ctx) private pure {
         uint256 pi = 0; // page index cursor
         uint256 ni = 0; // node index cursor
         uint256 prevEnd = 0;
-        uint256 pageSize = EmulatorConstants.PAGE_SIZE;
         uint256 pageCnt = ctx.pageIndices.length;
         uint256 nodeCnt = ctx.nodes.length;
         while (pi < pageCnt || ni < nodeCnt) {
@@ -231,14 +297,11 @@ library StepLog {
             } else if (ni >= nodeCnt) {
                 takePage = true;
             } else {
-                uint256 pageStart =
-                    uint256(ctx.pageIndices[pi]) << EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
-                takePage = pageStart < ctx.nodes[ni].addr;
+                takePage = sliceAddress(ctx.slices[pi]) < ctx.nodes[ni].addr;
             }
             if (takePage) {
-                entryStart =
-                    uint256(ctx.pageIndices[pi]) << EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
-                entryEnd = entryStart + pageSize;
+                entryStart = sliceAddress(ctx.slices[pi]);
+                entryEnd = entryStart + (uint256(1) << sliceLog2Size(ctx.slices[pi]));
                 pi++;
             } else {
                 entryStart = ctx.nodes[ni].addr;
@@ -260,20 +323,15 @@ library StepLog {
         uint256 pageCnt = ctx.pageIndices.length;
         for (uint256 i = 0; i < pageCnt; i++) {
             if (ctx.pageHashes[i] == bytes32(0)) {
-                ctx.pageHashes[i] =
-                    HashTree.merkleTreeHashAsm(ctx.pageData, i * EmulatorConstants.PAGE_SIZE);
+                ctx.pageHashes[i] = HashTree.merkleTreeHashAsm(
+                    ctx.pageData,
+                    sliceDataOffset(ctx.slices[i]),
+                    uint256(1) << sliceLog2Size(ctx.slices[i])
+                );
             }
         }
         TreeWalkCursors memory c;
-        bytes32 root = computeSubtreeHashAsm(
-            ctx,
-            c,
-            0, // start page index
-            uint8(
-                EmulatorConstants.HASH_TREE_LOG2_ROOT_SIZE
-                    - EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE
-            ) // log2PageCount
-        );
+        bytes32 root = computeSubtreeHashAsm(ctx, c, 0, EmulatorConstants.HASH_TREE_LOG2_ROOT_SIZE);
         if (c.nextPage != pageCnt) revert TooManyPages();
         if (c.nextNode != ctx.nodes.length) revert TooManyNodes();
         if (c.nextSibling != ctx.siblings.length) revert TooManySiblings();
@@ -292,82 +350,71 @@ library StepLog {
     function computeSubtreeHash(
         Context memory ctx,
         TreeWalkCursors memory c,
-        uint64 pageIndex,
-        uint8 log2PageCount
+        uint64 addr,
+        uint8 log2Size
     ) internal pure returns (bytes32) {
-        uint256 subtreeStartAddr = uint256(pageIndex) << EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
-        uint8 subtreeLog2Size = log2PageCount + EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
-        uint64 subtreeEndPageIndex = pageIndex + (uint64(1) << log2PageCount);
-
-        bool pageIn =
-            c.nextPage < ctx.pageIndices.length && ctx.pageIndices[c.nextPage] < subtreeEndPageIndex;
-        bool nodeIn = c.nextNode < ctx.nodes.length
-            && (ctx.nodes[c.nextNode].addr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE)
-                < subtreeEndPageIndex;
-
+        uint256 end = uint256(addr) + (uint256(1) << log2Size);
+        bool pageIn = c.nextPage < ctx.slices.length && sliceAddress(ctx.slices[c.nextPage]) < end;
+        bool nodeIn = c.nextNode < ctx.nodes.length && ctx.nodes[c.nextNode].addr < end;
         if (!pageIn && !nodeIn) {
-            // no page or node in this subtree, so it must be a sibling
             if (c.nextSibling >= ctx.siblings.length) revert TooFewSiblings();
             return ctx.siblings[c.nextSibling++];
         }
-
         if (
-            nodeIn && ctx.nodes[c.nextNode].addr == subtreeStartAddr
-                && ctx.nodes[c.nextNode].log2Size == subtreeLog2Size
+            nodeIn && ctx.nodes[c.nextNode].addr == addr
+                && ctx.nodes[c.nextNode].log2Size == log2Size
         ) {
-            // The subtree is fully covered by a node; consume it and return its hash.
             return ctx.nodes[c.nextNode++].hash;
         }
-
-        if (log2PageCount > 0) {
-            // The subtree is partially covered by pages/nodes, so recurse to the left and right halves.
-            bytes32 left = computeSubtreeHash(ctx, c, pageIndex, log2PageCount - 1);
-            uint64 halfwayPageIndex = pageIndex + (uint64(1) << (log2PageCount - 1));
-            bytes32 right = computeSubtreeHash(ctx, c, halfwayPageIndex, log2PageCount - 1);
-            // combine through the EVM scratch space (0x00-0x40) rather than
-            // abi.encodePacked, which would allocate a fresh buffer per tree node
-            // (~100 nodes per verify); same idiom as HashTree.merkleTreeHash
-            bytes32 parent;
-            assembly ("memory-safe") {
-                mstore(0x00, left)
-                mstore(0x20, right)
-                parent := keccak256(0x00, 0x40)
-            }
-            return parent;
+        if (
+            pageIn && sliceAddress(ctx.slices[c.nextPage]) == addr
+                && sliceLog2Size(ctx.slices[c.nextPage]) == log2Size
+        ) {
+            return ctx.pageHashes[c.nextPage++];
         }
-        // Leaf: must be a page (nodes have log2Size > HASH_TREE_LOG2_PAGE_SIZE).
-        return ctx.pageHashes[c.nextPage++];
+        if (log2Size <= EmulatorConstants.HASH_TREE_LOG2_WORD_SIZE) revert InvalidSliceSubtree();
+        bytes32 left = computeSubtreeHash(ctx, c, addr, log2Size - 1);
+        bytes32 right =
+            computeSubtreeHash(ctx, c, addr + (uint64(1) << (log2Size - 1)), log2Size - 1);
+        bytes32 parent;
+        assembly ("memory-safe") {
+            mstore(0x00, left)
+            mstore(0x20, right)
+            parent := keccak256(0x00, 0x40)
+        }
+        return parent;
     }
 
     /// Assembly twin of computeSubtreeHash, over the same validated, disjoint entries.
-    /// The root walk spans page indices [0, 2^52); recursion only halves that range.
-    /// Array reads are guarded by their cursors. At a leaf, pageIn implies a valid
-    /// page hash because decode allocates pageIndices and pageHashes with equal length.
+    /// The root walk spans byte addresses [0, 2^64), descending to slice size.
+    /// Array reads are guarded by their cursors. Exact slice matches select hashes from the equally sized pageHashes table.
     function computeSubtreeHashAsm(
         Context memory ctx,
         TreeWalkCursors memory c,
-        uint64 pageIndex,
-        uint8 log2PageCount
+        uint64 addr,
+        uint8 log2Size
     ) internal pure returns (bytes32 result) {
         // Pin the page shift and maximum depth used below; both assertions fold away.
         assert(EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE == 12);
         assert(EmulatorConstants.HASH_TREE_LOG2_ROOT_SIZE == 64);
-        uint64[] memory pageIndices = ctx.pageIndices;
+        uint256[] memory slices = ctx.slices;
         NodeEntry[] memory nodes = ctx.nodes;
         bytes32[] memory siblings = ctx.siblings;
         bytes32[] memory pageHashes = ctx.pageHashes;
-        // Allocated walk state: three cursors, then pageIndices, nodes, siblings,
+        // Allocated walk state: three cursors, then slices, nodes, siblings,
         // and pageHashes pointers, at offsets 0x00 through 0xc0. No Context offsets.
         uint256[7] memory w;
         assembly ("memory-safe") {
-            function walk(w_, pageIndex_, log2PageCount_) -> h {
-                let endPageIndex := add(pageIndex_, shl(log2PageCount_, 1))
+            function walk(w_, address_, log2Size_) -> h {
+                let endAddress := add(address_, shl(log2Size_, 1))
                 let pageIn := 0
+                let slice := 0
                 {
                     let pages := mload(add(w_, 0x60))
                     let np := mload(w_)
                     if lt(np, mload(pages)) {
-                        pageIn := lt(mload(add(pages, add(0x20, shl(5, np)))), endPageIndex)
+                        slice := mload(add(pages, add(0x20, shl(5, np))))
+                        pageIn := lt(and(slice, 0xffffffffffffffe0), endAddress)
                     }
                 }
                 let nodeIn := 0
@@ -378,7 +425,7 @@ library StepLog {
                     if lt(nn, mload(nodes_)) {
                         // A memory array of structs contains pointers to the structs.
                         nptr := mload(add(nodes_, add(0x20, shl(5, nn))))
-                        nodeIn := lt(shr(12, mload(nptr)), endPageIndex)
+                        nodeIn := lt(mload(nptr), endAddress)
                     }
                 }
                 if iszero(or(pageIn, nodeIn)) {
@@ -394,55 +441,71 @@ library StepLog {
                 }
                 if nodeIn {
                     // Current NodeEntry: addr, log2Size, one current hash.
-                    if and(
-                        eq(mload(nptr), shl(12, pageIndex_)),
-                        eq(mload(add(nptr, 0x20)), add(log2PageCount_, 12))
-                    ) {
+                    if and(eq(mload(nptr), address_), eq(mload(add(nptr, 0x20)), log2Size_)) {
                         mstore(add(w_, 0x20), add(mload(add(w_, 0x20)), 1))
                         h := mload(add(nptr, 0x40))
                         leave
                     }
                 }
-                if log2PageCount_ {
-                    let halfLog2 := sub(log2PageCount_, 1)
-                    let left := walk(w_, pageIndex_, halfLog2)
-                    let right := walk(w_, add(pageIndex_, shl(halfLog2, 1)), halfLog2)
-                    // Only the EVM scratch area is used for the parent hash.
-                    mstore(0x00, left)
-                    mstore(0x20, right)
-                    h := keccak256(0x00, 0x40)
-                    leave
+                if pageIn {
+                    if and(
+                        eq(and(slice, 0xffffffffffffffe0), address_), eq(and(slice, 31), log2Size_)
+                    ) {
+                        let np := mload(w_)
+                        h := mload(add(mload(add(w_, 0xc0)), add(0x20, shl(5, np))))
+                        mstore(w_, add(np, 1))
+                        leave
+                    }
                 }
-                let np := mload(w_)
-                h := mload(add(mload(add(w_, 0xc0)), add(0x20, shl(5, np))))
-                mstore(w_, add(np, 1))
+                if iszero(gt(log2Size_, 5)) {
+                    mstore(0x00, shl(224, 0xabe197a9)) // InvalidSliceSubtree()
+                    revert(0x00, 0x04)
+                }
+                let halfLog2 := sub(log2Size_, 1)
+                let left := walk(w_, address_, halfLog2)
+                let right := walk(w_, add(address_, shl(halfLog2, 1)), halfLog2)
+                mstore(0x00, left)
+                mstore(0x20, right)
+                h := keccak256(0x00, 0x40)
             }
             mstore(w, mload(c))
             mstore(add(w, 0x20), mload(add(c, 0x20)))
             mstore(add(w, 0x40), mload(add(c, 0x40)))
-            mstore(add(w, 0x60), pageIndices)
+            mstore(add(w, 0x60), slices)
             mstore(add(w, 0x80), nodes)
             mstore(add(w, 0xa0), siblings)
             mstore(add(w, 0xc0), pageHashes)
-            result := walk(w, and(pageIndex, 0xffffffffffffffff), and(log2PageCount, 0xff))
+            result := walk(w, and(addr, 0xffffffffffffffff), and(log2Size, 0xff))
             mstore(c, mload(w))
             mstore(add(c, 0x20), mload(add(w, 0x20)))
             mstore(add(c, 0x40), mload(add(w, 0x40)))
         }
     }
 
+    function findPage(Context memory ctx, uint64 paddr) internal pure returns (uint256) {
+        return findPage(ctx, paddr, 8);
+    }
+
+    function findPageForWrite(Context memory ctx, uint64 paddr) internal pure returns (uint256) {
+        return findPageForWrite(ctx, paddr, 8);
+    }
+
     /// Returns a raw memory pointer to byte `paddr` inside ctx.pageData. Callers consume the pointer
     /// immediately in an assembly block; safe because `bytes memory` never moves. Read paths use this;
     /// write paths use findPageForWrite so the page is rehashed on the post-state root.
-    function findPage(Context memory ctx, uint64 paddr) internal pure returns (uint256 memPtr) {
+    function findPage(Context memory ctx, uint64 paddr, uint256 length)
+        internal
+        pure
+        returns (uint256 memPtr)
+    {
         if (isUarchShadowPage(paddr)) flushUarchRegisters(ctx);
-        (memPtr,) = locatePage(ctx, paddr);
+        (memPtr,) = locatePage(ctx, paddr, length);
     }
 
     /// Like findPage, but invalidates the page's cached hash (zeroes its pageHashes slot) so
     /// computeRootHash rehashes it on the post-state pass. A raw write also invalidates cached
     /// registers on this page, so subsequent register reads observe the written bytes.
-    function findPageForWrite(Context memory ctx, uint64 paddr)
+    function findPageForWrite(Context memory ctx, uint64 paddr, uint256 length)
         internal
         pure
         returns (uint256 memPtr)
@@ -452,7 +515,7 @@ library StepLog {
             ctx.uarchShadowPtr = 0;
         }
         uint256 pageIdx;
-        (memPtr, pageIdx) = locatePage(ctx, paddr);
+        (memPtr, pageIdx) = locatePage(ctx, paddr, length);
         ctx.pageHashes[pageIdx] = bytes32(0);
     }
 
@@ -481,7 +544,13 @@ library StepLog {
     // Internal for StateAccess's inline accessors; no external ABI is added.
     function loadUarchRegisters(Context memory ctx) internal pure {
         (ctx.uarchShadowPtr, ctx.uarchShadowPageIndex) =
-            locatePage(ctx, EmulatorConstants.UARCH_HALT_ADDR);
+            locatePage(ctx, EmulatorConstants.UARCH_HALT_ADDR, UARCH_REGISTER_WORD_COUNT * 8);
+        // Exactly 35 words (280 bytes), touching the same nine 32-byte leaves
+        // marked by step_log_recorder::touch_page. Check once before bulk load/flush.
+        assert(
+            UARCH_REGISTER_WORD_COUNT * 8
+                == EmulatorConstants.UARCH_REGISTER_END_ADDR - EmulatorConstants.UARCH_HALT_ADDR
+        );
         // Check the fixed length against the generated register layout.
         assert(ctx.uarchRegisters.length == UARCH_REGISTER_WORD_COUNT);
         for (uint256 i; i < UARCH_REGISTER_WORD_COUNT; ++i) {
@@ -517,7 +586,7 @@ library StepLog {
         }
     }
 
-    function locatePage(Context memory ctx, uint64 paddr)
+    function locatePage(Context memory ctx, uint64 paddr, uint256 length)
         private
         pure
         returns (uint256 memPtr, uint256 pageIdx)
@@ -538,12 +607,27 @@ library StepLog {
                 lo = resolvePageMiss(ctx, idx, cacheSlot);
             }
             pageIdx = lo;
-            uint256 byteOff = lo * EmulatorConstants.PAGE_SIZE
-                + (uint256(paddr) & uint256(EmulatorConstants.PAGE_OFFSET_MASK));
-            bytes memory pd = ctx.pageData;
-            assembly ("memory-safe") {
-                memPtr := add(add(pd, 32), byteOff)
-            }
+            memPtr = slicePointer(ctx, lo, paddr, length);
+        }
+    }
+
+    /// Resolve checked bytes within a known slice; subtraction rejects addresses below its start.
+    function slicePointer(Context memory ctx, uint256 pos, uint64 paddr, uint256 length)
+        internal
+        pure
+        returns (uint256 ptr)
+    {
+        uint256 slice = ctx.slices[pos];
+        uint256 size = uint256(1) << sliceLog2Size(slice);
+        uint256 offset;
+        unchecked {
+            offset = uint256(paddr) - sliceAddress(slice);
+        }
+        if (length > size || offset > size - length) revert AccessOutsideSlice();
+        uint256 byteOff = sliceDataOffset(slice) + offset;
+        bytes memory pd = ctx.pageData;
+        assembly ("memory-safe") {
+            ptr := add(add(pd, 32), byteOff)
         }
     }
 
@@ -586,16 +670,15 @@ library StepLog {
         return swapBytes64(uint64(bytes8(data[off:off + 8])));
     }
 
-    function copyPageData(bytes calldata data, uint256 srcOff, bytes memory dst, uint64 pageIdx)
-        private
-        pure
-    {
-        uint256 dstOff = uint256(pageIdx) * EmulatorConstants.PAGE_SIZE;
-        uint256 pageSize = EmulatorConstants.PAGE_SIZE;
+    function copySliceData(
+        bytes calldata data,
+        uint256 srcOff,
+        bytes memory dst,
+        uint256 dstOff,
+        uint256 size
+    ) private pure {
         assembly ("memory-safe") {
-            // skip 32-byte length prefix
-            let dstPtr := add(add(dst, 32), dstOff)
-            calldatacopy(dstPtr, add(data.offset, srcOff), pageSize)
+            calldatacopy(add(add(dst, 32), dstOff), add(data.offset, srcOff), size)
         }
     }
 

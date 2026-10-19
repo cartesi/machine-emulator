@@ -320,9 +320,12 @@ function tests_util.parse_step_log(log)
     local node_count = u64()
     local sibling_count = u64()
     for i = 1, page_count do
+        local address, log2_size = u64(), u64()
         parsed.pages[i] = {
-            index = u64(),
-            data = take(PAGE_SIZE),
+            index = address >> PAGE_LOG2_SIZE,
+            offset = address & (PAGE_SIZE - 1),
+            log2_size = log2_size,
+            data = take(1 << log2_size),
             scratch_hash = take(32),
         }
     end
@@ -350,7 +353,8 @@ function tests_util.serialize_step_log(logdata)
         string.pack("<I8", logdata.override_sibling_count or #logdata.siblings),
     }
     for _, page in ipairs(logdata.pages) do
-        parts[#parts + 1] = string.pack("<I8", page.index)
+        parts[#parts + 1] =
+            string.pack("<I8I8", (page.index << PAGE_LOG2_SIZE) | (page.offset or 0), page.log2_size or PAGE_LOG2_SIZE)
         parts[#parts + 1] = page.data
         parts[#parts + 1] = page.scratch_hash
     end
@@ -387,114 +391,120 @@ end
 -- Mirrors the replayer's three-cursor walk (pages, nodes, siblings) to locate the first
 -- sibling spanning more than one page (node sizes must exceed a page), then moves that
 -- sibling's hash into log.nodes. Works on logs that already carry a node (reset/cmio).
-function tests_util.inject_unchanged_node(log)
-    local pages = {}
-    for i, p in ipairs(log.pages) do
-        pages[i] = p.index
-    end
-    table.sort(pages)
-    local nodes = log.nodes or {}
+local function walk_step_log(log, sibling_fn, slice_fn, node_fn, parent_fn)
     local next_page, next_node, next_sibling = 1, 1, 1
-    local target
-
-    local function walk(first_page_index, log2_page_count)
-        local end_page_index = first_page_index + (1 << log2_page_count)
-        local page_in = next_page <= #pages and pages[next_page] < end_page_index
-        local node_in = next_node <= #nodes and (nodes[next_node].address >> PAGE_LOG2_SIZE) < end_page_index
+    local function walk(first_leaf, log2_leaves)
+        local end_leaf = first_leaf + (1 << log2_leaves)
+        local page = log.pages[next_page]
+        local node = log.nodes[next_node]
+        local page_leaf = page and (((page.index << PAGE_LOG2_SIZE) | (page.offset or 0)) >> WORD_LOG2_SIZE)
+        local page_in = page_leaf and page_leaf < end_leaf
+        local node_in = node and (node.address >> WORD_LOG2_SIZE) < end_leaf
+        local address, log2_size = first_leaf << WORD_LOG2_SIZE, log2_leaves + WORD_LOG2_SIZE
         if not page_in and not node_in then
-            if not target and log2_page_count > 0 then
-                target = {
-                    sibling_index = next_sibling,
-                    address = first_page_index << PAGE_LOG2_SIZE,
-                    log2_size = log2_page_count + PAGE_LOG2_SIZE,
-                }
-            end
-            next_sibling = next_sibling + 1
-            return
+            local i = next_sibling
+            next_sibling = i + 1
+            return sibling_fn(log.siblings[i], address, log2_size, i)
         end
-        if
-            node_in
-            and nodes[next_node].address == (first_page_index << PAGE_LOG2_SIZE)
-            and nodes[next_node].log2_size == (log2_page_count + PAGE_LOG2_SIZE)
-        then
+        if node_in and node.address == address and node.log2_size == log2_size then
             next_node = next_node + 1
-            return
+            return node_fn(node)
         end
-        if log2_page_count > 0 then
-            walk(first_page_index, log2_page_count - 1)
-            walk(first_page_index + (1 << (log2_page_count - 1)), log2_page_count - 1)
-        else
+        if page_in and page_leaf == first_leaf and (page.log2_size or PAGE_LOG2_SIZE) == log2_size then
             next_page = next_page + 1
+            return slice_fn(page)
+        end
+        assert(log2_leaves > 0, "invalid slice geometry")
+        local left = walk(first_leaf, log2_leaves - 1)
+        local right = walk(first_leaf + (1 << (log2_leaves - 1)), log2_leaves - 1)
+        return parent_fn(left, right, address, log2_size)
+    end
+    local root = walk(0, ROOT_LOG2_SIZE - WORD_LOG2_SIZE)
+    assert(next_page == #log.pages + 1 and next_node == #log.nodes + 1 and next_sibling == #log.siblings + 1)
+    return root
+end
+
+tests_util.walk_step_log = walk_step_log
+
+function tests_util.inject_unchanged_node(log)
+    local target
+    local function sibling(hash, address, log2_size, index)
+        if not target and log2_size > PAGE_LOG2_SIZE then
+            target = { address = address, log2_size = log2_size, hash = hash, index = index }
         end
     end
-
-    walk(0, ROOT_LOG2_SIZE - PAGE_LOG2_SIZE)
+    local function noop() end
+    walk_step_log(log, sibling, noop, noop, noop)
     assert(target, "no multi-page sibling subtree available to convert into a node")
-    local hash = log.siblings[target.sibling_index]
-    table.remove(log.siblings, target.sibling_index)
-    log.nodes = nodes
-    table.insert(log.nodes, {
-        address = target.address,
-        log2_size = target.log2_size,
-        hash = hash,
-    })
+    table.remove(log.siblings, target.index)
+    target.index = nil
+    table.insert(log.nodes, target)
     table.sort(log.nodes, function(a, b)
-        return a.address < b.address
+        return (a.address >> WORD_LOG2_SIZE) < (b.address >> WORD_LOG2_SIZE)
     end)
     return log
 end
 
--- Recompute a parsed step log's root by folding pages, nodes, and siblings over the
--- full address space, mirroring the replayer's compute_root_hash. Lets a generator
--- tamper a page or node and re-derive the resulting root. Same three-cursor walk as
--- inject_unchanged_node, but returning each subtree's hash instead of locating a target.
+-- Recompute the root without trusting the scratch hashes.
 function tests_util.recompute_step_log_root(log, hash_fn)
     hash_fn = hash_fn or "keccak256"
-    local pages = {}
-    for _, p in ipairs(log.pages) do
-        pages[#pages + 1] = p
-    end
-    table.sort(pages, function(a, b)
-        return a.index < b.index
+    return walk_step_log(log, function(hash)
+        return assert(hash, "missing sibling")
+    end, function(page)
+        return merkle_hash(page.data, 0, page.log2_size or PAGE_LOG2_SIZE, hash_fn)
+    end, function(node)
+        return node.hash
+    end, function(left, right)
+        return cartesi[hash_fn](left, right)
     end)
-    local nodes = {}
-    for _, n in ipairs(log.nodes) do
-        nodes[#nodes + 1] = n
-    end
-    table.sort(nodes, function(a, b)
-        return a.address < b.address
-    end)
-    local next_page, next_node, next_sibling = 1, 1, 1
+end
 
-    local function walk(first_page_index, log2_page_count)
-        local end_page_index = first_page_index + (1 << log2_page_count)
-        local page_in = next_page <= #pages and pages[next_page].index < end_page_index
-        local node_in = next_node <= #nodes and (nodes[next_node].address >> PAGE_LOG2_SIZE) < end_page_index
-        if not page_in and not node_in then
-            local sibling = log.siblings[next_sibling]
-            next_sibling = next_sibling + 1
-            return sibling
-        end
-        if
-            node_in
-            and nodes[next_node].address == (first_page_index << PAGE_LOG2_SIZE)
-            and nodes[next_node].log2_size == (log2_page_count + PAGE_LOG2_SIZE)
-        then
-            local node = nodes[next_node]
-            next_node = next_node + 1
-            return node.hash
-        end
-        if log2_page_count > 0 then
-            local left = walk(first_page_index, log2_page_count - 1)
-            local right = walk(first_page_index + (1 << (log2_page_count - 1)), log2_page_count - 1)
-            return cartesi[hash_fn](left, right)
-        end
-        local page = pages[next_page]
-        next_page = next_page + 1
-        return merkle_hash(page.data, 0, PAGE_LOG2_SIZE, hash_fn)
+-- Restrict an existing slice and move its omitted bytes into sibling hashes. The
+-- pre-state root stays identical: useful for proving that replay checks access bounds.
+function tests_util.restrict_step_log_slice(log, page_index, offset, log2_size)
+    local hash_fn = log.hash_function == 0 and "keccak256" or "sha256"
+    local target
+    local hashes = {}
+    local function key(address, size)
+        return string.format("%x:%d", address, size)
     end
-
-    return walk(0, ROOT_LOG2_SIZE - PAGE_LOG2_SIZE)
+    local function remember(hash, address, size)
+        hashes[key(address, size)] = hash
+    end
+    local function split(data, address, size)
+        local hash
+        if size == WORD_LOG2_SIZE then
+            hash = cartesi[hash_fn](data)
+        else
+            local half = 1 << (size - 1)
+            hash = cartesi[hash_fn](
+                split(data:sub(1, half), address, size - 1),
+                split(data:sub(half + 1), address + half, size - 1)
+            )
+        end
+        remember(hash, address, size)
+        return hash
+    end
+    local function slice(page)
+        if page.index == page_index then
+            target = page
+            split(page.data, (page.index << PAGE_LOG2_SIZE) | page.offset, page.log2_size)
+        end
+    end
+    local function noop() end
+    walk_step_log(log, remember, slice, noop, noop)
+    assert(target, "slice to restrict was not found")
+    local count = 1 << log2_size
+    local relative = offset - target.offset
+    assert(log2_size >= WORD_LOG2_SIZE and log2_size <= target.log2_size and offset & (count - 1) == 0)
+    assert(relative >= 0 and relative + count <= #target.data)
+    target.data = target.data:sub(relative + 1, relative + count)
+    target.offset, target.log2_size = offset, log2_size
+    log.siblings = {}
+    walk_step_log(log, function(_, address, size)
+        log.siblings[#log.siblings + 1] = assert(hashes[key(address, size)], "missing restricted-slice sibling")
+    end, noop, noop, noop)
+    return log
 end
 
 -- Executes a callback when the scope exits.

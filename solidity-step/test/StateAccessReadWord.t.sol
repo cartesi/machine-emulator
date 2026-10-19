@@ -106,10 +106,11 @@ contract StateAccessReadWordTest is ManifestParser {
         // Every witnessed page: first/last aligned word and a rotating interior
         // word, each cold and warm. Fuzz tests below cover arbitrary word contents.
         for (uint256 i; i < actual.pageIndices.length; ++i) {
-            uint64 start = actual.pageIndices[i] << 12;
+            uint64 start = StepLog.sliceAddress(actual.slices[i]);
+            uint64 size = uint64(1) << StepLog.sliceLog2Size(actual.slices[i]);
             compareColdAndWarm(actual, expected, start);
-            compareColdAndWarm(actual, expected, start + 4088);
-            compareColdAndWarm(actual, expected, start + uint64(sample % 512) * 8);
+            compareColdAndWarm(actual, expected, start + size - 8);
+            compareColdAndWarm(actual, expected, start + uint64(sample % (size / 8)) * 8);
         }
         compareState(actual, expected);
     }
@@ -128,10 +129,15 @@ contract StateAccessReadWordTest is ManifestParser {
         returns (StepLog.Context memory ctx)
     {
         ctx.pageIndices = new uint64[](3);
+        ctx.slices = new uint256[](3);
+        for (uint256 si; si < ctx.slices.length; ++si) {
+            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
+        }
         ctx.pageData = new bytes(3 * 4096);
         ctx.pageHashes = new bytes32[](3);
         for (uint64 i; i < 3; ++i) {
             ctx.pageIndices[i] = base + i * 61;
+            ctx.slices[i] = StepLog.packSlice(ctx.pageIndices[i] << 12, 12, uint256(i) * 4096);
             for (uint256 j; j < 8; ++j) {
                 ctx.pageData[uint256(i) * 4096 + offset + j] = bytes1(uint8(value >> (j * 8)));
             }
@@ -214,7 +220,12 @@ contract StateAccessReadWordTest is ManifestParser {
         returns (StepLog.Context memory ctx)
     {
         ctx.pageIndices = new uint64[](1);
+        ctx.slices = new uint256[](1);
+        for (uint256 si; si < ctx.slices.length; ++si) {
+            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
+        }
         ctx.pageIndices[0] = EmulatorConstants.UARCH_HALT_ADDR >> 12;
+        ctx.slices[0] = StepLog.packSlice(ctx.pageIndices[0] << 12, 12, uint256(0) * 4096);
         ctx.pageData = new bytes(4096);
         ctx.pageHashes = new bytes32[](1);
         ctx.nodes = new StepLog.NodeEntry[](0);

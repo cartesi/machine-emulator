@@ -102,6 +102,11 @@ private:
         log_write_reg(machine_reg_enum(what), val);
     }
 
+    machine_hash do_read_revert_root_hash() const {
+        m_recorder.touch_page(AR_SHADOW_REVERT_ROOT_HASH_START, sizeof(machine_hash));
+        return m_m.read_revert_root_hash();
+    }
+
     // -----
     // i_state_access interface implementation
     // -----
@@ -138,13 +143,13 @@ private:
 
     template <typename T, typename A>
     void do_read_memory_word(host_addr haddr, uint64_t pma_index, T *pval) const {
-        m_recorder.touch_page(m_m.get_paddr(haddr, pma_index));
+        m_recorder.touch_page(m_m.get_paddr(haddr, pma_index), sizeof(T));
         *pval = aliased_aligned_read<T, A>(haddr);
     }
 
     template <typename T, typename A>
     void do_write_memory_word(host_addr haddr, uint64_t pma_index, T val) const {
-        m_recorder.touch_page(m_m.get_paddr(haddr, pma_index));
+        m_recorder.touch_page(m_m.get_paddr(haddr, pma_index), sizeof(T));
         aliased_aligned_write<T, A>(haddr, val);
     }
 
@@ -164,7 +169,8 @@ private:
     template <TLB_set_index SET>
     host_addr do_read_tlb_vf_offset(uint64_t slot_index) const {
         // Touch the shadow page so replay has the TLB slot data
-        m_recorder.touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
+        m_recorder.touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page),
+            SHADOW_TLB_SLOT_SIZE);
         // Return the vh_offset from the hot entry
         return m_m.get_state().penumbra.tlb[SET][slot_index].vh_offset;
     }
@@ -172,10 +178,11 @@ private:
     template <TLB_set_index SET>
     uint64_t do_init_hot_tlb_slot(uint64_t slot_index) const {
         // Touch the shadow page so replay has the TLB slot data
-        m_recorder.touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
+        m_recorder.touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page),
+            SHADOW_TLB_SLOT_SIZE);
         // Touch PMA page so replay's do_read_pma can validate the entry (even if corrupt)
         const auto pma_index = m_m.read_shadow_tlb(SET, slot_index, shadow_tlb_what::pma_index);
-        m_recorder.touch_page(pmas_get_abs_addr(pma_index, pmas_what::istart));
+        m_recorder.touch_page(pmas_get_abs_addr(pma_index, pmas_what::istart), sizeof(pmas_entry));
         // Validate and promote the slot; corrupt entries return TLB_INVALID_PAGE
         const auto validated_vaddr_page = m_m.init_hot_tlb_slot(SET, slot_index);
         // Only touch target page itself after validation confirms the entry is sound
@@ -183,7 +190,7 @@ private:
             const auto vp_offset = m_m.read_shadow_tlb(SET, slot_index, shadow_tlb_what::vp_offset);
             const auto paddr_page = validated_vaddr_page + vp_offset;
             // replay's do_init_hot_tlb_slot needs the page there so promote the hot entry
-            m_recorder.touch_page(paddr_page);
+            m_recorder.save_page(paddr_page);
         }
         return validated_vaddr_page;
     }
@@ -198,12 +205,13 @@ private:
     void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) const {
         // replay_step_state_access needs the TLB slot page and the target page data
         // vaddr_page, vp_offset, and pma_index are on the same page, so we only need touch one of them.
-        m_recorder.touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
+        m_recorder.touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page),
+            SHADOW_TLB_SLOT_SIZE);
         // We still need to touch the page data
         if (vaddr_page != TLB_INVALID_PAGE) {
             const auto haddr_page = vaddr_page + vh_offset;
             const auto paddr_page = m_m.get_paddr(haddr_page, pma_index);
-            m_recorder.touch_page(paddr_page);
+            m_recorder.save_page(paddr_page);
         }
         m_m.write_verified_tlb(SET, slot_index, vaddr_page, vh_offset, pma_index);
     }
@@ -211,7 +219,7 @@ private:
     fast_addr do_get_faddr(uint64_t paddr, uint64_t pma_index) const {
         // replay_step_state_access needs the corresponding page to perform a
         // translation between paddr and its own haddr, so we touch the page here
-        m_recorder.touch_page(paddr);
+        m_recorder.save_page(paddr);
         return m_m.get_host_addr(paddr, pma_index);
     }
 
@@ -236,7 +244,7 @@ private:
         if (write_length_log2_size > HASH_TREE_LOG2_PAGE_SIZE) {
             m_recorder.touch_node(paddr, write_length_log2_size);
         } else {
-            m_recorder.touch_page(paddr);
+            m_recorder.touch_page(paddr, write_length);
         }
         m_m.write_memory(paddr, data, data_length);
         if (write_length > data_length) {

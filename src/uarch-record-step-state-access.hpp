@@ -89,7 +89,7 @@ private:
 
     void do_write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
         uint64_t pma_index) const {
-        m_recorder.touch_page(shadow_tlb_get_abs_addr(set_index, slot_index));
+        m_recorder.touch_page(shadow_tlb_get_abs_addr(set_index, slot_index), SHADOW_TLB_SLOT_SIZE);
         m_m.write_unverified_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
     }
 
@@ -101,7 +101,7 @@ private:
     void do_revert_state() const {
         // Witness the revert root hash leaf so the replayer can recover the canonical post-state
         // hash from its page and return it from finish().
-        m_recorder.touch_page(AR_SHADOW_REVERT_ROOT_HASH_START);
+        m_recorder.touch_page(AR_SHADOW_REVERT_ROOT_HASH_START, sizeof(machine_hash));
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

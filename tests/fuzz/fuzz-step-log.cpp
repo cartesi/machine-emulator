@@ -34,12 +34,13 @@
 #include <cstring>
 #include <exception>
 #include <memory>
+#include <vector>
 
 #include <step-log.hpp>
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    // decode requires a mutable image (it rehashes pages into their scratch slots
-    // in place), so copy the immutable input into a writable buffer.
+    // decode needs a mutable image for its scratch hashes. Keep this fuzz buffer
+    // aligned; the unit suite separately covers unaligned buffers.
     const size_t words = size / 8 + 1;
     const std::unique_ptr<uint64_t[]> buffer{new uint64_t[words]};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -47,10 +48,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     std::memcpy(image, data, size);
 
     try {
-        auto log = cartesi::step_log::decode(image, size);
+        std::vector<cartesi::slice_entry> slices(cartesi::step_log::get_slice_count(image, size));
+        auto log = cartesi::step_log::decode(image, size, slices);
         // A structurally valid log (an unmutated seed) also exercises the
         // queries and the post-state walk; both must be exception-safe.
-        log.try_find_page(log.pages[0].index << 12);
+        log.try_find_page(log.pages[0].address);
         log.try_find_node(0);
         log.compute_root_hash();
     } catch (const std::exception &) {

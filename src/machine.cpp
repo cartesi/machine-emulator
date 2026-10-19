@@ -2043,9 +2043,10 @@ machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned 
         throw std::invalid_argument{"invalid data buffer"};
     }
     step_log_data image(log.begin(), log.end()); // the replay mutates the image in place
+    std::vector<slice_entry> slices(step_log::get_slice_count(image.data(), image.size()));
     replay_step_state_access<>::context context;
     // Pinned, unlike verify_step: these logs exist for the Keccak-256 on-chain verifier.
-    replay_step_state_access<> a(context, image.data(), image.size(), hash_function_type::keccak256);
+    replay_step_state_access<> a(context, image.data(), image.size(), slices, hash_function_type::keccak256);
     context.log.check_root_hash_before(root_hash_before);
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash);
     return a.finish(false);
@@ -2058,9 +2059,10 @@ std::string machine::dump_send_cmio_response(uint16_t reason, const unsigned cha
         throw std::invalid_argument{"invalid data buffer"};
     }
     step_log_data image(log.begin(), log.end()); // the replay mutates the image in place
+    std::vector<slice_entry> slices(step_log::get_slice_count(image.data(), image.size()));
     replay_step_state_access<step_log_dumper>::context context;
     // Pinned, unlike verify_step: these logs exist for the Keccak-256 on-chain verifier.
-    const replay_step_state_access<step_log_dumper> a(context, image.data(), image.size(),
+    const replay_step_state_access<step_log_dumper> a(context, image.data(), image.size(), slices,
         hash_function_type::keccak256);
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash);
     return context.dumper.str();
@@ -2106,8 +2108,9 @@ step_log_data machine::log_reset_uarch() {
 
 machine_hash machine::verify_reset_uarch(const_machine_hash_view root_hash_before, std::span<const unsigned char> log) {
     step_log_data image(log.begin(), log.end());
+    std::vector<slice_entry> slices(step_log::get_slice_count(image.data(), image.size()));
     uarch_replay_step_state_access<>::context context;
-    uarch_replay_step_state_access<> a(context, image.data(), image.size());
+    uarch_replay_step_state_access<> a(context, image.data(), image.size(), slices);
     context.log.check_root_hash_before(root_hash_before);
     uarch_reset_state(a);
     return a.finish();
@@ -2116,8 +2119,9 @@ machine_hash machine::verify_reset_uarch(const_machine_hash_view root_hash_befor
 std::string machine::dump_step_uarch(std::span<const unsigned char> log, uint64_t skip_count,
     uint64_t uarch_cycle_count) {
     step_log_data image(log.begin(), log.end()); // the replay mutates the image in place
+    std::vector<slice_entry> slices(step_log::get_slice_count(image.data(), image.size()));
     uarch_replay_step_state_access<step_log_dumper>::context context;
-    const uarch_replay_step_state_access<step_log_dumper> a(context, image.data(), image.size());
+    const uarch_replay_step_state_access<step_log_dumper> a(context, image.data(), image.size(), slices);
     // uarch_interpret's cycle-limit bookkeeping would open the dump with redundant uarch.cycle reads
     auto replay = [&](uint64_t count) {
         for (uint64_t i = 0; i < count; ++i) {
@@ -2137,8 +2141,9 @@ std::string machine::dump_step_uarch(std::span<const unsigned char> log, uint64_
 
 std::string machine::dump_reset_uarch(std::span<const unsigned char> log) {
     step_log_data image(log.begin(), log.end()); // the replay mutates the image in place
+    std::vector<slice_entry> slices(step_log::get_slice_count(image.data(), image.size()));
     uarch_replay_step_state_access<step_log_dumper>::context context;
-    uarch_replay_step_state_access<step_log_dumper> a(context, image.data(), image.size());
+    uarch_replay_step_state_access<step_log_dumper> a(context, image.data(), image.size(), slices);
     uarch_reset_state(a);
     return context.dumper.str();
 }
@@ -2166,8 +2171,9 @@ log_step_uarch_result machine::log_step_uarch(uint64_t uarch_cycle_count) {
 machine_hash machine::verify_step_uarch(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
     uint64_t uarch_cycle_count) {
     step_log_data image(log.begin(), log.end());
+    std::vector<slice_entry> slices(step_log::get_slice_count(image.data(), image.size()));
     uarch_replay_step_state_access<>::context context;
-    uarch_replay_step_state_access<> a(context, image.data(), image.size());
+    uarch_replay_step_state_access<> a(context, image.data(), image.size(), slices);
     context.log.check_root_hash_before(root_hash_before);
     const uint64_t uarch_cycle_end = saturating_add(a.read_uarch_cycle(), uarch_cycle_count);
     uarch_interpret(a, uarch_cycle_end);
@@ -2247,9 +2253,9 @@ log_step_result machine::log_step(uint64_t mcycle_count) {
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
     const auto break_reason = interpret(a, mcycle_end);
     auto root_hash_after = get_root_hash();
-    const state_access sa(*this);
-    if (is_rejected_manual_yield(sa)) {
-        root_hash_after = read_revert_root_hash();
+    // Replay also reads these fields to select the canonical post-state.
+    if (is_rejected_manual_yield(a)) {
+        root_hash_after = a.read_revert_root_hash();
     }
     auto log = recorder.finish();
     if (!std::ranges::equal(verify_step(root_hash_before, log, mcycle_count), root_hash_after)) {
@@ -2261,8 +2267,9 @@ log_step_result machine::log_step(uint64_t mcycle_count) {
 machine_hash machine::verify_step(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
     uint64_t mcycle_count) {
     step_log_data image(log.begin(), log.end());
+    std::vector<slice_entry> slices(step_log::get_slice_count(image.data(), image.size()));
     replay_step_state_access<>::context context;
-    replay_step_state_access<> a(context, image.data(), image.size());
+    replay_step_state_access<> a(context, image.data(), image.size(), slices);
     context.log.check_root_hash_before(root_hash_before);
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
     interpret(a, mcycle_end);

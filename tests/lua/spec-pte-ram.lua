@@ -2,6 +2,7 @@
 -- SPDX-License-Identifier: LGPL-3.0-or-later
 
 local cartesi = require("cartesi")
+local test_util = require("cartesi.tests.util")
 local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 
@@ -76,9 +77,8 @@ lester.describe("RAM-only page tables", function()
                         assert(native:read_reg("x2") == 42)
                         assert(native:read_memory(region.start, 4096) == pte_before, "PTE must not be written")
                         assert(native:read_memory(data, 8) == string.pack("<I8", 0x1122334455667788))
-                        local pages = string.unpack("<I8", log, 17)
-                        for i = 0, pages - 1 do
-                            local page = string.unpack("<I8", log, 41 + i * 4136) << 12
+                        for _, slice in ipairs(test_util.parse_step_log(log).pages) do
+                            local page = slice.index << 12
                             assert(page ~= region.start, "out-of-RAM PTE must not be read")
                         end
                     end)

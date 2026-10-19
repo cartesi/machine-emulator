@@ -39,7 +39,7 @@ contract StepLogDecodeTest is ManifestParser {
     /// need one sibling per tree level per page, so MAX_SIBLING_COUNT >= depth * MAX_PAGE_COUNT.
     function testSiblingCapCoversPageCap() public pure {
         uint256 depth =
-            EmulatorConstants.HASH_TREE_LOG2_ROOT_SIZE - EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
+            EmulatorConstants.HASH_TREE_LOG2_ROOT_SIZE - EmulatorConstants.HASH_TREE_LOG2_WORD_SIZE;
         assertGe(uint256(StepLog.MAX_SIBLING_COUNT), depth * uint256(StepLog.MAX_PAGE_COUNT));
     }
 
@@ -54,7 +54,11 @@ contract StepLogDecodeTest is ManifestParser {
 
         uint256 pageCount = ctx.pageIndices.length;
         assertGt(pageCount, 0, "log has pages");
-        assertEq(ctx.pageData.length, pageCount * 4096, "pageData length tracks pageCount");
+        uint256 contentBytes;
+        for (uint256 i; i < pageCount; ++i) {
+            contentBytes += uint256(1) << StepLog.sliceLog2Size(ctx.slices[i]);
+        }
+        assertEq(ctx.pageData.length, contentBytes, "pageData length tracks slice contents");
         assertEq(ctx.pageHashes.length, pageCount, "pageHashes allocated per page");
         assertEq(ctx.pageIndices[0], EXPECTED_FIRST_PAGE_INDEX, "uarch shadow state page first");
     }
@@ -98,8 +102,8 @@ contract StepLogDecodeTest is ManifestParser {
     /// Decode recomputes the pre-state root, so a tampered page byte changes it.
     function testTamperedPageChangesRootBefore() public view {
         bytes memory bad = bytes(fixture);
-        // First page data starts after the header + the 8-byte page index.
-        uint256 firstPageDataOff = StepLog.HEADER_SIZE + 8;
+        // First page data starts after the header + the 16-byte slice prefix.
+        uint256 firstPageDataOff = StepLog.HEADER_SIZE + 16;
         bad[firstPageDataOff] = bytes1(uint8(bad[firstPageDataOff]) ^ 0xff);
         StepLog.Context memory ctx = this.decode(bad);
         assertTrue(

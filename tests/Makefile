@@ -426,7 +426,10 @@ test-uarch-address-range:
 test-uarch-pma-cache:
 	$(BUILDDIR)/misc/test-uarch-pma-cache
 
-test-misc: test-c-api test-c-api-remote test-c-jsonrpc-api test-save-and-load test-yield-and-save test-uarch-address-range test-uarch-pma-cache
+test-step-log:
+	$(BUILDDIR)/misc/test-step-log
+
+test-misc: test-c-api test-c-api-remote test-c-jsonrpc-api test-save-and-load test-yield-and-save test-uarch-address-range test-uarch-pma-cache test-step-log
 
 test-interactive:
 	echo uname -a | $(LUA) ../src/cartesi-machine.lua --quiet --no-init-splash -it sh | grep -q "riscv64 GNU/Linux"
@@ -451,7 +454,7 @@ test-coverage-uarch:
 # tail steps ordered below.
 PARALLEL_TESTS = test-save-and-load test-machine test-lua test-jsonrpc \
 	test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine \
-	test-uarch-rv64ui test-uarch-rv64ui-replay test-uarch-interpreter test-uarch-address-range test-uarch-pma-cache \
+	test-uarch-rv64ui test-uarch-rv64ui-replay test-uarch-interpreter test-uarch-address-range test-uarch-pma-cache test-step-log \
 	test-machine-with-log-step test-coverage-uarch test-computation-hash
 
 test-parallel: $(PARALLEL_TESTS)
@@ -513,7 +516,7 @@ coverage-all: | test-coverage-uarch-pcs
 	$(MAKE) coverage-report
 	$(MAKE) -C ../src swap-uarch-pristine-stock
 
-test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-rv64ui-replay test-uarch-interpreter test-uarch-address-range test-uarch-pma-cache test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step create-computation-hash-corpus
+test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-rv64ui-replay test-uarch-interpreter test-uarch-address-range test-uarch-pma-cache test-step-log test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step create-computation-hash-corpus
 
 lint format check-format:
 	@$(MAKE) -C misc $@

@@ -68,10 +68,13 @@ public:
     /// \param context Context to be filled with replay step log data
     /// \param log_image Pointer to the step log file bytes
     /// \param log_size Size of the log bytes
+    /// \param slice_storage Caller-owned descriptors; must outlive this replay
     /// \throw runtime_error if the log is malformed or declares a hash function other than
     /// Keccak-256 (the only one the uarch protocol and its on-chain verifier support)
-    uarch_replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size) : m_context(context) {
-        m_context.log = step_log::decode(log_image, log_size, hash_function_type::keccak256);
+    uarch_replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size,
+        std::span<slice_entry> slice_storage) :
+        m_context(context) {
+        m_context.log = step_log::decode(log_image, log_size, slice_storage, hash_function_type::keccak256);
     }
 
     /// \brief Finish the replay and return the obtained root hash after
@@ -94,9 +97,8 @@ private:
     host_addr paddr_to_haddr_for_write(uint64_t paddr) const {
         const auto paddr_page = paddr & ~PAGE_OFFSET_MASK;
         auto *page_log = m_context.log.find_page(paddr_page);
-        page_log->hash = machine_hash{};
-        const auto offset = paddr & PAGE_OFFSET_MASK;
-        return cast_ptr_to_host_addr(page_log->data) + offset;
+        *page_log->hash = machine_hash{};
+        return cast_ptr_to_host_addr(page_log->find_data(paddr, sizeof(uint64_t)));
     }
 
     // -----
@@ -158,8 +160,8 @@ private:
     void do_revert_state() const {
         // The canonical post-state hash is the recorded revert root hash, read raw from its leaf in the
         // witnessed shadow page. finish() returns it instead of the recomputed tree root.
-        std::copy_n(m_context.log.find_data(AR_SHADOW_REVERT_ROOT_HASH_START), m_context.reverted_root_hash.size(),
-            m_context.reverted_root_hash.begin());
+        std::copy_n(m_context.log.find_data(AR_SHADOW_REVERT_ROOT_HASH_START, m_context.reverted_root_hash.size()),
+            m_context.reverted_root_hash.size(), m_context.reverted_root_hash.begin());
         m_context.reverted = true;
         m_context.dumper.revert(m_context.reverted_root_hash);
     }

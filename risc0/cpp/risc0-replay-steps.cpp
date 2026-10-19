@@ -20,6 +20,7 @@
 #include "machine-hash.hpp"
 #include "interpret.hpp"
 #include "replay-step-state-access.hpp"
+#include <array>
 #include <cinttypes>
 #include <cstring>
 
@@ -32,8 +33,11 @@ extern "C" void risc0_replay_steps(
     unsigned char* out_root_hash_before,
     unsigned char* out_root_hash_after)
 {
+    // Bound descriptor memory in the freestanding guest; decode rejects larger witnesses.
+    static constexpr size_t MAX_SLICE_COUNT = 65536;
+    static std::array<slice_entry, MAX_SLICE_COUNT> slices;
     replay_step_state_access<>::context context{};
-    replay_step_state_access<> a(context, step_log_image, step_log_image_size, hash_function_type::sha256);
+    replay_step_state_access<> a(context, step_log_image, step_log_image_size, slices, hash_function_type::sha256);
     uint64_t mcycle_end{};
     // Saturate on overflow, matching machine::verify_step's saturating_add, so the RISC0
     // guest and the host replayer agree on the cycle target.

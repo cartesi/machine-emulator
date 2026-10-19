@@ -21,6 +21,66 @@ local cartesi = require("cartesi")
 local M = {}
 
 M.errors = {
+    old_signature = {
+        cpp_pattern = "invalid step log signature",
+        solidity_signature = "InvalidSignature()",
+        solidity_message = "",
+    },
+    slice_size_low = {
+        cpp_pattern = "slice log2 size out of range",
+        solidity_signature = "SliceLog2SizeOutOfRange(uint64)",
+        solidity_message = "",
+    },
+    slice_size_high = {
+        cpp_pattern = "slice log2 size out of range",
+        solidity_signature = "SliceLog2SizeOutOfRange(uint64)",
+        solidity_message = "",
+    },
+    slice_unaligned = {
+        cpp_pattern = "slice address not aligned to its size",
+        solidity_signature = "SliceNotAligned(uint64,uint64)",
+        solidity_message = "",
+    },
+    slice_unsorted = {
+        cpp_pattern = "slice addresses not in increasing order",
+        solidity_signature = "PagesNotInOrder()",
+        solidity_message = "",
+    },
+    slice_overlap = {
+        cpp_pattern = "slice overlaps previous slice",
+        solidity_signature = "SlicesOverlap()",
+        solidity_message = "",
+    },
+    slice_same_page = {
+        cpp_pattern = "multiple slices in the same page",
+        solidity_signature = "MultipleSlicesInPage()",
+        solidity_message = "",
+    },
+    slice_node_overlap = {
+        cpp_pattern = "slice or node overlaps a previous entry",
+        solidity_signature = "OverlappingEntries()",
+        solidity_message = "",
+    },
+    slice_truncated = {
+        cpp_pattern = "truncated slice data or hash",
+        solidity_signature = "LogTruncated()",
+        solidity_message = "",
+    },
+    slice_trailing_bytes = {
+        cpp_pattern = "step log byte length does not match counts",
+        solidity_signature = "TrailingBytes(uint256,uint256)",
+        solidity_message = "",
+    },
+    slice_count_mismatch = {
+        cpp_pattern = "step log byte length does not match counts",
+        solidity_signature = "LogTruncated()",
+        solidity_message = "",
+    },
+    access_outside_slice = {
+        cpp_pattern = "access outside witnessed slice",
+        solidity_signature = "AccessOutsideSlice()",
+        solidity_message = "",
+    },
     bad_signature = {
         cpp_pattern = "invalid step log signature",
         solidity_signature = "InvalidSignature()",
@@ -32,17 +92,17 @@ M.errors = {
         solidity_message = "",
     },
     page_count_zero = {
-        cpp_pattern = "page count is zero",
+        cpp_pattern = "slice count is zero",
         solidity_signature = "PageCountZero()",
         solidity_message = "",
     },
     page_index_not_increasing = {
-        cpp_pattern = "page index is not in increasing order",
+        cpp_pattern = "slice addresses not in increasing order",
         solidity_signature = "PagesNotInOrder()",
         solidity_message = "",
     },
     entries_overlap = {
-        cpp_pattern = "page or node overlaps a previous entry",
+        cpp_pattern = "slice or node overlaps a previous entry",
         solidity_signature = "OverlappingEntries()",
         solidity_message = "",
     },
@@ -57,7 +117,7 @@ M.errors = {
         solidity_message = "",
     },
     nonzero_scratch_hash = {
-        cpp_pattern = "page scratch hash area is not zero",
+        cpp_pattern = "slice scratch hash area is not zero",
         solidity_signature = "NonZeroScratchHash()",
         solidity_message = "",
     },

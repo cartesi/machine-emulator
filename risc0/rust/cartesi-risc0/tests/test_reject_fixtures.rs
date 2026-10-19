@@ -34,11 +34,22 @@ fn expected_message(tag: &str) -> &'static str {
         "unsupported_hash_function" => "unsupported hash function type",
         "keccak256_declared" => "step log hash function not supported by this verifier",
         "nonzero_scratch_hash" => "scratch hash area is not zero",
-        "page_count_zero" => "page count is zero",
-        "page_count_exceeds_size" => "page count exceeds step log size",
-        "sibling_count_mismatch" => "sibling count does not match step log size",
-        "page_index_not_increasing" => "page index is not in increasing order",
+        "page_count_zero" => "slice count is zero",
+        "page_count_exceeds_size" => "slice count exceeds step log size",
+        "sibling_count_mismatch" => "step log byte length does not match counts",
+        "page_index_not_increasing" => "slice addresses not in increasing order",
         "too_few_siblings" => "too few sibling hashes in log",
+        "old_signature" => "invalid step log signature",
+        "slice_size_low" | "slice_size_high" => "slice log2 size out of range",
+        "slice_unaligned" => "slice address not aligned to its size",
+        "slice_unsorted" => "slice addresses not in increasing order",
+        "slice_overlap" => "slice overlaps previous slice",
+        "slice_same_page" => "multiple slices in the same page",
+        "slice_node_overlap" => "slice or node overlaps a previous entry",
+        "slice_truncated" => "truncated slice data or hash",
+        "slice_trailing_bytes" | "slice_count_mismatch" => {
+            "step log byte length does not match counts"
+        }
         other => panic!("unmapped reject tag: {other}"),
     }
 }
@@ -119,4 +130,21 @@ fn test_host_rejects_wrong_belief() {
     let e = try_prove(REPLAY_STEP_ELF, &before, &log, cycle, &bad)
         .expect_err("wrong root_after accepted");
     assert!(e.contains("root_hash_after mismatch"), "{e:?}");
+}
+
+#[test]
+fn test_guest_rejects_descriptor_capacity_overflow() {
+    // The freestanding guest provides 65,536 descriptors. Supply enough bytes for
+    // the declared minimum entries so rejection is specifically the capacity gate.
+    let count = 65537u64;
+    let mut log = vec![0u8; 40 + count as usize * 80];
+    log[..8].copy_from_slice(b"CTSI\x04\0\0\0");
+    log[8..16].copy_from_slice(&1u64.to_le_bytes());
+    log[16..24].copy_from_slice(&count.to_le_bytes());
+    let err = try_prove(REPLAY_STEP_ELF, &[0; 32], &log, 1, &[0; 32])
+        .expect_err("guest accepted more slices than its static descriptor table");
+    assert!(
+        err.contains("slice count exceeds descriptor storage capacity"),
+        "{err:?}"
+    );
 }

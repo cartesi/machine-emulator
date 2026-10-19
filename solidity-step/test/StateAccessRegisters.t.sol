@@ -124,7 +124,12 @@ contract StateAccessRegistersTest is ManifestParser {
 
     function registerContext() private pure returns (StepLog.Context memory ctx) {
         ctx.pageIndices = new uint64[](1);
+        ctx.slices = new uint256[](1);
+        for (uint256 si; si < ctx.slices.length; ++si) {
+            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
+        }
         ctx.pageIndices[0] = EmulatorConstants.UARCH_HALT_ADDR >> 12;
+        ctx.slices[0] = StepLog.packSlice(ctx.pageIndices[0] << 12, 12, uint256(0) * 4096);
         ctx.pageData = new bytes(4096);
         ctx.pageHashes = new bytes32[](1);
         ctx.nodes = new StepLog.NodeEntry[](0);
@@ -205,6 +210,10 @@ contract StateAccessRegistersTest is ManifestParser {
             ctx = registerContext();
         } else {
             ctx.pageIndices = new uint64[](0);
+            ctx.slices = new uint256[](0);
+            for (uint256 si; si < ctx.slices.length; ++si) {
+                ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
+            }
             ctx.pageData = new bytes(0);
         }
         if (warm) StepLog.readUarchWord(ctx, 0);

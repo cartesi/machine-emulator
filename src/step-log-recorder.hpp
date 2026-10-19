@@ -33,7 +33,9 @@
 #include "hash-tree.hpp"
 #include "machine-hash.hpp"
 #include "machine.hpp"
+#include "shadow-uarch-state.hpp"
 #include "step-log-data.hpp"
+#include "step-log-slice.hpp"
 #include "step-log.hpp"
 
 namespace cartesi {
@@ -42,11 +44,16 @@ namespace cartesi {
 /// \brief Collects the pages, nodes and sibling hashes a recorded step touches into a binary step log.
 class step_log_recorder {
     using page_data_type = std::array<uint8_t, HASH_TREE_PAGE_SIZE>;
-    using pages_type = std::map<uint64_t, page_data_type>;
+    struct recorded_page {
+        page_data_type data{};
+        uint128_t touched{};
+    };
+    using pages_type = std::map<uint64_t, recorded_page>;
     using nodes_type = std::map<uint64_t, node_entry>;
     using sibling_hashes_type = hash_tree::sibling_hashes_type;
-    using page_indices_type = std::vector<uint64_t>;
+    using slices_type = std::vector<slice_entry_header>;
 
+    int m_log2_floor;                   ///< Minimum recorded slice size (verifiers accept every legal size)
     hash_function_type m_hash_function; ///< Hash function type to use for the log
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m;               ///< Machine being recorded
@@ -54,17 +61,25 @@ class step_log_recorder {
     nodes_type m_touched_nodes; ///< Subtrees touched during execution
 
 public:
+    static constexpr int LOG2_SLICE_FLOOR = 9;
+
     /// \brief Constructor
     /// \param hash_function hash function type to use for the log
     /// \param m machine being recorded
+    /// \param log2_floor minimum slice size, in log2 bytes (5..12)
     /// \details The log is serialized when finish() is called
-    step_log_recorder(hash_function_type hash_function, machine &m) : m_hash_function(hash_function), m_m(m) {
-        ;
+    // The optional floor argument is for tests; production uses LOG2_SLICE_FLOOR.
+    step_log_recorder(hash_function_type hash_function, machine &m, int log2_floor = LOG2_SLICE_FLOOR) :
+        m_log2_floor(log2_floor),
+        m_hash_function(hash_function),
+        m_m(m) {
+        if (log2_floor < HASH_TREE_LOG2_WORD_SIZE || log2_floor > HASH_TREE_LOG2_PAGE_SIZE) {
+            throw std::invalid_argument("step log slice floor out of range");
+        }
     }
 
-    /// \brief Mark a page as touched and save its contents
-    /// \param address address inside the page
-    void touch_page(uint64_t address) {
+    /// Save the page before the first access or replay address-mapping dependency.
+    void save_page(uint64_t address) {
         auto page = address & ~PAGE_OFFSET_MASK;
         if (m_touched_pages.contains(page)) {
             return; // already saved
@@ -79,8 +94,31 @@ public:
                 throw std::runtime_error("page falls inside a recorded node's range");
             }
         }
-        auto [it, _] = m_touched_pages.emplace(page, page_data_type());
-        m_m.read_memory(page, it->second.data(), it->second.size());
+        auto [it, _] = m_touched_pages.emplace(page, recorded_page{});
+        m_m.read_memory(page, it->second.data.data(), it->second.data.size());
+    }
+
+    /// Mark every leaf read or written; retain the full first-touch preimage until finish().
+    void touch_page(uint64_t address, uint64_t length = sizeof(uint64_t)) {
+        while (length != 0) {
+            const auto page = address & ~PAGE_OFFSET_MASK;
+            const auto offset = address & PAGE_OFFSET_MASK;
+            const auto count = std::min(length, HASH_TREE_PAGE_SIZE - offset);
+            save_page(address);
+            auto &saved = m_touched_pages.at(page);
+            const auto first = offset >> HASH_TREE_LOG2_WORD_SIZE;
+            const auto last = (offset + count - 1) >> HASH_TREE_LOG2_WORD_SIZE;
+            for (auto leaf = first; leaf <= last; ++leaf) {
+                saved.touched |= static_cast<uint128_t>(1) << leaf;
+            }
+            // Solidity's dedicated register cache loads and flushes this whole window.
+            if (page == AR_SHADOW_UARCH_STATE_START) {
+                constexpr auto leaves = (sizeof(shadow_uarch_state) + HASH_TREE_WORD_SIZE - 1) / HASH_TREE_WORD_SIZE;
+                saved.touched |= (static_cast<uint128_t>(1) << leaves) - 1;
+            }
+            address += count;
+            length -= count;
+        }
     }
 
     /// \brief Record that the subtree at (address, log2_size) is being touched.
@@ -130,7 +168,14 @@ public:
 
     /// \brief Finish recording and return the binary step log
     step_log_data finish() {
-        auto sibling_hashes = get_sibling_hashes();
+        slices_type slices;
+        uint64_t slices_bytes = 0;
+        for (const auto &[address, page] : m_touched_pages) {
+            const auto [offset, log2_size] = select_page_slice(page.touched, m_log2_floor);
+            slices.push_back({address + offset, static_cast<uint64_t>(log2_size)});
+            slices_bytes += sizeof(slice_entry_header) + (UINT64_C(1) << log2_size) + sizeof(machine_hash);
+        }
+        auto sibling_hashes = get_sibling_hashes(slices);
 
         const step_log_header header{
             .signature = STEP_LOG_SIGNATURE,
@@ -140,21 +185,20 @@ public:
             .sibling_count = sibling_hashes.size(),
         };
         step_log_data log;
-        log.reserve(sizeof(header) + (m_touched_pages.size() * sizeof(page_entry)) +
-            (m_touched_nodes.size() * sizeof(node_entry)) + (sibling_hashes.size() * sizeof(machine_hash)));
+        log.reserve(sizeof(header) + slices_bytes + (m_touched_nodes.size() * sizeof(node_entry)) +
+            (sibling_hashes.size() * sizeof(machine_hash)));
         const auto append = [&log](const void *data, size_t size) {
             const auto *bytes = static_cast<const unsigned char *>(data);
             log.insert(log.end(), bytes, bytes + size);
         };
         append(&header, sizeof(header));
-        for (const auto &[address, data] : m_touched_pages) {
-            page_entry entry{
-                .index = address >> HASH_TREE_LOG2_PAGE_SIZE,
-                .data = {},
-                .hash = {}, // scratch; replayer fills this in from the data
-            };
-            std::copy_n(data.data(), data.size(), entry.data);
-            append(&entry, sizeof(entry));
+        for (const auto &slice : slices) {
+            const auto page = slice.address & ~PAGE_OFFSET_MASK;
+            const auto offset = slice.address & PAGE_OFFSET_MASK;
+            const machine_hash zero{};
+            append(&slice, sizeof(slice));
+            append(m_touched_pages.at(page).data.data() + offset, UINT64_C(1) << slice.log2_size);
+            append(&zero, sizeof(zero));
         }
         for (const auto &[_, node] : m_touched_nodes) {
             append(&node, sizeof(node));
@@ -166,63 +210,42 @@ public:
     }
 
 private:
-    /// \brief Collect the sibling hashes needed to reconstruct the root hash from touched pages and nodes.
-    /// \details Walks the tree with three cursors (pages, nodes, siblings).
-    /// A subtree whose range exactly matches a recorded node is consumed as a node
-    /// (no sibling emitted). Subtrees with no touched content emit one sibling hash.
-    /// Recursion descends into subtrees that contain at least one touched page or node.
-    sibling_hashes_type get_sibling_hashes() {
-        sibling_hashes_type sibling_hashes{};
-        page_indices_type page_indices{};
-        for (const auto &[address, _] : m_touched_pages) {
-            page_indices.push_back(address >> HASH_TREE_LOG2_PAGE_SIZE);
+    sibling_hashes_type get_sibling_hashes(const slices_type &slices) {
+        sibling_hashes_type hashes;
+        size_t next_slice = 0;
+        auto next_node = m_touched_nodes.cbegin();
+        get_sibling_hashes_impl(0, HASH_TREE_LOG2_ROOT_SIZE, slices, next_slice, next_node, hashes);
+        if (next_slice != slices.size() || next_node != m_touched_nodes.cend()) {
+            throw std::runtime_error("get_sibling_hashes failed to consume all slices or nodes");
         }
-        auto next_page_index = page_indices.cbegin();
-        auto next_node_it = m_touched_nodes.cbegin();
-        get_sibling_hashes_impl(0, HASH_TREE_LOG2_ROOT_SIZE - HASH_TREE_LOG2_PAGE_SIZE, page_indices, next_page_index,
-            next_node_it, sibling_hashes);
-        if (next_page_index != page_indices.cend()) {
-            throw std::runtime_error("get_sibling_hashes failed to consume all pages");
-        }
-        if (next_node_it != m_touched_nodes.cend()) {
-            throw std::runtime_error("get_sibling_hashes failed to consume all nodes");
-        }
-        return sibling_hashes;
+        return hashes;
     }
 
-    /// \brief Recursively collect sibling hashes for the subtree rooted at page_index
-    /// \param page_index Index of the first page in the subtree
-    /// \param page_count_log2_size Log2 of the number of pages in the subtree
-    /// \param page_indices All touched page indices, sorted ascending
-    /// \param next_page_index Cursor into page_indices; advances past each page consumed during recursion
-    /// \param next_node_it Cursor into touched nodes; advances past each node consumed during recursion
-    /// \param sibling_hashes Accumulates sibling hashes for untouched subtrees
-    void get_sibling_hashes_impl(uint64_t page_index, int page_count_log2_size, page_indices_type &page_indices,
-        page_indices_type::const_iterator &next_page_index, nodes_type::const_iterator &next_node_it,
-        sibling_hashes_type &sibling_hashes) {
-        const auto subtree_start_addr = page_index << HASH_TREE_LOG2_PAGE_SIZE;
-        const auto subtree_log2_size = page_count_log2_size + HASH_TREE_LOG2_PAGE_SIZE;
-        const auto page_count = UINT64_C(1) << page_count_log2_size;
-        const auto subtree_end_page_index = page_index + page_count;
-
-        // next unconsumed page / node is inside this subtree?
-        const bool page_in = next_page_index != page_indices.cend() && *next_page_index < subtree_end_page_index;
-        // shift node address into page-index units to compare with subtree_end_page_index
-        const bool node_in = next_node_it != m_touched_nodes.cend() &&
-            (next_node_it->first >> HASH_TREE_LOG2_PAGE_SIZE) < subtree_end_page_index;
-
-        if (!page_in && !node_in) {
-            sibling_hashes.push_back(m_m.get_node_hash(subtree_start_addr, subtree_log2_size, skip_hash_tree_update));
-        } else if (node_in && next_node_it->first == subtree_start_addr &&
-            std::cmp_equal(next_node_it->second.log2_size, subtree_log2_size)) {
-            ++next_node_it;
-        } else if (page_count_log2_size > 0) {
-            get_sibling_hashes_impl(page_index, page_count_log2_size - 1, page_indices, next_page_index, next_node_it,
-                sibling_hashes);
-            get_sibling_hashes_impl(page_index + (UINT64_C(1) << (page_count_log2_size - 1)), page_count_log2_size - 1,
-                page_indices, next_page_index, next_node_it, sibling_hashes);
+    /// Whole-tree walk; intra-page siblings come from the saved preimage.
+    void get_sibling_hashes_impl(uint64_t address, int log2_size, const slices_type &slices, size_t &next_slice,
+        nodes_type::const_iterator &next_node, sibling_hashes_type &hashes) {
+        const uint128_t end = static_cast<uint128_t>(address) + (static_cast<uint128_t>(1) << log2_size);
+        const bool slice_in = next_slice < slices.size() && slices[next_slice].address < end;
+        const bool node_in = next_node != m_touched_nodes.cend() && next_node->first < end;
+        if (!slice_in && !node_in) {
+            if (log2_size < HASH_TREE_LOG2_PAGE_SIZE) {
+                const auto &page = m_touched_pages.at(address & ~PAGE_OFFSET_MASK);
+                machine_hash hash{};
+                merkle_tree_hash(m_hash_function, page.data.data() + (address & PAGE_OFFSET_MASK),
+                    UINT64_C(1) << log2_size, reinterpret_cast<hash_type>(&hash));
+                hashes.push_back(hash);
+            } else {
+                hashes.push_back(m_m.get_node_hash(address, log2_size, skip_hash_tree_update));
+            }
+        } else if (node_in && next_node->first == address && std::cmp_equal(next_node->second.log2_size, log2_size)) {
+            ++next_node;
+        } else if (slice_in && slices[next_slice].address == address &&
+            std::cmp_equal(slices[next_slice].log2_size, log2_size)) {
+            ++next_slice;
         } else {
-            ++next_page_index;
+            get_sibling_hashes_impl(address, log2_size - 1, slices, next_slice, next_node, hashes);
+            get_sibling_hashes_impl(address + (UINT64_C(1) << (log2_size - 1)), log2_size - 1, slices, next_slice,
+                next_node, hashes);
         }
     }
 };

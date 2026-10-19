@@ -978,6 +978,16 @@ static int machine_obj_index_sync_stored(lua_State *L) {
     return 0;
 }
 
+/// \brief This is the machine:clear_hash_tree() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_clear_hash_tree(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    if (cm_clear_hash_tree(m.get()) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    return 0;
+}
+
 /// \brief This is the machine:verify_hash_tree() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_verify_hash_tree(lua_State *L) {
@@ -1488,6 +1498,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {.name = "get_address_ranges", .func = machine_obj_index_get_address_ranges},
     {.name = "get_proof", .func = machine_obj_index_get_proof},
     {.name = "get_hash_tree_stats", .func = machine_obj_index_get_hash_tree_stats},
+    {.name = "clear_hash_tree", .func = machine_obj_index_clear_hash_tree},
     {.name = "get_reg_address", .func = machine_obj_index_get_reg_address},
     {.name = "get_uarch_pristine_hash", .func = machine_obj_index_get_uarch_pristine_hash},
     {.name = "get_root_hash", .func = machine_obj_index_get_root_hash},

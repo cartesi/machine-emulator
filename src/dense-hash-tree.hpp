@@ -77,6 +77,10 @@ public:
     }
 
 private:
+    void do_clear() noexcept override {
+        m_mapped_memory.clear();
+    }
+
     machine_hash_view do_node_hash_view(uint64_t offset, int log2_size) noexcept override {
         if (auto index = to_index(offset, log2_size); index != invalid_index) {
             return machine_hash_view{m_tree[index]};

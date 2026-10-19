@@ -88,6 +88,7 @@ private:
     void do_write_word(uint64_t address, uint64_t value) override;
     machine_config do_get_initial_config() const override;
     hash_tree_stats do_get_hash_tree_stats(bool clear) override;
+    void do_clear_hash_tree() override;
     machine_runtime_config do_get_runtime_config() const override;
     void do_set_runtime_config(const machine_runtime_config &r) override;
     void do_destroy() override;

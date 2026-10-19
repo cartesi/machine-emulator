@@ -1148,6 +1148,13 @@ CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reaso
 // Integrity checking
 // ------------------------------------
 
+/// \brief Clears all cached hash-tree data without changing machine state or statistics.
+/// \param m Pointer to a machine instance.
+/// \returns 0 for success, non zero code for error.
+/// \details Resets hashes, page-cache entries, and dirty-page tracking to freshly initialized values.
+/// Shared hash-tree backing stores are reset in place. Hashes are rebuilt lazily on the next hash or proof request.
+CM_API cm_error cm_clear_hash_tree(cm_machine *m);
+
 /// \brief Verifies integrity of hash tree against current machine state.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param result True if tree is self-consistent, false otherwise.

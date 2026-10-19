@@ -5,7 +5,6 @@
 
 local cartesi = require("cartesi")
 local filesystem = require("cartesi.filesystem")
-local util = require("cartesi.util")
 
 local artifact_dir = assert(os.getenv("CARTESI_COMPUTATION_HASH_CORPUS_PATH"), "corpus path is not set")
 local machine_tests_dir = assert(os.getenv("CARTESI_TESTS_PATH"), "machine tests path is not set")
@@ -50,7 +49,7 @@ local function make_template(options)
         local custom_offset = cartesi.UARCH_RAM_LENGTH // 2
         local stock_machine <close> = cartesi.machine(make_machine_config())
         local stock_uarch_ram = stock_machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, cartesi.UARCH_RAM_LENGTH)
-        local custom = util.read_file(options.custom_uarch_image)
+        local custom = filesystem.read_file(options.custom_uarch_image)
         assert(custom_offset + #custom <= #stock_uarch_ram, "custom uarch program does not fit")
         assert(
             stock_uarch_ram:sub(custom_offset + 1, custom_offset + #custom) == string.rep("\0", #custom),
@@ -208,7 +207,7 @@ local function add_case(case)
     local input_paths = {}
     for i, command in ipairs(case.commands or {}) do
         local path = string.format("inputs/%s-%d.bin", case.id, i - 1)
-        util.write_file(encode_command(command), artifact_dir .. "/" .. path)
+        filesystem.write_file(encode_command(command), artifact_dir .. "/" .. path)
         input_paths[#input_paths + 1] = path
     end
 
@@ -769,5 +768,5 @@ add_uarch_case({
     equivalent_to = "uarch-after-window",
 })
 
-util.write_file(cartesi.tojson(manifest, 2) .. "\n", artifact_dir .. "/manifest.json")
+filesystem.write_file(cartesi.tojson(manifest, 2) .. "\n", artifact_dir .. "/manifest.json")
 io.stderr:write("Created " .. artifact_dir .. "/manifest.json\n")

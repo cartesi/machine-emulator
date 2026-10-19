@@ -41,10 +41,6 @@
 #include "page-hash-tree-cache.hpp"
 #include "variant-hasher.hpp"
 
-#ifdef HAS_SIGNPOSTS
-#include "signposts.hpp"
-#endif
-
 namespace cartesi {
 
 class hash_tree {
@@ -52,8 +48,8 @@ class hash_tree {
     struct dirty_page {
         int ar_index; ///< Source address range
         // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
-        page_hash_tree_cache::entry &br; ///< Borrowed page hash-tree cache entry
-        bool changed;                    ///< Whether the update operation really changed the page
+        page_hash_tree_cache::entry_metadata &br; ///< Borrowed page hash-tree cache entry
+        bool changed;                             ///< Whether the update operation really changed the page
     };
 
     using dirty_pages = std::pmr::vector<dirty_page>;
@@ -201,9 +197,9 @@ private:
     static pristine_hashes get_pristine_hashes(hash_function_type hash_function);
 
     bool update_dirty_pages(address_ranges ars, changed_address_ranges &changed_ars);
-    bool update_dirty_page(address_range &ar, page_hash_tree_cache::entry &entry, bool &changed);
+    bool update_dirty_page(address_range &ar, page_hash_tree_cache::entry_metadata &entry, bool &changed);
     bool enqueue_hash_dirty_page(page_hash_tree_cache::simd_page_hasher<variant_hasher> &queue, address_range &ar,
-        page_hash_tree_cache::entry &entry, page_hash_tree_cache_stats &stats);
+        page_hash_tree_cache::entry_metadata &entry, page_hash_tree_cache_stats &stats);
     bool return_updated_dirty_pages(address_ranges ars, dirty_pages &batch, changed_address_ranges &changed_ars);
 
     bool update_dense_trees(address_ranges ars, const changed_address_ranges &changed_ars);
@@ -220,14 +216,6 @@ private:
 
     static nodes_type create_nodes(const_address_ranges ars);
     static void check_address_ranges(const_address_ranges ars);
-
-#ifdef HAS_SIGNPOSTS
-    os_log_t m_log;
-    os_signpost_id_t m_spid_update;
-    os_signpost_id_t m_spid_update_page_hashes;
-    os_signpost_id_t m_spid_update_dense_trees;
-    os_signpost_id_t m_spid_update_sparse_tree;
-#endif
 
     mutable page_hash_tree_cache m_page_cache;
     os::mapped_memory m_mapped_memory;

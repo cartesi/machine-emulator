@@ -37,7 +37,7 @@ In particular, it can be scripted in Lua, for fast prototyping and testing.
 - **Verifiable**
   - **Deterministic execution**, ensuring every instruction is reproducible (including floating-point).
   - **State Merkle tree computation**, for generating cryptographic proofs.
-  - **State transition access logging**, enabling on-chain verification of state transitions.
+  - **Binary step logs**, recording the memory witnesses needed to verify state transitions on-chain.
   - **Cycle-level execution control**, for interactive fraud-proof bisection.
   - **Microarchitecture (uarch) emulation** of its interpreter for simplifying on-chain verification.
   - **Generic I/O interface**, enabling handling of data input/output through state transitions.

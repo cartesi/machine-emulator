@@ -122,21 +122,29 @@ pub extern "C" fn zk_concat_hash(
 }
 
 fn main() {
-    // Input: an 8-byte little-endian requested cycle count, then the step log bytes.
-    let mut input = Vec::<u8>::new();
-    env::stdin().read_to_end(&mut input).unwrap();
-    assert!(
-        input.len() >= 8,
-        "input shorter than the cycle count prefix"
-    );
-    let (count_bytes, log_bytes) = input.split_at(8);
-    let mcycle_count = u64::from_le_bytes(count_bytes.try_into().unwrap());
-    // step_log::decode reads uint64 fields in place; a Vec<u8> is not 8-aligned.
-    let mut aligned = vec![0u64; log_bytes.len().div_ceil(8)];
-    let log_data = unsafe {
-        std::slice::from_raw_parts_mut(aligned.as_mut_ptr().cast::<u8>(), log_bytes.len())
-    };
-    log_data.copy_from_slice(log_bytes);
+    // Input: little-endian u64 cycle count and log byte length, then the step log bytes.
+    let mut input = env::stdin();
+    let mut prefix = [0u8; 8];
+    input
+        .read_exact(&mut prefix)
+        .expect("input shorter than the cycle count prefix");
+    let mcycle_count = u64::from_le_bytes(prefix);
+    input
+        .read_exact(&mut prefix)
+        .expect("input shorter than the step log length prefix");
+    let log_size = usize::try_from(u64::from_le_bytes(prefix))
+        .expect("step log size exceeds guest address space");
+    let log_words = log_size
+        .checked_add(7)
+        .expect("step log size exceeds guest address space")
+        / 8;
+    // Read directly into aligned storage for the C++ replay's in-place uint64 accesses.
+    let mut aligned = vec![0u64; log_words];
+    let log_data =
+        unsafe { std::slice::from_raw_parts_mut(aligned.as_mut_ptr().cast::<u8>(), log_size) };
+    input
+        .read_exact(log_data)
+        .expect("input shorter than the declared step log length");
 
     let mut root_hash_before: MachineHash = [0; 32];
     let mut root_hash_after: MachineHash = [0; 32];

@@ -25,6 +25,7 @@
 local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
 local manifest = require("cartesi.tests.step_log_manifest")
+local reject_errors = require("cartesi.tests.reject_fixture_errors")
 
 local function stderr(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
@@ -121,6 +122,73 @@ local function tamper_page_byte(log, page_idx, off)
     error(string.format("page 0x%x not recorded in reset log (revert-hash/htif shadow page missing?)", page_idx))
 end
 
+-- Decode the base witness into its partial Merkle tree before changing its
+-- coverage. Collapsed subtrees retain their original hashes; shrinking a node
+-- creates a synthetic pair of children. Emit the new sibling stream and pre-root
+-- together, so an access-time failure cannot be masked by a stale Merkle proof.
+local function refold_witness(log, edit)
+    local pi, ni, si = 1, 1, 1
+    local function read_tree(first, height)
+        local limit = first + (1 << height)
+        local page = log.pages[pi]
+        local node = log.nodes[ni]
+        local page_in = page and page.index < limit
+        local node_in = node and (node.address >> 12) < limit
+        if not page_in and not node_in then
+            local tree = { hash = assert(log.siblings[si]) }
+            si = si + 1
+            return tree
+        end
+        if node_in and node.address == (first << 12) and node.log2_size == height + 12 then
+            ni = ni + 1
+            return { node = node, hash = node.hash }
+        end
+        if height == 0 then
+            pi = pi + 1
+            return { page = page, hash = test_util.merkle_hash(page.data, 0, 12, "keccak256") }
+        end
+        local left = read_tree(first, height - 1)
+        local right = read_tree(first + (1 << (height - 1)), height - 1)
+        return { left = left, right = right, hash = cartesi.keccak256(left.hash, right.hash) }
+    end
+    local tree = read_tree(0, 52)
+    assert(pi == #log.pages + 1 and ni == #log.nodes + 1 and si == #log.siblings + 1)
+
+    local edits = 0
+    local function change(t)
+        if t.left then
+            change(t.left)
+            change(t.right)
+        end
+        if edit(t) then
+            edits = edits + 1
+        end
+        if t.left then
+            t.hash = cartesi.keccak256(t.left.hash, t.right.hash)
+        end
+        t.witnessed = t.page ~= nil or t.node ~= nil or (t.left and (t.left.witnessed or t.right.witnessed))
+    end
+    change(tree)
+    assert(edits == 1, "expected exactly one witness edit")
+
+    log.pages, log.nodes, log.siblings = {}, {}, {}
+    local function emit(t)
+        if t.page then
+            log.pages[#log.pages + 1] = t.page
+        elseif t.node then
+            log.nodes[#log.nodes + 1] = t.node
+        elseif t.witnessed then
+            emit(t.left)
+            emit(t.right)
+        else
+            log.siblings[#log.siblings + 1] = t.hash
+        end
+    end
+    emit(tree)
+    assert(test_util.recompute_step_log_root(log, "keccak256") == tree.hash)
+    return tree.hash
+end
+
 -- Each case: tag, kind, base file, and a mutate(log) that tampers the log in place and
 -- returns the claimed {before, cycle, after} the manifest hands the verifier. Defaults
 -- (real header values) apply when a field is nil.
@@ -152,7 +220,7 @@ local cases = {
         end,
     },
     {
-        tag = "page_index_not_ascending",
+        tag = "page_index_not_increasing",
         kind = "cycle",
         base = UARCH_BASE,
         mutate = function(log)
@@ -200,6 +268,82 @@ local cases = {
         -- Drop a sibling the tree walk needs; the fold runs out of sibling hashes.
         mutate = function(log)
             table.remove(log.siblings)
+        end,
+    },
+    {
+        tag = "required_page_not_found",
+        kind = "cycle",
+        base = UARCH_BASE,
+        mutate = function(log)
+            local before = refold_witness(log, function(t)
+                if t.page and t.page.index == PC_PAGE then
+                    t.page = nil
+                    return true
+                end
+            end)
+            assert(before == base_claims(UARCH_BASE).before, "omitting a page must preserve the pre-root")
+            return { before = before }
+        end,
+    },
+    {
+        tag = "required_node_not_found",
+        kind = "reset_uarch",
+        base = RESET_BASE,
+        mutate = function(log)
+            local before = refold_witness(log, function(t)
+                if t.node then
+                    t.node = nil
+                    return true
+                end
+            end)
+            assert(before == base_claims(RESET_BASE).before, "omitting a node must preserve the pre-root")
+            return { before = before }
+        end,
+    },
+    {
+        tag = "too_many_pages",
+        kind = "cycle",
+        base = UARCH_BASE,
+        -- An in-range unused page is legal. Index 2^52 is beyond the 64-bit
+        -- address space, so the root fold leaves this extra entry unconsumed.
+        mutate = function(log)
+            log.pages[#log.pages + 1] = {
+                index = 1 << 52,
+                data = string.rep("\0", 4096),
+                scratch_hash = string.rep("\0", 32),
+            }
+        end,
+    },
+    {
+        tag = "too_many_siblings",
+        kind = "cycle",
+        base = UARCH_BASE,
+        mutate = function(log)
+            log.siblings[#log.siblings + 1] = BOGUS
+        end,
+    },
+    {
+        tag = "reset_uarch_wrong_size",
+        kind = "reset_uarch",
+        base = RESET_BASE,
+        mutate = function(log)
+            return {
+                before = refold_witness(log, function(t)
+                    if t.node then
+                        -- Keep the reset address, halve its extent, and supply
+                        -- the other half as a sibling in a self-consistent tree.
+                        local n = t.node
+                        t.node = nil
+                        t.left = {
+                            node = { address = n.address, log2_size = n.log2_size - 1, hash = n.hash },
+                            hash = n.hash,
+                            witnessed = true,
+                        }
+                        t.right = { hash = BOGUS }
+                        return true
+                    end
+                end),
+            }
         end,
     },
     {
@@ -312,10 +456,12 @@ local cases = {
 }
 
 test_util.prepare_empty_output_dir(output_dir)
+reject_errors.write(output_dir)
 local out <close> = assert(io.open(output_dir .. "/" .. manifest.MANIFEST_NAME, "w"))
 out:write(manifest.HEADER)
 
 for _, case in ipairs(cases) do
+    assert(reject_errors.errors[case.tag], "unmapped reject tag: " .. case.tag)
     local log = test_util.read_step_log_file(case.base)
     local claims = base_claims(case.base)
     local claim = case.mutate(log) or {}

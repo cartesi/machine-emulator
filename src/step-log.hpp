@@ -51,11 +51,10 @@
 
 namespace cartesi {
 
-/// \brief Signature at the start of a binary step log file: magic + version + reserved.
-/// Version byte is 3: all array counts live in the header.
+/// \brief Signature at the start of a binary step log buffer: magic + version + reserved.
 constexpr std::array<char, 8> STEP_LOG_SIGNATURE = {'C', 'T', 'S', 'I', 3, 0, 0, 0};
 
-/// \brief Fixed-size prefix of a step log file.
+/// \brief Fixed-size prefix of a step log buffer.
 /// \details The root hash before is recomputed from the witnessed tree at decode time; the cycle
 /// count and the root hash after are the caller's, driving the replay and checking its result.
 struct PACKED step_log_header {
@@ -73,7 +72,7 @@ static_assert(sizeof(step_log_header) == 40, "expected wire size of step_log_hea
 struct PACKED page_entry {
     uint64_t index;                          ///< Page index (byte address >> log2_page_size)
     unsigned char data[HASH_TREE_PAGE_SIZE]; ///< Page contents as of first touch
-    machine_hash hash;                       ///< Scratch slot; must be zero on disk
+    machine_hash hash;                       ///< Scratch slot; must be zero in the encoded log
 };
 static_assert(sizeof(page_entry) == 4136, "expected wire size of page_entry is 4136 bytes");
 // The page wire format is written by the recorder using HASH_TREE_* and reconstructed by
@@ -108,7 +107,7 @@ struct step_log {
     std::span<const machine_hash> siblings; ///< Sibling hashes for untouched subtrees
 
     /// \brief Decode and validate a binary step log.
-    /// \param log_image Pointer to the step log file bytes. The returned step_log keeps spans into it,
+    /// \param log_image Pointer to the step log buffer. The returned step_log keeps spans into it,
     /// so it must outlive the step_log.
     /// \param log_size Size of the log bytes.
     /// \param required_hash_function When set, reject a log declaring any other hash function.
@@ -119,6 +118,7 @@ struct step_log {
     /// \details Mirrors StepLog.decode in the Solidity replayer: header parse, per-count size bounds,
     /// page ordering, per-node alignment/range, the combined pages+nodes disjointness walk, and the
     /// initial-root recompute.
+    /// Solidity's per-count caps (64 pages, 4 nodes, 3328 siblings) have no C++ counterpart by design.
     static step_log decode(unsigned char *log_image, uint64_t log_size,
         std::optional<hash_function_type> required_hash_function = std::nullopt) {
         step_log log;

@@ -4970,6 +4970,31 @@ dofile(%q)
         )
     end)
 
+    it("resumable epochs reject CMIO logging before execution", function()
+        local _ <close>, state_hash = scope_temp_pathname()
+        local _ <close>, outputs = scope_temp_pathname()
+        local _ <close>, log_file = scope_temp_pathname()
+        for _, lifecycle in ipairs({ "", ",end_epoch:false", ",begin_epoch:false" }) do
+            run_fail(
+                {
+                    "--cmio-advance-state=resumable:true,output_proof:,state_hash:"
+                        .. state_hash
+                        .. ",outputs_frontier:"
+                        .. outputs
+                        .. lifecycle,
+                    "--log-send-cmio-response=" .. log_file .. ",reason:1,data:0x00",
+                    "--max-mcycle=0",
+                    "--revert-mode=none",
+                },
+                "options that modify epoch files cannot be combined with options that modify the machine"
+                    .. " after the last advance state input"
+            )
+            expect.falsy(io.open(state_hash, "rb"))
+            expect.falsy(io.open(outputs, "rb"))
+            expect.falsy(io.open(log_file, "rb"))
+        end
+    end)
+
     local function run_rolling_template(machine, option)
         local _ <close>, stored = scope_stored_dirname()
         machine:store(stored)

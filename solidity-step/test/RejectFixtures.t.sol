@@ -60,6 +60,9 @@ contract RejectFixturesTest is ManifestParser {
                     rows[i].data,
                     rows[i].revertRootHash
                 );
+                assertEq(
+                    obtained, trueAfter(rows[i]), "replay must return the true transition root"
+                );
                 assertTrue(obtained != rows[i].rootHashAfter, "forged transition must not verify");
                 continue;
             }
@@ -102,6 +105,9 @@ contract RejectFixturesTest is ManifestParser {
                 bytes32 obtained = kind == Kind.Cycle
                     ? this.verifyCycle(log, rows[i].rootHashBefore)
                     : this.verifyReset(log, rows[i].rootHashBefore);
+                assertEq(
+                    obtained, trueAfter(rows[i]), "replay must return the true transition root"
+                );
                 assertTrue(obtained != rows[i].rootHashAfter, "forged transition must not verify");
                 continue;
             }
@@ -114,50 +120,50 @@ contract RejectFixturesTest is ManifestParser {
         }
     }
 
+    /// The claimed root is forged; independently recorded base roots pin the exact
+    /// result. The cleared-iflags case instead modifies the pre-state into a no-op.
+    function trueAfter(Row memory row) internal returns (bytes32) {
+        if (row.kind == Kind.Cycle) {
+            return findManifestRowByName(
+                string.concat(UARCH_PER_CYCLE_DIR, "/rv64ui-uarch-add/_manifest.csv"),
+                Kind.Cycle,
+                "00000.log"
+            ).rootHashAfter;
+        }
+        if (row.kind == Kind.ResetUarch) {
+            return findManifestRowByName(
+                "test/fixtures/reset-uarch/_manifest.csv", Kind.ResetUarch, "reset-uarch.log"
+            ).rootHashAfter;
+        }
+        if (keccak256(bytes(row.name)) == keccak256("cmio_iflags_cleared.log")) {
+            return row.rootHashBefore;
+        }
+        return findManifestRowByName(
+            SEND_CMIO_RESPONSE_MANIFEST, Kind.SendCmioResponse, "send-cmio-response-1.log"
+        ).rootHashAfter;
+    }
+
     /// The one tag whose rejection is not a revert: the verifier returns an obtained root
     /// the caller's comparison must refuse.
     function isRootAfterMismatchTag(string memory tag) internal pure returns (bool) {
         return keccak256(bytes(tag)) == keccak256("root_after_mismatch");
     }
 
-    /// Map the reject tag to the Solidity error it must revert with. Custom errors match by
-    /// selector (arguments vary); the interpreter traps share one RuntimeError selector, so
-    /// they match the exact message that distinguishes them.
+    /// The recorder exports the shared C++ message/Solidity signature table.
+    /// Keeping both expectations in each entry prevents independent tag vocabularies.
     function expectRevertFor(string memory tag) internal {
-        bytes32 t = keccak256(bytes(tag));
-        if (t == keccak256("illegal_instruction")) {
-            expectRuntimeError("illegal instruction");
-        } else if (t == keccak256("uarch_aborted")) {
-            expectRuntimeError("uarch aborted");
-        } else if (t == keccak256("unsupported_ecall")) {
-            expectRuntimeError("unsupported ecall function");
-        } else if (t == keccak256("tlb_index_out_of_range")) {
-            expectRuntimeError("TLB index out of range");
+        string memory errors = vm.readFile(string.concat(UARCH_DIR, "/_errors.json"));
+        string memory signature =
+            vm.parseJsonString(errors, string.concat(".", tag, ".solidity_signature"));
+        require(bytes(signature).length != 0, "unmapped reject selector");
+        string memory message =
+            vm.parseJsonString(errors, string.concat(".", tag, ".solidity_message"));
+        bytes4 selector = bytes4(keccak256(bytes(signature)));
+        if (bytes(message).length != 0) {
+            vm.expectRevert(abi.encodeWithSelector(selector, message));
         } else {
-            vm.expectPartialRevert(selectorFor(t));
+            vm.expectPartialRevert(selector);
         }
-    }
-
-    function expectRuntimeError(string memory message) internal {
-        vm.expectRevert(abi.encodeWithSelector(StateAccess.RuntimeError.selector, message));
-    }
-
-    function selectorFor(bytes32 t) internal pure returns (bytes4) {
-        if (t == keccak256("bad_signature")) return StepLog.InvalidSignature.selector;
-        if (t == keccak256("unsupported_hash_function")) {
-            return StepLog.UnsupportedHashFunction.selector;
-        }
-        if (t == keccak256("node_misaligned")) return StepLog.NodeNotAligned.selector;
-        if (t == keccak256("node_log2_out_of_range")) {
-            return StepLog.NodeLog2SizeOutOfRange.selector;
-        }
-        if (t == keccak256("nonzero_scratch_hash")) return StepLog.NonZeroScratchHash.selector;
-        if (t == keccak256("too_few_siblings")) return StepLog.TooFewSiblings.selector;
-        if (t == keccak256("page_count_zero")) return StepLog.PageCountZero.selector;
-        if (t == keccak256("page_index_not_ascending")) return StepLog.PagesNotInOrder.selector;
-        if (t == keccak256("entries_overlap")) return StepLog.OverlappingEntries.selector;
-        if (t == keccak256("root_before_mismatch")) return Verify.RootHashBeforeMismatch.selector;
-        revert("unmapped reject tag");
     }
 
     // External wrappers so `log`/`data` arrive as calldata for StepLog.decode.

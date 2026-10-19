@@ -9,12 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `dump_step_uarch`, `dump_reset_uarch` and `dump_send_cmio_response`, which replay a binary step log into a human-readable printout, across the C++, C, and Lua APIs; `dump_step_uarch` takes a skip count so a later cycle of a multi-cycle log can be dumped on its own
 - Added `--log-send-cmio-response=<filename>,reason:<number>,data:<text>|data-file:<path>[,encoding:hex|base64|utf8]`, which sends a cmio response and writes its binary step log
 - Added a `dump` sub-key to `--log-step-uarch`, `--log-reset-uarch` and `--log-send-cmio-response`, which also writes the human-readable printout to stderr
-- Added `root hash before:` and `root hash after:` lines to stderr around every `--log-*` option, the pair a verifier needs now that the log carries no hashes (`--log-step` already printed it in the `<mcycle>: <hash>` style); for `--log-step` and `--log-reset-uarch` the hash after is the recorded revert root hash when the option leaves the machine paused on a rejected input
+- Added `root hash before:` and `root hash after:` lines to stderr around every `--log-*` option, the pair a verifier needs because the log omits these root hashes; for `--log-step` and `--log-reset-uarch` the hash after is the recorded revert root hash when the option leaves the machine paused on a rejected input
+- Added the public C constants `CM_AR_SHADOW_UARCH_STATE_START`, `CM_AR_SHADOW_UARCH_STATE_LENGTH`, `CM_AR_UARCH_RAM_START`, `CM_AR_UARCH_RAM_LENGTH`, `CM_STEP_LOG_SIGNATURE`, and `CM_STEP_LOG_SIGNATURE_SIZE`
+- Added the Lua constants `HASH_FUNCTION_KECCAK256` and `HASH_FUNCTION_SHA256`
 - Added `solidity-step`, an on-chain verifier for uarch steps, uarch resets and cmio responses, whose `UArchStep.sol`, `UArchReset.sol` and `SendCmioResponse.sol` are transpiled from the emulator's own C++ sources
 - Added a bounds check on the write-TLB uarch ECALL indices, which now fail with `TLB index out of range` instead of wrapping the slot address
 
 ### Changed
+- Bumped the JSON-RPC protocol version to 0.9.0 for binary step logs and the revised logging and verification methods
 - Changed `log_step`, `log_step_uarch`, `log_reset_uarch` and `log_send_cmio_response` to return the binary step log, and `verify_step`, `verify_step_uarch`, `verify_reset_uarch` and `verify_send_cmio_response` to take it, instead of going through a file; the command line still writes log files
+- Changed Lua `log_step` to return `(log, break_reason)`, with the binary step log first
+- Changed `--log-step` stderr output from `<mcycle>: <hash>` lines to `root hash before:` and `root hash after:` lines
 - Replaced the per-access JSON log with the binary step log across all APIs, dropping `access_log`, the `ACCESS_LOG_TYPE_*` constants, and `cartesi.util.print_log`
 - Reduced the binary step log to a pure witness: verifiers recompute the root hash before from the log, take the cycle count from the caller where the operation has one, and return the root hash after for the caller to compare
 - Changed `log_step_uarch` and `verify_step_uarch` to take a uarch cycle count, so one log can cover several uarch cycles, and gave `--log-step-uarch` a matching `count:` sub-key

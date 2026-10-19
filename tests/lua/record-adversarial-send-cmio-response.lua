@@ -26,6 +26,7 @@
 local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
 local manifest = require("cartesi.tests.step_log_manifest")
+local reject_errors = require("cartesi.tests.reject_fixture_errors")
 
 local function stderr(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
@@ -140,10 +141,12 @@ local cases = {
 }
 
 test_util.prepare_empty_output_dir(output_dir)
+reject_errors.write(output_dir)
 local out <close> = assert(io.open(output_dir .. "/" .. manifest.MANIFEST_NAME, "w"))
 out:write(manifest.HEADER)
 
 for _, case in ipairs(cases) do
+    assert(reject_errors.errors[case.tag], "unmapped reject tag: " .. case.tag)
     local log = test_util.read_step_log_file(case.base)
     local claims = base_claims(case.base)
     local claim = case.mutate(log) or {}

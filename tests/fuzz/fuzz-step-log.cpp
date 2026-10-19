@@ -38,8 +38,8 @@
 #include <step-log.hpp>
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    // decode requires an 8-aligned, mutable image (it rehashes pages into their
-    // scratch slots in place), so copy the input into an aligned buffer.
+    // decode requires a mutable image (it rehashes pages into their scratch slots
+    // in place), so copy the immutable input into a writable buffer.
     const size_t words = size / 8 + 1;
     const std::unique_ptr<uint64_t[]> buffer{new uint64_t[words]};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)

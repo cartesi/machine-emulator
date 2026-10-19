@@ -83,9 +83,11 @@ pub fn try_prove(
     mcycle_count: u64,
     root_hash_after: &MachineHash,
 ) -> Result<Receipt, String> {
-    // Guest input: the cycle count to run, then the log bytes (see methods/guest main.rs).
+    // Guest input: little-endian u64 cycle count and log byte length, then the log bytes.
+    let log_size = u64::try_from(log.len()).map_err(|_| "step log length exceeds uint64")?;
     let env = ExecutorEnv::builder()
         .write_slice(&mcycle_count.to_le_bytes())
+        .write_slice(&log_size.to_le_bytes())
         .write_slice(log)
         .build()
         .map_err(|e| format!("could not build executor env: {e}"))?;

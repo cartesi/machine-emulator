@@ -4842,7 +4842,7 @@ The client shell produces
 
 ``` text
 Connecting to remote cartesi machine at '127.0.0.1:8084'
-Connected: remote version is 0.8.0
+Connected: remote version is 0.9.0
 
 Halted
 Cycles: 49120357
@@ -5127,7 +5127,7 @@ exits and shuts down the server. The full transcript is
 
 ``` text
 Connecting to remote cartesi machine at '127.0.0.1:8085'
-Connected: remote version is 0.8.0
+Connected: remote version is 0.9.0
 feeding expression 0
 6*2^1024 + 3*2^512
 result is
@@ -5392,7 +5392,7 @@ transcript is
 
 ``` text
 Connecting to remote cartesi machine at '127.0.0.1:8089'
-Connected: remote version is 0.8.0
+Connected: remote version is 0.9.0
 feeding expression 0
 6*2^1024 + 3*2^512
 result is

@@ -116,15 +116,12 @@ local function cpp_to_solidity_syntax(src)
     end)
 end
 
--- The transpiler does only mechanical rewrites; it does NOT translate shift width,
--- integer width, or signedness. The uarch C++ sources are written in a Solidity-
--- compatible dialect where those operations go through uarch-solidity-compat.hpp
--- helpers (uint32ShiftLeft, int32ShiftRight, ...) and use the intN/uintN aliases.
--- This guard fails transpilation if a raw shift on a non-literal operand, or a native
--- fixed-width C++ type (intN_t/uintN_t), reaches the body: either would silently emit
--- Solidity whose overflow/sign/width semantics diverge from the C++/RISC0 replayers.
--- Constant-only shifts in decode masks, e.g. (0x7f << 25), are allowed because both
--- operands are literals.
+-- The transpiler performs mechanical rewrites, without translating integer widths
+-- or signedness. This guard rejects raw shifts unless both adjacent operands are
+-- integer literals, and rejects native fixed-width C++ type names (intN_t/uintN_t).
+-- Constant shifts such as (0x7f << 25) are allowed. The guard does not establish
+-- general equivalence between C++ and Solidity: other operations still depend on
+-- the sources using intN/uintN aliases and uarch-solidity-compat.hpp helpers.
 local function assert_solidity_dialect(body)
     local function is_int_literal(tok)
         return tok ~= "" and (tok:match("^%d+$") ~= nil or tok:match("^0[xX]%x+$") ~= nil)

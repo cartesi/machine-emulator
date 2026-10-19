@@ -2035,6 +2035,10 @@ step_log_data machine::log_send_cmio_response(uint16_t reason, const unsigned ch
 machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
     const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
     const_machine_hash_view revert_root_hash) {
+    // Oversized responses do not consume the data buffer.
+    if (data == nullptr && length > 0 && length <= AR_CMIO_RX_BUFFER_LENGTH) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     step_log_data image(log.begin(), log.end()); // the replay mutates the image in place
     replay_step_state_access<>::context context;
     // Pinned, unlike verify_step: these logs exist for the Keccak-256 on-chain verifier.
@@ -2046,6 +2050,10 @@ machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned 
 
 std::string machine::dump_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
     std::span<const unsigned char> log, const_machine_hash_view revert_root_hash) {
+    // Oversized responses do not consume the data buffer.
+    if (data == nullptr && length > 0 && length <= AR_CMIO_RX_BUFFER_LENGTH) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     step_log_data image(log.begin(), log.end()); // the replay mutates the image in place
     replay_step_state_access<step_log_dumper>::context context;
     // Pinned, unlike verify_step: these logs exist for the Keccak-256 on-chain verifier.

@@ -39,6 +39,7 @@ CARTESI_TESTS_UARCH_PATH ?= $(abspath ./build/uarch)
 CARTESI_COMPUTATION_HASH_CORPUS_PATH ?= $(abspath ./build/computation-hash-corpus)
 # The solidity-step and risc0 suites override these to record into their own test/fixtures.
 CARTESI_UARCH_STEP_FIXTURES_PATH ?= $(abspath ./build/uarch-step-fixtures)
+CARTESI_REJECT_STEP_FIXTURES_PATH ?= $(abspath ./build/reject-step-fixtures)
 CARTESI_MACHINE_STEP_FIXTURES_PATH ?= $(abspath ./build/machine-step-fixtures)
 
 export CARTESI_IMAGES_PATH
@@ -310,7 +311,7 @@ MACHINE_TEST ?=
 
 # The uarch recorders refuse a non-empty output dir, so start from a clean one.
 create-uarch-step-fixtures: clean-uarch-step-fixtures
-	RECORDERS_DIR=$(abspath ./lua) UARCH_TESTS_PATH=$(CARTESI_TESTS_UARCH_PATH) \
+	$(LD_PRELOAD_PREFIX) RECORDERS_DIR=$(abspath ./lua) UARCH_TESTS_PATH=$(CARTESI_TESTS_UARCH_PATH) \
 		LUA='$(LUA_BIN)' JOBS=$(NUM_JOBS) UARCH_TEST_PATTERN='$(UARCH_TEST_PATTERN)' \
 		./scripts/record-uarch-step-fixtures.sh $(CARTESI_UARCH_STEP_FIXTURES_PATH)
 
@@ -370,6 +371,19 @@ run-lua-program-%: | $(CARTESI_IMAGES)
 
 run-lua-spec-%: | $(CARTESI_IMAGES)
 	$(LUA) lua/spec-$*.lua --filter='$(SPEC_FILTER)'
+
+# Exercise the same reject manifests as Foundry with a small, freshly recorded
+# base corpus; no Solidity tools or pre-existing fixtures are required.
+run-lua-spec-reject-fixtures: create-reject-test-fixtures
+	CARTESI_REJECT_STEP_FIXTURES_PATH=$(CARTESI_REJECT_STEP_FIXTURES_PATH) \
+		$(LUA) lua/spec-reject-fixtures.lua --filter='$(SPEC_FILTER)'
+
+create-reject-test-fixtures:
+	$(MAKE) create-uarch-step-fixtures \
+		CARTESI_UARCH_STEP_FIXTURES_PATH=$(CARTESI_REJECT_STEP_FIXTURES_PATH) \
+		UARCH_TEST_PATTERN='rv64ui%-uarch%-add%.bin'
+
+.PHONY: run-lua-spec-reject-fixtures create-reject-test-fixtures
 
 # spec-cm-cli runs the CLI as child processes under LUA_CLI (lua -lluacov under
 # coverage), which write luacov.stats.out, so its directory must exist first.

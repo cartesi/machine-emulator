@@ -145,6 +145,22 @@ contract StepLogDecodeTest is ManifestParser {
         this.decodeAt(bad, 0);
     }
 
+    /// Aligned/disjoint wire entries always consume all in-range nodes. Exercise
+    /// the defensive leftover-node check directly on an invalid in-memory context:
+    /// a root node consumes the whole tree, leaving a second node behind.
+    function testRejectsLeftoverNodeInContext() public {
+        StepLog.Context memory ctx;
+        ctx.nodes = new StepLog.NodeEntry[](2);
+        ctx.nodes[0] = StepLog.NodeEntry(0, 64, bytes32(uint256(1)));
+        ctx.nodes[1] = StepLog.NodeEntry(0, 13, bytes32(uint256(2)));
+        vm.expectRevert(StepLog.TooManyNodes.selector);
+        this.computeRoot(ctx);
+    }
+
+    function computeRoot(StepLog.Context memory ctx) external pure returns (bytes32) {
+        return StepLog.computeRootHash(ctx);
+    }
+
     function setLE64(bytes memory b, uint256 off, uint64 v) internal pure {
         for (uint256 i = 0; i < 8; i++) {
             b[off + i] = bytes1(uint8(v >> (8 * i)));

@@ -1,3 +1,19 @@
+// Copyright Cartesi and individual authors (see AUTHORS)
+// SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// This program is free software: you can redistribute it and/or modify it under
+// the terms of the GNU Lesser General Public License as published by the Free
+// Software Foundation, either version 3 of the License, or (at your option) any
+// later version.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+// PARTICULAR PURPOSE. See the GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License along
+// with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
+//
+
 use cartesi_risc0::{try_prove, REPLAY_STEP_ELF};
 use std::fs;
 use std::path::Path;
@@ -6,8 +22,8 @@ mod common;
 use common::machine_rows;
 
 // The big-machine (sha256) reject fixtures (tests/lua/record-adversarial-machine.lua) are
-// structurally invalid logs. The guest must abort on each -- via zk_abort_with_msg, which
-// carries the same message the C++ host throws -- rather than produce a valid receipt. This
+// malformed or declare an unsupported hash function. The guest must abort on each via
+// zk_abort_with_msg, which carries the C++ decoder's error, rather than produce a valid receipt. This
 // is the soundness statement: a malicious prover cannot get a proof for a forged log.
 
 /// The substring the guest abort message must contain for each reject tag (the C++ throw
@@ -16,6 +32,7 @@ fn expected_message(tag: &str) -> &'static str {
     match tag {
         "bad_signature" => "invalid step log signature",
         "unsupported_hash_function" => "unsupported hash function type",
+        "keccak256_declared" => "step log hash function not supported by this verifier",
         "nonzero_scratch_hash" => "scratch hash area is not zero",
         "page_count_zero" => "page count is zero",
         "page_count_exceeds_size" => "page count exceeds step log size",

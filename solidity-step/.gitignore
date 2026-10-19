@@ -5,3 +5,4 @@ test/fixtures/
 # forge-std is a test-only dependency fetched on demand by `make dep` (see Makefile),
 # not a submodule, so a C++-only checkout never pulls it.
 lib/
+.env

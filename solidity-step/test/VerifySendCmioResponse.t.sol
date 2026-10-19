@@ -63,6 +63,14 @@ contract VerifySendCmioResponseTest is ManifestParser {
             MANIFEST_CSV, Kind.SendCmioResponse, "send-cmio-response-noop.log"
         );
         assertEq(noop.rootHashBefore, noop.rootHashAfter, "no-op must not change root hash");
+        bytes memory log = vm.readFileBinary(string.concat(CMIO_DIR, "/", noop.name));
+        ReplayArgs memory args = ReplayArgs({
+            rootHashBefore: noop.rootHashBefore,
+            rootHashAfter: noop.rootHashBefore,
+            revertRootHash: noop.revertRootHash,
+            reason: noop.reason
+        });
+        this.replayCmio(log, args, noop.data);
     }
 
     /// External self-call so `log` and `data` arrive as `bytes calldata`

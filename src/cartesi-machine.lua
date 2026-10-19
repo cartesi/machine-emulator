@@ -998,7 +998,7 @@ where options are:
     hash, which is what the verifier returns.
     append ",dump" to also write a human-readable printout to stderr.
 
-  --log-send-cmio-response=<filename>,<key>:<value>[,<key>:<value>[,...]...]
+  --log-send-cmio-response=<filename>,<key>:<value>[,<key>:<value>[,...]...][,dump]
     send a cmio response to the rx buffer and write a binary step log to a file.
     runs after the machine has reached its terminal state. the machine should be
     in a yielded state (iflags.Y == 1); otherwise the logged transition is a no-op.
@@ -1008,16 +1008,12 @@ where options are:
 
     <key>:<value> is one of
         reason:<number>
-        filename:<path>
         data:<text>
         data-file:<path>
         encoding:hex|base64|utf8
 
         reason (required)
         the cmio yield reason (e.g., a HTIF_YIELD_*_REASON_* constant).
-
-        filename (required)
-        path of the step log file to write.
 
         data | data-file (exactly one required)
         the response payload, given inline or read from a file.
@@ -2953,6 +2949,7 @@ local function wants_post_epoch_execution()
         or cmdline.max_uarch_cycle > 0
         or cmdline.log_step_uarch
         or cmdline.log_reset_uarch
+        or cmdline.log_send_cmio_response
 end
 
 -- Both hashes use the epoch's mcycle sampling period. Uarch computation hashes expand one

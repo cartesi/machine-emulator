@@ -74,6 +74,18 @@ local function parse_row(line)
     return row
 end
 
+-- Read every call recipe, retaining the manifest's string fields.
+function M.read_rows(dir)
+    local path = dir .. "/" .. M.MANIFEST_NAME
+    local src <close> = assert(io.open(path, "r"))
+    assert(src:read("L") == M.HEADER, "manifest schema mismatch in " .. path)
+    local rows = {}
+    for line in src:lines() do
+        rows[#rows + 1] = parse_row(line)
+    end
+    return rows
+end
+
 -- Recorded cycle count and before/after roots (as binary) for the fixture named
 -- `name`, from its directory's manifest row.
 function M.read_claims(dir, name)

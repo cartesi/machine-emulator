@@ -1623,6 +1623,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(send_cmio_response_oversized_length_test, cmio_re
                                 &before, saved_log.data(), saved_log.size(), &before, &after),
             CM_ERROR_OK);
         BOOST_CHECK_EQUAL(0, memcmp(before, after, sizeof(cm_hash)));
+        const char *dump{};
+        BOOST_REQUIRE_EQUAL(cm_dump_send_cmio_response(CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, length,
+                                saved_log.data(), saved_log.size(), &before, &dump),
+            CM_ERROR_OK);
+        BOOST_CHECK(dump != nullptr);
     }
 }
 
@@ -1661,6 +1666,57 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(send_cmio_response_null_data_test, cmio_request_m
             cm_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, 0, &before);
         BOOST_CHECK_EQUAL(error, CM_ERROR_OK);
     }
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_and_dump_send_cmio_response_null_data_test, cmio_request_machine_fixture) {
+    if (g_server != nullptr) {
+        BOOST_TEST_MESSAGE("Null response buffers can only be tested locally");
+        return;
+    }
+    cm_hash before{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &before), CM_ERROR_OK);
+    const std::array<uint8_t, 1> data{{0x11}};
+    const uint8_t *log{};
+    uint64_t log_length{};
+    BOOST_REQUIRE_EQUAL(cm_log_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, data.data(),
+                            data.size(), &before, &log, &log_length),
+        CM_ERROR_OK);
+    const std::vector<uint8_t> saved_log(log, log + log_length);
+    for (const uint32_t length : {uint32_t{1}, uint32_t{CM_AR_CMIO_RX_BUFFER_LENGTH}}) {
+        for (const cm_machine *machine : std::array<const cm_machine *, 2>{nullptr, _machine}) {
+            cm_hash obtained{};
+            BOOST_CHECK_EQUAL(cm_verify_send_cmio_response(machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, length,
+                                  &before, saved_log.data(), saved_log.size(), &before, &obtained),
+                CM_ERROR_INVALID_ARGUMENT);
+            BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), "invalid data buffer");
+        }
+        const char *dump{};
+        BOOST_CHECK_EQUAL(cm_dump_send_cmio_response(CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, length,
+                              saved_log.data(), saved_log.size(), &before, &dump),
+            CM_ERROR_INVALID_ARGUMENT);
+        BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), "invalid data buffer");
+        BOOST_CHECK(dump == nullptr);
+    }
+
+    // A null buffer is valid for a zero-length response, including replay and dump.
+    BOOST_REQUIRE_EQUAL(cm_write_reg(_machine, CM_REG_IFLAGS_Y, 1), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &before), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(
+        cm_log_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, 0, &before, &log, &log_length),
+        CM_ERROR_OK);
+    const std::vector<uint8_t> empty_log(log, log + log_length);
+    cm_hash after{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &after), CM_ERROR_OK);
+    cm_hash obtained{};
+    BOOST_REQUIRE_EQUAL(cm_verify_send_cmio_response(nullptr, CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, 0, &before,
+                            empty_log.data(), empty_log.size(), &before, &obtained),
+        CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(0, memcmp(after, obtained, sizeof(cm_hash)));
+    const char *dump{};
+    BOOST_REQUIRE_EQUAL(cm_dump_send_cmio_response(CM_HTIF_YIELD_REASON_ADVANCE_STATE, nullptr, 0, empty_log.data(),
+                            empty_log.size(), &before, &dump),
+        CM_ERROR_OK);
+    BOOST_CHECK(dump != nullptr);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(receive_cmio_request_length_query_test, cmio_request_machine_fixture) {

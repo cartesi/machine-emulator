@@ -269,6 +269,7 @@ end
 function _M.write_file(contents, filename)
     local f <close> = assert(io.open(filename, "wb"))
     assert(f:write(contents))
+    assert(f:close())
 end
 
 return _M

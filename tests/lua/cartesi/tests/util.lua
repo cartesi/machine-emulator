@@ -55,6 +55,9 @@ local tests_util = {
     cmio_path = adjust_path(os.getenv("CARTESI_CMIO_PATH") or get_script_path(4) .. "/build/cmio"),
     step_logs_path = adjust_path(os.getenv("CARTESI_STEP_LOGS_PATH") or get_script_path(4) .. "/build/step-logs"),
     tests_uarch_path = adjust_path(os.getenv("CARTESI_TESTS_UARCH_PATH") or get_script_path(4) .. "/build/uarch"),
+    reject_fixtures_path = adjust_path(
+        os.getenv("CARTESI_REJECT_STEP_FIXTURES_PATH") or get_script_path(4) .. "/build/reject-step-fixtures"
+    ),
 }
 
 local function compute_zero_hash_table(hash_fn)

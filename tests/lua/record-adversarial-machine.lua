@@ -19,6 +19,7 @@
 -- shared replayer rejects them at decode. Replayed by the RISC0 guest and the C++/Lua host. Writes
 -- <output-dir>/<case>.log plus <output-dir>/_manifest.csv.
 
+local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
 local manifest = require("cartesi.tests.step_log_manifest")
 
@@ -76,6 +77,13 @@ local cases = {
         tag = "unsupported_hash_function",
         mutate = function(log)
             log.hash_function = 99
+        end,
+    },
+    {
+        tag = "keccak256_declared",
+        -- The RISC0 verifier requires SHA-256 even when the declared hash is otherwise valid.
+        mutate = function(log)
+            log.hash_function = cartesi.HASH_FUNCTION_KECCAK256
         end,
     },
     {

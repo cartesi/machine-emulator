@@ -33,7 +33,7 @@ extern "C" void risc0_replay_steps(
     unsigned char* out_root_hash_after)
 {
     replay_step_state_access<>::context context{};
-    replay_step_state_access<> a(context, step_log_image, step_log_image_size);
+    replay_step_state_access<> a(context, step_log_image, step_log_image_size, hash_function_type::sha256);
     uint64_t mcycle_end{};
     // Saturate on overflow, matching machine::verify_step's saturating_add, so the RISC0
     // guest and the host replayer agree on the cycle target.

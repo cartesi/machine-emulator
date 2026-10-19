@@ -296,9 +296,9 @@ local SCHEMA_DICT = {
     CommitUarchClaimResponse = "Claim",
     ProveStateTransitionEvent = { items = { "Default", "Default", "Default" } },
     ProveStateTransitionResponse = {
-        send_cmio_log = "AccessLog",
-        step_log = "AccessLog",
-        reset_uarch_log = "AccessLog",
+        send_cmio_log = "Base64",
+        step_log = "Base64",
+        reset_uarch_log = "Base64",
     },
     ProveOutputsMerkleRootEvent = { items = { "Base64" } },
     ProveOutputsMerkleRootResponse = {

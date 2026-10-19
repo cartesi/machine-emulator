@@ -37,9 +37,6 @@
 
 namespace cartesi {
 
-// Forward declarations
-enum class bracket_type;
-
 // Type trait that should return the fast_addr type for a state access class
 template <typename STATE_ACCESS>
 struct i_state_access_fast_addr {};
@@ -347,11 +344,11 @@ public:
         return derived().do_write_memory(paddr, data, length);
     }
 
-    /// \brief Write a data buffer to memory padded with 0
-    /// \param paddr Destination physical address.
-    /// \param data Pointer to source data buffer.
-    /// \param data_length Length of data buffer.
-    /// \param write_length_log2_size Log2 size of the total write length.
+    /// \brief Writes \p data to memory at \p paddr, zero-padding to a power of 2 total length.
+    /// \param paddr Destination physical address; must be aligned to (1 << write_length_log2_size).
+    /// \param data Pointer to the source bytes.
+    /// \param data_length Number of valid bytes at \p data; must not exceed (1 << write_length_log2_size).
+    /// \param write_length_log2_size Log2 of the total padded write length.
     void write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
         int write_length_log2_size) const {
         derived().do_write_memory_with_padding(paddr, data, data_length, write_length_log2_size);
@@ -361,12 +358,6 @@ public:
     /// \returns The hash.
     machine_hash read_revert_root_hash() const {
         return derived().do_read_revert_root_hash();
-    }
-
-    /// \brief Writes the revert root hash in the shadow state.
-    /// \param hash View of hash data, one full hash tree leaf in size.
-    void write_revert_root_hash(const_machine_hash_view hash) const {
-        derived().do_write_revert_root_hash(hash);
     }
 
     /// \brief Reads a word from memory.

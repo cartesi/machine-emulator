@@ -466,10 +466,6 @@ private:
         return m_s.shadow.revert_root_hash;
     }
 
-    void do_write_revert_root_hash(const_machine_hash_view hash) const {
-        std::ranges::copy(hash, m_s.shadow.revert_root_hash.begin());
-    }
-
     template <typename T, typename A = T>
     void do_read_memory_word(host_addr haddr, uint64_t /* pma_index */, T *pval) const {
         *pval = aliased_aligned_read<T, A>(haddr);

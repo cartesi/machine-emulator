@@ -130,18 +130,30 @@ for _, variant in ipairs(variants) do
         end)
 
         describe("get_uarch_pristine_hash", function()
-            it("should accept the pristine hash in a reset log and reject a changed hash", function()
+            it("should replay a pristine reset and reject a changed witness hash", function()
                 local source <close> = variant.create({ ram = { length = 0x1000 } })
                 source:write_reg("uarch_x1", 123)
                 local hash = source:get_uarch_pristine_hash()
+                local uarch_before =
+                    source:get_node_hash(cartesi.UARCH_STATE_START_ADDRESS, cartesi.UARCH_STATE_LOG2_SIZE)
                 local before = source:get_root_hash()
                 local log = source:log_reset_uarch()
-                expect.equal(log.accesses[1].written_hash, hash)
+                local parsed = tests_util.parse_step_log(log)
+                expect.equal(#parsed.nodes, 1)
+                expect.equal(parsed.nodes[1].address, cartesi.UARCH_STATE_START_ADDRESS)
+                expect.equal(parsed.nodes[1].log2_size, cartesi.UARCH_STATE_LOG2_SIZE)
+                expect.equal(parsed.nodes[1].hash, uarch_before)
+                expect.equal(
+                    source:get_node_hash(cartesi.UARCH_STATE_START_ADDRESS, cartesi.UARCH_STATE_LOG2_SIZE),
+                    hash
+                )
                 expect.equal(source:verify_reset_uarch(before, log), source:get_root_hash())
-                log.accesses[1].written_hash = string.char(hash:byte(1) ~ 1) .. hash:sub(2)
+                -- Binary logs witness the previous subtree; replay supplies the pristine hash.
+                parsed.nodes[1].hash = string.char(uarch_before:byte(1) ~ 1) .. uarch_before:sub(2)
+                local corrupted = tests_util.serialize_step_log(parsed)
                 expect.fail(function()
-                    source:verify_reset_uarch(before, log)
-                end, "written hash for uarch.state does not match expected hash")
+                    source:verify_reset_uarch(before, corrupted)
+                end, "root hash before does not match")
             end)
 
             it("should match the full uarch subtree after reset", function()

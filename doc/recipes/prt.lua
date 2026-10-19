@@ -282,7 +282,7 @@ local function validate_state_transition_response(
             root_hash_before
         )
     end
-    obtained_root_hash = cartesi.machine:verify_step_uarch(obtained_root_hash, response.step_log)
+    obtained_root_hash = cartesi.machine:verify_step_uarch(obtained_root_hash, response.step_log, 1)
     if uarch_cycle == UARCH_CYCLE_MAX then
         obtained_root_hash = cartesi.machine:verify_reset_uarch(obtained_root_hash, response.reset_uarch_log)
     end
@@ -1668,7 +1668,7 @@ function event_handler.prove_state_transition(self, epoch_input_offset, input_pe
         -- Logging never fails. A machine that is not waiting for the input logs the no-op delivery.
         local send_cmio_log =
             machine:log_send_cmio_response(HTIF_YIELD_REASON_ADVANCE_STATE, input_data, pair.revert_root_hash)
-        return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
+        return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch(1) }
     end
     local builder = self:make_null_computation_hash_builder()
     local input_mcycle_offset =
@@ -1676,10 +1676,10 @@ function event_handler.prove_state_transition(self, epoch_input_offset, input_pe
     self:run_to_input_mcycle_offset(builder, pair, epoch_input_offset, input_data, input_mcycle_offset)
     self:run_to_uarch_cycle(builder, pair, epoch_input_offset, input_data, input_mcycle_offset, uarch_cycle)
     if uarch_cycle == UARCH_CYCLE_MAX then
-        local step_log = machine:log_step_uarch()
+        local step_log = machine:log_step_uarch(1)
         return { step_log = step_log, reset_uarch_log = machine:log_reset_uarch() }
     end
-    return { step_log = machine:log_step_uarch() }
+    return { step_log = machine:log_step_uarch(1) }
 end
 -- docs:end prove_state_transition
 

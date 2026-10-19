@@ -313,6 +313,9 @@ machine::machine(machine_config c, machine_runtime_config r, const std::string &
     init_hot_tlb_contents();
     init_dtb_contents(m_c);
     init_console();
+    if (m_r.clear_hash_tree) {
+        clear_hash_tree();
+    }
     // Disable SIGPIPE handler, because this signal can be raised and terminate the emulator process
     // when calling write() on closed file descriptors.
     // This can happen with the stdout console file descriptors or network file descriptors.

@@ -935,6 +935,110 @@ describe("cartesi-machine CLI", function()
         run_ok({ "--no-reserve", "--max-mcycle=0", "--no-init-splash", "--quiet" })
     end)
 
+    it("clears hash-tree caches when loading", function()
+        local _ <close>, dirname = scope_stored_dirname()
+        local source <close> = cartesi.machine({ ram = { length = 0x3000 }, hash_tree = { phtc_size = 32 } })
+        source:write_memory(cartesi.AR_RAM_START, string.rep("A", 0x1000))
+        local root = source:get_root_hash()
+        source:store(dirname)
+        local rc, _, stderr = run({
+            "--load=" .. dirname,
+            "--clear-hash-tree",
+            "--initial-hash",
+            "--max-mcycle=0",
+            "--no-init-splash",
+        })
+        expect.equal(rc, 0)
+        expect.truthy(stderr:find(cartesi.tohex(root), 1, true))
+    end)
+
+    it("clear-hash-tree modes control stored snapshot and revert reloads", function()
+        run_fail({ "--clear-hash-tree=invalid" }, "invalid value")
+        run_fail({ "--clear-hash-tree=" }, "missing value")
+
+        local _ <close>, template_dir = scope_stored_dirname()
+        run_ok({
+            "--store=" .. template_dir,
+            "--assert-rolling-template",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop --vouchers=0 --notices=0 --reports=0",
+        })
+        local template <close> = cartesi.machine(template_dir)
+        local source <close> = cartesi.machine({ ram = { length = 0x3000 } })
+        local _ <close>, config_file = filesystem.write_scope_temp_file(cartesi.tojson(source:get_initial_config()))
+        local _ <close>, query_file = filesystem.write_scope_temp_file("inspect")
+        local _ <close>, initial_hash = scope_temp_pathname()
+        local _ <close>, final_hash = scope_temp_pathname()
+        local _ <close>, calls_file = scope_temp_pathname()
+        local _ <close>, guarded_cli = scope_temp_pathname()
+        local original_cli = CLI
+        local _ <close> = tests_util.scope_exit(function()
+            CLI = original_cli
+        end)
+        -- Observe the runtime options at the API boundary while executing real creates and loads.
+        filesystem.write_file(
+            string.format(
+                [[
+local cartesi = require("cartesi")
+local machine <close> = cartesi.new()
+local methods = getmetatable(machine).__index
+for _, name in ipairs({ "create", "load" }) do
+    local original = methods[name]
+    methods[name] = function(self, config, runtime, ...)
+        local file <close> = assert(io.open(%q, "a"))
+        file:write(name, ":", tostring(runtime.clear_hash_tree), "\n")
+        return original(self, config, runtime, ...)
+    end
+end
+dofile(%q)
+]],
+                calls_file,
+                original_cli
+            ),
+            guarded_cli
+        )
+        CLI = guarded_cli
+        for _, option in ipairs({ false, "--clear-hash-tree", "--clear-hash-tree=once", "--clear-hash-tree=always" }) do
+            for _, operation in ipairs({ "create", "load" }) do
+                local _ <close>, machine_dir = scope_stored_dirname()
+                local _ <close> = tests_util.scope_exit(function()
+                    pcall(cartesi.machine.remove_stored, cartesi.machine, machine_dir .. ".revert")
+                end)
+                local flags = {
+                    "--revert-mode=stored",
+                    "--initial-hash=" .. initial_hash,
+                    "--final-hash=" .. final_hash,
+                    "--no-init-splash",
+                    "--quiet",
+                }
+                if operation == "create" then
+                    flags[#flags + 1] = "--create=" .. machine_dir .. ",sharing:all"
+                    flags[#flags + 1] = "--load-config=" .. config_file .. ",format:json"
+                    flags[#flags + 1] = "--max-mcycle=0"
+                else
+                    flags[#flags + 1] = "--load=" .. machine_dir .. ",clone:" .. template_dir .. ",sharing:all"
+                    flags[#flags + 1] = "--cmio-inspect-state=query:" .. query_file .. ",report:"
+                    flags[#flags + 1] = "--max-mcycle=2000000000"
+                end
+                if option then
+                    flags[#flags + 1] = option
+                end
+                filesystem.write_file("", calls_file)
+                run_ok(flags)
+                local first = operation .. ":" .. tostring(option ~= false) .. "\n"
+                local reload = "load:" .. tostring(option == "--clear-hash-tree=always") .. "\n"
+                -- Creation only reloads during setup; inspection also snapshots and reverts.
+                expect.equal(filesystem.read_file(calls_file), first .. reload:rep(operation == "create" and 1 or 3))
+                local root = operation == "create" and source:get_root_hash() or template:get_root_hash()
+                expect.equal(filesystem.read_file(initial_hash), root)
+                expect.equal(filesystem.read_file(final_hash), root)
+            end
+        end
+    end)
+
     -- -------------------------------------------------------------------------
     -- Mcycle overflow
     --

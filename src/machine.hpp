@@ -437,6 +437,13 @@ public:
     /// \returns True if an interrupt was requested, false otherwise.
     bool poll_virtio_devices(uint64_t *timeout_us, i_device_state_access *da);
 
+    /// \brief Clears all cached hash-tree data without changing machine state.
+    /// \details Resets tree storage to freshly initialized values, updating shared backing stores in place.
+    /// Hashes are rebuilt lazily from machine state on the next hash or proof request. Statistics are kept.
+    void clear_hash_tree() noexcept {
+        m_ht.clear(m_ars);
+    }
+
     /// \brief Update the hash-tree so it matches the contents of the machine state.
     /// \returns True if successful, false otherwise.
     bool update_hash_tree() const;

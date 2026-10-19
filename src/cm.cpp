@@ -958,6 +958,14 @@ cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_bef
     return cm_result_failure();
 }
 
+cm_error cm_clear_hash_tree(cm_machine *m) try {
+    auto *cpp_m = convert_from_c(m);
+    cpp_m->clear_hash_tree();
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
 cm_error cm_get_hash_tree_stats(cm_machine *m, bool clear, const char **stats) try {
     if (stats == nullptr) {
         throw std::invalid_argument("invalid stats output");

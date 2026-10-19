@@ -34,15 +34,20 @@ end)
 local variants = {
     {
         name = "local",
-        create = function(config)
-            return cartesi.machine(config)
+        new = cartesi.new,
+        create = function(config, runtime)
+            return cartesi.machine(config, runtime)
         end,
     },
     {
         name = "remote",
-        create = function(config)
+        new = function()
             local jsonrpc = require("cartesi.jsonrpc")
-            return jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN):create(config)
+            return jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN)
+        end,
+        create = function(config, runtime)
+            local jsonrpc = require("cartesi.jsonrpc")
+            return jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN):create(config, runtime)
         end,
     },
 }
@@ -50,6 +55,160 @@ local variants = {
 for _, variant in ipairs(variants) do
     describe("machine API (" .. variant.name .. ")", function()
         local machine <close> = variant.create({ ram = { length = 0x1000 } })
+
+        describe("clear_hash_tree", function()
+            for _, hash_function in ipairs({ "keccak256", "sha256" }) do
+                local function create_source(phtc_size)
+                    return variant.create({
+                        ram = { length = 0x3000 },
+                        flash_drive = { { start = 0x90000000, length = 0x3000 } },
+                        hash_tree = { hash_function = hash_function, phtc_size = phtc_size or 32 },
+                    })
+                end
+
+                it("should rebuild all cached hashes lazily (" .. hash_function .. ")", function()
+                    -- Keep every page cached so stale cache entries cannot hide behind eviction.
+                    local source <close> = create_source(2048)
+                    source:write_reg("x1", 42)
+                    source:write_memory(cartesi.AR_RAM_START, string.rep("A", 0x1000))
+                    source:write_memory(0x90002000, string.rep("B", 0x1000))
+                    local root = source:get_root_hash()
+                    local cold_stats = source:get_hash_tree_stats(true)
+                    expect.truthy(cold_stats.phtc.page_misses <= 2048)
+                    local proof = source:get_proof(cartesi.AR_RAM_START, 5)
+                    local state = source:read_memory(cartesi.AR_SHADOW_STATE_START, cartesi.AR_SHADOW_STATE_LENGTH)
+                    local stats = source:get_hash_tree_stats()
+                    source:clear_hash_tree()
+                    source:clear_hash_tree()
+                    expect.equal(source:get_hash_tree_stats(), stats)
+                    expect.equal(
+                        source:read_memory(cartesi.AR_SHADOW_STATE_START, cartesi.AR_SHADOW_STATE_LENGTH),
+                        state
+                    )
+                    expect.equal(source:read_memory(cartesi.AR_RAM_START, 0x1000), string.rep("A", 0x1000))
+                    source:get_hash_tree_stats(true)
+                    expect.equal(source:get_root_hash(), root)
+                    local rebuilt_stats = source:get_hash_tree_stats()
+                    expect.equal(rebuilt_stats.phtc.page_hits, 0)
+                    expect.equal(rebuilt_stats.phtc.page_misses, cold_stats.phtc.page_misses)
+                    expect.equal(rebuilt_stats.phtc.page_changes, cold_stats.phtc.page_changes)
+                    expect.equal(rebuilt_stats.dense_node_hashes, cold_stats.dense_node_hashes)
+                    expect.equal(rebuilt_stats.sparse_node_hashes, cold_stats.sparse_node_hashes)
+                    expect.equal(source:get_proof(cartesi.AR_RAM_START, 5), proof)
+                    expect.truthy(source:verify_hash_tree())
+                    source:clear_hash_tree()
+                    expect.equal(source:get_proof(cartesi.AR_RAM_START, 5), proof)
+
+                    -- Clearing must also preserve writes that have not yet been hashed.
+                    source:write_memory(0x90000000, string.rep("C", 0x1000))
+                    source:write_reg("x1", 43)
+                    source:clear_hash_tree()
+                    expect.equal(source:get_root_hash(), tests_util.calculate_emulator_hash(source))
+                    expect.not_equal(source:get_root_hash(), root)
+                end)
+
+                for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_ALL }) do
+                    for _, runtime_clear in ipairs({ false, true }) do
+                        it(
+                            "should clear stored caches ("
+                                .. hash_function
+                                .. ", sharing="
+                                .. sharing
+                                .. ", runtime="
+                                .. tostring(runtime_clear)
+                                .. ")",
+                            function()
+                                local source <close> = create_source()
+                                local fresh_dirname = filesystem.temp_pathname()
+                                local _ <close> = tests_util.scope_exit(function()
+                                    cartesi.machine:remove_stored(fresh_dirname)
+                                end)
+                                source:store(fresh_dirname)
+                                local tree_filenames = { "hash_tree.sht", "hash_tree.phtc" }
+                                for _, ar in ipairs(source:get_address_ranges()) do
+                                    if ar.is_memory then
+                                        local prefix = string.format("%016x-%x", ar.start, ar.length)
+                                        tree_filenames[#tree_filenames + 1] = prefix .. ".dht"
+                                        tree_filenames[#tree_filenames + 1] = prefix .. ".dpt"
+                                    end
+                                end
+                                source:write_memory(cartesi.AR_RAM_START, string.rep("A", 0x1000))
+                                source:write_memory(0x90002000, string.rep("B", 0x1000))
+                                local root = source:get_root_hash()
+                                local proof = source:get_proof(0x90002000, 5)
+                                local dirname = filesystem.temp_pathname()
+                                local _ <close> = tests_util.scope_exit(function()
+                                    cartesi.machine:remove_stored(dirname)
+                                end)
+                                source:store(dirname)
+                                local warm_files = {}
+                                for _, filename in ipairs(tree_filenames) do
+                                    warm_files[filename] = filesystem.read_file(dirname .. "/" .. filename)
+                                end
+                                local loaded <close> = variant.new()
+                                loaded:load(dirname, { clear_hash_tree = runtime_clear }, sharing)
+                                expect.equal(loaded:get_runtime_config().clear_hash_tree, runtime_clear)
+                                if not runtime_clear then
+                                    expect.equal(loaded:get_root_hash(), root)
+                                    loaded:clear_hash_tree()
+                                end
+                                -- Persist the cleared trees before any hash request rebuilds them.
+                                local cleared_dirname = filesystem.temp_pathname()
+                                local _ <close> = tests_util.scope_exit(function()
+                                    cartesi.machine:remove_stored(cleared_dirname)
+                                end)
+                                loaded:store(cleared_dirname)
+                                for _, filename in ipairs(tree_filenames) do
+                                    local fresh_data = filesystem.read_file(fresh_dirname .. "/" .. filename)
+                                    local cleared_data = filesystem.read_file(cleared_dirname .. "/" .. filename)
+                                    assert(cleared_data == fresh_data, filename .. " differs from fresh tree storage")
+                                    local backing_data = filesystem.read_file(dirname .. "/" .. filename)
+                                    local expected = sharing == cartesi.SHARING_ALL and fresh_data
+                                        or warm_files[filename]
+                                    assert(backing_data == expected, filename .. " has incorrect backing storage")
+                                end
+                                local restored <close> = variant.new():load(cleared_dirname)
+                                expect.equal(restored:get_root_hash(), root)
+                                expect.truthy(restored:verify_hash_tree())
+                                if sharing == cartesi.SHARING_ALL then
+                                    loaded:destroy()
+                                    loaded:load(dirname)
+                                end
+                                local before = loaded:get_hash_tree_stats(true)
+                                expect.equal(loaded:get_root_hash(), root)
+                                local after = loaded:get_hash_tree_stats()
+                                expect.truthy(after.phtc.page_misses > 0)
+                                expect.equal(after.phtc.page_hits, 0)
+                                expect.truthy(after.sparse_node_hashes > 0)
+                                if runtime_clear then
+                                    expect.equal(before.phtc.page_misses, 0)
+                                end
+                                expect.equal(loaded:get_proof(0x90002000, 5), proof)
+                                expect.truthy(loaded:verify_hash_tree())
+                            end
+                        )
+                    end
+                end
+            end
+
+            it("should default to false and validate the runtime flag", function()
+                expect.equal(machine:get_runtime_config().clear_hash_tree, false)
+                expect.fail(function()
+                    local _ <close> = variant.create({ ram = { length = 0x1000 } }, { clear_hash_tree = "true" })
+                end, "clear_hash_tree")
+                local source <close> = variant.create({ ram = { length = 0x1000 } }, { clear_hash_tree = true })
+                expect.equal(source:get_runtime_config().clear_hash_tree, true)
+                expect.equal(source:get_hash_tree_stats().phtc.page_misses, 0)
+                expect.equal(source:get_root_hash(), tests_util.calculate_emulator_hash(source))
+            end)
+
+            it("should reject an empty machine", function()
+                local source <close> = variant.new()
+                expect.fail(function()
+                    source:clear_hash_tree()
+                end, "no machine")
+            end)
+        end)
 
         describe("mark_pages_dirty backing-store config", function()
             it("should default to false and preserve an explicit true", function()

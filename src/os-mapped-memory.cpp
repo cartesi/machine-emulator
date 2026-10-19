@@ -40,6 +40,7 @@
 #include "scope-exit.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
@@ -526,6 +527,11 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
     m_backing_fp = backing_fp;
     m_unaligned_host_memory = unaligned_host_memory;
 #endif // HAVE_MMAP
+}
+
+void mapped_memory::clear() noexcept {
+    assert(!m_flags.read_only && "cannot clear a read-only mapping");
+    std::ranges::fill(get_storage_data(), 0);
 }
 
 mapped_memory::~mapped_memory() noexcept {

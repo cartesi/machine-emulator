@@ -189,6 +189,10 @@ void local_machine::do_write_word(uint64_t address, uint64_t value) {
     get_machine()->write_word(address, value);
 }
 
+void local_machine::do_clear_hash_tree() {
+    get_machine()->clear_hash_tree();
+}
+
 hash_tree_stats local_machine::do_get_hash_tree_stats(bool clear) {
     return get_machine()->get_hash_tree_stats(clear);
 }

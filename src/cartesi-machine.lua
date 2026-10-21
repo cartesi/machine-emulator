@@ -3684,7 +3684,7 @@ local revert_none = {
     __close = function() end,
 }
 
-local function make_revert_none() return setmetatable({}, revert_none) end
+local function new_revert_none() return setmetatable({}, revert_none) end
 
 local revert_fork = { __index = {} }
 
@@ -3716,7 +3716,7 @@ function revert_fork:__close(err)
     if err ~= nil and self:has_snapshot() then self:revert() end
 end
 
-local function make_revert_fork(m) return setmetatable({ machine = m }, revert_fork) end
+local function new_revert_fork(m) return setmetatable({ machine = m }, revert_fork) end
 
 local revert_stored = { __index = {} }
 
@@ -3759,7 +3759,7 @@ end
 
 function revert_stored.__index:move() return setmetatable(shallow_move(self), revert_stored) end
 
-local function make_revert_stored(m, machine_directory, runtime)
+local function new_revert_stored(m, machine_directory, runtime)
     local backup <close> = setmetatable({
         machine = m,
         machine_directory = machine_directory,
@@ -3774,11 +3774,11 @@ end
 -- Select the snapshot implementation once. The object also reverts an outstanding snapshot on errors.
 local backup
 if cmdline.revert_mode == "fork" then
-    backup = make_revert_fork(machine)
+    backup = new_revert_fork(machine)
 elseif cmdline.revert_mode == "stored" then
-    backup = make_revert_stored(machine, cmdline.load_dir or cmdline.create_dir, runtime_config)
+    backup = new_revert_stored(machine, cmdline.load_dir or cmdline.create_dir, runtime_config)
 else
-    backup = make_revert_none()
+    backup = new_revert_none()
 end
 local _ <close> = backup
 
@@ -3886,7 +3886,7 @@ local function uarch_cycle_root_hashes_runner_run(self, mcycle_end)
     -- Past the window, run plainly.
     return self.runner:run(mcycle_end)
 end
-local function make_uarch_cycle_root_hashes_runner(runner, start, count, log2_bundle)
+local function new_uarch_cycle_root_hashes_runner(runner, start, count, log2_bundle)
     return setmetatable({
         runner = runner,
         start = start,
@@ -3981,7 +3981,7 @@ local function mcycle_root_hashes_runner_run(self, mcycle_end)
     self.partial_bundle = partial_bundle
     return collected.break_reason
 end
-local function make_mcycle_root_hashes_runner(runner, log2_period, start, log2_bundle)
+local function new_mcycle_root_hashes_runner(runner, log2_period, start, log2_bundle)
     return setmetatable({
         runner = runner,
         period = 1 << log2_period,
@@ -4110,7 +4110,7 @@ local function mcycle_computation_hash_persist_epoch_state(builder, runner)
     persist_cmio_epoch_state(builder, runner)
 end
 
-local function make_mcycle_computation_hash_builder(advance, computation, on_full)
+local function new_mcycle_computation_hash_builder(advance, computation, on_full)
     local log2_period = computation.log2_mcycle_period
     return {
         advance = advance,
@@ -4299,7 +4299,7 @@ local function uarch_cycle_computation_hash_end_epoch(builder, runner)
     end
 end
 
-local function make_uarch_cycle_computation_hash_builder(advance, computation, on_full)
+local function new_uarch_cycle_computation_hash_builder(advance, computation, on_full)
     local log2_period = computation.log2_mcycle_period
     local log2_periods_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_period
     local target_input = computation.mcycle_period_index >> log2_periods_per_input
@@ -4328,7 +4328,7 @@ end
 
 -- An epoch that does not compute a hash delegates execution to the runner and skips builder
 -- bookkeeping. It still checks that a rejection restored the input boundary.
-local function make_null_computation_hash_builder()
+local function new_null_computation_hash_builder()
     return {
         run = null_computation_hash_run,
         persist_epoch_state = null_computation_hash_noop,
@@ -4341,7 +4341,7 @@ local function make_null_computation_hash_builder()
 end
 
 -- Output-only persistence has no computation frontier, but saves completed epoch boundaries.
-local function make_epoch_outputs_builder(advance)
+local function new_epoch_outputs_builder(advance)
     return {
         advance = advance,
         run = null_computation_hash_run,
@@ -4460,8 +4460,7 @@ local function run_inspect_state_query(m, runner)
     -- Boot always runs the machine plainly, and only the query itself runs with the runner. A query
     -- needs a machine waiting for it on an rx-accepted manual yield. A halt, an overflow, an
     -- exhausted cycle limit, or a reject or exception yield leaves nothing to inspect.
-    local break_reason =
-        run_to_stop(make_null_computation_hash_builder(), m, cmdline.max_mcycle, ignore_yield_automatic)
+    local break_reason = run_to_stop(new_null_computation_hash_builder(), m, cmdline.max_mcycle, ignore_yield_automatic)
     local waiting = is_yielded_manual(break_reason)
     if waiting then
         local cmd, yield_reason = m:receive_cmio_request()
@@ -4484,7 +4483,7 @@ local function run_inspect_state_query(m, runner)
             cmdline.cmio_inspect.report_index = cmdline.cmio_inspect.report_index + 1
         end
     end
-    break_reason = run_to_stop(make_null_computation_hash_builder(), runner, cmdline.max_mcycle, on_yield_automatic)
+    break_reason = run_to_stop(new_null_computation_hash_builder(), runner, cmdline.max_mcycle, on_yield_automatic)
     report_stop(m, break_reason)
     stderr("\nAfter query\n")
     backup:revert()
@@ -4541,7 +4540,7 @@ end
 -- Requires boot to reach a fixed point and returns its revert root hash and stop information.
 local function initialize_advance_state_epoch(builder, runner)
     local break_reason =
-        run_to_stop(make_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
+        run_to_stop(new_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
     assert(is_at_fixed_point(break_reason), "advance-state epoch initialization did not reach a fixed point")
     backup:commit()
     local yield_reason, yield_data
@@ -4622,7 +4621,7 @@ end
 -- computation hash advances through it too).
 local runner = gdb_stub or machine
 if cmdline.uarch_cycle_root_hashes_count then
-    runner = make_uarch_cycle_root_hashes_runner(
+    runner = new_uarch_cycle_root_hashes_runner(
         runner,
         cmdline.uarch_cycle_root_hashes_start,
         cmdline.uarch_cycle_root_hashes_count,
@@ -4630,7 +4629,7 @@ if cmdline.uarch_cycle_root_hashes_count then
     )
 elseif mcycle_root_hashes then
     local start = cmdline.mcycle_root_hashes_start ~= 0 and cmdline.mcycle_root_hashes_start or nil
-    runner = make_mcycle_root_hashes_runner(
+    runner = new_mcycle_root_hashes_runner(
         runner,
         cmdline.mcycle_root_hashes_log2_period,
         start,
@@ -4645,18 +4644,17 @@ if cmdline.cmio_advance then
     local advance = cmdline.cmio_advance
     local builder
     if cmdline.mcycle_computation_hash then
-        builder =
-            make_mcycle_computation_hash_builder(advance, cmdline.mcycle_computation_hash, report_computation_hash)
+        builder = new_mcycle_computation_hash_builder(advance, cmdline.mcycle_computation_hash, report_computation_hash)
     elseif cmdline.uarch_cycle_computation_hash then
-        builder = make_uarch_cycle_computation_hash_builder(
+        builder = new_uarch_cycle_computation_hash_builder(
             advance,
             cmdline.uarch_cycle_computation_hash,
             report_computation_hash
         )
     elseif advance.resumable then
-        builder = make_epoch_outputs_builder(advance)
+        builder = new_epoch_outputs_builder(advance)
     else
-        builder = make_null_computation_hash_builder()
+        builder = new_null_computation_hash_builder()
     end
     run_advance_state_epoch(builder, runner)
     saved_machine_hash = advance.saved_machine_hash
@@ -4667,7 +4665,7 @@ if cmdline.cmio_inspect then
 elseif not cmdline.cmio_advance then
     report_stop(
         machine,
-        run_to_stop(make_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
+        run_to_stop(new_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
     )
 end
 -- log step

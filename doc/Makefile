@@ -5,6 +5,7 @@
 TAG ?= devel
 
 DOCS_IMAGE = cartesi/machine-emulator-docs
+PRT_IMAGE = cartesi/machine-emulator-prt
 
 DEPENDENCIES_LOCK ?= $(abspath ../dependencies.lock)
 include $(DEPENDENCIES_LOCK)
@@ -50,6 +51,87 @@ check-format-lua:
 
 check-lua:
 	luacheck . --exclude-files '$(REPLACE_CACHE_DIR)/**'
+
+.PHONY: build-prt-image run-prt-bridge
+build-prt-image:
+	$(MAKE) -C .. uarch-with-toolchain
+	$(MAKE) build-docs-image
+	docker build $(DOCKER_PLATFORM) --build-context emulator=.. \
+		--build-arg TOOLS_BASE=$(DOCS_IMAGE):$(TAG) --target runtime \
+		-t $(PRT_IMAGE):$(TAG) -f Dockerfile.prt .
+
+PRT_OUTPUT_DIR ?= $(REPLACE_CACHE_DIR)/prt-chain
+PRT_INPUT_CONFIRMATIONS ?= 8
+PRT_DISPUTE_CONFIRMATIONS ?= 4
+PRT_TEST_REORG ?= no
+PRT_TEST_RESTART ?= no
+PRT_PROFILE ?= no
+PRT_FEE_BUMP_BLOCKS ?= 3
+PRT_FEE_BUMP_PERCENT ?= 15
+PRT_MAX_FEE_PER_GAS ?= 100000000000
+PRT_MAX_PRIORITY_FEE_PER_GAS ?= 10000000000
+PRT_OBSERVATION_ENV = -e PRT_INPUT_CONFIRMATIONS=$(PRT_INPUT_CONFIRMATIONS) \
+    -e PRT_DISPUTE_CONFIRMATIONS=$(PRT_DISPUTE_CONFIRMATIONS) -e PRT_TEST_REORG=$(PRT_TEST_REORG) -e PRT_TEST_RESTART=$(PRT_TEST_RESTART) \
+    -e PRT_PROFILE=$(PRT_PROFILE) \
+    -e PRT_FEE_BUMP_BLOCKS=$(PRT_FEE_BUMP_BLOCKS) -e PRT_FEE_BUMP_PERCENT=$(PRT_FEE_BUMP_PERCENT) \
+    -e PRT_MAX_FEE_PER_GAS=$(PRT_MAX_FEE_PER_GAS) -e PRT_MAX_PRIORITY_FEE_PER_GAS=$(PRT_MAX_PRIORITY_FEE_PER_GAS)
+PRT_HOST_ENV = PRT_INPUT_CONFIRMATIONS=$(PRT_INPUT_CONFIRMATIONS) \
+    PRT_DISPUTE_CONFIRMATIONS=$(PRT_DISPUTE_CONFIRMATIONS) PRT_TEST_REORG=$(PRT_TEST_REORG) PRT_TEST_RESTART=$(PRT_TEST_RESTART) \
+    PRT_PROFILE=$(PRT_PROFILE) \
+    PRT_FEE_BUMP_BLOCKS=$(PRT_FEE_BUMP_BLOCKS) PRT_FEE_BUMP_PERCENT=$(PRT_FEE_BUMP_PERCENT) \
+    PRT_MAX_FEE_PER_GAS=$(PRT_MAX_FEE_PER_GAS) PRT_MAX_PRIORITY_FEE_PER_GAS=$(PRT_MAX_PRIORITY_FEE_PER_GAS)
+PRT_RPC_PORT ?= 8545
+run-prt-bridge:
+	mkdir -p "$(PRT_OUTPUT_DIR)"
+	docker run --rm $(DOCKER_PLATFORM) --user "$$(id -u):$$(id -g)" \
+		$(PRT_OBSERVATION_ENV) \
+		-v "$(PRT_OUTPUT_DIR):/work" $(PRT_IMAGE):$(TAG) $(PRT_MODE)
+
+PRT_MODE ?= story
+PRT_TEST_COMMAND ?= bash recipes/prt-demo.sh $(PRT_MODE)
+.PHONY: test-prt-bridge test-prt-bridge-unit test-prt-transactions test-prt-proofs prt-container-exec
+test-prt-bridge-unit: PRT_TEST_COMMAND = lua5.4 recipes/prt-bridge-test.lua
+test-prt-bridge-unit: prt-container-exec
+
+test-prt-transactions: PRT_TEST_COMMAND = bash recipes/prt-demo.sh transactions
+test-prt-transactions: prt-container-exec
+
+test-prt-proofs: PRT_TEST_COMMAND = bash recipes/prt-demo.sh proofs
+test-prt-proofs: prt-container-exec
+
+# The demo. The PRT image plays the chain, and deployment, mining, narration, and every player run
+# on the host, whose filesystem has reflinks. The Dave artifacts the host reads are copied from the
+# image, once per image id.
+test-prt-bridge:
+	@set -e; \
+	dave="$(REPLACE_CACHE_DIR)/dave-$$(docker image inspect --format '{{.Id}}' $(PRT_IMAGE):$(TAG) | cut -c8-19)"; \
+	if [ ! -d "$$dave" ]; then \
+	    container=$$(docker create $(DOCKER_PLATFORM) $(PRT_IMAGE):$(TAG)); \
+	    mkdir -p "$$dave.tmp/prt/contracts" "$$dave.tmp/cartesi-rollups/contracts"; \
+	    docker cp "$$container:/opt/dave/prt/contracts/out" "$$dave.tmp/prt/contracts/"; \
+	    docker cp "$$container:/opt/dave/cartesi-rollups/contracts/out" "$$dave.tmp/cartesi-rollups/contracts/"; \
+	    docker rm "$$container" > /dev/null; \
+	    mv "$$dave.tmp" "$$dave"; \
+	fi; \
+	chain=$$(docker run -d --rm $(DOCKER_PLATFORM) -p 127.0.0.1:$(PRT_RPC_PORT):8545 -v "$(CURDIR):/work" \
+	    --entrypoint bash $(PRT_IMAGE):$(TAG) /work/recipes/prt-demo.sh chain); \
+	trap 'docker logs "$$chain" > "$(PRT_OUTPUT_DIR)/anvil.log" 2>&1; docker stop "$$chain" > /dev/null' EXIT; \
+	eval "$$($(MAKE) -s -C .. env)"; \
+	export LUA_PATH_5_4="$$LUA_PATH_5_4;$$(luarocks --lua-version 5.4 path --lr-path)"; \
+	$(PRT_HOST_ENV) MAKE=$(MAKE) RECIPES_DIR=$(RECIPES_DIR) PRT_OUTPUT_DIR=$(PRT_OUTPUT_DIR) \
+	    PRT_RPC_URL=http://127.0.0.1:$(PRT_RPC_PORT) PRT_DAVE_DIR="$$dave" \
+	    bash $(RECIPES_DIR)/prt-demo.sh $(PRT_MODE)
+
+# Runs PRT_TEST_COMMAND in the PRT image, over the current recipe sources.
+prt-container-exec:
+	docker run --rm $(DOCKER_PLATFORM) --entrypoint bash --user "$$(id -u):$$(id -g)" \
+		$(PRT_OBSERVATION_ENV) \
+		-e RECIPES_DIR=/work/recipes -e PRT_OUTPUT_DIR=/work/recipes/cache/prt-chain \
+		-e 'LUA_PATH=/work/recipes/?.lua;;' \
+		-v "$(DEPENDENCIES_LOCK):/dependencies.lock:ro" \
+		-v "$(CURDIR):/work" \
+		-v "$(abspath ../src/cartesi/evmu.lua):/usr/local/share/lua/5.4/cartesi/evmu.lua:ro" \
+		-w /work $(PRT_IMAGE):$(TAG) -c '$(PRT_TEST_COMMAND)'
 
 ROOTFS_DOCS_INPUTS := \
     $(RECIPES_DIR)/Dockerfile.rootfs-docs \
@@ -257,6 +339,9 @@ template.d: | $(HOST_FILES)
 endif
 
 ifeq ($(RECIPE_TEST_ENV),yes)
+.PHONY: prt-demo-fixture
+prt-demo-fixture: $(GAME_TEST_DIR)/initial-hash
+
 test-prt-protocol:
 	bash $(RECIPES_DIR)/game-runner-test.sh
 	@work=$$(mktemp -d); \
@@ -330,7 +415,7 @@ template.d: README.md.template replace.lua $(DOCS_IMAGE_TRIGGER) | $(REPLACE_CAC
 	    -M docs_image_id="$(DOCS_IMAGE_ID)" \
 	    --lua-filter replace.lua README.md.template -o $@
 
-ifeq (,$(filter clean test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat,$(MAKECMDGOALS)))
+ifeq (,$(filter clean prt-demo-fixture build-prt-tools-image build-prt-calibration-image measure-prt-gas test-prt-contracts prt-contracts-exec test-prt-bridge test-prt-bridge-unit test-prt-transactions test-prt-proofs prt-container-exec build-prt-image run-prt-bridge test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat,$(MAKECMDGOALS)))
 -include template.d
 endif
 

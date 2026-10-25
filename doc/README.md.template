@@ -4929,8 +4929,7 @@ A raw hash is *opaque*, since nothing below it can be read.
 A run of repetitions is captured by a *fixed-point tree*.
 It is built over a sequence of complete trees of equal height, its *base values*, and the last of them repeats to fill the tree.
 Two complete trees of equal height that were built separately are joined as the left and right children of a *mixed tree*.
-A fixed-point or mixed tree can be descended into, down to its base values and through them, until a query reaches its target or an opaque hash.
-A mixed tree always joins two fixed-point or mixed trees, so a raw hash occurs only as a base value.
+A fixed-point or mixed tree can be descended into, down to its base values and children and through them, until a query reaches its target or an opaque hash.
 
 A fixed-point tree is a table with one array per level.
 The first array holds its base values, and each array above holds the hashes of the parents of the one below.

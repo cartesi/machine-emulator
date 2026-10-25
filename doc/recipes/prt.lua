@@ -27,10 +27,11 @@
 -- the whole narration are a function of the claims, the join order, and prescribed responses
 -- or skips.
 --   prt.lua referee  <address> <initial-state-hash> <input> [<input> ...]
---   prt.lua honest   <address> <initial-state-hash> [<label>]
+--   prt.lua honest   <address> <initial-state-hash> [<label> [<epoch-directory>]]
 --   prt.lua phase_closer <address> [stop]
 --
--- A player's label names it in the story and defaults to its role.
+-- A player's label names it in the story and defaults to its role. An existing epoch directory
+-- makes the player run on stored machines kept there instead of forked servers.
 -- The phase closer closes initial subscriptions once every player is in, then disconnects.
 -- A later invocation with stop ends the example through the server, including pending proof waits.
 -- Mcycle and uarch tournaments gather claims from fixed audiences while their allowance of
@@ -899,7 +900,8 @@ end
 ------------------------------------------------------------
 
 local LOG2_BUNDLE_MCYCLE_COUNT = 4
-local LOG2_BUNDLE_UARCH_CYCLE_COUNT = 16
+-- A uarch bundle is one whole mcycle, so a uarch claim stores one hash per mcycle.
+local LOG2_BUNDLE_UARCH_CYCLE_COUNT = LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
 local LOG2_HASHES_PER_COLLECTION = 8
 local LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE = 10 -- assume about 1024 uarch cycles per mcycle
 local MAX_MCYCLES_PER_ADVANCE_STATE = 1 << LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
@@ -999,13 +1001,23 @@ local function fork_server(machine)
     return fork
 end
 
--- Loads the initial machine snapshot from content-addressed local storage into a freshly
+-- Loads an explicit snapshot directory or the content-addressed default into a freshly
 -- spawned server, and verifies that the stored machine actually has the requested state hash.
--- A spawned server shuts down when its handle is closed or collected, including after an error.
-local function new_machine(initial_state_hash)
+-- The sharing mode defaults to keeping changes in memory. A spawned server shuts down when its
+-- handle is closed or collected, including after an error.
+local function new_machine(initial_state_hash, directory, sharing)
     local machine <close> = assert(cartesi_jsonrpc.spawn_server("127.0.0.1:0"))
-    machine:load(cartesi.tohex(initial_state_hash))
+    machine:load(directory or cartesi.tohex(initial_state_hash), nil, sharing)
     assert(machine:get_root_hash() == initial_state_hash, "initial machine snapshot hash mismatch")
+    return move_machine(machine)
+end
+
+-- Loads a stored machine into this process, sharing every change with its directory, and checks its
+-- state hash. Its locks go with the process, so a player that crashes leaves no machine holding them.
+local function new_stored_machine(state_hash, directory)
+    local machine <close> = cartesi.new()
+    machine:load(directory, nil, cartesi.SHARING_ALL)
+    assert(machine:get_root_hash() == state_hash, "stored machine hash mismatch")
     return move_machine(machine)
 end
 
@@ -1068,6 +1080,103 @@ local function new_machine_pair(machine)
     return pair:move()
 end
 
+-- Takes over a stored machine that clone_stored just created, which removes a clone that fails
+-- partway itself, and removes it if an error closes the owner before move() hands its directory over.
+local temporary_stored_machine_meta = { __index = {} }
+function temporary_stored_machine_meta.__index:close()
+    if self.directory then
+        cartesi.machine:remove_stored(self.directory)
+        self.directory = nil
+    end
+end
+temporary_stored_machine_meta.__close = temporary_stored_machine_meta.__index.close
+
+function temporary_stored_machine_meta.__index:move()
+    local directory = self.directory
+    self.directory = nil
+    return directory
+end
+
+local function new_temporary_stored_machine(directory)
+    return setmetatable({ directory = directory }, temporary_stored_machine_meta)
+end
+
+-- A loaded directory is locked, so its machine is destroyed around the clone and reloaded after.
+-- Returns the clone's directory once it is synced and the machine is reloaded.
+local function clone_loaded_directory(machine, directory, clone_directory)
+    machine:destroy()
+    machine:clone_stored(directory, clone_directory)
+    local clone <close> = new_temporary_stored_machine(clone_directory)
+    machine:sync_stored(clone_directory)
+    machine:load(directory, nil, cartesi.SHARING_ALL)
+    return clone:move()
+end
+
+-- Removes a stored machine that a crash or an earlier pair may have left, possibly incomplete, which
+-- remove_stored may not recognize.
+local function remove_leftover_stored_machine(directory)
+    if pcall(cartesi.machine.remove_stored, cartesi.machine, directory) then
+        return
+    end
+    for _, name in ipairs(fs.list_directory(directory)) do
+        fs.remove_file(directory .. "/" .. name)
+    end
+    fs.remove_directory(directory)
+end
+
+-- A stored pair runs its machine directly on the backing stores of its directory, loaded with
+-- SHARING_ALL, and snapshots by cloning that directory, like the command-line utility's
+-- --revert-mode=stored. Nothing is removed eagerly. Committing only syncs, and the next snapshot
+-- replaces the committed one. Closing only releases the machine, so an error leaves the disk as a
+-- crash would. Leftover scratch is replaced when next created, and the player's state decides on
+-- reopen which directories matter.
+local stored_machine_pair_meta = { __index = setmetatable({}, { __index = machine_pair_methods }) }
+local stored_machine_pair_methods = stored_machine_pair_meta.__index
+function stored_machine_pair_methods:close()
+    if self.machine then
+        self.machine:destroy()
+        self.machine = nil
+    end
+end
+stored_machine_pair_meta.__close = stored_machine_pair_methods.close
+
+function stored_machine_pair_methods:move()
+    return setmetatable(shallow_move(self), stored_machine_pair_meta)
+end
+
+function stored_machine_pair_methods:snapshot()
+    if self.backup_directory and self.backup_committed then
+        self.machine:remove_stored(self.backup_directory)
+        self.backup_directory = nil
+    end
+    assert(not self.backup_directory, "machine already has a snapshot")
+    self.backup_directory = clone_loaded_directory(self.machine, self.directory, self.directory .. ".revert")
+    self.backup_committed = false
+end
+
+function stored_machine_pair_methods:commit()
+    self.machine:sync_stored(self.directory)
+    self.backup_committed = true
+end
+
+function stored_machine_pair_methods:revert()
+    local backup_directory = assert(self.backup_directory, "no snapshot to revert to")
+    assert(not self.backup_committed, "cannot revert a committed input")
+    local machine = self.machine
+    machine:destroy()
+    machine:remove_stored(self.directory)
+    machine:rename_stored(backup_directory, self.directory)
+    self.backup_directory = nil
+    machine:load(self.directory, nil, cartesi.SHARING_ALL)
+    assert(machine:get_root_hash() == self.revert_root_hash, "rollback did not restore the input boundary")
+end
+
+local function new_stored_machine_pair(machine, directory)
+    local pair <close> = setmetatable({ machine = machine, directory = directory }, stored_machine_pair_meta)
+    pair.revert_root_hash = machine:get_root_hash()
+    return pair:move()
+end
+
 -- An entry is the machine at an input base, before delivery, indexed by the input. The first
 -- entry is the initial machine at input zero and is always retained. The epoch run considers
 -- every later input base, and the cache retains a bounded set of forks. When the cache is full,
@@ -1103,6 +1212,19 @@ function machine_cache_methods:move()
     return setmetatable(shallow_move(self), machine_cache_meta)
 end
 
+-- An entry holds a fork of the machine at its input boundary.
+function machine_cache_methods:new_entry(epoch_input_offset, machine) -- luacheck: ignore 212 self
+    return { epoch_input_offset = epoch_input_offset, machine = fork_server(machine) }
+end
+
+function machine_cache_methods:remove_entry(entry) -- luacheck: ignore 212 self
+    entry.machine:shutdown_server()
+end
+
+function machine_cache_methods:new_machine_pair_from_entry(entry) -- luacheck: ignore 212 self
+    return new_machine_pair(fork_server(entry.machine))
+end
+
 function machine_cache_methods:consider(epoch_input_offset, machine)
     local entries = assert(self.entries, "machine cache is closed or moved")
     assert(epoch_input_offset > self.last_epoch_input_offset, "cache entries are not ordered")
@@ -1126,13 +1248,11 @@ function machine_cache_methods:consider(epoch_input_offset, machine)
             return
         end
     end
-    local clone <close> = new_machine_pair(fork_server(machine))
+    entries[#entries + 1] = self:new_entry(epoch_input_offset, machine)
     if replace_index then
-        table.remove(entries, replace_index).machine:shutdown_server()
+        self:remove_entry(table.remove(entries, replace_index))
         self.replace_cursor = replace_index
     end
-    entries[#entries + 1] = { epoch_input_offset = epoch_input_offset, machine = clone.machine }
-    clone.machine = nil
 end
 
 local function find_nearest_entry(cache, epoch_input_offset)
@@ -1151,7 +1271,7 @@ end
 -- Fork the nearest retained input boundary not past the requested offset.
 function machine_cache_methods:nearest_not_past_epoch_input_offset(epoch_input_offset)
     local entry = find_nearest_entry(self, epoch_input_offset)
-    local pair <close> = new_machine_pair(fork_server(entry.machine))
+    local pair <close> = self:new_machine_pair_from_entry(entry)
     return pair:move(), entry.epoch_input_offset
 end
 
@@ -1171,6 +1291,127 @@ function machine_cache_methods:nearer_not_past_epoch_input_offset_or(
         self:nearest_not_past_epoch_input_offset(epoch_input_offset_end)
     received_pair:close()
     return advancing_pair:move(), cached_epoch_input_offset
+end
+
+-- Writes a file through a temporary file in the same directory, synced before the rename. The
+-- caller syncs the directory.
+local function write_durable_file(contents, path)
+    local directory, name = path:match("^(.*)/([^/]*)$")
+    local temporary <close> = fs.new_temporary_file(directory, name .. ".tmp.")
+    temporary.file:write(contents)
+    fs.sync_file(temporary.file)
+    temporary:rename(path)
+end
+
+-- A stored cache keeps its entries as stored machines under entries/ in the epoch directory, next
+-- to the epoch machine's own directory. A temporary pair runs on a clone of its entry in pair/,
+-- since a player has at most one at a time, replacing what an earlier pair left there. Closing the
+-- cache leaves the entries on disk. An evicted entry is removed only by remove_evicted, once the
+-- player's state no longer lists it.
+local stored_machine_cache_meta = { __index = setmetatable({}, { __index = machine_cache_methods }) }
+local stored_machine_cache_methods = stored_machine_cache_meta.__index
+
+function stored_machine_cache_methods:close()
+    self.entries = nil
+end
+stored_machine_cache_meta.__close = stored_machine_cache_methods.close
+
+function stored_machine_cache_methods:move()
+    return setmetatable(shallow_move(self), stored_machine_cache_meta)
+end
+
+function stored_machine_cache_methods:new_entry(epoch_input_offset, machine)
+    local directory = clone_loaded_directory(
+        machine,
+        self.machine_directory,
+        self.epoch_directory .. "/entries/" .. epoch_input_offset
+    )
+    return { epoch_input_offset = epoch_input_offset, directory = directory, root_hash = machine:get_root_hash() }
+end
+
+function stored_machine_cache_methods:remove_entry(entry)
+    self.evicted[#self.evicted + 1] = entry.directory
+end
+
+function stored_machine_cache_methods:remove_evicted()
+    for _, directory in ipairs(self.evicted) do
+        cartesi.machine:remove_stored(directory)
+    end
+    self.evicted = {}
+end
+
+function stored_machine_cache_methods:new_machine_pair_from_entry(entry)
+    local directory = self.epoch_directory .. "/pair"
+    for _, leftover in ipairs({ directory, directory .. ".revert" }) do
+        if fs.exists(leftover) then
+            remove_leftover_stored_machine(leftover)
+        end
+    end
+    cartesi.machine:clone_stored(entry.directory, directory)
+    local clone <close> = new_temporary_stored_machine(directory)
+    local machine = new_stored_machine(entry.root_hash, directory)
+    return new_stored_machine_pair(machine, clone:move())
+end
+
+-- The epoch machine is loaded from machine_directory. Entry zero is cloned from it.
+local function new_stored_machine_cache(epoch_directory, machine_directory, machine)
+    local cache <close> = setmetatable({
+        capacity = DEFAULT_MACHINE_CACHE_CAPACITY,
+        input_gap = DEFAULT_MACHINE_CACHE_INPUT_GAP,
+        replace_cursor = 2,
+        last_epoch_input_offset = 0,
+        epoch_directory = epoch_directory,
+        machine_directory = machine_directory,
+        entries = {},
+        evicted = {},
+    }, stored_machine_cache_meta)
+    cache.entries[1] = cache:new_entry(0, machine)
+    return cache:move()
+end
+
+-- Reopens a cache stored by stored_machine_cache_methods:store, with its policy and entries.
+local function load_stored_machine_cache(epoch_directory, machine_directory, path)
+    local stored = cartesi.fromjson(fs.read_file(path))
+    local cache <close> = setmetatable({
+        capacity = stored.capacity,
+        input_gap = stored.input_gap,
+        replace_cursor = stored.replace_cursor,
+        last_epoch_input_offset = stored.last_epoch_input_offset,
+        epoch_directory = epoch_directory,
+        machine_directory = machine_directory,
+        entries = {},
+        evicted = {},
+    }, stored_machine_cache_meta)
+    assert(math.type(cache.capacity) == "integer" and cache.capacity > 0, "invalid machine cache capacity")
+    assert(math.type(cache.input_gap) == "integer" and cache.input_gap > 0, "invalid machine cache input gap")
+    assert(math.type(cache.replace_cursor) == "integer", "invalid machine cache replace cursor")
+    assert(math.type(cache.last_epoch_input_offset) == "integer", "invalid machine cache input offset")
+    assert(#stored.entries > 0, "machine cache has no entries")
+    for i, entry in ipairs(stored.entries) do
+        cache.entries[i] = {
+            epoch_input_offset = entry.epoch_input_offset,
+            directory = epoch_directory .. "/entries/" .. entry.epoch_input_offset,
+            root_hash = cartesi.fromhex(entry.root_hash),
+        }
+    end
+    return cache:move()
+end
+
+-- Stores the cache's policy and entries in a file, for load_stored_machine_cache, and syncs its
+-- directory.
+function stored_machine_cache_methods:store(path)
+    local entries = {}
+    for i, entry in ipairs(self.entries) do
+        entries[i] = { epoch_input_offset = entry.epoch_input_offset, root_hash = cartesi.tohex(entry.root_hash) }
+    end
+    write_durable_file(cartesi.tojson({
+        capacity = self.capacity,
+        input_gap = self.input_gap,
+        replace_cursor = self.replace_cursor,
+        last_epoch_input_offset = self.last_epoch_input_offset,
+        entries = entries,
+    }, 2) .. "\n", path)
+    fs.sync_directory(path:match("^(.*)/[^/]*$"))
 end
 
 -- Advances through a builder's run(machine, mcycle_end) method until a fixed point or the target mcycle,
@@ -1465,7 +1706,7 @@ end
 
 -- Before delivery at the selected input's virgin boundary,
 -- begin_input saves its uarch tail for rejection; run replays to the selected period and
--- collects roots of bundles of 2^LOG2_BUNDLE_UARCH_CYCLE_COUNT transitions.
+-- collects one root per mcycle, its bundle.
 -- A fixed point before the selected period supplies its history without reaching the target.
 local function new_uarch_cycle_computation_hash_builder(log2_mcycles_per_period, epoch_period_offset)
     local periods_per_input = 1 << (LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period)
@@ -1569,6 +1810,10 @@ end
 -- of the relevant claim. Eliminate instructions need no machine and go to every player.
 ------------------------------------------------------------
 
+-- Forward declarations, since the epoch directory's functions follow the player.
+local store_input, commit_epoch_state, seal_epoch_state, store_uarch_claim, store_checkpoint
+local get_input_path, get_output_path, get_outputs_log_path
+
 local event_handler = {}
 
 function event_handler.win_match_by_timeout(self, computation_hash)
@@ -1647,7 +1892,18 @@ end
 -- and input period offset are zero-based, as the referee counts them. The referee checks
 -- that the submitted final state matches one of the contested values.
 function event_handler.commit_uarch_claim(self, epoch_input_offset, input_period_offset)
+    -- A restarted bridge may deliver this event again for a claim a reopened player already stored.
+    for _, claim in ipairs(self.uarch_claims) do
+        if claim.epoch_input_offset == epoch_input_offset and claim.input_period_offset == input_period_offset then
+            return new_claim(claim.tree)
+        end
+    end
     local tree = self:new_uarch_tree(epoch_input_offset, input_period_offset)
+    local claim = { epoch_input_offset = epoch_input_offset, input_period_offset = input_period_offset, tree = tree }
+    self.uarch_claims[#self.uarch_claims + 1] = claim
+    if self.epoch_directory then
+        store_uarch_claim(self, claim)
+    end
     self.trees[tree:get_root_hash()] = tree
     return new_claim(tree)
 end
@@ -1662,9 +1918,8 @@ function event_handler.prove_state_transition(self, epoch_input_offset, input_pe
     local period_mcycle_offset, uarch_cycle = split_state_transition_offset(state_transition_offset)
     local pair <close> = self:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
     local machine = pair.machine
-    local path = self.input_paths[epoch_input_offset + 1]
-    local input_data = path and fs.read_file(path)
-    if state_transition_offset == 0 and input_period_offset == 0 and path then
+    local input_data = self:read_input(epoch_input_offset)
+    if state_transition_offset == 0 and input_period_offset == 0 and input_data then
         -- Logging never fails. A machine that is not waiting for the input logs the no-op delivery.
         local send_cmio_log =
             machine:log_send_cmio_response(HTIF_YIELD_REASON_ADVANCE_STATE, input_data, pair.revert_root_hash)
@@ -1716,7 +1971,7 @@ end
 
 -- Offer the last output for this demonstration. The referee supplies no index.
 function event_handler.prove_output(self)
-    return self:prove_output(hash_tree.frontier_get_leaf_count(self.previous_outputs_frontier) - 1)
+    return self:prove_output(hash_tree.frontier_get_leaf_count(self.outputs_frontier) - 1)
 end
 
 local player_meta = { __index = {} }
@@ -1840,8 +2095,8 @@ end
 function player_meta.__index:run_to_epoch_input_offset(pair, epoch_input_offset_begin, epoch_input_offset_end)
     local builder = self:new_null_computation_hash_builder()
     builder:begin_epoch(pair.machine)
-    for epoch_input_offset = epoch_input_offset_begin, math.min(epoch_input_offset_end, #self.input_paths) - 1 do
-        local input_data = fs.read_file(self.input_paths[epoch_input_offset + 1])
+    for epoch_input_offset = epoch_input_offset_begin, math.min(epoch_input_offset_end, self.input_count) - 1 do
+        local input_data = self:read_input(epoch_input_offset)
         local break_reason, yield_reason = self:run_to_input_mcycle_offset(
             builder,
             pair,
@@ -1860,19 +2115,30 @@ end
 -- The persistent epoch pair advances once per input. Scope it during execution so
 -- errors release the working machine and any pending rollback snapshot immediately.
 function event_handler.input_added(self, epoch_input_offset, path)
+    -- A reopened player ignores events for inputs it already applied, which a restarted bridge delivers again.
+    if self.epoch_directory and epoch_input_offset < self.input_count then
+        return
+    end
     local pair <close> = assert(self.epoch_pair, "epoch is not open")
     local builder = self.epoch_builder
     self.epoch_pair, self.epoch_builder = nil, nil
-    assert(epoch_input_offset == #self.input_paths, "input events are not ordered")
-    self.input_paths[epoch_input_offset + 1] = path
+    assert(epoch_input_offset == self.input_count, "input events are not ordered")
+    -- A player without an epoch directory keeps the input's bytes, so the file need not outlive the event.
+    if self.epoch_directory then
+        store_input(self, epoch_input_offset, path)
+    else
+        self.inputs[epoch_input_offset + 1] = fs.read_file(path)
+    end
+    self.input_count = epoch_input_offset + 1
+    local outputs = {}
     if not self.epoch_stopped then
         local break_reason, yield_reason = self:run_to_input_mcycle_offset(
             builder,
             pair,
             epoch_input_offset,
-            fs.read_file(path),
+            self:read_input(epoch_input_offset),
             MAX_MCYCLES_PER_ADVANCE_STATE,
-            self.outputs,
+            outputs,
             self.outputs_frontier
         )
         if not is_rx_accepted(yield_reason) and not is_rx_rejected(yield_reason) then
@@ -1882,25 +2148,40 @@ function event_handler.input_added(self, epoch_input_offset, path)
     end
     assert(not pair.backup_machine, "input stopped before completion")
     self.machine_cache:consider(epoch_input_offset + 1, pair.machine)
+    local output_count = self.output_count
+    self.output_count = output_count + #outputs
+    if self.epoch_directory then
+        commit_epoch_state(self, pair, builder, outputs)
+    else
+        table.move(outputs, 1, #outputs, output_count + 1, self.outputs)
+    end
     self.epoch_pair, self.epoch_builder = pair:move(), builder
 end
 
--- A production bridge would spawn a player for the next epoch at each
--- epoch_sealed event, using this epoch's locally computed final state.
--- It could concurrently drive the dispute with the player spawned at
--- the previous seal. The first player is bootstrapped at construction.
-function event_handler.epoch_sealed(self)
+-- Retain the final machine before closing execution so the next player can
+-- accumulate inputs while this player disputes the sealed epoch.
+function event_handler.epoch_sealed(self, input_count, checkpoint_directory)
+    -- A restarted bridge may deliver the seal again to a reopened sealed player.
+    if self.epoch_directory and self.mcycle_forest then
+        return
+    end
+    assert(input_count == nil or input_count == self.input_count, "sealed input count mismatch")
     local pair <close> = assert(self.epoch_pair, "epoch is not open")
     self.epoch_pair = nil
     assert(not pair.backup_machine, "cannot seal an unfinished input")
     self.outputs_merkle_root_proof = get_outputs_merkle_root_proof(pair.machine)
+    self.final_state_hash = pair.machine:get_root_hash()
     local builder = self.epoch_builder
     self.epoch_builder = nil
     self.mcycle_forest = builder:end_epoch()
-    local leaves = map(self.outputs, keccak)
-    self.output_proofs = hash_tree.frontier_next_proofs(self.previous_outputs_frontier, leaves)
-    self.previous_outputs_frontier = self.outputs_frontier
-    self.outputs_frontier = nil
+    -- The checkpoint is stored while this player still owns the exact final machine, before the seal
+    -- is committed, so a seal resent after a crash stores it again.
+    if checkpoint_directory then
+        store_checkpoint(self, pair.machine, checkpoint_directory)
+    end
+    if self.epoch_directory then
+        seal_epoch_state(self)
+    end
 end
 
 -- docs:begin collect_mcycle_bundle
@@ -1910,8 +2191,7 @@ function player_meta.__index:collect_mcycle_bundle(epoch_input_offset, input_bun
     local builder = self:new_null_computation_hash_builder()
     -- Deliver the input and stay at its boundary. The machine advances to the bundle and pads it
     -- with its fixed-point state hash when the input stops early.
-    local path = self.input_paths[epoch_input_offset + 1]
-    begin_input(builder, pair, epoch_input_offset, path and fs.read_file(path))
+    begin_input(builder, pair, epoch_input_offset, self:read_input(epoch_input_offset))
     local hashes = machine:collect_mcycle_bundle(
         input_bundle_offset,
         self.geometry.log2_mcycles_per_period,
@@ -1931,12 +2211,11 @@ function player_meta.__index:build_uarch_claim(epoch_input_offset, input_period_
         combine_epoch_period_offset(self.geometry.periods_per_input, epoch_input_offset, input_period_offset)
     )
     builder:begin_epoch(machine)
-    local path = self.input_paths[epoch_input_offset + 1]
     self:run_to_input_mcycle_offset(
         builder,
         pair,
         epoch_input_offset,
-        path and fs.read_file(path),
+        self:read_input(epoch_input_offset),
         (input_period_offset + 1) * self.geometry.mcycles_per_period
     )
     return builder:end_epoch()
@@ -1944,17 +2223,13 @@ end
 -- docs:end build_uarch_claim
 
 -- docs:begin collect_uarch_cycle_bundle
-function player_meta.__index:collect_uarch_cycle_bundle(epoch_input_offset, input_period_offset, period_bundle_offset)
+function player_meta.__index:collect_uarch_cycle_bundle(epoch_input_offset, input_period_offset, period_mcycle_offset)
     local pair <close> = self:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
     local machine = pair.machine
     local tail = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0)
     local revert_uarch_tail = tail.hashes
-    local bundles_per_mcycle = 1 << (LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - LOG2_BUNDLE_UARCH_CYCLE_COUNT)
-    local period_mcycle_offset = period_bundle_offset // bundles_per_mcycle
-    local bundle_offset = period_bundle_offset % bundles_per_mcycle
     local builder = self:new_null_computation_hash_builder()
-    local path = self.input_paths[epoch_input_offset + 1]
-    local input_data = path and fs.read_file(path)
+    local input_data = self:read_input(epoch_input_offset)
     local input_mcycle_offset =
         combine_input_mcycle_offset(self.geometry.mcycles_per_period, input_period_offset, period_mcycle_offset)
     if input_mcycle_offset == 0 then
@@ -1963,26 +2238,69 @@ function player_meta.__index:collect_uarch_cycle_bundle(epoch_input_offset, inpu
         self:run_to_input_mcycle_offset(builder, pair, epoch_input_offset, input_data, input_mcycle_offset)
     end
     -- Replay may already have rolled back a rejected input. Its restored boundary
-    -- supplies the same uarch history as the tail captured before delivery.
-    local hashes = machine:collect_uarch_cycle_bundle(bundle_offset, LOG2_BUNDLE_UARCH_CYCLE_COUNT, revert_uarch_tail)
+    -- supplies the same uarch history as the tail captured before delivery. The mcycle's
+    -- uarch hashes are collected one per uarch cycle until the halt, then pushed as the builder
+    -- pushes every mcycle.
+    local collected =
+        machine:collect_uarch_cycle_root_hashes(usaturating_add(machine:read_reg("mcycle"), 1), 0, revert_uarch_tail)
+    local offsets = collected.mcycle_hash_offsets
     local forest = hash_tree.frontier_forest(LOG2_BUNDLE_UARCH_CYCLE_COUNT, "keccak256")
-    hash_tree.frontier_forest_append(forest, hashes, 1, #hashes + 1)
+    uarch_computation_hash_push_mcycle({ bundle_height = 0 }, forest, collected.hashes, offsets[1], offsets[2])
     return forest
 end
 -- docs:end collect_uarch_cycle_bundle
+
+-- Without an epoch directory, inputs stay in the caller's files and outputs in memory. With one,
+-- both are in the epoch directory. read_input returns nil past the applied inputs.
+function player_meta.__index:read_input(epoch_input_offset)
+    if epoch_input_offset >= self.input_count then
+        return nil
+    end
+    if self.epoch_directory then
+        return fs.read_file(get_input_path(self.epoch_directory, epoch_input_offset))
+    end
+    return self.inputs[epoch_input_offset + 1]
+end
+
+function player_meta.__index:read_output(epoch_output_offset)
+    if self.epoch_directory then
+        return fs.read_file(get_output_path(self.epoch_directory, epoch_output_offset))
+    end
+    return self.outputs[epoch_output_offset + 1]
+end
+
+-- The keccak of each output of the epoch, in order.
+function player_meta.__index:read_output_hashes()
+    if not self.epoch_directory then
+        return map(self.outputs, keccak)
+    end
+    local log = fs.read_file(get_outputs_log_path(self.epoch_directory))
+    assert(#log == self.output_count * cartesi.HASH_SIZE, "outputs.log does not match the output count")
+    local hashes = {}
+    for epoch_output_offset = 0, self.output_count - 1 do
+        local first = epoch_output_offset * cartesi.HASH_SIZE + 1
+        hashes[epoch_output_offset + 1] = log:sub(first, first + cartesi.HASH_SIZE - 1)
+    end
+    return hashes
+end
 
 -- Clients may request any accepted output from the sealed epoch by its global index, independently of
 -- the output the demonstration offers to the referee. Missing indices are no offer.
 function player_meta.__index:prove_output(output_index)
     assert(math.type(output_index) == "integer", "invalid output index")
-    local index = output_index - hash_tree.frontier_get_leaf_count(self.previous_outputs_frontier) + #self.outputs + 1
-    if index < 1 or index > #self.outputs then
+    assert(self.mcycle_forest, "epoch is not sealed")
+    local epoch_output_offset = output_index - hash_tree.frontier_get_leaf_count(self.previous_outputs_frontier)
+    if epoch_output_offset < 0 or epoch_output_offset >= self.output_count then
         return "nothing"
+    end
+    -- The first request proves every output of the epoch at once.
+    if not self.output_proofs then
+        self.output_proofs = hash_tree.frontier_next_proofs(self.previous_outputs_frontier, self:read_output_hashes())
     end
     return {
         output_index = output_index,
-        output_data = self.outputs[index],
-        output_proof = self.output_proofs[index],
+        output_data = self:read_output(epoch_output_offset),
+        output_proof = self.output_proofs[epoch_output_offset + 1],
     }
 end
 
@@ -2002,54 +2320,588 @@ function player_meta.__index:new_mcycle_tree()
         end
     )
 end
--- The uarch claim's root covers one period, so the tree's bundle index is already the offset
--- within that period. The input and period come from the tree's construction.
-function player_meta.__index:new_uarch_tree(epoch_input_offset, input_period_offset)
+-- The uarch claim's root covers one period and its bundles are mcycles, so the tree's bundle index
+-- is the mcycle's offset within that period. The input and period come from the tree's construction. A stored claim
+-- supplies its forest, which is otherwise built.
+function player_meta.__index:new_uarch_tree(epoch_input_offset, input_period_offset, forest)
     return new_tree(
         self.geometry.uarch_height,
         LOG2_BUNDLE_UARCH_CYCLE_COUNT,
-        self:build_uarch_claim(epoch_input_offset, input_period_offset),
-        function(_, period_bundle_offset)
-            return self:collect_uarch_cycle_bundle(epoch_input_offset, input_period_offset, period_bundle_offset)
+        forest or self:build_uarch_claim(epoch_input_offset, input_period_offset),
+        function(_, period_mcycle_offset)
+            return self:collect_uarch_cycle_bundle(epoch_input_offset, input_period_offset, period_mcycle_offset)
         end
     )
 end
 
 local prt
 
+-- A copy of the outputs frontier the previous epochs left, or an empty one at genesis.
+local function new_outputs_frontier(previous_outputs_frontier)
+    if not previous_outputs_frontier then
+        return hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+    end
+    assert(
+        #previous_outputs_frontier == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT + 1
+            and previous_outputs_frontier.hash_function == cartesi.keccak256,
+        "previous_outputs_frontier is not an outputs frontier"
+    )
+    return hash_tree.frontier_copy(previous_outputs_frontier)
+end
+
+-- Loads an outputs frontier stored with hash_tree.frontier_store.
+local function load_outputs_frontier(path)
+    return hash_tree.frontier_load(path, cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+end
+
+--------------------------------------------------------------------------------
+-- Epoch directory
+--
+-- A player given an epoch directory keeps its epoch run and dispute there, so it can reopen after a
+-- crash or an error. state.json records the newest input boundary, then the seal and each uarch
+-- claim, and is the only commit point. Everything it reaches is durable before it is written, and
+-- reopening removes what it does not reach. The epoch machine changes in place during an input, so
+-- reopening restores machine.revert when the epoch machine does not match state.json, which happens
+-- until state.json records the input's end.
+-- Small player fields are inline in state.json, and large ones are named by the file that holds
+-- them. A field is absent when the player does not have it, so an open epoch has an epoch_builder
+-- and a sealed epoch has the seal's fields instead. Inputs and outputs live in files of
+-- their own, and outputs.log holds the output keccaks. state.json reaches them through its input
+-- and output counts.
+--------------------------------------------------------------------------------
+
+local EPOCH_SUBDIRECTORIES = { "entries", "forests", "inputs", "outputs" }
+
+-- state.json names the file of each large player field. The boundary files take the input count,
+-- so a new boundary never overwrites the files the committed state.json names.
+local function get_boundary_files(input_count)
+    return {
+        epoch_builder = "frontier-" .. input_count .. ".json",
+        outputs_frontier = "outputs-frontier-" .. input_count .. ".json",
+        machine_cache = "machine-cache-" .. input_count .. ".json",
+    }
+end
+
+local MCYCLE_FOREST_FILE = "mcycle-forest.json"
+
+local function get_uarch_claim_file(epoch_input_offset, input_period_offset)
+    return "uarch-" .. epoch_input_offset .. "-" .. input_period_offset .. ".json"
+end
+
+-- The files the layout creates next to state.json, which reopening removes when state.json does not
+-- name them.
+local EPOCH_FILE_PATTERNS = {
+    "^frontier%-%d+%.json$",
+    "^outputs%-frontier%-%d+%.json$",
+    "^machine%-cache%-%d+%.json$",
+    "^mcycle%-forest%.json$",
+    "^uarch%-%d+%-%d+%.json$",
+}
+
+local function is_epoch_file(name)
+    for _, pattern in ipairs(EPOCH_FILE_PATTERNS) do
+        if name:match(pattern) then
+            return true
+        end
+    end
+    return name:find(".tmp.", 1, true) ~= nil
+end
+
+-- state.json keeps the sealed epoch's outputs Merkle root proof inline.
+local EPOCH_STATE_SCHEMAS = {
+    EpochState = { outputs_merkle_root_proof = "OutputsMerkleRootProof" },
+    OutputsMerkleRootProof = {
+        iflags_y_data = "Base64",
+        iflags_y_proof = "Proof",
+        htif_tohost_data = "Base64",
+        htif_tohost_proof = "Proof",
+        tx_buffer_data = "Base64",
+        tx_buffer_proof = "Proof",
+    },
+}
+
+function get_input_path(directory, epoch_input_offset)
+    return directory .. "/inputs/" .. epoch_input_offset .. ".bin"
+end
+
+function get_output_path(directory, epoch_output_offset)
+    return directory .. "/outputs/" .. epoch_output_offset .. ".bin"
+end
+
+function get_outputs_log_path(directory)
+    return directory .. "/outputs.log"
+end
+
+-- Clones an input into the epoch directory, so replay never depends on the caller's file.
+function store_input(self, epoch_input_offset, path)
+    local input_path = get_input_path(self.epoch_directory, epoch_input_offset)
+    fs.clone_file(path, input_path)
+    fs.sync_file(input_path)
+    fs.sync_directory(self.epoch_directory .. "/inputs")
+end
+
+-- Stores an input's outputs after the first self.output_count - #outputs of the epoch, and writes
+-- their keccaks to outputs.log after the committed records.
+local function store_outputs(self, outputs)
+    local directory = self.epoch_directory
+    local first = self.output_count - #outputs
+    for i, output_data in ipairs(outputs) do
+        write_durable_file(output_data, get_output_path(directory, first + i - 1))
+    end
+    fs.sync_directory(directory .. "/outputs")
+    local log <close> = assert(io.open(get_outputs_log_path(directory), "r+b"))
+    assert(log:seek("set", first * cartesi.HASH_SIZE))
+    assert(log:write(table.concat(map(outputs, keccak))))
+    fs.sync_file(log)
+end
+
+-- Commits the player's fields in state.json, which names the files holding the large ones. The
+-- caller makes those files durable first. Afterwards, the files the previous state.json named and this one does
+-- not are removed, as are the entries the cache evicted. An open epoch has an epoch_builder, and a
+-- sealed one the fields the seal adds.
+local function store_epoch_state(self, root_hash, files, pad_bundle)
+    local directory = self.epoch_directory
+    local state = {
+        version = 2,
+        input_count = self.input_count,
+        output_count = self.output_count,
+        root_hash = cartesi.tohex(root_hash),
+        epoch_stopped = self.epoch_stopped == true,
+        initial_outputs_merkle_root = cartesi.tohex(hash_tree.frontier_get_root_hash(self.previous_outputs_frontier)),
+        outputs_frontier = files.outputs_frontier,
+        machine_cache = files.machine_cache,
+    }
+    if files.epoch_builder then
+        state.epoch_builder = { frontier = files.epoch_builder, pad_bundle = cartesi.tohex(pad_bundle) }
+    else
+        state.mcycle_forest = files.mcycle_forest
+        state.outputs_merkle_root_proof = self.outputs_merkle_root_proof
+        state.uarch_claims = map(self.uarch_claims, function(claim)
+            return {
+                epoch_input_offset = claim.epoch_input_offset,
+                input_period_offset = claim.input_period_offset,
+                forest = get_uarch_claim_file(claim.epoch_input_offset, claim.input_period_offset),
+            }
+        end)
+    end
+    write_durable_file(cartesi.tojson(state, 2, "EpochState", EPOCH_STATE_SCHEMAS) .. "\n", directory .. "/state.json")
+    fs.sync_directory(directory)
+    self.machine_cache:remove_evicted()
+    local named = {}
+    for _, name in pairs(files) do
+        named[name] = true
+    end
+    for _, name in pairs(self.state_files or {}) do
+        if not named[name] then
+            fs.remove_file(directory .. "/" .. name)
+        end
+    end
+    self.state_files = files
+end
+
+-- Commits the boundary the epoch pair has reached. The input's snapshot stays until the next input
+-- replaces it, so a crash before this commit reverts.
+function commit_epoch_state(self, pair, builder, outputs)
+    local directory = self.epoch_directory
+    local files = get_boundary_files(self.input_count)
+    hash_tree.frontier_forest_store(builder.frontier, directory .. "/forests", directory .. "/" .. files.epoch_builder)
+    hash_tree.frontier_store(self.outputs_frontier, directory .. "/" .. files.outputs_frontier)
+    self.machine_cache:store(directory .. "/" .. files.machine_cache)
+    if #outputs > 0 then
+        store_outputs(self, outputs)
+    end
+    store_epoch_state(self, pair.machine:get_root_hash(), files, builder.pad_bundle)
+end
+
+-- Commits the seal. The mcycle forest replaces the open epoch's builder.
+function seal_epoch_state(self)
+    local directory = self.epoch_directory
+    hash_tree.frontier_forest_store(self.mcycle_forest, directory .. "/forests", directory .. "/" .. MCYCLE_FOREST_FILE)
+    store_epoch_state(self, self.final_state_hash, {
+        outputs_frontier = self.state_files.outputs_frontier,
+        machine_cache = self.state_files.machine_cache,
+        mcycle_forest = MCYCLE_FOREST_FILE,
+    })
+end
+
+-- Commits a uarch claim the player built. Its bundles, once opened, are stored with its forest.
+function store_uarch_claim(self, claim)
+    local directory = self.epoch_directory
+    local file = get_uarch_claim_file(claim.epoch_input_offset, claim.input_period_offset)
+    hash_tree.frontier_forest_store(claim.tree.forest, directory .. "/forests", directory .. "/" .. file)
+    store_epoch_state(self, self.final_state_hash, self.state_files)
+end
+
+-- Writes the files load_epoch reads next to the final machine stored in a checkpoint directory.
+local function store_checkpoint_files(self, directory)
+    local outputs_root =
+        output_verifier.validate_outputs_merkle_root_response(self.outputs_merkle_root_proof, self.final_state_hash)
+    assert(
+        outputs_root == hash_tree.frontier_get_root_hash(self.outputs_frontier),
+        "checkpoint output history does not match the machine"
+    )
+    hash_tree.frontier_store(self.outputs_frontier, directory .. "/outputs-frontier.json")
+    write_durable_file(cartesi.tojson({
+        version = 2,
+        initial_state_hash = cartesi.tohex(self.dapp_contract.initial_state_hash),
+        final_state_hash = cartesi.tohex(self.final_state_hash),
+        outputs_root = cartesi.tohex(outputs_root),
+        output_count = hash_tree.frontier_get_leaf_count(self.outputs_frontier),
+        input_count = self.input_count,
+        log2_mcycles_per_period = self.geometry.log2_mcycles_per_period,
+    }, 2) .. "\n", directory .. "/epoch.json")
+    fs.sync_directory(directory)
+end
+
+-- Stores the next epoch's checkpoint from the final machine. It is written under <directory>.tmp and
+-- renamed into place, so the checkpoint directory either holds a complete checkpoint or does not
+-- exist. An existing one comes from an earlier attempt at this seal, and a leftover .tmp is replaced.
+function store_checkpoint(self, machine, directory)
+    if fs.exists(directory) then
+        return
+    end
+    local temporary_directory = directory .. ".tmp"
+    if fs.exists(temporary_directory) then
+        remove_leftover_stored_machine(temporary_directory)
+    end
+    assert_rolling_template(machine)
+    machine:store(temporary_directory)
+    machine:sync_stored(temporary_directory)
+    store_checkpoint_files(self, temporary_directory)
+    cartesi.machine:rename_stored(temporary_directory, directory)
+end
+
+-- Stores the checkpoint epoch 0 starts from: the template machine with an empty output history. Like
+-- the seal's checkpoint, it is written under <directory>.tmp and renamed into place, and an existing
+-- one is kept.
+local function store_template_checkpoint(template_directory, geometry, directory)
+    if fs.exists(directory) then
+        return
+    end
+    local temporary_directory = directory .. ".tmp"
+    if fs.exists(temporary_directory) then
+        remove_leftover_stored_machine(temporary_directory)
+    end
+    cartesi.machine:clone_stored(template_directory, temporary_directory)
+    local outputs_frontier = new_outputs_frontier()
+    local outputs_root = hash_tree.frontier_get_root_hash(outputs_frontier)
+    local template_hash
+    do
+        local machine <close> = cartesi.machine(temporary_directory)
+        assert_rolling_template(machine)
+        assert(
+            machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE) == outputs_root,
+            "template machine has an output history"
+        )
+        template_hash = machine:get_root_hash()
+    end
+    hash_tree.frontier_store(outputs_frontier, temporary_directory .. "/outputs-frontier.json")
+    write_durable_file(cartesi.tojson({
+        version = 2,
+        initial_state_hash = cartesi.tohex(template_hash),
+        final_state_hash = cartesi.tohex(template_hash),
+        outputs_root = cartesi.tohex(outputs_root),
+        output_count = 0,
+        input_count = 0,
+        log2_mcycles_per_period = geometry.log2_mcycles_per_period,
+    }, 2) .. "\n", temporary_directory .. "/epoch.json")
+    fs.sync_directory(temporary_directory)
+    cartesi.machine:rename_stored(temporary_directory, directory)
+end
+
+-- Removes everything the layout creates from an epoch directory, which clears what an
+-- initialization interrupted before its first state.json left. A name the layout does not create
+-- is an error, so a wrong directory is never cleared.
+local function clear_epoch_directory(directory)
+    for _, name in ipairs(fs.list_directory(directory)) do
+        local path = directory .. "/" .. name
+        if name == "machine" or name == "machine.revert" or name == "pair" or name == "pair.revert" then
+            remove_leftover_stored_machine(path)
+        elseif name == "entries" then
+            for _, entry in ipairs(fs.list_directory(path)) do
+                remove_leftover_stored_machine(path .. "/" .. entry)
+            end
+            fs.remove_directory(path)
+        elseif name == "forests" or name == "inputs" or name == "outputs" then
+            for _, file in ipairs(fs.list_directory(path)) do
+                fs.remove_file(path .. "/" .. file)
+            end
+            fs.remove_directory(path)
+        elseif name == "state.json" or name == "outputs.log" or is_epoch_file(name) then
+            fs.remove_file(path)
+        else
+            error("epoch directory holds a file its layout does not create: " .. name)
+        end
+    end
+end
+
+-- Removes an epoch directory a player no longer needs, such as after its epoch's dispute.
+local function remove_epoch_directory(directory)
+    clear_epoch_directory(directory)
+    fs.remove_directory(directory)
+end
+
+-- Creates the layout of an epoch directory without a state.json.
+local function create_epoch_directory(directory)
+    clear_epoch_directory(directory)
+    for _, name in ipairs(EPOCH_SUBDIRECTORIES) do
+        fs.create_directory(directory .. "/" .. name)
+    end
+    write_durable_file("", get_outputs_log_path(directory))
+    fs.sync_directory(directory)
+end
+
+-- The root hash of a stored machine, or nil when there is none or it cannot be loaded.
+local function get_stored_root_hash(directory)
+    if not fs.exists(directory) then
+        return nil
+    end
+    local loaded, machine = pcall(cartesi.machine, directory)
+    if not loaded then
+        return nil
+    end
+    local stored <close> = machine
+    return stored:get_root_hash()
+end
+
+-- Brings the epoch machine to the recorded boundary. machine.revert holds it when a crash came
+-- during an input, before state.json recorded the input's end. Otherwise the epoch machine was
+-- synced at that boundary and is unchanged since.
+local function recover_epoch_machine(directory, root_hash)
+    local machine_directory = directory .. "/machine"
+    local backup_directory = machine_directory .. ".revert"
+    if get_stored_root_hash(backup_directory) == root_hash then
+        if fs.exists(machine_directory) then
+            remove_leftover_stored_machine(machine_directory)
+        end
+        cartesi.machine:rename_stored(backup_directory, machine_directory)
+        return
+    end
+    assert(get_stored_root_hash(machine_directory) == root_hash, "the epoch machine does not match its state")
+    if fs.exists(backup_directory) then
+        remove_leftover_stored_machine(backup_directory)
+    end
+end
+
+-- The files a state.json names, keyed by the field that names them.
+local function get_state_files(state)
+    return {
+        epoch_builder = state.epoch_builder and state.epoch_builder.frontier,
+        outputs_frontier = state.outputs_frontier,
+        machine_cache = state.machine_cache,
+        mcycle_forest = state.mcycle_forest,
+    }
+end
+
+-- Removes what state.json does not reach: temporary files, the temporary pair and its snapshot,
+-- entries the cache does not list, files no field names, and inputs, outputs, and outputs.log
+-- records past the counts.
+local function remove_epoch_leftovers(directory, state, machine_cache)
+    local function remove_files(subdirectory, count)
+        for _, name in ipairs(fs.list_directory(subdirectory)) do
+            local offset = tonumber(name:match("^(%d+)%.bin$"))
+            if name:find(".tmp.", 1, true) or (count and offset and offset >= count) then
+                fs.remove_file(subdirectory .. "/" .. name)
+            end
+        end
+    end
+    for _, leftover in ipairs({ "pair", "pair.revert" }) do
+        if fs.exists(directory .. "/" .. leftover) then
+            remove_leftover_stored_machine(directory .. "/" .. leftover)
+        end
+    end
+    local named = {}
+    for _, name in pairs(get_state_files(state)) do
+        named[name] = true
+    end
+    for _, claim in ipairs(state.uarch_claims or {}) do
+        named[claim.forest] = true
+    end
+    for _, name in ipairs(fs.list_directory(directory)) do
+        if is_epoch_file(name) and not named[name] then
+            fs.remove_file(directory .. "/" .. name)
+        end
+    end
+    remove_files(directory .. "/forests")
+    remove_files(directory .. "/inputs", state.input_count)
+    remove_files(directory .. "/outputs", state.output_count)
+    local outputs_log_path = get_outputs_log_path(directory)
+    local outputs_log_size = state.output_count * cartesi.HASH_SIZE
+    assert(fs.get_file_size(outputs_log_path) >= outputs_log_size, "outputs.log lost committed records")
+    fs.truncate_file(outputs_log_path, outputs_log_size)
+    fs.sync_file(outputs_log_path)
+    local entries = {}
+    for _, entry in ipairs(machine_cache.entries) do
+        entries[tostring(entry.epoch_input_offset)] = true
+    end
+    for _, name in ipairs(fs.list_directory(directory .. "/entries")) do
+        if not entries[name] then
+            remove_leftover_stored_machine(directory .. "/entries/" .. name)
+        end
+    end
+end
+
+-- Reopens an epoch directory at the boundary or seal its state.json records. An open epoch gets
+-- its epoch pair and builder back. A sealed epoch gets its mcycle forest and uarch claim forests
+-- back, with no epoch pair.
+local function reopen_epoch_directory(self)
+    local directory = self.epoch_directory
+    local state = cartesi.fromjson(fs.read_file(directory .. "/state.json"), "EpochState", EPOCH_STATE_SCHEMAS)
+    assert(state.version == 2, "unsupported epoch state version")
+    assert(
+        cartesi.fromhex(state.initial_outputs_merkle_root)
+            == hash_tree.frontier_get_root_hash(self.previous_outputs_frontier),
+        "the epoch directory continues a different output history"
+    )
+    local root_hash = cartesi.fromhex(state.root_hash)
+    recover_epoch_machine(directory, root_hash)
+    local machine_directory = directory .. "/machine"
+    self.machine_cache =
+        load_stored_machine_cache(directory, machine_directory, directory .. "/" .. state.machine_cache)
+    remove_epoch_leftovers(directory, state, self.machine_cache)
+    self.state_files = get_state_files(state)
+    self.input_count, self.output_count = state.input_count, state.output_count
+    self.epoch_stopped = state.epoch_stopped
+    self.outputs_frontier = load_outputs_frontier(directory .. "/" .. state.outputs_frontier)
+    assert(
+        hash_tree.frontier_get_leaf_count(self.outputs_frontier)
+            == hash_tree.frontier_get_leaf_count(self.previous_outputs_frontier) + self.output_count,
+        "the outputs frontier does not match the output count"
+    )
+    local forests_directory = directory .. "/forests"
+    if state.epoch_builder then
+        self.epoch_pair = new_stored_machine_pair(new_stored_machine(root_hash, machine_directory), machine_directory)
+        assert(
+            self.epoch_stopped
+                or self.epoch_pair.machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE)
+                    == hash_tree.frontier_get_root_hash(self.outputs_frontier),
+            "output history does not match the epoch machine"
+        )
+        local builder = self:new_mcycle_computation_hash_builder()
+        builder.frontier =
+            hash_tree.frontier_forest_load(forests_directory, directory .. "/" .. state.epoch_builder.frontier)
+        builder.pad_bundle = cartesi.fromhex(state.epoch_builder.pad_bundle)
+        builder.input_bundle_count = 0
+        self.epoch_builder = builder
+        return
+    end
+    self.final_state_hash = root_hash
+    self.outputs_merkle_root_proof = state.outputs_merkle_root_proof
+    assert(
+        output_verifier.validate_outputs_merkle_root_response(self.outputs_merkle_root_proof, root_hash)
+            == hash_tree.frontier_get_root_hash(self.outputs_frontier),
+        "the outputs Merkle root proof does not match the output history"
+    )
+    self.mcycle_forest = hash_tree.frontier_forest_load(forests_directory, directory .. "/" .. state.mcycle_forest)
+    for _, stored in ipairs(state.uarch_claims) do
+        self.uarch_claims[#self.uarch_claims + 1] = {
+            epoch_input_offset = stored.epoch_input_offset,
+            input_period_offset = stored.input_period_offset,
+            forest = hash_tree.frontier_forest_load(forests_directory, directory .. "/" .. stored.forest),
+        }
+    end
+end
+
+-- Registers the trees of a reopened sealed epoch. Trees collect bundles through the player, so they
+-- are made once the player has its final table.
+local function register_stored_trees(self)
+    local mcycle_tree = self:new_mcycle_tree()
+    self.trees[mcycle_tree:get_root_hash()] = mcycle_tree
+    for _, claim in ipairs(self.uarch_claims) do
+        claim.tree = self:new_uarch_tree(claim.epoch_input_offset, claim.input_period_offset, claim.forest)
+        claim.forest = nil
+        self.trees[claim.tree:get_root_hash()] = claim.tree
+    end
+end
+
 -- Each player owns its input filenames, cache, and open epoch computation.
 -- Default event handlers are shared and treated as read-only.
--- The optional proof bootstraps output history after a previous epoch.
-local function new_player(dapp_contract, label, last_output_proof)
+-- The optional outputs frontier bootstraps output history after a previous epoch.
+-- With an existing epoch directory, the player runs on stored machines kept there instead
+-- of forked servers.
+local function new_player(dapp_contract, label, previous_outputs_frontier, epoch_directory)
     local self <close> = setmetatable({
         event_handler = event_handler,
         label = label or "honest",
         dapp_contract = dapp_contract,
         geometry = dapp_contract.geometry,
-        input_paths = {},
+        epoch_directory = epoch_directory,
+        input_count = 0,
+        output_count = 0,
         trees = {},
+        uarch_claims = {},
     }, player_meta)
-    self.epoch_pair = new_machine_pair(prt.new_machine(dapp_contract.initial_state_hash))
-    local machine = self.epoch_pair.machine
-    assert_rolling_template(machine)
-    self.machine_cache = prt.new_machine_cache(fork_server(machine))
+    self.previous_outputs_frontier = new_outputs_frontier(previous_outputs_frontier)
+    if epoch_directory and fs.exists(epoch_directory .. "/state.json") then
+        reopen_epoch_directory(self)
+        local player = self:move()
+        if player.mcycle_forest then
+            register_stored_trees(player)
+        end
+        return player
+    end
+    local initial_state_hash = dapp_contract.initial_state_hash
+    local machine
+    if epoch_directory then
+        create_epoch_directory(epoch_directory)
+        local machine_directory = epoch_directory .. "/machine"
+        cartesi.machine:clone_stored(
+            dapp_contract.machine_directory or cartesi.tohex(initial_state_hash),
+            machine_directory
+        )
+        self.epoch_pair =
+            new_stored_machine_pair(new_stored_machine(initial_state_hash, machine_directory), machine_directory)
+        machine = self.epoch_pair.machine
+        assert_rolling_template(machine)
+        self.machine_cache = new_stored_machine_cache(epoch_directory, machine_directory, machine)
+    else
+        self.epoch_pair = new_machine_pair(prt.new_machine(initial_state_hash, dapp_contract.machine_directory))
+        machine = self.epoch_pair.machine
+        assert_rolling_template(machine)
+        self.machine_cache = prt.new_machine_cache(fork_server(machine))
+        self.inputs, self.outputs = {}, {}
+    end
     self.epoch_builder = self:new_mcycle_computation_hash_builder()
     self.epoch_builder:begin_epoch(machine)
-    self.outputs = {}
-    if last_output_proof then
-        assert(
-            last_output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT
-                and last_output_proof.log2_target_size == 0,
-            "last_output_proof is not an outputs proof"
-        )
-    end
-    self.previous_outputs_frontier =
-        hash_tree.frontier(last_output_proof or cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+    assert(
+        machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE)
+            == hash_tree.frontier_get_root_hash(self.previous_outputs_frontier),
+        "output history does not match initial machine"
+    )
     self.outputs_frontier = hash_tree.frontier_copy(self.previous_outputs_frontier)
+    if epoch_directory then
+        commit_epoch_state(self, self.epoch_pair, self.epoch_builder, {})
+    end
     return self:move()
 end
 
+-- Restore the public bootstrap inputs, leaving machine ownership to new_player.
+local function load_epoch(directory)
+    local manifest = cartesi.fromjson(fs.read_file(directory .. "/epoch.json"))
+    assert(manifest.version == 2, "unsupported player checkpoint version")
+    assert(
+        math.type(manifest.output_count) == "integer" and manifest.output_count >= 0,
+        "invalid checkpoint output count"
+    )
+    local frontier = load_outputs_frontier(directory .. "/outputs-frontier.json")
+    assert(hash_tree.frontier_get_leaf_count(frontier) == manifest.output_count, "checkpoint output count mismatch")
+    assert(
+        cartesi.tohex(hash_tree.frontier_get_root_hash(frontier)) == manifest.outputs_root,
+        "checkpoint output root mismatch"
+    )
+    return {
+        initial_state_hash = cartesi.fromhex(manifest.final_state_hash),
+        machine_directory = directory,
+        geometry = new_geometry(manifest.log2_mcycles_per_period),
+    },
+        frontier,
+        manifest
+end
+
 prt = {
+    load_epoch = load_epoch,
+    store_template_checkpoint = store_template_checkpoint,
+    remove_epoch_directory = remove_epoch_directory,
     LOG2_BUNDLE_MCYCLE_COUNT = LOG2_BUNDLE_MCYCLE_COUNT,
     LOG2_BUNDLE_UARCH_CYCLE_COUNT = LOG2_BUNDLE_UARCH_CYCLE_COUNT,
     new_player = new_player,
@@ -2116,8 +2968,9 @@ if role == "referee" then
     end
 elseif role == "honest" then
     local label = take_argument()
+    local epoch_directory = take_argument()
     run_role = function(dapp_contract)
-        local player <close> = new_player(dapp_contract, label)
+        local player <close> = new_player(dapp_contract, label, nil, epoch_directory)
         prtu.run_client(player, server_address)
     end
     assert(next_argument > #arg, "only the referee takes input files")

@@ -107,8 +107,8 @@ end
 
 -- Substitute an input filename as it arrives. Replay reads the forged file, while the
 -- referee still verifies input inclusion against the original contract inputs.
-local function new_forger(dapp_contract, epoch_input_offset, forged_path, label)
-    local player = prt.new_player(dapp_contract, label or "forger")
+local function new_forger(dapp_contract, epoch_input_offset, forged_path, label, previous_outputs_frontier)
+    local player = prt.new_player(dapp_contract, label or "forger", previous_outputs_frontier)
     clone_handlers(player)
     local input_added = player.event_handler.input_added
     player.event_handler.input_added = function(self, index, path)
@@ -120,7 +120,7 @@ end
 -- An entry exactly at the corruption point still holds the agreed state.
 -- Corruption happens only when executing or collecting the transition out of it.
 -- Each execution has private strategy state, which its snapshot restores on rollback.
-local function new_tamperer(dapp_contract, epoch_input_offset, tamper_bundle_offset, label)
+local function new_tamperer(dapp_contract, epoch_input_offset, tamper_bundle_offset, label, previous_outputs_frontier)
     local geometry = dapp_contract.geometry
     local offset = tamper_bundle_offset << (prt.LOG2_BUNDLE_MCYCLE_COUNT + geometry.log2_mcycles_per_period)
     local function tamper_point(machine)
@@ -154,7 +154,7 @@ local function new_tamperer(dapp_contract, epoch_input_offset, tamper_bundle_off
         end
         return target
     end
-    return use_machine(prt.new_player(dapp_contract, label or "tamperer"), {
+    return use_machine(prt.new_player(dapp_contract, label or "tamperer", previous_outputs_frontier), {
         run = function(machine, target)
             local point = tamper_point(machine)
             if point and math.ult(machine:read_reg("mcycle"), point) and math.ult(point, target) then
@@ -201,10 +201,6 @@ local function new_tamperer(dapp_contract, epoch_input_offset, tamper_bundle_off
             end
             apply(machine)
             return machine.machine:collect_mcycle_bundle(bundle_offset, log2_period, height)
-        end,
-        collect_uarch_cycle_bundle = function(machine, ...)
-            apply(machine)
-            return machine.machine:collect_uarch_cycle_bundle(...)
         end,
         run_uarch = function(machine, ...)
             apply(machine)
@@ -361,9 +357,9 @@ local function falsify_bundle(forest, height, leaf, fake_hash)
     return replacement
 end
 
-local function new_fabulist(dapp_contract, epoch_input_offset, leaf_offset, label)
+local function new_fabulist(dapp_contract, epoch_input_offset, leaf_offset, label, previous_outputs_frontier)
     local geometry = dapp_contract.geometry
-    local player = prt.new_player(dapp_contract, label or "fabulist")
+    local player = prt.new_player(dapp_contract, label or "fabulist", previous_outputs_frontier)
     local target_epoch_period_offset =
         prt.combine_epoch_period_offset(geometry.periods_per_input, epoch_input_offset, leaf_offset)
     local fake_hash = keccak("fabulist")
@@ -412,12 +408,12 @@ local function new_fabulist(dapp_contract, epoch_input_offset, leaf_offset, labe
         self,
         bundle_epoch_input_offset,
         input_period_offset,
-        period_bundle_offset
+        period_mcycle_offset
     )
         local forest =
-            collect_uarch_cycle_bundle(self, bundle_epoch_input_offset, input_period_offset, period_bundle_offset)
+            collect_uarch_cycle_bundle(self, bundle_epoch_input_offset, input_period_offset, period_mcycle_offset)
         if bundle_epoch_input_offset == epoch_input_offset and input_period_offset == leaf_offset then
-            local leaf = (1 << geometry.uarch_height) - 1 - (period_bundle_offset << prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT)
+            local leaf = (1 << geometry.uarch_height) - 1 - (period_mcycle_offset << prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT)
             return falsify_bundle(forest, prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT, leaf, fake_hash)
         end
         return forest
@@ -433,9 +429,9 @@ local function leave()
     return "done"
 end
 
-local function new_quitter(dapp_contract, label)
+local function new_quitter(dapp_contract, label, previous_outputs_frontier)
     label = label or "quitter"
-    local player = prt.new_player(dapp_contract, label)
+    local player = prt.new_player(dapp_contract, label, previous_outputs_frontier)
     use_machine(player, { send_cmio_response = function() end })
     local function insert(liar, _, count, height)
         local fake_hash = keccak(label)

@@ -364,13 +364,13 @@ end
 
 -- Requests the waiting claim's response for the timeout-win window, which opens at the on-turn
 -- claim's deadline and closes once the match is eliminable.
-local function emit_schedule_match_timeout_win(tournament, match, responder_deadline, eliminable_at)
+local function emit_win_match_by_timeout(tournament, match, responder_deadline, eliminable_at)
     local other_turn_index = get_other_turn_index(match.turn_index)
     local other_claim = match.claims[other_turn_index]
     return request_first_valid(
         subscription_hash(tournament.id, other_claim),
-        EVENTS.schedule_match_timeout_win,
-        { responder_deadline, other_claim.computation_hash },
+        EVENTS.win_match_by_timeout,
+        { other_claim.computation_hash },
         function(response, _, received_at)
             assert(received_at >= responder_deadline and received_at < eliminable_at, "timeout win outside its window")
             validate_timeout_win_response(response, other_claim.computation_hash)
@@ -380,17 +380,24 @@ local function emit_schedule_match_timeout_win(tournament, match, responder_dead
     )
 end
 
-local function emit_schedule_match_elimination(match, eliminable_at)
-    return request_first_valid(
-        EVERYONE,
-        EVENTS.schedule_match_elimination,
-        { eliminable_at },
-        function(_, sender, received_at)
-            assert(received_at >= eliminable_at, "early elimination")
-            story.report_match_eliminated(match, sender.label)
-            return 0
-        end
-    )
+local function emit_eliminate_match(match, eliminable_at)
+    return request_first_valid(EVERYONE, EVENTS.eliminate_match, {}, function(_, sender, received_at)
+        assert(received_at >= eliminable_at, "early elimination")
+        story.report_match_eliminated(match, sender.label)
+        return 0
+    end)
+end
+
+-- Settles a turn whose response did not arrive in time. The waiting claim may win until the
+-- match becomes eliminable, then anyone may eliminate it.
+local function settle_timeout(tournament, match, responder_deadline, eliminable_at)
+    local timeout <close> = emit_win_match_by_timeout(tournament, match, responder_deadline, eliminable_at)
+    local winner = timeout:wait_at_most(eliminable_at)
+    if winner then
+        return winner
+    end
+    local elimination <close> = emit_eliminate_match(match, eliminable_at)
+    return elimination:wait_at_most(FOREVER)
 end
 
 -- Settles a uarch match once the walk isolates the divergent leaf. The referee emits the
@@ -409,15 +416,6 @@ local function settle_uarch_state_hash(tournament, match, state_transition_offse
     local deadline_two = start_instant + match.claims[2].allowance
     local proof_deadline = math.min(deadline_one, deadline_two)
     local eliminable_at = math.max(deadline_one, deadline_two)
-    local elimination <close> = request_first_valid(
-        EVERYONE,
-        EVENTS.schedule_match_elimination,
-        { eliminable_at },
-        function(_, _, received_at)
-            assert(received_at >= eliminable_at, "early elimination")
-            return true
-        end
-    )
     local proof <close> = request_first_valid(
         subscriptions,
         EVENTS.prove_state_transition,
@@ -435,7 +433,17 @@ local function settle_uarch_state_hash(tournament, match, state_transition_offse
     )
     local obtained_root_hash = proof:wait_at_most(proof_deadline)
     if not obtained_root_hash then
-        elimination:wait_at_least(eliminable_at)
+        wait_until(eliminable_at)
+        local elimination <close> = request_first_valid(
+            EVERYONE,
+            EVENTS.eliminate_match,
+            {},
+            function(_, _, received_at)
+                assert(received_at >= eliminable_at, "early elimination")
+                return true
+            end
+        )
+        elimination:wait_at_most(FOREVER)
     end
     story.report_state_transition(tournament, match, state_transition_offset, obtained_root_hash, next_state_hashes)
     return obtained_root_hash
@@ -511,13 +519,6 @@ local function propagate_uarch_result(mcycle_match, winner, next_state_hashes)
         local claim_index = winner.final_state_hash == next_state_hashes[1] and 1 or 2
         assert(winner.final_state_hash == next_state_hashes[claim_index])
         local mcycle_claim = mcycle_match.claims[claim_index]
-        local elimination <close> = request_first_valid(
-            EVERYONE, EVENTS.schedule_uarch_result_elimination, { winner_expires_at },
-            function(_, _, received_at)
-                assert(received_at >= winner_expires_at)
-                return true
-            end
-        )
         local propagation <close> = request_first_valid(
             subscription_hash(mcycle_tournament.id, mcycle_claim),
             EVENTS.propagate_uarch_result, { mcycle_claim.computation_hash },
@@ -529,12 +530,18 @@ local function propagate_uarch_result(mcycle_match, winner, next_state_hashes)
             end
         )
         if not propagation:wait_at_most(winner_expires_at) then
-            elimination:wait_at_least(winner_expires_at)
+            local elimination <close> = request_first_valid(
+                EVERYONE, EVENTS.eliminate_uarch_result, {},
+                function(_, _, received_at)
+                    assert(received_at >= winner_expires_at)
+                    return true
+                end
+            )
+            elimination:wait_at_most(FOREVER)
             -- Both mcycle claims are eliminated despite the uarch tournament having a winner.
             -- Report this expiry separately from a uarch tournament that had no winner.
             return nil
         end
-        -- Leaving the scope cancels the remaining callbacks.
         return winner.final_state_hash
     end
     ]]
@@ -597,8 +604,6 @@ local function reveal_divergence(tournament, match)
         local start_instant = current_time()
         local responder_deadline = start_instant + turn_claim.allowance
         local eliminable_at = responder_deadline + match.claims[get_other_turn_index(match.turn_index)].allowance
-        local timeout <close> = emit_schedule_match_timeout_win(tournament, match, responder_deadline, eliminable_at)
-        local elimination <close> = emit_schedule_match_elimination(match, eliminable_at)
         local reveal <close> = request_first_valid(
             subscription_hash(tournament.id, turn_claim),
             EVENTS.reveal_bisection,
@@ -610,7 +615,7 @@ local function reveal_divergence(tournament, match)
         )
         local response = reveal:wait_at_most(responder_deadline)
         if not response then
-            return timeout:wait_at_most(eliminable_at) or elimination:wait_at_least(eliminable_at)
+            return settle_timeout(tournament, match, responder_deadline, eliminable_at)
         end
         charge_turn_time(tournament, match, start_instant)
         advance_bisection(match, response)
@@ -627,8 +632,6 @@ local function seal_divergence(tournament, match)
     local start_instant = current_time()
     local responder_deadline = start_instant + turn_claim.allowance
     local eliminable_at = responder_deadline + match.claims[get_other_turn_index(match.turn_index)].allowance
-    local timeout <close> = emit_schedule_match_timeout_win(tournament, match, responder_deadline, eliminable_at)
-    local elimination <close> = emit_schedule_match_elimination(match, eliminable_at)
     local seal <close> = request_first_valid(
         subscription_hash(tournament.id, turn_claim),
         EVENTS.seal_divergence,
@@ -640,7 +643,7 @@ local function seal_divergence(tournament, match)
     )
     local divergence = seal:wait_at_most(responder_deadline)
     if not divergence then
-        return nil, timeout:wait_at_most(eliminable_at) or elimination:wait_at_least(eliminable_at)
+        return nil, settle_timeout(tournament, match, responder_deadline, eliminable_at)
     end
     charge_turn_time(tournament, match, start_instant)
     return divergence
@@ -1568,18 +1571,14 @@ end
 
 local event_handler = {}
 
-function event_handler.schedule_match_timeout_win(self, deadline, computation_hash)
-    return prtu.schedule_response(self, deadline, function()
-        local tree = self.trees[computation_hash]
-        local left, right = tree:get_child_hashes(0, tree.height)
-        return { computation_hash_left = left, computation_hash_right = right }
-    end)
+function event_handler.win_match_by_timeout(self, computation_hash)
+    local tree = self.trees[computation_hash]
+    local left, right = tree:get_child_hashes(0, tree.height)
+    return { computation_hash_left = left, computation_hash_right = right }
 end
 
-function event_handler.schedule_match_elimination(self, deadline)
-    return prtu.schedule_response(self, deadline, function()
-        return {}
-    end)
+function event_handler.eliminate_match(self) -- luacheck: ignore 212 self
+    return {}
 end
 
 -- A claim: the computation hash's two children and the standard proof of its final state,

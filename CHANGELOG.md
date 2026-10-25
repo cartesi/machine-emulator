@@ -6,8 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- Added the `cartesi.filesystem` Lua module, with `sync_file` and `sync_directory` for durable writes
-- Added `frontier_forest_store` and `frontier_forest_load` to `cartesi.hash-tree`, keeping forests durably in a directory
+- Added `clear_hash_tree` to the C, Lua, and JSON-RPC APIs
+- Added the `clear_hash_tree` runtime option
+- Added the `--clear-hash-tree` command-line option
+- Added the `cartesi.filesystem` Lua module
+- Added `exists`, `create_directory`, and `list_directory` to `cartesi.filesystem`
+- Added `clone_file` and `truncate_file` to `cartesi.filesystem`
+- Added `new_temporary_file` to `cartesi.filesystem`
+- Added `sync_file` and `sync_directory` to `cartesi.filesystem`
+- Added `frontier_store` and `frontier_load` to `cartesi.hash-tree`
+- Added `frontier_forest_store` and `frontier_forest_load` to `cartesi.hash-tree`
+- Added `encode_abi` and `decode_abi` to `cartesi.evmu`
+- Added the permissionless refereed tournament to the user manual
+- Added a recipe that runs the tournament against Dave's contracts on a local chain
+
+### Changed
+- Changed the stored page hash-tree cache layout, making stored machines much faster to load
+- Changed `dependencies.lock` to define the kernel and rootfs download URLs
+- Bumped machine configuration archive version from 8 to 9
 
 ### Removed
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`

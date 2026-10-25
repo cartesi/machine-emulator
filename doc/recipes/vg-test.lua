@@ -19,7 +19,7 @@ local function run_game(players, input_paths)
             wait_connections(index)
         end
         run_client({ role = "phase_closer" }, function()
-            return { value = true }
+            return { value = "done" }
         end)
         vg.new_referee(dapp_contract):run(server)
     end)
@@ -43,7 +43,7 @@ print("vg-test: equal claims ok")
 -- can also join after settlement, with different connections supplying the root
 -- and the output. Empty or invalid earlier offers must not suppress their proofs.
 local function empty_offer()
-    return {}
+    return "nothing"
 end
 local empty_handlers = {
     __index = function()
@@ -116,7 +116,7 @@ for _, late_providers in ipairs({ false, true }) do
             wait_connections(index)
         end
         run_client({ role = "phase_closer" }, function()
-            return { value = true }
+            return { value = "done" }
         end)
         vg.new_referee(dapp_contract):run(server)
     end)
@@ -167,7 +167,7 @@ do
             wait_connections(index)
         end
         run_client({ role = "phase_closer" }, function()
-            return { value = true }
+            return { value = "done" }
         end)
         vg.new_referee(dapp_contract):run(server)
         resumed = true
@@ -248,7 +248,7 @@ for _, case in ipairs({
             wait_connections(index)
         end
         run_client({ role = "phase_closer" }, function()
-            return { value = true }
+            return { value = "done" }
         end)
         vg.new_referee(dapp_contract):run(server)
     end)
@@ -793,7 +793,7 @@ for _, output_count in ipairs({ 0, 2 }) do
     assert(player.previous_outputs_frontier == completed_frontier and not player.outputs_frontier)
     local offer = vg.event_handler.prove_output(player)
     if output_count == 0 then
-        assert(next(offer) == nil and #player.output_proofs == 0)
+        assert(offer == "nothing" and #player.output_proofs == 0)
     else
         assert(offer.output_index == #previous_hashes + output_count - 1)
         assert(require("game-output").validate_output_response(offer, root))

@@ -1,6 +1,5 @@
 ARG TAG=devel
-ARG LINUX_TAG
-ARG LINUX_VERSION
+ARG LINUX_URL
 ARG LINUX_SHA256
 ARG GENEXT2FS_VERSION=v1.5.6
 # Base for the host-tool builder stage below. This stage compiles a binary
@@ -26,12 +25,9 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     make -j"$(nproc)" install
 
 FROM scratch AS linux-image
-ARG LINUX_TAG
-ARG LINUX_VERSION
+ARG LINUX_URL
 ARG LINUX_SHA256
-ADD --checksum=sha256:${LINUX_SHA256} --chmod=0644 \
-    https://github.com/cartesi/linux/releases/download/${LINUX_TAG}/linux-${LINUX_VERSION}.bin \
-    /linux.bin
+ADD --checksum=sha256:${LINUX_SHA256} --chmod=0644 ${LINUX_URL} /linux.bin
 
 FROM cartesi/machine-emulator:$TAG
 

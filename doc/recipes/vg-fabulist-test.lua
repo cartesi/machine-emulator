@@ -13,7 +13,7 @@ local function run(initial_hash, paths, delegate)
     local honest <close> = vg.new_player(initial_hash)
     local opponent <close> = roles.new_forger(initial_hash, 2, "forged-input-2.bin")
     local fabulist <close> = roles.new_forger(initial_hash, 2, "forged-input-2.bin")
-    local dapp_contract = vg.make_dapp_contract(initial_hash, paths)
+    local dapp_contract = vg.new_dapp_contract(initial_hash, paths)
     local results
     local outsider
     local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)

@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Added the `cartesi.filesystem` Lua module, with `sync_file` and `sync_directory` for durable writes
+- Added `frontier_forest_store` and `frontier_forest_load` to `cartesi.hash-tree`, keeping forests durably in a directory
 
 ### Removed
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`

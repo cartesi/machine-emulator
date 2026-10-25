@@ -56,7 +56,7 @@ endif
 ifeq ($(TARGET_OS),Darwin)
 PICCFLAGS=-fPIC
 # We use -dynamiclib instead of the conventional -bundle flag when compiling Lua libraries
-# allowing jsonrpc.so to link with cartesi.so, which is necessary because they share symbols
+# allowing extension modules to link with cartesi.so, which is necessary because they share symbols
 SOLDFLAGS=-dynamiclib -undefined dynamic_lookup
 LIBLDFLAGS=-dynamiclib
 EXELDFLAGS=
@@ -101,8 +101,10 @@ SO_EXT=dylib
 LIBCARTESI_LDFLAGS=-install_name '@rpath/$(LIBCARTESI)'
 LIBCARTESI_HASH_TREE_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_HASH_TREE)'
 LIBCARTESI_JSONRPC_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_JSONRPC)' -Wl,-rpath,@loader_path
+LIBCARTESI_FILESYSTEM_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_FILESYSTEM)' -Wl,-rpath,@loader_path
 LUACARTESI_LDFLAGS=-install_name '@rpath/cartesi.so'
 LUACARTESI_JSONRPC_LDFLAGS=-install_name '@rpath/cartesi/jsonrpc.so' -Wl,-rpath,@loader_path/..
+LUACARTESI_FILESYSTEM_LDFLAGS=-install_name '@rpath/cartesi/filesystem.so' -Wl,-rpath,@loader_path/..
 PROFILE_DATA=default.profdata
 
 # Linux or some other POSIX platform
@@ -128,8 +130,10 @@ SO_EXT=so
 LIBCARTESI_LDFLAGS=
 LIBCARTESI_HASH_TREE_LDFLAGS=
 LIBCARTESI_JSONRPC_LDFLAGS=-Wl,-rpath,'$$ORIGIN'
+LIBCARTESI_FILESYSTEM_LDFLAGS=-Wl,-rpath,'$$ORIGIN'
 LUACARTESI_LDFLAGS=
 LUACARTESI_JSONRPC_LDFLAGS=-Wl,-rpath,'$$ORIGIN/..'
+LUACARTESI_FILESYSTEM_LDFLAGS=-Wl,-rpath,'$$ORIGIN/..'
 PROFILE_DATA=
 
 endif
@@ -137,6 +141,7 @@ endif
 LIBCARTESI=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).$(SO_EXT)
 LIBCARTESI_HASH_TREE=libcartesi_hash_tree-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).$(SO_EXT)
 LIBCARTESI_JSONRPC=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).$(SO_EXT)
+LIBCARTESI_FILESYSTEM=libcartesi_filesystem-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).$(SO_EXT)
 
 ifeq ($(slirp),yes)
 # Workaround for building with macports lua-luarocks installation
@@ -153,8 +158,10 @@ endif
 LIBCARTESI_LIBS=$(LIBCARTESI_COMMON_LIBS)
 LIBCARTESI_HASH_TREE_LIBS=
 LIBCARTESI_JSONRPC_LIBS=
+LIBCARTESI_FILESYSTEM_LIBS=
 LUACARTESI_LIBS=$(LIBCARTESI_COMMON_LIBS)
 LUACARTESI_JSONRPC_LIBS=
+LUACARTESI_FILESYSTEM_LIBS=
 CARTESI_JSONRPC_MACHINE_LIBS=$(LIBCARTESI_COMMON_LIBS)
 CARTESI_HASH_TREE_HASH_LIBS=
 
@@ -361,15 +368,15 @@ SOLDFLAGS+=$(MYSOLDFLAGS)
 LIBLDFLAGS+=$(MYLIBLDFLAGS)
 EXELDFLAGS+=$(MYEXELDFLAGS)
 
-all: libcartesi libcartesi_hash_tree libcartesi_jsonrpc c-api luacartesi cartesi-jsonrpc-machine hash
+all: libcartesi libcartesi_hash_tree libcartesi_jsonrpc libcartesi_filesystem c-api luacartesi cartesi-jsonrpc-machine hash
 
-luacartesi: libluacartesi.a cartesi.so libluacartesi_jsonrpc.a cartesi/jsonrpc.so
+luacartesi: libluacartesi.a cartesi.so libluacartesi_jsonrpc.a cartesi/jsonrpc.so libluacartesi_filesystem.a cartesi/filesystem.so
 
 jsonrpc: cartesi/jsonrpc.so cartesi-jsonrpc-machine
 
 hash: cartesi-hash-tree-hash
 
-c-api: $(LIBCARTESI) $(LIBCARTESI_HASH_TREE) $(LIBCARTESI_JSONRPC)
+c-api: $(LIBCARTESI) $(LIBCARTESI_HASH_TREE) $(LIBCARTESI_JSONRPC) $(LIBCARTESI_FILESYSTEM)
 
 .PHONY: all generate use clean lint format format-lua check-format check-format-lua luacartesi hash c-api compile_flags.txt swap-uarch-pristine-coverage swap-uarch-pristine-stock
 
@@ -441,6 +448,17 @@ LUACARTESI_JSONRPC_OBJS:= \
 	clua-cartesi-jsonrpc.o \
 	$(CARTESI_CLUA_OBJS)
 
+LIBCARTESI_FILESYSTEM_OBJS:= \
+	cm-filesystem.o \
+	os-filesystem.o \
+	is-pristine.o \
+	base64.o \
+	hex.o
+
+LUACARTESI_FILESYSTEM_OBJS:= \
+	clua-cartesi-filesystem.o \
+	$(CARTESI_CLUA_OBJS)
+
 CARTESI_JSONRPC_MACHINE_OBJS:= \
 	jsonrpc-remote-machine.o \
 	jsonrpc-discover.o \
@@ -451,8 +469,10 @@ DEFS+=-DGPERF
 LIBCARTESI_LIBS+=-lprofiler
 LIBCARTESI_HASH_TREE_LIBS+=-lprofiler
 LIBCARTESI_JSONRPC_LIBS+=-lprofiler
+LIBCARTESI_FILESYSTEM_LIBS+=-lprofiler
 LUACARTESI_LIBS+=-lprofiler
 LUACARTESI_JSONRPC_LIBS+=-lprofiler
+LUACARTESI_FILESYSTEM_LIBS+=-lprofiler
 endif
 
 version:
@@ -471,6 +491,10 @@ libcartesi_jsonrpc: libcartesi_jsonrpc.a libcartesi_jsonrpc.$(SO_EXT)
 libcartesi_jsonrpc.$(SO_EXT): $(LIBCARTESI_JSONRPC)
 	ln -sf $< $@
 
+libcartesi_filesystem: libcartesi_filesystem.a libcartesi_filesystem.$(SO_EXT)
+libcartesi_filesystem.$(SO_EXT): $(LIBCARTESI_FILESYSTEM)
+	ln -sf $< $@
+
 libcartesi.a: $(LIBCARTESI_OBJS)
 	$(AR) $@ $^
 
@@ -480,10 +504,16 @@ libcartesi_hash_tree.a: $(LIBCARTESI_HASH_TREE_OBJS)
 libcartesi_jsonrpc.a: $(LIBCARTESI_JSONRPC_OBJS)
 	$(AR) $@ $^
 
+libcartesi_filesystem.a: $(LIBCARTESI_FILESYSTEM_OBJS)
+	$(AR) $@ $^
+
 libluacartesi.a: $(LUACARTESI_OBJS)
 	$(AR) $@ $^
 
 libluacartesi_jsonrpc.a: $(LUACARTESI_JSONRPC_OBJS)
+	$(AR) $@ $^
+
+libluacartesi_filesystem.a: $(LUACARTESI_FILESYSTEM_OBJS)
 	$(AR) $@ $^
 
 $(LIBCARTESI_HASH_TREE): $(LIBCARTESI_HASH_TREE_OBJS)
@@ -494,6 +524,9 @@ $(LIBCARTESI): $(LIBCARTESI_OBJS)
 
 $(LIBCARTESI_JSONRPC): $(LIBCARTESI_JSONRPC_OBJS) $(LIBCARTESI)
 	$(CXX) -o $@ $^ $(LIBCARTESI_JSONRPC_LIBS) $(LDFLAGS) $(LIBCARTESI_JSONRPC_LDFLAGS) $(LIBLDFLAGS)
+
+$(LIBCARTESI_FILESYSTEM): $(LIBCARTESI_FILESYSTEM_OBJS) $(LIBCARTESI)
+	$(CXX) -o $@ $^ $(LIBCARTESI_FILESYSTEM_LIBS) $(LDFLAGS) $(LIBCARTESI_FILESYSTEM_LDFLAGS) $(LIBLDFLAGS)
 
 cartesi.so: $(LUACARTESI_OBJS) libcartesi.a
 	$(CXX) -o $@ $^ $(LUACARTESI_LIBS) $(LDFLAGS) $(LUACARTESI_LDFLAGS) $(SOLDFLAGS)
@@ -519,6 +552,9 @@ swap-uarch-pristine-stock:
 
 cartesi/jsonrpc.so: $(LUACARTESI_JSONRPC_OBJS) libcartesi_jsonrpc.a cartesi.so
 	$(CXX) -o $@ $^ $(LUACARTESI_JSONRPC_LIBS) $(LDFLAGS) $(LUACARTESI_JSONRPC_LDFLAGS) $(SOLDFLAGS)
+
+cartesi/filesystem.so: $(LUACARTESI_FILESYSTEM_OBJS) libcartesi_filesystem.a cartesi.so
+	$(CXX) -o $@ $^ $(LUACARTESI_FILESYSTEM_LIBS) $(LDFLAGS) $(LUACARTESI_FILESYSTEM_LDFLAGS) $(SOLDFLAGS)
 
 lint: $(CLANG_TIDY_TARGETS)
 	@$(MAKE) --no-print-directory -C ../uarch lint

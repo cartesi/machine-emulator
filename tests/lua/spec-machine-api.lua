@@ -119,7 +119,7 @@ for _, variant in ipairs(variants) do
                                 .. ")",
                             function()
                                 local source <close> = create_source()
-                                local fresh_dirname = filesystem.temp_pathname()
+                                local _ <close>, fresh_dirname = tests_util.scope_temp_pathname()
                                 local _ <close> = tests_util.scope_exit(function()
                                     cartesi.machine:remove_stored(fresh_dirname)
                                 end)
@@ -136,7 +136,7 @@ for _, variant in ipairs(variants) do
                                 source:write_memory(0x90002000, string.rep("B", 0x1000))
                                 local root = source:get_root_hash()
                                 local proof = source:get_proof(0x90002000, 5)
-                                local dirname = filesystem.temp_pathname()
+                                local _ <close>, dirname = tests_util.scope_temp_pathname()
                                 local _ <close> = tests_util.scope_exit(function()
                                     cartesi.machine:remove_stored(dirname)
                                 end)
@@ -153,7 +153,7 @@ for _, variant in ipairs(variants) do
                                     loaded:clear_hash_tree()
                                 end
                                 -- Persist the cleared trees before any hash request rebuilds them.
-                                local cleared_dirname = filesystem.temp_pathname()
+                                local _ <close>, cleared_dirname = tests_util.scope_temp_pathname()
                                 local _ <close> = tests_util.scope_exit(function()
                                     cartesi.machine:remove_stored(cleared_dirname)
                                 end)
@@ -726,7 +726,7 @@ describe("JSON-RPC fork", function()
             it(
                 "should handle a disk-backed hash tree (" .. hash_function .. ", shared=" .. tostring(shared) .. ")",
                 function()
-                    local prefix = filesystem.temp_pathname()
+                    local _ <close>, prefix = tests_util.scope_temp_pathname()
                     local config = {
                         ram = { length = 0x1000 },
                         hash_tree = {
@@ -793,7 +793,7 @@ describe("remote clone cleanup", function()
                 server:write_reg("x1", 42)
                 local source <close> =
                     jsonrpc.connect_server(server:get_server_address()):set_cleanup_call(policy):set_timeout(1234)
-                local dirname = filesystem.temp_pathname()
+                local _ <close>, dirname = tests_util.scope_temp_pathname()
                 local _ <close> = tests_util.scope_exit(function()
                     if operation == "load" then
                         cartesi.machine:remove_stored(dirname)

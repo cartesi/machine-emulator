@@ -100,17 +100,22 @@ ifeq ($(slirp),yes)
 LIBCARTESI_LIBS+=$(SLIRP_LIB)
 endif
 
-all: $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api
+all: $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api $(BUILDDIR)/test-lua-filesystem
 
 ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a:
 	$(info libcartesi.a and/or libcartesi_hash_tree.a were not found! Build them first.)
 	@exit 1
 
-$(BUILDDIR)/test-machine-c-api: test-machine-c-api.o ../../src/libcartesi_jsonrpc.a ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
+$(BUILDDIR)/test-machine-c-api: test-machine-c-api.o ../../src/libcartesi_filesystem.a ../../src/libcartesi_jsonrpc.a ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
 
 $(BUILDDIR)/test-machine-c-jsonrpc-api: test-machine-c-jsonrpc-api.o ../../src/libcartesi_jsonrpc.a ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
+
+test-lua-filesystem.o: CXXFLAGS += $(shell pkg-config --cflags-only-I lua5.4)
+
+$(BUILDDIR)/test-lua-filesystem: test-lua-filesystem.o
+	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(shell pkg-config --libs lua5.4) $(OMP_LIB)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
@@ -141,6 +146,6 @@ clean-objs:
 	@rm -f *.o *.d
 
 clean: clean-tidy clean-objs
-	@rm -f $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api
+	@rm -f $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api $(BUILDDIR)/test-lua-filesystem
 
 .SUFFIXES:

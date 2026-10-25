@@ -5,7 +5,6 @@ local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 local describe, it, expect = lester.describe, lester.it, lester.expect
 local cartesi = require("cartesi")
-local filesystem = require("cartesi.filesystem")
 local tests_util = require("cartesi.tests.util")
 
 local RAM_START = cartesi.AR_RAM_START
@@ -129,10 +128,7 @@ describe("interrupt priority", function()
 
                             local logged <close> = create_machine(case, prv, hash_function, mcycle_start)
                             local initial_hash = logged:get_root_hash()
-                            local filename = filesystem.temp_pathname()
-                            local _ <close> = tests_util.scope_exit(function()
-                                os.remove(filename)
-                            end)
+                            local _ <close>, filename = tests_util.scope_temp_pathname()
                             expect.equal(logged:log_step(32, filename), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
                             expect.equal(logged:get_root_hash(), hashes[32])
                             expect.equal(logged:verify_step(initial_hash, filename, 32), hashes[32])

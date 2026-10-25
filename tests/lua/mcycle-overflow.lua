@@ -17,7 +17,6 @@
 --
 
 local cartesi = require("cartesi")
-local filesystem = require("cartesi.filesystem")
 local tests_util = require("cartesi.tests.util")
 
 local MAX_MCYCLE = cartesi.MCYCLE_MAX
@@ -126,8 +125,8 @@ do_test("logged mcycle steps should preserve target and overflow semantics", fun
     local mcycle = machine:read_reg("mcycle")
     machine:write_reg("imcyclemax", mcycle)
 
-    local zero_step_filename = filesystem.temp_pathname()
-    local overflow_step_filename = filesystem.temp_pathname()
+    local _ <close>, zero_step_filename = tests_util.scope_temp_pathname()
+    local _ <close>, overflow_step_filename = tests_util.scope_temp_pathname()
     local _ <close> = tests_util.scope_exit(function()
         os.remove(zero_step_filename)
         os.remove(overflow_step_filename)
@@ -149,10 +148,7 @@ end)
 
 do_test("logged mcycle step should do nothing at max mcycle", function(machine)
     machine:write_reg("mcycle", MAX_MCYCLE)
-    local step_filename = filesystem.temp_pathname()
-    local _ <close> = tests_util.scope_exit(function()
-        os.remove(step_filename)
-    end)
+    local _ <close>, step_filename = tests_util.scope_temp_pathname()
 
     local root_hash = machine:get_root_hash()
     assert(machine:log_step(1, step_filename) == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
@@ -164,10 +160,7 @@ end)
 
 do_test("logged mcycle step should overflow from one cycle before max mcycle", function(machine)
     machine:write_reg("mcycle", MAX_MCYCLE - 1)
-    local step_filename = filesystem.temp_pathname()
-    local _ <close> = tests_util.scope_exit(function()
-        os.remove(step_filename)
-    end)
+    local _ <close>, step_filename = tests_util.scope_temp_pathname()
 
     local root_hash_before = machine:get_root_hash()
     assert(machine:log_step(1, step_filename) == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)

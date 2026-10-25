@@ -72,8 +72,8 @@ describe("backing stores", function()
                     .. storage[1]
                     .. " backing file",
                 function()
-                    local stored_dirname = filesystem.temp_pathname()
-                    local cloned_dirname = filesystem.temp_pathname()
+                    local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+                    local _ <close>, cloned_dirname = tests_util.scope_temp_pathname()
                     local _ <close> = tests_util.scope_exit(function()
                         pcall(cartesi.machine.remove_stored, cartesi.machine, cloned_dirname)
                         cartesi.machine:remove_stored(stored_dirname)
@@ -128,8 +128,8 @@ describe("backing stores", function()
     end
 
     it("should allow shared read-only mappings of hard-linked backing files", function()
-        local stored_dirname = filesystem.temp_pathname()
-        local cloned_dirname = filesystem.temp_pathname()
+        local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+        local _ <close>, cloned_dirname = tests_util.scope_temp_pathname()
         local _ <close> = tests_util.scope_exit(function()
             pcall(cartesi.machine.remove_stored, cartesi.machine, cloned_dirname)
             cartesi.machine:remove_stored(stored_dirname)
@@ -145,7 +145,7 @@ describe("backing stores", function()
     end)
 
     it("should store a machine with sharing mode all", function()
-        local stored_dirname = filesystem.temp_pathname()
+        local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
         local expected_root_hash
 
         do -- store new machine
@@ -165,8 +165,8 @@ describe("backing stores", function()
     end)
 
     it("should store a machine with sharing mode none", function()
-        local stored_dirname = filesystem.temp_pathname()
-        local cloned_dirname = filesystem.temp_pathname()
+        local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+        local _ <close>, cloned_dirname = tests_util.scope_temp_pathname()
         local expected_root_hash
 
         do -- store new machine
@@ -196,8 +196,8 @@ describe("backing stores", function()
 
     it("should store a machine with sharing mode config", function()
         local _ <close>, shared_data_filename = filesystem.write_scope_temp_file(a_data)
-        local stored_dirname = filesystem.temp_pathname()
-        local cloned_dirname = filesystem.temp_pathname()
+        local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+        local _ <close>, cloned_dirname = tests_util.scope_temp_pathname()
         local root_drive = {
             start = 0x00c0000000000000,
             length = #a_data,
@@ -247,8 +247,8 @@ describe("backing stores", function()
             it(
                 "should preserve pending write TLB dirty marks on " .. operation .. " (" .. hash_function .. ")",
                 function()
-                    local stored_dirname = filesystem.temp_pathname()
-                    local cloned_dirname = filesystem.temp_pathname()
+                    local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+                    local _ <close>, cloned_dirname = tests_util.scope_temp_pathname()
                     local _ <close> = tests_util.scope_exit(function()
                         cartesi.machine:remove_stored(stored_dirname)
                         if operation == "store" then
@@ -303,8 +303,8 @@ describe("backing stores", function()
     end
 
     it("should clone a stored machine", function()
-        local stored_dirname = filesystem.temp_pathname()
-        local cloned_dirname = filesystem.temp_pathname()
+        local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+        local _ <close>, cloned_dirname = tests_util.scope_temp_pathname()
         local expected_mid_root_hash
         local expected_end_root_hash
 
@@ -342,9 +342,9 @@ describe("backing stores", function()
     end)
 
     it("should rename a stored machine without overwriting", function()
-        local stored_dirname = filesystem.temp_pathname()
-        local renamed_dirname = filesystem.temp_pathname()
-        local occupied_dirname = filesystem.temp_pathname()
+        local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+        local _ <close>, renamed_dirname = tests_util.scope_temp_pathname()
+        local _ <close>, occupied_dirname = tests_util.scope_temp_pathname()
         local expected_root_hash
 
         do
@@ -380,7 +380,7 @@ describe("backing stores", function()
     end)
 
     it("should sync a stored machine", function()
-        local stored_dirname = filesystem.temp_pathname()
+        local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
         local expected_root_hash
 
         do -- store new machine
@@ -403,7 +403,7 @@ describe("backing stores", function()
     end)
 
     it("should sync a stored machine while it is in use", function()
-        local stored_dirname = filesystem.temp_pathname()
+        local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
 
         do -- store new machine
             local machine <close> = cartesi.machine(base_machine_config)
@@ -425,15 +425,16 @@ describe("backing stores", function()
             cartesi.machine:sync_stored()
         end, "bad argument")
         expect.fail(function()
-            cartesi.machine:sync_stored(filesystem.temp_pathname())
+            local _ <close>, missing = tests_util.scope_temp_pathname()
+            cartesi.machine:sync_stored(missing)
         end, "unable to read file")
     end)
 
     for _, hash_function in ipairs({ "keccak256", "sha256" }) do
         for _, operation in ipairs({ "sync", "clone" }) do
             it("should preserve cached page hashes after " .. operation .. " (" .. hash_function .. ")", function()
-                local stored_dirname = filesystem.temp_pathname()
-                local cloned_dirname = filesystem.temp_pathname()
+                local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+                local _ <close>, cloned_dirname = tests_util.scope_temp_pathname()
                 local _ <close> = tests_util.scope_exit(function()
                     cartesi.machine:remove_stored(stored_dirname)
                     if operation == "clone" then
@@ -466,7 +467,7 @@ describe("backing stores", function()
     end
 
     it("should fail to remove a stored machine containing an extraneous file", function()
-        local stored_dirname = filesystem.temp_pathname()
+        local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
 
         do -- store new machine
             local machine <close> = cartesi.machine(base_machine_config)
@@ -475,7 +476,7 @@ describe("backing stores", function()
 
         -- an extraneous file makes the removal fail, and the file survives
         local extraneous_filename = stored_dirname .. "/extraneous"
-        filesystem.write_file(extraneous_filename, "keep")
+        filesystem.write_file("keep", extraneous_filename)
         expect.fail(function()
             cartesi.machine:remove_stored(stored_dirname)
         end, "unable to remove directory")
@@ -487,7 +488,7 @@ describe("backing stores", function()
     end)
 
     it("should create a machine fully mapped on disk", function()
-        local stored_dirname = filesystem.temp_pathname()
+        local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
         local expected_root_hash
 
         do -- store new machine
@@ -506,7 +507,7 @@ describe("backing stores", function()
     end)
 
     it("should load a machine fully mapped on disk", function()
-        local stored_dirname = filesystem.temp_pathname()
+        local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
         local expected_mid_root_hash
         local expected_end_root_hash
 
@@ -535,8 +536,8 @@ describe("backing stores", function()
     end)
 
     it("should replace memory range", function()
-        local stored1_dirname = filesystem.temp_pathname()
-        local stored2_dirname = filesystem.temp_pathname()
+        local _ <close>, stored1_dirname = tests_util.scope_temp_pathname()
+        local _ <close>, stored2_dirname = tests_util.scope_temp_pathname()
         local expected1_root_hash
         local expected2_root_hash
 
@@ -568,8 +569,8 @@ describe("backing stores", function()
     end)
 
     it("should replace memory range with existing clean page tree", function()
-        local stored1_dirname = filesystem.temp_pathname()
-        local stored2_dirname = filesystem.temp_pathname()
+        local _ <close>, stored1_dirname = tests_util.scope_temp_pathname()
+        local _ <close>, stored2_dirname = tests_util.scope_temp_pathname()
         local expected1_root_hash
         local expected2_root_hash
 
@@ -733,7 +734,7 @@ describe("backing stores", function()
 
         for _, corruption in ipairs(corruptions) do
             it("should reject " .. corruption[1] .. " without following invalid links", function()
-                local directory = filesystem.temp_pathname()
+                local _ <close>, directory = tests_util.scope_temp_pathname()
                 do
                     local machine <close> = cartesi.machine({
                         ram = { length = 2 * capacity * 4096 },
@@ -749,7 +750,7 @@ describe("backing stores", function()
                 local filename = directory .. "/hash_tree.phtc"
                 local data = filesystem.read_file(filename)
                 expect.equal(string.unpack("<I8", data, 9), capacity)
-                filesystem.write_file(filename, corruption[2](data))
+                filesystem.write_file(corruption[2](data), filename)
                 for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_ALL }) do
                     expect.fail(function()
                         local _ <close> = cartesi.machine(directory, {}, sharing)
@@ -770,7 +771,7 @@ describe("backing stores", function()
         end)
 
         it("should reject truncated and oversized cache files before accessing metadata", function()
-            local directory = filesystem.temp_pathname()
+            local _ <close>, directory = tests_util.scope_temp_pathname()
             do
                 local machine <close> = cartesi.machine({
                     ram = { length = 4096 },
@@ -784,7 +785,7 @@ describe("backing stores", function()
             local filename = directory .. "/hash_tree.phtc"
             local data = filesystem.read_file(filename)
             for _, length in ipairs({ 0, 8, entries_offset - 1, payloads_offset - 1, #data - 1, #data + 1 }) do
-                filesystem.write_file(filename, length > #data and data .. "\0" or data:sub(1, length))
+                filesystem.write_file(length > #data and data .. "\0" or data:sub(1, length), filename)
                 for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_ALL }) do
                     expect.fail(function()
                         local _ <close> = cartesi.machine(directory, {}, sharing)
@@ -794,7 +795,7 @@ describe("backing stores", function()
         end)
 
         it("should validate unused metadata before entries are handed out", function()
-            local directory = filesystem.temp_pathname()
+            local _ <close>, directory = tests_util.scope_temp_pathname()
             do
                 local _ <close> = cartesi.machine({
                     ram = { length = 4096 },
@@ -808,7 +809,7 @@ describe("backing stores", function()
             local data = filesystem.read_file(filename)
             expect.equal(string.unpack("<I8", data, 9), 0)
             for _, offset in ipairs({ entries_offset, entries_offset + 8, entries_offset + 32 }) do
-                filesystem.write_file(filename, write_word(data, offset, -1))
+                filesystem.write_file(write_word(data, offset, -1), filename)
                 expect.fail(function()
                     local _ <close> = cartesi.machine(directory)
                 end, "corrupted page hash-tree cache")
@@ -816,7 +817,7 @@ describe("backing stores", function()
         end)
 
         it("should evict loaded entries without changing cached payloads", function()
-            local directory = filesystem.temp_pathname()
+            local _ <close>, directory = tests_util.scope_temp_pathname()
             do
                 local machine <close> = cartesi.machine({
                     ram = { length = 4096 },
@@ -894,9 +895,9 @@ describe("backing stores", function()
                         .. ")",
                     function()
                         for _, phtc_size in ipairs(dirty and { 32 } or { 1, 32, 1024 }) do
-                            local original_dir = filesystem.temp_pathname()
-                            local replacement_dir = filesystem.temp_pathname()
-                            local saved_dir = filesystem.temp_pathname()
+                            local _ <close>, original_dir = tests_util.scope_temp_pathname()
+                            local _ <close>, replacement_dir = tests_util.scope_temp_pathname()
+                            local _ <close>, saved_dir = tests_util.scope_temp_pathname()
                             local saved = false
                             do
                                 local machine <close> = cartesi.machine(make_config(hash_function, phtc_size))
@@ -980,7 +981,7 @@ describe("backing stores", function()
                         .. tostring(shared)
                         .. ")",
                     function()
-                        local stored_dir = filesystem.temp_pathname()
+                        local _ <close>, stored_dir = tests_util.scope_temp_pathname()
                         do
                             local config = make_config(hash_function, 256)
                             config.hash_tree.shared = shared
@@ -1027,8 +1028,8 @@ describe("backing stores", function()
         end
 
         it("should collect correct uarch hashes after clean range replacement", function()
-            local original_dir = filesystem.temp_pathname()
-            local replacement_dir = filesystem.temp_pathname()
+            local _ <close>, original_dir = tests_util.scope_temp_pathname()
+            local _ <close>, replacement_dir = tests_util.scope_temp_pathname()
             do
                 local machine <close> = cartesi.machine(make_config("keccak256", 256))
                 initialize(machine, "A")
@@ -1071,7 +1072,7 @@ describe("backing stores", function()
     end)
 
     it("should create a machine with new shared backing stores", function()
-        local filename_prefix = filesystem.temp_pathname()
+        local _ <close>, filename_prefix = tests_util.scope_temp_pathname()
         local expected_root_hash
         local function make_machine(create)
             return cartesi.machine({
@@ -1212,8 +1213,8 @@ describe("backing stores", function()
             it(
                 "should initialize dirty pages for backing trees (" .. creation .. ", " .. hash_function .. ")",
                 function()
-                    local filename_prefix = filesystem.temp_pathname()
-                    local stored_dirname = filesystem.temp_pathname()
+                    local _ <close>, filename_prefix = tests_util.scope_temp_pathname()
+                    local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
                     local in_directory = creation:find("^directory") ~= nil
                     local load_stored = creation:find("^load") ~= nil
                     local backing_store = {
@@ -1260,7 +1261,7 @@ describe("backing stores", function()
                     elseif creation == "shared" then
                         filesystem.remove_file(backing_store.dht_filename)
                     elseif creation == "directory-invalid-size" then
-                        filesystem.write_file(backing_store.dht_filename, "\0")
+                        filesystem.write_file("\0", backing_store.dht_filename)
                     elseif creation == "anonymous-dpt" or creation == "directory-dpt" then
                         backing_store.dpt_filename = ""
                     elseif creation == "shared-dpt" then
@@ -1268,7 +1269,7 @@ describe("backing stores", function()
                     elseif creation == "forced" or creation == "directory-forced" then
                         backing_store.mark_pages_dirty = true
                         drive_data = string.rep("B", #drive_data)
-                        filesystem.write_file(backing_store.data_filename, drive_data)
+                        filesystem.write_file(drive_data, backing_store.data_filename)
                     end
 
                     if load_stored then

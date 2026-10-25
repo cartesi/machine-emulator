@@ -18,10 +18,12 @@
 #define OS_FILESYSTEM_HPP
 
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace cartesi::os {
 
@@ -48,6 +50,12 @@ void create_directory(const std::string &dirname);
 /// \param dirname Path to the directory, must exist.
 /// \throw std::system_error on error.
 void remove_directory(const std::string &dirname);
+
+/// \brief Lists the entries of a directory.
+/// \param dirname Path to the directory, must exist.
+/// \returns Names of the entries, excluding "." and "..", in lexicographic order.
+/// \throw std::system_error on error.
+[[nodiscard]] std::vector<std::string> list_directory(const std::string &dirname);
 
 /// \brief Renames a directory.
 /// \param from Source directory, must exist.
@@ -138,11 +146,92 @@ void clone_file(const std::string &from, const std::string &to);
 /// so it may be locked by a running machine that maps it.
 void sync_file(const std::string &filename);
 
+/// \brief Creates a new directory with a unique name, accessible only by its owner on POSIX.
+/// \param dirname Directory to create the directory in, must exist.
+/// \param prefix Start of the directory name, which random characters complete.
+/// \returns Path of the new directory. The caller must remove it.
+/// \throw std::system_error on error.
+[[nodiscard]] std::string create_temporary_directory(const std::string &dirname, const std::string &prefix);
+
+/// \brief Creates a new file with a unique name, readable and writable only by its owner.
+/// \param dirname Directory to create the file in, must exist.
+/// \param prefix Start of the file name, which random characters complete.
+/// \returns File opened for reading and writing, closed on exec, and the path of the new file.
+/// \throw std::system_error on error.
+[[nodiscard]] std::pair<FILE *, std::string> create_temporary_file(const std::string &dirname,
+    const std::string &prefix);
+
+/// \brief Flushes all modifications of an open file to permanent storage.
+/// \param fd Open file descriptor.
+/// \param pathname Path name for error messages.
+/// \throw std::system_error on error.
+void sync_file_descriptor(int fd, const std::string &pathname);
+
 /// \brief Flushes all modifications of a directory entry list to permanent storage.
 /// \param dirname Path to the directory, must exist.
 /// \throw std::system_error on error.
 /// \details On Windows this is a no-op, directory metadata durability is handled by the filesystem.
 void sync_directory(const std::string &dirname);
+
+/// \brief Reads a file to EOF without locking it, including files held open by a machine.
+[[nodiscard]] std::string read_file_contents(const std::string &filename);
+
+/// \brief Writes to an open stream, reporting write errors without flushing or closing it.
+void write_file(FILE *file, const std::string &filename, std::span<const uint8_t> data);
+
+/// \brief Writes a file, creating it or overwriting its contents, without locking or syncing it.
+/// \details Reports errors from writing and closing the stream.
+void write_file(const std::string &filename, std::span<const uint8_t> data);
+
+/// \brief Renames a file, atomically replacing an existing destination.
+void rename_file(const std::string &from, const std::string &to);
+
+/// \brief Returns the parent directory, or "." for a path with no slash.
+[[nodiscard]] std::string get_parent_directory(const std::string &path);
+
+/// \brief Flushes a stream's write buffer and syncs its descriptor without closing it.
+/// \details Rejects streams with a previous write error, even if flushing succeeds.
+void sync_file_stream(FILE *file, const std::string &filename);
+
+/// \brief Owns a temporary file and removes it on destruction unless renamed or released.
+class temporary_file final {
+public:
+    temporary_file();
+    temporary_file(const std::string &dirname, const std::string &prefix);
+    ~temporary_file() noexcept;
+    temporary_file(const temporary_file &) = delete;
+    temporary_file &operator=(const temporary_file &) = delete;
+    temporary_file(temporary_file &&) = delete;
+    temporary_file &operator=(temporary_file &&) = delete;
+
+    [[nodiscard]] FILE *get_file() const noexcept;
+    [[nodiscard]] const std::string &get_path() const noexcept;
+    void write(std::span<const uint8_t> data);
+    /// \brief Closes the stream, reporting close errors. Does not remove the file.
+    void close_stream();
+    /// \brief Closes the stream and removes the file. Repeated calls are harmless.
+    /// \details Like Lua's scoped cleanup, ignores stream close errors but reports removal errors.
+    void close();
+    /// \brief Closes the stream and renames the file, replacing the destination.
+    void rename(const std::string &to);
+    /// \brief Closes the stream and transfers ownership of the path to the caller.
+    [[nodiscard]] std::string release();
+
+private:
+    explicit temporary_file(std::pair<FILE *, std::string> result) noexcept;
+    FILE *m_file = nullptr;
+    std::string m_path;
+};
+
+/// \brief Creates an empty temporary file and returns its name. The caller must remove it.
+[[nodiscard]] std::string temp_filename();
+
+/// \brief Writes and closes a temporary file. The caller must remove the returned path.
+[[nodiscard]] std::string write_temp_file(std::span<const uint8_t> data);
+
+/// \brief Writes through a temporary file, syncs it, and renames it onto the destination.
+/// \details The caller must sync the parent directory to make the rename durable.
+void write_durable_file(const std::string &filename, std::span<const uint8_t> data);
 
 } // namespace cartesi::os
 

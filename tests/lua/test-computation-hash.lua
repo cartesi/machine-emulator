@@ -35,10 +35,7 @@ local function output_path(recorded_path)
     if recording then
         return nil, recorded_path
     end
-    local path = filesystem.temp_pathname()
-    return tests_util.scope_exit(function()
-        os.remove(path)
-    end), path
+    return tests_util.scope_temp_pathname()
 end
 
 local function replace_plain(value, old, new)

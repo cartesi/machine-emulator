@@ -391,6 +391,7 @@ end
 
 -- Settles a turn whose response did not arrive in time. The waiting claim may win until the
 -- match becomes eliminable, then anyone may eliminate it.
+-- docs:begin settle_timeout
 local function settle_timeout(tournament, match, responder_deadline, eliminable_at)
     local timeout <close> = emit_win_match_by_timeout(tournament, match, responder_deadline, eliminable_at)
     local winner = timeout:wait_at_most(eliminable_at)
@@ -400,6 +401,7 @@ local function settle_timeout(tournament, match, responder_deadline, eliminable_
     local elimination <close> = emit_eliminate_match(match, eliminable_at)
     return elimination:wait_at_most(FOREVER)
 end
+-- docs:end settle_timeout
 
 -- Settles a uarch match once the walk isolates the divergent leaf. The referee emits the
 -- disputed transition to both claims' holders and takes the first answer that verifies
@@ -1851,6 +1853,7 @@ end
 -- (position, height), and the children of the node the walk descends into. Either node can
 -- cross into a stored bundle here because the claims alternate turns; crossing reconstructs
 -- and authenticates that complete bundle before the walk continues through it.
+-- docs:begin reveal_bisection
 function event_handler.reveal_bisection(self, computation_hash, position, height, other_left_node)
     local tree = self.trees[computation_hash]
     local turn_left_node, turn_right_node = tree:get_child_hashes(position, height)
@@ -1864,6 +1867,7 @@ function event_handler.reveal_bisection(self, computation_hash, position, height
         turn_next_right_node = turn_next_right_node,
     }
 end
+-- docs:end reveal_bisection
 
 -- Seals the leftmost divergence: exposes the final leaves and proves the agreed state
 -- immediately before them, except at leaf zero where the referee already knows that state.

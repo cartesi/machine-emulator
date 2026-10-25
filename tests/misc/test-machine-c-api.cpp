@@ -36,6 +36,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -53,6 +54,8 @@
 #include <sys/stat.h>
 #endif
 
+#include <base64.hpp>
+#include <cm-filesystem.h>
 #include <cm-jsonrpc.h>
 #include <cm.h>
 #include <keccak-256-hasher.hpp>
@@ -2889,4 +2892,126 @@ BOOST_AUTO_TEST_CASE_NOLINT(uarch_solidity_compatibility_layer) {
     BOOST_CHECK_EQUAL(int8ToUint64(int8(127)), 127);
     BOOST_CHECK_EQUAL(int8ToUint64(int8(-128)), 0xffffffffffffff80ULL);
 }
+
+BOOST_AUTO_TEST_CASE_NOLINT(cm_filesystem_validates_arguments_and_clears_outputs) {
+    bool exists = true;
+    const char *names = "unchanged";
+    const char *path = "unchanged";
+    FILE *file = stdout;
+    BOOST_CHECK_EQUAL(cm_filesystem_exists(nullptr, &exists), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK(!exists);
+    BOOST_CHECK_EQUAL(cm_filesystem_exists(".", nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_create_directory(nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_list_directory(nullptr, &names), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK(names == nullptr);
+    BOOST_CHECK_EQUAL(cm_filesystem_list_directory(".", nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_clone_file(nullptr, "unused"), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_clone_file("unused", nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_truncate_file(nullptr, 0), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_create_temporary_directory(nullptr, "unused", &path), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK(path == nullptr);
+    path = "unchanged";
+    BOOST_CHECK_EQUAL(cm_filesystem_create_temporary_directory(".", nullptr, &path), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK(path == nullptr);
+    BOOST_CHECK_EQUAL(cm_filesystem_create_temporary_directory(".", "unused", nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_create_temporary_file(nullptr, "unused", &file, &path), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK(file == nullptr);
+    BOOST_CHECK(path == nullptr);
+    BOOST_CHECK_EQUAL(cm_filesystem_create_temporary_file(".", nullptr, &file, &path), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_create_temporary_file(".", "unused", nullptr, &path), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_create_temporary_file(".", "unused", &file, nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_sync_file(nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_sync_file_descriptor(-1, "unused"), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_sync_file_descriptor(0, nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_sync_directory(nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_get_last_error_message(), "invalid path");
+    BOOST_REQUIRE_EQUAL(cm_filesystem_exists(".", &exists), CM_ERROR_OK);
+    BOOST_CHECK(exists);
+    BOOST_CHECK_EQUAL(cm_get_last_error_message(), "");
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(cm_filesystem_reports_os_errors_and_resets_outputs) {
+    const auto missing = unique_temp_path("fs-missing");
+    const auto child = missing + "/child";
+    const char *names = "unchanged";
+    const char *path = "unchanged";
+    FILE *file = stdout;
+    bool exists = true;
+    BOOST_REQUIRE_EQUAL(cm_filesystem_exists(missing.c_str(), &exists), CM_ERROR_OK);
+    BOOST_CHECK(!exists);
+    BOOST_CHECK_NE(cm_filesystem_create_directory(child.c_str()), CM_ERROR_OK);
+    BOOST_CHECK_NE(cm_filesystem_list_directory(missing.c_str(), &names), CM_ERROR_OK);
+    BOOST_CHECK(names == nullptr);
+    BOOST_CHECK_NE(cm_filesystem_clone_file(missing.c_str(), child.c_str()), CM_ERROR_OK);
+    BOOST_CHECK_NE(cm_filesystem_truncate_file(missing.c_str(), 0), CM_ERROR_OK);
+    BOOST_CHECK_NE(cm_filesystem_create_temporary_directory(missing.c_str(), "test", &path), CM_ERROR_OK);
+    BOOST_CHECK(path == nullptr);
+    BOOST_CHECK_NE(cm_filesystem_create_temporary_file(missing.c_str(), "test", &file, &path), CM_ERROR_OK);
+    BOOST_CHECK(file == nullptr);
+    BOOST_CHECK(path == nullptr);
+    BOOST_CHECK_NE(cm_filesystem_sync_file(missing.c_str()), CM_ERROR_OK);
+#ifndef _WIN32
+    BOOST_CHECK_NE(cm_filesystem_sync_directory(missing.c_str()), CM_ERROR_OK);
+#endif
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(cm_filesystem_temporary_directory_ownership_and_permissions) {
+    const auto parent = std::filesystem::temp_directory_path().string();
+    const char *path = nullptr;
+    BOOST_REQUIRE_EQUAL(cm_filesystem_create_temporary_directory(parent.c_str(), "fs-api-", &path), CM_ERROR_OK);
+    BOOST_REQUIRE(path != nullptr);
+    const std::string first(path);
+    BOOST_REQUIRE_EQUAL(cm_filesystem_create_temporary_directory(parent.c_str(), "fs-api-", &path), CM_ERROR_OK);
+    BOOST_REQUIRE(path != nullptr);
+    const std::string second(path);
+    BOOST_CHECK_NE(first, second);
+    BOOST_CHECK(std::filesystem::is_directory(first));
+    BOOST_CHECK(std::filesystem::is_empty(first));
+    BOOST_CHECK(std::filesystem::is_directory(second));
+#ifndef _WIN32
+    const auto permissions = std::filesystem::status(first).permissions();
+    BOOST_CHECK(((permissions & (std::filesystem::perms::group_all | std::filesystem::perms::others_all)) ==
+        std::filesystem::perms::none));
+#endif
+    BOOST_CHECK_NE(cm_filesystem_create_directory(first.c_str()), CM_ERROR_OK);
+    BOOST_CHECK(std::filesystem::remove(first));
+    BOOST_CHECK(std::filesystem::remove(second));
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(cm_filesystem_file_ownership_and_directory_results) {
+    const auto dirname = unique_temp_path("fs-api");
+    BOOST_REQUIRE_EQUAL(cm_filesystem_create_directory(dirname.c_str()), CM_ERROR_OK);
+    const char *names = nullptr;
+    BOOST_REQUIRE_EQUAL(cm_filesystem_list_directory(dirname.c_str(), &names), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(names, "[]");
+
+    FILE *file = nullptr;
+    const char *path = nullptr;
+    BOOST_REQUIRE_EQUAL(cm_filesystem_create_temporary_file(dirname.c_str(), "state-", &file, &path), CM_ERROR_OK);
+    std::unique_ptr<FILE, decltype(&fclose)> stream(file, &fclose);
+    BOOST_REQUIRE(stream != nullptr);
+    BOOST_REQUIRE(path != nullptr);
+    // C API strings are borrowed, so keep the path before making another API call.
+    const std::string filename(path);
+    BOOST_REQUIRE_NE(fputs("contents", stream.get()), EOF);
+    BOOST_REQUIRE_EQUAL(fflush(stream.get()), 0);
+    BOOST_REQUIRE_EQUAL(cm_filesystem_sync_file_descriptor(fileno(stream.get()), filename.c_str()), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_filesystem_truncate_file(filename.c_str(), 3), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_filesystem_sync_file(filename.c_str()), CM_ERROR_OK);
+    const auto clone = dirname + "/clone";
+    BOOST_REQUIRE_EQUAL(cm_filesystem_clone_file(filename.c_str(), clone.c_str()), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::filesystem::file_size(clone), 3);
+    BOOST_REQUIRE_EQUAL(cm_filesystem_sync_directory(dirname.c_str()), CM_ERROR_OK);
+
+    BOOST_REQUIRE_EQUAL(cm_filesystem_list_directory(dirname.c_str(), &names), CM_ERROR_OK);
+    const auto entries = nlohmann::json::parse(names).get<std::vector<std::string>>();
+    BOOST_REQUIRE_EQUAL(entries.size(), 2);
+    BOOST_CHECK_EQUAL(cartesi::decode_base64(entries[0]), "clone");
+    BOOST_CHECK_EQUAL(cartesi::decode_base64(entries[1]), std::filesystem::path(filename).filename().string());
+    BOOST_REQUIRE_EQUAL(fseek(stream.get(), 0, SEEK_SET), 0);
+    BOOST_CHECK_EQUAL(fgetc(stream.get()), 'c');
+    stream.reset();
+    std::filesystem::remove_all(dirname);
+}
+
 // NOLINTEND(cppcoreguidelines-avoid-do-while,cppcoreguidelines-non-private-member-variables-in-classes)

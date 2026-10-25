@@ -369,6 +369,9 @@ test-c-api-remote: | $(CARTESI_IMAGES)
 test-c-jsonrpc-api: | $(CARTESI_IMAGES)
 	CARTESI_JSONRPC_MACHINE=../src/cartesi-jsonrpc-machine ./build/misc/test-machine-c-jsonrpc-api
 
+test-lua-filesystem:
+	./build/misc/test-lua-filesystem
+
 test-save-and-load: | $(CARTESI_IMAGES)
 	./scripts/test-save-and-load.sh '$(LUA) ../src/cartesi-machine.lua'
 
@@ -378,7 +381,7 @@ test-yield-and-save: | $(CARTESI_IMAGES)
 test-fuzz: build-tests-fuzz
 	@$(MAKE) -C fuzz CC=clang CXX=clang++ fuzz=yes run-fuzz-interpret
 
-test-misc: test-c-api test-c-api-remote test-c-jsonrpc-api test-save-and-load test-yield-and-save
+test-misc: test-c-api test-c-api-remote test-c-jsonrpc-api test-lua-filesystem test-save-and-load test-yield-and-save
 
 test-generate-uarch-logs: $(BUILDDIR)/uarch-riscv-tests-json-logs
 	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --create-reset-uarch-log --create-send-cmio-response-log --jobs=$(NUM_JOBS) json-step-logs
@@ -406,7 +409,7 @@ test-coverage-uarch:
 # the .gcda files, which libgcov merges under a lock. Excludes the two coverage
 # tail steps ordered below.
 PARALLEL_TESTS = test-save-and-load test-machine test-lua test-jsonrpc \
-	test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine \
+	test-c-api test-c-api-remote test-c-jsonrpc-api test-lua-filesystem test-coverage-machine \
 	test-uarch-rv64ui test-uarch-interpreter test-machine-with-log-step \
 	test-coverage-uarch test-computation-hash
 
@@ -484,7 +487,7 @@ check-lua:
 	luacheck lua/
 
 .PHONY: machine uarch misc riscv-tests riscv-arch-test build-tests-fuzz build-tests-fuzz-seed-corpus test-fuzz
-.PHONY: $(PARALLEL_TESTS) test-parallel test test-misc test-lua test-cm-cli test-evmu run-lua-spec-cm-cli \
+.PHONY: $(PARALLEL_TESTS) test-parallel test test-misc test-lua test-lua-filesystem test-cm-cli test-evmu run-lua-spec-cm-cli \
 	test-coverage-uarch-pcs coverage-report coverage-all clean-coverage
 .PHONY: build-tests-computation-hash-fixtures build-computation-hash-corpus \
 	build-computation-hash-corpus-with-toolchain create-computation-hash-corpus archive-computation-hash-corpus \

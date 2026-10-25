@@ -8,6 +8,7 @@
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
 local util = require("cartesi.util")
+local fs = require("cartesi.filesystem")
 local prtu = require("prtu")
 local run_with_game_server = require("game-test-server")
 local prt = require("prt")
@@ -162,7 +163,7 @@ local function new_input_file(data)
             assert(os.remove(path))
         end,
     })
-    util.write_file(data, path)
+    fs.write_file(data, path)
     return path, owner
 end
 
@@ -1020,7 +1021,7 @@ for _, phase in ipairs({ "begin_input", "run", "end_input" }) do
         error("injected " .. phase .. " failure")
     end
     assert(
-        util.read_file(player.input_paths[1]) == "accepted" and player.machine_cache == cache,
+        fs.read_file(player.input_paths[1]) == "accepted" and player.machine_cache == cache,
         "player lost its replay dependencies"
     )
     local ok, err = pcall(make_mcycle_tree, player)
@@ -1964,7 +1965,7 @@ if arg[1] then
     local initial_state_hash = cartesi.fromhex(arg[1])
     local inputs = {}
     for i = 2, 4 do
-        inputs[#inputs + 1] = util.read_file(arg[i])
+        inputs[#inputs + 1] = fs.read_file(arg[i])
     end
     assert(#inputs >= 3, "machine checkpoint tests require three inputs")
     local dapp_contract = {
@@ -2071,7 +2072,7 @@ if arg[1] then
         assert(type(saved.machine) == "userdata", "checkpoint machine is wrapped")
     end
     assert(cached_tree:get_root_hash() == honest_tree:get_root_hash(), "cache policy changed the mcycle root")
-    assert(honest_tree:get_root_hash() == util.read_file(assert(arg[5])), "mcycle root differs from CLI")
+    assert(honest_tree:get_root_hash() == fs.read_file(assert(arg[5])), "mcycle root differs from CLI")
     -- This fabricated leaf is beyond the last input, so end_epoch must insert it even when
     -- bundle collection never calls run. Opening the bundle also authenticates the returned subtree.
     do
@@ -2107,7 +2108,7 @@ if arg[1] then
         end
     end
     local first_uarch = honest:make_uarch_tree(0, 0)
-    assert(first_uarch:get_root_hash() == util.read_file(assert(arg[6])), "uarch root differs from CLI")
+    assert(first_uarch:get_root_hash() == fs.read_file(assert(arg[6])), "uarch root differs from CLI")
     first_uarch:get_proof(0)
     first_uarch:get_proof(
         ((1 << (dapp_contract.geometry.uarch_height - LOG2_BUNDLE_UARCH_CYCLE_COUNT)) - 1) << first_uarch.bundle_height
@@ -2397,7 +2398,7 @@ if arg[1] then
     )
     local forged_state = cartesi.machine:verify_send_cmio_response(
         cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-        util.read_file(forger.input_paths[1]),
+        fs.read_file(forger.input_paths[1]),
         initial_state_hash,
         forged_logs.send_cmio_log,
         initial_state_hash

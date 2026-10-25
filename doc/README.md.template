@@ -1699,18 +1699,18 @@ An abbreviated log shows the six inputs advancing in the same invocation
 
 ```{.lua key=rollup_constants replace=null outputs=log2_max_advance_states_per_epoch,log2_max_mcycles_per_advance_state,log2_max_uarch_cycles_per_mcycle,log2_mcycle_leaves,log2_uarch_leaves}
 local cartesi = require("cartesi")
-local util = require("cartesi.util")
+local fs = require("cartesi.filesystem")
 -- tree heights for the 2^10-mcycle period the examples use
 local log2_period = 10
 local log2_mcycle_leaves = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
     + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
     - log2_period
 local log2_uarch_leaves = log2_period + cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-util.write_file(tostring(cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH), "log2_max_advance_states_per_epoch")
-util.write_file(tostring(cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE), "log2_max_mcycles_per_advance_state")
-util.write_file(tostring(cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE), "log2_max_uarch_cycles_per_mcycle")
-util.write_file(tostring(log2_mcycle_leaves), "log2_mcycle_leaves")
-util.write_file(tostring(log2_uarch_leaves), "log2_uarch_leaves")
+fs.write_file(tostring(cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH), "log2_max_advance_states_per_epoch")
+fs.write_file(tostring(cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE), "log2_max_mcycles_per_advance_state")
+fs.write_file(tostring(cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE), "log2_max_uarch_cycles_per_mcycle")
+fs.write_file(tostring(log2_mcycle_leaves), "log2_mcycle_leaves")
+fs.write_file(tostring(log2_uarch_leaves), "log2_uarch_leaves")
 ```
 
 A *computation hash* is the root of a Merkle tree whose leaves are the machine state hashes sampled at periodic intervals during a computation.
@@ -3942,7 +3942,7 @@ The mapping is given in the following table:
 
 ```{.lua key=reg_addr replace=null outputs=state_size,register_count,control_register_count,board_register_count,x0,x1,x31,mcycle,pc,fcsr,f0,f1,f31,iprv,mstatus,mtvec,mscratch,mepc,mcause,mtval,misa,mie,mip,medeleg,mideleg,mcounteren,menvcfg,mvendorid,marchid,mimpid,stvec,sscratch,sepc,scause,stval,satp,scounteren,senvcfg,ilrsc,icycleinstret,iunrep,imcyclemax,iflags_X,iflags_Y,iflags_H,clint_mtimecmp,plic_girqpend,plic_girqsrvd,htif_tohost,htif_fromhost,htif_ihalt,htif_iconsole,htif_iyield}
 local cartesi = require "cartesi"
-local util = require "cartesi.util"
+local fs = require "cartesi.filesystem"
 local first_address = cartesi.machine:get_reg_address("first_")
 local last_address = cartesi.machine:get_reg_address("last_")
 local register_size = cartesi.machine:get_reg_address("x1") - cartesi.machine:get_reg_address("x0")
@@ -3957,7 +3957,7 @@ local values = {
     board_register_count = count_registers("clint_mtimecmp", "last_"),
 }
 for name, value in pairs(values) do
-    util.write_file(tostring(value), name)
+    fs.write_file(tostring(value), name)
 end
 local names = {"x0", "x1", "x31", "mcycle", "pc", "fcsr", "f0", "f1", "f31", "iprv",
     "mstatus", "mtvec", "mscratch", "mepc", "mcause", "mtval", "misa", "mie", "mip",
@@ -3968,7 +3968,7 @@ local names = {"x0", "x1", "x31", "mcycle", "pc", "fcsr", "f0", "f1", "f31", "ip
     "clint_mtimecmp", "plic_girqpend", "plic_girqsrvd",
     "htif_tohost", "htif_fromhost", "htif_ihalt", "htif_iconsole", "htif_iyield"}
 for _, name in ipairs(names) do
-    util.write_file(string.format("0x%03x", cartesi.machine:get_reg_address(name)), name)
+    fs.write_file(string.format("0x%03x", cartesi.machine:get_reg_address(name)), name)
 end
 ```
 
@@ -4027,11 +4027,11 @@ The mapping is given in the following table:
 
 ```{.lua key=uarch_reg_addr replace=null outputs=uarch_halt,uarch_cycle,uarch_pc,uarch_x0,uarch_x1,uarch_x31}
 local cartesi = require "cartesi"
-local util = require "cartesi.util"
+local fs = require "cartesi.filesystem"
 local names = {"uarch_halt", "uarch_cycle", "uarch_pc",
     "uarch_x0", "uarch_x1", "uarch_x31"}
 for _, name in ipairs(names) do
-    util.write_file(string.format("0x%06x", cartesi.machine:get_reg_address(name)), name)
+    fs.write_file(string.format("0x%06x", cartesi.machine:get_reg_address(name)), name)
 end
 ```
 
@@ -5423,8 +5423,8 @@ Both therefore give the same tentative hashes throughout bisection, even though 
 
 ```{.lua key=vg_final_state_hash vars=rolling_calc_run replace=null}
 local cartesi = require("cartesi")
-local util = require("cartesi.util")
-io.write(cartesi.tohex(util.read_file("$rolling_calc_run/epoch-0-state-hash.bin")))
+local fs = require("cartesi.filesystem")
+io.write(cartesi.tohex(fs.read_file("$rolling_calc_run/epoch-0-state-hash.bin")))
 ```
 
 Start the referee as before:

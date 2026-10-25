@@ -33,19 +33,32 @@
 #define JSON_HAS_FILESYSTEM 0
 #include <json.hpp>
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
+
+#if defined(__linux__) || defined(__APPLE__)
+#include <sys/stat.h>
+#endif
 
 #include <cm-jsonrpc.h>
 #include <cm.h>
+#include <keccak-256-hasher.hpp>
+#include <os-filesystem.hpp>
+#include <os-mapped-memory.hpp>
+#include <page-hash-tree-cache.hpp>
 #include <riscv-constants.hpp>
 #include <uarch-constants.hpp>
 #include <uarch-pristine.hpp>
@@ -918,7 +931,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_machine_config_version_test, store_file_fix
     auto j = nlohmann::json::parse(ifs);
     BOOST_REQUIRE(j.contains("archive_version"));
     BOOST_REQUIRE(j["archive_version"].is_number_integer());
-    BOOST_CHECK_EQUAL(j["archive_version"].get<int>(), 8);
+    BOOST_CHECK_EQUAL(j["archive_version"].get<int>(), 9);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_machine_test, ordinary_machine_fixture) {
@@ -2130,6 +2143,31 @@ BOOST_AUTO_TEST_CASE_NOLINT(write_reg_null_machine_test) {
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
+BOOST_AUTO_TEST_CASE_NOLINT(page_hash_tree_cache_payload_alignment_test) {
+    constexpr std::array<std::pair<size_t, size_t>, 5> layouts{
+        {{1, 4096}, {101, 4096}, {102, 8192}, {204, 8192}, {205, 12288}}};
+    for (const auto &[capacity, payloads_offset] : layouts) {
+        cartesi::page_hash_tree_cache cache{cartesi::keccak_256_hasher{}, capacity, "", false};
+        const auto storage = cache.get_storage_data();
+        const auto storage_address = reinterpret_cast<uintptr_t>(storage.data());
+        BOOST_CHECK_EQUAL(storage.size(), payloads_offset + (capacity * 12288));
+        for (size_t i = 0; i < capacity; ++i) {
+            bool hit = false;
+            auto borrowed = cache.borrow_entry(i * cartesi::HASH_TREE_PAGE_SIZE, hit);
+            BOOST_REQUIRE(borrowed.has_value());
+            BOOST_CHECK(!hit);
+            auto &metadata = borrowed->get();
+            const auto &payload = cache.get_payload(metadata);
+            const auto page_address = reinterpret_cast<uintptr_t>(payload.get_page().data());
+            const auto tree_address = reinterpret_cast<uintptr_t>(payload.get_page_hash_tree().data());
+            BOOST_CHECK_EQUAL(page_address % cartesi::HASH_TREE_PAGE_SIZE, 0);
+            BOOST_CHECK_EQUAL(tree_address % cartesi::HASH_TREE_PAGE_SIZE, 0);
+            BOOST_CHECK_EQUAL(page_address - storage_address, payloads_offset + (i * 12288));
+            BOOST_CHECK(cache.return_entry(metadata));
+        }
+    }
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_reg_basic_test, ordinary_machine_fixture) {
     uint64_t reg_origin = 42;
     uint64_t reg_read{};
@@ -2146,6 +2184,61 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_reg_basic_test, ordinary_machine_fixtu
     uint64_t pc_addr{};
     BOOST_CHECK_EQUAL(cm_get_reg_address(_machine, CM_REG_PC, &pc_addr), CM_ERROR_OK);
     BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x108), pc_addr);
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(clear_mapped_memory_test) {
+    for (const auto length : {64U, 65536U}) {
+        for (const bool shared : {false, true}) {
+            const auto filename =
+                unique_temp_path("clear-mapped-" + std::to_string(length) + (shared ? "-shared" : "-private"));
+            const std::vector<uint8_t> original(length, 0x5a);
+            cartesi::os::create_file(filename, original);
+            {
+                // Also exercise an anonymous tail beyond the backing file and dirty resident pages.
+                cartesi::os::mapped_memory memory{length + 4096, {.shared = shared}, filename, length};
+                auto *const ptr = memory.get_ptr();
+                std::ranges::fill(memory.get_storage_data(), 0x7b);
+                memory.clear();
+                BOOST_CHECK_EQUAL(memory.get_ptr(), ptr);
+                BOOST_CHECK(std::ranges::all_of(memory.get_storage_data(), [](auto b) { return b == 0; }));
+                memory.clear();
+                BOOST_CHECK(std::ranges::all_of(memory.get_storage_data(), [](auto b) { return b == 0; }));
+            }
+            const auto [owner, data] = cartesi::os::read_file(filename);
+            BOOST_CHECK_EQUAL(data.size(), length);
+            const auto expected = shared ? 0 : 0x5a;
+            BOOST_CHECK(std::ranges::all_of(data, [expected](auto b) { return b == expected; }));
+#if defined(__linux__) || defined(__APPLE__)
+            if (shared && length == 65536) {
+                struct stat status{};
+                BOOST_REQUIRE_EQUAL(stat(filename.c_str(), &status), 0);
+                BOOST_TEST_MESSAGE("Cleared shared mapping: " << status.st_blocks << " allocated 512-byte blocks");
+            }
+#endif
+            cartesi::os::remove_file(filename);
+        }
+    }
+    cartesi::os::mapped_memory anonymous{65536};
+    std::ranges::fill(anonymous.get_storage_data(), 0x7b);
+    anonymous.clear();
+    BOOST_CHECK(std::ranges::all_of(anonymous.get_storage_data(), [](auto b) { return b == 0; }));
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(clear_hash_tree_null_machine_test) {
+    BOOST_CHECK_EQUAL(cm_clear_hash_tree(nullptr), CM_ERROR_INVALID_ARGUMENT);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(clear_hash_tree_basic_test, ordinary_machine_fixture) {
+    cm_hash before{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &before), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_clear_hash_tree(_machine), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_clear_hash_tree(_machine), CM_ERROR_OK);
+    cm_hash after{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &after), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL_COLLECTIONS(std::begin(before), std::end(before), std::begin(after), std::end(after));
+    bool valid = false;
+    BOOST_REQUIRE_EQUAL(cm_verify_hash_tree(_machine, &valid), CM_ERROR_OK);
+    BOOST_CHECK(valid);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(verify_hash_tree_null_machine_test) {

@@ -6,7 +6,6 @@
 local cartesi = require("cartesi")
 local filesystem = require("cartesi.filesystem")
 local hash_tree = require("cartesi.hash-tree")
-local util = require("cartesi.util")
 local tests_util = require("cartesi.tests.util")
 local fcntl = require("posix.fcntl")
 local unistd = require("posix.unistd")
@@ -454,7 +453,7 @@ if recording then
             case.expected.computation_hash = nil
         end
     end
-    util.write_file(cartesi.tojson(manifest, 2) .. "\n", artifact_dir .. "/manifest.json")
+    filesystem.write_file(cartesi.tojson(manifest, 2) .. "\n", artifact_dir .. "/manifest.json")
 end
 
 io.stdout:write(string.format("\nPASSED all %d tests\n\n", count))

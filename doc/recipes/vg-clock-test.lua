@@ -5,7 +5,7 @@ local run_with_server = require("vg-test-server")
 local hash = cartesi.keccak256("clock fixture")
 
 local function empty_response()
-    return {}
+    return "nothing"
 end
 local empty_handlers = {
     __index = function()
@@ -22,7 +22,7 @@ local empty_handlers = {
 for delayed_index = 1, 2 do
     local clients = {}
     local claims = { hash, cartesi.keccak256("other claim") }
-    local dapp_contract = vg.make_dapp_contract(hash, {})
+    local dapp_contract = vg.new_dapp_contract(hash, {})
     dapp_contract.max_allowance = 5
     local results
     local delayed, immediate
@@ -71,7 +71,7 @@ for delayed_index = 1, 2 do
         local senders = server:get_players()
         delayed, immediate = senders[delayed_index], senders[3 - delayed_index]
         run_client({ role = "phase_closer" }, function()
-            return { value = true }
+            return { value = "done" }
         end)
         vg.new_referee(dapp_contract):run(server)
     end)
@@ -92,7 +92,7 @@ end
 -- Repeated claims and labels still belong to separate connections. One
 -- proponent's accepted tentative hash cannot save another who fails to defend it.
 do
-    local dapp_contract = vg.make_dapp_contract(hash, {})
+    local dapp_contract = vg.new_dapp_contract(hash, {})
     local results
     local requested = {}
     local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
@@ -113,7 +113,7 @@ do
             wait_connections(index)
         end
         run_client({ role = "phase_closer" }, function()
-            return { value = true }
+            return { value = "done" }
         end)
         vg.new_referee(dapp_contract):run(server)
     end)
@@ -123,7 +123,7 @@ do
 end
 
 for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
-    local dapp_contract = vg.make_dapp_contract(hash, {})
+    local dapp_contract = vg.new_dapp_contract(hash, {})
     local results
     run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
         results = observed
@@ -131,10 +131,10 @@ for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
             run_client({ role = "player", label = behavior .. " " .. index }, function(wire)
                 if wire.operation == "commit_claim" then
                     if behavior == "quit" then
-                        return { skip = true, id = wire.id, done = true }, true
+                        return { value = "done", id = wire.id }, true
                     end
                     if behavior == "skip" then
-                        return { skip = true, id = wire.id }
+                        return { id = wire.id }
                     end
                     return { value = { answer = "malformed" }, id = wire.id }
                 end
@@ -143,7 +143,7 @@ for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
             wait_connections(index)
         end
         run_client({ role = "phase_closer" }, function()
-            return { value = true }
+            return { value = "done" }
         end)
         vg.new_referee(dapp_contract):run(server)
     end)
@@ -163,7 +163,7 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
             uarch_cycle = failed_round == 85 and (1 << 20) - 1 or failed_round == 86 and 0xa55aa or 0,
         }
         local claims = { hash, cartesi.keccak256("other claim") }
-        local dapp_contract = vg.make_dapp_contract(hash, {})
+        local dapp_contract = vg.new_dapp_contract(hash, {})
         local results
         local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
             results = observed
@@ -215,7 +215,7 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                     if failed_round == 85 then
                         return vgu.schedule_response(self, math.maxinteger, empty_response)
                     end
-                    return {} -- Rejected; no valid proof arrives before the deadline.
+                    return "nothing" -- Rejected; no valid proof arrives before the deadline.
                 end
                 run_client({ role = "player", label = client.label }, function(_, line)
                     return vgu.answer_event(client, line)
@@ -223,7 +223,7 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                 wait_connections(index)
             end
             run_client({ role = "phase_closer" }, function()
-                return { value = true }
+                return { value = "done" }
             end)
             vg.new_referee(dapp_contract):run(server)
         end)

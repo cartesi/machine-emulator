@@ -475,7 +475,7 @@ describe("backing stores", function()
 
         -- an extraneous file makes the removal fail, and the file survives
         local extraneous_filename = stored_dirname .. "/extraneous"
-        filesystem.write_file(extraneous_filename, "keep")
+        filesystem.write_file("keep", extraneous_filename)
         expect.fail(function()
             cartesi.machine:remove_stored(stored_dirname)
         end, "unable to remove directory")
@@ -600,6 +600,254 @@ describe("backing stores", function()
             })
             expect.equal(machine:get_root_hash(), expected2_root_hash)
         end
+    end)
+
+    describe("page hash-tree cache metadata", function()
+        -- The persisted layout contains a tag, list size, sentinel links, and compact entries.
+        -- Each entry contains next/previous links, page address, borrowed flag, and payload index.
+        local capacity = 32
+        local entries_offset = 32
+        local entry_size = 40
+        local payloads_offset = (entries_offset + capacity * entry_size + 4095) & ~4095
+
+        local function write_word(data, offset, value)
+            return data:sub(1, offset) .. string.pack("<I8", value) .. data:sub(offset + 9)
+        end
+
+        local function write_link(data, offset, target_offset)
+            return write_word(data, offset, target_offset - offset)
+        end
+
+        local corruptions = {
+            {
+                "old layout tag",
+                function(data)
+                    return write_word(data, 0, 0x50485443)
+                end,
+            },
+            {
+                "oversized list",
+                function(data)
+                    return write_word(data, 8, capacity + 1)
+                end,
+            },
+            {
+                "short list",
+                function(data)
+                    return write_word(data, 8, capacity - 1)
+                end,
+            },
+            {
+                "null head",
+                function(data)
+                    return write_word(data, 16, 1)
+                end,
+            },
+            {
+                "head outside mapping",
+                function(data)
+                    return write_link(data, 16, #data + 4096)
+                end,
+            },
+            {
+                "unaligned head",
+                function(data)
+                    return write_link(data, 16, entries_offset + 1)
+                end,
+            },
+            {
+                "head inside entry",
+                function(data)
+                    return write_link(data, 16, entries_offset + 8)
+                end,
+            },
+            {
+                "head in metadata padding",
+                function(data)
+                    return write_link(data, 16, entries_offset + capacity * entry_size)
+                end,
+            },
+            {
+                "head in payload",
+                function(data)
+                    return write_link(data, 16, payloads_offset)
+                end,
+            },
+            {
+                "invalid tail",
+                function(data)
+                    return write_word(data, 24, 1)
+                end,
+            },
+            {
+                "invalid next",
+                function(data)
+                    return write_word(data, entries_offset, 1)
+                end,
+            },
+            {
+                "invalid previous",
+                function(data)
+                    return write_word(data, entries_offset + 8, 1)
+                end,
+            },
+            {
+                "self cycle",
+                function(data)
+                    return write_link(data, entries_offset, entries_offset)
+                end,
+            },
+            {
+                "borrowed entry",
+                function(data)
+                    return write_word(data, entries_offset + 24, 1)
+                end,
+            },
+            {
+                "out-of-range payload",
+                function(data)
+                    return write_word(data, entries_offset + 32, capacity)
+                end,
+            },
+            {
+                "overflowing payload",
+                function(data)
+                    return write_word(data, entries_offset + 32, -1)
+                end,
+            },
+            {
+                "duplicate payload",
+                function(data)
+                    local other = string.unpack("<I8", data, entries_offset + entry_size + 33)
+                    return write_word(data, entries_offset + 32, other)
+                end,
+            },
+            {
+                "duplicate page address",
+                function(data)
+                    local other = string.unpack("<I8", data, entries_offset + entry_size + 17)
+                    return write_word(data, entries_offset + 16, other)
+                end,
+            },
+        }
+
+        for _, corruption in ipairs(corruptions) do
+            it("should reject " .. corruption[1] .. " without following invalid links", function()
+                local directory = filesystem.temp_pathname()
+                do
+                    local machine <close> = cartesi.machine({
+                        ram = { length = 2 * capacity * 4096 },
+                        hash_tree = { phtc_size = capacity },
+                    })
+                    machine:write_memory(cartesi.AR_RAM_START, string.rep("A", 2 * capacity * 4096))
+                    machine:get_root_hash()
+                    machine:store(directory)
+                end
+                local _ <close> = tests_util.scope_exit(function()
+                    cartesi.machine:remove_stored(directory)
+                end)
+                local filename = directory .. "/hash_tree.phtc"
+                local data = filesystem.read_file(filename)
+                expect.equal(string.unpack("<I8", data, 9), capacity)
+                filesystem.write_file(corruption[2](data), filename)
+                for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_ALL }) do
+                    expect.fail(function()
+                        local _ <close> = cartesi.machine(directory, {}, sharing)
+                    end, "corrupted page hash-tree cache")
+                end
+            end)
+        end
+
+        it("should reject overflowing cache capacities before mapping", function()
+            for _, phtc_size in ipairs({ math.maxinteger, -1 }) do
+                expect.fail(function()
+                    local _ <close> = cartesi.machine({
+                        ram = { length = 4096 },
+                        hash_tree = { phtc_size = phtc_size },
+                    })
+                end, "invalid page hash-tree cache capacity")
+            end
+        end)
+
+        it("should reject truncated and oversized cache files before accessing metadata", function()
+            local directory = filesystem.temp_pathname()
+            do
+                local machine <close> = cartesi.machine({
+                    ram = { length = 4096 },
+                    hash_tree = { phtc_size = capacity },
+                })
+                machine:store(directory)
+            end
+            local _ <close> = tests_util.scope_exit(function()
+                cartesi.machine:remove_stored(directory)
+            end)
+            local filename = directory .. "/hash_tree.phtc"
+            local data = filesystem.read_file(filename)
+            for _, length in ipairs({ 0, 8, entries_offset - 1, payloads_offset - 1, #data - 1, #data + 1 }) do
+                filesystem.write_file(length > #data and data .. "\0" or data:sub(1, length), filename)
+                for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_ALL }) do
+                    expect.fail(function()
+                        local _ <close> = cartesi.machine(directory, {}, sharing)
+                    end, "length")
+                end
+            end
+        end)
+
+        it("should validate unused metadata before entries are handed out", function()
+            local directory = filesystem.temp_pathname()
+            do
+                local _ <close> = cartesi.machine({
+                    ram = { length = 4096 },
+                    hash_tree = { phtc_size = capacity },
+                }, {}, directory)
+            end
+            local _ <close> = tests_util.scope_exit(function()
+                cartesi.machine:remove_stored(directory)
+            end)
+            local filename = directory .. "/hash_tree.phtc"
+            local data = filesystem.read_file(filename)
+            expect.equal(string.unpack("<I8", data, 9), 0)
+            for _, offset in ipairs({ entries_offset, entries_offset + 8, entries_offset + 32 }) do
+                filesystem.write_file(write_word(data, offset, -1), filename)
+                expect.fail(function()
+                    local _ <close> = cartesi.machine(directory)
+                end, "corrupted page hash-tree cache")
+            end
+        end)
+
+        it("should evict loaded entries without changing cached payloads", function()
+            local directory = filesystem.temp_pathname()
+            do
+                local machine <close> = cartesi.machine({
+                    ram = { length = 4096 },
+                    flash_drive = {
+                        { start = 0x90000000, length = 4096, backing_store = { shared = true } },
+                        { start = 0xa0000000, length = 4096 },
+                    },
+                    hash_tree = { phtc_size = capacity, shared = true },
+                }, {}, directory)
+                machine:write_memory(0x90000000, string.rep("A", 4096))
+                machine:write_memory(0xa0000000, string.rep("B", 4096))
+                machine:get_root_hash()
+                machine:get_node_hash(0x90000000, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+                machine:get_node_hash(0xa0000000, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+            end
+            local _ <close> = tests_util.scope_exit(function()
+                cartesi.machine:remove_stored(directory)
+            end)
+            local filename = directory .. "/hash_tree.phtc"
+            local before = filesystem.read_file(filename)
+            do
+                local _ <close> = cartesi.machine(directory, {}, cartesi.SHARING_CONFIG)
+            end
+            local after = filesystem.read_file(filename)
+            expect.truthy(string.unpack("<I8", after, 9) < string.unpack("<I8", before, 9))
+            expect.equal(after:sub(payloads_offset + 1), before:sub(payloads_offset + 1))
+            -- Reload the compacted metadata and exercise both retained and reassigned slots.
+            local machine <close> = cartesi.machine(directory, {}, cartesi.SHARING_ALL)
+            machine:write_memory(0xa0000000, string.rep("C", 4096))
+            expect.equal(machine:get_root_hash(), tests_util.calculate_emulator_hash(machine))
+        end)
     end)
 
     describe("page hash-tree cache eviction", function()
@@ -1012,7 +1260,7 @@ describe("backing stores", function()
                     elseif creation == "shared" then
                         filesystem.remove_file(backing_store.dht_filename)
                     elseif creation == "directory-invalid-size" then
-                        filesystem.write_file(backing_store.dht_filename, "\0")
+                        filesystem.write_file("\0", backing_store.dht_filename)
                     elseif creation == "anonymous-dpt" or creation == "directory-dpt" then
                         backing_store.dpt_filename = ""
                     elseif creation == "shared-dpt" then
@@ -1020,7 +1268,7 @@ describe("backing stores", function()
                     elseif creation == "forced" or creation == "directory-forced" then
                         backing_store.mark_pages_dirty = true
                         drive_data = string.rep("B", #drive_data)
-                        filesystem.write_file(backing_store.data_filename, drive_data)
+                        filesystem.write_file(drive_data, backing_store.data_filename)
                     end
 
                     if load_stored then

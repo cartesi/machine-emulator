@@ -935,6 +935,23 @@ describe("cartesi-machine CLI", function()
         run_ok({ "--no-reserve", "--max-mcycle=0", "--no-init-splash", "--quiet" })
     end)
 
+    it("clears hash-tree caches when loading", function()
+        local _ <close>, dirname = scope_stored_dirname()
+        local source <close> = cartesi.machine({ ram = { length = 0x3000 }, hash_tree = { phtc_size = 32 } })
+        source:write_memory(cartesi.AR_RAM_START, string.rep("A", 0x1000))
+        local root = source:get_root_hash()
+        source:store(dirname)
+        local rc, _, stderr = run({
+            "--load=" .. dirname,
+            "--clear-hash-tree",
+            "--initial-hash",
+            "--max-mcycle=0",
+            "--no-init-splash",
+        })
+        expect.equal(rc, 0)
+        expect.truthy(stderr:find(cartesi.tohex(root), 1, true))
+    end)
+
     -- -------------------------------------------------------------------------
     -- Mcycle overflow
     --
@@ -2122,9 +2139,9 @@ describe("cartesi-machine CLI", function()
                 os.remove(p)
             end
         end)
-        filesystem.write_file(prefix .. "-input-0.bin", encode_advance(0, "hello"))
-        filesystem.write_file(prefix .. "-input-1.bin", encode_advance(1, "world"))
-        filesystem.write_file(prefix .. "-query.bin", "inspect-me")
+        filesystem.write_file(encode_advance(0, "hello"), prefix .. "-input-0.bin")
+        filesystem.write_file(encode_advance(1, "world"), prefix .. "-input-1.bin")
+        filesystem.write_file("inspect-me", prefix .. "-query.bin")
 
         run_ok({
             "--cmio-advance-state=input:"
@@ -2209,7 +2226,7 @@ describe("cartesi-machine CLI", function()
                 os.remove(p)
             end
         end)
-        filesystem.write_file(prefix .. "-input-0.bin", encode_advance(0, "hello"))
+        filesystem.write_file(encode_advance(0, "hello"), prefix .. "-input-0.bin")
 
         -- Save the root for the non-genesis rolling-template assertion and disable its proof
         -- so no cwd-relative defaults are written on a read-only CI working directory.
@@ -2343,8 +2360,8 @@ describe("cartesi-machine CLI", function()
                 os.remove(p)
             end
         end)
-        filesystem.write_file(prefix .. "-input-0.bin", encode_advance(0, "first"))
-        filesystem.write_file(prefix .. "-input-1.bin", encode_advance(1, "second"))
+        filesystem.write_file(encode_advance(0, "first"), prefix .. "-input-0.bin")
+        filesystem.write_file(encode_advance(1, "second"), prefix .. "-input-1.bin")
 
         run_ok({
             "--cmio-advance-state=input:"
@@ -2413,9 +2430,9 @@ describe("cartesi-machine CLI", function()
                 os.remove(p)
             end
         end)
-        filesystem.write_file(prefix .. "-inpr-0.bin", encode_advance(0, "ok"))
-        filesystem.write_file(prefix .. "-inpr-1.bin", encode_advance(1, "reject-me"))
-        filesystem.write_file(prefix .. "-inpr-2.bin", encode_advance(2, "also-ok"))
+        filesystem.write_file(encode_advance(0, "ok"), prefix .. "-inpr-0.bin")
+        filesystem.write_file(encode_advance(1, "reject-me"), prefix .. "-inpr-1.bin")
+        filesystem.write_file(encode_advance(2, "also-ok"), prefix .. "-inpr-2.bin")
 
         -- ioctl-echo-loop --reject=1 rejects input 1, exercising revert; inputs 0 and 2
         -- exercise do_snapshot + do_commit. A rejected input's outputs go to rejected_output and
@@ -2496,7 +2513,7 @@ describe("cartesi-machine CLI", function()
         local _ <close> = tests_util.scope_exit(function()
             os.remove(prefix .. "-st-0.bin")
         end)
-        filesystem.write_file(prefix .. "-st-0.bin", encode_advance(0, "last-input"))
+        filesystem.write_file(encode_advance(0, "last-input"), prefix .. "-st-0.bin")
         local rc, _, log = run({
             "--console-io=output_destination:to_null",
             "--cmio-advance-state=input:"
@@ -2549,9 +2566,9 @@ describe("cartesi-machine CLI", function()
             "--",
             "ioctl-echo-loop --vouchers=0 --notices=1 --reports=1 --reject=1",
         })
-        filesystem.write_file(prefix .. "-input-0.bin", encode_advance(0, "first"))
-        filesystem.write_file(prefix .. "-input-1.bin", encode_advance(1, "rejected"))
-        filesystem.write_file(prefix .. "-input-2.bin", encode_advance(2, "third"))
+        filesystem.write_file(encode_advance(0, "first"), prefix .. "-input-0.bin")
+        filesystem.write_file(encode_advance(1, "rejected"), prefix .. "-input-1.bin")
+        filesystem.write_file(encode_advance(2, "third"), prefix .. "-input-2.bin")
 
         run_ok({
             "--remote-address=" .. address,
@@ -2586,7 +2603,7 @@ describe("cartesi-machine CLI", function()
         )
         expect.falsy(os.rename(machine_dir .. ".revert", machine_dir .. ".revert"))
 
-        filesystem.write_file(prefix .. "-query.bin", "inspect")
+        filesystem.write_file("inspect", prefix .. "-query.bin")
         run_ok({
             "--remote-address=" .. address,
             "--load=" .. machine_dir .. ",sharing:all",
@@ -2779,9 +2796,9 @@ describe("cartesi-machine CLI", function()
                 os.remove(p)
             end
         end)
-        filesystem.write_file(prefix .. "-chin-0.bin", encode_advance(0, "ok"))
-        filesystem.write_file(prefix .. "-chin-1.bin", encode_advance(1, "reject-me"))
-        filesystem.write_file(prefix .. "-chin-2.bin", encode_advance(2, "also-ok"))
+        filesystem.write_file(encode_advance(0, "ok"), prefix .. "-chin-0.bin")
+        filesystem.write_file(encode_advance(1, "reject-me"), prefix .. "-chin-1.bin")
+        filesystem.write_file(encode_advance(2, "also-ok"), prefix .. "-chin-2.bin")
 
         local _, log = run_ok({
             "--remote-address=" .. address,
@@ -2997,7 +3014,7 @@ describe("cartesi-machine CLI", function()
             os.remove(prefix .. "-chh.bin")
             os.remove(prefix .. "-chhb.bin")
         end)
-        filesystem.write_file(prefix .. "-chh-0.bin", encode_advance(0, "last-input"))
+        filesystem.write_file(encode_advance(0, "last-input"), prefix .. "-chh-0.bin")
         local _, log = run_ok({
             "--console-io=output_destination:to_null",
             "--cmio-advance-state=input:"
@@ -3198,8 +3215,8 @@ describe("cartesi-machine CLI", function()
             os.remove(prefix .. "-chr-0.bin")
             os.remove(prefix .. "-chr-1.bin")
         end)
-        filesystem.write_file(prefix .. "-chr-0.bin", encode_advance(0, "ok"))
-        filesystem.write_file(prefix .. "-chr-1.bin", encode_advance(1, "reject-me"))
+        filesystem.write_file(encode_advance(0, "ok"), prefix .. "-chr-0.bin")
+        filesystem.write_file(encode_advance(1, "reject-me"), prefix .. "-chr-1.bin")
         run_fail({
             "--cmio-advance-state=input:"
                 .. prefix
@@ -3231,9 +3248,9 @@ describe("cartesi-machine CLI", function()
                 os.remove(prefix .. "-pnr-" .. i .. ".bin")
             end
         end)
-        filesystem.write_file(prefix .. "-pnr-0.bin", encode_advance(0, "ok"))
-        filesystem.write_file(prefix .. "-pnr-1.bin", encode_advance(1, "reject-me"))
-        filesystem.write_file(prefix .. "-pnr-2.bin", encode_advance(2, "never-delivered"))
+        filesystem.write_file(encode_advance(0, "ok"), prefix .. "-pnr-0.bin")
+        filesystem.write_file(encode_advance(1, "reject-me"), prefix .. "-pnr-1.bin")
+        filesystem.write_file(encode_advance(2, "never-delivered"), prefix .. "-pnr-2.bin")
         for _, input_file_index_end in ipairs({ 3, 2 }) do
             run_fail({
                 "--cmio-advance-state=input:"
@@ -3277,7 +3294,7 @@ describe("cartesi-machine CLI", function()
             hash_tree.frontier_get_root_hash(hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256"))
         )
         machine:store(stored)
-        filesystem.write_file(input, string.rep("x", (1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE) + 1))
+        filesystem.write_file(string.rep("x", (1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE) + 1), input)
         local _, log = run_ok({
             "--load=" .. stored,
             "--revert-mode=none",
@@ -3390,8 +3407,8 @@ describe("cartesi-machine CLI", function()
             os.remove(prefix .. "-uchr-0.bin")
             os.remove(prefix .. "-uchr-1.bin")
         end)
-        filesystem.write_file(prefix .. "-uchr-0.bin", encode_advance(0, "ok"))
-        filesystem.write_file(prefix .. "-uchr-1.bin", encode_advance(1, "reject-me"))
+        filesystem.write_file(encode_advance(0, "ok"), prefix .. "-uchr-0.bin")
+        filesystem.write_file(encode_advance(1, "reject-me"), prefix .. "-uchr-1.bin")
         run_fail({
             "--cmio-advance-state=input:"
                 .. prefix
@@ -3449,13 +3466,13 @@ describe("cartesi-machine CLI", function()
                 os.remove(p)
             end
         end)
-        filesystem.write_file(prefix .. "-uin-0.bin", encode_advance(0, "ok"))
-        filesystem.write_file(prefix .. "-uin-1.bin", encode_advance(1, "reject-me"))
-        filesystem.write_file(prefix .. "-uin-2.bin", encode_advance(2, "also-ok"))
+        filesystem.write_file(encode_advance(0, "ok"), prefix .. "-uin-0.bin")
+        filesystem.write_file(encode_advance(1, "reject-me"), prefix .. "-uin-1.bin")
+        filesystem.write_file(encode_advance(2, "also-ok"), prefix .. "-uin-2.bin")
         for i = 0, 2 do
             filesystem.write_file(
-                prefix .. "-uin-" .. (i + 7) .. ".bin",
-                filesystem.read_file(prefix .. "-uin-" .. i .. ".bin")
+                filesystem.read_file(prefix .. "-uin-" .. i .. ".bin"),
+                prefix .. "-uin-" .. (i + 7) .. ".bin"
             )
         end
         local common = "input:"
@@ -3691,7 +3708,7 @@ describe("cartesi-machine CLI", function()
         end)
         -- Inputs carry global indices. The reject targets the input whose encoded index is 3.
         for i = 0, 4 do
-            filesystem.write_file(prefix .. "-ein-" .. i .. ".bin", encode_advance(i, "epoch-input-" .. i))
+            filesystem.write_file(encode_advance(i, "epoch-input-" .. i), prefix .. "-ein-" .. i .. ".bin")
         end
 
         -- Epoch 1: inputs 0 and 1 against a freshly created machine, left alive on the server.
@@ -3832,10 +3849,10 @@ describe("cartesi-machine CLI", function()
             local output_input_indices_file = path("-output-input-indices.bin")
             local prior_proof = path("-prior.json")
             local prior_input = path("-prior.bin")
-            filesystem.write_file(prior_input, encode_advance(9, "previous epoch"))
+            filesystem.write_file(encode_advance(9, "previous epoch"), prior_input)
             local begin_index = 7
             for i = begin_index, begin_index + 2 do
-                filesystem.write_file(path("-input-" .. i .. ".bin"), encode_advance(i - begin_index, "input-" .. i))
+                filesystem.write_file(encode_advance(i - begin_index, "input-" .. i), path("-input-" .. i .. ".bin"))
             end
             local disabled = "output:,rejected_output:,report:,outputs_merkle_root:,outputs_merkle_root_proof:"
             local initial = {
@@ -4020,7 +4037,6 @@ describe("cartesi-machine CLI", function()
             end)
             local guarded_cli = path("-no-history-read.lua")
             filesystem.write_file(
-                guarded_cli,
                 string.format(
                     [[
 local protected = {}
@@ -4044,7 +4060,8 @@ dofile(%q)
                     output_hashes_file,
                     output_input_indices_file,
                     original_cli
-                )
+                ),
+                guarded_cli
             )
             for index = 0, 2 do
                 local interrupted = index == 0
@@ -4131,7 +4148,7 @@ dofile(%q)
                                 copies[file] = copy
                                 local input <close> = io.open(file, "rb")
                                 if input then
-                                    filesystem.write_file(copy, input:read("a"))
+                                    filesystem.write_file(input:read("a"), copy)
                                 end
                             end
                         end
@@ -4180,8 +4197,8 @@ dofile(%q)
                         -- Default file indices follow the epoch offset, while history keeps earlier overrides.
                         for i = 1, 2 do
                             filesystem.write_file(
-                                path("-input-" .. i .. ".bin"),
-                                filesystem.read_file(prefix .. "-input-" .. (begin_index + i) .. ".bin")
+                                filesystem.read_file(prefix .. "-input-" .. (begin_index + i) .. ".bin"),
+                                path("-input-" .. i .. ".bin")
                             )
                             for output = 0, outputs_per_input - 1 do
                                 local o = output_begin + outputs_per_input + output
@@ -4230,9 +4247,9 @@ dofile(%q)
                             )
                         end
                     end
-                    filesystem.write_file(state_hash_file, zeros(32))
+                    filesystem.write_file(zeros(32), state_hash_file)
                     run_fail(continued_flags(continued), "machine root does not match state_hash")
-                    filesystem.write_file(state_hash_file, saved[state_hash_file])
+                    filesystem.write_file(saved[state_hash_file], state_hash_file)
                     if scenario.bundle and scenario.hash_type ~= "sha256" then
                         local baseline_uarch = path("-baseline-uarch.bin")
                         local continued_uarch = path("-continued-uarch.bin")
@@ -4274,29 +4291,29 @@ dofile(%q)
                 local final_options = split_options()
                 for _, file in ipairs({ output_hashes_file, output_input_indices_file }) do
                     local data = contents(file)
-                    filesystem.write_file(file, data .. "x")
+                    filesystem.write_file(data .. "x", file)
                     run_fail(resume_flags(final_options), "output file size does not match record size")
-                    filesystem.write_file(file, data)
+                    filesystem.write_file(data, file)
                 end
                 local data = contents(output_input_indices_file)
-                filesystem.write_file(output_input_indices_file, data .. string.pack("<I8", 0))
+                filesystem.write_file(data .. string.pack("<I8", 0), output_input_indices_file)
                 run_fail(resume_flags(final_options), "output history count does not match outputs frontier")
-                filesystem.write_file(output_input_indices_file, data)
+                filesystem.write_file(data, output_input_indices_file)
                 local old_hashes, old_indices = contents(output_hashes_file), contents(output_input_indices_file)
-                filesystem.write_file(output_hashes_file, old_hashes:sub(33))
-                filesystem.write_file(output_input_indices_file, old_indices:sub(9))
+                filesystem.write_file(old_hashes:sub(33), output_hashes_file)
+                filesystem.write_file(old_indices:sub(9), output_input_indices_file)
                 run_fail(resume_flags(final_options), "output history count does not match outputs frontier")
-                filesystem.write_file(output_hashes_file, old_hashes)
-                filesystem.write_file(output_input_indices_file, old_indices)
+                filesystem.write_file(old_hashes, output_hashes_file)
+                filesystem.write_file(old_indices, output_input_indices_file)
                 local hashes = contents(output_hashes_file)
-                filesystem.write_file(output_hashes_file, zeros(#hashes))
+                filesystem.write_file(zeros(#hashes), output_hashes_file)
                 CLI = guarded_cli
                 run_ok(resume_flags(final_options .. ",end_epoch:false"))
                 CLI = original_cli
                 run_fail(resume_flags(final_options), "output hashes do not match the epoch outputs Merkle root")
-                filesystem.write_file(output_hashes_file, hashes)
+                filesystem.write_file(hashes, output_hashes_file)
                 local query = path("-query.bin")
-                filesystem.write_file(query, "inspect between batches")
+                filesystem.write_file("inspect between batches", query)
                 local before_query = contents(state_hash_file)
                 run_ok(
                     resume_flags(
@@ -4400,7 +4417,7 @@ dofile(%q)
             run_fail(flags(checkpoint .. ",begin_epoch:false", true), "cannot resume epoch: cannot read")
             expect.falsy(io.open(state_hash, "rb"))
             -- A fresh resumable epoch accepts missing or empty files.
-            filesystem.write_file(outputs, "")
+            filesystem.write_file("", outputs)
             run_ok(flags(checkpoint .. ",end_epoch:false", true))
             local saved = {}
             for _, filename in ipairs({ state_hash, outputs, hashes, indices }) do
@@ -4418,14 +4435,14 @@ dofile(%q)
                 assert(os.remove(filename))
                 run_fail(flags(checkpoint .. ",begin_epoch:false", true), "cannot resume epoch: cannot read")
                 expect.falsy(io.open(filename, "rb"))
-                filesystem.write_file(filename, data)
+                filesystem.write_file(data, filename)
                 if #data > 0 then
-                    filesystem.write_file(filename, "")
+                    filesystem.write_file("", filename)
                     run_fail(
                         flags(checkpoint .. ",begin_epoch:false", true),
                         "cannot resume epoch: .* is empty %(use begin_epoch:true"
                     )
-                    filesystem.write_file(filename, data)
+                    filesystem.write_file(data, filename)
                 end
             end
             -- An intermediate batch leaves the epoch open. The final batch seals it.
@@ -4631,10 +4648,10 @@ dofile(%q)
         local _ <close>, outputs_file = scope_temp_pathname()
         local machine <close> = cartesi.machine({ ram = { length = 4096 } })
         machine:store(stored)
-        filesystem.write_file(state_hash, machine:get_root_hash())
+        filesystem.write_file(machine:get_root_hash(), state_hash)
         local initial_outputs = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
         initial_outputs.hash_function = nil
-        filesystem.write_file(outputs_file, cartesi.tojson(initial_outputs, 2, "Base64Array"))
+        filesystem.write_file(cartesi.tojson(initial_outputs, 2, "Base64Array"), outputs_file)
         local function flags(options)
             return {
                 "--max-mcycle=0",
@@ -4646,14 +4663,14 @@ dofile(%q)
                     .. (options ~= "" and "," .. options or ""),
             }
         end
-        filesystem.write_file(filename, "short")
+        filesystem.write_file("short", filename)
         run_fail(flags("state_hash:" .. filename), "invalid state_hash size")
         local computation = "--mcycle-computation-hash=log2_mcycle_period:10,frontier:" .. filename
         local function invalid(change, message)
             local frontier = hash_tree.frontier(62, "keccak256")
             frontier.hash_function = nil
             change(frontier)
-            filesystem.write_file(filename, cartesi.tojson(frontier, 2, "Base64Array"))
+            filesystem.write_file(cartesi.tojson(frontier, 2, "Base64Array"), filename)
             local args = flags("")
             args[#args + 1] = computation
             run_fail(args, message)
@@ -4685,7 +4702,7 @@ dofile(%q)
         local outputs = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
         hash_tree.frontier_push_back(outputs, zeros(32), 1)
         outputs.hash_function = nil
-        filesystem.write_file(filename, cartesi.tojson(outputs, 2, "Base64Array"))
+        filesystem.write_file(cartesi.tojson(outputs, 2, "Base64Array"), filename)
         for _, option in ipairs({ "output_hashes:" .. hashes_file, "output_input_indices:" .. indices_file }) do
             run_fail(
                 flags("outputs_frontier:" .. filename .. "," .. option),
@@ -4857,7 +4874,7 @@ dofile(%q)
         local option = "--assert-rolling-template=outputs_merkle_root:" .. filename
         expect.equal((run_rolling_template(machine, option)), 1)
         for _, data in ipairs({ "", zeros(31), zeros(33), string.rep("0", 64) }) do
-            filesystem.write_file(filename, data)
+            filesystem.write_file(data, filename)
             machine:write_reg("htif_tohost_data", #data)
             if #data > 0 then
                 machine:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, data)
@@ -4882,7 +4899,7 @@ dofile(%q)
         local _ <close> = tests_util.scope_exit(function()
             os.remove(prefix .. "-inrt-0.bin")
         end)
-        filesystem.write_file(prefix .. "-inrt-0.bin", encode_advance(0, "boom"))
+        filesystem.write_file(encode_advance(0, "boom"), prefix .. "-inrt-0.bin")
         local flags = {
             "--cmio-advance-state=input:"
                 .. prefix

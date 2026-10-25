@@ -18,7 +18,7 @@
 
 local bash = require("cartesi.bash")
 -- forward compiled package declarations so handle_bash_completion can run clean
-local cartesi, util, hash_tree
+local cartesi, util, hash_tree, fs
 local MCYCLE_MAX
 
 local function stderr_unsilenceable(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
@@ -712,6 +712,10 @@ where options are:
 
     DON'T USE THIS OPTION IN PRODUCTION
 
+  --clear-hash-tree
+    clear all cached hash-tree data after creating or loading the machine.
+    hashes are rebuilt lazily on the next hash or proof request.
+
   --max-mcycle=<number>
     stop at a given mcycle (default: 2^64-1).
 
@@ -1179,6 +1183,7 @@ local cmdline = {
     concurrency_update_hash_tree = 0,
     skip_version_check = false,
     no_reserve = false,
+    clear_hash_tree = false,
     initial_hash = false,
     final_hash = false,
     initial_proof = {},
@@ -2119,6 +2124,13 @@ options = {
         end,
     },
     {
+        "--clear-hash-tree",
+        function()
+            cmdline.clear_hash_tree = true
+            return true
+        end,
+    },
+    {
         "--no-reserve",
         function()
             cmdline.no_reserve = true
@@ -2565,7 +2577,7 @@ options = {
     {
         "--append-init-file=",
         function(_, _, opts)
-            local contents = util.read_file(opts)
+            local contents = fs.read_file(opts)
             if not contents:find("\n$") then contents = contents .. "\n" end
             cmdline.append_init = cmdline.append_init .. contents
             return true
@@ -2582,7 +2594,7 @@ options = {
     {
         "--append-entrypoint-file=",
         function(_, _, opts)
-            local contents = util.read_file(opts)
+            local contents = fs.read_file(opts)
             if not contents:find("\n$") then contents = contents .. "\n" end
             cmdline.append_entrypoint = cmdline.append_entrypoint .. contents
             return true
@@ -2662,6 +2674,7 @@ if #arg == 1 and arg[1] == "--bash-completion" then handle_bash_completion() end
 cartesi = require("cartesi")
 util = require("cartesi.util")
 hash_tree = require("cartesi.hash-tree")
+fs = require("cartesi.filesystem")
 
 -- And perform the dependent initializations
 MCYCLE_MAX = cartesi.MCYCLE_MAX
@@ -2793,6 +2806,7 @@ local runtime_config = {
     console = cmdline.console,
     skip_version_check = cmdline.skip_version_check,
     no_reserve = cmdline.no_reserve,
+    clear_hash_tree = cmdline.clear_hash_tree,
 }
 
 if cmdline.remote_spawn then
@@ -3072,7 +3086,7 @@ echo "
 
     local loaded_config
     if cmdline.load_config and cmdline.load_config_format == "json" then
-        loaded_config = cartesi.fromjson(util.read_file(cmdline.load_config))
+        loaded_config = cartesi.fromjson(fs.read_file(cmdline.load_config))
     elseif cmdline.load_config then
         local env = {}
         local chunk, err = loadfile(cmdline.load_config, "t", env)
@@ -3197,7 +3211,7 @@ local function save_cmio_data(advance, data, filename_pattern, index)
     local values = { i = advance.input_file_index, o = index }
     local name = instantiate_filename(filename_pattern, values)
     stderr("Storing %s\n", name)
-    util.write_file(data, name)
+    fs.write_file(data, name)
 end
 
 local function save_cmio_report(advance, data)
@@ -3252,23 +3266,14 @@ end
 
 local function load_frontier(filename, height, hash_type)
     if filename == "" then return nil end
-    local frontier = cartesi.fromjson(read_epoch_file(filename), "Base64Array")
-    assert(#frontier == height + 1, "frontier height does not match computation settings")
-    for _, hash in ipairs(frontier) do
-        assert(hash == false or (type(hash) == "string" and #hash == cartesi.HASH_SIZE), "invalid frontier entry")
-    end
-    if frontier[#frontier] then
-        for level = 1, #frontier - 1 do
-            assert(not frontier[level], "invalid complete frontier")
-        end
-    end
-    frontier.hash_function = cartesi[hash_type]
-    return frontier
+    -- A missing or empty file fails as an epoch that cannot resume.
+    read_epoch_file(filename)
+    return hash_tree.frontier_load(filename, height, hash_type)
 end
 
 local function store_frontier(filename, frontier)
     if filename == "" then return end
-    util.write_file(cartesi.tojson(table.move(frontier, 1, #frontier, 1, {}), 2, "Base64Array") .. "\n", filename)
+    hash_tree.frontier_store(frontier, filename)
 end
 
 -- State files are written independently. Validation can detect inconsistent files
@@ -3279,7 +3284,7 @@ local function persist_cmio_epoch_state(builder, runner)
     if advance.state_hash_filename ~= "" and runner:read_reg("iflags_Y") ~= 0 and runner:read_reg("iflags_H") == 0 then
         local cmd, reason = runner:receive_cmio_request()
         if cmd == cartesi.HTIF_YIELD_CMD_MANUAL and is_rx_accepted(reason) then
-            util.write_file(runner:get_root_hash(), advance.state_hash_filename)
+            fs.write_file(runner:get_root_hash(), advance.state_hash_filename)
         end
     end
     advance.saved_machine_hash = runner:get_root_hash()
@@ -3298,7 +3303,7 @@ end
 -- Reads back a Proof written by serialize_proof, in the resolved format (explicit format wins,
 -- else the filename extension).
 local function read_proof(filename, format)
-    local contents = util.read_file(filename)
+    local contents = fs.read_file(filename)
     if resolve_format(format, filename) == "json" then return cartesi.fromjson(contents, "Proof") end
     return assert(load(contents, filename, "t", {}))()
 end
@@ -3478,7 +3483,7 @@ local function save_cmio_output_proofs(advance)
         local values = { i = input_indices[i], o = proof.target_address }
         local name = instantiate_filename(advance.output_proof, values)
         stderr("Storing %s\n", name)
-        util.write_file(serialize_proof(proof, format), name)
+        fs.write_file(serialize_proof(proof, format), name)
     end
 end
 
@@ -3492,7 +3497,7 @@ local function save_cmio_outputs_merkle_root_proof(advance, proof)
     local name = instantiate_filename(advance.outputs_merkle_root_proof, values)
     local format = resolve_format(advance.format, advance.outputs_merkle_root_proof)
     stderr("Storing %s\n", name)
-    util.write_file(serialize_proof(proof, format), name)
+    fs.write_file(serialize_proof(proof, format), name)
 end
 
 local function save_cmio_hashes_and_indices(advance, hashes)
@@ -3558,7 +3563,7 @@ end
 local function load_cmio_input(machine, advance, input_file_index, revert_root_hash)
     local values = { i = input_file_index }
     local filename = instantiate_filename(advance.input, values)
-    local data = util.read_file(filename)
+    local data = fs.read_file(filename)
     -- Delivering data that does not fit the rx buffer is a no-op transition, as in the EVM
     -- verifier. It is still delivered so the run follows the same transition.
     if #data > 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE then
@@ -3570,7 +3575,7 @@ local function load_cmio_input(machine, advance, input_file_index, revert_root_h
 end
 
 local function load_cmio_query(machine, inspect)
-    local data = util.read_file(inspect.query)
+    local data = fs.read_file(inspect.query)
     machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_INSPECT_STATE, data)
 end
 
@@ -3579,7 +3584,7 @@ local function save_cmio_inspect_state_report(inspect, data)
     local values = { o = inspect.report_index }
     local name = instantiate_filename(inspect.report, values)
     stderr("Storing %s\n", name)
-    util.write_file(data, name)
+    fs.write_file(data, name)
 end
 
 local function store_machine(machine, config, dir, sharing)
@@ -3598,7 +3603,7 @@ local function dump_memory_ranges(machine, dir)
         -- Only memory ranges hold state. Device ranges are always pristine, so skip them.
         if v.is_memory then
             local filename = prefix .. string.format("%016x--%016x.bin", v.start, v.length)
-            util.write_file(machine:read_memory(v.start, v.length), filename)
+            fs.write_file(machine:read_memory(v.start, v.length), filename)
         end
     end
 end
@@ -3661,7 +3666,7 @@ end
 if cmdline.initial_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     if type(cmdline.initial_hash) == "string" then
-        util.write_file(machine:get_root_hash(), cmdline.initial_hash)
+        fs.write_file(machine:get_root_hash(), cmdline.initial_hash)
     else
         print_root_hash(machine, stderr_unsilenceable)
     end
@@ -3679,7 +3684,7 @@ local revert_none = {
     __close = function() end,
 }
 
-local function make_revert_none() return setmetatable({}, revert_none) end
+local function new_revert_none() return setmetatable({}, revert_none) end
 
 local revert_fork = { __index = {} }
 
@@ -3711,7 +3716,7 @@ function revert_fork:__close(err)
     if err ~= nil and self:has_snapshot() then self:revert() end
 end
 
-local function make_revert_fork(m) return setmetatable({ machine = m }, revert_fork) end
+local function new_revert_fork(m) return setmetatable({ machine = m }, revert_fork) end
 
 local revert_stored = { __index = {} }
 
@@ -3754,7 +3759,7 @@ end
 
 function revert_stored.__index:move() return setmetatable(shallow_move(self), revert_stored) end
 
-local function make_revert_stored(m, machine_directory, runtime)
+local function new_revert_stored(m, machine_directory, runtime)
     local backup <close> = setmetatable({
         machine = m,
         machine_directory = machine_directory,
@@ -3769,11 +3774,11 @@ end
 -- Select the snapshot implementation once. The object also reverts an outstanding snapshot on errors.
 local backup
 if cmdline.revert_mode == "fork" then
-    backup = make_revert_fork(machine)
+    backup = new_revert_fork(machine)
 elseif cmdline.revert_mode == "stored" then
-    backup = make_revert_stored(machine, cmdline.load_dir or cmdline.create_dir, runtime_config)
+    backup = new_revert_stored(machine, cmdline.load_dir or cmdline.create_dir, runtime_config)
 else
-    backup = make_revert_none()
+    backup = new_revert_none()
 end
 local _ <close> = backup
 
@@ -3881,7 +3886,7 @@ local function uarch_cycle_root_hashes_runner_run(self, mcycle_end)
     -- Past the window, run plainly.
     return self.runner:run(mcycle_end)
 end
-local function make_uarch_cycle_root_hashes_runner(runner, start, count, log2_bundle)
+local function new_uarch_cycle_root_hashes_runner(runner, start, count, log2_bundle)
     return setmetatable({
         runner = runner,
         start = start,
@@ -3976,7 +3981,7 @@ local function mcycle_root_hashes_runner_run(self, mcycle_end)
     self.partial_bundle = partial_bundle
     return collected.break_reason
 end
-local function make_mcycle_root_hashes_runner(runner, log2_period, start, log2_bundle)
+local function new_mcycle_root_hashes_runner(runner, log2_period, start, log2_bundle)
     return setmetatable({
         runner = runner,
         period = 1 << log2_period,
@@ -4105,7 +4110,7 @@ local function mcycle_computation_hash_persist_epoch_state(builder, runner)
     persist_cmio_epoch_state(builder, runner)
 end
 
-local function make_mcycle_computation_hash_builder(advance, computation, on_full)
+local function new_mcycle_computation_hash_builder(advance, computation, on_full)
     local log2_period = computation.log2_mcycle_period
     return {
         advance = advance,
@@ -4294,7 +4299,7 @@ local function uarch_cycle_computation_hash_end_epoch(builder, runner)
     end
 end
 
-local function make_uarch_cycle_computation_hash_builder(advance, computation, on_full)
+local function new_uarch_cycle_computation_hash_builder(advance, computation, on_full)
     local log2_period = computation.log2_mcycle_period
     local log2_periods_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_period
     local target_input = computation.mcycle_period_index >> log2_periods_per_input
@@ -4323,7 +4328,7 @@ end
 
 -- An epoch that does not compute a hash delegates execution to the runner and skips builder
 -- bookkeeping. It still checks that a rejection restored the input boundary.
-local function make_null_computation_hash_builder()
+local function new_null_computation_hash_builder()
     return {
         run = null_computation_hash_run,
         persist_epoch_state = null_computation_hash_noop,
@@ -4336,7 +4341,7 @@ local function make_null_computation_hash_builder()
 end
 
 -- Output-only persistence has no computation frontier, but saves completed epoch boundaries.
-local function make_epoch_outputs_builder(advance)
+local function new_epoch_outputs_builder(advance)
     return {
         advance = advance,
         run = null_computation_hash_run,
@@ -4357,7 +4362,7 @@ local function report_computation_hash(root)
     stderr("\n%s computation hash: %s\n", name, cartesi.tohex(root))
     if filename ~= "" then
         stderr("Storing %s\n", filename)
-        util.write_file(root, filename)
+        fs.write_file(root, filename)
     end
 end
 
@@ -4436,7 +4441,7 @@ local function assert_rolling_template(m, opts)
         return
     end
     local filename = opts.outputs_merkle_root
-    local expected_root = filename and util.read_file(filename)
+    local expected_root = filename and fs.read_file(filename)
         or hash_tree.frontier_get_root_hash(hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256"))
     assert(#expected_root == cartesi.HASH_SIZE, "invalid outputs_merkle_root size: expected 32 bytes")
     if data ~= expected_root then exit_code = 2 end
@@ -4455,8 +4460,7 @@ local function run_inspect_state_query(m, runner)
     -- Boot always runs the machine plainly, and only the query itself runs with the runner. A query
     -- needs a machine waiting for it on an rx-accepted manual yield. A halt, an overflow, an
     -- exhausted cycle limit, or a reject or exception yield leaves nothing to inspect.
-    local break_reason =
-        run_to_stop(make_null_computation_hash_builder(), m, cmdline.max_mcycle, ignore_yield_automatic)
+    local break_reason = run_to_stop(new_null_computation_hash_builder(), m, cmdline.max_mcycle, ignore_yield_automatic)
     local waiting = is_yielded_manual(break_reason)
     if waiting then
         local cmd, yield_reason = m:receive_cmio_request()
@@ -4479,7 +4483,7 @@ local function run_inspect_state_query(m, runner)
             cmdline.cmio_inspect.report_index = cmdline.cmio_inspect.report_index + 1
         end
     end
-    break_reason = run_to_stop(make_null_computation_hash_builder(), runner, cmdline.max_mcycle, on_yield_automatic)
+    break_reason = run_to_stop(new_null_computation_hash_builder(), runner, cmdline.max_mcycle, on_yield_automatic)
     report_stop(m, break_reason)
     stderr("\nAfter query\n")
     backup:revert()
@@ -4536,7 +4540,7 @@ end
 -- Requires boot to reach a fixed point and returns its revert root hash and stop information.
 local function initialize_advance_state_epoch(builder, runner)
     local break_reason =
-        run_to_stop(make_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
+        run_to_stop(new_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
     assert(is_at_fixed_point(break_reason), "advance-state epoch initialization did not reach a fixed point")
     backup:commit()
     local yield_reason, yield_data
@@ -4617,7 +4621,7 @@ end
 -- computation hash advances through it too).
 local runner = gdb_stub or machine
 if cmdline.uarch_cycle_root_hashes_count then
-    runner = make_uarch_cycle_root_hashes_runner(
+    runner = new_uarch_cycle_root_hashes_runner(
         runner,
         cmdline.uarch_cycle_root_hashes_start,
         cmdline.uarch_cycle_root_hashes_count,
@@ -4625,7 +4629,7 @@ if cmdline.uarch_cycle_root_hashes_count then
     )
 elseif mcycle_root_hashes then
     local start = cmdline.mcycle_root_hashes_start ~= 0 and cmdline.mcycle_root_hashes_start or nil
-    runner = make_mcycle_root_hashes_runner(
+    runner = new_mcycle_root_hashes_runner(
         runner,
         cmdline.mcycle_root_hashes_log2_period,
         start,
@@ -4640,18 +4644,17 @@ if cmdline.cmio_advance then
     local advance = cmdline.cmio_advance
     local builder
     if cmdline.mcycle_computation_hash then
-        builder =
-            make_mcycle_computation_hash_builder(advance, cmdline.mcycle_computation_hash, report_computation_hash)
+        builder = new_mcycle_computation_hash_builder(advance, cmdline.mcycle_computation_hash, report_computation_hash)
     elseif cmdline.uarch_cycle_computation_hash then
-        builder = make_uarch_cycle_computation_hash_builder(
+        builder = new_uarch_cycle_computation_hash_builder(
             advance,
             cmdline.uarch_cycle_computation_hash,
             report_computation_hash
         )
     elseif advance.resumable then
-        builder = make_epoch_outputs_builder(advance)
+        builder = new_epoch_outputs_builder(advance)
     else
-        builder = make_null_computation_hash_builder()
+        builder = new_null_computation_hash_builder()
     end
     run_advance_state_epoch(builder, runner)
     saved_machine_hash = advance.saved_machine_hash
@@ -4662,7 +4665,7 @@ if cmdline.cmio_inspect then
 elseif not cmdline.cmio_advance then
     report_stop(
         machine,
-        run_to_stop(make_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
+        run_to_stop(new_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
     )
 end
 -- log step
@@ -4709,7 +4712,7 @@ if cmdline.dump_memory_ranges_dir then dump_memory_ranges(machine, cmdline.dump_
 if cmdline.final_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     if type(cmdline.final_hash) == "string" then
-        util.write_file(machine:get_root_hash(), cmdline.final_hash)
+        fs.write_file(machine:get_root_hash(), cmdline.final_hash)
     else
         print_root_hash(machine, stderr_unsilenceable)
     end

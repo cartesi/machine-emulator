@@ -8,7 +8,7 @@
 local cartesi = require("cartesi")
 local jsonrpc = require("cartesi.jsonrpc")
 local hash_tree = require("cartesi.hash-tree")
-local util = require("cartesi.util")
+local fs = require("cartesi.filesystem")
 local vgu = require("vgu")
 local output_verifier = require("game-output")
 local EVENTS = vgu.EVENTS
@@ -226,11 +226,11 @@ local function new_machine_pair(machine)
     return pair:move()
 end
 
--- A checkpoint is the machine at an input base, before delivery, indexed by the input. The first
--- checkpoint is the initial machine at input zero and is always retained. The epoch run considers
+-- An entry is the machine at an input base, before delivery, indexed by the input. The first
+-- entry is the initial machine at input zero and is always retained. The epoch run considers
 -- every later input base, and the cache retains a bounded set of forks. When the cache is full,
--- a new checkpoint replaces the first one closer than the input gap to its predecessor. If there
--- is none, the gap doubles, so checkpoints spread across the epoch as it grows.
+-- a new entry replaces the first one closer than the input gap to its predecessor. If there
+-- is none, the gap doubles, so entries spread across the epoch as it grows.
 local machine_cache_meta = { __index = {} }
 local machine_cache_methods = machine_cache_meta.__index
 
@@ -242,7 +242,7 @@ local function new_machine_cache(initial_machine, capacity, input_gap)
         input_gap = input_gap,
         replace_cursor = 2,
         last_epoch_input_offset = 0,
-        checkpoints = { { epoch_input_offset = 0, machine = initial_machine } },
+        entries = { { epoch_input_offset = 0, machine = initial_machine } },
     }, machine_cache_meta)
     assert(math.type(capacity) == "integer" and capacity > 0, "invalid machine cache capacity")
     assert(math.type(input_gap) == "integer" and input_gap > 0, "invalid machine cache input gap")
@@ -250,10 +250,10 @@ local function new_machine_cache(initial_machine, capacity, input_gap)
 end
 
 function machine_cache_methods:close()
-    for _, checkpoint in ipairs(self.checkpoints or {}) do
-        checkpoint.machine:shutdown_server()
+    for _, entry in ipairs(self.entries or {}) do
+        entry.machine:shutdown_server()
     end
-    self.checkpoints = nil
+    self.entries = nil
 end
 machine_cache_meta.__close = machine_cache_methods.close
 
@@ -263,23 +263,23 @@ end
 
 -- docs:begin cache_consider
 function machine_cache_methods:consider(epoch_input_offset, machine)
-    local checkpoints = assert(self.checkpoints, "machine cache is closed or moved")
-    assert(epoch_input_offset > self.last_epoch_input_offset, "machine checkpoints are not ordered")
+    local entries = assert(self.entries, "machine cache is closed or moved")
+    assert(epoch_input_offset > self.last_epoch_input_offset, "cache entries are not ordered")
     self.last_epoch_input_offset = epoch_input_offset
-    if epoch_input_offset - checkpoints[#checkpoints].epoch_input_offset < self.input_gap then
+    if epoch_input_offset - entries[#entries].epoch_input_offset < self.input_gap then
         return
     end
     local replace_index
-    if #checkpoints == self.capacity then
+    if #entries == self.capacity then
         replace_index = self.replace_cursor
-        while replace_index <= #checkpoints do
-            local previous = checkpoints[replace_index - 1].epoch_input_offset
-            if checkpoints[replace_index].epoch_input_offset - previous < self.input_gap then
+        while replace_index <= #entries do
+            local previous = entries[replace_index - 1].epoch_input_offset
+            if entries[replace_index].epoch_input_offset - previous < self.input_gap then
                 break
             end
             replace_index = replace_index + 1
         end
-        if replace_index > #checkpoints then
+        if replace_index > #entries then
             self.input_gap = self.input_gap << 1
             self.replace_cursor = 2
             return
@@ -287,44 +287,44 @@ function machine_cache_methods:consider(epoch_input_offset, machine)
     end
     local clone <close> = new_machine_pair(fork_machine(machine))
     if replace_index then
-        table.remove(checkpoints, replace_index).machine:shutdown_server()
+        table.remove(entries, replace_index).machine:shutdown_server()
         self.replace_cursor = replace_index
     end
-    checkpoints[#checkpoints + 1] = { epoch_input_offset = epoch_input_offset, machine = clone.machine }
+    entries[#entries + 1] = { epoch_input_offset = epoch_input_offset, machine = clone.machine }
     clone.machine = nil
 end
 -- docs:end cache_consider
 
-local function find_nearest_checkpoint(cache, epoch_input_offset)
-    local checkpoints = assert(cache.checkpoints, "machine cache is closed or moved")
+local function find_nearest_entry(cache, epoch_input_offset)
+    local entries = assert(cache.entries, "machine cache is closed or moved")
     assert(epoch_input_offset >= 0, "invalid epoch input offset")
     local nearest
-    for _, checkpoint in ipairs(checkpoints) do
-        if checkpoint.epoch_input_offset > epoch_input_offset then
+    for _, entry in ipairs(entries) do
+        if entry.epoch_input_offset > epoch_input_offset then
             break
         end
-        nearest = checkpoint
+        nearest = entry
     end
     return nearest
 end
 
 -- Fork the nearest retained input boundary not past the requested offset.
 function machine_cache_methods:nearest_not_past_epoch_input_offset(epoch_input_offset)
-    local checkpoint = find_nearest_checkpoint(self, epoch_input_offset)
-    local pair <close> = new_machine_pair(fork_machine(checkpoint.machine))
-    return pair:move(), checkpoint.epoch_input_offset
+    local entry = find_nearest_entry(self, epoch_input_offset)
+    local pair <close> = new_machine_pair(fork_machine(entry.machine))
+    return pair:move(), entry.epoch_input_offset
 end
 
--- Take ownership of the received pair and keep it unless a retained checkpoint is strictly nearer.
+-- Take ownership of the received pair and keep it unless a retained entry is strictly nearer.
 function machine_cache_methods:nearer_not_past_epoch_input_offset_or(
     pair,
     pair_epoch_input_offset,
     epoch_input_offset_end
 )
     local received_pair <close> = assert(pair, "missing machine pair")
-    local checkpoint = find_nearest_checkpoint(self, epoch_input_offset_end)
+    local entry = find_nearest_entry(self, epoch_input_offset_end)
     assert(pair_epoch_input_offset <= epoch_input_offset_end, "pair is past desired input")
-    if checkpoint.epoch_input_offset <= pair_epoch_input_offset then
+    if entry.epoch_input_offset <= pair_epoch_input_offset then
         return received_pair:move(), pair_epoch_input_offset
     end
     local advancing_pair <close>, cached_epoch_input_offset =
@@ -369,7 +369,7 @@ function player_methods:new_machine(initial_state_hash) -- luacheck: ignore 212 
     return move_machine(machine)
 end
 
--- Obtain an exact input boundary without exposing checkpoint selection to callers.
+-- Obtain an exact input boundary without exposing entry selection to callers.
 function player_methods:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
     local pair <close>, cached_epoch_input_offset =
         self.machine_cache:nearest_not_past_epoch_input_offset(epoch_input_offset)
@@ -491,10 +491,10 @@ function player_methods:run_to_epoch_input_offset(pair, inputs, epoch_input_offs
 end
 
 function player_methods:read_input(_index, path) -- luacheck: ignore 212 self
-    return util.read_file(path)
+    return fs.read_file(path)
 end
 
--- Returns a pair at position_end, starting from a closer checkpoint when the cache has one.
+-- Returns a pair at position_end, starting from a closer entry when the cache has one.
 -- docs:begin run_to_position
 function player_methods:run_to_position(pair, position_begin, position_end)
     local received_pair <close> = pair
@@ -669,7 +669,7 @@ end
 -- docs:begin prove_output
 function event_handler:prove_output()
     if #self.outputs == 0 then
-        return {}
+        return "nothing"
     end
     return {
         output_index = self.output_proofs[#self.outputs].target_address,
@@ -1026,12 +1026,12 @@ end
 
 -- The deployed contract fixes the epoch's initial state, inputs, and clock settings.
 -- Input events carry paths; proof verification trusts the contract's own input bytes.
-local function make_dapp_contract(initial_state_hash, input_paths)
+local function new_dapp_contract(initial_state_hash, input_paths)
     assert(#initial_state_hash == 32 and #input_paths <= INPUTS_PER_EPOCH, "invalid epoch")
     return {
         initial_state_hash = initial_state_hash,
         input_paths = input_paths,
-        inputs = map(input_paths, util.read_file),
+        inputs = map(input_paths, fs.read_file),
         max_allowance = 4,
         response_budget = 1,
     }
@@ -1053,7 +1053,7 @@ local vg = {
     addresses = addresses,
     new_player = new_player,
     new_referee = new_referee,
-    make_dapp_contract = make_dapp_contract,
+    new_dapp_contract = new_dapp_contract,
     event_handler = event_handler,
     player_methods = player_methods,
     machine_pair_methods = machine_pair_methods,
@@ -1074,7 +1074,7 @@ if role == "phase_closer" then
 end
 local initial_state_hash = cartesi.fromhex(assert(arg[3], "missing initial state hash"))
 if role == "referee" then
-    local dapp_contract = make_dapp_contract(initial_state_hash, { table.unpack(arg, 4) })
+    local dapp_contract = new_dapp_contract(initial_state_hash, { table.unpack(arg, 4) })
     vgu.run_server(new_referee(dapp_contract), address)
     vgu.close_narration()
 elseif role == "honest" then

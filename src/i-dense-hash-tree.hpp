@@ -26,6 +26,11 @@ namespace cartesi {
 
 class i_dense_hash_tree {
 public:
+    /// \brief Clears all cached node hashes.
+    void clear() noexcept {
+        do_clear();
+    }
+
     machine_hash_view node_hash_view(uint64_t offset, int log2_size) noexcept {
         return do_node_hash_view(offset, log2_size);
     }
@@ -56,6 +61,7 @@ protected:
     }
 
 private:
+    virtual void do_clear() noexcept = 0;
     virtual const_machine_hash_view do_node_hash_view(uint64_t offset, int log2_size) const noexcept = 0;
     virtual machine_hash_view do_node_hash_view(uint64_t offset, int log2_size) noexcept = 0;
     virtual const_machine_hash_view do_root_hash_view() const noexcept = 0;
@@ -63,6 +69,8 @@ private:
 };
 
 class empty_dense_hash_tree final : public i_dense_hash_tree {
+    void do_clear() noexcept override {}
+
     const_machine_hash_view do_node_hash_view(uint64_t /*offset*/, int /*log2_size*/) const noexcept override {
         return no_hash_view();
     }

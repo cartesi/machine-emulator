@@ -84,7 +84,8 @@ struct machine_runtime_config {
     concurrency_runtime_config concurrency{};
     bool skip_version_check{};
     bool soft_yield{};
-    bool no_reserve{}; ///< Do not reserve swap memory when mapping flash drives
+    bool no_reserve{};      ///< Do not reserve swap memory when mapping flash drives
+    bool clear_hash_tree{}; ///< Clear cached hash-tree data after construction (create or load only)
 };
 
 } // namespace cartesi

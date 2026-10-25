@@ -242,15 +242,15 @@ echo ...
 
 A final check can also be performed to verify if the contents inside the container are as expected:
 
-```{.bash key=linux_sha replace=source}
-sha256sum /usr/share/cartesi-machine/images/linux.bin
+```{.bash key=linux_sha vars=images->globals/cartesi_images_path replace=source}
+sha256sum $images/linux.bin
 ```
 
 ```{.text replace=linux_sha}
 ```
 
-```{.bash key=rootfs_sha replace=source}
-sha256sum /usr/share/cartesi-machine/images/rootfs.ext2
+```{.bash key=rootfs_sha vars=images->globals/cartesi_images_path replace=source}
+sha256sum $images/rootfs.ext2
 ```
 
 ```{.text replace=rootfs_sha}
@@ -1730,7 +1730,7 @@ ln -sf $rolling_calc_encode/input-[012].bin .
 cartesi-jsonrpc-machine \
     --server-address=127.0.0.1:8095
 } > /dev/null 2>&1 &
-while ! netstat -ntl 2>&1 | grep '\<8095\>' > /dev/null; do sleep 1; done
+while ! netstat -ant 2>&1 | grep '\<8095\>' | grep -q LISTEN; do sleep 1; done
 {
 # docs:begin client
 cartesi-machine \
@@ -1766,7 +1766,7 @@ cartesi-jsonrpc-machine \
 # docs:end server
 } > server 2>&1 &
 srv_pid=$!
-while ! netstat -ntl 2>&1 | grep '\<8088\>' > /dev/null; do sleep 1; done
+while ! netstat -ant 2>&1 | grep '\<8088\>' | grep -q LISTEN; do sleep 1; done
 {
 # docs:begin first
 cartesi-machine \
@@ -1834,7 +1834,7 @@ ln -sf $rolling_calc_encode/input-[012].bin .
 cartesi-jsonrpc-machine \
     --server-address=127.0.0.1:8087
 } > /dev/null 2>&1 &
-while ! netstat -ntl 2>&1 | grep '\<8087\>' > /dev/null; do sleep 1; done
+while ! netstat -ant 2>&1 | grep '\<8087\>' | grep -q LISTEN; do sleep 1; done
 {
 # docs:begin client
 cartesi-machine \
@@ -2367,7 +2367,7 @@ Recall from an [earlier example](#initialization) that the `cartesi-machine` com
 ```{.bash replace=ls_bin/source}
 ```
 builds a Cartesi Machine that, when run, lists the contents of the `/bin/` directory before gracefully halting.
-The kernel `linux.bin` and root file-system `rootfs.ext2` come from the defaults under `/usr/share/cartesi-machine/images/`.
+The kernel `linux.bin` and root file-system `rootfs.ext2` come from the defaults under []{replace=globals/cartesi_images_path}.
 
 The command-line option `--store-config[=<filename>]` makes the utility capture the initial machine configuration.
 Without an argument, the configuration is printed to standard output.
@@ -2805,7 +2805,7 @@ The calculator script requires this module and uses `verify_slice` to verify the
 ```{.lua key=run_calculator_with_proof include=run-calculator-with-proof.lua title="run-calculator-with-proof.lua"}
 ```
 
-```{.lua key=proof_module include=../../usr/share/lua/5.4/cartesi/hash-tree.lua replace=null}
+```{.lua key=proof_module include=cache/hash-tree.lua replace=null}
 ```
 
 Running the script with the command-line
@@ -5318,7 +5318,7 @@ lua5.4 vg.lua referee 127.0.0.1:8090 "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 # docs:end server
 } > /dev/null &
-while ! netstat -ntl 2>&1 | grep '\<8090\>' > /dev/null; do sleep 1; done
+while ! netstat -ant 2>&1 | grep '\<8090\>' | grep -q LISTEN; do sleep 1; done
 {
 # docs:begin honest
 lua5.4 vg.lua honest 127.0.0.1:8090 "$initial_state_hash"
@@ -5441,7 +5441,7 @@ lua5.4 vg.lua referee 127.0.0.1:8090 "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 # docs:end server
 } > /dev/null &
-while ! netstat -ntl 2>&1 | grep '\<8090\>' > /dev/null; do sleep 1; done
+while ! netstat -ant 2>&1 | grep '\<8090\>' | grep -q LISTEN; do sleep 1; done
 {
 # docs:begin idle
 lua5.4 vg-dishonest.lua idle 127.0.0.1:8090 "$initial_state_hash"
@@ -5499,7 +5499,7 @@ ln -sf "$vg_sybil_run"/{input-[012].bin,fake-input-2.bin,vg.lua,vg-dishonest.lua
 trap 'lua5.4 vg.lua phase_closer 127.0.0.1:8090 stop > /dev/null 2>&1 || true; wait' EXIT
 lua5.4 vg.lua referee 127.0.0.1:8090 "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin > /dev/null &
-while ! netstat -ntl 2>&1 | grep '\<8090\>' > /dev/null; do sleep 1; done
+while ! netstat -ant 2>&1 | grep '\<8090\>' | grep -q LISTEN; do sleep 1; done
 {
 # docs:begin honest
 lua5.4 vg.lua honest 127.0.0.1:8090 "$initial_state_hash"

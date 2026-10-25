@@ -27,6 +27,11 @@ RECIPES_DIR ?= $(CURDIR)/recipes
 REPLACE_CACHE_DIR := $(RECIPES_DIR)/cache
 export RECIPES_DIR REPLACE_CACHE_DIR
 export LUA_PATH := $(CURDIR)/?.lua;$(RECIPES_DIR)/?.lua;$(LUA_PATH);;
+# Lua 5.4 prefers LUA_PATH_5_4, which make env sets.
+ifdef LUA_PATH_5_4
+export LUA_PATH_5_4 := $(CURDIR)/?.lua;$(RECIPES_DIR)/?.lua;$(LUA_PATH_5_4)
+endif
+export PATH := $(RECIPES_DIR):$(PATH)
 
 STYLUA=stylua
 STYLUA_FLAGS=--indent-type Spaces --respect-ignores
@@ -189,8 +194,7 @@ build-docs-image: | ensure-rootfs-docs
 	base=$$(docker image inspect --format '{{ index .Config.Labels "io.cartesi.machine-emulator.base-image" }}' cartesi/machine-emulator:$(TAG)); \
 	docker build $(DOCKER_PLATFORM) \
 	    --build-arg TAG=$(TAG) \
-	    --build-arg LINUX_TAG=$(LINUX_TAG) \
-	    --build-arg LINUX_VERSION=$(LINUX_VERSION) \
+	    --build-arg LINUX_URL=$(LINUX_URL) \
 	    --build-arg LINUX_SHA256=$(LINUX_SHA256) \
 	    $${base:+--build-arg BUILDER_BASE=$$base} \
 	    -t $(DOCS_IMAGE):$(TAG) .
@@ -212,10 +216,53 @@ $(REPLACE_CACHE_DIR):
 RECIPE_TEST_ENV ?= no
 GAME_TEST_DIR := $(REPLACE_CACHE_DIR)/game-tests
 .PHONY: test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat
+
+# HOST=yes runs the recipes outside the docs image, against the local emulator build set up
+# by eval $(make env). The default images the docs image would provide live in BUILD_DIR,
+# and the installed command name links to the CLI script in the emulator's source tree.
+HOST ?= no
+ifeq ($(HOST),yes)
+BUILD_DIR := $(CURDIR)/build
+RECIPE_TEST_ENV := yes
+export CARTESI_IMAGES_PATH := $(BUILD_DIR)/images
+# Timestamps print as in the docs image.
+export TZ := UTC
+# The recipes and the README blocks expect GNU tools, as in the docs image. MacPorts keeps
+# them under their usual names in GNU_BIN_DIR.
+GNU_BIN_DIR ?= /opt/local/libexec/gnubin
+export PATH := $(GNU_BIN_DIR):$(PATH)
+HOST_COMMANDS := ../src/cartesi-machine ../src/cartesi-machine-stored-hash
+HOST_FILES := $(HOST_COMMANDS) $(CARTESI_IMAGES_PATH)/linux.bin $(CARTESI_IMAGES_PATH)/rootfs.ext2
+
+$(HOST_COMMANDS): ../src/%:
+	ln -s $*.lua $@
+
+$(CARTESI_IMAGES_PATH)/linux.bin: $(DEPENDENCIES_LOCK)
+	mkdir -p $(@D)
+	curl -sSfL -o $@ $(LINUX_URL)
+	echo '$(LINUX_SHA256)  $@' | sha256sum -c -
+
+$(CARTESI_IMAGES_PATH)/rootfs.ext2: | check-rootfs-docs
+	mkdir -p $(@D)
+	ln -sf $(ROOTFS_DOCS_EXT2) $@
+
+test-prt-protocol test-vg test-vg-execution $(GAME_TEST_DIR)/initial-hash: | $(HOST_FILES)
+
+# Rendering runs the blocks here as well. The emulator build and the images take the place of
+# the docs image, so their hash stands in for its ID.
+DEV_ENV_HAS_DOCGEN := yes
+DOCS_IMAGE_ID := host-$(shell cat ../src/cartesi.so ../src/libcartesi* ../src/cartesi-jsonrpc-machine \
+    ../src/*.lua ../src/cartesi/*.lua $(DEPENDENCIES_LOCK) $(ROOTFS_DOCS_EXT2) | shasum -a 256 | cut -c1-16)
+template.d: | $(HOST_FILES)
+endif
+
 ifeq ($(RECIPE_TEST_ENV),yes)
 test-prt-protocol:
 	bash $(RECIPES_DIR)/game-runner-test.sh
-	@work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; \
+	@work=$$(mktemp -d); \
+	    trap 'cd "$$work" && rm -f claims.txt outputs.txt verdict.txt round_1.txt round_1_inputs.txt \
+	        round_1_mcycles.txt round_1_proofs.txt round_1_timeouts.txt round_1_uarch_cycles.txt && \
+	        cd / && rmdir "$$work" || exit 1' EXIT; \
 	    cd "$$work" && lua5.4 $(RECIPES_DIR)/prt-test.lua && \
 	    lua5.4 $(RECIPES_DIR)/game-transport-test.lua && \
 	    lua5.4 $(RECIPES_DIR)/vg-clock-test.lua
@@ -257,14 +304,29 @@ ifeq ($(DOCS_IMAGE_ID),)
 $(error DOCS_IMAGE_ID is not set)
 endif
 
+# template.d holds the paths of the environment that generated it, so a change of environment,
+# such as between the docs image and the host, regenerates it.
+DOCS_IMAGE_TRIGGER := $(REPLACE_CACHE_DIR)/.docs-image-$(lastword $(subst :, ,$(DOCS_IMAGE_ID)))
+$(DOCS_IMAGE_TRIGGER): | $(REPLACE_CACHE_DIR)
+	rm -f $(REPLACE_CACHE_DIR)/.docs-image-*
+	touch $@
+
+# The README quotes the cartesi.hash-tree module this environment's Lua uses.
+HASH_TREE_LUA := $(shell lua5.4 -e 'io.write(package.searchpath("cartesi.hash-tree", package.path))')
+
+# Where the default kernel and rootfs images live, as the README names them.
+CARTESI_IMAGES_DIR := $(or $(CARTESI_IMAGES_PATH),/usr/share/cartesi-machine/images)
+
 # Dry-run: scan the template, populate cache directories, and emit one make
 # rule per annotated block into template.d. The rendered output IS the .d
 # file (pandoc emits the RawBlock that replace.lua builds).
-template.d: README.md.template replace.lua | $(REPLACE_CACHE_DIR)
+template.d: README.md.template replace.lua $(DOCS_IMAGE_TRIGGER) | $(REPLACE_CACHE_DIR)
+	ln -sfn '$(HASH_TREE_LUA)' $(REPLACE_CACHE_DIR)/hash-tree.lua
 	REPLACE_CACHE_DIR=$(REPLACE_CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) \
 	    pandoc -f markdown -t plain \
 	    -M write-user-dependencies=README.md \
 	    -M docs_image=$(DOCS_IMAGE):$(TAG) \
+	    -M cartesi_images_path=$(CARTESI_IMAGES_DIR) \
 	    -M docs_image_id="$(DOCS_IMAGE_ID)" \
 	    --lua-filter replace.lua README.md.template -o $@
 
@@ -313,6 +375,7 @@ README.md: README.md.template replace.lua alerts.lua github.template.md template
 	REPLACE_CACHE_DIR=$(REPLACE_CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) \
 	    pandoc -f markdown -s -t gfm --toc \
 	    -M docs_image=$(DOCS_IMAGE):$(TAG) \
+	    -M cartesi_images_path=$(CARTESI_IMAGES_DIR) \
 	    --lua-filter replace.lua --lua-filter alerts.lua \
 	    --template=github.template.md \
 	    README.md.template -o $@
@@ -321,6 +384,7 @@ README.html: README.md README.md.template replace.lua alerts.lua github.template
 	REPLACE_CACHE_DIR=$(REPLACE_CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) \
 	    pandoc -f markdown+emoji -s -t html5 --toc --mathjax \
 	    -M docs_image=$(DOCS_IMAGE):$(TAG) \
+	    -M cartesi_images_path=$(CARTESI_IMAGES_DIR) \
 	    --lua-filter replace.lua --lua-filter alerts.lua \
 	    --template=github.template.html \
 	    README.md.template -o $@
@@ -349,4 +413,4 @@ clean:
 	rm -f $(RECIPES_DIR)/rootfs-docs.tar
 	rm -f $(ROOTFS_DOCS_KEY) $(ROOTFS_DOCS_KEY)-have
 	rm -f $(RECIPES_DIR)/.rootfs-docs-*
-	rm -rf $(REPLACE_CACHE_DIR)
+	rm -rf recipes/cache

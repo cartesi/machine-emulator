@@ -108,7 +108,7 @@ end
 -- Substitute an input filename as it arrives. Replay reads the forged file, while the
 -- referee still verifies input inclusion against the original contract inputs.
 local function new_forger(dapp_contract, epoch_input_offset, forged_path, label)
-    local player = prt.new_player(dapp_contract, label or "forger")
+    local player = prt.new_forked_player(dapp_contract, label or "forger")
     clone_handlers(player)
     local input_added = player.event_handler.input_added
     player.event_handler.input_added = function(self, index, path)
@@ -154,7 +154,7 @@ local function new_tamperer(dapp_contract, epoch_input_offset, tamper_bundle_off
         end
         return target
     end
-    return use_machine(prt.new_player(dapp_contract, label or "tamperer"), {
+    return use_machine(prt.new_forked_player(dapp_contract, label or "tamperer"), {
         run = function(machine, target)
             local point = tamper_point(machine)
             if point and math.ult(machine:read_reg("mcycle"), point) and math.ult(point, target) then
@@ -363,7 +363,7 @@ end
 
 local function new_fabulist(dapp_contract, epoch_input_offset, leaf_offset, label)
     local geometry = dapp_contract.geometry
-    local player = prt.new_player(dapp_contract, label or "fabulist")
+    local player = prt.new_forked_player(dapp_contract, label or "fabulist")
     local target_epoch_period_offset =
         prt.combine_epoch_period_offset(geometry.periods_per_input, epoch_input_offset, leaf_offset)
     local fake_hash = keccak("fabulist")
@@ -435,7 +435,7 @@ end
 
 local function new_quitter(dapp_contract, label)
     label = label or "quitter"
-    local player = prt.new_player(dapp_contract, label)
+    local player = prt.new_forked_player(dapp_contract, label)
     use_machine(player, { send_cmio_response = function() end })
     local function insert(liar, _, count, height)
         local fake_hash = keccak(label)
@@ -493,14 +493,14 @@ local function take_argument(message)
     next_argument = next_argument + 1
     return value
 end
-local new_player
+local new_forked_player
 if role == "quitter" then
-    new_player = new_quitter
+    new_forked_player = new_quitter
 elseif role == "forger" then
     local index =
         assert(tonumber(take_argument("missing forged epoch input offset")), "invalid forged epoch input offset")
     local path = take_argument("missing forged input file")
-    new_player = function(dapp_contract, label)
+    new_forked_player = function(dapp_contract, label)
         return new_forger(dapp_contract, index, path, label)
     end
 elseif role == "tamperer" or role == "fabulist" then
@@ -508,7 +508,7 @@ elseif role == "tamperer" or role == "fabulist" then
         assert(tonumber(take_argument("missing epoch input offset")), "invalid epoch input offset")
     local offset = assert(tonumber(take_argument("missing offset")), "invalid offset")
     local new = role == "tamperer" and new_tamperer or new_fabulist
-    new_player = function(dapp_contract, label)
+    new_forked_player = function(dapp_contract, label)
         return new(dapp_contract, epoch_input_offset, offset, label)
     end
 else
@@ -517,5 +517,5 @@ end
 local label = take_argument()
 assert(next_argument > #arg, "only the referee takes input files")
 local dapp_contract = prt.new_dapp_contract(initial_state_hash, {})
-local player <close> = new_player(dapp_contract, label)
+local player <close> = new_forked_player(dapp_contract, label)
 prtu.run_client(player, server_address)

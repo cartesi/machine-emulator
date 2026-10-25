@@ -1062,7 +1062,7 @@ function machine_pair_methods:revert()
 end
 -- docs:end revert
 
-local function new_machine_pair(machine)
+local function new_forked_machine_pair(machine)
     local pair <close> = setmetatable({ machine = machine }, machine_pair_meta)
     pair.revert_root_hash = machine:get_root_hash()
     return pair:move()
@@ -1076,7 +1076,7 @@ end
 local machine_cache_meta = { __index = {} }
 local machine_cache_methods = machine_cache_meta.__index
 
-local function new_machine_cache(initial_machine, capacity, input_gap)
+local function new_forked_machine_cache(initial_machine, capacity, input_gap)
     capacity = capacity or DEFAULT_MACHINE_CACHE_CAPACITY
     input_gap = input_gap or DEFAULT_MACHINE_CACHE_INPUT_GAP
     local cache <close> = setmetatable({
@@ -1126,7 +1126,7 @@ function machine_cache_methods:consider(epoch_input_offset, machine)
             return
         end
     end
-    local clone <close> = new_machine_pair(fork_server(machine))
+    local clone <close> = new_forked_machine_pair(fork_server(machine))
     if replace_index then
         table.remove(entries, replace_index).machine:shutdown_server()
         self.replace_cursor = replace_index
@@ -1151,7 +1151,7 @@ end
 -- Fork the nearest retained input boundary not past the requested offset.
 function machine_cache_methods:nearest_not_past_epoch_input_offset(epoch_input_offset)
     local entry = find_nearest_entry(self, epoch_input_offset)
-    local pair <close> = new_machine_pair(fork_server(entry.machine))
+    local pair <close> = new_forked_machine_pair(fork_server(entry.machine))
     return pair:move(), entry.epoch_input_offset
 end
 
@@ -2020,7 +2020,7 @@ local prt
 -- Each player owns its input filenames, cache, and open epoch computation.
 -- Default event handlers are shared and treated as read-only.
 -- The optional proof bootstraps output history after a previous epoch.
-local function new_player(dapp_contract, label, last_output_proof)
+local function new_forked_player(dapp_contract, label, last_output_proof)
     local self <close> = setmetatable({
         event_handler = event_handler,
         label = label or "honest",
@@ -2029,10 +2029,10 @@ local function new_player(dapp_contract, label, last_output_proof)
         input_paths = {},
         trees = {},
     }, player_meta)
-    self.epoch_pair = new_machine_pair(prt.new_machine(dapp_contract.initial_state_hash))
+    self.epoch_pair = new_forked_machine_pair(prt.new_machine(dapp_contract.initial_state_hash))
     local machine = self.epoch_pair.machine
     assert_rolling_template(machine)
-    self.machine_cache = prt.new_machine_cache(fork_server(machine))
+    self.machine_cache = prt.new_forked_machine_cache(fork_server(machine))
     self.epoch_builder = self:new_mcycle_computation_hash_builder()
     self.epoch_builder:begin_epoch(machine)
     self.outputs = {}
@@ -2052,7 +2052,7 @@ end
 prt = {
     LOG2_BUNDLE_MCYCLE_COUNT = LOG2_BUNDLE_MCYCLE_COUNT,
     LOG2_BUNDLE_UARCH_CYCLE_COUNT = LOG2_BUNDLE_UARCH_CYCLE_COUNT,
-    new_player = new_player,
+    new_forked_player = new_forked_player,
     new_tree = new_tree,
     new_machine = new_machine,
     new_null_computation_hash_builder = new_null_computation_hash_builder,
@@ -2064,8 +2064,8 @@ prt = {
     is_yielded_manual = is_yielded_manual,
     is_at_fixed_point = is_at_fixed_point,
     uarch_computation_hash_push_mcycle = uarch_computation_hash_push_mcycle,
-    new_machine_cache = new_machine_cache,
-    new_machine_pair = new_machine_pair,
+    new_forked_machine_cache = new_forked_machine_cache,
+    new_forked_machine_pair = new_forked_machine_pair,
     new_match = new_match,
     new_referee = new_referee,
     new_dapp_contract = new_dapp_contract,
@@ -2117,7 +2117,7 @@ if role == "referee" then
 elseif role == "honest" then
     local label = take_argument()
     run_role = function(dapp_contract)
-        local player <close> = new_player(dapp_contract, label)
+        local player <close> = new_forked_player(dapp_contract, label)
         prtu.run_client(player, server_address)
     end
     assert(next_argument > #arg, "only the referee takes input files")

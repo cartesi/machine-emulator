@@ -123,8 +123,6 @@ endif
 
 RUN_ARCH_TEST = $(LUA) $(abspath ./lua/run-rv64i-arch-test.lua)
 
-MACHINE_GUEST_TOOLS_ROOTFS_URL = https://github.com/cartesi/machine-guest-tools/releases/download/$(MACHINE_GUEST_TOOLS_TAG)/rootfs-tools.ext2
-LINUX_IMAGE_URL = https://github.com/cartesi/linux/releases/download/$(LINUX_TAG)/linux-$(LINUX_VERSION).bin
 ROOTFS_TOOLS_IMAGE = $(CARTESI_IMAGES_PATH)/rootfs-tools.ext2
 LINUX_IMAGE = $(CARTESI_IMAGES_PATH)/linux-$(LINUX_VERSION).bin
 ROOTFS_TOOLS_INPUTS_HASH := $(shell printf '%s\n' \
@@ -225,7 +223,7 @@ $(ROOTFS_TOOLS_IMAGE): $(ROOTFS_TOOLS_INPUTS_KEY)
 	touch $@
 
 $(LINUX_IMAGE): $(LINUX_IMAGE_INPUTS_KEY)
-	wget -q -O $@ $(LINUX_IMAGE_URL)
+	wget -q -O $@ $(LINUX_URL)
 	printf '%s  %s\n' '$(LINUX_SHA256)' '$@' | shasum -a 256 -c -
 	touch $@
 

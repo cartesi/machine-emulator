@@ -5095,7 +5095,7 @@ The referee obtains claims as follows (note the claim interaction gives no addit
 ```
 The function `request_all(<subscribers>, <event>, <arguments>, <validator>)` notifies all `<subscribers>` of an
 `<event>` with associated `<arguments>` and returns a future.
-This future has self-explanatory methods `wait_at_most(<deadline>)` and `wait_at_least(<deadline>)`, which return
+This future has a method `wait_at_most(<deadline>)`, which returns
 the list of all entries that were returned by a `<validator>` function.
 In the snippet, the validator ensures the claim arrived on time and included a valid hash.
 It then creates and returns a player structure associated with the claim.

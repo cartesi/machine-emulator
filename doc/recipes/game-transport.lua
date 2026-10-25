@@ -322,6 +322,8 @@ end
 -- Referee server
 --
 -- Players receive requests immediately and answer in a later logical block.
+-- Deadlines are exclusive. A wait for block D settles block D - 1 and returns, so a
+-- request made then is answered at D.
 -- Request acknowledgements drain before the next time notification.
 -- The referee owns every window and validator. Only an accepted response
 -- resolves a first-valid future, even when all its holders skip or announce departure.
@@ -379,9 +381,6 @@ local queue_control
 
 -- Releases a completed request or block wait.
 local function complete_event(self, entry)
-    if entry.not_before and self:get_time() < entry.not_before then
-        return
-    end
     entry.resolved = true
     self.active[entry] = nil
     if entry.cortn then
@@ -772,6 +771,7 @@ future_meta.__close = future_meta.__index.close
 
 -- Waiting consumes the future, closing it on completion or expiry. Validators alone
 -- decide acceptance, and the deadline only limits how long the waiter stays suspended.
+-- The wait expires once the last block before the deadline is settled.
 -- All-response requests return a sender-keyed map and ordered senders for accepted
 -- replies. First-valid requests return nil if no result was accepted.
 local function wait_for_result(self, deadline)
@@ -804,21 +804,7 @@ function future_meta.__index:wait_at_most(deadline)
     )
     begin_wait(self)
     local cleanup <close> = self -- luacheck: ignore 211
-    return wait_for_result(self, deadline)
-end
-
--- A lower bound delays consumption, not validation. The request remains live
--- until a result is available and the shared clock has reached the given block.
-function future_meta.__index:wait_at_least(block)
-    assert(math.type(block) == "integer" and block >= 0, "block must be a nonnegative block number")
-    begin_wait(self)
-    local cleanup <close> = self -- luacheck: ignore 211
-    self.not_before = block
-    if self.resolved and self.server:get_time() < block then
-        self.resolved = false
-        self.server.active[self] = true
-    end
-    return wait_for_result(self, FOREVER)
+    return wait_for_result(self, deadline and deadline - 1)
 end
 
 -- Starts the closures concurrently, in list order. The future resolves to true when all
@@ -911,13 +897,13 @@ function server_meta.__index.notify_all(self, subscriptions, event, event_argume
     notification:wait_at_most(FOREVER)
 end
 
--- Waits for a logical block's time barrier, or returns immediately if it has already been reached.
+-- Waits until a request made now is answered at the given block, or returns immediately if it already would be.
 function server_meta.__index.wait_until(self, block)
     assert(math.type(block) == "integer" and block >= 0, "block must be a nonnegative block number")
-    if self:get_time() >= block then
+    if self:get_time() >= block - 1 then
         return
     end
-    local future <close> = setmetatable({ kind = "block", server = self, target_block = block }, future_meta)
+    local future <close> = setmetatable({ kind = "block", server = self, target_block = block - 1 }, future_meta)
     register_event(self, future, {})
     future:wait_at_most(FOREVER)
 end
@@ -1133,9 +1119,6 @@ function server_meta.__index.step_time(self)
     for entry in pairs(self.active) do
         if entry.target_block then
             boundaries[#boundaries + 1] = entry.target_block
-        end
-        if entry.not_before then
-            boundaries[#boundaries + 1] = entry.not_before
         end
         if entry.deadline then
             boundaries[#boundaries + 1] = entry.deadline

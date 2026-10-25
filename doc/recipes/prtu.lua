@@ -316,8 +316,8 @@ local SCHEMA_DICT = {
         output_proof = "Proof",
     },
     ClaimChildren = { computation_hash_left = "Base64", computation_hash_right = "Base64" },
-    ScheduleClaimChildrenEvent = { items = { "Default", "Base64" } },
-    ScheduleEliminationEvent = { items = { "Default" } },
+    WinMatchByTimeoutEvent = { items = { "Base64" } },
+    EliminateMatchEvent = { items = {} },
     Responses = { items = "Default" },
     AdvanceTimeEvent = { items = { "Default" } },
 }
@@ -348,12 +348,8 @@ local EVENTS = {
         "ProveOutputsMerkleRootResponse"
     ),
     prove_output = define_event("prove_output", "ProveOutputEvent", "ProveOutputResponse"),
-    schedule_match_timeout_win = define_event(
-        "schedule_match_timeout_win",
-        "ScheduleClaimChildrenEvent",
-        "ClaimChildren"
-    ),
-    schedule_match_elimination = define_event("schedule_match_elimination", "ScheduleEliminationEvent", "Default"),
+    win_match_by_timeout = define_event("win_match_by_timeout", "WinMatchByTimeoutEvent", "ClaimChildren"),
+    eliminate_match = define_event("eliminate_match", "EliminateMatchEvent", "Default"),
     advance_time = define_event("advance_time", "AdvanceTimeEvent", "Responses"),
 }
 

@@ -765,10 +765,10 @@ return function(run_with_server, new_test_player)
             player.event_handler.epoch_sealed = function()
                 return true
             end
-            player.make_mcycle_tree = function()
+            player.new_mcycle_tree = function()
                 return repeated_tree(final, geometry.mcycle_height)
             end
-            player.make_uarch_tree = function()
+            player.new_uarch_tree = function()
                 return repeated_tree(final, geometry.uarch_height)
             end
             player.event_handler.prove_state_transition = function()
@@ -788,7 +788,7 @@ return function(run_with_server, new_test_player)
                     hash_tree.frontier_forest_push_back(forest, leaf == 1 and keccak("inactive" .. index) or after)
                 end
                 local tree = prt.new_tree(3, 0, forest)
-                players[index].make_uarch_tree = function()
+                players[index].new_uarch_tree = function()
                     return tree
                 end
                 inactive[#inactive + 1] = tree:get_root_hash()
@@ -799,7 +799,7 @@ return function(run_with_server, new_test_player)
             assert(inactive[1] ~= inactive[2])
         end
         -- Determine the bracket without relying on connection order.
-        local roots = { players[1]:make_mcycle_tree():get_root_hash(), players[2]:make_mcycle_tree():get_root_hash() }
+        local roots = { players[1]:new_mcycle_tree():get_root_hash(), players[2]:new_mcycle_tree():get_root_hash() }
         -- Claims pair in join order, and slot 1 connects first.
         local first = 1
         run_with_server(function(server, run_client, wait_connections)

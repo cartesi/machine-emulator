@@ -1,5 +1,5 @@
 -- Checks claim trees, proofs, and the referee with synthetic state, then, when given an initial
--- machine hash and inputs, checks checkpoint replay against a real machine. The synthetic claims
+-- machine hash and inputs, checks cache replay against a real machine. The synthetic claims
 -- are walked under both claim orders. The loopback referee tests its tournament lifecycle,
 -- valid moves, rejected proofs that leave connections open, and logical-block barriers.
 -- The real-machine cases cover tampering during replay
@@ -114,7 +114,7 @@ local function with_test_cache(cache, construct, geometry, ...)
         defaults[key] = value
     end
     cache = cache or prt.new_machine_cache(new_fake_machine(keccak("fixture initial")))
-    local initial = cache.checkpoints[1].machine
+    local initial = cache.entries[1].machine
     local new_machine, new_cache = prt.new_machine, prt.new_machine_cache
     prt.new_machine = function(initial_state_hash)
         local machine = assert(initial:fork_server())
@@ -128,7 +128,7 @@ local function with_test_cache(cache, construct, geometry, ...)
         return machine
     end
     prt.new_machine_cache = function(machine)
-        assert(machine ~= initial, "cache bootstrap borrowed the fixture's checkpoint")
+        assert(machine ~= initial, "cache bootstrap borrowed the fixture's entry")
         machine:shutdown_server()
         return cache
     end
@@ -195,9 +195,9 @@ local function process_epoch(player)
     player.event_handler.epoch_sealed(player, #paths)
 end
 
-local function make_mcycle_tree(player)
+local function new_mcycle_tree(player)
     process_epoch(player)
-    return player:make_mcycle_tree()
+    return player:new_mcycle_tree()
 end
 
 -- Coordinates remain zero-based across input boundaries and fit in separate 64-bit integers.
@@ -243,7 +243,7 @@ for _, case in ipairs({
         hashes[#hashes + 1] = padding
         return { hashes = hashes, break_reason = cartesi.BREAK_REASON_MCYCLE_OVERFLOW, mcycle_phase = 0 }
     end
-    local builder = prt.make_mcycle_computation_hash_builder(case.log2_period)
+    local builder = prt.new_mcycle_computation_hash_builder(case.log2_period)
     builder:begin_epoch(machine)
     builder:begin_input(machine, 0)
     local ok, reason = pcall(builder.run, builder, machine, cartesi.MCYCLE_MAX)
@@ -274,7 +274,7 @@ end
 -- Uarch fixed-point groups describe padding, even when ordinary mcycles already fill
 -- the period. Reject excess ordinary groups before changing the claim's forest.
 for ordinary = 0, 3 do
-    local builder = prt.make_uarch_cycle_computation_hash_builder(1, 0)
+    local builder = prt.new_uarch_cycle_computation_hash_builder(1, 0)
     builder:begin_epoch()
     local halted, reset, pad_halted, pad_reset =
         keccak("halted"), keccak("reset"), keccak("pad halt"), keccak("pad reset")
@@ -406,7 +406,7 @@ for _, stop in ipairs({
         local bundle_span = 1 << (log2_period + LOG2_BUNDLE_MCYCLE_COUNT)
         local owner <close> = player:new_machine_pair_at_epoch_input_offset(0)
         local machine = owner.machine
-        player:make_null_computation_hash_builder():begin_input(machine, 0, 0)
+        player:new_null_computation_hash_builder():begin_input(machine, 0, 0)
         local native = machine.machine
         local reached = stop == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
         local runs, writes, collections = 0, 0, 0
@@ -549,7 +549,7 @@ for _, outcome in ipairs({ "accepted", "rejected", "halted" }) do
 end
 
 --------------------------------------------------------------------------------
--- Machine checkpoint cache
+-- Machine cache
 --------------------------------------------------------------------------------
 
 -- Invalid cache configuration releases the supplied initial machine immediately.
@@ -575,7 +575,7 @@ end
 for _, phase in ipairs({ "clone", "hash", "yield", "cache_fork", "begin_epoch" }) do
     local initial = new_fake_machine(keccak("initial"))
     local cache <close> = prt.new_machine_cache(initial)
-    local template = cache.checkpoints[1].machine
+    local template = cache.entries[1].machine
     local fork = template.fork_server
     template.fork_server = function(self)
         assert(phase ~= "clone", "injected clone failure")
@@ -600,7 +600,7 @@ for _, phase in ipairs({ "clone", "hash", "yield", "cache_fork", "begin_epoch" }
     end
     local ok = pcall(new_test_player, prt.new_geometry(10), cache)
     assert(not ok, phase .. " initialization failure was accepted")
-    assert(initial.counts.live == 0 and cache.checkpoints == nil, phase .. " initialization failure leaked a machine")
+    assert(initial.counts.live == 0 and cache.entries == nil, phase .. " initialization failure leaked a machine")
 end
 
 -- Replay rereads the file, and a file removed after delivery cannot use cached bytes.
@@ -626,7 +626,7 @@ do
     assert(initial.counts.live == 2, "failed replay leaked a machine or rollback snapshot")
 end
 
--- Closing a player releases its epoch pair and checkpoints; temporary pairs own their scopes.
+-- Closing a player releases its epoch pair and entries; temporary pairs own their scopes.
 for _, phase in ipairs({ "constructed", "input", "snapshot", "sealed" }) do
     local initial = new_fake_machine(keccak("initial"))
     local cache = prt.new_machine_cache(initial)
@@ -642,7 +642,7 @@ for _, phase in ipairs({ "constructed", "input", "snapshot", "sealed" }) do
             player.event_handler.epoch_sealed(player, 1)
         end
     end
-    assert(initial.counts.live == 0 and cache.checkpoints == nil, phase .. " player cleanup leaked a machine")
+    assert(initial.counts.live == 0 and cache.entries == nil, phase .. " player cleanup leaked a machine")
 end
 
 -- Filename events advance the working machine before sealing, and sealing performs no
@@ -677,7 +677,7 @@ do
         error("sealing resumed execution")
     end
     handlers.epoch_sealed(player, 2)
-    local tree = player:make_mcycle_tree()
+    local tree = player:new_mcycle_tree()
     local expected, padding = first, second
     local input_height = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - player.geometry.log2_mcycles_per_period
     for _ = 1, input_height do
@@ -691,7 +691,7 @@ do
     assert(next(handlers.prove_output(player)) == nil, "empty epoch invented an output")
     assert(handlers.prove_outputs_merkle_root(player), "sealed epoch cannot prove its output root")
     assert(not player.epoch_pair and not player.epoch_builder, "sealing retained a working builder")
-    assert(initial.counts.live == #cache.checkpoints, "sealing leaked its execution")
+    assert(initial.counts.live == #cache.entries, "sealing leaked its execution")
 end
 
 -- One sealed epoch answers arbitrary client output requests without acquiring a machine.
@@ -762,15 +762,15 @@ do
         return consider(self, index, machine)
     end
     player.new_machine_pair_at_epoch_input_offset = function()
-        error("forward execution acquired a checkpoint")
+        error("forward execution acquired an entry")
     end
     local working = player.epoch_pair.machine
     for index, data in ipairs({ accepted, rejected, rejected, accepted, terminal, accepted }) do
         player.event_handler.input_added(player, index - 1, fixture_input(data))
         assert(player.epoch_pair.machine == working, "forward execution replaced its machine")
         assert(not player.epoch_builder.machine, "builder retained a machine")
-        assert(#cache.checkpoints == 1 and initial.counts.live == 2, "forward execution exceeded its machine bound")
-        assert(cache.checkpoints[1].epoch_input_offset == 0)
+        assert(#cache.entries == 1 and initial.counts.live == 2, "forward execution exceeded its machine bound")
+        assert(cache.entries[1].epoch_input_offset == 0)
     end
     assert(offers == 6 and working:get_root_hash() == terminal, "terminal input bypassed consideration")
     player.event_handler.epoch_sealed(player, 6)
@@ -788,7 +788,7 @@ do
     assert(os.remove(path))
     assert(not pcall(player.event_handler.input_added, player, 0, path), "missing input file was accepted")
     assert(
-        initial.counts.live == #cache.checkpoints and not player.epoch_pair and not player.epoch_builder,
+        initial.counts.live == #cache.entries and not player.epoch_pair and not player.epoch_builder,
         "failed input read leaked its execution"
     )
 end
@@ -868,9 +868,9 @@ do
     local cache <close> = prt.new_machine_cache(machine) -- luacheck: ignore 211
     local geometry = prt.new_geometry(10)
     for _, builder in ipairs({
-        prt.make_null_computation_hash_builder(),
-        prt.make_mcycle_computation_hash_builder(geometry.log2_mcycles_per_period),
-        prt.make_uarch_cycle_computation_hash_builder(geometry.log2_mcycles_per_period, 0),
+        prt.new_null_computation_hash_builder(),
+        prt.new_mcycle_computation_hash_builder(geometry.log2_mcycles_per_period),
+        prt.new_uarch_cycle_computation_hash_builder(geometry.log2_mcycles_per_period, 0),
     }) do
         assert(builder.machine == nil, "builder retained a machine")
         assert(builder.get_root_hash == nil, "builder exposed a machine method")
@@ -889,9 +889,9 @@ do
         cache:consider(index, offered)
     end
     local retained = {}
-    for _, checkpoint in ipairs(cache.checkpoints) do
-        retained[#retained + 1] = checkpoint.epoch_input_offset
-        assert(checkpoint.machine ~= offered, "checkpoint borrowed its offering machine")
+    for _, entry in ipairs(cache.entries) do
+        retained[#retained + 1] = entry.epoch_input_offset
+        assert(entry.machine ~= offered, "entry borrowed its offering machine")
     end
     assert(table.concat(retained, ",") == "0,4,8" and cache.input_gap == 4)
     local original <close> = cache:nearest_not_past_epoch_input_offset(0)
@@ -900,16 +900,16 @@ do
     assert(kept.machine == machine and not original.machine and base == 0)
     local later <close>, later_base = cache:nearer_not_past_epoch_input_offset_or(kept:move(), 5, 6)
     assert(later.machine == machine and not kept.machine and later_base == 5)
-    cache.checkpoints[2].machine.fail_clone = true
+    cache.entries[2].machine.fail_clone = true
     assert(not pcall(cache.nearer_not_past_epoch_input_offset_or, cache, later:move(), 0, 6))
     assert(not later.machine and machine.shutdown, "failed replacement retained the transferred pair")
-    cache.checkpoints[2].machine.fail_clone = nil
+    cache.entries[2].machine.fail_clone = nil
     local fallback <close> = cache:nearest_not_past_epoch_input_offset(0)
     local nearer <close>, offset = cache:nearer_not_past_epoch_input_offset_or(fallback:move(), 0, 6)
-    assert(offset == 4 and not fallback.machine and nearer.machine ~= cache.checkpoints[2].machine)
+    assert(offset == 4 and not fallback.machine and nearer.machine ~= cache.entries[2].machine)
     nearer.machine.root_hash = "working"
-    assert(cache.checkpoints[2].machine:get_root_hash() == "initial", "execution mutated a checkpoint")
-    assert(not pcall(cache.consider, cache, 10, offered), "out-of-order checkpoint accepted")
+    assert(cache.entries[2].machine:get_root_hash() == "initial", "execution mutated an entry")
+    assert(not pcall(cache.consider, cache, 10, offered), "out-of-order entry accepted")
     cache:close()
     assert(not nearer.machine.shutdown, "cache closure shut down an independent pair")
     assert(not pcall(cache.nearest_not_past_epoch_input_offset, cache, 0))
@@ -922,13 +922,13 @@ do
         cache:consider(offset, offered)
     end
     local retained = {}
-    for _, checkpoint in ipairs(cache.checkpoints) do
-        retained[checkpoint.epoch_input_offset] = true
+    for _, entry in ipairs(cache.entries) do
+        retained[entry.epoch_input_offset] = true
     end
     assert(retained[0] and retained[6] and retained[12] and retained[18] and retained[24])
 end
 
--- Independent pairs own snapshots and transfers; cache closure owns only checkpoints.
+-- Independent pairs own snapshots and transfers; cache closure owns only entries.
 for _, fail in ipairs({ false, true }) do
     local machine = new_fake_machine("initial")
     if fail then
@@ -982,33 +982,30 @@ do
     assert(counts.live == 0, "transferred pair leaked its machines")
 end
 
--- Failed acquisition or replay must leave only the retained checkpoint alive, whether the
+-- Failed acquisition or replay must leave only the retained entry alive, whether the
 -- failure happened before snapshotting, during execution, or after committing the input.
 for _, phase in ipairs({ "factory", "begin_epoch", "begin_input", "run", "end_input", "end_epoch" }) do
     local initial = new_fake_machine("initial")
     local cache <close> = prt.new_machine_cache(initial, 2, 1)
     local player = new_test_player(prt.new_geometry(10), cache)
     player.input_paths[1] = fixture_input("accepted")
-    function player.make_null_computation_hash_builder()
+    function player.new_null_computation_hash_builder()
         assert(phase ~= "factory", "injected factory failure")
-        local builder = prt.make_null_computation_hash_builder()
+        local builder = prt.new_null_computation_hash_builder()
         builder[phase] = function()
             error("injected " .. phase .. " failure")
         end
         return builder
     end
-    local ok, err = pcall(player.make_uarch_tree, player, 1, 0)
+    local ok, err = pcall(player.new_uarch_tree, player, 1, 0)
     assert(not ok and err:find("injected " .. phase .. " failure"), "replay did not propagate the original error")
-    assert(initial.counts.live == (#cache.checkpoints + 1), phase .. " failure leaked a working machine or backup")
-    cache.checkpoints[1].machine.fail_clone = true
+    assert(initial.counts.live == (#cache.entries + 1), phase .. " failure leaked a working machine or backup")
+    cache.entries[1].machine.fail_clone = true
     assert(not pcall(cache.nearest_not_past_epoch_input_offset, cache, 0), "failed clone was returned")
     local offered <close> = new_fake_machine("new boundary")
     offered.fail_clone = true
-    assert(not pcall(cache.consider, cache, 1, offered), "failed checkpoint clone was retained")
-    assert(
-        #cache.checkpoints == 1 and initial.counts.live == (#cache.checkpoints + 1),
-        "failed clone changed retained checkpoints"
-    )
+    assert(not pcall(cache.consider, cache, 1, offered), "failed entry clone was retained")
+    assert(#cache.entries == 1 and initial.counts.live == (#cache.entries + 1), "failed clone changed retained entries")
 end
 
 -- Forward failures release the working machine and its pending rollback snapshot.
@@ -1024,9 +1021,9 @@ for _, phase in ipairs({ "begin_input", "run", "end_input" }) do
         fs.read_file(player.input_paths[1]) == "accepted" and player.machine_cache == cache,
         "player lost its replay dependencies"
     )
-    local ok, err = pcall(make_mcycle_tree, player)
+    local ok, err = pcall(new_mcycle_tree, player)
     assert(not ok and err:find("injected " .. phase .. " failure"), "builder failure was not propagated")
-    assert(initial.counts.live == #cache.checkpoints, "builder failure leaked its execution scope")
+    assert(initial.counts.live == #cache.entries, "builder failure leaked its execution scope")
 end
 
 -- Soft yields and console breaks must not end an input. Automatic yields are serviced, and
@@ -1050,7 +1047,7 @@ for _, terminal in ipairs({
     local player = new_test_player(prt.new_geometry(10), cache)
     player.input_paths[1] = fixture_input("accepted")
     do
-        local builder = prt.make_null_computation_hash_builder()
+        local builder = prt.new_null_computation_hash_builder()
         builder.run = function(_, _, mcycle_end)
             assert(
                 mcycle_end == 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE,
@@ -1082,7 +1079,7 @@ for _, terminal in ipairs({
         end
         player.epoch_builder = builder
     end
-    local ok, err = pcall(make_mcycle_tree, player)
+    local ok, err = pcall(new_mcycle_tree, player)
     local at_target = terminal == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
     local expected = at_target and "input stopped outside a fixed point" or "epoch complete"
     assert(not ok and err:find(expected, 1, true), "input did not stop for its terminal reason")
@@ -1092,7 +1089,7 @@ for _, terminal in ipairs({
         "delivery read the boundary yield"
     )
     assert(ended_inputs == (at_target and 0 or 1), "input finalization did not respect the terminal reason")
-    assert(initial.counts.live == #cache.checkpoints, "input execution leaked a working machine or backup")
+    assert(initial.counts.live == #cache.entries, "input execution leaked a working machine or backup")
 end
 
 -- Input delivery must use the saved boundary hash even if preparation changes the running machine.
@@ -1113,12 +1110,12 @@ for _, phase in ipairs({ "begin_input", "snapshot" }) do
             machine.root_hash = "changed"
         end
     end
-    local ok, err = pcall(make_mcycle_tree, player)
+    local ok, err = pcall(new_mcycle_tree, player)
     assert(
         not ok and err:find("revert root hash does not match the machine root hash", 1, true),
         "input delivery accepted a changed boundary"
     )
-    assert(initial.counts.live == #cache.checkpoints, "boundary mismatch leaked a working machine or backup")
+    assert(initial.counts.live == #cache.entries, "boundary mismatch leaked a working machine or backup")
 end
 
 -- Acceptance establishes the next boundary. Rejection must restore that same hash, including
@@ -1142,8 +1139,8 @@ for _, corrupt in ipairs({ false, true }) do
     local player = new_test_player(prt.new_geometry(10), cache)
     player.input_paths[1] = fixture_input("first")
     player.input_paths[2] = fixture_input("second")
-    function player.make_null_computation_hash_builder()
-        local builder = prt.make_null_computation_hash_builder()
+    function player.new_null_computation_hash_builder()
+        local builder = prt.new_null_computation_hash_builder()
         local epoch_input_offset
         builder.begin_input = function(_, machine, index)
             epoch_input_offset = index
@@ -1164,13 +1161,13 @@ for _, corrupt in ipairs({ false, true }) do
         end
         return builder
     end
-    function player.make_uarch_cycle_computation_hash_builder(_)
+    function player.new_uarch_cycle_computation_hash_builder(_)
         error("replay complete")
     end
-    local ok, err = pcall(player.make_uarch_tree, player, 2, 0)
+    local ok, err = pcall(player.new_uarch_tree, player, 2, 0)
     local expected = corrupt and "rollback did not restore the input boundary" or "replay complete"
     assert(not ok and err:find(expected, 1, true), "replay lost its expected boundary hash")
-    assert(initial.counts.live == (#cache.checkpoints + 1), "replay left a working machine or backup alive")
+    assert(initial.counts.live == (#cache.entries + 1), "replay left a working machine or backup alive")
 end
 
 -- A missing wrapper field forwards a machine method; absence of a private snapshot must instead
@@ -1200,7 +1197,7 @@ local INITIAL_STATE_HASH = keccak("initial")
 -- A claim over leaves that repeat `base_state_hash` except at `lie`, which holds
 -- `fake_state_hash`. Built either
 -- flat or bundled 2^2 leaves per stored bundle, so the bundle collection path is exercised too.
-local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundled)
+local function new_synthetic_claim(base_state_hash, lie, fake_state_hash, bundled)
     local leaves = {}
     for i = 0, LEAVES - 1 do
         leaves[i] = i == lie and fake_state_hash or base_state_hash
@@ -1250,7 +1247,7 @@ local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundl
 end
 
 -- Exercise the actual player responses against the referee's synthetic walk.
-local function make_bisection_response(match)
+local function new_bisection_response(match)
     local tree = match.claims[match.turn_index].tree
     local player = new_test_player()
     player.trees[tree:get_root_hash()] = tree
@@ -1263,7 +1260,7 @@ local function make_bisection_response(match)
     )
 end
 
-local function make_seal_response(match)
+local function new_seal_response(match)
     local tree = match.claims[match.turn_index].tree
     local player = new_test_player()
     player.trees[tree:get_root_hash()] = tree
@@ -1285,13 +1282,13 @@ local function walk(claim1, claim2)
     local match = prt.new_match(claim1, claim2, HEIGHT)
     local tournament = { height = HEIGHT, initial_state_hash = INITIAL_STATE_HASH }
     while match.height > 1 do
-        local response = make_bisection_response(match)
+        local response = new_bisection_response(match)
         prt.validate_bisection_response(match, response)
         local valid = pcall(prt.validate_bisection_response, match, swap_turn_children(response))
         assert(not valid or response.turn_left_node == response.turn_right_node, "a swapped response validated")
         prt.advance_bisection(match, response)
     end
-    local response = make_seal_response(match)
+    local response = new_seal_response(match)
     local valid = pcall(prt.validate_seal_response, tournament, match, swap_turn_children(response))
     assert(not valid or response.turn_left_node == response.turn_right_node, "a swapped seal validated")
     return prt.validate_seal_response(tournament, match, response)
@@ -1299,7 +1296,7 @@ end
 
 local base_state_hash, fake_state_hash = keccak("base"), keccak("fake")
 do
-    local claim = make_synthetic_claim(base_state_hash, nil, nil, true)
+    local claim = new_synthetic_claim(base_state_hash, nil, nil, true)
     local unopened_index = 0
     local hash, err = hash_tree.frontier_forest_get_node_hash(claim.tree.forest, unopened_index, 0)
     assert(hash == nil and err == "the node is below an opaque hash", "the bundle was already open")
@@ -1396,8 +1393,8 @@ end
 
 for _, lie in ipairs({ 0, 1, 4, 6, 13, LEAVES - 1 }) do
     for _, bundled in ipairs({ false, true }) do
-        local honest = make_synthetic_claim(base_state_hash, nil, nil, bundled)
-        local liar = make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundled)
+        local honest = new_synthetic_claim(base_state_hash, nil, nil, bundled)
+        local liar = new_synthetic_claim(base_state_hash, lie, fake_state_hash, bundled)
         assert(honest.computation_hash ~= liar.computation_hash)
         -- honest opens first
         local divergence = walk(honest, liar)
@@ -1439,7 +1436,7 @@ local function run_with_server(scenario)
 end
 
 -- A player that returns `claim` to any tournament and answers every event with `answer`.
-local function make_claimer(claim, answer)
+local function new_claimer(claim, answer)
     return function(event)
         if event.operation == "commit_mcycle_claim" then
             return { value = claim }
@@ -1623,8 +1620,8 @@ run_with_server(function(server, run_client, wait_connections)
             return { value = value }
         end
     end
-    run_client(nil, make_claimer("a", answer("valid")))
-    run_client(nil, make_claimer("b", answer("invalid")))
+    run_client(nil, new_claimer("a", answer("valid")))
+    run_client(nil, new_claimer("b", answer("invalid")))
     run_client({ role = "phase_closer" }, function()
         return { value = true }
     end)
@@ -1655,7 +1652,7 @@ run_with_server(function(server, run_client, wait_connections)
     server:subscribe_connection("a", a)
     server:subscribe_connection("b", b)
     -- A late joiner, after the phase closes, is not part of the mcycle tournament.
-    run_client(nil, make_claimer("c", answer("valid")))
+    run_client(nil, new_claimer("c", answer("valid")))
     wait_connections(4)
 
     local function request(subscriptions, event, arguments, accept)
@@ -1953,7 +1950,7 @@ do
 end
 
 --------------------------------------------------------------------------------
--- Machine checkpoint replay
+-- Machine cache replay
 --------------------------------------------------------------------------------
 
 local function new_test_cache(contract, capacity, input_gap)
@@ -1967,7 +1964,7 @@ if arg[1] then
     for i = 2, 4 do
         inputs[#inputs + 1] = fs.read_file(arg[i])
     end
-    assert(#inputs >= 3, "machine checkpoint tests require three inputs")
+    assert(#inputs >= 3, "machine cache tests require three inputs")
     local dapp_contract = {
         initial_state_hash = initial_state_hash,
         inputs = inputs,
@@ -1980,7 +1977,7 @@ if arg[1] then
         local input_data, cache <close> = new_test_cache(dapp_contract)
         local player = new_test_player(dapp_contract.geometry, cache)
         local pair <close> = player:new_machine_pair_at_epoch_input_offset(0)
-        local builder = player:make_null_computation_hash_builder()
+        local builder = player:new_null_computation_hash_builder()
         player:run_to_input_mcycle_offset(builder, pair, 0, input_data[1], 0)
         player:run_to_uarch_cycle(builder, pair, 0, input_data[1], 0, 0)
         assert(pair.machine:get_root_hash() == initial_state_hash and not pair.backup_machine)
@@ -1993,13 +1990,13 @@ if arg[1] then
     local tamperer_inputs, tamperer_cache <close> = new_test_cache(dapp_contract, 64, 1)
     local tamperer = dishonest.new_tamperer(dapp_contract.geometry, tamperer_cache, 0, 100)
     seed_input_paths(tamperer, tamperer_inputs)
-    local tampered_tree = make_mcycle_tree(tamperer)
+    local tampered_tree = new_mcycle_tree(tamperer)
     tampered_tree:get_proof(99 << tampered_tree.bundle_height)
     tampered_tree:get_proof(100 << tampered_tree.bundle_height)
     local uncached_tamperer_inputs, uncached_tamperer_cache <close> = new_test_cache(dapp_contract, 1)
     local uncached_tamperer = dishonest.new_tamperer(dapp_contract.geometry, uncached_tamperer_cache, 0, 100)
     seed_input_paths(uncached_tamperer, uncached_tamperer_inputs)
-    local uncached_tampered_tree = make_mcycle_tree(uncached_tamperer)
+    local uncached_tampered_tree = new_mcycle_tree(uncached_tamperer)
     assert(uncached_tampered_tree:get_root_hash() == tampered_tree:get_root_hash(), "cache changed the tampered claim")
     uncached_tampered_tree:get_proof(100 << uncached_tampered_tree.bundle_height)
     local tampered_first_leaf = 100 << LOG2_BUNDLE_MCYCLE_COUNT
@@ -2023,14 +2020,14 @@ if arg[1] then
             nested = nested + 1
             return collect(self, ...)
         end
-        local tree = make_mcycle_tree(fabulist)
+        local tree = new_mcycle_tree(fabulist)
         assert(nested > 0, "fabulist did not collect a nested bundle")
         tree:get_proof(1 << tree.bundle_height)
         assert(tree:get_node_hash(16, 0) == keccak("fabulist"), "nested collection lost the fabricated leaf")
         assert(not fabulist.epoch_pair, "nested collection retained the epoch pair")
     end
 
-    -- Bundle collection is a read of the committed claim. It must not replace build checkpoints with
+    -- Bundle collection is a read of the committed claim. It must not replace build entries with
     -- speculative machines from an input whose committed suffix is its revert state.
     local honest_inputs, honest_cache <close> = new_test_cache(dapp_contract, 1)
     local honest = new_test_player(dapp_contract.geometry, honest_cache)
@@ -2038,13 +2035,13 @@ if arg[1] then
     local cache = honest_cache
     local native <close> = prt.new_machine(initial_state_hash)
     assert(type(native) == "userdata", "honest machine is wrapped")
-    assert(type(cache.checkpoints[1].machine) == "userdata", "honest checkpoint machine is wrapped")
-    local native_builder = prt.make_mcycle_computation_hash_builder(dapp_contract.geometry.log2_mcycles_per_period)
+    assert(type(cache.entries[1].machine) == "userdata", "honest entry machine is wrapped")
+    local native_builder = prt.new_mcycle_computation_hash_builder(dapp_contract.geometry.log2_mcycles_per_period)
     assert(rawget(native_builder, "machine") == nil, "honest computation-hash builder retained a machine")
     assert(native_builder.unbundle == nil, "honest builder exposes strategy-only bundle collection")
     assert(native_builder.pad_back == nil, "honest builder exposes strategy-only insertion")
     local native_uarch_builder =
-        prt.make_uarch_cycle_computation_hash_builder(dapp_contract.geometry.log2_mcycles_per_period, 0)
+        prt.new_uarch_cycle_computation_hash_builder(dapp_contract.geometry.log2_mcycles_per_period, 0)
     assert(rawget(native_uarch_builder, "machine") == nil, "honest uarch builder retained a machine")
     assert(native_uarch_builder.unbundle == nil, "honest uarch builder exposes strategy-only bundle collection")
     assert(native_uarch_builder.pad_back == nil, "honest uarch builder exposes strategy-only insertion")
@@ -2052,24 +2049,24 @@ if arg[1] then
     native_uarch_builder:begin_input(native, 0, native:read_reg("mcycle"))
     assert(native:get_root_hash() == virgin_root, "capturing the revert tail changed the virgin machine")
     assert(
-        rawget(prt.make_null_computation_hash_builder(), "machine") == nil,
+        rawget(prt.new_null_computation_hash_builder(), "machine") == nil,
         "honest replay builder retained a machine"
     )
 
-    local honest_tree = make_mcycle_tree(honest)
-    local checkpoint = assert(cache.checkpoints[1], "claim build retained no machine checkpoint").epoch_input_offset
+    local honest_tree = new_mcycle_tree(honest)
+    local entry = assert(cache.entries[1], "claim build retained no machine cache entry").epoch_input_offset
     honest_tree:get_proof(dapp_contract.geometry.periods_per_input)
-    assert(cache.checkpoints[1].epoch_input_offset == checkpoint, "mcycle bundle collection changed the machine cache")
+    assert(cache.entries[1].epoch_input_offset == entry, "mcycle bundle collection changed the machine cache")
     local cached_inputs, cached_cache <close> = new_test_cache(dapp_contract, 2, 1)
     local cached = new_test_player(dapp_contract.geometry, cached_cache)
     seed_input_paths(cached, cached_inputs)
-    local cached_tree = make_mcycle_tree(cached)
+    local cached_tree = new_mcycle_tree(cached)
     assert(
-        #cached_cache.checkpoints == 2 and cached_cache.checkpoints[2].epoch_input_offset == 3,
+        #cached_cache.entries == 2 and cached_cache.entries[2].epoch_input_offset == 3,
         "small real-machine cache did not evict intermediate boundaries"
     )
-    for _, saved in ipairs(cached_cache.checkpoints) do
-        assert(type(saved.machine) == "userdata", "checkpoint machine is wrapped")
+    for _, saved in ipairs(cached_cache.entries) do
+        assert(type(saved.machine) == "userdata", "entry machine is wrapped")
     end
     assert(cached_tree:get_root_hash() == honest_tree:get_root_hash(), "cache policy changed the mcycle root")
     assert(honest_tree:get_root_hash() == fs.read_file(assert(arg[5])), "mcycle root differs from CLI")
@@ -2079,7 +2076,7 @@ if arg[1] then
         local fabulist_inputs, fabulist_cache <close> = new_test_cache(dapp_contract)
         local fabulist = dishonest.new_fabulist(dapp_contract.geometry, fabulist_cache, #inputs, 16)
         seed_input_paths(fabulist, fabulist_inputs)
-        local tree = make_mcycle_tree(fabulist)
+        local tree = new_mcycle_tree(fabulist)
         local leaf = #inputs * dapp_contract.geometry.periods_per_input + 16
         local bundle = leaf >> LOG2_BUNDLE_MCYCLE_COUNT
         tree:get_proof(bundle << tree.bundle_height)
@@ -2107,43 +2104,43 @@ if arg[1] then
             )
         end
     end
-    local first_uarch = honest:make_uarch_tree(0, 0)
+    local first_uarch = honest:new_uarch_tree(0, 0)
     assert(first_uarch:get_root_hash() == fs.read_file(assert(arg[6])), "uarch root differs from CLI")
     first_uarch:get_proof(0)
     first_uarch:get_proof(
         ((1 << (dapp_contract.geometry.uarch_height - LOG2_BUNDLE_UARCH_CYCLE_COUNT)) - 1) << first_uarch.bundle_height
     )
-    local rejected_uarch = honest:make_uarch_tree(1, 60000)
+    local rejected_uarch = honest:new_uarch_tree(1, 60000)
     rejected_uarch:get_proof(0)
     rejected_uarch:get_proof(
         ((1 << (dapp_contract.geometry.uarch_height - LOG2_BUNDLE_UARCH_CYCLE_COUNT)) - 1)
             << rejected_uarch.bundle_height
     )
     assert(
-        honest:make_uarch_tree(2, 0):get_root_hash() == cached:make_uarch_tree(2, 0):get_root_hash(),
+        honest:new_uarch_tree(2, 0):get_root_hash() == cached:new_uarch_tree(2, 0):get_root_hash(),
         "cache changed post-rejection uarch replay"
     )
 
-    -- Every checkpoint is a virgin boundary, including after rollback. Dense and sparse
+    -- Every entry is a virgin boundary, including after rollback. Dense and sparse
     -- histories must reconstruct the same states inside and after a rejected input.
     local dense_inputs, dense_cache <close> = new_test_cache(dapp_contract, 64, 1)
     local dense = new_test_player(dapp_contract.geometry, dense_cache)
     seed_input_paths(dense, dense_inputs)
-    local dense_tree = make_mcycle_tree(dense)
+    local dense_tree = new_mcycle_tree(dense)
     local rejected_epoch_input_offset = 1
     local retained_boundaries = {}
-    for _, saved in ipairs(dense_cache.checkpoints) do
+    for _, saved in ipairs(dense_cache.entries) do
         retained_boundaries[saved.epoch_input_offset] = true
     end
     assert(
         retained_boundaries[0] and retained_boundaries[rejected_epoch_input_offset] and retained_boundaries[3],
         "dense cache lost an accepted input's boundary"
     )
-    assert(retained_boundaries[rejected_epoch_input_offset + 1], "rejection bypassed the checkpoint policy")
+    assert(retained_boundaries[rejected_epoch_input_offset + 1], "rejection bypassed the cache policy")
     assert(dense_tree:get_root_hash() == honest_tree:get_root_hash(), "dense cache changed the mcycle root")
-    local saved_checkpoints = {}
-    for i, saved in ipairs(dense_cache.checkpoints) do
-        saved_checkpoints[i] = saved
+    local saved_entries = {}
+    for i, saved in ipairs(dense_cache.entries) do
+        saved_entries[i] = saved
     end
     for _, input_period_offset in ipairs({ 16, 60000, dapp_contract.geometry.periods_per_input - 1 }) do
         local bundle_index = (
@@ -2160,19 +2157,19 @@ if arg[1] then
         end
     end
     assert(
-        honest:make_uarch_tree(rejected_epoch_input_offset + 1, 0):get_root_hash()
-            == dense:make_uarch_tree(rejected_epoch_input_offset + 1, 0):get_root_hash(),
+        honest:new_uarch_tree(rejected_epoch_input_offset + 1, 0):get_root_hash()
+            == dense:new_uarch_tree(rejected_epoch_input_offset + 1, 0):get_root_hash(),
         "dense cache changed replay past the rejected input"
     )
-    assert(#saved_checkpoints == #dense_cache.checkpoints, "bundle collection changed checkpoint count")
-    for i, saved in ipairs(saved_checkpoints) do
-        assert(dense_cache.checkpoints[i] == saved, "bundle collection replaced a checkpoint")
+    assert(#saved_entries == #dense_cache.entries, "bundle collection changed entry count")
+    for i, saved in ipairs(saved_entries) do
+        assert(dense_cache.entries[i] == saved, "bundle collection replaced an entry")
     end
 
     -- Uarch collection and transition proofs replay from the rejected input's own boundary, both
     -- before and after its rejection, and their logs authenticate against the claims.
     for _, period in ipairs({ 16, 60000 }) do
-        local uarch = dense:make_uarch_tree(1, period)
+        local uarch = dense:new_uarch_tree(1, period)
         uarch:get_proof(0)
         local logs = dense.event_handler.prove_state_transition(dense, 1, period, 0)
         local preceding_leaf = dapp_contract.geometry.periods_per_input + period - 1
@@ -2205,7 +2202,7 @@ if arg[1] then
     local chain_inputs, chain_cache <close> = new_test_cache(chain_contract, 128, 1)
     local input_runs = {}
     local replay_begins, replay_ends = 0, 0
-    local new_null = prt.make_null_computation_hash_builder
+    local new_null = prt.new_null_computation_hash_builder
     local function observe_replay()
         local builder = new_null()
         builder.begin_epoch = function()
@@ -2221,32 +2218,32 @@ if arg[1] then
     end
     local chain = new_test_player(chain_contract.geometry, chain_cache)
     seed_input_paths(chain, chain_inputs)
-    function chain.make_null_computation_hash_builder()
+    function chain.new_null_computation_hash_builder()
         return observe_replay()
     end
-    local chain_tree = make_mcycle_tree(chain)
+    local chain_tree = new_mcycle_tree(chain)
     local chain_reference_inputs, chain_reference_cache <close> = new_test_cache(chain_contract, 1)
     local chain_reference = new_test_player(chain_contract.geometry, chain_reference_cache)
     seed_input_paths(chain_reference, chain_reference_inputs)
     assert(
-        chain_tree:get_root_hash() == make_mcycle_tree(chain_reference):get_root_hash(),
+        chain_tree:get_root_hash() == new_mcycle_tree(chain_reference):get_root_hash(),
         "cache changed rejection-chain root"
     )
     local chain_boundaries = {}
-    for _, saved in ipairs(chain_cache.checkpoints) do
+    for _, saved in ipairs(chain_cache.entries) do
         chain_boundaries[saved.epoch_input_offset] = saved
     end
     assert(chain_boundaries[1] and chain_boundaries[4], "chain fixture lacks the boundaries around the chain")
-    assert(chain_boundaries[2] and chain_boundaries[3], "rejection bypassed the checkpoint policy")
+    assert(chain_boundaries[2] and chain_boundaries[3], "rejection bypassed the cache policy")
     assert(
         chain_boundaries[1].machine:get_root_hash() == chain_boundaries[2].machine:get_root_hash()
             and chain_boundaries[2].machine:get_root_hash() == chain_boundaries[3].machine:get_root_hash(),
-        "rejection checkpoints did not retain the restored boundary"
+        "the cache did not retain the restored boundary after rejection"
     )
-    -- Remove intermediate checkpoints to exercise replay through both rejections.
+    -- Remove intermediate entries to exercise replay through both rejections.
     chain_boundaries[2].machine:shutdown_server()
     chain_boundaries[3].machine:shutdown_server()
-    chain_cache.checkpoints = { chain_boundaries[0], chain_boundaries[1], chain_boundaries[4] }
+    chain_cache.entries = { chain_boundaries[0], chain_boundaries[1], chain_boundaries[4] }
     -- The player resolves the requested boundary, including an uncached boundary after
     -- rejection and positions past the last posted input. The target input remains undelivered.
     local clone_boundary = chain.new_machine_pair_at_epoch_input_offset
@@ -2262,7 +2259,7 @@ if arg[1] then
             observed = true
             return resolved:move()
         end
-        chain:make_uarch_tree(target, 0)
+        chain:new_uarch_tree(target, 0)
         assert(observed, "player did not request its input boundary")
     end
     chain.new_machine_pair_at_epoch_input_offset = clone_boundary
@@ -2290,14 +2287,14 @@ if arg[1] then
         "rejection-chain tail differs from the reference"
     )
     lookups, input_runs = 0, {}
-    local after_chain = chain:make_uarch_tree(3, 0)
+    local after_chain = chain:new_uarch_tree(3, 0)
     assert(lookups == 1, "post-chain boundary performed multiple lookups")
     assert(
         not input_runs[0] and input_runs[1] == 1 and input_runs[2] == 1,
         "boundary replay did not roll back each rejected input once"
     )
     assert(
-        after_chain:get_root_hash() == honest:make_uarch_tree(2, 0):get_root_hash(),
+        after_chain:get_root_hash() == honest:new_uarch_tree(2, 0):get_root_hash(),
         "chain changed next-input uarch claim"
     )
 
@@ -2318,10 +2315,10 @@ if arg[1] then
         "post-chain transition does not authenticate against the claim"
     )
 
-    -- With only the initial checkpoint, replay runs every input once, rejections included.
+    -- With only the initial entry, replay runs every input once, rejections included.
     -- Temporarily hide historical boundaries; saved entries still own their machines.
-    local all_checkpoints = chain_cache.checkpoints
-    chain_cache.checkpoints = { all_checkpoints[1] }
+    local all_entries = chain_cache.entries
+    chain_cache.entries = { all_entries[1] }
     lookups, input_runs = 0, {}
     local final_logs = chain.event_handler.prove_state_transition(chain, 4, 0, 0)
     assert(lookups == 1, "sparse recovery performed more than one lookup")
@@ -2337,7 +2334,7 @@ if arg[1] then
         cartesi.machine:verify_step_uarch(final_hash, final_logs.step_log) == final_machine:get_root_hash(),
         "sparse recovery lost the accepted input's final state"
     )
-    chain_cache.checkpoints = all_checkpoints
+    chain_cache.entries = all_entries
 
     -- Final-machine proofs come from the retained boundary without replaying inputs.
     local run_input = honest.run_to_input_mcycle_offset
@@ -2437,9 +2434,9 @@ if arg[1] then
         local payload_cache <close> = prt.new_machine_cache(template)
         local player = new_test_player(dapp_contract.geometry, payload_cache)
         player.input_paths[1] = fixture_input(inputs[1])
-        local mcycle_tree = make_mcycle_tree(player)
+        local mcycle_tree = new_mcycle_tree(player)
         mcycle_tree:get_proof(0)
-        local uarch_tree = player:make_uarch_tree(0, 0)
+        local uarch_tree = player:new_uarch_tree(0, 0)
         uarch_tree:get_proof(0)
         local payload_logs = player.event_handler.prove_state_transition(player, 0, 0, 0)
         local payload_after_send = cartesi.machine:verify_send_cmio_response(
@@ -2495,7 +2492,7 @@ if arg[1] then
     -- identically for sampled execution and plain replay, so later logical inputs pad from it
     -- without delivery.
     for _, terminal in ipairs({ "halt", "exception", "unexpected", "overflow", "counter_overflow", "empty" }) do
-        local function make_terminal_template()
+        local function new_terminal_template()
             local machine = prt.new_machine(initial_state_hash)
             if terminal == "counter_overflow" then
                 machine:write_reg("mcycle", cartesi.MCYCLE_MAX)
@@ -2509,7 +2506,7 @@ if arg[1] then
         }
         local counts = { outer = 0, bundles = 0, uarch = 0 }
         local terminal_inputs = { table.unpack(contract.inputs) }
-        local terminal_cache <close> = prt.new_machine_cache(make_terminal_template())
+        local terminal_cache <close> = prt.new_machine_cache(new_terminal_template())
         local player = new_test_player(contract.geometry, terminal_cache)
         seed_input_paths(player, terminal_inputs)
         -- Force the stop at delivery itself, including native bundle collection
@@ -2527,7 +2524,7 @@ if arg[1] then
             return setmetatable({ machine = machine, send_cmio_response = send_cmio_response }, machine_meta)
         end
         player.epoch_pair.machine = wrap_machine(player.epoch_pair.machine)
-        for _, saved in ipairs(terminal_cache.checkpoints) do
+        for _, saved in ipairs(terminal_cache.entries) do
             saved.machine = wrap_machine(saved.machine)
         end
         function machine_meta.__index(self, name)
@@ -2543,9 +2540,9 @@ if arg[1] then
             return util.forward_method(self, self.machine, name)
         end
         counts.outer = counts.outer + 1
-        function player:make_uarch_cycle_computation_hash_builder(epoch_period_offset)
+        function player:new_uarch_cycle_computation_hash_builder(epoch_period_offset)
             counts.uarch = counts.uarch + 1
-            return prt.make_uarch_cycle_computation_hash_builder(
+            return prt.new_uarch_cycle_computation_hash_builder(
                 self.geometry.log2_mcycles_per_period,
                 epoch_period_offset
             )
@@ -2565,7 +2562,7 @@ if arg[1] then
             counts.uarch = counts.uarch + 1
             return collect_uarch_cycle_bundle(self, epoch_input_offset, input_period_offset, period_bundle_offset)
         end
-        local reference <close> = make_terminal_template()
+        local reference <close> = new_terminal_template()
         if terminal ~= "empty" then
             reference:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, inputs[1], reference:get_root_hash())
             force_terminal(reference, terminal)
@@ -2575,7 +2572,7 @@ if arg[1] then
         for _ = 1, contract.geometry.mcycle_height do
             expected = keccak(expected, expected)
         end
-        local tree = make_mcycle_tree(player)
+        local tree = new_mcycle_tree(player)
         assert(tree:get_root_hash() == expected, terminal .. " has the wrong fixed-point tail")
         tree:get_proof(0)
         assert(counts.bundles == 1, "first mcycle opening bypassed the player collector")
@@ -2585,7 +2582,7 @@ if arg[1] then
         local mcycle_last = (1 << contract.geometry.mcycle_height) - 1
         tree:get_proof(mcycle_last)
         assert(tree:get_node_hash(mcycle_last, 0) == terminal_root, "last mcycle bundle has the wrong state")
-        local uarch = player:make_uarch_tree(2, 60000)
+        local uarch = player:new_uarch_tree(2, 60000)
         uarch:get_proof(0)
         assert(counts.uarch == 2, "uarch build or first opening bypassed the selected builder or collector")
         local uarch_last = (1 << contract.geometry.uarch_height) - 1
@@ -2610,7 +2607,7 @@ if arg[1] then
                 == uarch:get_node_hash(reset_offset, 0),
             "terminal reset does not authenticate against the claim"
         )
-        local boundary = player:make_uarch_tree(2, 0)
+        local boundary = player:new_uarch_tree(2, 0)
         boundary:get_proof(0)
         local boundary_logs = player.event_handler.prove_state_transition(player, 2, 0, 0)
         local boundary_root = terminal_root

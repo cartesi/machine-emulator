@@ -156,15 +156,21 @@ local function new_no_rollback(initial_hash)
 end
 
 local function acknowledge() end
-local function quit(self)
-    self.done = true
-    return cartesi.keccak256("a fabricated final state")
+local function leave()
+    return "done"
 end
-local quitter_events = {
+-- The quitter posts a fabricated claim, then leaves at the next event.
+local quitter_events = setmetatable({
     input_added = acknowledge,
     epoch_sealed = acknowledge,
-    commit_claim = quit,
-}
+    commit_claim = function()
+        return cartesi.keccak256("a fabricated final state")
+    end,
+}, {
+    __index = function()
+        return leave
+    end,
+})
 local function close_quitter() end
 local quitter_meta = { __close = close_quitter }
 local function new_quitter()

@@ -3,7 +3,12 @@
 set -euo pipefail
 : "${RECIPES_DIR:?}"
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+# Removes only the exact names this test creates, so a leftover file makes rmdir fail.
+cleanup() {
+    cd "$work" && rm -f bin/lua5.4 bin/netstat referee.log player.log early-referee.log early-player.log &&
+        rmdir bin && cd / && rmdir "$work" || exit 1
+}
+trap cleanup EXIT
 mkdir "$work/bin"
 cat > "$work/bin/lua5.4" <<'EOF'
 #!/bin/bash
@@ -25,7 +30,7 @@ fi
 EOF
 cat > "$work/bin/netstat" <<'EOF'
 #!/bin/bash
-if [ "$1" = -ntl ] && [[ "$FAIL_ROLE" = *player ]]; then
+if [ "$1" = -ant ] && [[ "$FAIL_ROLE" = *player ]]; then
     echo 'tcp 127.0.0.1:8097 LISTEN'
 fi
 EOF

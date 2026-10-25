@@ -41,7 +41,7 @@
 
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
-local util = require("cartesi.util")
+local fs = require("cartesi.filesystem")
 local prtu = require("prtu")
 local cartesi_jsonrpc = require("cartesi.jsonrpc")
 
@@ -858,7 +858,7 @@ local function make_dapp_contract(initial_state_hash, input_paths)
     local max_allowance = 4
     return {
         initial_state_hash = initial_state_hash,
-        inputs = map(input_paths, util.read_file),
+        inputs = map(input_paths, fs.read_file),
         input_paths = input_paths,
         geometry = new_geometry(10),
         max_allowance = max_allowance,
@@ -1663,7 +1663,7 @@ function event_handler.prove_state_transition(self, epoch_input_offset, input_pe
     local pair <close> = self:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
     local machine = pair.machine
     local path = self.input_paths[epoch_input_offset + 1]
-    local input_data = path and util.read_file(path)
+    local input_data = path and fs.read_file(path)
     if state_transition_offset == 0 and input_period_offset == 0 and path then
         -- Logging never fails. A machine that is not waiting for the input logs the no-op delivery.
         local send_cmio_log =
@@ -1841,7 +1841,7 @@ function player_meta.__index:run_to_epoch_input_offset(pair, epoch_input_offset_
     local builder = self:make_null_computation_hash_builder()
     builder:begin_epoch(pair.machine)
     for epoch_input_offset = epoch_input_offset_begin, math.min(epoch_input_offset_end, #self.input_paths) - 1 do
-        local input_data = util.read_file(self.input_paths[epoch_input_offset + 1])
+        local input_data = fs.read_file(self.input_paths[epoch_input_offset + 1])
         local break_reason, yield_reason = self:run_to_input_mcycle_offset(
             builder,
             pair,
@@ -1870,7 +1870,7 @@ function event_handler.input_added(self, epoch_input_offset, path)
             builder,
             pair,
             epoch_input_offset,
-            util.read_file(path),
+            fs.read_file(path),
             MAX_MCYCLES_PER_ADVANCE_STATE,
             self.outputs,
             self.outputs_frontier
@@ -1911,7 +1911,7 @@ function player_meta.__index:collect_mcycle_bundle(epoch_input_offset, input_bun
     -- Deliver the input and stay at its boundary. The machine advances to the bundle and pads it
     -- with its fixed-point state hash when the input stops early.
     local path = self.input_paths[epoch_input_offset + 1]
-    begin_input(builder, pair, epoch_input_offset, path and util.read_file(path))
+    begin_input(builder, pair, epoch_input_offset, path and fs.read_file(path))
     local hashes = machine:collect_mcycle_bundle(
         input_bundle_offset,
         self.geometry.log2_mcycles_per_period,
@@ -1936,7 +1936,7 @@ function player_meta.__index:build_uarch_claim(epoch_input_offset, input_period_
         builder,
         pair,
         epoch_input_offset,
-        path and util.read_file(path),
+        path and fs.read_file(path),
         (input_period_offset + 1) * self.geometry.mcycles_per_period
     )
     return builder:end_epoch()
@@ -1954,7 +1954,7 @@ function player_meta.__index:collect_uarch_cycle_bundle(epoch_input_offset, inpu
     local bundle_offset = period_bundle_offset % bundles_per_mcycle
     local builder = self:make_null_computation_hash_builder()
     local path = self.input_paths[epoch_input_offset + 1]
-    local input_data = path and util.read_file(path)
+    local input_data = path and fs.read_file(path)
     local input_mcycle_offset =
         combine_input_mcycle_offset(self.geometry.mcycles_per_period, input_period_offset, period_mcycle_offset)
     if input_mcycle_offset == 0 then

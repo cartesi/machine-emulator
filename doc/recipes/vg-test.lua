@@ -1,11 +1,11 @@
 -- Run with make -C doc test-vg. This does not parse or render the README.
 local cartesi = require("cartesi")
-local util = require("cartesi.util")
+local fs = require("cartesi.filesystem")
 local vg = require("vg")
 local vgu = require("vgu")
 local run_with_server = require("vg-test-server")
 local replay_test = require("vg-replay-test")
-local initial_hash = cartesi.fromhex(util.read_file("initial-hash"))
+local initial_hash = cartesi.fromhex(fs.read_file("initial-hash"))
 local paths = { "input-0.bin", "input-1.bin", "input-2.bin" }
 local function run_game(players, input_paths)
     local dapp_contract = vg.make_dapp_contract(initial_hash, input_paths or paths)
@@ -485,7 +485,7 @@ for _, granularity in ipairs({ "mcycle", "uarch" }) do
     local player <close> = vg.new_player(initial_hash)
     local pair = player.epoch_pair
     pair.machine:write_reg("x1", ~pair.machine:read_reg("x1"))
-    local input = util.read_file(paths[1])
+    local input = fs.read_file(paths[1])
     local ok, err
     if granularity == "mcycle" then
         ok, err = pcall(player.run_to_input_mcycle_offset, player, pair, input, 0, 1)
@@ -608,7 +608,7 @@ end
 do
     local hash_tree = require("cartesi.hash-tree")
     local player <close> = vg.new_player(initial_hash)
-    local input_data = util.read_file(paths[1])
+    local input_data = fs.read_file(paths[1])
     local pair <close> = player:new_machine_pair_at_epoch_input_offset(0)
     local outputs = {}
     local frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
@@ -694,7 +694,7 @@ do
     local player <close> = vg.new_player(initial_hash)
     vg.event_handler.input_added(player, 0, paths[2])
     vg.event_handler.epoch_sealed(player, 1)
-    local contract = { inputs = { util.read_file(paths[2]) } }
+    local contract = { inputs = { fs.read_file(paths[2]) } }
     local function verify(machine, input_mcycle_offset, cycle, input, expected)
         local root_hash_before = machine:get_root_hash()
         local logs = {}
@@ -973,7 +973,7 @@ for _, cheat in ipairs({ "no-rollback", "extra-input", "composite" }) do
                 100,
                 3,
                 vg.player_methods.new_machine(self, initial_state_hash),
-                util.read_file("forged-input-2.bin")
+                fs.read_file("forged-input-2.bin")
             )
         end
         function overrides:new_machine_pair_at_epoch_input_offset(epoch_input_offset)

@@ -44,12 +44,12 @@ return function(run_with_server, new_test_player)
         local original = second.event_handler.prove_output
         first.event_handler.prove_output = function(player)
             assert(player == first, "dispatcher passed the handler table instead of the player")
-            return {}
+            return "nothing"
         end
         assert(second.event_handler.prove_output == original, "handler override changed another player")
         local event = cartesi.tojson({ operation = "prove_output" }, -1)
         local encoded = prtu.answer_event(first, event)
-        assert(next(cartesi.fromjson(encoded).value) == nil, "dispatcher ignored the handler override")
+        assert(cartesi.fromjson(encoded).value == "nothing", "dispatcher ignored the handler override")
         second.event_handler.prove_output = nil
         second.prove_output = function()
             error("dispatcher called an ordinary player method")
@@ -268,14 +268,14 @@ return function(run_with_server, new_test_player)
                     server.dispatcher:schedule(coroutine.running(), "delay")
                     coroutine.yield()
                 end
-                return { skip = true, id = event.id }
+                return { id = event.id }
             end, true)
             run_client(nil, function(event)
                 if event.operation == "cancelled_collection" then
                     return { value = true }
                 end
                 assert(event.operation == "probe")
-                return { skip = true, done = true }, true
+                return { value = "done" }, true
             end)
             wait_connections(3)
             for _, connection in ipairs(server:get_players()) do
@@ -478,12 +478,12 @@ return function(run_with_server, new_test_player)
         player.event_handler.delayed_elimination = function(self, block)
             return prtu.schedule_response(self, block, function()
                 scheduled_calls[block] = (scheduled_calls[block] or 0) + 1
-                return {}
+                return "nothing"
             end)
         end
         run_client({ role = "player", label = player.label }, function(event, line)
             if event.operation == "cancelled_probe" then
-                return { id = event.id, skip = true }
+                return { id = event.id }
             end
             return prtu.answer_event(player, line)
         end, true)
@@ -565,7 +565,7 @@ return function(run_with_server, new_test_player)
                 coroutine.yield()
             end
             assert(resumed == 0, "an early response released a protocol coroutine")
-            return { skip = true }
+            return {}
         end)
         wait_connections(2)
         local parent, blocks = coroutine.running(), {}
@@ -665,7 +665,7 @@ return function(run_with_server, new_test_player)
         end
         run_client({ role = "player", label = player.label }, function(event, line)
             if event.operation == "probe" then
-                return { skip = true }
+                return {}
             end
             local encoded, done = prtu.answer_event(player, line)
             if event.operation == "advance_time" then
@@ -675,7 +675,7 @@ return function(run_with_server, new_test_player)
                     local valid = response.value[1]
                     valid.value.output_data = "!"
                     local elimination = response.value[2].value
-                    assert(type(elimination) == "table" and not next(elimination), "elimination response is not empty")
+                    assert(elimination == "nothing", "elimination response has a payload")
                     valid.request = "prove_output"
                     local invalid = copy(valid)
                     invalid.value.computation_hash_left = "!"
@@ -797,7 +797,7 @@ return function(run_with_server, new_test_player)
                 return logs
             end
             player.event_handler.prove_outputs_merkle_root = function()
-                return {}
+                return "nothing"
             end
             players[index] = player
         end
@@ -967,7 +967,7 @@ return function(run_with_server, new_test_player)
                             or mode == "concurrent"
                             or (mode == "uarch_inactive" and index >= 3)
                         if suppress and event.operation == "win_match_by_timeout" then
-                            return cartesi.tojson({ skip = true, id = event.id }, -1)
+                            return cartesi.tojson({ id = event.id }, -1)
                         end
                     else
                         local request = event.operation
@@ -993,7 +993,7 @@ return function(run_with_server, new_test_player)
                             or (mode == "leaf_expiry" and request == "prove_state_transition")
                             or (mode == "uarch_inactive" and index >= 3 and opening and committed_uarch)
                         then
-                            return cartesi.tojson({ skip = true, id = event.id }, -1)
+                            return cartesi.tojson({ id = event.id }, -1)
                         end
                         if
                             request == "commit_uarch_claim"
@@ -1002,18 +1002,19 @@ return function(run_with_server, new_test_player)
                                 or ((mode == "uarch" or mode == "uarch_without_holder") and index == 2)
                             )
                         then
-                            return cartesi.tojson({ skip = true, id = event.id }, -1)
+                            return cartesi.tojson({ id = event.id }, -1)
                         end
                     end
-                    if mode == "uarch_without_holder" and index == 1 and event.operation == "commit_uarch_claim" then
-                        player.done = true
+                    -- This holder answers its uarch claim, then leaves at the next event.
+                    if mode == "uarch_without_holder" and index == 1 and committed_uarch then
+                        return cartesi.tojson({ id = event.id, value = "done" }, -1), true
                     end
                     local encoded, done = prtu.answer_event(player, line)
                     if event.operation == "commit_uarch_claim" then
                         committed_uarch = true
                     end
                     if index == 1 and event.operation == "eliminate_match" then
-                        assert(cartesi.fromjson(encoded).value.answer, "the honest lineage did not answer")
+                        assert(cartesi.fromjson(encoded).value == "nothing", "the honest lineage did not answer")
                         unrelated_responses = unrelated_responses + 1
                     end
                     return encoded, done

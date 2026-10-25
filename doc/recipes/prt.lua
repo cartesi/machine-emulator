@@ -1577,8 +1577,9 @@ function event_handler.win_match_by_timeout(self, computation_hash)
     return { computation_hash_left = left, computation_hash_right = right }
 end
 
+-- Eliminating a match needs no payload.
 function event_handler.eliminate_match(self) -- luacheck: ignore 212 self
-    return {}
+    return "nothing"
 end
 
 -- A claim: the computation hash's two children and the standard proof of its final state,
@@ -1976,7 +1977,7 @@ function player_meta.__index:prove_output(output_index)
     assert(math.type(output_index) == "integer", "invalid output index")
     local index = output_index - hash_tree.frontier_get_leaf_count(self.previous_outputs_frontier) + #self.outputs + 1
     if index < 1 or index > #self.outputs then
-        return {}
+        return "nothing"
     end
     return {
         output_index = output_index,

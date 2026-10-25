@@ -669,7 +669,7 @@ end
 -- docs:begin prove_output
 function event_handler:prove_output()
     if #self.outputs == 0 then
-        return {}
+        return "nothing"
     end
     return {
         output_index = self.output_proofs[#self.outputs].target_address,

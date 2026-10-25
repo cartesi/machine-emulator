@@ -688,7 +688,7 @@ do
     end
     assert(tree:get_root_hash() == expected, "streamed claim changed its input order or padding")
     assert(player.output_proofs and player.outputs, "sealing did not retain outputs and their proofs")
-    assert(next(handlers.prove_output(player)) == nil, "empty epoch invented an output")
+    assert(handlers.prove_output(player) == "nothing", "empty epoch invented an output")
     assert(handlers.prove_outputs_merkle_root(player), "sealed epoch cannot prove its output root")
     assert(not player.epoch_pair and not player.epoch_builder, "sealing retained a working builder")
     assert(initial.counts.live == #cache.entries, "sealing leaked its execution")
@@ -728,7 +728,7 @@ for _, previous_count in ipairs({ 0, 3 }) do
         "client request changed the offered output"
     )
     assert(
-        next(player:prove_output(previous_count + 3)) == nil and next(player:prove_output(previous_count - 1)) == nil
+        player:prove_output(previous_count + 3) == "nothing" and player:prove_output(previous_count - 1) == "nothing"
     )
     assert(not pcall(player.prove_output, player, 0.5), "noninteger output index was accepted")
     player.new_machine_pair_at_epoch_input_offset = clone
@@ -857,7 +857,10 @@ do
             for _ = 1, geometry.mcycle_height do
                 expected_root = keccak(expected_root, expected_root)
             end
-            assert(proof.root_hash == expected_root and player.done, "quitter did not post its fabricated claim")
+            assert(
+                proof.root_hash == expected_root and player.event_handler.reveal_bisection(player) == "done",
+                "quitter did not post its fabricated claim and leave"
+            )
         end
     end
 end
@@ -1618,7 +1621,7 @@ run_with_server(function(server, run_client, wait_connections)
     run_client(nil, new_claimer("a", answer("valid")))
     run_client(nil, new_claimer("b", answer("invalid")))
     run_client({ role = "phase_closer" }, function()
-        return { value = true }
+        return { value = "done" }
     end)
     server:accept_subscribers("initial")
     local close_block = server:get_time() + 2
@@ -1712,7 +1715,7 @@ run_with_server(function(server, run_client, wait_connections)
 
     -- A holder that explicitly quits counts as answered. Its claim remains unanswered.
     run_client(nil, function()
-        return { skip = true, done = true }, true
+        return { value = "done" }, true
     end)
     wait_connections(6)
     local labels <close> = server:request_all(EVERYONE, define_event("label"), {})
@@ -1769,9 +1772,10 @@ run_with_server(function(server, run_client, wait_connections)
     wait_connections(9)
     local malformed <close> = server:request_all(EVERYONE, define_event("label"), {})
     malformed:wait_at_most(FOREVER)
+    -- The phase closer leaves after closing admission, so only players are counted.
     local dead = 0
     for _, connection in ipairs(server.connections) do
-        if connection.dead then
+        if connection.dead and not connection.is_phase_closer then
             dead = dead + 1
         end
     end
@@ -1884,7 +1888,7 @@ for _, stop_during in ipairs({ "root", "output" }) do
             run_client(cartesi.fromjson(closer.hello), function(_, line)
                 return prtu.answer_event(closer, line)
             end, true)
-            return { skip = true, id = event.id }
+            return { id = event.id }
         end, true)
         wait_connections(1)
         local root <close> = server:request_first_valid(EVERYONE, define_event("stop_test_root"), {}, is_valid)
@@ -1926,7 +1930,7 @@ do
             run_client(cartesi.fromjson(closer.hello), function(_, line)
                 return prtu.answer_event(closer, line)
             end, true)
-            return { skip = true, id = event.id }
+            return { id = event.id }
         end, true)
         wait_connections(1)
         while true do
@@ -2357,7 +2361,7 @@ if arg[1] then
         assert(output.output_proof.target_hash == keccak(output.output_data), "output proof used the wrong payload")
         hash_tree.verify_slice(output.output_proof)
     end
-    assert(next(honest:prove_output(2)) == nil, "the player invented an output at a missing index")
+    assert(honest:prove_output(2) == "nothing", "the player invented an output at a missing index")
 
     local forger_inputs, forger_cache <close> = new_test_cache(dapp_contract)
     local original_input = dapp_contract.inputs[1]

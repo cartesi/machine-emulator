@@ -8,11 +8,12 @@
 --   vg-dishonest.lua idle <address> <initial-hash>
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
+local fs = require("cartesi.filesystem")
 local vg = require("vg")
 local vgu = require("vgu")
 
 local function read_forged_input(self, index, path)
-    return util.read_file(index == self.forged_index and self.private_path or path)
+    return fs.read_file(index == self.forged_index and self.private_path or path)
 end
 local function new_forger(initial_hash, input_index, private_path)
     local player = vg.new_player(initial_hash, "forger")

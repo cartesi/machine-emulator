@@ -1,7 +1,7 @@
 -- VG event schemas, transport bindings, and narration.
 local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")
-local util = require("cartesi.util")
+local fs = require("cartesi.filesystem")
 local transport = require("game-transport")
 
 -- Enumerate player addresses in admission order.
@@ -159,7 +159,7 @@ function story.report_output(output)
     if ok then
         local path = story.output_inputs and story.output_inputs[output.output_index]
         if path then
-            local input = evmu.decode_calldata(ADVANCE, util.read_file(path), "raw")
+            local input = evmu.decode_calldata(ADVANCE, fs.read_file(path), "raw")
             eventf("Output %d of input %q is %q.", output.output_index, input.payload:gsub("%s+$", ""), decoded.payload)
         else
             eventf("Output %d is %q.", output.output_index, decoded.payload)

@@ -596,7 +596,7 @@ local function write_idempotent(path, content)
             return
         end
     end
-    os.execute("mkdir -p '" .. path:match("(.*)/") .. "'")
+    pandoc.system.make_directory(path:match("(.*)/"), true)
     f = assert(io.open(path, "w"))
     f:write(content)
     f:close()

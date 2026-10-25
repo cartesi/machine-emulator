@@ -1509,14 +1509,9 @@ run_with_server(function(server)
             end,
         })
         local proof <close> = server:request_first_valid({}, define_event("group_proof"), {}, is_valid)
-        local elimination <close> = server:request_first_valid(
-            {},
-            prtu.EVENTS.schedule_match_elimination,
-            { server:get_time() + 11 },
-            function()
-                return 0
-            end
-        )
+        local elimination <close> = server:request_first_valid({}, prtu.EVENTS.eliminate_match, {}, function()
+            return 0
+        end)
         pending[#pending + 1] = proof
         pending[#pending + 1] = elimination
         started = started + 1
@@ -1584,7 +1579,7 @@ run_with_server(function(server, run_client, wait_connections)
         end
     )
     local block = server:get_time() + 1
-    local responses, order = collection:wait_at_most(block + 1)
+    local responses, order = collection:wait_at_most(block + 2)
     assert(checked == 5 and #order == 2, "collection did not validate every reply")
     assert(server:get_time() == block, "rejected replies held up collection")
     local labels = {}

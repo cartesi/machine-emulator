@@ -113,9 +113,9 @@ local function with_test_cache(cache, construct, geometry, ...)
     for key, value in pairs(geometry or {}) do
         defaults[key] = value
     end
-    cache = cache or prt.new_machine_cache(new_fake_machine(keccak("fixture initial")))
+    cache = cache or prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial")))
     local initial = cache.entries[1].machine
-    local new_machine, new_cache = prt.new_machine, prt.new_machine_cache
+    local new_machine, new_cache = prt.new_machine, prt.new_forked_machine_cache
     prt.new_machine = function(initial_state_hash)
         local machine = assert(initial:fork_server())
         local ok, err = pcall(function()
@@ -127,7 +127,7 @@ local function with_test_cache(cache, construct, geometry, ...)
         end
         return machine
     end
-    prt.new_machine_cache = function(machine)
+    prt.new_forked_machine_cache = function(machine)
         assert(machine ~= initial, "cache bootstrap borrowed the fixture's entry")
         machine:shutdown_server()
         return cache
@@ -136,7 +136,7 @@ local function with_test_cache(cache, construct, geometry, ...)
         geometry = defaults,
         initial_state_hash = initial:get_root_hash(),
     }, ...)
-    prt.new_machine, prt.new_machine_cache = new_machine, new_cache
+    prt.new_machine, prt.new_forked_machine_cache = new_machine, new_cache
     if not ok then
         cache:close()
         error(player, 0)
@@ -146,7 +146,7 @@ local function with_test_cache(cache, construct, geometry, ...)
 end
 
 local function new_test_player(geometry, cache, label, last_output_proof)
-    return with_test_cache(cache, prt.new_player, geometry, label, last_output_proof)
+    return with_test_cache(cache, prt.new_forked_player, geometry, label, last_output_proof)
 end
 
 local dishonest = {}
@@ -346,7 +346,7 @@ local function new_bundle_player(machine)
     getmetatable(player).__close(player)
     function player.new_machine_pair_at_epoch_input_offset(_, epoch_input_offset)
         assert(epoch_input_offset == 0)
-        local pair = prt.new_machine_pair(machine)
+        local pair = prt.new_forked_machine_pair(machine)
         function pair:snapshot()
             self.saved_mcycle, self.saved_root = machine.mcycle, machine.root_hash
             self.backup_machine = true
@@ -555,14 +555,14 @@ end
 -- Invalid cache configuration releases the supplied initial machine immediately.
 for _, settings in ipairs({ { 0, 1 }, { 1, 0 }, { 1.5, 1 } }) do
     local initial = new_fake_machine(keccak("initial"))
-    assert(not pcall(prt.new_machine_cache, initial, table.unpack(settings)))
+    assert(not pcall(prt.new_forked_machine_cache, initial, table.unpack(settings)))
     assert(initial.counts.live == 0, "failed cache construction leaked its initial machine")
 end
 
 -- Construction validates the template and releases every acquired machine on failure.
 do
     local initial = new_fake_machine(keccak("initial"))
-    local cache <close> = prt.new_machine_cache(initial)
+    local cache <close> = prt.new_forked_machine_cache(initial)
     local select_pair = cache.nearest_not_past_epoch_input_offset
     cache.nearest_not_past_epoch_input_offset = function()
         error("bootstrap acquired its pair from the cache")
@@ -574,7 +574,7 @@ end
 
 for _, phase in ipairs({ "clone", "hash", "yield", "cache_fork", "begin_epoch" }) do
     local initial = new_fake_machine(keccak("initial"))
-    local cache <close> = prt.new_machine_cache(initial)
+    local cache <close> = prt.new_forked_machine_cache(initial)
     local template = cache.entries[1].machine
     local fork = template.fork_server
     template.fork_server = function(self)
@@ -606,7 +606,7 @@ end
 -- Replay rereads the file, and a file removed after delivery cannot use cached bytes.
 do
     local initial = new_fake_machine(keccak("initial"))
-    local cache <close> = prt.new_machine_cache(initial, 1)
+    local cache <close> = prt.new_forked_machine_cache(initial, 1)
     local player = new_test_player(prt.new_geometry(10), cache)
     local data = keccak("input")
     do
@@ -629,7 +629,7 @@ end
 -- Closing a player releases its epoch pair and entries; temporary pairs own their scopes.
 for _, phase in ipairs({ "constructed", "input", "snapshot", "sealed" }) do
     local initial = new_fake_machine(keccak("initial"))
-    local cache = prt.new_machine_cache(initial)
+    local cache = prt.new_forked_machine_cache(initial)
     do
         local player <close> = new_test_player(prt.new_geometry(10), cache)
         if phase ~= "constructed" then
@@ -650,7 +650,7 @@ end
 do
     local initial_hash, first, second = keccak("initial"), keccak("first input"), keccak("second input")
     local initial = new_fake_machine(initial_hash)
-    local cache <close> = prt.new_machine_cache(initial, 2, 1)
+    local cache <close> = prt.new_forked_machine_cache(initial, 2, 1)
     local player = new_test_player(prt.new_geometry(10), cache)
     local path, _ <close> = new_input_file(first)
     local handlers = player.event_handler
@@ -753,7 +753,7 @@ do
         return machine
     end
     local initial = configure(new_fake_machine(keccak("initial")))
-    local cache <close> = prt.new_machine_cache(initial, 1)
+    local cache <close> = prt.new_forked_machine_cache(initial, 1)
     local player = new_test_player(prt.new_geometry(10), cache)
     local offers = 0
     local consider = cache.consider
@@ -782,7 +782,7 @@ end
 -- A missing file fails the input event and releases the open execution.
 do
     local initial = new_fake_machine(keccak("initial"))
-    local cache <close> = prt.new_machine_cache(initial)
+    local cache <close> = prt.new_forked_machine_cache(initial)
     local player = new_test_player(prt.new_geometry(10), cache)
     local path = os.tmpname()
     assert(os.remove(path))
@@ -840,7 +840,7 @@ do
             quitter = true,
         },
     }) do
-        local cache <close> = prt.new_machine_cache(new_fake_machine(keccak("initial")))
+        local cache <close> = prt.new_forked_machine_cache(new_fake_machine(keccak("initial")))
         local inputs = { input_hash }
         local player = case.make(cache)
         seed_input_paths(player, inputs)
@@ -868,7 +868,7 @@ end
 -- Builders retain computation state only; machine operations use explicit arguments.
 do
     local machine = new_fake_machine("initial")
-    local cache <close> = prt.new_machine_cache(machine) -- luacheck: ignore 211
+    local cache <close> = prt.new_forked_machine_cache(machine) -- luacheck: ignore 211
     local geometry = prt.new_geometry(10)
     for _, builder in ipairs({
         prt.new_null_computation_hash_builder(),
@@ -883,7 +883,7 @@ end
 -- Unchanged states still follow the same retention policy.
 do
     local initial = new_fake_machine("initial")
-    local cache <close> = prt.new_machine_cache(initial, 3, 1)
+    local cache <close> = prt.new_forked_machine_cache(initial, 3, 1)
     local offered <close> = new_fake_machine("initial")
     function offered.receive_cmio_request()
         error("consider inspected an outgoing payload")
@@ -919,7 +919,7 @@ do
 end
 
 do
-    local cache <close> = prt.new_machine_cache(new_fake_machine("0"), 5, 3)
+    local cache <close> = prt.new_forked_machine_cache(new_fake_machine("0"), 5, 3)
     for _, offset in ipairs({ 3, 6, 9, 12, 15, 18, 21, 24 }) do
         local offered <close> = new_fake_machine(tostring(offset))
         cache:consider(offset, offered)
@@ -938,11 +938,11 @@ for _, fail in ipairs({ false, true }) do
         machine.get_root_hash = function()
             error("injected pair root hash failure")
         end
-        local ok, err = pcall(prt.new_machine_pair, machine)
+        local ok, err = pcall(prt.new_forked_machine_pair, machine)
         assert(not ok and tostring(err):find("injected pair root hash failure", 1, true))
         assert(machine.counts.live == 0, "failed pair construction waited for GC")
     else
-        local pair <close> = prt.new_machine_pair(machine)
+        local pair <close> = prt.new_forked_machine_pair(machine)
         assert(pair.machine == machine and pair.revert_root_hash == "initial")
     end
 end
@@ -950,7 +950,7 @@ end
 do
     local initial = new_fake_machine("initial")
     local counts = initial.counts
-    local cache <close> = prt.new_machine_cache(initial)
+    local cache <close> = prt.new_forked_machine_cache(initial)
     local outer <close> = cache:nearest_not_past_epoch_input_offset(0)
     outer:snapshot()
     outer.machine.root_hash = "outer"
@@ -989,7 +989,7 @@ end
 -- failure happened before snapshotting, during execution, or after committing the input.
 for _, phase in ipairs({ "factory", "begin_epoch", "begin_input", "run", "end_input", "end_epoch" }) do
     local initial = new_fake_machine("initial")
-    local cache <close> = prt.new_machine_cache(initial, 2, 1)
+    local cache <close> = prt.new_forked_machine_cache(initial, 2, 1)
     local player = new_test_player(prt.new_geometry(10), cache)
     player.input_paths[1] = fixture_input("accepted")
     function player.new_null_computation_hash_builder()
@@ -1014,7 +1014,7 @@ end
 -- Forward failures release the working machine and its pending rollback snapshot.
 for _, phase in ipairs({ "begin_input", "run", "end_input" }) do
     local initial = new_fake_machine("initial")
-    local cache <close> = prt.new_machine_cache(initial)
+    local cache <close> = prt.new_forked_machine_cache(initial)
     local player = new_test_player(prt.new_geometry(10), cache)
     player.input_paths[1] = fixture_input("accepted")
     player.epoch_builder[phase] = function()
@@ -1038,7 +1038,7 @@ for _, terminal in ipairs({
     cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
 }) do
     local initial = new_fake_machine("initial")
-    local cache <close> = prt.new_machine_cache(initial)
+    local cache <close> = prt.new_forked_machine_cache(initial)
     local reasons = {
         cartesi.BREAK_REASON_YIELDED_SOFTLY,
         cartesi.BREAK_REASON_CONSOLE_OUTPUT,
@@ -1098,7 +1098,7 @@ end
 -- Input delivery must use the saved boundary hash even if preparation changes the running machine.
 for _, phase in ipairs({ "begin_input", "snapshot" }) do
     local initial = new_fake_machine("initial")
-    local cache <close> = prt.new_machine_cache(initial)
+    local cache <close> = prt.new_forked_machine_cache(initial)
     local player = new_test_player(prt.new_geometry(10), cache)
     local snapshot = player.epoch_pair.snapshot
     player.epoch_pair.snapshot = function(self)
@@ -1126,7 +1126,7 @@ end
 -- Replay skips automatic yields without reading their output payloads.
 for _, corrupt in ipairs({ false, true }) do
     local initial = new_fake_machine("initial")
-    local cache <close> = prt.new_machine_cache(initial)
+    local cache <close> = prt.new_forked_machine_cache(initial)
     if corrupt then
         local fork = initial.fork_server
         function initial.fork_server(source)
@@ -1176,7 +1176,7 @@ end
 -- A missing wrapper field forwards a machine method; absence of a private snapshot must instead
 -- be represented explicitly. Exercise this before the slower real-machine checks.
 do
-    local cache <close> = prt.new_machine_cache(new_fake_machine("initial"))
+    local cache <close> = prt.new_forked_machine_cache(new_fake_machine("initial"))
     dishonest.new_tamperer(prt.new_geometry(10), cache, 0, 100)
     local owner <close> = cache:nearest_not_past_epoch_input_offset(0)
     local machine = owner.machine
@@ -1954,7 +1954,7 @@ end
 
 local function new_test_cache(contract, capacity, input_gap)
     local inputs = { table.unpack(contract.inputs) }
-    return inputs, prt.new_machine_cache(prt.new_machine(contract.initial_state_hash), capacity, input_gap)
+    return inputs, prt.new_forked_machine_cache(prt.new_machine(contract.initial_state_hash), capacity, input_gap)
 end
 
 if arg[1] then
@@ -2430,7 +2430,7 @@ if arg[1] then
         local template = prt.new_machine(initial_state_hash)
         template:write_reg("htif_tohost_data", 0xffffffff)
         local root = template:get_root_hash()
-        local payload_cache <close> = prt.new_machine_cache(template)
+        local payload_cache <close> = prt.new_forked_machine_cache(template)
         local player = new_test_player(dapp_contract.geometry, payload_cache)
         player.input_paths[1] = fixture_input(inputs[1])
         local mcycle_tree = new_mcycle_tree(player)
@@ -2476,7 +2476,7 @@ if arg[1] then
     for _, terminal in ipairs({ "halt", "exception", "unexpected", "overflow" }) do
         local template = prt.new_machine(initial_state_hash)
         force_terminal(template, terminal)
-        local template_cache <close> = prt.new_machine_cache(template)
+        local template_cache <close> = prt.new_forked_machine_cache(template)
         local built, failure = pcall(new_test_player, dapp_contract.geometry, template_cache)
         local message = tostring(failure)
         assert(not built, terminal .. " template built a claim")
@@ -2505,7 +2505,7 @@ if arg[1] then
         }
         local counts = { outer = 0, bundles = 0, uarch = 0 }
         local terminal_inputs = { table.unpack(contract.inputs) }
-        local terminal_cache <close> = prt.new_machine_cache(new_terminal_template())
+        local terminal_cache <close> = prt.new_forked_machine_cache(new_terminal_template())
         local player = new_test_player(contract.geometry, terminal_cache)
         seed_input_paths(player, terminal_inputs)
         -- Force the stop at delivery itself, including native bundle collection

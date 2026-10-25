@@ -8,7 +8,7 @@
 local cartesi = require("cartesi")
 local jsonrpc = require("cartesi.jsonrpc")
 local hash_tree = require("cartesi.hash-tree")
-local util = require("cartesi.util")
+local fs = require("cartesi.filesystem")
 local vgu = require("vgu")
 local output_verifier = require("game-output")
 local EVENTS = vgu.EVENTS
@@ -491,7 +491,7 @@ function player_methods:run_to_epoch_input_offset(pair, inputs, epoch_input_offs
 end
 
 function player_methods:read_input(_index, path) -- luacheck: ignore 212 self
-    return util.read_file(path)
+    return fs.read_file(path)
 end
 
 -- Returns a pair at position_end, starting from a closer checkpoint when the cache has one.
@@ -1031,7 +1031,7 @@ local function make_dapp_contract(initial_state_hash, input_paths)
     return {
         initial_state_hash = initial_state_hash,
         input_paths = input_paths,
-        inputs = map(input_paths, util.read_file),
+        inputs = map(input_paths, fs.read_file),
         max_allowance = 4,
         response_budget = 1,
     }

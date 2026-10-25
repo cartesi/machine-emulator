@@ -1,5 +1,5 @@
 local cartesi = require("cartesi")
-local util = require("cartesi.util")
+local fs = require("cartesi.filesystem")
 local hash_tree = require("cartesi.hash-tree")
 
 -- Read a proof saved as a Lua chunk
@@ -8,10 +8,10 @@ local function read_proof(name)
 end
 
 -- The settled machine state hash, the two proofs, and the output to verify against them
-local machine_hash = util.read_file(assert(arg[1], "missing machine state hash"))
+local machine_hash = fs.read_file(assert(arg[1], "missing machine state hash"))
 local outputs_merkle_root_proof = read_proof(assert(arg[2], "missing outputs Merkle root proof"))
 local output_proof = read_proof(assert(arg[3], "missing output proof"))
-local output = util.read_file(assert(arg[4], "missing output"))
+local output = fs.read_file(assert(arg[4], "missing output"))
 
 -- The outputs Merkle root proof must be rooted at the agreed machine state hash
 assert(outputs_merkle_root_proof.root_hash == machine_hash, "proof not rooted at the machine state hash")

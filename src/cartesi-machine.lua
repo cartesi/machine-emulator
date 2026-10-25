@@ -3266,23 +3266,14 @@ end
 
 local function load_frontier(filename, height, hash_type)
     if filename == "" then return nil end
-    local frontier = cartesi.fromjson(read_epoch_file(filename), "Base64Array")
-    assert(#frontier == height + 1, "frontier height does not match computation settings")
-    for _, hash in ipairs(frontier) do
-        assert(hash == false or (type(hash) == "string" and #hash == cartesi.HASH_SIZE), "invalid frontier entry")
-    end
-    if frontier[#frontier] then
-        for level = 1, #frontier - 1 do
-            assert(not frontier[level], "invalid complete frontier")
-        end
-    end
-    frontier.hash_function = cartesi[hash_type]
-    return frontier
+    -- A missing or empty file fails as an epoch that cannot resume.
+    read_epoch_file(filename)
+    return hash_tree.frontier_load(filename, height, hash_type)
 end
 
 local function store_frontier(filename, frontier)
     if filename == "" then return end
-    fs.write_file(cartesi.tojson(table.move(frontier, 1, #frontier, 1, {}), 2, "Base64Array") .. "\n", filename)
+    hash_tree.frontier_store(frontier, filename)
 end
 
 -- State files are written independently. Validation can detect inconsistent files

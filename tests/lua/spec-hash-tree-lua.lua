@@ -11,6 +11,8 @@ lester.parse_args()
 local describe, it, expect = lester.describe, lester.it, lester.expect
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
+local fs = require("cartesi.filesystem")
+local tests_util = require("cartesi.tests.util")
 
 local H = cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT
 
@@ -45,6 +47,19 @@ local function make_leaves(n)
 end
 
 -- Two proofs of the same output, computed independently, must agree on every field.
+-- A new empty directory, removed with its files when the returned owner closes.
+local function new_scope_directory()
+    local directory = fs.temp_pathname()
+    fs.create_directory(directory)
+    return tests_util.scope_exit(function()
+        for _, name in ipairs(fs.list_directory(directory)) do
+            fs.remove_file(directory .. "/" .. name)
+        end
+        fs.remove_directory(directory)
+    end),
+        directory
+end
+
 local function expect_same_proof(a, b)
     expect.equal(a.target_address, b.target_address)
     expect.equal(a.log2_target_size, b.log2_target_size)
@@ -159,6 +174,46 @@ describe("hash-tree.lua", function()
             expect.fail(function()
                 hash_tree.frontier_next_proofs(frontier, { leaf(2) })
             end, "frontier leaf count exceeds 64 bits")
+        end)
+    end)
+
+    describe("frontier_store", function()
+        it("loads the frontier it stored, empty, partial, or full", function()
+            local _ <close>, directory = new_scope_directory()
+            local path = directory .. "/frontier.json"
+            local full = hash_tree.frontier(2, "keccak256")
+            hash_tree.frontier_append(full, make_leaves(4))
+            local partial = hash_tree.frontier(H, "keccak256")
+            hash_tree.frontier_append(partial, make_leaves(5))
+            for _, frontier in ipairs({ hash_tree.frontier(H, "keccak256"), partial, full }) do
+                hash_tree.frontier_store(frontier, path)
+                local loaded = hash_tree.frontier_load(path, #frontier - 1, "keccak256")
+                expect.equal(#loaded, #frontier)
+                expect.equal(hash_tree.frontier_get_leaf_count(loaded), hash_tree.frontier_get_leaf_count(frontier))
+                expect.equal(hash_tree.frontier_get_root_hash(loaded), hash_tree.frontier_get_root_hash(frontier))
+                expect.equal(loaded.hash_function, cartesi.keccak256)
+            end
+            expect.equal(table.concat(fs.list_directory(directory), ","), "frontier.json")
+        end)
+
+        it("rejects a frontier of another height, invalid entries, or a full frontier with other levels", function()
+            local _ <close>, directory = new_scope_directory()
+            local path = directory .. "/frontier.json"
+            hash_tree.frontier_store(hash_tree.frontier(4, "keccak256"), path)
+            expect.fail(function()
+                hash_tree.frontier_load(path, 3, "keccak256")
+            end, "frontier height does not match")
+            expect.fail(function()
+                hash_tree.frontier_load(path, 4, "unknown")
+            end, "unsupported hash function")
+            fs.write_file(cartesi.tojson({ false, "short", false }, 2, "Base64Array"), path)
+            expect.fail(function()
+                hash_tree.frontier_load(path, 2, "keccak256")
+            end, "invalid frontier entry")
+            fs.write_file(cartesi.tojson({ leaf(1), false, leaf(2) }, 2, "Base64Array"), path)
+            expect.fail(function()
+                hash_tree.frontier_load(path, 2, "keccak256")
+            end, "invalid complete frontier")
         end)
     end)
 
@@ -1044,6 +1099,206 @@ describe("hash-tree.lua", function()
             local forest = hash_tree.frontier_forest(1, "sha256")
             hash_tree.frontier_forest_append(forest, leaves)
             expect.equal(hash_tree.frontier_forest_get_root_hash(forest), cartesi.sha256(leaves[1], leaves[2]))
+        end)
+
+        describe("frontier_forest_store", function()
+            local function tree_path(directory, hash)
+                return directory .. "/" .. cartesi.tohex(hash) .. ".json"
+            end
+
+            -- Every node and sibling query, including opaque results, must agree between two full forests.
+            local function expect_same_queries(a, b)
+                expect.equal(hash_tree.frontier_forest_get_root_hash(a), hash_tree.frontier_forest_get_root_hash(b))
+                for log2_size = 0, H4 do
+                    for index = 0, (MAX4 >> log2_size) - 1 do
+                        local position = index << log2_size
+                        local a_hash, a_err = hash_tree.frontier_forest_get_node_hash(a, position, log2_size)
+                        local b_hash, b_err = hash_tree.frontier_forest_get_node_hash(b, position, log2_size)
+                        expect.equal(a_hash, b_hash)
+                        expect.equal(a_err, b_err)
+                        local a_siblings = hash_tree.frontier_forest_get_siblings(a, position, log2_size)
+                        local b_siblings = hash_tree.frontier_forest_get_siblings(b, position, log2_size)
+                        expect.equal(a_siblings == nil, b_siblings == nil)
+                        for i = 1, #(a_siblings or {}) do
+                            expect.equal(a_siblings[i], b_siblings[i])
+                        end
+                    end
+                end
+            end
+
+            local leaves = make_leaves(MAX4)
+
+            local function new_bundle(first)
+                local bundle = hash_tree.frontier_forest(2, "keccak256")
+                hash_tree.frontier_forest_append(bundle, leaves, first, first + 4)
+                return bundle
+            end
+
+            -- Forests covering each tree shape: fixed-point leaves, a repeated suffix, completed
+            -- forests as base values, opaque bundles, and opaque bundles expanded before storing.
+            local fixtures = {
+                leaves = function()
+                    local forest = hash_tree.frontier_forest(H4, "keccak256")
+                    hash_tree.frontier_forest_append(forest, leaves)
+                    return forest
+                end,
+                repetition = function()
+                    local forest = hash_tree.frontier_forest(H4, "keccak256")
+                    hash_tree.frontier_forest_append(forest, leaves, 1, 6)
+                    hash_tree.frontier_forest_pad_back(forest, leaves[6])
+                    return forest
+                end,
+                forests = function()
+                    local forest = hash_tree.frontier_forest(H4, "keccak256")
+                    for i = 1, 3 do
+                        hash_tree.frontier_forest_push_back(forest, new_bundle(4 * i - 3))
+                    end
+                    hash_tree.frontier_forest_pad_back(forest, new_bundle(13), 1)
+                    return forest
+                end,
+                opaque = function()
+                    local forest = hash_tree.frontier_forest(H4, "keccak256")
+                    hash_tree.frontier_forest_append(forest, leaves, 1, 9)
+                    for i = 3, 4 do
+                        local root = hash_tree.frontier_forest_get_root_hash(new_bundle(4 * i - 3))
+                        hash_tree.frontier_forest_push_back(forest, root, 2)
+                    end
+                    return forest
+                end,
+                expanded = function()
+                    local forest = hash_tree.frontier_forest(H4, "keccak256")
+                    for i = 1, 4 do
+                        local root = hash_tree.frontier_forest_get_root_hash(new_bundle(4 * i - 3))
+                        hash_tree.frontier_forest_push_back(forest, root, 2)
+                    end
+                    hash_tree.frontier_forest_expand_leaf(forest, 4, new_bundle(5))
+                    hash_tree.frontier_forest_expand_leaf(forest, 12, new_bundle(13))
+                    return forest
+                end,
+            }
+
+            for _, name in ipairs({ "leaves", "repetition", "forests", "opaque", "expanded" }) do
+                it("answers every query the same after a round trip of " .. name, function()
+                    local _ <close>, directory = new_scope_directory()
+                    local forest = fixtures[name]()
+                    local frontier_path = directory .. "/frontier.json"
+                    hash_tree.frontier_forest_store(forest, directory, frontier_path)
+                    local loaded = hash_tree.frontier_forest_load(directory, frontier_path)
+                    expect_same_queries(fixtures[name](), loaded)
+                    expect_same_queries(forest, loaded)
+                end)
+            end
+
+            it("stores an expansion without rewriting its parent and loads it when reached", function()
+                local _ <close>, directory = new_scope_directory()
+                local frontier_path = directory .. "/frontier.json"
+                hash_tree.frontier_forest_store(fixtures.opaque(), directory, frontier_path)
+                local forest = hash_tree.frontier_forest_load(directory, frontier_path)
+                local node_hash, err = hash_tree.frontier_forest_get_node_hash(forest, 12, 0)
+                expect.equal(node_hash, nil)
+                expect.equal(err, "the node is below an opaque hash")
+                local before = {}
+                for _, name in ipairs(fs.list_directory(directory)) do
+                    before[name] = fs.read_file(directory .. "/" .. name)
+                end
+                local bundle = new_bundle(13)
+                hash_tree.frontier_forest_expand_leaf(forest, 12, bundle)
+                expect.equal(hash_tree.frontier_forest_get_node_hash(forest, 12, 0), leaves[13])
+                for name, contents in pairs(before) do
+                    expect.equal(fs.read_file(directory .. "/" .. name), contents)
+                end
+                expect.truthy(io.open(tree_path(directory, hash_tree.frontier_forest_get_root_hash(bundle))))
+                -- The unchanged frontier reopens the forest with the stored expansion.
+                local reopened = hash_tree.frontier_forest_load(directory, frontier_path)
+                expect_same_queries(forest, reopened)
+                expect.equal(hash_tree.frontier_forest_get_node_hash(reopened, 15, 0), leaves[16])
+            end)
+
+            it("flushes pending values and shares trees between snapshots of a growing forest", function()
+                local _ <close>, directory = new_scope_directory()
+                local forest = hash_tree.frontier_forest(H4, "keccak256")
+                hash_tree.frontier_forest_append(forest, leaves, 1, 6)
+                hash_tree.frontier_forest_store(forest, directory, directory .. "/first.json")
+                local first = {}
+                for _, name in ipairs(fs.list_directory(directory)) do
+                    first[name] = fs.read_file(directory .. "/" .. name)
+                end
+                hash_tree.frontier_forest_append(forest, leaves, 6, 12)
+                hash_tree.frontier_forest_store(forest, directory, directory .. "/second.json")
+                for _, name in ipairs(fs.list_directory(directory)) do
+                    expect.falsy(name:find(".tmp.", 1, true))
+                end
+                for name, contents in pairs(first) do
+                    expect.equal(fs.read_file(directory .. "/" .. name), contents)
+                end
+                for _, snapshot in ipairs({ { "first.json", 6 }, { "second.json", 12 } }) do
+                    local loaded = hash_tree.frontier_forest_load(directory, directory .. "/" .. snapshot[1])
+                    expect.equal(hash_tree.frontier_forest_get_leaf_count(loaded), snapshot[2] - 1)
+                    hash_tree.frontier_forest_append(loaded, leaves, snapshot[2])
+                    expect_matches_reference(loaded, leaves)
+                end
+                hash_tree.frontier_forest_append(forest, leaves, 12)
+                expect_matches_reference(forest, leaves)
+                local _ <close>, other_directory = new_scope_directory()
+                expect.fail(function()
+                    hash_tree.frontier_forest_store(forest, other_directory, directory .. "/third.json")
+                end, "stored in another directory")
+            end)
+
+            it("rewrites the files an interrupted store left missing", function()
+                local _ <close>, directory = new_scope_directory()
+                local frontier_path = directory .. "/frontier.json"
+                hash_tree.frontier_forest_store(fixtures.forests(), directory, frontier_path)
+                -- A crash can make a parent's file durable without a child's. Storing the same
+                -- forest again, as after a restart, must restore the child despite the parent's file.
+                local bundle_path = tree_path(directory, hash_tree.frontier_forest_get_root_hash(new_bundle(1)))
+                assert(os.remove(bundle_path))
+                local forest = fixtures.forests()
+                hash_tree.frontier_forest_store(forest, directory, frontier_path)
+                expect.truthy(fs.exists(bundle_path))
+                expect_same_queries(forest, hash_tree.frontier_forest_load(directory, frontier_path))
+            end)
+
+            it("rejects tampered, misplaced, and mismatched stored trees", function()
+                local _ <close>, directory = new_scope_directory()
+                local frontier_path = directory .. "/frontier.json"
+                local forest = fixtures.forests()
+                hash_tree.frontier_forest_store(forest, directory, frontier_path)
+                local bundle_path = tree_path(directory, hash_tree.frontier_forest_get_root_hash(new_bundle(1)))
+                local original = fs.read_file(bundle_path)
+                local function expect_query_fails(message)
+                    local loaded = hash_tree.frontier_forest_load(directory, frontier_path)
+                    expect.fail(function()
+                        hash_tree.frontier_forest_get_node_hash(loaded, 0, 0)
+                    end, message)
+                end
+                fs.write_file(
+                    (original:gsub(cartesi.tohex(leaves[1]):sub(3), cartesi.tohex(leaves[2]):sub(3))),
+                    bundle_path
+                )
+                expect_query_fails("stored tree hash mismatch")
+                fs.write_file(
+                    fs.read_file(tree_path(directory, hash_tree.frontier_forest_get_root_hash(new_bundle(5)))),
+                    bundle_path
+                )
+                expect_query_fails("stored tree hash mismatch")
+                fs.write_file((original:gsub('"height":2', '"height":3')), bundle_path)
+                expect_query_fails("stored tree height mismatch")
+                fs.write_file(original, bundle_path)
+                expect_same_queries(forest, hash_tree.frontier_forest_load(directory, frontier_path))
+                -- A raw hash at another height must not open the tree stored under that hash.
+                local other = hash_tree.frontier_forest(H4, "keccak256")
+                hash_tree.frontier_forest_pad_back(other, hash_tree.frontier_forest_get_root_hash(new_bundle(1)), 8, 1)
+                hash_tree.frontier_forest_store(other, directory, directory .. "/other.json")
+                expect.fail(function()
+                    hash_tree.frontier_forest_get_node_hash(other, 0, 0)
+                end, "stored tree height mismatch")
+                local frontier = fs.read_file(frontier_path)
+                fs.write_file((frontier:gsub('"leaf_count":16', '"leaf_count":15')), frontier_path)
+                expect.fail(function()
+                    hash_tree.frontier_forest_load(directory, frontier_path)
+                end, "does not match leaf count")
+            end)
         end)
     end)
 

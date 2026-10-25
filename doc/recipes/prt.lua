@@ -854,7 +854,7 @@ end
 -- expiry. The response budget equals the allowance, so no response is ever charged. Input
 -- events carry filenames readable by every player; the referee retains its own bytes for
 -- verification.
-local function make_dapp_contract(initial_state_hash, input_paths)
+local function new_dapp_contract(initial_state_hash, input_paths)
     local max_allowance = 4
     return {
         initial_state_hash = initial_state_hash,
@@ -1065,11 +1065,11 @@ local function new_machine_pair(machine)
     return pair:move()
 end
 
--- A checkpoint is the machine at an input base, before delivery, indexed by the input. The first
--- checkpoint is the initial machine at input zero and is always retained. The epoch run considers
+-- An entry is the machine at an input base, before delivery, indexed by the input. The first
+-- entry is the initial machine at input zero and is always retained. The epoch run considers
 -- every later input base, and the cache retains a bounded set of forks. When the cache is full,
--- a new checkpoint replaces the first one closer than the input gap to its predecessor. If there
--- is none, the gap doubles, so checkpoints spread across the epoch as it grows.
+-- a new entry replaces the first one closer than the input gap to its predecessor. If there
+-- is none, the gap doubles, so entries spread across the epoch as it grows.
 local machine_cache_meta = { __index = {} }
 local machine_cache_methods = machine_cache_meta.__index
 
@@ -1081,7 +1081,7 @@ local function new_machine_cache(initial_machine, capacity, input_gap)
         input_gap = input_gap,
         replace_cursor = 2,
         last_epoch_input_offset = 0,
-        checkpoints = { { epoch_input_offset = 0, machine = initial_machine } },
+        entries = { { epoch_input_offset = 0, machine = initial_machine } },
     }, machine_cache_meta)
     assert(math.type(capacity) == "integer" and capacity > 0, "invalid machine cache capacity")
     assert(math.type(input_gap) == "integer" and input_gap > 0, "invalid machine cache input gap")
@@ -1089,10 +1089,10 @@ local function new_machine_cache(initial_machine, capacity, input_gap)
 end
 
 function machine_cache_methods:close()
-    for _, checkpoint in ipairs(self.checkpoints or {}) do
-        checkpoint.machine:shutdown_server()
+    for _, entry in ipairs(self.entries or {}) do
+        entry.machine:shutdown_server()
     end
-    self.checkpoints = nil
+    self.entries = nil
 end
 machine_cache_meta.__close = machine_cache_methods.close
 
@@ -1101,23 +1101,23 @@ function machine_cache_methods:move()
 end
 
 function machine_cache_methods:consider(epoch_input_offset, machine)
-    local checkpoints = assert(self.checkpoints, "machine cache is closed or moved")
-    assert(epoch_input_offset > self.last_epoch_input_offset, "machine checkpoints are not ordered")
+    local entries = assert(self.entries, "machine cache is closed or moved")
+    assert(epoch_input_offset > self.last_epoch_input_offset, "cache entries are not ordered")
     self.last_epoch_input_offset = epoch_input_offset
-    if epoch_input_offset - checkpoints[#checkpoints].epoch_input_offset < self.input_gap then
+    if epoch_input_offset - entries[#entries].epoch_input_offset < self.input_gap then
         return
     end
     local replace_index
-    if #checkpoints == self.capacity then
+    if #entries == self.capacity then
         replace_index = self.replace_cursor
-        while replace_index <= #checkpoints do
-            local previous = checkpoints[replace_index - 1].epoch_input_offset
-            if checkpoints[replace_index].epoch_input_offset - previous < self.input_gap then
+        while replace_index <= #entries do
+            local previous = entries[replace_index - 1].epoch_input_offset
+            if entries[replace_index].epoch_input_offset - previous < self.input_gap then
                 break
             end
             replace_index = replace_index + 1
         end
-        if replace_index > #checkpoints then
+        if replace_index > #entries then
             self.input_gap = self.input_gap << 1
             self.replace_cursor = 2
             return
@@ -1125,43 +1125,43 @@ function machine_cache_methods:consider(epoch_input_offset, machine)
     end
     local clone <close> = new_machine_pair(fork_server(machine))
     if replace_index then
-        table.remove(checkpoints, replace_index).machine:shutdown_server()
+        table.remove(entries, replace_index).machine:shutdown_server()
         self.replace_cursor = replace_index
     end
-    checkpoints[#checkpoints + 1] = { epoch_input_offset = epoch_input_offset, machine = clone.machine }
+    entries[#entries + 1] = { epoch_input_offset = epoch_input_offset, machine = clone.machine }
     clone.machine = nil
 end
 
-local function find_nearest_checkpoint(cache, epoch_input_offset)
-    local checkpoints = assert(cache.checkpoints, "machine cache is closed or moved")
+local function find_nearest_entry(cache, epoch_input_offset)
+    local entries = assert(cache.entries, "machine cache is closed or moved")
     assert(epoch_input_offset >= 0, "invalid epoch input offset")
     local nearest
-    for _, checkpoint in ipairs(checkpoints) do
-        if checkpoint.epoch_input_offset > epoch_input_offset then
+    for _, entry in ipairs(entries) do
+        if entry.epoch_input_offset > epoch_input_offset then
             break
         end
-        nearest = checkpoint
+        nearest = entry
     end
     return nearest
 end
 
 -- Fork the nearest retained input boundary not past the requested offset.
 function machine_cache_methods:nearest_not_past_epoch_input_offset(epoch_input_offset)
-    local checkpoint = find_nearest_checkpoint(self, epoch_input_offset)
-    local pair <close> = new_machine_pair(fork_server(checkpoint.machine))
-    return pair:move(), checkpoint.epoch_input_offset
+    local entry = find_nearest_entry(self, epoch_input_offset)
+    local pair <close> = new_machine_pair(fork_server(entry.machine))
+    return pair:move(), entry.epoch_input_offset
 end
 
--- Take ownership of the received pair and keep it unless a retained checkpoint is strictly nearer.
+-- Take ownership of the received pair and keep it unless a retained entry is strictly nearer.
 function machine_cache_methods:nearer_not_past_epoch_input_offset_or(
     pair,
     pair_epoch_input_offset,
     epoch_input_offset_end
 )
     local received_pair <close> = assert(pair, "missing machine pair")
-    local checkpoint = find_nearest_checkpoint(self, epoch_input_offset_end)
+    local entry = find_nearest_entry(self, epoch_input_offset_end)
     assert(pair_epoch_input_offset <= epoch_input_offset_end, "pair is past desired input")
-    if checkpoint.epoch_input_offset <= pair_epoch_input_offset then
+    if entry.epoch_input_offset <= pair_epoch_input_offset then
         return received_pair:move(), pair_epoch_input_offset
     end
     local advancing_pair <close>, cached_epoch_input_offset =
@@ -1236,7 +1236,7 @@ end
 
 -- Plain replay has the same input lifecycle as a sampled run.
 local function noop() end
-local function make_null_computation_hash_builder()
+local function new_null_computation_hash_builder()
     return {
         begin_epoch = noop,
         begin_input = noop,
@@ -1322,7 +1322,7 @@ end
 -- Collect the full epoch as roots of bundles of 2^LOG2_BUNDLE_MCYCLE_COUNT period samples.
 -- Per-input counts measure bundles at bundle_height.
 -- The forest owns total coverage.
-local function make_mcycle_computation_hash_builder(log2_mcycles_per_period)
+local function new_mcycle_computation_hash_builder(log2_mcycles_per_period)
     local log2_periods_per_input = LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period
     local height = LOG2_MAX_ADVANCE_STATES_PER_EPOCH + log2_periods_per_input
     return {
@@ -1464,7 +1464,7 @@ end
 -- begin_input saves its uarch tail for rejection; run replays to the selected period and
 -- collects roots of bundles of 2^LOG2_BUNDLE_UARCH_CYCLE_COUNT transitions.
 -- A fixed point before the selected period supplies its history without reaching the target.
-local function make_uarch_cycle_computation_hash_builder(log2_mcycles_per_period, epoch_period_offset)
+local function new_uarch_cycle_computation_hash_builder(log2_mcycles_per_period, epoch_period_offset)
     local periods_per_input = 1 << (LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period)
     local _, input_period_offset = split_epoch_period_offset(periods_per_input, epoch_period_offset)
     local height = log2_mcycles_per_period + LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
@@ -1584,7 +1584,7 @@ end
 
 -- A claim: the computation hash's two children and the standard proof of its final state,
 -- the last leaf. The proof query opens the last stored bundle if needed.
-local function make_claim(tree)
+local function new_claim(tree)
     local final_leaf_index = (1 << tree.height) - 1
     local computation_hash_left, computation_hash_right = tree:get_child_hashes(0, tree.height)
     local final_state_hash_proof = tree:get_proof(final_leaf_index)
@@ -1597,9 +1597,9 @@ end
 
 -- The player's opening mcycle claim.
 function event_handler.commit_mcycle_claim(self)
-    local tree = self:make_mcycle_tree()
+    local tree = self:new_mcycle_tree()
     self.trees[tree:get_root_hash()] = tree
-    return make_claim(tree)
+    return new_claim(tree)
 end
 
 -- Reveals the nodes the referee needs for one bisection advance: the claim's node at
@@ -1647,9 +1647,9 @@ end
 -- and input period offset are zero-based, as the referee counts them. The referee checks
 -- that the submitted final state matches one of the contested values.
 function event_handler.commit_uarch_claim(self, epoch_input_offset, input_period_offset)
-    local tree = self:make_uarch_tree(epoch_input_offset, input_period_offset)
+    local tree = self:new_uarch_tree(epoch_input_offset, input_period_offset)
     self.trees[tree:get_root_hash()] = tree
-    return make_claim(tree)
+    return new_claim(tree)
 end
 
 -- The disputed transition's access logs, produced by positioning a fresh fork at the
@@ -1670,7 +1670,7 @@ function event_handler.prove_state_transition(self, epoch_input_offset, input_pe
             machine:log_send_cmio_response(HTIF_YIELD_REASON_ADVANCE_STATE, input_data, pair.revert_root_hash)
         return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
     end
-    local builder = self:make_null_computation_hash_builder()
+    local builder = self:new_null_computation_hash_builder()
     local input_mcycle_offset =
         combine_input_mcycle_offset(self.geometry.mcycles_per_period, input_period_offset, period_mcycle_offset)
     self:run_to_input_mcycle_offset(builder, pair, epoch_input_offset, input_data, input_mcycle_offset)
@@ -1721,7 +1721,7 @@ end
 
 local player_meta = { __index = {} }
 
--- The player owns its epoch pair and checkpoints. Temporary pairs own their scopes.
+-- The player owns its epoch pair and entries. Temporary pairs own their scopes.
 function player_meta.__close(self)
     if self.epoch_pair then
         self.epoch_pair:close()
@@ -1747,19 +1747,19 @@ function player_meta.__index:move()
 end
 
 -- Builders use the player's geometry and own only collection state.
-function player_meta.__index:make_mcycle_computation_hash_builder()
-    return make_mcycle_computation_hash_builder(self.geometry.log2_mcycles_per_period)
+function player_meta.__index:new_mcycle_computation_hash_builder()
+    return new_mcycle_computation_hash_builder(self.geometry.log2_mcycles_per_period)
 end
 
-function player_meta.__index:make_uarch_cycle_computation_hash_builder(epoch_period_offset)
-    return make_uarch_cycle_computation_hash_builder(self.geometry.log2_mcycles_per_period, epoch_period_offset)
+function player_meta.__index:new_uarch_cycle_computation_hash_builder(epoch_period_offset)
+    return new_uarch_cycle_computation_hash_builder(self.geometry.log2_mcycles_per_period, epoch_period_offset)
 end
 
-function player_meta.__index:make_null_computation_hash_builder() -- luacheck: ignore 212 self
-    return make_null_computation_hash_builder()
+function player_meta.__index:new_null_computation_hash_builder() -- luacheck: ignore 212 self
+    return new_null_computation_hash_builder()
 end
 
--- Obtain an exact input boundary without exposing checkpoint selection to callers.
+-- Obtain an exact input boundary without exposing entry selection to callers.
 function player_meta.__index:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
     local pair <close>, cached_epoch_input_offset =
         self.machine_cache:nearest_not_past_epoch_input_offset(epoch_input_offset)
@@ -1838,7 +1838,7 @@ end
 
 -- Replay completed inputs, leaving the target input undelivered.
 function player_meta.__index:run_to_epoch_input_offset(pair, epoch_input_offset_begin, epoch_input_offset_end)
-    local builder = self:make_null_computation_hash_builder()
+    local builder = self:new_null_computation_hash_builder()
     builder:begin_epoch(pair.machine)
     for epoch_input_offset = epoch_input_offset_begin, math.min(epoch_input_offset_end, #self.input_paths) - 1 do
         local input_data = fs.read_file(self.input_paths[epoch_input_offset + 1])
@@ -1907,7 +1907,7 @@ end
 function player_meta.__index:collect_mcycle_bundle(epoch_input_offset, input_bundle_offset)
     local pair <close> = self:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
     local machine = pair.machine
-    local builder = self:make_null_computation_hash_builder()
+    local builder = self:new_null_computation_hash_builder()
     -- Deliver the input and stay at its boundary. The machine advances to the bundle and pads it
     -- with its fixed-point state hash when the input stops early.
     local path = self.input_paths[epoch_input_offset + 1]
@@ -1927,7 +1927,7 @@ end
 function player_meta.__index:build_uarch_claim(epoch_input_offset, input_period_offset)
     local pair <close> = self:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
     local machine = pair.machine
-    local builder = self:make_uarch_cycle_computation_hash_builder(
+    local builder = self:new_uarch_cycle_computation_hash_builder(
         combine_epoch_period_offset(self.geometry.periods_per_input, epoch_input_offset, input_period_offset)
     )
     builder:begin_epoch(machine)
@@ -1952,7 +1952,7 @@ function player_meta.__index:collect_uarch_cycle_bundle(epoch_input_offset, inpu
     local bundles_per_mcycle = 1 << (LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - LOG2_BUNDLE_UARCH_CYCLE_COUNT)
     local period_mcycle_offset = period_bundle_offset // bundles_per_mcycle
     local bundle_offset = period_bundle_offset % bundles_per_mcycle
-    local builder = self:make_null_computation_hash_builder()
+    local builder = self:new_null_computation_hash_builder()
     local path = self.input_paths[epoch_input_offset + 1]
     local input_data = path and fs.read_file(path)
     local input_mcycle_offset =
@@ -1989,7 +1989,7 @@ end
 -- A tree asks for bundles by their index under its root. The mcycle claim's root covers the
 -- whole epoch, so the collector splits that epoch-wide index into the input holding the bundle
 -- and the bundle's offset within that input.
-function player_meta.__index:make_mcycle_tree()
+function player_meta.__index:new_mcycle_tree()
     return new_tree(
         self.geometry.mcycle_height,
         LOG2_BUNDLE_MCYCLE_COUNT,
@@ -2004,7 +2004,7 @@ function player_meta.__index:make_mcycle_tree()
 end
 -- The uarch claim's root covers one period, so the tree's bundle index is already the offset
 -- within that period. The input and period come from the tree's construction.
-function player_meta.__index:make_uarch_tree(epoch_input_offset, input_period_offset)
+function player_meta.__index:new_uarch_tree(epoch_input_offset, input_period_offset)
     return new_tree(
         self.geometry.uarch_height,
         LOG2_BUNDLE_UARCH_CYCLE_COUNT,
@@ -2033,7 +2033,7 @@ local function new_player(dapp_contract, label, last_output_proof)
     local machine = self.epoch_pair.machine
     assert_rolling_template(machine)
     self.machine_cache = prt.new_machine_cache(fork_server(machine))
-    self.epoch_builder = self:make_mcycle_computation_hash_builder()
+    self.epoch_builder = self:new_mcycle_computation_hash_builder()
     self.epoch_builder:begin_epoch(machine)
     self.outputs = {}
     if last_output_proof then
@@ -2055,9 +2055,9 @@ prt = {
     new_player = new_player,
     new_tree = new_tree,
     new_machine = new_machine,
-    make_null_computation_hash_builder = make_null_computation_hash_builder,
-    make_mcycle_computation_hash_builder = make_mcycle_computation_hash_builder,
-    make_uarch_cycle_computation_hash_builder = make_uarch_cycle_computation_hash_builder,
+    new_null_computation_hash_builder = new_null_computation_hash_builder,
+    new_mcycle_computation_hash_builder = new_mcycle_computation_hash_builder,
+    new_uarch_cycle_computation_hash_builder = new_uarch_cycle_computation_hash_builder,
     umin = umin,
     usaturating_add = usaturating_add,
     is_target_mcycle = is_target_mcycle,
@@ -2068,7 +2068,7 @@ prt = {
     new_machine_pair = new_machine_pair,
     new_match = new_match,
     new_referee = new_referee,
-    make_dapp_contract = make_dapp_contract,
+    new_dapp_contract = new_dapp_contract,
     new_geometry = new_geometry,
     split_epoch_period_offset = split_epoch_period_offset,
     combine_epoch_period_offset = combine_epoch_period_offset,
@@ -2125,5 +2125,5 @@ else
     error("unknown role: " .. role)
 end
 
-local dapp_contract = make_dapp_contract(initial_state_hash, { take_remaining_arguments() })
+local dapp_contract = new_dapp_contract(initial_state_hash, { take_remaining_arguments() })
 run_role(dapp_contract)

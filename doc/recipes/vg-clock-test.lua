@@ -22,7 +22,7 @@ local empty_handlers = {
 for delayed_index = 1, 2 do
     local clients = {}
     local claims = { hash, cartesi.keccak256("other claim") }
-    local dapp_contract = vg.make_dapp_contract(hash, {})
+    local dapp_contract = vg.new_dapp_contract(hash, {})
     dapp_contract.max_allowance = 5
     local results
     local delayed, immediate
@@ -92,7 +92,7 @@ end
 -- Repeated claims and labels still belong to separate connections. One
 -- proponent's accepted tentative hash cannot save another who fails to defend it.
 do
-    local dapp_contract = vg.make_dapp_contract(hash, {})
+    local dapp_contract = vg.new_dapp_contract(hash, {})
     local results
     local requested = {}
     local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
@@ -123,7 +123,7 @@ do
 end
 
 for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
-    local dapp_contract = vg.make_dapp_contract(hash, {})
+    local dapp_contract = vg.new_dapp_contract(hash, {})
     local results
     run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
         results = observed
@@ -163,7 +163,7 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
             uarch_cycle = failed_round == 85 and (1 << 20) - 1 or failed_round == 86 and 0xa55aa or 0,
         }
         local claims = { hash, cartesi.keccak256("other claim") }
-        local dapp_contract = vg.make_dapp_contract(hash, {})
+        local dapp_contract = vg.new_dapp_contract(hash, {})
         local results
         local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
             results = observed

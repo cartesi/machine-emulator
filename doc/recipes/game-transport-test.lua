@@ -311,7 +311,7 @@ for _, count in ipairs({ 0, 1, 3 }) do
                 end)
             end
             wait_connections(count + 1)
-            return { value = true }
+            return { value = "done" }
         end)
         local admitted = server:accept_subscribers(hash)
         assert(#admitted == count and #server.open_phases == 0)

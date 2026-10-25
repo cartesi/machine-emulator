@@ -30,7 +30,7 @@ local function run_with_server(protocol, scenario)
                     if typed then
                         reply, done = handler(wire_event, line)
                     elseif wire_event.operation == "finish" then
-                        reply, done = { value = true }, true
+                        reply, done = { value = "done" }, true
                     elseif wire_event.operation == "advance_time" then
                         reply = { value = {} }
                     else
@@ -46,7 +46,9 @@ local function run_with_server(protocol, scenario)
                                 reply.value = { answer = reply.value }
                             end
                         end
-                        reply.done = done or reply.done
+                        if done then
+                            reply.value = "done"
+                        end
                         reply = cartesi.tojson(reply, -1)
                     end
                     if reply ~= nil then

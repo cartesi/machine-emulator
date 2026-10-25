@@ -71,7 +71,7 @@ local function run(initial_hash, paths, delegate)
             return future
         end
         run_client({ role = "phase_closer" }, function()
-            return { value = true }
+            return { value = "done" }
         end)
         vg.new_referee(dapp_contract):run(server)
         assert(not owner.dead, "the honest player disconnected during the counterfactual")

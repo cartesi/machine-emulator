@@ -429,6 +429,10 @@ end
 -- its builder substitutes a made-up state at every position, and it disconnects
 -- after posting that claim. The disconnect is its only protocol-level deviation. The made-up
 -- state derives from the label, so quitters with different labels post different claims.
+local function leave()
+    return "done"
+end
+
 local function new_quitter(dapp_contract, label)
     label = label or "quitter"
     local player = prt.new_player(dapp_contract, label)
@@ -453,8 +457,14 @@ local function new_quitter(dapp_contract, label)
     clone_handlers(player)
     local commit = player.event_handler.commit_mcycle_claim
     player.event_handler.commit_mcycle_claim = function(self)
-        self.done = true
-        return commit(self)
+        local claim = commit(self)
+        -- Having posted its claim, the quitter leaves at the next event.
+        self.event_handler = setmetatable({}, {
+            __index = function()
+                return leave
+            end,
+        })
+        return claim
     end
     return player
 end

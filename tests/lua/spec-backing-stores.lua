@@ -475,7 +475,7 @@ describe("backing stores", function()
 
         -- an extraneous file makes the removal fail, and the file survives
         local extraneous_filename = stored_dirname .. "/extraneous"
-        filesystem.write_file(extraneous_filename, "keep")
+        filesystem.write_file("keep", extraneous_filename)
         expect.fail(function()
             cartesi.machine:remove_stored(stored_dirname)
         end, "unable to remove directory")
@@ -749,7 +749,7 @@ describe("backing stores", function()
                 local filename = directory .. "/hash_tree.phtc"
                 local data = filesystem.read_file(filename)
                 expect.equal(string.unpack("<I8", data, 9), capacity)
-                filesystem.write_file(filename, corruption[2](data))
+                filesystem.write_file(corruption[2](data), filename)
                 for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_ALL }) do
                     expect.fail(function()
                         local _ <close> = cartesi.machine(directory, {}, sharing)
@@ -784,7 +784,7 @@ describe("backing stores", function()
             local filename = directory .. "/hash_tree.phtc"
             local data = filesystem.read_file(filename)
             for _, length in ipairs({ 0, 8, entries_offset - 1, payloads_offset - 1, #data - 1, #data + 1 }) do
-                filesystem.write_file(filename, length > #data and data .. "\0" or data:sub(1, length))
+                filesystem.write_file(length > #data and data .. "\0" or data:sub(1, length), filename)
                 for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_ALL }) do
                     expect.fail(function()
                         local _ <close> = cartesi.machine(directory, {}, sharing)
@@ -808,7 +808,7 @@ describe("backing stores", function()
             local data = filesystem.read_file(filename)
             expect.equal(string.unpack("<I8", data, 9), 0)
             for _, offset in ipairs({ entries_offset, entries_offset + 8, entries_offset + 32 }) do
-                filesystem.write_file(filename, write_word(data, offset, -1))
+                filesystem.write_file(write_word(data, offset, -1), filename)
                 expect.fail(function()
                     local _ <close> = cartesi.machine(directory)
                 end, "corrupted page hash-tree cache")
@@ -1260,7 +1260,7 @@ describe("backing stores", function()
                     elseif creation == "shared" then
                         filesystem.remove_file(backing_store.dht_filename)
                     elseif creation == "directory-invalid-size" then
-                        filesystem.write_file(backing_store.dht_filename, "\0")
+                        filesystem.write_file("\0", backing_store.dht_filename)
                     elseif creation == "anonymous-dpt" or creation == "directory-dpt" then
                         backing_store.dpt_filename = ""
                     elseif creation == "shared-dpt" then
@@ -1268,7 +1268,7 @@ describe("backing stores", function()
                     elseif creation == "forced" or creation == "directory-forced" then
                         backing_store.mark_pages_dirty = true
                         drive_data = string.rep("B", #drive_data)
-                        filesystem.write_file(backing_store.data_filename, drive_data)
+                        filesystem.write_file(drive_data, backing_store.data_filename)
                     end
 
                     if load_stored then

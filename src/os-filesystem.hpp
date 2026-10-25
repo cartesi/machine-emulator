@@ -18,10 +18,12 @@
 #define OS_FILESYSTEM_HPP
 
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace cartesi::os {
 
@@ -48,6 +50,12 @@ void create_directory(const std::string &dirname);
 /// \param dirname Path to the directory, must exist.
 /// \throw std::system_error on error.
 void remove_directory(const std::string &dirname);
+
+/// \brief Lists the entries of a directory.
+/// \param dirname Path to the directory, must exist.
+/// \returns Names of the entries, excluding "." and "..", in lexicographic order.
+/// \throw std::system_error on error.
+[[nodiscard]] std::vector<std::string> list_directory(const std::string &dirname);
 
 /// \brief Renames a directory.
 /// \param from Source directory, must exist.
@@ -137,6 +145,20 @@ void clone_file(const std::string &from, const std::string &to);
 /// \details The file is deliberately not locked during the operation,
 /// so it may be locked by a running machine that maps it.
 void sync_file(const std::string &filename);
+
+/// \brief Creates a new file with a unique name, readable and writable only by its owner.
+/// \param dirname Directory to create the file in, must exist.
+/// \param prefix Start of the file name, which random characters complete.
+/// \returns File opened for reading and writing, closed on exec, and the path of the new file.
+/// \throw std::system_error on error.
+[[nodiscard]] std::pair<FILE *, std::string> create_temporary_file(const std::string &dirname,
+    const std::string &prefix);
+
+/// \brief Flushes all modifications of an open file to permanent storage.
+/// \param fd Open file descriptor.
+/// \param pathname Path name for error messages.
+/// \throw std::system_error on error.
+void sync_file_descriptor(int fd, const std::string &pathname);
 
 /// \brief Flushes all modifications of a directory entry list to permanent storage.
 /// \param dirname Path to the directory, must exist.

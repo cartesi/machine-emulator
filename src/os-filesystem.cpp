@@ -37,6 +37,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <span>
 #include <sstream>
@@ -44,6 +45,7 @@
 #include <system_error>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #ifdef HAVE_FLOCK
 #include <sys/file.h> // flock
@@ -146,6 +148,20 @@ void remove_directory(const std::string &dirname) {
     if (rmdir(dirname.c_str()) != 0) {
         throw make_path_system_error(errno, "unable to remove directory"s, dirname);
     }
+}
+
+std::vector<std::string> list_directory(const std::string &dirname) {
+    std::error_code ec;
+    std::filesystem::directory_iterator it{dirname, ec};
+    std::vector<std::string> names;
+    for (; !ec && it != std::filesystem::directory_iterator{}; it.increment(ec)) {
+        names.push_back(it->path().filename().string());
+    }
+    if (ec) {
+        throw make_path_system_error(ec.value(), "unable to list directory"s, dirname);
+    }
+    std::ranges::sort(names);
+    return names;
 }
 
 void rename_directory(const std::string &from, const std::string &to) {
@@ -621,6 +637,59 @@ static void sync_fd(int fd, const std::string &description, const std::string &p
     if (retry_on_eintr([&] { return fsync(fd); }) != 0) {
         throw make_path_system_error(errno, description, pathname, "fsync() failed"s);
     }
+}
+
+void sync_file_descriptor(int fd, const std::string &pathname) {
+    sync_fd(fd, "unable to sync file"s, pathname);
+}
+
+// Opens a stream on a newly created file, closing and removing the file if that fails.
+static std::pair<FILE *, std::string> open_temporary_file(int fd, const std::string &path) {
+    auto failure_remove = scope_fail([&] {
+        std::ignore = retry_on_eintr([&] { return close(fd); });
+        std::ignore = unlink(path.c_str());
+    });
+#ifndef _WIN32
+    if (fcntl(fd, F_SETFD, FD_CLOEXEC) != 0) {
+        throw make_path_system_error(errno, "unable to create temporary file"s, path, "fcntl() failed"s);
+    }
+#endif
+    auto *file = fdopen(fd, "w+b");
+    if (file == nullptr) {
+        throw make_path_system_error(errno, "unable to create temporary file"s, path, "fdopen() failed"s);
+    }
+    failure_remove.release();
+    return {file, path};
+}
+
+std::pair<FILE *, std::string> create_temporary_file(const std::string &dirname, const std::string &prefix) {
+    const auto template_path = dirname + "/"s + prefix + "XXXXXX"s;
+#ifdef _WIN32
+    // _mktemp_s only picks a name, so creation retries until an exclusive open succeeds
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        auto path = template_path;
+        if (_mktemp_s(path.data(), path.size() + 1) != 0) {
+            throw make_path_system_error(errno, "unable to create temporary file"s, template_path,
+                "_mktemp_s() failed"s);
+        }
+        const auto fd = open(path.c_str(), O_CREAT | O_EXCL | O_RDWR | O_BINARY | O_CLOEXEC, // NOLINT
+            S_IRUSR | S_IWUSR);
+        if (fd >= 0) {
+            return open_temporary_file(fd, path);
+        }
+        if (errno != EEXIST) {
+            throw make_path_system_error(errno, "unable to create temporary file"s, path, "open() failed"s);
+        }
+    }
+    throw make_path_system_error(EEXIST, "unable to create temporary file"s, template_path);
+#else
+    auto path = template_path;
+    const auto fd = mkstemp(path.data());
+    if (fd < 0) {
+        throw make_path_system_error(errno, "unable to create temporary file"s, template_path, "mkstemp() failed"s);
+    }
+    return open_temporary_file(fd, path);
+#endif
 }
 
 #ifndef HAVE_UNIFIED_PAGE_CACHE

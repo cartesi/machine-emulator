@@ -418,6 +418,7 @@ CARTESI_CLUA_OBJS:= \
 
 LUACARTESI_OBJS:= \
 	clua-cartesi.o \
+	clua-cartesi-filesystem.o \
 	$(CARTESI_CLUA_OBJS)
 
 LIBCARTESI_HASH_TREE_OBJS:= \

@@ -16,6 +16,7 @@
 
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
+local filesystem = require("cartesi.filesystem")
 
 local ROOT_LOG2_SIZE = 64
 local PAGE_LOG2_SIZE = 12
@@ -271,6 +272,18 @@ function tests_util.scope_exit(callback)
         end
     end
     return setmetatable({}, { __gc = do_callback, __close = do_callback })
+end
+
+-- A nonexistent path inside a private temporary directory. Callers remove any nonempty directories
+-- or sibling files they create before this scope closes.
+function tests_util.scope_temp_pathname(suffix)
+    local directory = filesystem.create_temporary_directory(os.getenv("TMPDIR") or "/tmp", "cartesi-test-")
+    local path = directory .. "/temp" .. (suffix or "")
+    return tests_util.scope_exit(function()
+        os.remove(path)
+        filesystem.remove_directory(directory)
+    end),
+        path
 end
 
 return tests_util

@@ -77,22 +77,22 @@ function measured_events:reveal_bisection(agreed, tentative)
     return hash
 end
 
--- The closest retained checkpoint at or before the input base. Input zero is always retained.
-local function closest_checkpoint_offset(player, epoch_input_offset)
+-- The closest retained entry at or before the input base. Input zero is always retained.
+local function closest_entry_offset(player, epoch_input_offset)
     local closest
-    for _, checkpoint in ipairs(player.machine_cache.checkpoints) do
-        if checkpoint.epoch_input_offset > epoch_input_offset then
+    for _, entry in ipairs(player.machine_cache.entries) do
+        if entry.epoch_input_offset > epoch_input_offset then
             break
         end
-        closest = checkpoint.epoch_input_offset
+        closest = entry.epoch_input_offset
     end
     return closest
 end
 
--- Replay of the inputs between the closest retained checkpoint and the input base.
+-- Replay of the inputs between the closest retained entry and the input base.
 local function expected_prefix(player, epoch_input_offset)
     local counts = player.replay_counts
-    local first = closest_checkpoint_offset(player, epoch_input_offset) + 1
+    local first = closest_entry_offset(player, epoch_input_offset) + 1
     local prefix = 0
     for input = first, math.min(epoch_input_offset, #player.inputs) do
         prefix = prefix + counts.inputs[input]
@@ -141,7 +141,7 @@ local function measure(player)
         inputs = {},
     }
     player.replay_counts = counts
-    local initial = player.machine_cache.checkpoints[1]
+    local initial = player.machine_cache.entries[1]
     initial.machine = measured_machine(initial.machine, counts)
     player.epoch_pair.machine = measured_machine(player.epoch_pair.machine, counts)
     player.unmeasured_new_machine, player.new_machine = player.new_machine, measured_new_machine
@@ -154,8 +154,8 @@ local function position(input, mcycle, uarch)
     return { epoch_input_offset = input, input_mcycle_offset = mcycle or 0, uarch_cycle = uarch or 0 }
 end
 
--- The policy keeps input zero and spreads the other checkpoints across the epoch, doubling the gap
--- when none can be thinned. A pair is replaced only by a checkpoint closer to the target.
+-- The policy keeps input zero and spreads the other entries across the epoch, doubling the gap
+-- when none can be thinned. A pair is replaced only by an entry closer to the target.
 local function check_machine_cache_policy()
     local shutdowns = 0
     local function new_fake()
@@ -181,10 +181,10 @@ local function check_machine_cache_policy()
         machine_cache:consider(epoch_input_offset, fake)
     end
     local retained = {}
-    for _, checkpoint in ipairs(machine_cache.checkpoints) do
-        retained[#retained + 1] = checkpoint.epoch_input_offset
+    for _, entry in ipairs(machine_cache.entries) do
+        retained[#retained + 1] = entry.epoch_input_offset
     end
-    assert(table.concat(retained, ",") == "0,4,8", "unexpected retained checkpoints " .. table.concat(retained, ","))
+    assert(table.concat(retained, ",") == "0,4,8", "unexpected retained entries " .. table.concat(retained, ","))
     assert(shutdowns == 2 and machine_cache.input_gap == 4)
     local pair <close> = machine_cache:nearest_not_past_epoch_input_offset(0)
     local machine = pair.machine
@@ -195,11 +195,11 @@ local function check_machine_cache_policy()
     local clone <close>, clone_offset = machine_cache:nearer_not_past_epoch_input_offset_or(later:move(), 0, 6)
     assert(clone.machine ~= machine and clone_offset == 4 and not later.machine and machine.closed)
     assert(clone.machine ~= fake and clone.revert_root_hash == "fake" and not clone.backup_machine)
-    -- Fresh acquisition always clones the nearest retained checkpoint not past the input base.
+    -- Fresh acquisition always clones the nearest retained entry not past the input base.
     local initial <close>, initial_offset = machine_cache:nearest_not_past_epoch_input_offset(3)
     assert(initial.machine ~= fake and initial_offset == 0)
     machine_cache:close()
-    assert(shutdowns == 6 and machine_cache.checkpoints == nil)
+    assert(shutdowns == 6 and machine_cache.entries == nil)
     assert(not clone.machine.closed and not initial.machine.closed, "cache closed independently owned pairs")
 
     -- Replay failures must close both a fork and any snapshot without waiting for GC.
@@ -228,7 +228,7 @@ end
 local function run(initial_hash, paths)
     check_machine_cache_policy()
     local started = socket.gettime()
-    -- One checkpoint besides input zero forces eviction and leaves bases that replay from input zero.
+    -- One entry besides input zero forces eviction and leaves bases that replay from input zero.
     local player <close> =
         vg.new_player(initial_hash, nil, nil, { machine_cache_capacity = 2, machine_cache_input_gap = 1 })
     print(string.format("vg-test: new_player_s=%.3f", socket.gettime() - started))
@@ -239,8 +239,8 @@ local function run(initial_hash, paths)
     player.event_handler.epoch_sealed(player)
     local counts = player.replay_counts
     assert(counts.inputs[1] ~= counts.inputs[2], "fixture must include unequal input costs")
-    assert(closest_checkpoint_offset(player, #paths) == #paths)
-    assert(closest_checkpoint_offset(player, #paths - 1) == 0, "earlier checkpoints were not evicted")
+    assert(closest_entry_offset(player, #paths) == #paths)
+    assert(closest_entry_offset(player, #paths - 1) == 0, "earlier entries were not evicted")
     local origin = position(0)
     player.event_handler.dispute_started(player)
     local agreed = origin
@@ -341,7 +341,7 @@ local function run(initial_hash, paths)
             ) == after
         )
     end
-    local initial_machine = player.machine_cache.checkpoints[1].machine
+    local initial_machine = player.machine_cache.entries[1].machine
     assert(initial_machine:get_root_hash() == initial_hash, "initial machine was mutated")
     assert(counts.loads == 0)
 

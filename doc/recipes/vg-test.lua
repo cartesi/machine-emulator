@@ -8,7 +8,7 @@ local replay_test = require("vg-replay-test")
 local initial_hash = cartesi.fromhex(fs.read_file("initial-hash"))
 local paths = { "input-0.bin", "input-1.bin", "input-2.bin" }
 local function run_game(players, input_paths)
-    local dapp_contract = vg.make_dapp_contract(initial_hash, input_paths or paths)
+    local dapp_contract = vg.new_dapp_contract(initial_hash, input_paths or paths)
     local results
     local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
         results = observed
@@ -51,7 +51,7 @@ local empty_handlers = {
     end,
 }
 for _, late_providers in ipairs({ false, true }) do
-    local dapp_contract = vg.make_dapp_contract(initial_hash, {})
+    local dapp_contract = vg.new_dapp_contract(initial_hash, {})
     local settled
     local root_offer = vg.event_handler.prove_outputs_merkle_root(first)
     local output_offer = vg.event_handler.prove_output(first)
@@ -130,7 +130,7 @@ print("vg-test: permissionless output providers ok")
 -- Player-selected outputs need not arrive in index order. Repeating an accepted
 -- output leaves the wait suspended until the runner stops the game.
 do
-    local dapp_contract = vg.make_dapp_contract(initial_hash, {})
+    local dapp_contract = vg.new_dapp_contract(initial_hash, {})
     local settled
     local offered, resumed = { 0, 0 }, false
     local last = #first.outputs
@@ -207,7 +207,7 @@ for _, case in ipairs({
         case.winner == 2 and root_hash_after or cartesi.keccak256("wrong second endpoint"),
     }
     local proofs = {}
-    local dapp_contract = vg.make_dapp_contract(initial_hash, {})
+    local dapp_contract = vg.new_dapp_contract(initial_hash, {})
     local settled
     local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
         settled = observed
@@ -346,7 +346,7 @@ assert(not pcall(first.new_machine, first, string.rep("\0", 32)))
 assert(vg.usaturating_add(cartesi.MCYCLE_MAX - 2, 3) == cartesi.MCYCLE_MAX)
 assert(vg.usaturating_add(math.maxinteger, 2) == math.mininteger + 1)
 
--- Bootstrap owns the loaded template; later resets fork the initial checkpoint.
+-- Bootstrap owns the loaded template; later resets fork the initial entry.
 do
     local loads = 0
     local machine = first:new_machine(initial_hash)
@@ -357,7 +357,7 @@ do
             return machine
         end,
     })
-    assert(player.epoch_pair.machine == machine and player.machine_cache.checkpoints[1].machine ~= machine)
+    assert(player.epoch_pair.machine == machine and player.machine_cache.entries[1].machine ~= machine)
     player:reset_bisection()
     assert(loads == 1 and player.agreed_pair.machine ~= machine, "reset reloaded the initial template")
 end
@@ -882,7 +882,7 @@ do
         inputs = {},
         state_hashes_before_inputs = { [0] = initial_hash },
         input_mcycle_lengths = {},
-        -- The gap exceeds every input base, so no checkpoint forks the fake machine.
+        -- The gap exceeds every input base, so no entry forks the fake machine.
         machine_cache = vg.new_machine_cache({ shutdown_server = function() end }, 1, math.maxinteger),
         epoch_pair = new_pair(),
         outputs = {},
@@ -982,7 +982,7 @@ for _, cheat in ipairs({ "no-rollback", "extra-input", "composite" }) do
             pair.snapshot = snapshot_composite
             return pair
         end
-        -- The pair counts its inputs from zero, so it must replay every prefix rather than start at a checkpoint.
+        -- The pair counts its inputs from zero, so it must replay every prefix rather than start at an entry.
         overrides.machine_cache_input_gap = math.maxinteger
     end
     local opponent <close> = cheat == "no-rollback" and require("vg-dishonest").new_no_rollback(initial_hash)

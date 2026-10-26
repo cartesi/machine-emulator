@@ -1,6 +1,6 @@
 -- The parts of the PRT game shared by referee and players: geometry, event schemas,
 -- transport bindings and narration. The game script supplies
--- the match walk, machines, claim builds, tournament, and verification of the disputed transition.
+-- the match bisection, machines, claim builds, tournament, and verification of the disputed transition.
 
 local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")

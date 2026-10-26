@@ -337,7 +337,7 @@ local function new_uarch_liar(builder, insert)
 end
 
 -- Replace one leaf in a collected bundle, retaining compression of repeated hashes.
--- The ordinary claim tree still authenticates this fabricated forest against its bundle root.
+-- The ordinary hash tree still authenticates this fabricated forest against its bundle root.
 local function falsify_bundle(forest, height, leaf, fake_hash)
     local leaf_count = 1 << height
     if leaf < 0 or leaf >= leaf_count then

@@ -1,4 +1,4 @@
--- Checks claim trees, proofs, and the referee with synthetic state, then, when given an initial
+-- Checks computation hashes, proofs, and the referee with synthetic state, then, when given an initial
 -- machine hash and inputs, checks cache replay against a real machine. The synthetic claims
 -- are walked under both claim orders. The loopback referee tests its tournament lifecycle,
 -- valid moves, rejected proofs that leave connections open, and logical-block barriers.
@@ -539,7 +539,7 @@ for _, outcome in ipairs({ "accepted", "rejected", "halted" }) do
         self.collections = self.collections + 1
         return { hashes = { halted, reset }, mcycle_hash_offsets = { 1, 3 }, break_reason = break_reason }
     end
-    local forest = player:build_uarch_claim(0, 1)
+    local forest = player:build_uarch_cycle_computation_hash(0, 1)
     local height = LOG2_BUNDLE_UARCH_CYCLE_COUNT
     -- Each mcycle is one bundle whose value is the mcycle's root, here the reset-ending entry.
     assert(machine.collections == 1)
@@ -2582,8 +2582,8 @@ if arg[1] then
                 crashing.event_handler.epoch_sealed(crashing, 3)
                 references.sealed = describe_sealed_state(crashing)
                 cutting = false
-                local built = crashing:build_uarch_claim(0, 0)
-                crashing.build_uarch_claim = function()
+                local built = crashing:build_uarch_cycle_computation_hash(0, 0)
+                crashing.build_uarch_cycle_computation_hash = function()
                     return built
                 end
                 processing, cutting = "uarch", true
@@ -2629,7 +2629,7 @@ if arg[1] then
                     kind = crash.processing .. ":sealed"
                 else
                     assert(crash.processing ~= "seal", where .. " invented a uarch claim")
-                    reopened.build_uarch_claim = function()
+                    reopened.build_uarch_cycle_computation_hash = function()
                         error("reopening lost the uarch claim")
                     end
                     assert(describe_sealed_state(reopened) == references.uarch, where .. " recovered a different claim")
@@ -2664,7 +2664,7 @@ if arg[1] then
             do
                 local reopened <close> =
                     prt.new_stored_player(dapp_contract, "reopened", nil, references.opened_directory)
-                reopened.build_uarch_claim = function()
+                reopened.build_uarch_cycle_computation_hash = function()
                     error("reopening lost the uarch claim")
                 end
                 reopened.collect_uarch_cycle_bundle = function()

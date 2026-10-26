@@ -111,7 +111,7 @@ flowchart LR
 ```
 
 The contracts own pairing, clocks, move validity, and results. The player owns
-machine execution, computation hash trees, and proofs. The bridge turns events
+machine execution, computation hashes, and proofs. The bridge turns events
 into player requests and transactions. The harness owns deployment, the choice
 of players, mining, and narration, and exists only in the demo.
 

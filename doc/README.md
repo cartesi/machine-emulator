@@ -87,7 +87,8 @@
       claim](#each-player-must-defend-its-own-claim)
   - [Permissionless refereed
     tournament](#permissionless-refereed-tournament)
-    - [Claim trees with repetition](#claim-trees-with-repetition)
+    - [Computation hashes with
+      repetition](#computation-hashes-with-repetition)
     - [The player](#the-player-1)
     - [The tournament](#the-tournament)
     - [Settling a match](#settling-a-match)
@@ -2614,8 +2615,8 @@ Passing `end_epoch:false` leaves the epoch open, and
 `--no-remote-destroy` keeps the machine in the server. The `state_hash`
 file receives the machine state hash after the last completed input,
 `outputs_frontier` the state of the outputs Merkle tree, and `frontier`
-in `--mcycle-computation-hash` the state of the computation hash tree.
-(Both are frontiers, explained under [The hash tree
+in `--mcycle-computation-hash` the state of the computation hash under
+construction. (Both are frontiers, explained under [The hash tree
 frontier](#the-hash-tree-frontier) in the blockchain perspective.)
 Output proofs across executions also need `output_hashes` and
 `output_input_indices`, which this example does not use, so it disables
@@ -2635,8 +2636,8 @@ cartesi-machine \
 
 Passing `begin_epoch:false` continues the epoch from the saved files,
 after checking that the machine found in the server matches
-`state_hash`. The default `end_epoch:true` then seals the computation
-hash tree and prints
+`state_hash`. The default `end_epoch:true` then completes the
+computation hash and prints
 
 ``` text
 Mcycle computation hash: 0x1f384c90ad99c3ec1681cf23362c1d3428ab493551176f285cbc516cc6c19f3d
@@ -10277,12 +10278,13 @@ so it favors short ones. For this epoch, p = 10 balances the two build
 times. Dave’s `ArbitrationConstants.sol` uses the same two levels over a
 larger epoch.
 
-### Claim trees with repetition
+### Computation hashes with repetition
 
-An mcycle claim tree has 2<sup>62</sup> leaves and a uarch claim tree
-2<sup>30</sup>. A player keeps its mcycle claim for the whole dispute,
-and each uarch claim while its match lasts, so storing either tree in
-full is out of the question. Two observations keep them small.
+An mcycle computation hash has 2<sup>62</sup> leaves and a uarch cycle
+computation hash 2<sup>30</sup>. A player keeps its mcycle claim for the
+whole dispute, and each uarch claim while its match lasts, so storing
+either tree in full is out of the question. Two observations keep them
+small.
 
 First, almost all leaves are repetitions. The calculator finishes each
 input within about 50 million mcycles, and every sample after that, out
@@ -10294,10 +10296,10 @@ stored value and one hash per level.
 Second, the stored nodes need not be leaves. The emulator delivers the
 sampled hashes in *bundles*, one subtree root per 2<sup>4</sup> mcycle
 samples (or one per mcycle, 2<sup>20</sup> uarch transitions). Bundle
-roots are interior nodes of the claim tree, so the root is unchanged,
-and the player stores one node per bundle. The three inputs of our epoch
-fit in about nine thousand mcycle bundles, and one uarch period in at
-most 2<sup>10</sup>.
+roots are interior nodes of the hash tree, so the computation hash is
+unchanged, and the player stores one node per bundle. The three inputs
+of our epoch fit in about nine thousand mcycle bundles, and one uarch
+period in at most 2<sup>10</sup>.
 
 When the dispute descends below a bundle, the player opens it. It
 replays a machine from the nearest retained input boundary through the
@@ -10334,7 +10336,8 @@ the nodes later queries need.
 ### The player
 
 The PRT player does the same work as the verification game’s
-[player](#the-player), but answers from its claim tree.
+[player](#the-player), but answers from the hash trees of its
+computation hashes.
 
 As before, the epoch is computed once, in response to `input_added`
 events. Each input runs to its fixed point (and is reverted if
@@ -10369,14 +10372,14 @@ end
 The referee names the node to open and the other claim’s left child
 below it. The player returns the node’s two children and the two
 children of the side where the claims part, which is all the referee
-needs to advance the walk one level. No machine runs, unless the walk
-reaches a bundle the player has not opened yet.
+needs to advance the bisection one level. No machine runs, unless the
+bisection reaches a bundle the player has not opened yet.
 
 A uarch claim is built when a dispute reaches one, by replaying the
 disputed input from the cache to the end of the disputed period:
 
 ``` lua
-function player_meta.__index:build_uarch_claim(epoch_input_offset, input_period_offset)
+function player_meta.__index:build_uarch_cycle_computation_hash(epoch_input_offset, input_period_offset)
     local pair <close> = self:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
     local machine = pair.machine
     local builder = self:new_uarch_cycle_computation_hash_builder(
@@ -10398,7 +10401,7 @@ State transition proofs come from a machine positioned at the disputed
 transition, as in the verification game.
 
 The dishonest strategies in `prt-dishonest.lua` reuse this player and
-wrap only what they corrupt. They cannot bypass the claim tree, which
+wrap only what they corrupt. They cannot bypass the hash tree, which
 authenticates every bundle they open.
 
 A player runs in one of two modes. A stored player keeps its machines,
@@ -10420,15 +10423,11 @@ against that claim’s final state:
 local function run_referee(dapp_contract)
     local tournament = open_mcycle_tournament(dapp_contract)
     local winner = run_tournament(tournament)
-    story.report_winner(winner)
     if winner then
         wait_for_outputs(winner.final_state_hash)
     end
 end
 ```
-
-Calls to `story` narrate milestones, and everything they print is
-computed outside the excerpts.
 
 The mcycle tournament opens to every player subscribed to the epoch’s
 initial state hash, so the referee never needs to know how many players
@@ -10463,7 +10462,6 @@ local function run_round(tournament, round)
     local matches = pair_claims(tournament, round)
     local unmatched_claim = #claims % 2 == 1 and claims[#claims] or nil
     run_matches(tournament, matches)
-    story.report_round(tournament, round, matches, unmatched_claim)
     local surviving_claims = { unmatched_claim } -- unmatched_claim may be nil
     for _, match in ipairs(matches) do
         surviving_claims[#surviving_claims + 1] = match.claims[match.winner] -- match.claims[match.winner] may be nil
@@ -10475,12 +10473,13 @@ end
 The survivors keep their bracket order, so the next round depends only
 on the claims, not on the order in which the matches finished.
 
-A match walks down the two claim trees to the first leaf where they
-differ, as in Dave’s `Match.sol`. The claims take turns, one response
-per turn. The referee keeps only three nodes, the node the on-turn claim
-must open and the other claim’s two children at the same position. The
-on-turn claim opens its node by exposing its two children and, above the
-leaves, the two children of the side the walk descends into:
+A match bisects the two computation hashes down to the first leaf where
+they differ, as in Dave’s `Match.sol`. The claims take turns, one
+response per turn. The referee keeps only three nodes, the node the
+on-turn claim must open and the other claim’s two children at the same
+position. The on-turn claim opens its node by exposing its two children
+and, above the leaves, the two children of the side the bisection
+descends into:
 
 ``` lua
 local function validate_bisection_response(match, response)
@@ -10493,7 +10492,7 @@ local function validate_bisection_response(match, response)
 end
 ```
 
-The walk descends left when the exposed left child differs from the
+The bisection descends left when the exposed left child differs from the
 other claim’s, since the claims then part in the left subtree, and right
 otherwise:
 
@@ -10552,8 +10551,8 @@ local function validate_seal_response(tournament, match, response)
 end
 ```
 
-These validators are pure functions, so the recipe tests the walk on
-synthetic trees that differ at a chosen leaf before any machine is
+These validators are pure functions, so the recipe tests the bisection
+on synthetic trees that differ at a chosen leaf before any machine is
 involved.
 
 `reveal_divergence` asks the holders of the on-turn claim to open its
@@ -10583,7 +10582,6 @@ local function reveal_divergence(tournament, match)
         end
         charge_turn_time(tournament, match, start_instant)
         advance_bisection(match, response)
-        story.report_match_progress(match)
     end
 end
 ```
@@ -10641,7 +10639,6 @@ survives:
 
 ``` lua
 local function settle_divergence(tournament, match, divergence)
-    story.report_divergence(match, divergence)
     local settled_state_hash = tournament:settle_state_hash(
         match,
         divergence.leaf_index,
@@ -10687,15 +10684,15 @@ local function settle_mcycle_state_hash(
 end
 ```
 
-A uarch match settles against the machine itself. The walk has isolated
-one uarch transition out of an agreed state hash, and its position
-within the disputed period picks the transition’s form, as in Dave’s
-`CartesiStateTransition.sol`. The transition out of an input boundary
-first delivers the input the dapp contract holds (never one a player
-supplies). The transition that closes an instruction verifies a uarch
-step (by then at its fixed point) followed by the uarch reset, which
-also reverts the machine when the instruction rejected its input. Every
-other transition is an ordinary uarch step:
+A uarch match settles against the machine itself. The bisection has
+isolated one uarch transition out of an agreed state hash, and its
+position within the disputed period picks the transition’s form, as in
+Dave’s `CartesiStateTransition.sol`. The transition out of an input
+boundary first delivers the input the dapp contract holds (never one a
+player supplies). The transition that closes an instruction verifies a
+uarch step (by then at its fixed point) followed by the uarch reset,
+which also reverts the machine when the instruction rejected its input.
+Every other transition is an ordinary uarch step:
 
 ``` lua
 local function validate_state_transition_response(
@@ -10772,7 +10769,6 @@ local function settle_uarch_state_hash(tournament, match, state_transition_offse
         )
         elimination:wait_at_most(FOREVER)
     end
-    story.report_state_transition(tournament, match, state_transition_offset, obtained_root_hash, next_state_hashes)
     return obtained_root_hash
 end
 ```
@@ -10994,7 +10990,7 @@ An elimination response from tamperer removes both inactive claims.
 ```
 
 Match 2, between the two fabulists, shows the whole shape of a dispute.
-The mcycle walk converges on the leftmost lie, the first fabulist’s
+The mcycle bisection converges on the leftmost lie, the first fabulist’s
 sample deep inside input 2, and opens a uarch tournament over that
 period. The second fabulist, honest there, submits the truthful uarch
 claim:
@@ -11012,9 +11008,9 @@ Match 2.1: claim 0x58817ca6... wins.
 The uarch winner confirms 0x5c587adb.... Claim 0xaec474d4... is eliminated.
 ```
 
-The uarch walk converges on the disputed transition. The lie sits at the
-end of an instruction, so the transition that closes it (a uarch step
-and the uarch reset) settles the match against the first fabulist:
+The uarch bisection converges on the disputed transition. The lie sits
+at the end of an instruction, so the transition that closes it (a uarch
+step and the uarch reset) settles the match against the first fabulist:
 
 ``` text
 Height 1: the claims first disagree within leaves [0x3ffffffe, 0x3fffffff].

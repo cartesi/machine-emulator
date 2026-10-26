@@ -68,6 +68,15 @@ end
 
 local cases = {
     {
+        tag = "whole_page_only",
+        mutate = function(log)
+            -- A legal floor-9 witness with the original pre-root: machine replay rejects its shape.
+            local before = test_util.recompute_step_log_root(log, "sha256")
+            test_util.restrict_step_log_slice(log, log.pages[1].index, 0, 9)
+            assert(test_util.recompute_step_log_root(log, "sha256") == before)
+        end,
+    },
+    {
         tag = "bad_signature",
         mutate = function(log)
             log.signature = "\0" .. log.signature:sub(2)

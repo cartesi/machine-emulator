@@ -5659,9 +5659,12 @@ the other. Each witnessed 4 KiB page contributes at most one slice,
 containing every byte the step read or wrote. The recorder starts with
 the full page and repeatedly selects one half only when the other half
 was untouched, stopping at its fixed 512-byte floor or when both halves
-were touched. Decoders accept every legal slice size, independently of
-that recorder floor. The uarch register cache's whole load and flush
-window counts as touched.
+were touched. This floor applies to `log_step_uarch`, `log_reset_uarch`,
+and `log_send_cmio_response`; their verifiers accept every legal slice size.
+`log_step` records whole 4 KiB pages, and machine replay (`verify_step`,
+RISC0 and SP1) rejects any smaller slice with "machine replay requires
+whole-page witnesses". The wire format is the same for both shapes. The uarch
+register cache's whole load and flush window counts as touched.
 
 Slices must be aligned, strictly ascending by address, disjoint, and
 unique by enclosing page. Nodes represent bulk writes replacing whole

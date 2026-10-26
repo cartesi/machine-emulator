@@ -17,7 +17,7 @@ local function machine()
 end
 
 lester.describe("page-slice witnesses", function()
-    lester.it("uses floor 9 and preserves roots for reads and writes", function()
+    lester.it("uses whole pages for machine steps and preserves roots for reads and writes", function()
         local m <close> = machine()
         assert(m:get_runtime_config().log2_slice_floor == nil)
         m:write_reg("pc", 0x80000000)
@@ -30,20 +30,34 @@ lester.describe("page-slice witnesses", function()
         assert(cartesi.machine:verify_step(before, bytes, 2) == m:get_root_hash())
         local log = util.parse_step_log(bytes)
         assert(log.signature == "CTSI\4\0\0\0")
-        local found_floor = false
         for _, page in ipairs(log.pages) do
-            assert(page.log2_size >= 9)
-            assert(page.offset & ((1 << page.log2_size) - 1) == 0)
-            found_floor = found_floor or page.log2_size == 9
+            assert(page.log2_size == 12 and page.offset == 0)
         end
-        assert(found_floor)
+    end)
+
+    lester.it("keeps floor 9 for uarch steps and resets", function()
+        local m <close> = machine()
+        for _, operation in ipairs({ "log_step_uarch", "log_reset_uarch" }) do
+            local before = m:get_root_hash()
+            local bytes = operation == "log_step_uarch" and m:log_step_uarch(1) or m:log_reset_uarch()
+            local log = util.parse_step_log(bytes)
+            local found_floor = false
+            for _, page in ipairs(log.pages) do
+                assert(page.log2_size >= 9)
+                found_floor = found_floor or page.log2_size == 9
+            end
+            assert(found_floor)
+            local after = operation == "log_step_uarch" and cartesi.machine:verify_step_uarch(before, bytes, 1)
+                or cartesi.machine:verify_reset_uarch(before, bytes)
+            assert(after == m:get_root_hash())
+        end
     end)
 
     for _, case in ipairs(rejections) do
         lester.it("rejects " .. case.tag, function()
             local m <close> = machine()
             local before = m:get_root_hash()
-            local bytes = m:log_step(1)
+            local bytes = m:log_step_uarch(1)
             local log = util.parse_step_log(bytes)
             if case.mutate then
                 case.mutate(log)
@@ -53,13 +67,13 @@ lester.describe("page-slice witnesses", function()
                 bytes = case.wire(bytes)
             end
             reject(function()
-                cartesi.machine:verify_step(before, bytes, 1)
+                cartesi.machine:verify_step_uarch(before, bytes, 1)
             end, case.error)
         end)
     end
 
     for _, write in ipairs({ false, true }) do
-        lester.it("checks slice bounds on a hot TLB " .. (write and "write" or "read"), function()
+        lester.it("rejects a partial machine witness before a hot TLB " .. (write and "write" or "read"), function()
             local m <close> = machine()
             m:write_reg("pc", 0x80000000)
             m:write_reg("x1", 0x80002000)
@@ -77,15 +91,17 @@ lester.describe("page-slice witnesses", function()
             util.restrict_step_log_slice(log, 0x80002, 0, 5)
             assert(util.recompute_step_log_root(log) == before, "tampered proof must still match pre-state")
             bytes = util.serialize_step_log(log)
-            -- One instruction succeeds; the second crosses the slice's upper bound.
-            cartesi.machine:verify_step(before, bytes, 1)
+            -- The shape is rejected before either instruction, even with a correct pre-root.
+            reject(function()
+                cartesi.machine:verify_step(before, bytes, 1)
+            end, "machine replay requires whole-page witnesses")
             reject(function()
                 cartesi.machine:verify_step(before, bytes, 2)
-            end, "access outside witnessed slice")
+            end, "machine replay requires whole-page witnesses")
         end)
     end
 
-    lester.it("checks an instruction fetch beyond a cached code slice", function()
+    lester.it("rejects a partial machine code page before populating the fetch cache", function()
         local m <close> = machine()
         m:write_reg("pc", 0x8000001c)
         m:write_memory(0x8000001c, string.pack("<I4I4", 0x00000013, 0x00000013))
@@ -95,10 +111,12 @@ lester.describe("page-slice witnesses", function()
         util.restrict_step_log_slice(log, 0x80000, 0, 5)
         assert(util.recompute_step_log_root(log) == before)
         bytes = util.serialize_step_log(log)
-        cartesi.machine:verify_step(before, bytes, 1)
+        reject(function()
+            cartesi.machine:verify_step(before, bytes, 1)
+        end, "machine replay requires whole-page witnesses")
         reject(function()
             cartesi.machine:verify_step(before, bytes, 2)
-        end, "access outside witnessed slice")
+        end, "machine replay requires whole-page witnesses")
     end)
 
     lester.it("checks the entire padded CMIO write", function()
@@ -113,7 +131,13 @@ lester.describe("page-slice witnesses", function()
         local before = m:get_root_hash()
         local data = string.rep("a", 33)
         local bytes = m:log_send_cmio_response(0, data, before)
+        assert(cartesi.machine:verify_send_cmio_response(0, data, before, bytes, before) == m:get_root_hash())
         local log = util.parse_step_log(bytes)
+        local found_floor = false
+        for _, page in ipairs(log.pages) do
+            found_floor = found_floor or page.log2_size == 9
+        end
+        assert(found_floor)
         util.restrict_step_log_slice(log, cartesi.AR_CMIO_RX_BUFFER_START >> 12, 0, 5)
         assert(util.recompute_step_log_root(log) == before)
         reject(function()

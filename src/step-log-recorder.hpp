@@ -53,7 +53,7 @@ class step_log_recorder {
     using sibling_hashes_type = hash_tree::sibling_hashes_type;
     using slices_type = std::vector<slice_entry_header>;
 
-    int m_log2_floor;                   ///< Minimum recorded slice size (verifiers accept every legal size)
+    int m_log2_floor;                   ///< Minimum recorded slice size for this operation
     hash_function_type m_hash_function; ///< Hash function type to use for the log
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m;               ///< Machine being recorded
@@ -68,7 +68,8 @@ public:
     /// \param m machine being recorded
     /// \param log2_floor minimum slice size, in log2 bytes (5..12)
     /// \details The log is serialized when finish() is called
-    // The optional floor argument is for tests; production uses LOG2_SLICE_FLOOR.
+    // Machine steps pass the page size; slice-based operations use LOG2_SLICE_FLOOR.
+    // Tests may select any legal floor.
     step_log_recorder(hash_function_type hash_function, machine &m, int log2_floor = LOG2_SLICE_FLOOR) :
         m_log2_floor(log2_floor),
         m_hash_function(hash_function),

@@ -144,25 +144,25 @@ void boundary_slices() {
                 rejects([&] { log.pages[0].find_data(address + data.size() - 8, 9); },
                     "access outside witnessed slice");
                 rejects([&] { log.pages[0].find_data(address, UINT64_MAX); }, "access outside witnessed slice");
-                // Exercise the resolved-value cache at both address-space ends,
-                // including an accessor copy and a word straddling a slice boundary.
                 replay_step_state_access<>::context context{};
                 std::array<slice_entry, 1> replay_slices{};
+                if (size != 12) {
+                    rejects(
+                        [&] {
+                            replay_step_state_access<> replay{context, replay_wire.data(), replay_wire.size(),
+                                replay_slices};
+                        },
+                        "machine replay requires whole-page witnesses");
+                    continue;
+                }
                 replay_step_state_access<> replay{context, replay_wire.data(), replay_wire.size(), replay_slices};
                 auto copy = replay;
                 uint64_t value{};
-                replay.read_memory_word(address, 0, &value);
+                replay.read_memory_word(replay.get_faddr(address, 0), 0, &value);
                 require(value == UINT64_C(0xabababababababab));
-                if (size < 12) {
-                    const auto outside = address == 0 ? data.size() - 4 : address - 4;
-                    rejects([&] { copy.read_memory_word<uint64_t, uint32_t>(outside, 0, &value); },
-                        "access outside witnessed slice");
-                    rejects([&] { copy.write_memory_word<uint64_t, uint32_t>(outside, 0, UINT64_C(1)); },
-                        "access outside witnessed slice");
-                }
                 const auto last = address + data.size() - 8;
-                copy.write_memory_word(last, 0, UINT64_C(42));
-                replay.read_memory_word(last, 0, &value);
+                copy.write_memory_word(copy.get_faddr(last, 0), 0, UINT64_C(42));
+                replay.read_memory_word(replay.get_faddr(last, 0), 0, &value);
                 require(value == 42 && *context.log.pages[0].hash == zero);
                 require(context.log.compute_root_hash() != root);
                 wire[0] = 0;

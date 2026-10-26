@@ -20,10 +20,10 @@
 #include "send-cmio-response.hpp"
 
 #include "address-range-constants.hpp"
+#include "cmio-replay-state-access.hpp" // IWYU pragma: keep
 #include "hash-tree-constants.hpp"
 #include "htif-constants.hpp"
 #include "record-step-state-access.hpp" // IWYU pragma: keep
-#include "replay-step-state-access.hpp" // IWYU pragma: keep
 #include "state-access.hpp"             // IWYU pragma: keep
 #include "step-log-dumper.hpp"          // IWYU pragma: keep
 #include "uarch-solidity-compat.hpp"
@@ -94,10 +94,10 @@ template void send_cmio_response(state_access a, uint16_t reason, const unsigned
 template void send_cmio_response(record_step_state_access a, uint16_t reason, const unsigned char *data, uint64 length,
     bytes32 revertRootHash);
 
-// Explicit instantiation for replay_step_state_access
-template void send_cmio_response(replay_step_state_access<no_step_log_dumper> a, uint16_t reason,
+// Explicit instantiation for cmio_replay_state_access
+template void send_cmio_response(cmio_replay_state_access<no_step_log_dumper> a, uint16_t reason,
     const unsigned char *data, uint64 length, bytes32 revertRootHash);
-template void send_cmio_response(replay_step_state_access<step_log_dumper> a, uint16_t reason,
+template void send_cmio_response(cmio_replay_state_access<step_log_dumper> a, uint16_t reason,
     const unsigned char *data, uint64 length, bytes32 revertRootHash);
 
 } // namespace cartesi

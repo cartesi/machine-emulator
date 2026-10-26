@@ -43,8 +43,9 @@ fn expected_message(tag: &str) -> &'static str {
         "slice_size_low" | "slice_size_high" => "slice log2 size out of range",
         "slice_unaligned" => "slice address not aligned to its size",
         "slice_unsorted" => "slice addresses not in increasing order",
-        "slice_overlap" => "slice overlaps previous slice",
-        "slice_same_page" => "multiple slices in the same page",
+        "whole_page_only" | "slice_overlap" | "slice_same_page" => {
+            "machine replay requires whole-page witnesses"
+        }
         "slice_node_overlap" => "slice or node overlaps a previous entry",
         "slice_truncated" => "truncated slice data or hash",
         "slice_trailing_bytes" | "slice_count_mismatch" => {

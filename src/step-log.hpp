@@ -115,6 +115,9 @@ static_assert(sizeof(node_entry) == 48, "expected wire size of node_entry is 48 
 
 // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast,misc-no-recursion)
 
+/// The verifier selects its accepted witness shape; the wire format is shared.
+enum class step_log_shape { slices, whole_pages };
+
 /// \brief Parsed binary step log: the witnessed tree plus the header values it was decoded from.
 /// \details Borrows the caller's slice descriptors and log image; decoding performs no heap allocation.
 struct step_log {
@@ -137,6 +140,7 @@ struct step_log {
     /// \param required_hash_function When set, reject a log declaring any other hash function.
     /// Verifiers whose protocol fixes the hash function (the on-chain replayer is Keccak-256 only)
     /// pass it so a mismatched log fails here instead of at the initial-root recompute.
+    /// \param shape Accepted witness shape; machine replay requires whole pages.
     /// \return A validated step_log with root_hash_before recomputed from the witnessed tree.
     /// \throw runtime_error if the log is malformed.
     /// \details Mirrors StepLog.decode in the Solidity replayer: header parse, per-count size bounds,
@@ -144,7 +148,8 @@ struct step_log {
     /// initial-root recompute.
     /// Solidity's per-count caps have no C++ wire-format counterpart; callers bound descriptor storage.
     static step_log decode(unsigned char *log_image, uint64_t log_size, std::span<slice_entry> slice_storage,
-        std::optional<hash_function_type> required_hash_function = std::nullopt) {
+        std::optional<hash_function_type> required_hash_function = std::nullopt,
+        step_log_shape shape = step_log_shape::slices) {
         step_log log;
         const auto header = read_header(log_image, log_size);
         switch (header.hash_function) {
@@ -176,6 +181,9 @@ struct step_log {
             remaining -= sizeof(entry);
             if (entry.log2_size < HASH_TREE_LOG2_WORD_SIZE || entry.log2_size > HASH_TREE_LOG2_PAGE_SIZE) {
                 THROW(std::runtime_error, "invalid log format: slice log2 size out of range");
+            }
+            if (shape == step_log_shape::whole_pages && entry.log2_size != HASH_TREE_LOG2_PAGE_SIZE) {
+                THROW(std::runtime_error, "machine replay requires whole-page witnesses");
             }
             const uint64_t size = UINT64_C(1) << entry.log2_size;
             if ((entry.address & (size - 1)) != 0) {

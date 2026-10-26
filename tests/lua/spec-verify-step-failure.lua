@@ -297,11 +297,13 @@ describe("verify_step", function()
     end)
 
     describe("sibling validation", function()
-        it("rejects an extra slice that needs missing sibling hashes", function()
+        it("rejects an extra page that needs missing sibling hashes", function()
             expect_corruption_error("too few sibling hashes in log", function(log_data)
                 local last = log_data.pages[#log_data.pages]
                 table.insert(log_data.pages, {
-                    index = last.index + 1,
+                    -- A distant branch needs new siblings; an adjacent whole page can
+                    -- instead consume an existing sibling and leave one too many.
+                    index = 1 << 50,
                     offset = last.offset,
                     log2_size = last.log2_size,
                     data = last.data,

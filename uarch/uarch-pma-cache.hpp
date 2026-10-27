@@ -98,7 +98,7 @@ public:
         uint64_t lower = 1;
         uint64_t upper = PMA_MAX;
         while (lower < upper) {
-            index = lower + (upper - lower) / 2;
+            index = lower + ((upper - lower) / 2);
             const auto entry = probe(index, read_entry);
             const uint64_t start = entry.istart & PMA_ISTART_START_MASK;
             // Raw bounds suffice for rejection; construct only the selected descriptor.

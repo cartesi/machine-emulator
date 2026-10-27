@@ -173,7 +173,7 @@ public:
         uint64_t slices_bytes = 0;
         for (const auto &[address, page] : m_touched_pages) {
             const auto [offset, log2_size] = select_page_slice(page.touched, m_log2_floor);
-            slices.push_back({address + offset, static_cast<uint64_t>(log2_size)});
+            slices.push_back({.address = address + offset, .log2_size = static_cast<uint64_t>(log2_size)});
             slices_bytes += sizeof(slice_entry_header) + (UINT64_C(1) << log2_size) + sizeof(machine_hash);
         }
         auto sibling_hashes = get_sibling_hashes(slices);
@@ -232,7 +232,9 @@ private:
             if (log2_size < HASH_TREE_LOG2_PAGE_SIZE) {
                 const auto &page = m_touched_pages.at(address & ~PAGE_OFFSET_MASK);
                 machine_hash hash{};
+                // The hash helper takes a pointer to the same 32-byte storage as a C array.
                 merkle_tree_hash(m_hash_function, page.data.data() + (address & PAGE_OFFSET_MASK),
+                    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
                     UINT64_C(1) << log2_size, reinterpret_cast<hash_type>(&hash));
                 hashes.push_back(hash);
             } else {

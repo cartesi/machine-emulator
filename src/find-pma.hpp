@@ -51,7 +51,7 @@ auto &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
         uint64_t lower = 1;
         uint64_t upper = PMA_MAX;
         while (lower < upper) {
-            index = lower + (upper - lower) / 2;
+            index = lower + ((upper - lower) / 2);
             const auto [start, length] = a.read_pma_bounds(index);
             // Constructible tails are sorted and disjoint. Empty slots are +infinity.
             if (length == 0 || paddr < start) {
@@ -81,7 +81,7 @@ auto &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
         uint64_t lower = 1;
         uint64_t upper = PMA_MAX;
         while (lower < upper) {
-            index = lower + (upper - lower) / 2;
+            index = lower + ((upper - lower) / 2);
             auto &ar = a.read_pma(index);
             // Constructible tails are sorted and disjoint. Empty slots are +infinity.
             if (ar.is_empty() || paddr < ar.get_start()) {

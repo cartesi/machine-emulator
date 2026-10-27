@@ -192,7 +192,10 @@ struct step_log {
             if (remaining < size + sizeof(machine_hash)) {
                 THROW(std::runtime_error, "truncated slice data or hash");
             }
-            log.pages[i] = {entry.address, entry.log2_size, cursor, reinterpret_cast<machine_hash *>(cursor + size)};
+            log.pages[i] = {.address = entry.address,
+                .log2_size = entry.log2_size,
+                .data = cursor,
+                .hash = reinterpret_cast<machine_hash *>(cursor + size)};
             cursor += size + sizeof(machine_hash);
             remaining -= size + sizeof(machine_hash);
         }
@@ -229,7 +232,7 @@ struct step_log {
 
     /// \brief Find a witnessed page by any physical address inside it, or throw if absent.
     const slice_entry *find_page(uint64_t paddr_page) const {
-        auto *page_log = try_find_page(paddr_page);
+        const auto *page_log = try_find_page(paddr_page);
         if (page_log == nullptr) {
             THROW(std::runtime_error, "required page not found");
         }
@@ -389,7 +392,7 @@ private:
             } else if (next_node >= nodes.size()) {
                 take_page = true;
             } else {
-                const uint128_t page_start = static_cast<uint128_t>(pages[next_page].address);
+                const auto page_start = static_cast<uint128_t>(pages[next_page].address);
                 take_page = page_start < nodes[next_node].address;
             }
             if (take_page) {

@@ -230,7 +230,7 @@ uarch-run.uarch_cpp.o: CFLAGS += -ffunction-sections
 	grep -v '^#' $@.tmp > $@
 
 %.clang-tidy: %.cpp
-	$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- $(CLANG_TIDY_CXXFLAGS) $(CFLAGS) $(CXXFLAGS) $(CLANG_TIDY_WARNS)
+	$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- $(CLANG_TIDY_CXXFLAGS) $(filter-out -freorder-blocks-algorithm=%,$(CFLAGS)) $(CXXFLAGS) $(CLANG_TIDY_WARNS)
 	@touch $@
 
 lint: $(CLANG_TIDY_TARGETS)

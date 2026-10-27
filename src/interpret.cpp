@@ -996,9 +996,9 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(const STATE_
     uint64_t paddr{};
     if (const auto status = translate_virtual_address(a, &paddr, vaddr, PTE_XWR_R_SHIFT);
         status != translation_status::success) [[unlikely]] {
-        const uint64_t cause = status == translation_status::access_fault ?
-            (RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT) :
-            (RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_PAGE_FAULT : MCAUSE_LOAD_PAGE_FAULT);
+        constexpr auto access_fault = RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT;
+        constexpr auto page_fault = RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_PAGE_FAULT : MCAUSE_LOAD_PAGE_FAULT;
+        const uint64_t cause = status == translation_status::access_fault ? access_fault : page_fault;
         pc = raise_exception(a, pc, cause, vaddr);
         return {false, pc};
     }

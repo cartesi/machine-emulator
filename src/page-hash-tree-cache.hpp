@@ -553,6 +553,23 @@ public:
         return std::ref(e.set_borrowed(true).set_paddr_page(paddr_page));
     }
 
+    /// \brief Tries to borrow a cache entry for a page whose hash is known
+    /// \param paddr_page Target physical address of page to borrow
+    /// \param page_hash Hash the page is known to have
+    /// \param hit Receives true if page was found in cache with a matching root hash, false otherwise
+    /// \returns Entry for page, nothing if all pages have already been borrowed
+    /// \details An entry whose root hash differs from page_hash does not describe the page, so it is lent as a miss.
+    std::optional<entry_metadata::ref> borrow_entry(address_type paddr_page, const_machine_hash_view page_hash,
+        bool &hit) {
+        auto opt_br = borrow_entry(paddr_page, hit);
+        if (opt_br && hit && !std::ranges::equal(get_payload(opt_br->get()).root_hash_view(), page_hash)) {
+            hit = false;
+            --m_stats.page_hits;
+            ++m_stats.page_misses;
+        }
+        return opt_br;
+    }
+
     /// \brief Tries to borrow a cache entry
     /// \param paddr_page Target physical address of page to borrow
     /// \returns Entry for page, nothing if all pages have already been borrowed
@@ -574,33 +591,6 @@ public:
     /// \brief Returns maximum number of entries in cache
     constexpr auto capacity() const noexcept {
         return m_entries.size();
-    }
-
-    /// \brief Evicts entries whose page addresses satisfy a predicate
-    /// \param predicate Predicate over physical page addresses
-    template <typename Predicate>
-    void evict_entries_if(Predicate predicate) {
-        for (size_t i = 0; i < m_lru.size();) {
-            auto &e = m_entries[i];
-            if (!predicate(e.get_paddr_page())) {
-                ++i;
-                continue;
-            }
-            auto &last = m_entries[m_lru.size() - 1];
-            if (e.get_borrowed() || last.get_borrowed()) {
-                throw std::runtime_error{"page hash-tree cache entry already borrowed"};
-            }
-            m_map.erase(e.get_paddr_page());
-            m_lru.erase(m_lru.iterator_to(e));
-            if (&e != &last) {
-                // Keep active entries in the array prefix used by borrow_entry().
-                std::swap(e.m_payload_index, last.m_payload_index);
-                e.set_paddr_page(last.get_paddr_page());
-                m_lru.insert(m_lru.iterator_to(last), e);
-                m_lru.erase(m_lru.iterator_to(last));
-                m_map.at(e.get_paddr_page()) = std::ref(e);
-            }
-        }
     }
 
     /// \brief Clears entire cache

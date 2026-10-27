@@ -816,38 +816,52 @@ describe("backing stores", function()
             end
         end)
 
-        it("should evict loaded entries without changing cached payloads", function()
+        it("should reuse stored entries without touching cached payloads", function()
             local _ <close>, directory = tests_util.scope_temp_pathname()
+            local pages = { 0x80000000, 0x90000000, 0x90001000, 0xa0000000 }
+            local contents = { "R", "A", "B", "C" }
             do
                 local machine <close> = cartesi.machine({
                     ram = { length = 4096 },
                     flash_drive = {
-                        { start = 0x90000000, length = 4096, backing_store = { shared = true } },
+                        { start = 0x90000000, length = 2 * 4096 },
                         { start = 0xa0000000, length = 4096 },
                     },
-                    hash_tree = { phtc_size = capacity, shared = true },
+                    hash_tree = { phtc_size = capacity },
                 }, {}, directory)
-                machine:write_memory(0x90000000, string.rep("A", 4096))
-                machine:write_memory(0xa0000000, string.rep("B", 4096))
+                for i, page in ipairs(pages) do
+                    machine:write_memory(page, string.rep(contents[i], 4096))
+                end
                 machine:get_root_hash()
-                machine:get_node_hash(0x90000000, cartesi.HASH_TREE_LOG2_WORD_SIZE)
-                machine:get_node_hash(0xa0000000, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+                for _, page in ipairs(pages) do
+                    machine:get_node_hash(page, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+                end
             end
             local _ <close> = tests_util.scope_exit(function()
                 cartesi.machine:remove_stored(directory)
             end)
             local filename = directory .. "/hash_tree.phtc"
-            local before = filesystem.read_file(filename)
-            do
-                local _ <close> = cartesi.machine(directory, {}, cartesi.SHARING_CONFIG)
+            local payloads = filesystem.read_file(filename):sub(payloads_offset + 1)
+            local word_size = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
+            for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_ALL }) do
+                do
+                    local _ <close> = cartesi.machine(directory, {}, sharing)
+                end
+                expect.equal(filesystem.read_file(filename):sub(payloads_offset + 1), payloads)
+                -- Each stored entry must still describe the page its metadata names, so every query is a hit
+                local machine <close> = cartesi.machine(directory, {}, sharing)
+                machine:get_root_hash()
+                for i, page in ipairs(pages) do
+                    machine:get_hash_tree_stats(true)
+                    machine:get_node_hash(page, cartesi.HASH_TREE_LOG2_PAGE_SIZE)
+                    local baseline = machine:get_hash_tree_stats(true).phtc
+                    local expected = cartesi.keccak256(string.rep(contents[i], word_size))
+                    expect.equal(machine:get_node_hash(page, cartesi.HASH_TREE_LOG2_WORD_SIZE), expected)
+                    local stats = machine:get_hash_tree_stats(true).phtc
+                    expect.equal(stats.page_hits, baseline.page_hits + 1)
+                    expect.equal(stats.page_misses, 0)
+                end
             end
-            local after = filesystem.read_file(filename)
-            expect.truthy(string.unpack("<I8", after, 9) < string.unpack("<I8", before, 9))
-            expect.equal(after:sub(payloads_offset + 1), before:sub(payloads_offset + 1))
-            -- Reload the compacted metadata and exercise both retained and reassigned slots.
-            local machine <close> = cartesi.machine(directory, {}, cartesi.SHARING_ALL)
-            machine:write_memory(0xa0000000, string.rep("C", 4096))
-            expect.equal(machine:get_root_hash(), tests_util.calculate_emulator_hash(machine))
         end)
     end)
 
@@ -883,6 +897,21 @@ describe("backing stores", function()
             local proof = machine:get_proof(address, cartesi.HASH_TREE_LOG2_WORD_SIZE)
             expect.equal(proof.target_hash, expected_hash)
             hash_tree.verify_slice(proof, hash_function)
+        end
+
+        -- Compares uarch cycle root hashes of the next mcycle with a reference that rebuilt its hash tree from memory
+        local function expect_uarch_hashes(stored_dir, sharing)
+            local reference <close> = cartesi.machine(stored_dir, { clear_hash_tree = true }, cartesi.SHARING_NONE)
+            local machine <close> = cartesi.machine(stored_dir, {}, sharing)
+            local revert_tail = { string.rep("\0", cartesi.HASH_SIZE), string.rep("\0", cartesi.HASH_SIZE) }
+            local expected = reference:collect_uarch_cycle_root_hashes(1, 0, revert_tail)
+            local obtained = machine:collect_uarch_cycle_root_hashes(1, 0, revert_tail)
+            expect.equal(obtained.mcycle_hash_offsets, expected.mcycle_hash_offsets)
+            expect.equal(#obtained.hashes, #expected.hashes)
+            for i, hash in ipairs(expected.hashes) do
+                expect.equal(obtained.hashes[i], hash)
+            end
+            expect.equal(machine:get_root_hash(), reference:get_root_hash())
         end
 
         for _, hash_function in ipairs({ "keccak256", "sha256" }) do
@@ -975,7 +1004,7 @@ describe("backing stores", function()
 
             for _, shared in ipairs({ false, true }) do
                 it(
-                    "should evict loaded pages with different sharing ("
+                    "should reuse loaded pages with different sharing ("
                         .. hash_function
                         .. ", shared="
                         .. tostring(shared)
@@ -1013,11 +1042,8 @@ describe("backing stores", function()
                             expect.equal(stats.page_misses, 0)
                             machine:get_node_hash(retained_start, cartesi.HASH_TREE_LOG2_WORD_SIZE)
                             stats = machine:get_hash_tree_stats(true).phtc
-                            expect.equal(
-                                stats.page_hits,
-                                baseline.page_hits + (sharing == cartesi.SHARING_CONFIG and 0 or 1)
-                            )
-                            expect.equal(stats.page_misses, sharing == cartesi.SHARING_CONFIG and 1 or 0)
+                            expect.equal(stats.page_hits, baseline.page_hits + 1)
+                            expect.equal(stats.page_misses, 0)
                             expect_word(machine, drive_start, "A", hash_function)
                             expect_word(machine, retained_start, "R", hash_function)
                             expect.equal(machine:get_root_hash(), tests_util.calculate_emulator_hash(machine))
@@ -1025,7 +1051,91 @@ describe("backing stores", function()
                     end
                 )
             end
+
+            for _, shared in ipairs({ false, true }) do
+                it(
+                    "should not reuse pages left stale by a mixed sharing session ("
+                        .. hash_function
+                        .. ", shared="
+                        .. tostring(shared)
+                        .. ")",
+                    function()
+                        local _ <close>, stored_dir = tests_util.scope_temp_pathname()
+                        do
+                            local config = make_config(hash_function, 256)
+                            config.hash_tree.shared = shared
+                            config.flash_drive[1].backing_store = { shared = shared }
+                            config.flash_drive[2].backing_store = { shared = not shared }
+                            local machine <close> = cartesi.machine(config, {}, stored_dir)
+                            initialize(machine, "A")
+                            machine:write_reg("x10", retained_start)
+                            machine:get_root_hash()
+                            machine:get_node_hash(retained_start, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+                        end
+                        local _ <close> = tests_util.scope_exit(function()
+                            cartesi.machine:remove_stored(stored_dir)
+                        end)
+                        -- The retained drive and the hash tree are persisted differently, so the stored drive and
+                        -- the stored cache disagree after this session while the drive pages remain clean
+                        do
+                            local machine <close> = cartesi.machine(stored_dir, {}, cartesi.SHARING_CONFIG)
+                            machine:write_memory(retained_start, string.rep("S", page_size))
+                            machine:get_root_hash()
+                            machine:get_node_hash(retained_start, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+                        end
+                        local retained = shared and "R" or "S"
+                        if hash_function == "keccak256" then
+                            expect_uarch_hashes(stored_dir, cartesi.SHARING_NONE)
+                        end
+                        for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_ALL }) do
+                            local machine <close> = cartesi.machine(stored_dir, {}, sharing)
+                            expect_word(machine, retained_start, retained, hash_function)
+                            expect.equal(machine:get_root_hash(), tests_util.calculate_emulator_hash(machine))
+                        end
+                    end
+                )
+            end
         end
+
+        it("should not reuse pages left stale by a range replacement on a shared cache", function()
+            local _ <close>, original_dir = tests_util.scope_temp_pathname()
+            local _ <close>, replacement_dir = tests_util.scope_temp_pathname()
+            do
+                local machine <close> = cartesi.machine(make_config("keccak256", 256))
+                initialize(machine, "A")
+                machine:get_root_hash()
+                machine:store(original_dir, cartesi.SHARING_ALL)
+                machine:write_memory(drive_start, string.rep("B", 2 * page_size))
+                machine:get_root_hash()
+                machine:store(replacement_dir, cartesi.SHARING_ALL)
+            end
+            local _ <close> = tests_util.scope_exit(function()
+                cartesi.machine:remove_stored(original_dir)
+                cartesi.machine:remove_stored(replacement_dir)
+            end)
+            -- The replacement's pages enter the stored cache, but the stored drive keeps the original contents
+            do
+                local machine <close> = cartesi.machine(original_dir, {}, cartesi.SHARING_ALL)
+                machine:get_node_hash(drive_start, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+                local prefix = replacement_dir .. "/0000000090000000-2000"
+                machine:replace_memory_range({
+                    start = drive_start,
+                    length = 2 * page_size,
+                    backing_store = {
+                        data_filename = prefix .. ".bin",
+                        dht_filename = prefix .. ".dht",
+                        dpt_filename = prefix .. ".dpt",
+                    },
+                })
+                expect_word(machine, drive_start, "B", "keccak256")
+                expect_word(machine, drive_start + page_size, "B", "keccak256")
+            end
+            expect_uarch_hashes(original_dir, cartesi.SHARING_NONE)
+            local machine <close> = cartesi.machine(original_dir, {}, cartesi.SHARING_NONE)
+            expect_word(machine, drive_start, "A", "keccak256")
+            expect_word(machine, drive_start + page_size, "A", "keccak256")
+            expect.equal(machine:get_root_hash(), tests_util.calculate_emulator_hash(machine))
+        end)
 
         it("should collect correct uarch hashes after clean range replacement", function()
             local _ <close>, original_dir = tests_util.scope_temp_pathname()

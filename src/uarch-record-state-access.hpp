@@ -275,9 +275,8 @@ private:
     }
 
     void do_reset_uarch() const {
-        //??D I'd like to add an static_assert or some other guard mechanism to
-        // guarantee that uarch.ram and uarch.shadow are alone in the entire
-        // span of their common hash tree parent node
+        // machine_address_ranges::check() guarantees that uarch.ram and uarch.shadow
+        // are alone in the entire span of their common hash tree parent node
         log_write_access(
             UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE,
             [this]() {

@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`
 
+### Fixed
+- Fixed address ranges being accepted inside the uarch state hash tree node
+
 ## [0.22.0] - 2026-10-15
 ### Added
 - Added `collect_mcycle_bundle` and `collect_uarch_cycle_bundle` to all machine APIs

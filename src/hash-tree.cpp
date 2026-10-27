@@ -104,7 +104,8 @@ void hash_tree::get_page_proof(address_range &ar, uint64_t address, proof_type &
     }
     const auto paddr_page = address & ~(HASH_TREE_PAGE_SIZE - 1);
     bool hit = false;
-    auto opt_br = m_page_cache.borrow_entry(paddr_page, hit);
+    auto opt_br = m_page_cache.borrow_entry(paddr_page,
+        ar.get_dense_hash_tree().node_hash_view(paddr_page - ar.get_start(), HASH_TREE_LOG2_PAGE_SIZE), hit);
     assert(opt_br && "page hash-tree cache has no entries to lend");
     if (!hit) {
         [[maybe_unused]] bool changed = false;
@@ -571,13 +572,6 @@ machine_hash hash_tree::get_root_hash() const noexcept {
     return m_sparse_nodes[1].hash;
 }
 
-void hash_tree::evict_clean_pages(const address_range &ar) {
-    m_page_cache.evict_entries_if([&ar](uint64_t paddr_page) {
-        return ar.contains_absolute(paddr_page, HASH_TREE_PAGE_SIZE) &&
-            !ar.get_dirty_page_tree().is_node_dirty(paddr_page - ar.get_start(), HASH_TREE_LOG2_PAGE_SIZE);
-    });
-}
-
 machine_hash hash_tree::get_dense_node_hash(address_range &ar, uint64_t address, int log2_size) {
     if (log2_size < HASH_TREE_LOG2_PAGE_SIZE) {
         assert(log2_size >= HASH_TREE_LOG2_WORD_SIZE && "invalid log2_size");
@@ -587,7 +581,8 @@ machine_hash hash_tree::get_dense_node_hash(address_range &ar, uint64_t address,
         assert(ar.contains_absolute(address, HASH_TREE_WORD_SIZE) && "address not in expected address range");
         const auto paddr_page = address & ~(HASH_TREE_PAGE_SIZE - 1);
         bool hit = false;
-        auto opt_br = m_page_cache.borrow_entry(paddr_page, hit);
+        auto opt_br = m_page_cache.borrow_entry(paddr_page,
+            ar.get_dense_hash_tree().node_hash_view(paddr_page - ar.get_start(), HASH_TREE_LOG2_PAGE_SIZE), hit);
         assert(opt_br && "page hash-tree cache has no entries to lend");
         if (!hit) {
             [[maybe_unused]] bool changed = false;
@@ -782,13 +777,6 @@ bool hash_tree::update_words(address_ranges ars, const dirty_words_type &dirty_w
         auto begin = page_starts[i];
         auto end = page_starts[i + 1];
         auto paddr_page = words[begin] & page_mask;
-        bool hit = false;
-        auto opt_br = m_page_cache.borrow_entry(paddr_page, hit);
-        if (!opt_br) {
-            ++update_failures;
-            continue;
-        }
-        auto &cache_entry = opt_br->get();
         for (; ar_index < static_cast<int>(ars.size()); ++ar_index) {
             if (ars[ar_index].contains_absolute(paddr_page, HASH_TREE_PAGE_SIZE)) {
                 break;
@@ -796,10 +784,17 @@ bool hash_tree::update_words(address_ranges ars, const dirty_words_type &dirty_w
         }
         if (ar_index >= static_cast<int>(ars.size())) {
             ++update_failures;
-            page_hash_tree_cache::return_entry(cache_entry);
             continue;
         }
         auto &ar = ars[ar_index];
+        bool hit = false;
+        auto opt_br = m_page_cache.borrow_entry(paddr_page,
+            ar.get_dense_hash_tree().node_hash_view(paddr_page - ar.get_start(), HASH_TREE_LOG2_PAGE_SIZE), hit);
+        if (!opt_br) {
+            ++update_failures;
+            continue;
+        }
+        auto &cache_entry = opt_br->get();
         try_push_back(changed_ars, ar_index);
         max_level_count = std::max(max_level_count, ar.get_level_count());
         const auto *base = ar.get_host_memory();
@@ -1000,13 +995,7 @@ hash_tree::hash_tree(const hash_tree_config &config, uint64_t concurrency, machi
 
             return c;
         }(),
-        concurrency, create_nodes(mars)) {
-    // Reuse stored page hashes only when their ranges share the cache's persistence behavior.
-    m_page_cache.evict_entries_if([&mars, shared = has_shared_backing_store()](uint64_t paddr_page) {
-        const auto &ar = mars.find(paddr_page, HASH_TREE_PAGE_SIZE);
-        return ar.is_empty() || ar.has_shared_backing_store() != shared;
-    });
-}
+        concurrency, create_nodes(mars)) {}
 
 void hash_tree::check_address_ranges(const_address_ranges ars) {
     for (int ar_i = 0; auto &&ar : ars) {

@@ -411,9 +411,6 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
     os::create_directory(dir);
     remover.add_directory(dir);
 
-    // Store config
-    remover.add_file(m_c.store(dir));
-
     // Store all address ranges
     auto store_address_range = [&](const backing_store_config &c, const address_range &ar, bool read_only) {
         if (ar.is_empty()) {
@@ -486,6 +483,9 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
         remover.add_file(phtc_filename);
     }
 
+    // Store config last, so an interrupted store leaves a directory that cannot be loaded
+    remover.add_file(m_c.store(dir));
+
     // Retain all stored files
     remover.retain_all();
 }
@@ -502,12 +502,6 @@ void machine::clone_stored(const std::string &from_dir, const std::string &to_di
     // Create directory
     os::create_directory(to_dir);
     remover.add_directory(to_dir);
-
-    // Clone config
-    const auto from_config_filename = machine_config::get_config_filename(from_dir);
-    const auto to_config_filename = machine_config::get_config_filename(to_dir);
-    os::clone_file(from_config_filename, to_config_filename);
-    remover.add_file(to_config_filename);
 
     // Clone all address ranges
     auto clone_ar_backing_store = [&](const backing_store_config &from_bs, const backing_store_config &to_bs) {
@@ -538,6 +532,12 @@ void machine::clone_stored(const std::string &from_dir, const std::string &to_di
     remover.add_file(to_c.hash_tree.sht_filename);
     os::clone_file(from_c.hash_tree.phtc_filename, to_c.hash_tree.phtc_filename);
     remover.add_file(to_c.hash_tree.phtc_filename);
+
+    // Clone config last, so an interrupted clone leaves a directory that cannot be loaded
+    const auto from_config_filename = machine_config::get_config_filename(from_dir);
+    const auto to_config_filename = machine_config::get_config_filename(to_dir);
+    os::clone_file(from_config_filename, to_config_filename);
+    remover.add_file(to_config_filename);
 
     // Retain all stored files
     remover.retain_all();

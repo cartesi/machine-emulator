@@ -1181,6 +1181,36 @@ describe("backing stores", function()
         end)
     end)
 
+    it("should reject loading stores and clones whose config was not written", function()
+        local _ <close>, stored_dir = tests_util.scope_temp_pathname()
+        local _ <close>, cloned_dir = tests_util.scope_temp_pathname()
+        do
+            local machine <close> = cartesi.machine({ ram = { length = 0x1000 } })
+            machine:get_root_hash()
+            machine:store(stored_dir, cartesi.SHARING_ALL)
+        end
+        cartesi.machine:clone_stored(stored_dir, cloned_dir)
+        local config = filesystem.read_file(stored_dir .. "/config.json")
+        local _ <close> = tests_util.scope_exit(function()
+            for _, dir in ipairs({ stored_dir, cloned_dir }) do
+                filesystem.write_file(config, dir .. "/config.json")
+                cartesi.machine:remove_stored(dir)
+            end
+        end)
+        -- The config is written last, so an interrupted store or clone leaves it missing or still zero-filled
+        for _, dir in ipairs({ stored_dir, cloned_dir }) do
+            local filename = dir .. "/config.json"
+            filesystem.remove_file(filename)
+            expect.fail(function()
+                local _ <close> = cartesi.machine(dir)
+            end, "config.json")
+            filesystem.write_file(string.rep("\0", #config), filename)
+            expect.fail(function()
+                local _ <close> = cartesi.machine(dir)
+            end, "parse error")
+        end
+    end)
+
     it("should create a machine with new shared backing stores", function()
         local _ <close>, filename_prefix = tests_util.scope_temp_pathname()
         local expected_root_hash

@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed address ranges being accepted inside the uarch state hash tree node
 - Fixed proofs and uarch cycle root hashes using stale page hash-tree cache entries
+- Fixed interrupted stores and clones leaving directories that load with a torn page hash-tree cache
 
 ## [0.22.0] - 2026-10-15
 ### Added

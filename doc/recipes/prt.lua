@@ -1083,16 +1083,9 @@ local function clone_loaded_directory(machine, directory, clone_directory)
     return clone:move()
 end
 
--- Removes a stored machine that a crash or an earlier pair may have left, possibly incomplete, which
--- remove_stored may not recognize.
+-- Removes a stored machine that a crash or an earlier pair may have left, possibly incomplete.
 local function remove_leftover_stored_machine(directory)
-    if pcall(cartesi.machine.remove_stored, cartesi.machine, directory) then
-        return
-    end
-    for _, name in ipairs(fs.list_directory(directory)) do
-        fs.remove_file(directory .. "/" .. name)
-    end
-    fs.remove_directory(directory)
+    cartesi.machine:remove_stored(directory, cartesi.REMOVE_FORCED)
 end
 
 -- A stored pair runs its machine on the backing stores of its directory and snapshots by cloning

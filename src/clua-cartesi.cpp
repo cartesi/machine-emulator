@@ -283,6 +283,8 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_SHARING_NONE, "SHARING_NONE", -1);
     clua_setintegerfield(L, CM_SHARING_CONFIG, "SHARING_CONFIG", -1);
     clua_setintegerfield(L, CM_SHARING_ALL, "SHARING_ALL", -1);
+    clua_setintegerfield(L, CM_REMOVE_STORED, "REMOVE_STORED", -1);
+    clua_setintegerfield(L, CM_REMOVE_FORCED, "REMOVE_FORCED", -1);
     clua_setintegerfield(L, CM_AR_CMIO_RX_BUFFER_START, "AR_CMIO_RX_BUFFER_START", -1);
     clua_setintegerfield(L, CM_AR_CMIO_RX_BUFFER_LOG2_SIZE, "AR_CMIO_RX_BUFFER_LOG2_SIZE", -1);
     clua_setintegerfield(L, CM_AR_SHADOW_TLB_LENGTH, "AR_SHADOW_TLB_LENGTH", -1);

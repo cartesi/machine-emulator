@@ -258,6 +258,29 @@ static sharing_mode sharing_mode_from_name(const std::string &name) {
     return got->second;
 }
 
+static auto remove_mode_to_name(remove_mode mode) {
+    switch (mode) {
+        case remove_mode::stored:
+            return "stored";
+        case remove_mode::forced:
+            return "forced";
+        default:
+            throw std::domain_error{"invalid remove mode"};
+            break;
+    }
+    return "";
+}
+
+static remove_mode remove_mode_from_name(const std::string &name) {
+    const static std::unordered_map<std::string, remove_mode> g_remove_name = {{"stored", remove_mode::stored},
+        {"forced", remove_mode::forced}};
+    auto got = g_remove_name.find(name);
+    if (got == g_remove_name.end()) {
+        throw std::domain_error{"invalid remove mode"};
+    }
+    return got->second;
+}
+
 static auto reg_to_name(machine_reg r) {
     using reg = machine_reg;
     switch (r) {
@@ -993,6 +1016,24 @@ template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t
     const std::string &path);
 
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, sharing_mode &value,
+    const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, remove_mode &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jk = j[key];
+    if (!jk.is_string()) {
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
+    }
+    value = remove_mode_from_name(jk.template get<std::string>());
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, remove_mode &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, remove_mode &value,
     const std::string &path);
 
 template <typename K>
@@ -2231,6 +2272,10 @@ void to_json(nlohmann::json &j, const machine_reg &reg) {
 
 void to_json(nlohmann::json &j, const sharing_mode &sharing) {
     j = sharing_mode_to_name(sharing);
+}
+
+void to_json(nlohmann::json &j, const remove_mode &mode) {
+    j = remove_mode_to_name(mode);
 }
 
 void to_json(nlohmann::json &j, const base64_machine_hash &h) {

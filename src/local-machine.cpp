@@ -85,8 +85,8 @@ void local_machine::do_rename_stored(const std::string &from_dir, const std::str
     machine::rename_stored(from_dir, to_dir);
 }
 
-void local_machine::do_remove_stored(const std::string &dir) const {
-    machine::remove_stored(dir);
+void local_machine::do_remove_stored(const std::string &dir, remove_mode mode) const {
+    machine::remove_stored(dir, mode);
 }
 
 void local_machine::do_sync_stored(const std::string &dir) const {

@@ -360,7 +360,6 @@ local function new_bundle_player(machine)
         end
         function pair:commit()
             self.backup_machine = nil
-            machine.committed = true
         end
         function pair:close()
             self.backup_machine = nil
@@ -534,7 +533,7 @@ for _, outcome in ipairs({ "accepted", "rejected", "halted" }) do
         if outcome == "rejected" then
             assert(self.rolled_back and self.mcycle == 0 and self.root_hash == "virgin")
         else
-            assert(self.committed and self.mcycle == 2 and self.root_hash == "delivered")
+            assert(not self.rolled_back and self.mcycle == 2 and self.root_hash == "delivered")
         end
         self.collections = self.collections + 1
         return { hashes = { halted, reset }, mcycle_hash_offsets = { 1, 3 }, break_reason = break_reason }

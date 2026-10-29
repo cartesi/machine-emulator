@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed proofs and uarch cycle root hashes using stale page hash-tree cache entries
 - Fixed interrupted stores and clones leaving directories that load with a torn page hash-tree cache
 - Fixed `remove_stored` failing on directories left by interrupted removals
+- Fixed stored machines left unloadable or with stale root hashes by interrupted hash-tree updates
 
 ## [0.22.0] - 2026-10-15
 ### Added

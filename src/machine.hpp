@@ -847,6 +847,12 @@ public:
             std::ranges::any_of(m_ars.all(), [](const auto &ar) { return ar.has_shared_backing_store(); });
     }
 
+    /// \brief Marks the stored page hash-tree cache initialized again, so loading it keeps its entries
+    /// \details Changing a shared cache marks it uninitialized, so stopping mid-change leaves it to be rebuilt.
+    void mark_stored_page_cache_initialized() const noexcept {
+        m_ht.mark_stored_page_cache_initialized();
+    }
+
     /// \brief Writes a character to console output.
     /// \param ch Character to write.
     /// \returns True if console output should be flushed externally.

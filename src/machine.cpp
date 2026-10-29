@@ -476,6 +476,8 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
     if (sharing == sharing_mode::all || (sharing == sharing_mode::config && m_c.hash_tree.shared)) {
         os::create_file(sht_filename, m_ht.get_sht_storage_data());
         remover.add_file(sht_filename);
+        // The cache is consistent between operations, so the stored copy can keep its entries
+        m_ht.mark_stored_page_cache_initialized();
         os::create_file(phtc_filename, m_ht.get_phtc_storage_data());
         remover.add_file(phtc_filename);
     } else {

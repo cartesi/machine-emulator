@@ -912,8 +912,9 @@ where options are:
         flush the machine state held in the backing stores of <directory> to
         permanent storage before exiting. with a sharing mode other than "none"
         there is no final store, and process exit does not guarantee the
-        modifications are durable on disk; sync fsyncs every backing store file,
-        the directory, and its parent before exit.
+        modifications are durable on disk. even queries such as computing the
+        root hash modify the backing stores. sync fsyncs every backing store
+        file, the directory, and its parent before exit.
         requires a sharing mode other than "none".
 
   --store=<directory>[,<key>:<value>[,...]...]

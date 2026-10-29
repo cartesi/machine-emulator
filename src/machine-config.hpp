@@ -35,6 +35,12 @@ enum class sharing_mode {
     all,    ///< Share all backing stores, all machine changes will be on-disk
 };
 
+/// \brief Stored machine removal modes
+enum class remove_mode {
+    stored, ///< Remove an empty directory, or a loadable stored machine with no other files
+    forced, ///< Remove a directory holding any regular files
+};
+
 /// \brief Machine config constants
 enum machine_config_constants {
     FLASH_DRIVE_MAX = 8,         ///< Maximum number of flash drives

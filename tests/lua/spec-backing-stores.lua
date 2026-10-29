@@ -474,17 +474,19 @@ describe("backing stores", function()
             machine:store(stored_dirname, cartesi.SHARING_ALL)
         end
 
-        -- an extraneous file makes the removal fail, and the file survives
+        -- an extraneous file makes the removal fail before any file is removed
         local extraneous_filename = stored_dirname .. "/extraneous"
         filesystem.write_file("keep", extraneous_filename)
+        local names = filesystem.list_directory(stored_dirname)
         expect.fail(function()
             cartesi.machine:remove_stored(stored_dirname)
-        end, "unable to remove directory")
+        end, "is not one of its files")
+        expect.equal(filesystem.list_directory(stored_dirname), names)
         expect.equal(filesystem.read_file(extraneous_filename), "keep")
 
-        -- the machine files were already removed, only the extraneous file remains
-        filesystem.remove_file(extraneous_filename)
-        assert(os.remove(stored_dirname))
+        -- forcing the removal removes the extraneous file too
+        cartesi.machine:remove_stored(stored_dirname, cartesi.REMOVE_FORCED)
+        expect.falsy(filesystem.exists(stored_dirname))
     end)
 
     it("should create a machine fully mapped on disk", function()
@@ -1178,6 +1180,91 @@ describe("backing stores", function()
             expect.equal(machine:read_reg("mcycle"), 1)
             expect.equal(machine:get_root_hash(), reference:get_root_hash())
             expect.equal(machine:get_root_hash(), tests_util.calculate_emulator_hash(machine))
+        end)
+    end)
+
+    describe("remove_stored", function()
+        -- Stores a small machine and returns its parent owner, directory, and file names.
+        local function store_machine()
+            local owner, dir = tests_util.scope_temp_pathname()
+            local machine <close> = cartesi.machine({ ram = { length = 0x1000 } })
+            machine:store(dir)
+            return owner, dir, filesystem.list_directory(dir)
+        end
+
+        it("should remove a stored machine in the default mode", function()
+            local _ <close>, dir = store_machine()
+            cartesi.machine:remove_stored(dir)
+            expect.falsy(filesystem.exists(dir))
+        end)
+
+        it("should complete an interrupted removal in the default mode", function()
+            local _ <close>, dir, names = store_machine()
+            -- The config is removed last, so an interrupted removal leaves it with some of the other files
+            for i, name in ipairs(names) do
+                if name ~= "config.json" and i % 2 == 0 then
+                    filesystem.remove_file(dir .. "/" .. name)
+                end
+            end
+            cartesi.machine:remove_stored(dir, cartesi.REMOVE_STORED)
+            expect.falsy(filesystem.exists(dir))
+        end)
+
+        it("should remove an empty directory in the default mode", function()
+            local _ <close>, dir = tests_util.scope_temp_pathname()
+            filesystem.create_directory(dir)
+            cartesi.machine:remove_stored(dir)
+            expect.falsy(filesystem.exists(dir))
+        end)
+
+        it("should remove a directory without a loadable config only when forced", function()
+            local _ <close>, stored_dir = store_machine()
+            local _ <close>, unrelated_dir = tests_util.scope_temp_pathname()
+            filesystem.create_directory(unrelated_dir)
+            filesystem.write_file("data", unrelated_dir .. "/notes.txt")
+            local _ <close> = tests_util.scope_exit(function()
+                for _, dir in ipairs({ stored_dir, unrelated_dir }) do
+                    pcall(cartesi.machine.remove_stored, cartesi.machine, dir, cartesi.REMOVE_FORCED)
+                end
+            end)
+            -- An interrupted store leaves the stored files without a config
+            filesystem.remove_file(stored_dir .. "/config.json")
+            for _, dir in ipairs({ stored_dir, unrelated_dir }) do
+                local names = filesystem.list_directory(dir)
+                expect.fail(function()
+                    cartesi.machine:remove_stored(dir)
+                end, "config.json")
+                expect.equal(filesystem.list_directory(dir), names)
+                cartesi.machine:remove_stored(dir, cartesi.REMOVE_FORCED)
+                expect.falsy(filesystem.exists(dir))
+            end
+        end)
+
+        it("should refuse to remove a directory with entries that are not files", function()
+            local _ <close>, dir = store_machine()
+            filesystem.create_directory(dir .. "/subdirectory")
+            local _ <close> = tests_util.scope_exit(function()
+                filesystem.remove_directory(dir .. "/subdirectory")
+                cartesi.machine:remove_stored(dir)
+            end)
+            local names = filesystem.list_directory(dir)
+            for _, mode in ipairs({ cartesi.REMOVE_STORED, cartesi.REMOVE_FORCED }) do
+                expect.fail(function()
+                    cartesi.machine:remove_stored(dir, mode)
+                end, "is not a file")
+                expect.equal(filesystem.list_directory(dir), names)
+            end
+        end)
+
+        it("should reject an unknown removal mode", function()
+            local _ <close>, dir = store_machine()
+            local _ <close> = tests_util.scope_exit(function()
+                cartesi.machine:remove_stored(dir)
+            end)
+            expect.fail(function()
+                cartesi.machine:remove_stored(dir, cartesi.REMOVE_FORCED + 1)
+            end, "unknown remove mode")
+            expect.truthy(filesystem.exists(dir .. "/config.json"))
         end)
     end)
 

@@ -125,7 +125,7 @@ private:
     void do_store(const std::string &dir, sharing_mode sharing) const override;
     void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const override;
     void do_rename_stored(const std::string &from_dir, const std::string &to_dir) const override;
-    void do_remove_stored(const std::string &dir) const override;
+    void do_remove_stored(const std::string &dir, remove_mode mode) const override;
     void do_sync_stored(const std::string &dir) const override;
     uint64_t do_read_reg(reg r) const override;
     void do_write_reg(reg w, uint64_t val) override;

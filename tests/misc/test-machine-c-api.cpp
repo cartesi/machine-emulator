@@ -1036,7 +1036,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(rename_stored_test, ordinary_machine_fixture) {
     BOOST_CHECK(!std::filesystem::exists(_machine_dir_path));
     BOOST_CHECK(std::filesystem::exists(renamed_dir_path));
 
-    error_code = cm_remove_stored(_machine, renamed_dir_path.c_str());
+    error_code = cm_remove_stored(_machine, renamed_dir_path.c_str(), CM_REMOVE_STORED);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 }
 
@@ -1049,7 +1049,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(remove_stored_null_machine_test, ordinary_machine
     cm_error error_code = cm_store(_machine, _machine_dir_path.c_str(), CM_SHARING_ALL);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
-    error_code = cm_remove_stored(nullptr, _machine_dir_path.c_str());
+    error_code = cm_remove_stored(nullptr, _machine_dir_path.c_str(), CM_REMOVE_STORED);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK(!std::filesystem::exists(_machine_dir_path));

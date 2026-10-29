@@ -278,6 +278,14 @@
           "schema": {
             "type": "string"
           }
+        },
+        {
+          "name": "mode",
+          "description": "Removal mode (defaults to stored)",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/RemoveMode"
+          }
         }
       ],
       "result": {
@@ -2603,6 +2611,10 @@
       "SharingMode": {
         "title": "SharingMode",
         "enum": ["none", "config", "all"]
+      },
+      "RemoveMode": {
+        "title": "RemoveMode",
+        "enum": ["stored", "forced"]
       },
       "REG": {
         "title": "REG",

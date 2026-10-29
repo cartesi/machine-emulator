@@ -186,8 +186,10 @@ public:
 
     /// \brief Removes all files and the directory of a previously stored machine.
     /// \param dir Path to the directory containing the stored machine to be removed.
-    /// \details On success, the removed parent directory entry is durable on disk.
-    static void remove_stored(const std::string &dir);
+    /// \param mode Removal mode.
+    /// \details The directory must hold only regular files.
+    /// On success, the removed parent directory entry is durable on disk.
+    static void remove_stored(const std::string &dir, remove_mode mode = remove_mode::stored);
 
     /// \brief Flushes all files of a previously stored machine to permanent storage.
     /// \param dir Path to the directory containing the stored machine to be synced.

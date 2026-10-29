@@ -74,7 +74,6 @@ class hash_tree {
         index_type right{};
         index_type parent{};
         uint32_t log2_size{};
-        uint32_t marked{};
         machine_hash hash{};
     };
 

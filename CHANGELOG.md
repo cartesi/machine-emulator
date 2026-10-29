@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed interrupted stores and clones leaving directories that load with a torn page hash-tree cache
 - Fixed `remove_stored` failing on directories left by interrupted removals
 - Fixed stored machines left unloadable or with stale root hashes by interrupted hash-tree updates
+- Fixed interrupted hash-tree updates freezing the root hash of stored sparse trees
 
 ## [0.22.0] - 2026-10-15
 ### Added

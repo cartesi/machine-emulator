@@ -1358,6 +1358,57 @@ describe("backing stores", function()
         end
     end)
 
+    it("should rehash the stale ancestors of a range left by an interrupted update", function()
+        local ram_log2_size = 18
+        local _ <close>, directory = tests_util.scope_temp_pathname()
+        do
+            local machine <close> = cartesi.machine({ ram = { length = 1 << ram_log2_size } }, {}, directory)
+            machine:get_root_hash()
+            -- Leave a page dirty in the stored dirty-page tree, as an interrupted update would
+            machine:write_memory(cartesi.AR_RAM_START, string.rep("R", 4096))
+        end
+        local _ <close> = tests_util.scope_exit(function()
+            cartesi.machine:remove_stored(directory)
+        end)
+        -- An update interrupted after storing the RAM leaf leaves the inner nodes above it stale, and once left
+        -- nodes marked as queued for update, freezing them. Each 64-byte node holds its left child, right child and
+        -- parent indices (8 bytes each), its log2 size (4 bytes), 4 bytes that once held that mark, and its hash.
+        local filename = directory .. "/hash_tree.sht"
+        local data = filesystem.read_file(filename)
+        local node_size = 64
+        local nodes = {}
+        for offset = 0, #data - node_size, node_size do
+            nodes[#nodes + 1] = data:sub(offset + 1, offset + node_size)
+        end
+        local ram_leaf
+        for index, node in ipairs(nodes) do
+            local left, _, _, log2_size = string.unpack("<i8i8i8I4", node)
+            if left == -1 and log2_size == ram_log2_size then
+                expect.falsy(ram_leaf)
+                ram_leaf = index
+            end
+        end
+        expect.truthy(ram_leaf)
+        local stale = {}
+        local parent = string.unpack("<i8", nodes[ram_leaf], 17)
+        while parent ~= 0 do
+            stale[parent + 1] = true
+            parent = string.unpack("<i8", nodes[parent + 1], 17)
+        end
+        for index, node in ipairs(nodes) do
+            node = node:sub(1, 28) .. string.pack("<I4", 1) .. node:sub(33)
+            if stale[index] then
+                node = node:sub(1, 32) .. string.rep("\0", 32)
+            end
+            nodes[index] = node
+        end
+        filesystem.write_file(table.concat(nodes), filename)
+        for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_ALL }) do
+            local machine <close> = cartesi.machine(directory, {}, sharing)
+            expect.equal(machine:get_root_hash(), tests_util.calculate_emulator_hash(machine))
+        end
+    end)
+
     it("should reject loading stores and clones whose config was not written", function()
         local _ <close>, stored_dir = tests_util.scope_temp_pathname()
         local _ <close>, cloned_dir = tests_util.scope_temp_pathname()

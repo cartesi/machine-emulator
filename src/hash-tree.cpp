@@ -508,16 +508,21 @@ bool hash_tree::update_sparse_tree(address_ranges ars, const changed_address_ran
     changed_backing.reserve(std::ranges::size(changed_ars));
     std::priority_queue<E, decltype(changed_backing), std::greater<>> changed(std::greater<>{},
         std::move(changed_backing));
+    // Nodes already queued for update are marked here rather than in the stored nodes,
+    // so an interrupted update cannot leave a node that is never queued again
+    std::pmr::vector<uint8_t> marked(m_sparse_nodes.size(), 0, &m_memory_pool);
+    const auto mark_changed = [&](index_type node_index) {
+        if (marked[node_index] == 0) {
+            marked[node_index] = 1;
+            changed.emplace(m_sparse_nodes[node_index].log2_size, node_index);
+        }
+    };
     for (auto ar_index : changed_ars) {
         auto ar_node_index = get_ar_sparse_node_index(ar_index);
         auto &ar_node = m_sparse_nodes[ar_node_index];
         auto ar_root_hash_view = ars[ar_index].get_dense_hash_tree().root_hash_view();
         std::ranges::copy(ar_root_hash_view, ar_node.hash.begin());
-        auto &ar_parent_node = m_sparse_nodes[ar_node.parent];
-        if (ar_parent_node.marked == 0) {
-            ar_parent_node.marked = 1;
-            changed.emplace(ar_parent_node.log2_size, ar_node.parent);
-        }
+        mark_changed(ar_node.parent);
     }
     // Ensure all sparse leaf node hashes match their corresponding dense tree root hashes.
     // This is necessary because sparse and dense trees can become unsynchronized,
@@ -528,11 +533,7 @@ bool hash_tree::update_sparse_tree(address_ranges ars, const changed_address_ran
         auto ar_root_hash_view = ar.get_dense_hash_tree().root_hash_view();
         if (!std::ranges::equal(ar_root_hash_view, ar_node.hash)) {
             std::ranges::copy(ar_root_hash_view, ar_node.hash.begin());
-            auto &ar_parent_node = m_sparse_nodes[ar_node.parent];
-            if (ar_parent_node.marked == 0) {
-                ar_parent_node.marked = 1;
-                changed.emplace(ar_parent_node.log2_size, ar_node.parent);
-            }
+            mark_changed(ar_node.parent);
         }
         ++ar_index;
     }
@@ -543,10 +544,6 @@ bool hash_tree::update_sparse_tree(address_ranges ars, const changed_address_ran
         auto [log2_size, inner_index] = changed.top();
         changed.pop();
         auto &inner_node = m_sparse_nodes[inner_index];
-        // Every node with smaller log2_size than inner_node has already been processed.
-        // By implication, its children have already been processed.
-        // So we can clear the mark with no fear inner_node will be added back to the queue.
-        inner_node.marked = 0;
         auto left_hash_view = get_sparse_node_hash_view(inner_node.left, log2_size - 1);
         auto right_hash_view = get_sparse_node_hash_view(inner_node.right, log2_size - 1);
         // When crossing tree height boundary, we need to flush the queue
@@ -557,11 +554,7 @@ bool hash_tree::update_sparse_tree(address_ranges ars, const changed_address_ran
         queue.enqueue(left_hash_view, right_hash_view, inner_node.hash);
         ++m_sparse_node_hashes;
         if (!is_pristine(inner_node.parent)) {
-            auto &parent_node = m_sparse_nodes[inner_node.parent];
-            if (parent_node.marked == 0) {
-                parent_node.marked = 1;
-                changed.emplace(log2_size + 1, inner_node.parent);
-            }
+            mark_changed(inner_node.parent);
         }
     }
     queue.flush();
@@ -718,7 +711,6 @@ void hash_tree::clear(address_ranges ars) noexcept {
     }
     for (auto &node : m_sparse_nodes) {
         node.hash = {};
-        node.marked = 0;
     }
 }
 
@@ -963,7 +955,7 @@ hash_tree::hash_tree(const hash_tree_config &config, uint64_t concurrency, const
         // Validate sparse nodes consistency
         for (const auto &[node, init_node] : std::views::zip(m_sparse_nodes, init_sparse_nodes)) {
             if (node.left != init_node.left || node.right != init_node.right || node.parent != init_node.parent ||
-                node.log2_size != init_node.log2_size || node.marked > 1) {
+                node.log2_size != init_node.log2_size) {
                 throw std::runtime_error{"inconsistent sparse hash tree nodes"};
             }
         }
@@ -1071,7 +1063,6 @@ hash_tree::index_type hash_tree::append_nodes(uint64_t begin_page_index, uint64_
             .right = ar_index,
             .parent = parent,
             .log2_size = static_cast<uint32_t>(log2_size),
-            .marked = 0,
         };
         // Consume range
         ++ar_curr;

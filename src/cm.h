@@ -625,8 +625,12 @@ CM_API cm_error cm_remove_stored(const cm_machine *m, const char *dir, cm_remove
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param dir Path to the directory containing the stored machine to be synced.
 /// \returns 0 for success, non zero code for error.
-/// \details The expected usage is to sync after the machine using the stored files has been closed.
+/// \details Sync either after the machine using the stored files has been closed, or while a machine loaded
+/// from them with CM_SHARING_ALL is still using them.
 /// On success, all previous changes to the stored machine files are durable on disk.
+/// If \p m holds a machine, its stored page hash-tree cache is marked initialized first, so a load keeps its entries.
+/// A machine using the stored files changes them on any call, including cm_get_root_hash() and cm_get_proof(),
+/// so the stored machine is durable only as of the last sync.
 /// \warning Syncing while a machine is still using the stored files commits to disk only
 /// the changes that were meant to persist on disk (changes to shared backing stores), and
 /// only on systems with a unified page cache (Linux, macOS). Elsewhere, only data already

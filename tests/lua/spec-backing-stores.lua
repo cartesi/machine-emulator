@@ -818,6 +818,67 @@ describe("backing stores", function()
             end
         end)
 
+        local initialized_tag = 0x0250485443
+
+        local function read_tag(directory)
+            return (string.unpack("<I8", filesystem.read_file(directory .. "/hash_tree.phtc")))
+        end
+
+        it("should keep a stored cache uninitialized while it changes, until a sync, store or destruction", function()
+            local _ <close>, directory = tests_util.scope_temp_pathname()
+            local _ <close>, stored_directory = tests_util.scope_temp_pathname()
+            local _ <close> = tests_util.scope_exit(function()
+                for _, dir in ipairs({ directory, stored_directory }) do
+                    pcall(cartesi.machine.remove_stored, cartesi.machine, dir, cartesi.REMOVE_FORCED)
+                end
+            end)
+            local machine <close> = cartesi.machine({
+                ram = { length = 4096 },
+                hash_tree = { phtc_size = capacity },
+            }, {}, directory)
+            machine:get_root_hash()
+            expect.equal(read_tag(directory), 0)
+            machine:sync_stored(directory)
+            expect.equal(read_tag(directory), initialized_tag)
+            machine:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+            expect.equal(read_tag(directory), 0)
+            machine:store(stored_directory)
+            expect.equal(read_tag(stored_directory), initialized_tag)
+            machine:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+            expect.equal(read_tag(directory), 0)
+            machine:destroy()
+            expect.equal(read_tag(directory), initialized_tag)
+        end)
+
+        it("should rebuild a stored cache left uninitialized by an interrupted change", function()
+            local _ <close>, directory = tests_util.scope_temp_pathname()
+            do
+                local machine <close> = cartesi.machine({
+                    ram = { length = 4096 },
+                    hash_tree = { phtc_size = capacity },
+                }, {}, directory)
+                machine:write_memory(cartesi.AR_RAM_START, string.rep("A", 4096))
+                machine:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+            end
+            local _ <close> = tests_util.scope_exit(function()
+                cartesi.machine:remove_stored(directory)
+            end)
+            -- A process stopped mid-change leaves the tag uninitialized and the rest of the cache in any state
+            local filename = directory .. "/hash_tree.phtc"
+            local data = filesystem.read_file(filename)
+            data = write_word(write_word(data, 0, 0), entries_offset + 24, 1)
+            data = data:sub(1, payloads_offset) .. string.rep("\255", #data - payloads_offset)
+            filesystem.write_file(data, filename)
+            for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_ALL }) do
+                local machine <close> = cartesi.machine(directory, {}, sharing)
+                expect.equal(machine:get_root_hash(), tests_util.calculate_emulator_hash(machine))
+                expect.equal(
+                    machine:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE),
+                    cartesi.keccak256(string.rep("A", 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE))
+                )
+            end
+        end)
+
         it("should reuse stored entries without touching cached payloads", function()
             local _ <close>, directory = tests_util.scope_temp_pathname()
             local pages = { 0x80000000, 0x90000000, 0x90001000, 0xa0000000 }
@@ -1266,6 +1327,35 @@ describe("backing stores", function()
             end, "unknown remove mode")
             expect.truthy(filesystem.exists(dir .. "/config.json"))
         end)
+    end)
+
+    it("should rehash the ancestors of page hashes stored by an interrupted update", function()
+        local ram_length = 0x10000
+        local page = string.rep("B", 4096)
+        local page_hash
+        do
+            local machine <close> = cartesi.machine({ ram = { length = ram_length } })
+            machine:write_memory(cartesi.AR_RAM_START, page)
+            page_hash = machine:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_PAGE_SIZE)
+        end
+        local _ <close>, directory = tests_util.scope_temp_pathname()
+        do
+            local machine <close> = cartesi.machine({ ram = { length = ram_length } }, {}, directory)
+            machine:get_root_hash()
+            machine:write_memory(cartesi.AR_RAM_START, page)
+        end
+        local _ <close> = tests_util.scope_exit(function()
+            cartesi.machine:remove_stored(directory)
+        end)
+        -- An update interrupted after storing the page hash in its leaf leaves the page dirty and its ancestors stale
+        local filename = string.format("%s/%016x-%x.dht", directory, cartesi.AR_RAM_START, ram_length)
+        local data = filesystem.read_file(filename)
+        local leaf_offset = (ram_length // 4096) * #page_hash
+        filesystem.write_file(data:sub(1, leaf_offset) .. page_hash .. data:sub(leaf_offset + #page_hash + 1), filename)
+        for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_ALL }) do
+            local machine <close> = cartesi.machine(directory, {}, sharing)
+            expect.equal(machine:get_root_hash(), tests_util.calculate_emulator_hash(machine))
+        end
     end)
 
     it("should reject loading stores and clones whose config was not written", function()

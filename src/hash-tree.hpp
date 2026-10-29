@@ -162,6 +162,11 @@ public:
         return m_mapped_memory.get_flags().shared;
     }
 
+    /// \brief Marks the stored page hash-tree cache initialized again, unless a cache operation is in progress
+    void mark_stored_page_cache_initialized() const noexcept {
+        m_page_cache.mark_stored_initialized();
+    }
+
     /// \brief Resets cached hashes and dirty-page tracking to freshly initialized values.
     /// \details Keeps the sparse tree topology, backing-store mappings, and statistics.
     void clear(address_ranges ars) noexcept;
@@ -227,6 +232,10 @@ private:
     std::pmr::unsynchronized_pool_resource m_memory_pool;
     uint64_t m_sparse_node_hashes{0};
     std::array<uint64_t, HASH_TREE_LOG2_ROOT_SIZE> m_dense_node_hashes{};
+    /// \brief Whether to rehash ancestors of dirty pages whose hashes did not change, until an update succeeds
+    /// \details Stored dense trees left by an interrupted update, or a failed one, may hold the new hashes of dirty
+    /// pages without those of their ancestors.
+    bool m_bubble_up_unchanged_pages{true};
 };
 
 } // namespace cartesi

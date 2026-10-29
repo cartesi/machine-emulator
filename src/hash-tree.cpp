@@ -705,9 +705,11 @@ bool hash_tree::verify(address_ranges ars) const {
 void hash_tree::clear(address_ranges ars) noexcept {
     m_page_cache.clear();
     for (auto &ar : ars) {
-        ar.get_dense_hash_tree().clear();
+        // Mark pages dirty before clearing their hashes, so an interrupted clear never leaves a clean page with a
+        // cleared hash in a stored hash tree.
         // Include padding leaves in ranges whose length is not a power of two.
         ar.get_dirty_page_tree().mark_dirty_pages_and_up(0, std::bit_ceil(ar.get_length()));
+        ar.get_dense_hash_tree().clear();
     }
     for (auto &node : m_sparse_nodes) {
         node.hash = {};

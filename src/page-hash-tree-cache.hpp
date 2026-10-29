@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -502,6 +503,7 @@ public:
             if (e.get_borrowed()) {
                 throw std::runtime_error{"page hash-tree cache entry already borrowed"};
             }
+            mark_stored_uninitialized();
             // Return borrowed entry
             return std::ref(e.set_borrowed(true));
         }
@@ -513,6 +515,7 @@ public:
     /// \param hit Receives true if page was found in cache, false if another page was evicted and its entry returned
     /// \returns Entry for page, nothing if all pages have already been borrowed
     std::optional<entry_metadata::ref> borrow_entry(address_type paddr_page, bool &hit) {
+        mark_stored_uninitialized();
         // Found entry for page in map?
         if (auto it = m_map.find(paddr_page); it != m_map.end()) {
             entry_metadata &e = it->second;
@@ -595,6 +598,7 @@ public:
 
     /// \brief Clears entire cache
     void clear() noexcept {
+        mark_stored_uninitialized();
         m_lru.clear();
         m_map.clear();
         for (auto &e : m_entries) {
@@ -618,8 +622,20 @@ public:
         return m_stats;
     }
 
+    /// \brief Marks a stored cache initialized again, unless an entry is still borrowed
+    /// \details Call only between cache operations, when the cache is consistent.
+    void mark_stored_initialized() const noexcept {
+        if (m_initialized == initialized_tag::uninitialized &&
+            std::ranges::none_of(m_entries, [](const auto &e) { return e.get_borrowed(); })) {
+            // Keep the compiler from moving earlier changes to a stored cache after its tag
+            std::atomic_signal_fence(std::memory_order_seq_cst);
+            m_initialized = initialized_tag::initialized;
+        }
+    }
+
     /// \brief Destructor
     ~page_hash_tree_cache() {
+        mark_stored_initialized();
 #ifdef DUMP_HASH_TREE_STATS
         auto s = get_stats();
         auto pages_all = s.page_hits + s.page_misses;
@@ -649,6 +665,16 @@ public:
     }
 
 private:
+    /// \brief Marks a stored cache uninitialized before changing it, so stopping mid-change leaves it uninitialized
+    /// \details Loading initializes an uninitialized cache anew. Changes to a private cache never reach its file.
+    void mark_stored_uninitialized() noexcept {
+        if (m_mapped_memory.get_flags().shared && m_initialized == initialized_tag::initialized) {
+            m_initialized = initialized_tag::uninitialized;
+            // Keep the compiler from moving later changes to the stored cache before its tag
+            std::atomic_signal_fence(std::memory_order_seq_cst);
+        }
+    }
+
     /// \brief Returns the payload array offset aligned to the machine page size for a checked capacity
     static size_t get_payloads_offset(size_t num_entries) noexcept {
         const auto metadata_length = sizeof(initialized_tag) + sizeof(lru) + (num_entries * sizeof(entry_metadata));

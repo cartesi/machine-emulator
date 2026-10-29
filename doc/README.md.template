@@ -3095,6 +3095,7 @@ Four functions manage stored machines.
 `machine:clone_stored(<source_directory>, <destination_directory>)` clones a stored machine cheaply, hard-linking read-only backing files and using reference links for writable ones where the filesystem supports them.
 `machine:rename_stored(<source_directory>, <destination_directory>)` atomically renames a stored machine without overwriting the destination and syncs the affected parent directories before returning.
 `machine:sync_stored(<directory>)` flushes the state held in the backing stores of a loaded directory to permanent storage.
+A machine using the stored files changes them on any call, including `get_root_hash` and `get_proof`, so the stored machine is durable only as of the last `sync_stored`.
 `machine:remove_stored(<directory>)` removes a stored machine from disk and makes the removal durable.
 All four are also available on `cartesi.machine` itself, so a script can manipulate stored machines without holding a loaded instance.
 These functions are the basis for the `clone:` and `sync` keys of the command-line utility's `--load` option.

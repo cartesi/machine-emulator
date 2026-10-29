@@ -174,6 +174,12 @@ typedef enum cm_sharing_mode {
     CM_SHARING_ALL = 2,    ///< Share all backing stores, all machine changes will be on-disk
 } cm_sharing_mode;
 
+/// \brief Stored machine removal modes.
+typedef enum cm_remove_mode {
+    CM_REMOVE_STORED = 0, ///< Remove an empty directory, or a loadable stored machine with no other files
+    CM_REMOVE_FORCED = 1, ///< Remove a directory holding any regular files
+} cm_remove_mode;
+
 /// \brief HTIF tohost/fromhost register field shifts.
 typedef enum cm_htif_shift {
     CM_HTIF_DEV_SHIFT = 56,
@@ -571,6 +577,7 @@ CM_API cm_error cm_load_new(const char *dir, const char *runtime_config, cm_shar
 /// \returns 0 for success, non zero code for error.
 /// \details The function refuses to store into an existing directory (it will not overwrite an existing machine).
 /// If the store is interrupted, the directory is left incomplete and cannot be loaded.
+/// Remove it with cm_remove_stored() in CM_REMOVE_FORCED mode.
 /// The stored files are durable only after cm_sync_stored() succeeds.
 CM_API cm_error cm_store(const cm_machine *m, const char *dir, cm_sharing_mode sharing);
 
@@ -584,6 +591,7 @@ CM_API cm_error cm_store(const cm_machine *m, const char *dir, cm_sharing_mode s
 /// Sparsity of files is preserved.
 /// The source directory machine must not have a running instance.
 /// If the clone is interrupted, the destination directory is left incomplete and cannot be loaded.
+/// Remove it with cm_remove_stored() in CM_REMOVE_FORCED mode.
 /// The cloned files are durable only after cm_sync_stored() succeeds.
 CM_API cm_error cm_clone_stored(const cm_machine *m, const char *from_dir, const char *to_dir);
 
@@ -600,12 +608,18 @@ CM_API cm_error cm_rename_stored(const cm_machine *m, const char *from_dir, cons
 /// \brief Removes all files and the directory of a previously stored machine.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param dir Path to the directory containing the stored machine to be removed.
+/// \param mode Removal mode.
+/// CM_REMOVE_STORED: The directory must be empty, or hold a loadable stored machine and no other files.
+/// CM_REMOVE_FORCED: The directory may hold any regular files, such as an incomplete stored machine left by
+/// an interrupted cm_store() or cm_clone_stored().
 /// \returns 0 for success, non zero code for error.
 /// \details The stored machine must not be in use.
-/// On success, the entire directory and all machine files are deleted, and the
+/// In both modes, the directory must hold only regular files, and nothing is removed otherwise.
+/// On success, the entire directory and all its files are deleted, and the
 /// removed parent directory entry is durable on disk.
 /// On failure, some files or the directory may remain.
-CM_API cm_error cm_remove_stored(const cm_machine *m, const char *dir);
+/// An interrupted removal can be completed by calling the function again with the same mode.
+CM_API cm_error cm_remove_stored(const cm_machine *m, const char *dir, cm_remove_mode mode);
 
 /// \brief Flushes all files of a previously stored machine to permanent storage.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).

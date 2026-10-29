@@ -513,6 +513,16 @@ static cartesi::sharing_mode convert_from_c(cm_sharing_mode sharing) {
     throw std::domain_error{"unknown sharing mode"};
 }
 
+static cartesi::remove_mode convert_from_c(cm_remove_mode mode) {
+    switch (mode) {
+        case CM_REMOVE_STORED:
+            return cartesi::remove_mode::stored;
+        case CM_REMOVE_FORCED:
+            return cartesi::remove_mode::forced;
+    }
+    throw std::domain_error{"unknown remove mode"};
+}
+
 static cartesi::i_machine *convert_from_c(cm_machine *m) {
     if (m == nullptr) {
         throw std::invalid_argument("invalid machine");
@@ -708,14 +718,14 @@ cm_error cm_rename_stored(const cm_machine *m, const char *from_dir, const char 
     return cm_result_failure();
 }
 
-cm_error cm_remove_stored(const cm_machine *m, const char *dir) try {
+cm_error cm_remove_stored(const cm_machine *m, const char *dir, cm_remove_mode mode) try {
     if (dir == nullptr) {
         throw std::invalid_argument("invalid dir");
     }
     if (m == nullptr) {
-        cartesi::machine::remove_stored(dir);
+        cartesi::machine::remove_stored(dir, convert_from_c(mode));
     } else {
-        convert_from_c(m)->remove_stored(dir);
+        convert_from_c(m)->remove_stored(dir, convert_from_c(mode));
     }
     return cm_result_success();
 } catch (...) {

@@ -30,7 +30,9 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
+#include <vector>
 
 #include "access-log.hpp"
 #include "address-range-constants.hpp"
@@ -608,9 +610,48 @@ static void for_each_stored_filename(const std::string &dir, const F &func) {
     func(machine_config::get_config_filename(dir));
 }
 
-void machine::remove_stored(const std::string &dir) {
-    // Remove all files
-    for_each_stored_filename(dir, os::remove_file);
+void machine::remove_stored(const std::string &dir, remove_mode mode) {
+    if (dir.empty()) {
+        throw std::invalid_argument{"directory name cannot be empty"};
+    }
+    std::vector<std::string> filenames;
+    for (const auto &name : os::list_directory(dir)) {
+        filenames.push_back(std::string{dir}.append("/").append(name));
+    }
+
+    // A stored machine holds only regular files, so refuse anything else before removing any file
+    for (const auto &filename : filenames) {
+        std::error_code ec;
+        const auto status = std::filesystem::symlink_status(filename, ec);
+        if (ec || !std::filesystem::is_regular_file(status)) {
+            throw std::runtime_error{"unable to remove stored machine: '" + filename + "' is not a file"};
+        }
+    }
+
+    // Unless forced, only remove the files of a loadable stored machine, refusing any other file
+    if (mode != remove_mode::forced && !filenames.empty()) {
+        std::vector<std::string> stored_filenames;
+        for_each_stored_filename(dir, [&](const std::string &filename) { stored_filenames.push_back(filename); });
+        for (const auto &filename : filenames) {
+            if (!std::ranges::contains(stored_filenames, filename)) {
+                throw std::runtime_error{"unable to remove stored machine: '" + filename + "' is not one of its files"};
+            }
+        }
+    }
+
+    // Remove all files, the config file last, so an interrupted removal can be resumed without forcing
+    const auto config_filename = machine_config::get_config_filename(dir);
+    bool has_config = false;
+    for (const auto &filename : filenames) {
+        if (filename == config_filename) {
+            has_config = true;
+        } else {
+            os::remove_file(filename);
+        }
+    }
+    if (has_config) {
+        os::remove_file(config_filename);
+    }
 
     // Remove directory
     os::remove_directory(dir);

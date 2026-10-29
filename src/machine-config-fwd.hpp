@@ -20,6 +20,7 @@
 namespace cartesi {
 
 enum class sharing_mode;
+enum class remove_mode;
 struct machine_config;
 struct memory_range_config;
 

@@ -719,9 +719,9 @@ void jsonrpc_machine::do_rename_stored(const std::string &from_dir, const std::s
     request("machine.rename_stored", std::tie(from_dir, to_dir), result);
 }
 
-void jsonrpc_machine::do_remove_stored(const std::string &dir) const {
+void jsonrpc_machine::do_remove_stored(const std::string &dir, remove_mode mode) const {
     bool result = false;
-    request("machine.remove_stored", std::tie(dir), result);
+    request("machine.remove_stored", std::tie(dir, mode), result);
 }
 
 void jsonrpc_machine::do_sync_stored(const std::string &dir) const {

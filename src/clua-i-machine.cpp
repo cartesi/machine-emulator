@@ -961,7 +961,8 @@ static int machine_obj_index_rename_stored(lua_State *L) {
 static int machine_obj_index_remove_stored(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const char *dir = luaL_checkstring(L, 2);
-    if (cm_remove_stored(m.get(), dir) != 0) {
+    const auto mode = static_cast<cm_remove_mode>(luaL_optinteger(L, 3, CM_REMOVE_STORED));
+    if (cm_remove_stored(m.get(), dir, mode) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     return 0;

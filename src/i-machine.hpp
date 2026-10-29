@@ -126,8 +126,8 @@ public:
     }
 
     /// \brief Removes a stored machine from a directory and makes the removal durable
-    void remove_stored(const std::string &dir) const {
-        do_remove_stored(dir);
+    void remove_stored(const std::string &dir, remove_mode mode = remove_mode::stored) const {
+        do_remove_stored(dir, mode);
     }
 
     /// \brief Flushes a stored machine in a directory to permanent storage
@@ -404,7 +404,7 @@ private:
     virtual void do_store(const std::string &dir, sharing_mode sharing) const = 0;
     virtual void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const = 0;
     virtual void do_rename_stored(const std::string &from_dir, const std::string &to_dir) const = 0;
-    virtual void do_remove_stored(const std::string &dir) const = 0;
+    virtual void do_remove_stored(const std::string &dir, remove_mode mode) const = 0;
     virtual void do_sync_stored(const std::string &dir) const = 0;
     virtual interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) = 0;
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;

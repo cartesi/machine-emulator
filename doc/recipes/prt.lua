@@ -1089,8 +1089,8 @@ local function remove_leftover_stored_machine(directory)
 end
 
 -- A stored pair runs its machine on the backing stores of its directory and snapshots by cloning
--- that directory. Committing only syncs, and the next snapshot replaces the committed one. Closing
--- only releases the machine, so an error leaves the disk as a crash would.
+-- that directory. Committing removes the snapshot, so callers commit only after recording the boundary.
+-- Closing only releases the machine, so an error leaves the disk as a crash would.
 local stored_machine_pair_meta = { __index = setmetatable({}, { __index = machine_pair_methods }) }
 local stored_machine_pair_methods = stored_machine_pair_meta.__index
 function stored_machine_pair_methods:close()
@@ -1106,23 +1106,19 @@ function stored_machine_pair_methods:move()
 end
 
 function stored_machine_pair_methods:snapshot()
-    if self.backup_directory and self.backup_committed then
-        self.machine:remove_stored(self.backup_directory)
-        self.backup_directory = nil
-    end
     assert(not self.backup_directory, "machine already has a snapshot")
     self.backup_directory = clone_loaded_directory(self.machine, self.directory, self.directory .. ".revert")
-    self.backup_committed = false
 end
 
 function stored_machine_pair_methods:commit()
-    self.machine:sync_stored(self.directory)
-    self.backup_committed = true
+    if self.backup_directory then
+        self.machine:remove_stored(self.backup_directory)
+        self.backup_directory = nil
+    end
 end
 
 function stored_machine_pair_methods:revert()
     local backup_directory = assert(self.backup_directory, "no snapshot to revert to")
-    assert(not self.backup_committed, "cannot revert a committed input")
     local machine = self.machine
     machine:destroy()
     machine:remove_stored(self.directory)
@@ -1958,6 +1954,7 @@ end
 
 -- Runs from an input boundary to the input mcycle offset or a fixed point, and returns the break
 -- reason, the manual yield reason, and the input's base mcycle. Outputs stay local until acceptance.
+-- A rejected input is reverted here. Callers commit a completed input once it no longer needs its snapshot.
 -- luacheck: push ignore self
 function player_meta.__index:run_to_input_mcycle_offset(
     builder,
@@ -1998,7 +1995,6 @@ function player_meta.__index:run_to_input_mcycle_offset(
         if is_rx_accepted(yield_reason) then
             pair.revert_root_hash = machine:get_root_hash()
         end
-        pair:commit()
     end
     builder:end_input(machine)
     return break_reason, yield_reason, input_mcycle_base
@@ -2038,8 +2034,12 @@ function player_meta.__index:run_to_epoch_input_offset(pair, epoch_input_offset_
             input_data,
             MAX_MCYCLES_PER_ADVANCE_STATE
         )
-        if not is_rx_accepted(yield_reason) and not is_rx_rejected(yield_reason) then
+        local stopped = not is_rx_accepted(yield_reason) and not is_rx_rejected(yield_reason)
+        if stopped then
             assert(is_at_fixed_point(break_reason), "input stopped outside a fixed point")
+        end
+        pair:commit()
+        if stopped then
             break
         end
     end
@@ -2075,10 +2075,11 @@ function event_handler.input_added(self, epoch_input_offset, path)
             self.epoch_stopped = true
         end
     end
-    assert(not pair.backup_machine, "input stopped before completion")
     self.machine_cache:consider(epoch_input_offset + 1, pair.machine)
     self.output_count = self.output_count + #outputs
     self:commit_epoch_state(pair, builder, outputs)
+    -- The boundary is recorded, so the input no longer needs its snapshot
+    pair:commit()
     self.epoch_pair, self.epoch_builder = pair:move(), builder
 end
 
@@ -2092,13 +2093,12 @@ function event_handler.epoch_sealed(self, input_count)
     assert(input_count == nil or input_count == self.input_count, "sealed input count mismatch")
     local pair <close> = assert(self.epoch_pair, "epoch is not open")
     self.epoch_pair = nil
-    assert(not pair.backup_machine, "cannot seal an unfinished input")
     self.outputs_merkle_root_proof = get_outputs_merkle_root_proof(pair.machine)
     self.final_state_hash = pair.machine:get_root_hash()
     local builder = self.epoch_builder
     self.epoch_builder = nil
     self.mcycle_forest = builder:end_epoch()
-    self:seal_epoch_state(pair.machine)
+    self:seal_epoch_state(pair)
 end
 
 -- docs:begin collect_mcycle_bundle
@@ -2434,8 +2434,9 @@ local function store_epoch_state(self, root_hash, files, pad_bundle)
     self.state_files = files
 end
 
--- Commits the boundary the epoch pair has reached. The input's snapshot stays until the next input
--- replaces it, so a crash before this commit reverts.
+-- Commits the boundary the epoch pair has reached. The input's snapshot stays until the caller commits
+-- the pair after this, so a crash before this commit reverts. Any call on the machine changes its stored
+-- files, so the directory is synced after the last one, before state.json records the boundary.
 function stored_player_methods:commit_epoch_state(pair, builder, outputs)
     local directory = self.epoch_directory
     local files = get_boundary_files(self.input_count)
@@ -2445,7 +2446,9 @@ function stored_player_methods:commit_epoch_state(pair, builder, outputs)
     if #outputs > 0 then
         store_outputs(self, outputs)
     end
-    store_epoch_state(self, pair.machine:get_root_hash(), files, builder.pad_bundle)
+    local root_hash = pair.machine:get_root_hash()
+    pair.machine:sync_stored(pair.directory)
+    store_epoch_state(self, root_hash, files, builder.pad_bundle)
 end
 
 -- Commits a uarch claim the player built. Its bundles, once opened, are stored with its forest.
@@ -2496,11 +2499,13 @@ end
 
 -- Commits the epoch seal. The mcycle forest replaces the open epoch's builder. The next epoch's checkpoint is
 -- stored first, while the player still owns the final machine, so a seal resent after a crash stores it again.
-function stored_player_methods:seal_epoch_state(machine)
+function stored_player_methods:seal_epoch_state(pair)
     if self.checkpoint_directory then
-        store_next_epoch_checkpoint(self, machine, self.checkpoint_directory)
+        store_next_epoch_checkpoint(self, pair.machine, self.checkpoint_directory)
     end
     local directory = self.epoch_directory
+    -- Sealing called the machine after the last boundary commit, so its directory is synced again.
+    pair.machine:sync_stored(pair.directory)
     hash_tree.frontier_forest_store(self.mcycle_forest, directory .. "/forests", directory .. "/" .. MCYCLE_FOREST_FILE)
     store_epoch_state(self, self.final_state_hash, {
         outputs_frontier = self.state_files.outputs_frontier,

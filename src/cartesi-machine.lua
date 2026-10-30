@@ -1018,6 +1018,8 @@ where options are:
     exit with failure in case the generated machine is not compatible with
     Rolling Cartesi Machine templates. Requires a manual rx-accepted yield
     with the expected outputs Merkle root in the tx buffer.
+    A machine using the Keccak-256 hash function must also have a pristine
+    microarchitecture state.
     By default, expects the empty outputs tree padded with zero leaves.
     For a non-genesis template, outputs_merkle_root names a file containing
     the expected root as exactly 32 raw bytes.
@@ -4465,6 +4467,14 @@ local function assert_rolling_template(m, opts)
         or hash_tree.frontier_get_root_hash(hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256"))
     assert(#expected_root == cartesi.HASH_SIZE, "invalid outputs_merkle_root size: expected 32 bytes")
     if data ~= expected_root then exit_code = 2 end
+    -- Only Keccak-256 machines can run the uarch.
+    if
+        initial_config.hash_tree.hash_function == "keccak256"
+        and m:get_node_hash(cartesi.UARCH_STATE_START_ADDRESS, cartesi.UARCH_STATE_LOG2_SIZE)
+            ~= cartesi.UARCH_PRISTINE_STATE_HASH
+    then
+        exit_code = 2
+    end
 end
 
 -- The inner loop of a run with no cmio requests ignores automatic yields.
@@ -4744,12 +4754,12 @@ if saved_machine_hash then
     if backup:has_snapshot() then backup:revert() end
     assert(machine:get_root_hash() == saved_machine_hash, "machine changed after the epoch state boundary")
 end
+if cmdline.assert_rolling_template then assert_rolling_template(machine, cmdline.assert_rolling_template) end
 if cmdline.store_dir then store_machine(machine, initial_config, cmdline.store_dir, cmdline.store_sharing) end
 if cmdline.load_sync then
     stderr("Syncing machine: please wait\n")
     machine:sync_stored(cmdline.load_dir)
 end
-if cmdline.assert_rolling_template then assert_rolling_template(machine, cmdline.assert_rolling_template) end
 if backup:has_snapshot() then backup:revert() end
 if not cmdline.remote_address or cmdline.remote_destroy then machine:destroy() end
 os.exit(exit_code, true)

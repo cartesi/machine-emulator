@@ -58,6 +58,10 @@ local function new_fake_machine(root_hash, mcycle, counts, outputs_root)
         end
         return self.mcycle
     end
+    function machine.get_node_hash(_, address, log2_size)
+        assert(address == cartesi.UARCH_STATE_START_ADDRESS and log2_size == cartesi.UARCH_STATE_LOG2_SIZE)
+        return cartesi.UARCH_PRISTINE_STATE_HASH
+    end
     function machine:get_root_hash()
         return self.root_hash
     end
@@ -581,9 +585,8 @@ for _, phase in ipairs({ "clone", "hash", "yield", "cache_fork", "begin_epoch" }
         if phase == "hash" then
             machine.root_hash = keccak("wrong initial state")
         elseif phase == "yield" then
-            local read_reg = machine.read_reg
-            machine.read_reg = function(m, name)
-                return name == "iflags_Y" and 0 or read_reg(m, name)
+            machine.run = function()
+                return cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
             end
         elseif phase == "cache_fork" then
             machine.fork_server = function()
@@ -3098,11 +3101,11 @@ if arg[1] then
         )
     end
 
-    -- Puts a machine in a terminal state. Halt leaves no yield pending, overflow closes the input
-    -- budget at the current cycle, and the two manual yields carry a reason no delivery applies to.
+    -- Puts a machine in a terminal state. Only the malformed halt_with_yield case retains a yield
+    -- at halt. Overflow closes the input budget; the other yields carry a reason no delivery applies to.
     local function force_terminal(m, terminal)
-        if terminal == "halt" then
-            m:write_reg("iflags_Y", 0)
+        if terminal == "halt" or terminal == "halt_with_yield" then
+            m:write_reg("iflags_Y", terminal == "halt_with_yield" and 1 or 0)
             m:write_reg("iflags_H", 1)
         elseif terminal == "exception" or terminal == "unexpected" then
             local reason = terminal == "exception" and cartesi.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION or 0xffff
@@ -3119,7 +3122,7 @@ if arg[1] then
 
     -- A template that is not waiting for an input is a deployment error. Check it once
     -- at construction, independently of the sender's no-op transitions.
-    for _, terminal in ipairs({ "halt", "exception", "unexpected", "overflow" }) do
+    for _, terminal in ipairs({ "halt", "halt_with_yield", "exception", "unexpected", "overflow" }) do
         local template = prt.new_machine(initial_state_hash)
         force_terminal(template, terminal)
         local template_cache <close> = prt.new_forked_machine_cache(template)
@@ -3130,6 +3133,18 @@ if arg[1] then
             message:find("initial machine is not waiting on an rx-accepted manual yield", 1, true),
             terminal .. " template was refused for the wrong reason: " .. message
         )
+    end
+
+    -- A manual yield takes precedence over an exhausted input budget, including the saturated
+    -- counter. Checking template readiness must not execute or mutate either boundary.
+    for _, mcycle in ipairs({ 1 << 48, cartesi.MCYCLE_MAX }) do
+        local template = prt.new_machine(initial_state_hash)
+        template:write_reg("mcycle", mcycle)
+        template:write_reg("imcyclemax", mcycle)
+        local root = template:get_root_hash()
+        local template_cache <close> = prt.new_forked_machine_cache(template)
+        local player = new_test_player(dapp_contract.geometry, template_cache)
+        assert(player.epoch_pair.machine:get_root_hash() == root, "template validation changed the budget boundary")
     end
 
     -- Terminal inputs and empty epochs must fill claims and reconstructed bundles from a state

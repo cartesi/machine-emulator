@@ -934,14 +934,20 @@ local function is_tx_output(yield_reason)
     return yield_reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT
 end
 
--- Check the initial yield through its header registers without reading an output payload.
+-- Check readiness at the current cycle, so halt takes precedence over manual yield as in the CLI.
+-- Inspect the yield header without reading an output payload, and require pristine uarch state.
 local function assert_rolling_template(machine)
     assert(
-        machine:read_reg("iflags_Y") ~= 0
+        is_yielded_manual(machine:run(machine:read_reg("mcycle")))
             and machine:read_reg("htif_tohost_dev") == cartesi.HTIF_DEV_YIELD
             and machine:read_reg("htif_tohost_cmd") == cartesi.HTIF_YIELD_CMD_MANUAL
             and machine:read_reg("htif_tohost_reason") == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED,
         "initial machine is not waiting on an rx-accepted manual yield"
+    )
+    assert(
+        machine:get_node_hash(cartesi.UARCH_STATE_START_ADDRESS, cartesi.UARCH_STATE_LOG2_SIZE)
+            == cartesi.UARCH_PRISTINE_STATE_HASH,
+        "initial machine uarch state is not pristine"
     )
 end
 

@@ -4943,6 +4943,42 @@ dofile(%q)
         end
     end)
 
+    it("rolling template checks the uarch state of keccak256 machines", function()
+        local genesis = cartesi.fromhex("0x0a162946e56158bac0673e6dd3bdfdc1e4a0e7744a120fdb640050c8d7abe1c6")
+        -- The pristine uarch state hash is a keccak256 hash, so only keccak256 machines check the uarch state.
+        for _, case in ipairs({
+            { hash_function = "keccak256", change = function() end, rc = 0 },
+            {
+                hash_function = "keccak256",
+                change = function(machine)
+                    machine:write_memory(cartesi.UARCH_RAM_START_ADDRESS + 8, "\1")
+                end,
+                rc = 2,
+            },
+            {
+                hash_function = "keccak256",
+                change = function(machine)
+                    machine:write_reg("uarch_halt", 1)
+                end,
+                rc = 2,
+            },
+            { hash_function = "sha256", change = function() end, rc = 0 },
+        }) do
+            local machine <close> = cartesi.machine({
+                ram = { length = 4096 },
+                hash_tree = { hash_function = case.hash_function },
+            })
+            machine:write_reg("iflags_Y", 1)
+            machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+            machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+            machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+            machine:write_reg("htif_tohost_data", #genesis)
+            machine:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, genesis)
+            case.change(machine)
+            expect.equal((run_rolling_template(machine)), case.rc)
+        end
+    end)
+
     it("rolling template rejects missing or malformed expected root files", function()
         local machine <close> = cartesi.machine({ ram = { length = 4096 } })
         machine:write_reg("iflags_Y", 1)

@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed `dependencies.lock` to define the kernel and rootfs download URLs
 - Bumped machine configuration archive version from 8 to 9
 - Bumped JSON-RPC protocol version to 0.9.0
+- Changed `--assert-rolling-template` to require a pristine uarch state in Keccak-256 machines
 
 ### Removed
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`

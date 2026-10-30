@@ -129,6 +129,7 @@ release?=no
 sanitize?=no
 fuzz?=no
 coverage?=no
+threads?=yes
 git_commit?=
 
 # If not build type is chosen, set the default to release with debug information,

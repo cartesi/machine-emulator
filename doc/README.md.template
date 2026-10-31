@@ -4944,7 +4944,7 @@ The constructor is `new_fixed_point_tree`:
 ```
 In the excerpt, `<values>` holds the base values starting at `<first>`, `<base_height>` is their height, and `<log2_count>` is the number of levels built above them.
 The helper `get_or_last` reads the entry at a 0-based index of a level, returning the last stored entry for any index past the end.
-The helper `get_value_hash` returns the hash of an entry, the entry itself when it is a raw hash and its root hash when it is a tree.
+The helper `get_value_hash` returns the hash of a value, the value itself when it is a raw hash and its root hash when it is a tree.
 Each level stores the distinct parents of its children plus the first repeated one.
 With *n* stored children, the explicit pairs give the first *n*/2 parents, rounded down.
 The next parent pairs the last child with itself (when *n* is even), or the unpaired last child with its implicit copy (when *n* is odd).
@@ -4978,9 +4978,9 @@ The constructor is `frontier_forest`, which takes the same height and hash type 
 Three functions append to it, mirroring `frontier_push_back`, `frontier_append`, and `frontier_pad_back`.
 The function `frontier_forest_push_back` appends one value, `frontier_forest_append` appends raw hashes in a half-open range with the same defaults as `frontier_append`, and `frontier_forest_pad_back` appends a number of copies of one value, or fills the rest of the forest when the count is omitted.
 Each also takes the height of what it appends.
-A value is a raw hash, standing for a subtree of that height, or a completed forest, which keeps its own height and all of its nodes.
-A completed forest goes in as the complete tree at its top level, which can then become a base value of a fixed-point tree.
-Appending a completed forest is how small trees, built separately, nest into a larger one.
+A value is a raw hash, standing for a subtree of that height, or a full forest, which keeps its own height and all of its nodes.
+A full forest goes in as the complete tree at its top level, which can then become a base value of a fixed-point tree.
+Appending a full forest is how small trees, built separately, nest into a larger one.
 
 Appended values do not go into the levels right away.
 They accumulate in a pending array of equal-height values, together with a count of how many more times its last value repeats, so a repetition of any length costs one stored value:
@@ -5010,7 +5010,7 @@ A query that reaches a raw hash above its target cannot go further, and both fun
 Such a raw hash can be opened later with `frontier_forest_expand_leaf`:
 ```{.lua replace=proof_module/source/frontier_forest_expand_leaf title="hash-tree.lua (excerpt)"}
 ```
-It replaces the opaque hash at `<position>` with a completed forest of the same height, after checking that the forest's root is the hash it replaces.
+It replaces the opaque hash at `<position>` with a full forest of the same height, after checking that the forest's root is the hash it replaces.
 No ancestor hash changes, so the forest's root is unaffected.
 When the opaque hash is the repeated last value of a fixed-point tree, every repetition reads the same entry, so all of them share the expansion.
 A forest stored with `frontier_forest_store` keeps its trees in a directory, one file per tree named by its hash, and `frontier_forest_load` reopens it.

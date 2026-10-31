@@ -420,8 +420,8 @@ end
 
 -- A forest is an appendable frontier that retains complete trees instead of only their hashes.
 -- A tree is a complete subtree retained by a forest and is either fixed-point or mixed.
--- A fixed-point tree stores values as leaves and raw hashes at its inner levels up to the root.
--- At every level, its last stored entry implicitly repeats until the level is complete.
+-- A fixed-point tree stores its base values, and raw hashes on the levels above them up to the
+-- root. At every level, its last stored entry implicitly repeats until the level is complete.
 -- A mixed tree joins two equal-height values without changing their internal representations.
 -- A value is a raw hash or a tree. Forest levels, mixed tree children, and fixed-point tree base
 -- values all hold values.
@@ -432,9 +432,8 @@ local function is_tree(value)
     return kind == "fixed_point" or kind == "mixed"
 end
 
--- Fixed-point-tree levels contain raw hashes or complete trees at their base and raw hashes
--- above it.
-local function get_value_hash(root) return type(root) == "string" and root or root.hash end
+-- Returns the hash of a value: the raw hash itself, or the tree's root hash.
+local function get_value_hash(value) return type(value) == "string" and value or value.hash end
 
 -- Returns the value at a 0-based logical index, repeating the last stored value beyond
 -- the explicit prefix.
@@ -699,37 +698,36 @@ local function store_expansion(forest, tree)
     sync_trees(forest, written)
 end
 
--- Descends from the value at container[key], whose height is given, along leaf_index until bit
--- reaches stop_bit. When siblings is given, appends the path siblings from the root downward. A raw
--- hash with a stored tree is replaced by that tree. Otherwise it is opaque below its height, so a
--- query below one fails.
-local function descend_tree(forest, container, key, height, leaf_index, bit, stop_bit, siblings)
-    if bit == stop_bit then return get_value_hash(container[key]) end
+-- Descends from the value at container[key], whose height is given, toward position until it
+-- reaches the node at stop_height. When siblings is given, appends the path siblings from the root
+-- downward. A raw hash with a stored tree is replaced by that tree. Otherwise it is opaque below its
+-- height, so a query below one fails.
+local function descend_tree(forest, container, key, height, position, stop_height, siblings)
+    if height == stop_height then return get_value_hash(container[key]) end
     local tree = load_value(forest, container, key, height)
     if not is_tree(tree) then return nil, "the node is below an opaque hash" end
     if tree.kind == "mixed" then
-        bit = bit >> 1
         local child, sibling = "left", "right"
-        if (leaf_index & bit) ~= 0 then
+        if (position & (1 << (height - 1))) ~= 0 then
             child, sibling = "right", "left"
         end
         append_if(siblings, get_value_hash(tree[sibling]))
-        return descend_tree(forest, tree, child, height - 1, leaf_index, bit, stop_bit, siblings)
+        return descend_tree(forest, tree, child, height - 1, position, stop_height, siblings)
     end
 
     local level_index = 0
     for relative_height = #tree - 2, 0, -1 do
-        bit = bit >> 1
+        local node_height = tree.base_height + relative_height
         level_index = 2 * level_index
-        if (leaf_index & bit) ~= 0 then level_index = level_index + 1 end
+        if (position & (1 << node_height)) ~= 0 then level_index = level_index + 1 end
         local values = tree[relative_height + 1]
         append_if(siblings, get_value_hash(get_or_last(values, level_index ~ 1)))
-        if bit == stop_bit then return get_value_hash(get_or_last(values, level_index)) end
+        if node_height == stop_height then return get_value_hash(get_or_last(values, level_index)) end
     end
 
     local values = tree[1]
     local index = math.min(level_index + 1, #values)
-    return descend_tree(forest, values, index, tree.base_height, leaf_index, bit, stop_bit, siblings)
+    return descend_tree(forest, values, index, tree.base_height, position, stop_height, siblings)
 end
 
 -- An empty frontier forest of the given height, ready to append 2^log2_max_leaves leaves.
@@ -761,18 +759,18 @@ end
 -- Returns the number of leaves covered by the forest, including its pending entries.
 local function frontier_forest_get_leaf_count(forest) return forest.leaf_count end
 
--- Validates a declared raw-hash height and applies its leaf default.
-local function normalize_hash_height(hash_height)
-    assert(hash_height == nil or (math.type(hash_height) == "integer" and hash_height >= 0), "invalid value height")
-    return hash_height or 0
+-- Validates a declared value height and applies its leaf default.
+local function normalize_value_height(value_height)
+    assert(value_height == nil or (math.type(value_height) == "integer" and value_height >= 0), "invalid value height")
+    return value_height or 0
 end
 
--- Returns one raw hash or a completed forest's root tree after validating it against
+-- Returns one raw hash or a full forest's root tree after validating it against
 -- the destination forest. Forests therefore never occur inside fixed-point or mixed trees.
 -- A stored or loaded forest may hold raw hashes whose trees are files in its directory, which
 -- the destination cannot reach, so only a forest that was never stored or loaded is a value.
 local function normalize_forest_value(forest, value, value_height)
-    local declared_height = normalize_hash_height(value_height)
+    local declared_height = normalize_value_height(value_height)
     if type(value) == "string" then
         assert(#value == cartesi.HASH_SIZE, "invalid hash size")
         return value, declared_height
@@ -861,7 +859,7 @@ local function frontier_forest_append(forest, hashes, begin_index, end_index, ha
     begin_index, end_index = normalize_hash_range(hashes, begin_index, end_index)
     local count = end_index - begin_index
     if count == 0 then return end
-    hash_height = normalize_hash_height(hash_height)
+    hash_height = normalize_value_height(hash_height)
     assert_forest_can_append(forest, hash_height, count)
     if should_flush_pending_hashes(forest.pending, hash_height) then forest_flush(forest, hash_height) end
     table.move(hashes, begin_index, end_index - 1, #forest.pending.values + 1, forest.pending.values)
@@ -869,7 +867,7 @@ local function frontier_forest_append(forest, hashes, begin_index, end_index, ha
     if forest.leaf_count == (1 << forest.height) then forest_flush(forest) end
 end
 
--- Appends one raw hash or completed forest.
+-- Appends one raw hash or full forest.
 local function frontier_forest_push_back(forest, value, value_height)
     value, value_height = normalize_forest_value(forest, value, value_height)
     assert_forest_can_append(forest, value_height, 1)
@@ -883,7 +881,7 @@ local function frontier_forest_push_back(forest, value, value_height)
     if forest.leaf_count == (1 << forest.height) then forest_flush(forest) end
 end
 
--- Appends count copies of one raw hash or completed forest.
+-- Appends count copies of one raw hash or full forest.
 -- Omitting count fills the forest.
 -- Mutates the forest in place: validates, appends the base to the pending partial array when
 -- its last value is not already that base, and records the additional implicit copies in pad_count. The
@@ -932,16 +930,16 @@ end
 -- The node hash at height whose first covered leaf is position, following the machine API's
 -- position-first argument order. Requires the forest to be full and position to be aligned
 -- to the node size. Returns nil and an error message below an opaque hash. Invalid
--- arguments and incomplete forests still raise errors. Loads stored trees on the path and
--- otherwise does not mutate the forest. O(log2_max_leaves).
+-- arguments and forests that are not full still raise errors. Loads stored trees on the path
+-- and otherwise does not mutate the forest. O(log2_max_leaves).
 local function frontier_forest_get_node_hash(forest, position, height)
     local top = forest.height + 1
     assert(forest[top], "the forest is not full")
     assert_valid_forest_node(forest, position, height)
-    return descend_tree(forest, forest, top, forest.height, position, 1 << forest.height, 1 << height)
+    return descend_tree(forest, forest, top, forest.height, position, height)
 end
 
--- Expands an opaque leaf of a full forest using a completed forest of the same height and
+-- Expands an opaque leaf of a full forest using a full forest of the same height and
 -- root hash. Position is a logical leaf address. Repeated entries share the expansion,
 -- including when the selected position lies in an implicit suffix. Coverage and cached
 -- ancestor hashes do not change. Stored trees on the path load as in a query. All checks
@@ -989,16 +987,15 @@ end
 -- node size. A caller proves across two stacked forests by
 -- appending the inner forest's siblings and then the outer forest's. Returns nil and an
 -- error message if the path reaches an opaque hash, leaving into unchanged. Invalid
--- arguments and incomplete forests still raise errors. Loads stored trees on the path and
--- otherwise does not mutate the forest.
+-- arguments and forests that are not full still raise errors. Loads stored trees on the path
+-- and otherwise does not mutate the forest.
 -- docs:begin frontier_forest_get_siblings
 local function frontier_forest_get_siblings(forest, position, height, into)
     local top = forest.height + 1
     assert(forest[top], "the forest is not full")
     assert_valid_forest_node(forest, position, height)
     local siblings = {}
-    local node, err =
-        descend_tree(forest, forest, top, forest.height, position, 1 << forest.height, 1 << height, siblings)
+    local node, err = descend_tree(forest, forest, top, forest.height, position, height, siblings)
     if not node then return nil, err end
     into = into or {}
     for i = #siblings, 1, -1 do

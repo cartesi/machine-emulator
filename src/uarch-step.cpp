@@ -930,14 +930,14 @@ static inline bool insnMatchOpcodeFunct3(uint32 insn, uint32 opcode, uint32 func
 
 /// \brief Returns true if the opcode, funct3 and funct7 fields of an instruction match the provided arguments
 static inline bool insnMatchOpcodeFunct3Funct7(uint32 insn, uint32 opcode, uint32 funct3, uint32 funct7) {
-    constexpr uint32 mask = (0x7f << 25) | (7 << 12) | 0x7f;
+    constexpr uint32 mask = 0xfe000000 | (7 << 12) | 0x7f;
     return (insn & mask) == (uint32ShiftLeft(funct7, 25) | uint32ShiftLeft(funct3, 12) | opcode);
 }
 
 /// \brief Returns true if the opcode, funct3 and 6 most significant bits of funct7 fields of an instruction match the
 /// provided arguments
 static inline bool insnMatchOpcodeFunct3Funct7Sr1(uint32 insn, uint32 opcode, uint32 funct3, uint32 funct7Sr1) {
-    constexpr uint32 mask = (0x3f << 26) | (7 << 12) | 0x7f;
+    constexpr uint32 mask = 0xfc000000 | (7 << 12) | 0x7f;
     return (insn & mask) == (uint32ShiftLeft(funct7Sr1, 26) | uint32ShiftLeft(funct3, 12) | opcode);
 }
 

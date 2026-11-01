@@ -21,8 +21,39 @@
 
 #include "address-range.hpp"
 #include "pmas-constants.hpp"
+#include "pmas.hpp"
 
 namespace cartesi {
+
+/// \brief Probe RAM, then binary-search the sorted nonempty PMA tail.
+/// Empty suffix entries compare as +infinity. A miss selects the synthetic empty
+/// PMA entry at PMA_MAX. The caller constructs and validates the selected address range.
+template <typename T, typename ENTRY>
+uint64_t find_pma_index(uint64_t paddr, ENTRY entry) {
+    const auto ram_entry = entry(PMA_RAM_INDEX);
+    const uint64_t ram_start = ram_entry.istart & PMA_ISTART_START_MASK;
+    if (ram_entry.ilength == 0) [[unlikely]] {
+        return PMA_RAM_INDEX;
+    }
+    if (paddr >= ram_start && ram_entry.ilength >= sizeof(T) && paddr - ram_start <= ram_entry.ilength - sizeof(T)) {
+        return PMA_RAM_INDEX;
+    }
+    uint64_t lower = 1;
+    uint64_t upper = PMA_MAX;
+    while (lower < upper) {
+        const uint64_t index = lower + ((upper - lower) / 2);
+        const auto current = entry(index);
+        const uint64_t start = current.istart & PMA_ISTART_START_MASK;
+        if (current.ilength == 0 || paddr < start) {
+            upper = index;
+        } else if (current.ilength >= sizeof(T) && paddr - start <= current.ilength - sizeof(T)) {
+            return index;
+        } else {
+            lower = index + 1;
+        }
+    }
+    return PMA_MAX;
+}
 
 /// \brief Returns address range associated to the PMA entry where a word falls.
 /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
@@ -36,64 +67,16 @@ auto &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
     [[maybe_unused]] auto note = a.make_scoped_note("find_pma");
     if constexpr (requires { a.template find_pma<T>(paddr, index); }) {
         return a.template find_pma<T>(paddr, index);
-    } else if constexpr (requires { a.read_pma_bounds(index); }) {
-        // Probe RAM, then binary-search the sorted nonempty tail, treating
-        // empty suffix entries as +infinity. A miss returns the synthetic empty
-        // PMA entry at PMA_MAX. Only the selected address range is constructed and validated.
-        index = PMA_RAM_INDEX;
-        const auto [ram_start, ram_length] = a.read_pma_bounds(index);
-        if (ram_length == 0) [[unlikely]] {
-            return a.read_pma(index);
-        }
-        if (paddr >= ram_start && ram_length >= sizeof(T) && paddr - ram_start <= ram_length - sizeof(T)) {
-            return a.read_pma(index);
-        }
-        uint64_t lower = 1;
-        uint64_t upper = PMA_MAX;
-        while (lower < upper) {
-            index = lower + ((upper - lower) / 2);
-            const auto [start, length] = a.read_pma_bounds(index);
-            // Constructible tails are sorted and disjoint. Empty slots are +infinity.
-            if (length == 0 || paddr < start) {
-                upper = index;
-            } else if (length >= sizeof(T) && paddr - start <= length - sizeof(T)) {
-                return a.read_pma(index);
-            } else {
-                lower = index + 1;
-            }
-        }
-        // PMA_MAX selects the accessor's synthetic empty PMA entry.
-        index = PMA_MAX;
-        return a.read_pma(index);
     } else {
-        // Native accessors already own constructed address ranges. Preserve their lookup path.
-        // Probe RAM, then binary-search the sorted nonempty tail, treating
-        // empty suffix entries as +infinity. A miss returns the synthetic empty
-        // PMA entry at PMA_MAX. Only probed address ranges are validated.
-        index = PMA_RAM_INDEX;
-        auto &ram = a.read_pma(index);
-        if (ram.is_empty()) [[unlikely]] {
-            return ram;
-        }
-        if (ram.contains_absolute(paddr, sizeof(T))) {
-            return ram;
-        }
-        uint64_t lower = 1;
-        uint64_t upper = PMA_MAX;
-        while (lower < upper) {
-            index = lower + ((upper - lower) / 2);
-            auto &ar = a.read_pma(index);
-            // Constructible tails are sorted and disjoint. Empty slots are +infinity.
-            if (ar.is_empty() || paddr < ar.get_start()) {
-                upper = index;
-            } else if (ar.contains_absolute(paddr, sizeof(T))) {
-                return ar;
+        index = find_pma_index<T>(paddr, [a](uint64_t i) {
+            if constexpr (requires { a.read_pma_bounds(i); }) {
+                const auto [start, length] = a.read_pma_bounds(i);
+                return pmas_entry{.istart = start, .ilength = length};
             } else {
-                lower = index + 1;
+                const auto &ar = a.read_pma(i);
+                return pmas_entry{.istart = ar.get_istart(), .ilength = ar.get_length()};
             }
-        }
-        // PMA_MAX selects the accessor's synthetic empty PMA entry.
-        index = PMA_MAX;
+        });
         return a.read_pma(index);
     }
 }

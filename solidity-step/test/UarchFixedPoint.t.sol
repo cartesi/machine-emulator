@@ -34,7 +34,14 @@ contract UarchFixedPointTest is ManifestParser {
 
     function testCycleOverflowIsFixedPoint() public view {
         assertEq(
-            this.stepStatusAtCycleCeiling(stepLog),
+            this.stepStatusAtCycleCeiling(stepLog, false),
+            uint8(UArchStep.UArchStepStatus.UArchCycleOverflow)
+        );
+    }
+
+    function testHaltedAtCycleCeilingIsFixedPoint() public view {
+        assertEq(
+            this.stepStatusAtCycleCeiling(stepLog, true),
             uint8(UArchStep.UArchStepStatus.UArchCycleOverflow)
         );
     }
@@ -43,15 +50,26 @@ contract UarchFixedPointTest is ManifestParser {
         assertEq(this.stepStatusWhenHalted(stepLog), uint8(UArchStep.UArchStepStatus.UArchHalted));
     }
 
-    function stepStatusAtCycleCeiling(bytes calldata log) external pure returns (uint8) {
+    function stepStatusAtCycleCeiling(bytes calldata log, bool halted)
+        external
+        pure
+        returns (uint8)
+    {
         StepLog.Context memory ctx = StepLog.decode(log);
         StateAccess.writeCycle(ctx, EmulatorConstants.UARCH_CYCLE_MAX);
-        return uint8(UArchStep.uarchStep(ctx));
+        StateAccess.writeHalt(ctx, halted ? 1 : 0);
+        ctx.rootHashBefore = StepLog.computeRootHash(ctx);
+        uint8 status = uint8(UArchStep.uarchStep(ctx));
+        assertEq(StepLog.computeRootHash(ctx), ctx.rootHashBefore, "fixed point changed state");
+        return status;
     }
 
     function stepStatusWhenHalted(bytes calldata log) external pure returns (uint8) {
         StepLog.Context memory ctx = StepLog.decode(log);
         StateAccess.writeHalt(ctx, 1);
-        return uint8(UArchStep.uarchStep(ctx));
+        ctx.rootHashBefore = StepLog.computeRootHash(ctx);
+        uint8 status = uint8(UArchStep.uarchStep(ctx));
+        assertEq(StepLog.computeRootHash(ctx), ctx.rootHashBefore, "fixed point changed state");
+        return status;
     }
 }

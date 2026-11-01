@@ -974,8 +974,8 @@ where options are:
 
   --log-step=<filename>,count:<mcycle-count>
     log and save a step of <mcycle-count> mcycles to <filename>.
-    when the step leaves the machine paused on a rejected input, the hash after is the recorded
-    revert root hash, which is what the verifier returns.
+    when the step leaves the machine paused on a rejected input, the hash after
+    is the recorded revert root hash, which is what the verifier returns.
 
     the logging options run in a fixed order once the machine stops:
     --log-step, then --max-uarch-cycle, then --log-step-uarch,

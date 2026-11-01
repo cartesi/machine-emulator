@@ -56,8 +56,8 @@ library StepLog {
         uint8 hashFunction;
         uint64[] pageIndices; // strictly ascending
         uint256[] slices; // same order as pageIndices; one aligned region per page
-        bytes pageData; // concatenated slice contents; writes materialize before hashing/raw access
-        bytes32[] pageHashes; // filled by computeRootHash
+        bytes sliceData; // concatenated slice contents; writes materialize before hashing/raw access
+        bytes32[] sliceHashes; // filled by computeRootHash
         NodeEntry[] nodes; // internal nodes covering regions > PAGE_SIZE; strictly ascending by addr, no overlaps with pages
         bytes32[] siblings; // hash values for subtrees not covered by pages or nodes; left-to-right order
         bool reverted; // set when uarch reset reverted the state on a rejected input; see Verify.verifyReset
@@ -86,7 +86,7 @@ library StepLog {
 
     // Slices are 32-byte aligned: pack log2 size in the address's spare low
     // five bits, and content offset above bit 63. Decode validates size/alignment
-    // and bounds the offset by 64 * 4096 bytes. The wire is unchanged.
+    // and bounds the offset by 64 * 4096 bytes.
     function packSlice(uint64 addr, uint64 log2Size, uint256 dataOffset)
         internal
         pure
@@ -234,7 +234,7 @@ library StepLog {
     {
         ctx.pageIndices = new uint64[](pageCount);
         ctx.slices = new uint256[](pageCount);
-        ctx.pageHashes = new bytes32[](pageCount);
+        ctx.sliceHashes = new bytes32[](pageCount);
         uint256 sliceStart = cursor;
         uint256 contentBytes;
         for (uint256 i; i < pageCount; ++i) {
@@ -268,13 +268,13 @@ library StepLog {
             cursor += HASH_SIZE;
         }
         // Size the allocation to the witnessed contents, not the enclosing pages.
-        ctx.pageData = new bytes(contentBytes);
+        ctx.sliceData = new bytes(contentBytes);
         uint256 copyCursor = sliceStart;
         for (uint256 i; i < pageCount; ++i) {
             uint256 slice = ctx.slices[i];
             uint256 size = uint256(1) << sliceLog2Size(slice);
             copySliceData(
-                data, copyCursor + SLICE_HEADER_SIZE, ctx.pageData, sliceDataOffset(slice), size
+                data, copyCursor + SLICE_HEADER_SIZE, ctx.sliceData, sliceDataOffset(slice), size
             );
             copyCursor += SLICE_HEADER_SIZE + size + HASH_SIZE;
         }
@@ -313,8 +313,8 @@ library StepLog {
         }
     }
 
-    /// Hashes each page lazily into ctx.pageHashes, then folds the tree over its current state.
-    /// A zero pageHashes slot means "needs hashing": writes invalidate the written page's slot
+    /// Hashes each page lazily into ctx.sliceHashes, then folds the tree over its current state.
+    /// A zero sliceHashes slot means "needs hashing": writes invalidate the written page's slot
     /// (findPageForWrite or the first pending writeUarchWord). So decode hashes all pages and the
     /// post-state call rehashes only the pages the operation wrote. Node slots are used as they
     /// stand; replayed bulk writes keep them current.
@@ -322,9 +322,9 @@ library StepLog {
         flushUarchRegisters(ctx);
         uint256 pageCnt = ctx.pageIndices.length;
         for (uint256 i = 0; i < pageCnt; i++) {
-            if (ctx.pageHashes[i] == bytes32(0)) {
-                ctx.pageHashes[i] = HashTree.merkleTreeHashAsm(
-                    ctx.pageData,
+            if (ctx.sliceHashes[i] == bytes32(0)) {
+                ctx.sliceHashes[i] = HashTree.merkleTreeHashAsm(
+                    ctx.sliceData,
                     sliceDataOffset(ctx.slices[i]),
                     uint256(1) << sliceLog2Size(ctx.slices[i])
                 );
@@ -370,7 +370,7 @@ library StepLog {
             pageIn && sliceAddress(ctx.slices[c.nextPage]) == addr
                 && sliceLog2Size(ctx.slices[c.nextPage]) == log2Size
         ) {
-            return ctx.pageHashes[c.nextPage++];
+            return ctx.sliceHashes[c.nextPage++];
         }
         if (log2Size <= EmulatorConstants.HASH_TREE_LOG2_WORD_SIZE) revert InvalidSliceSubtree();
         bytes32 left = computeSubtreeHash(ctx, c, addr, log2Size - 1);
@@ -387,7 +387,7 @@ library StepLog {
 
     /// Assembly twin of computeSubtreeHash, over the same validated, disjoint entries.
     /// The root walk spans byte addresses [0, 2^64), descending to slice size.
-    /// Array reads are guarded by their cursors. Exact slice matches select hashes from the equally sized pageHashes table.
+    /// Array reads are guarded by their cursors. Exact slice matches select hashes from the equally sized sliceHashes table.
     function computeSubtreeHashAsm(
         Context memory ctx,
         TreeWalkCursors memory c,
@@ -400,9 +400,8 @@ library StepLog {
         uint256[] memory slices = ctx.slices;
         NodeEntry[] memory nodes = ctx.nodes;
         bytes32[] memory siblings = ctx.siblings;
-        bytes32[] memory pageHashes = ctx.pageHashes;
-        // Allocated walk state: three cursors, then slices, nodes, siblings,
-        // and pageHashes pointers, at offsets 0x00 through 0xc0. No Context offsets.
+        bytes32[] memory sliceHashes = ctx.sliceHashes;
+        // The assembly reads only w, so it is independent of the Context layout.
         uint256[7] memory w;
         assembly ("memory-safe") {
             function walk(w_, address_, log2Size_) -> h {
@@ -474,7 +473,7 @@ library StepLog {
             mstore(add(w, 0x60), slices)
             mstore(add(w, 0x80), nodes)
             mstore(add(w, 0xa0), siblings)
-            mstore(add(w, 0xc0), pageHashes)
+            mstore(add(w, 0xc0), sliceHashes)
             result := walk(w, and(addr, 0xffffffffffffffff), and(log2Size, 0xff))
             mstore(c, mload(w))
             mstore(add(c, 0x20), mload(add(w, 0x20)))
@@ -490,7 +489,7 @@ library StepLog {
         return findPageForWrite(ctx, paddr, 8);
     }
 
-    /// Returns a raw memory pointer to byte `paddr` inside ctx.pageData. Callers consume the pointer
+    /// Returns a raw memory pointer to byte `paddr` inside ctx.sliceData. Callers consume the pointer
     /// immediately in an assembly block; safe because `bytes memory` never moves. Read paths use this;
     /// write paths use findPageForWrite so the page is rehashed on the post-state root.
     function findPage(Context memory ctx, uint64 paddr, uint256 length)
@@ -502,7 +501,7 @@ library StepLog {
         (memPtr,) = locatePage(ctx, paddr, length);
     }
 
-    /// Like findPage, but invalidates the page's cached hash (zeroes its pageHashes slot) so
+    /// Like findPage, but invalidates the page's cached hash (zeroes its sliceHashes slot) so
     /// computeRootHash rehashes it on the post-state pass. A raw write also invalidates cached
     /// registers on this page, so subsequent register reads observe the written bytes.
     function findPageForWrite(Context memory ctx, uint64 paddr, uint256 length)
@@ -516,7 +515,7 @@ library StepLog {
         }
         uint256 pageIdx;
         (memPtr, pageIdx) = locatePage(ctx, paddr, length);
-        ctx.pageHashes[pageIdx] = bytes32(0);
+        ctx.sliceHashes[pageIdx] = bytes32(0);
     }
 
     function isUarchShadowPage(uint64 paddr) private pure returns (bool) {
@@ -535,13 +534,12 @@ library StepLog {
         // The hash stays invalid while writes are pending; hashing first flushes the registers.
         if (!ctx.uarchRegistersDirty) {
             ctx.uarchRegistersDirty = true;
-            ctx.pageHashes[ctx.uarchShadowPageIndex] = bytes32(0);
+            ctx.sliceHashes[ctx.uarchShadowPageIndex] = bytes32(0);
         }
     }
 
     // Call only when the cache is empty. Keep the check at the callers so warm
     // register accesses avoid entering this cold loader.
-    // Internal for StateAccess's inline accessors; no external ABI is added.
     function loadUarchRegisters(Context memory ctx) internal pure {
         (ctx.uarchShadowPtr, ctx.uarchShadowPageIndex) =
             locatePage(ctx, EmulatorConstants.UARCH_HALT_ADDR, UARCH_REGISTER_WORD_COUNT * 8);
@@ -593,7 +591,6 @@ library StepLog {
     {
         // decode caps the table at 64 pages; cache positions fit in six bits.
         // Search indices stay in 0..64 and byteOff is below 64 * PAGE_SIZE.
-        // Array bounds checks and missing-page rejection are unchanged.
         unchecked {
             uint64 idx = paddr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
             uint256 cacheSlot = uint256(idx) % ctx.pageLookupCache.length;
@@ -625,7 +622,7 @@ library StepLog {
         }
         if (length > size || offset > size - length) revert AccessOutsideSlice();
         uint256 byteOff = sliceDataOffset(slice) + offset;
-        bytes memory pd = ctx.pageData;
+        bytes memory pd = ctx.sliceData;
         assembly ("memory-safe") {
             ptr := add(add(pd, 32), byteOff)
         }
@@ -633,7 +630,6 @@ library StepLog {
 
     // Shared cold path for locatePage and StateAccess's inline read/write cache hits.
     // Callers pass idx % pageLookupCache.length as cacheSlot.
-    // Internal for the StateAccess caller; this adds no external ABI.
     function resolvePageMiss(Context memory ctx, uint64 idx, uint256 cacheSlot)
         internal
         pure

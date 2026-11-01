@@ -26,16 +26,20 @@ import {HashTree} from "src/HashTree.sol";
 contract HashTreeTest is Test {
     // Literals: Solidity can't use cross-library constants in fixed-array sizes.
     uint256 constant PAGE_LEAF_COUNT = 128;
-    uint256 constant SIBLING_SIZE = 32;
+    uint256 constant LEAF_SIZE = 32;
 
     /// Iterative bottom-up reference oracle: halves the level array in place.
     /// Independent of production's recursive merkleTreeHash.
-    function hashIter(bytes memory pageData, uint256 startOffset) internal pure returns (bytes32) {
+    function hashIter(bytes memory sliceData, uint256 startOffset)
+        internal
+        pure
+        returns (bytes32)
+    {
         bytes32[PAGE_LEAF_COUNT] memory level;
         for (uint256 i = 0; i < PAGE_LEAF_COUNT; i++) {
             bytes32 word;
             assembly {
-                word := mload(add(add(pageData, 32), add(startOffset, mul(i, SIBLING_SIZE))))
+                word := mload(add(add(sliceData, 32), add(startOffset, mul(i, LEAF_SIZE))))
             }
             level[i] = keccak256(abi.encodePacked(word));
         }
@@ -129,6 +133,24 @@ contract HashTreeTest is Test {
         bytes32 oracle = padAndHash(data, log2Size);
         bytes32 fast = this.calldataWrap(data, log2Size);
         assertEq(fast, oracle, "merkleTreeHashPadded disagrees with brute-force oracle");
+    }
+
+    function testDirtyCalldataPaddingDoesNotEnterTheHash() public view {
+        uint256[4] memory lengths = [uint256(1), uint256(31), uint256(33), uint256(63)];
+        for (uint256 i; i < lengths.length; ++i) {
+            bytes memory data = filler(lengths[i]);
+            bytes memory callData = abi.encodeCall(this.calldataWrap, (data, uint8(6)));
+            // Two argument slots, dynamic length, then the actual bytes. Poison only ABI padding.
+            uint256 end = 4 + 64 + 32 + data.length;
+            for (uint256 j = end; j < callData.length; ++j) {
+                callData[j] = 0xff;
+            }
+            (bool ok, bytes memory result) = address(this).staticcall(callData);
+            assertTrue(ok, "dirty padding rejected by wrapper");
+            assertEq(
+                abi.decode(result, (bytes32)), padAndHash(data, 6), "dirty ABI tail entered hash"
+            );
+        }
     }
 
     /// Calldata bridge: merkleTreeHashPadded takes `bytes calldata`.

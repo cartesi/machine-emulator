@@ -16,7 +16,6 @@
 pragma solidity ^0.8.30;
 
 import {StepLog} from "src/StepLog.sol";
-import {Verify} from "src/Verify.sol";
 
 import {ManifestParser} from "./ManifestParser.sol";
 
@@ -39,15 +38,12 @@ contract RejectsMutatedLogTest is ManifestParser {
         index = bound(index, 0, fixture.length - 1);
         bytes memory bad = bytes(fixture);
         bad[index] = bytes1(uint8(bad[index]) ^ mask);
-        vm.expectRevert();
-        this.verifyStep(bad, rootHashBefore);
+        (bool ok, bytes memory reason) =
+            address(this).call(abi.encodeCall(this.verifyStep, (bad, rootHashBefore)));
+        assertCleanRevert(ok, reason);
     }
 
     /// External wrapper so `log` arrives as calldata for StepLog.decode.
-    function verifyStep(bytes calldata log, bytes32 rootBefore) external pure {
-        StepLog.Context memory ctx = StepLog.decode(log);
-        Verify.verifyStep(ctx, rootBefore);
-    }
 }
 
 /// Same soundness invariant for the uarch-reset proof. The reset accesses the revert root hash and
@@ -74,13 +70,10 @@ contract RejectsMutatedResetLogTest is ManifestParser {
         index = bound(index, 0, fixture.length - 1);
         bytes memory bad = bytes(fixture);
         bad[index] = bytes1(uint8(bad[index]) ^ mask);
-        vm.expectRevert();
-        this.verifyReset(bad, rootHashBefore);
+        (bool ok, bytes memory reason) =
+            address(this).call(abi.encodeCall(this.verifyReset, (bad, rootHashBefore)));
+        assertCleanRevert(ok, reason);
     }
 
     /// External wrapper so `log` arrives as calldata for StepLog.decode.
-    function verifyReset(bytes calldata log, bytes32 rootBefore) external pure {
-        StepLog.Context memory ctx = StepLog.decode(log);
-        Verify.verifyReset(ctx, rootBefore);
-    }
 }

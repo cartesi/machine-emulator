@@ -75,6 +75,11 @@ public:
         std::span<slice_entry> slice_storage) :
         m_context(context) {
         m_context.log = step_log::decode(log_image, log_size, slice_storage, hash_function_type::keccak256);
+        // Reset witnesses a subtree node instead. If the register slice is present,
+        // require the same complete window that Solidity loads on its first access.
+        if (const auto *slice = m_context.log.try_find_page(AR_SHADOW_UARCH_STATE_START)) {
+            (void) slice->find_data(AR_SHADOW_UARCH_STATE_START, sizeof(shadow_uarch_state));
+        }
     }
 
     /// \brief Finish the replay and return the obtained root hash after

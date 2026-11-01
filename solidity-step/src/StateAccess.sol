@@ -21,7 +21,9 @@ import {StepLog} from "src/StepLog.sol";
 
 /// Read/write accessors over a decoded step log. The transpiled uarch interpreter
 /// calls these methods; names match `machine-emulator/src/uarch-solidity-compat.hpp`,
-/// semantics mirror `replay-step-state-access.hpp`.
+/// semantics mirror `uarch-replay-step-state-access.hpp`.
+/// Inline twins avoid helper frames on warm accesses; readable helpers remain the reference.
+/// Each cacheSlot is reduced modulo the fixed cache length, so its assembly load is in bounds.
 library StateAccess {
     error UnalignedWordAccess(uint64 paddr);
     error UarchXRegisterOutOfRange(uint8 reg);
@@ -48,13 +50,11 @@ library StateAccess {
         ) {
             StepLog.flushUarchRegisters(ctx);
         }
-        // Inline twin of locatePage's hit path: avoid helper call frames on every
-        // instruction fetch/load. Misses still use the shared checked search.
+        // Inline twin of locatePage.
         uint256[61] memory cache = ctx.pageLookupCache;
         uint64 idx = paddr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
         uint256 cacheSlot = uint256(idx) % cache.length;
         uint256 cached;
-        // Modulo the fixed array length guarantees cacheSlot is in 0..60.
         assembly ("memory-safe") {
             cached := mload(add(cache, shl(5, cacheSlot)))
         }
@@ -66,7 +66,7 @@ library StateAccess {
                 lo = StepLog.resolvePageMiss(ctx, idx, cacheSlot);
             }
         }
-        bytes memory pd = ctx.pageData;
+        bytes memory pd = ctx.sliceData;
         uint256[] memory slices = ctx.slices;
         uint64 value;
         // The cache selects a decoded descriptor. Check the entire aligned word
@@ -104,13 +104,11 @@ library StateAccess {
             StepLog.flushUarchRegisters(ctx);
             ctx.uarchShadowPtr = 0;
         }
-        // Inline twin of findPageForWrite's cache hit and hash invalidation.
-        // Keep the readable helper as a reference; misses use the same checked search.
+        // Inline twin of findPageForWrite.
         uint256[61] memory cache = ctx.pageLookupCache;
         uint64 idx = paddr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
         uint256 cacheSlot = uint256(idx) % cache.length;
         uint256 cached;
-        // Modulo the fixed array length guarantees cacheSlot is in 0..60.
         assembly ("memory-safe") {
             cached := mload(add(cache, shl(5, cacheSlot)))
         }
@@ -122,8 +120,8 @@ library StateAccess {
                 lo = StepLog.resolvePageMiss(ctx, idx, cacheSlot);
             }
         }
-        bytes memory pd = ctx.pageData;
-        bytes32[] memory hashes = ctx.pageHashes;
+        bytes memory pd = ctx.sliceData;
+        bytes32[] memory hashes = ctx.sliceHashes;
         uint256[] memory slices = ctx.slices;
         uint256 ptr;
         // Decode validates positions and slice sizes; the entire 8-byte write must fit.
@@ -163,10 +161,10 @@ library StateAccess {
     function writePc(StepLog.Context memory ctx, uint64 val) internal pure {
         if (ctx.uarchShadowPtr == 0) StepLog.loadUarchRegisters(ctx);
         ctx.uarchRegisters[EmulatorConstants.UARCH_PC_WORD_INDEX] = val;
-        // Inline writeUarchWord twin: retain first-pending-write invalidation.
+        // Inline twin of writeUarchWord.
         if (!ctx.uarchRegistersDirty) {
             ctx.uarchRegistersDirty = true;
-            ctx.pageHashes[ctx.uarchShadowPageIndex] = bytes32(0);
+            ctx.sliceHashes[ctx.uarchShadowPageIndex] = bytes32(0);
         }
     }
 
@@ -176,8 +174,7 @@ library StateAccess {
         uint64[35] memory registers = ctx.uarchRegisters;
         uint256 firstX = EmulatorConstants.UARCH_X_WORD_INDEX;
         uint64 value;
-        // Inline readUarchWord twin: reg < 32 makes 3 + reg fit the 35-word array.
-        // Keep the warm path here to avoid helper frames on every register access.
+        // Inline twin of readUarchWord.
         assembly ("memory-safe") {
             value := mload(add(registers, shl(5, add(firstX, and(reg, 0xff)))))
         }
@@ -189,7 +186,7 @@ library StateAccess {
         if (ctx.uarchShadowPtr == 0) StepLog.loadUarchRegisters(ctx);
         uint64[35] memory registers = ctx.uarchRegisters;
         uint256 firstX = EmulatorConstants.UARCH_X_WORD_INDEX;
-        // Inline writeUarchWord twin: reg < 32 makes 3 + reg fit the 35-word array.
+        // Inline twin of writeUarchWord.
         assembly ("memory-safe") {
             mstore(
                 add(registers, shl(5, add(firstX, and(reg, 0xff)))), and(val, 0xffffffffffffffff)
@@ -198,7 +195,7 @@ library StateAccess {
         // The hash stays invalid while writes are pending; hashing flushes first.
         if (!ctx.uarchRegistersDirty) {
             ctx.uarchRegistersDirty = true;
-            ctx.pageHashes[ctx.uarchShadowPageIndex] = bytes32(0);
+            ctx.sliceHashes[ctx.uarchShadowPageIndex] = bytes32(0);
         }
     }
 
@@ -212,7 +209,7 @@ library StateAccess {
     }
 
     function writeHtifFromhost(StepLog.Context memory ctx, uint64 val) internal pure {
-        writeWord(ctx, EmulatorConstants.HTIF_FROMHOST_ADDR, val);
+        writeWord(ctx, EmulatorConstants.HTIF_FROMHOST_ADDRESS, val);
     }
 
     function readHtifTohost(StepLog.Context memory ctx) internal pure returns (uint64) {
@@ -298,7 +295,8 @@ library StateAccess {
 
     /// Mirrors do_reset_uarch in uarch-replay-step-state-access.hpp.
     function resetState(StepLog.Context memory ctx) internal pure {
-        StepLog.NodeEntry memory n = StepLog.findNode(ctx, EmulatorConstants.UARCH_STATE_START_ADDR);
+        StepLog.NodeEntry memory n =
+            StepLog.findNode(ctx, EmulatorConstants.UARCH_STATE_START_ADDRESS);
         if (n.log2Size != EmulatorConstants.UARCH_STATE_LOG2_SIZE) {
             revert ResetUarchWrongSize(n.log2Size);
         }
@@ -342,13 +340,11 @@ library StateAccess {
             StepLog.flushUarchRegisters(ctx);
             ctx.uarchShadowPtr = 0;
         }
-        // Inline twin of findPageForWrite, as in writeWord. Validated TLB slots
-        // never alias the uarch shadow page; keep the helper's flush/drop semantics.
+        // Inline twin of findPageForWrite.
         uint256[61] memory cache = ctx.pageLookupCache;
         uint64 idx = slotAddr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
         uint256 cacheSlot = uint256(idx) % cache.length;
         uint256 cached;
-        // Modulo the fixed array length guarantees cacheSlot is in 0..60.
         assembly ("memory-safe") {
             cached := mload(add(cache, shl(5, cacheSlot)))
         }
@@ -360,8 +356,8 @@ library StateAccess {
                 lo = StepLog.resolvePageMiss(ctx, idx, cacheSlot);
             }
         }
-        bytes memory pd = ctx.pageData;
-        bytes32[] memory hashes = ctx.pageHashes;
+        bytes memory pd = ctx.sliceData;
+        bytes32[] memory hashes = ctx.sliceHashes;
         uint256[] memory slices = ctx.slices;
         uint256 ptr;
         // Decode validates positions and slice sizes; the entire 32-byte write must fit.

@@ -312,10 +312,10 @@ function tests_util.parse_step_log(log)
         nodes = {},
         siblings = {},
     }
-    local page_count = u64()
+    local slice_count = u64()
     local node_count = u64()
     local sibling_count = u64()
-    for i = 1, page_count do
+    for i = 1, slice_count do
         local address, log2_size = u64(), u64()
         parsed.pages[i] = {
             index = address >> PAGE_LOG2_SIZE,

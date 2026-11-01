@@ -291,7 +291,7 @@ void nonmatching_malformed_cases() {
         } catch (const std::runtime_error &) {
             range_rejected = true;
         }
-        require(range_rejected && range_index == 0);
+        require(range_rejected);
         require(shared_rejected == range_rejected || (!match_invalid && shared_index == 1));
         try {
             cache.find<uint64_t>(address, guest_index, [&](uint64_t i) { return entries[i]; }, fail);

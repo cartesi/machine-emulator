@@ -1,5 +1,18 @@
 // Copyright Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
 pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
@@ -31,8 +44,8 @@ contract SliceBoundsTest is Test {
         ctx.pageIndices[0] = start >> 12;
         ctx.slices = new uint256[](1);
         ctx.slices[0] = StepLog.packSlice(start, log2Size, 0);
-        ctx.pageData = new bytes(uint256(1) << log2Size);
-        ctx.pageHashes = new bytes32[](1);
+        ctx.sliceData = new bytes(uint256(1) << log2Size);
+        ctx.sliceHashes = new bytes32[](1);
     }
 
     function access(
@@ -91,7 +104,7 @@ contract SliceBoundsTest is Test {
         assertEq(StateAccess.readX(ctx, 31), 42);
         // The last leaf has 8 bytes beyond the 35-word window; these must remain untouched.
         for (uint256 i = 280; i < 288; ++i) {
-            assertEq(ctx.pageData[i], bytes1(0));
+            assertEq(ctx.sliceData[i], bytes1(0));
         }
     }
 
@@ -103,10 +116,10 @@ contract SliceBoundsTest is Test {
         this.registerWindow(9);
     }
 
-    function paddedWrite(uint64 log2Size, uint32 writeSize, bool warm) external view {
+    function paddedWrite(uint64 log2Size, uint32 writeLengthLog2Size, bool warm) external view {
         StepLog.Context memory ctx = context(0x80000000, log2Size);
         if (warm) StateAccess.writeWord(ctx, 0x80000000, 7);
-        this.writePadded(ctx, writeSize, hex"01");
+        this.writePadded(ctx, writeLengthLog2Size, hex"01");
     }
 
     function writePadded(StepLog.Context memory ctx, uint32 log2Size, bytes calldata data)

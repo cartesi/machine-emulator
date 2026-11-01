@@ -38,7 +38,8 @@ sources they derive from, regenerate and commit:
 
 ```bash
 make gen-all        # regenerate (needs a built emulator + Foundry)
-make check-gen-all  # check for drift without regenerating (what CI runs)
+make check-gen-all  # check for drift without regenerating
 ```
 
-`check-gen-all` fails with a diff naming any stale file.
+`check-gen-all` fails with a diff naming any stale file. CI runs `check-gen-transpiled`,
+`test-transpile` and a constants diff inside the toolchain image.

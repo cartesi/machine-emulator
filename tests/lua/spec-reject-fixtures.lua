@@ -73,9 +73,7 @@ describe("shared reject fixtures", function()
         if not tests_util.file_exists(path) then
             assert(not os.getenv("CARTESI_REJECT_STEP_FIXTURES_PATH"), "missing reject manifest: " .. path)
             it(family .. " (fixtures unavailable)", function() end, false)
-            goto continue
-        end
-        do
+        else
             local dir = fixtures .. family
             local rows = manifest.read_rows(dir)
             assert(#rows > 0, "empty reject manifest: " .. dir)
@@ -105,7 +103,6 @@ describe("shared reject fixtures", function()
                 end)
             end
         end
-        ::continue::
     end
 end)
 

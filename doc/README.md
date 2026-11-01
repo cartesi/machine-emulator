@@ -5626,12 +5626,12 @@ state, in addition to recording the log.
 
 The binary step log uses the slices format (version 4):
 
-    step_log ::= header slice_entry^page_count node_entry^node_count sibling_entry^sibling_count
+    step_log ::= header slice_entry^slice_count node_entry^node_count sibling_entry^sibling_count
 
     header ::= {                        -- 40 bytes
       signature     ::= "CTSI" 4 0 0 0, -- magic + version + reserved
       hash_function ::= uint64,         -- 0 for Keccak-256, 1 for SHA-256
-      page_count    ::= uint64,          -- number of slices
+      slice_count   ::= uint64,          -- number of slices
       node_count    ::= uint64,
       sibling_count ::= uint64
     }

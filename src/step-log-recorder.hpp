@@ -181,7 +181,7 @@ public:
         const step_log_header header{
             .signature = STEP_LOG_SIGNATURE,
             .hash_function = static_cast<uint64_t>(m_hash_function),
-            .page_count = m_touched_pages.size(),
+            .slice_count = m_touched_pages.size(),
             .node_count = m_touched_nodes.size(),
             .sibling_count = sibling_hashes.size(),
         };

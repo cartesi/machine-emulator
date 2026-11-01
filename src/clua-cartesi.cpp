@@ -373,6 +373,8 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, UARCH_ECALL_FN_WRITE_TLB, "UARCH_ECALL_FN_WRITE_TLB", -1);
     clua_setintegerfield(L, UARCH_ECALL_FN_FLUSH_TLB_BATCH, "UARCH_ECALL_FN_FLUSH_TLB_BATCH", -1);
     clua_setintegerfield(L, UARCH_TLB_FLUSH_BATCH_SIZE, "UARCH_TLB_FLUSH_BATCH_SIZE", -1);
+    clua_setintegerfield(L, TLB_SET_SIZE, "TLB_SET_SIZE", -1);
+    clua_setintegerfield(L, TLB_SET_COUNT, "TLB_SET_COUNT", -1);
     clua_setintegerfield(L, TLB_INVALID_PAGE, "TLB_INVALID_PAGE", -1);
     clua_setintegerfield(L, TLB_INVALID_PMA_INDEX, "TLB_INVALID_PMA_INDEX", -1);
     clua_setlstringfield(L, STEP_LOG_SIGNATURE.data(), STEP_LOG_SIGNATURE.size(), "STEP_LOG_SIGNATURE", -1);

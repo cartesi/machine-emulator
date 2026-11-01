@@ -1,5 +1,18 @@
 // Copyright Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
 pragma solidity ^0.8.30;
 
 import {console} from "forge-std/Test.sol";
@@ -10,9 +23,11 @@ import {UArchStep} from "src/UArchStep.sol";
 
 import {ManifestParser} from "./ManifestParser.sol";
 
-/// Differential coverage for the physical-write twins. The references preserve
+/// Differential coverage for the physical-write twins. The references implement
 /// the readable lookup/invalidation path, including register aliases and reverts.
 contract StateAccessWritesTest is ManifestParser {
+    uint256 fixtureTlbSlices;
+
     function referenceWriteWord(StepLog.Context memory ctx, uint64 paddr, uint64 value)
         private
         pure
@@ -50,10 +65,10 @@ contract StateAccessWritesTest is ManifestParser {
         private
         pure
     {
-        assertEq(keccak256(actual.pageData), keccak256(expected.pageData), "page bytes/neighbors");
+        assertEq(keccak256(actual.sliceData), keccak256(expected.sliceData), "page bytes/neighbors");
         assertEq(
-            keccak256(abi.encode(actual.pageHashes)),
-            keccak256(abi.encode(expected.pageHashes)),
+            keccak256(abi.encode(actual.sliceHashes)),
+            keccak256(abi.encode(expected.sliceHashes)),
             "hash invalidation"
         );
         assertEq(
@@ -110,6 +125,7 @@ contract StateAccessWritesTest is ManifestParser {
 
     function testEveryFixture() public {
         string[] memory dirs = programDirs();
+        require(dirs.length > 0, "no per-cycle uarch fixtures");
         uint256 count;
         for (uint256 i; i < dirs.length; ++i) {
             count += runDir(dirs[i], Kind.Cycle);
@@ -117,18 +133,24 @@ contract StateAccessWritesTest is ManifestParser {
         count += runDir("test/fixtures/reset-uarch", Kind.ResetUarch);
         count += runDir("test/fixtures/send-cmio-response", Kind.SendCmioResponse);
         assertGt(count, 0, "no write fixtures");
+        assertGt(fixtureTlbSlices, 0, "no fixture exercised TLB writes");
         console.log("write differential fixture logs", count);
     }
 
     function runDir(string memory dir, Kind kind) private returns (uint256 count) {
         Row[] memory rows = readManifestRows(string.concat(dir, "/_manifest.csv"), kind);
         for (uint256 i; i < rows.length; ++i) {
-            this.compareFixture(vm.readFileBinary(string.concat(dir, "/", rows[i].name)), i);
+            fixtureTlbSlices +=
+                this.compareFixture(vm.readFileBinary(string.concat(dir, "/", rows[i].name)), i);
             ++count;
         }
     }
 
-    function compareFixture(bytes calldata log, uint256 sample) external pure {
+    function compareFixture(bytes calldata log, uint256 sample)
+        external
+        pure
+        returns (uint256 tlbSlices)
+    {
         StepLog.Context memory actual = StepLog.decode(log);
         StepLog.Context memory expected = StepLog.decode(log);
         for (uint256 i; i < actual.pageIndices.length; ++i) {
@@ -138,11 +160,20 @@ contract StateAccessWritesTest is ManifestParser {
             compareColdWarmWord(actual, expected, start, value);
             compareColdWarmWord(actual, expected, start + size - 8, value);
             compareColdWarmWord(actual, expected, start + uint64(sample % (size / 8)) * 8, value);
-            if (start >= 0x1000 && start < 0x7000) {
+            if (
+                start >= EmulatorConstants.AR_SHADOW_TLB_START
+                    && start - EmulatorConstants.AR_SHADOW_TLB_START
+                        < EmulatorConstants.TLB_SET_COUNT * EmulatorConstants.SHADOW_TLB_SET_LENGTH
+            ) {
+                ++tlbSlices;
                 // Every TLB slot in every witnessed TLB page, including page/set edges.
-                uint64 setIndex = (start - 0x1000) / 0x2000;
-                uint64 firstSlot = ((start - 0x1000) % 0x2000) / 32;
-                for (uint64 j; j < size / 32; ++j) {
+                uint64 setIndex = (start - EmulatorConstants.AR_SHADOW_TLB_START)
+                    / EmulatorConstants.SHADOW_TLB_SET_LENGTH;
+                uint64 firstSlot = (
+                    (start - EmulatorConstants.AR_SHADOW_TLB_START)
+                        % EmulatorConstants.SHADOW_TLB_SET_LENGTH
+                ) / EmulatorConstants.SHADOW_TLB_SLOT_SIZE;
+                for (uint64 j; j < size / EmulatorConstants.SHADOW_TLB_SLOT_SIZE; ++j) {
                     uint256 cacheSlot = (start >> 12) % 61;
                     actual.pageLookupCache[cacheSlot] = 0;
                     expected.pageLookupCache[cacheSlot] = 0;
@@ -162,26 +193,12 @@ contract StateAccessWritesTest is ManifestParser {
     }
 
     function physicalContext(uint64 base) private pure returns (StepLog.Context memory ctx) {
-        ctx.pageIndices = new uint64[](3);
-        ctx.slices = new uint256[](3);
-        for (uint256 si; si < ctx.slices.length; ++si) {
-            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
-        }
-        ctx.pageData = new bytes(3 * 4096);
-        ctx.pageHashes = new bytes32[](3);
+        ctx = collidingPageContext(base);
         for (uint64 i; i < 3; ++i) {
-            ctx.pageIndices[i] = base + i * 61;
-            ctx.slices[i] = StepLog.packSlice(ctx.pageIndices[i] << 12, 12, uint256(i) * 4096);
-            ctx.pageHashes[i] = bytes32(uint256(i) + 1);
-            ctx.pageData[uint256(i) * 4096] = 0xa5;
-            ctx.pageData[uint256(i) * 4096 + 4095] = 0x5a;
+            ctx.sliceHashes[i] = bytes32(uint256(i) + 1);
+            ctx.sliceData[uint256(i) * 4096] = 0xa5;
+            ctx.sliceData[uint256(i) * 4096 + 4095] = 0x5a;
         }
-    }
-
-    function physicalBase(uint64 seed) private pure returns (uint64 base) {
-        base = (seed >> 12) % ((uint64(1) << 52) - 183);
-        uint64 shadow = EmulatorConstants.UARCH_HALT_ADDR >> 12;
-        if (base <= shadow && base + 122 >= shadow) base = shadow + 1;
     }
 
     function testFuzzWordColdWarmCollision(uint64 seed, uint16 wordSeed, uint64 value)
@@ -227,17 +244,9 @@ contract StateAccessWritesTest is ManifestParser {
     }
 
     function maximumContext() private pure returns (StepLog.Context memory ctx) {
-        ctx.pageIndices = new uint64[](64);
-        ctx.slices = new uint256[](64);
-        for (uint256 si; si < ctx.slices.length; ++si) {
-            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
-        }
-        ctx.pageData = new bytes(64 * 4096);
-        ctx.pageHashes = new bytes32[](64);
+        ctx = maximumPageContext();
         for (uint64 i; i < 64; ++i) {
-            ctx.pageIndices[i] = i == 63 ? type(uint64).max >> 12 : i;
-            ctx.slices[i] = StepLog.packSlice(ctx.pageIndices[i] << 12, 12, uint256(i) * 4096);
-            ctx.pageHashes[i] = bytes32(uint256(i) + 1);
+            ctx.sliceHashes[i] = bytes32(uint256(i) + 1);
         }
     }
 
@@ -332,14 +341,11 @@ contract StateAccessWritesTest is ManifestParser {
         private
         view
     {
-        (bool aOk, bytes memory a) =
-            address(this).staticcall(abi.encodeCall(this.probe, (true, base, addr, tlb, warm)));
-        (bool eOk, bytes memory e) =
-            address(this).staticcall(abi.encodeCall(this.probe, (false, base, addr, tlb, warm)));
-        assertFalse(aOk);
-        assertFalse(eOk);
-        assertEq(a, e, "revert mismatch");
-        assertEq(a, reason, "wrong revert");
+        compareRevert(
+            abi.encodeCall(this.probe, (true, base, addr, tlb, warm)),
+            abi.encodeCall(this.probe, (false, base, addr, tlb, warm)),
+            reason
+        );
     }
 
     function probe(bool fast, uint64 base, uint64 addr, bool tlb, bool warm) external pure {
@@ -373,17 +379,10 @@ contract StateAccessWritesTest is ManifestParser {
     function invalidEcall(uint64 selector, uint64 setIndex, uint64 slotIndex) external pure {
         StepLog.Context memory ctx;
         ctx.pageIndices = new uint64[](2);
-        ctx.slices = new uint256[](2);
-        for (uint256 si; si < ctx.slices.length; ++si) {
-            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
-        }
         ctx.pageIndices[0] = EmulatorConstants.UARCH_HALT_ADDR >> 12;
-        ctx.slices[0] = StepLog.packSlice(ctx.pageIndices[0] << 12, 12, uint256(0) * 4096);
         ctx.pageIndices[1] = 0x600;
-        ctx.slices[1] = StepLog.packSlice(ctx.pageIndices[1] << 12, 12, uint256(1) * 4096);
-        ctx.pageHashes = new bytes32[](2);
-        ctx.pageData = new bytes(8192);
-        ctx.pageData[4096] = 0x73; // ECALL
+        ctx = contextWithPages(ctx.pageIndices);
+        ctx.sliceData[4096] = 0x73; // ECALL
         StateAccess.writePc(ctx, 0x600000);
         StateAccess.writeX(ctx, 10, setIndex);
         StateAccess.writeX(ctx, 11, slotIndex);

@@ -15,13 +15,13 @@
 //
 pragma solidity ^0.8.30;
 
-import {Test} from "forge-std/Test.sol";
+import {StepLogTestBase} from "./StepLogTestBase.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 
 /// Shared base for tests that walk a `_manifest.csv`. Every fixture family writes one,
 /// from its own recorder under tests/lua; the `kind` column says which. Unknown kinds map
 /// to `Kind.Unknown` so readers stay forward-compatible with kinds added later.
-abstract contract ManifestParser is Test {
+abstract contract ManifestParser is StepLogTestBase {
     enum Kind {
         Unknown,
         Cycle,
@@ -107,6 +107,15 @@ abstract contract ManifestParser is Test {
         }
         vm.closeFile(path);
         return out;
+    }
+
+    function manifestDataRowCount(string memory path) internal returns (uint256 count) {
+        require(
+            keccak256(bytes(vm.readLine(path))) == keccak256(bytes(EXPECTED_HEADER)),
+            "manifest schema mismatch"
+        );
+        while (bytes(vm.readLine(path)).length != 0) ++count;
+        vm.closeFile(path);
     }
 
     /// Returns the row of `kind` whose `name` column matches; reverts if there is no such row.

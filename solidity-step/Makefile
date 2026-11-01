@@ -115,3 +115,13 @@ gas-report:
 # No forge dependency, so the top-level clean works without Foundry installed.
 clean: fixtures-clean
 	rm -rf out cache broadcast
+
+.PHONY: format-lua check-format-lua check-lua
+format-lua:
+	stylua --indent-type Spaces --respect-ignores tools/
+
+check-format-lua:
+	stylua --indent-type Spaces --respect-ignores --check tools/
+
+check-lua:
+	luacheck tools/

@@ -1,5 +1,18 @@
 // Copyright Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
 pragma solidity ^0.8.30;
 
 import {console} from "forge-std/Test.sol";
@@ -38,8 +51,8 @@ contract StateAccessRegistersTest is ManifestParser {
         assertEq(actual.uarchShadowPageIndex, expected.uarchShadowPageIndex, "page position");
         assertEq(actual.uarchShadowPtr == 0, expected.uarchShadowPtr == 0, "loaded");
         assertEq(
-            keccak256(abi.encode(actual.pageHashes)),
-            keccak256(abi.encode(expected.pageHashes)),
+            keccak256(abi.encode(actual.sliceHashes)),
+            keccak256(abi.encode(expected.sliceHashes)),
             "page hashes"
         );
         assertEq(
@@ -47,7 +60,7 @@ contract StateAccessRegistersTest is ManifestParser {
             keccak256(abi.encode(expected.pageLookupCache)),
             "lookup cache"
         );
-        assertEq(actual.pageData, expected.pageData, "page bytes");
+        assertEq(actual.sliceData, expected.sliceData, "page bytes");
     }
 
     function compareWriteX(
@@ -60,7 +73,7 @@ contract StateAccessRegistersTest is ManifestParser {
         referenceWriteX(expected, reg, value);
         compareState(actual, expected);
         assertTrue(actual.uarchRegistersDirty);
-        assertEq(actual.pageHashes[actual.uarchShadowPageIndex], bytes32(0));
+        assertEq(actual.sliceHashes[actual.uarchShadowPageIndex], bytes32(0));
     }
 
     function compareWritePc(
@@ -85,6 +98,7 @@ contract StateAccessRegistersTest is ManifestParser {
 
     function testEveryPerStepFixture() public {
         string[] memory dirs = programDirs();
+        require(dirs.length > 0, "no per-cycle uarch fixtures");
         uint256 fixtures;
         for (uint256 i; i < dirs.length; ++i) {
             Row[] memory rows =
@@ -123,22 +137,14 @@ contract StateAccessRegistersTest is ManifestParser {
     }
 
     function registerContext() private pure returns (StepLog.Context memory ctx) {
-        ctx.pageIndices = new uint64[](1);
-        ctx.slices = new uint256[](1);
-        for (uint256 si; si < ctx.slices.length; ++si) {
-            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
-        }
-        ctx.pageIndices[0] = EmulatorConstants.UARCH_HALT_ADDR >> 12;
-        ctx.slices[0] = StepLog.packSlice(ctx.pageIndices[0] << 12, 12, uint256(0) * 4096);
-        ctx.pageData = new bytes(4096);
-        ctx.pageHashes = new bytes32[](1);
+        ctx = registerPageContext();
         ctx.nodes = new StepLog.NodeEntry[](0);
         ctx.siblings = new bytes32[](52);
         for (uint256 i; i < EmulatorConstants.UARCH_REGISTER_WORD_COUNT; ++i) {
-            ctx.pageData[i * 8] = bytes1(uint8(i + 1));
+            ctx.sliceData[i * 8] = bytes1(uint8(i + 1));
         }
-        ctx.pageData[280] = 0xa5;
-        ctx.pageData[4095] = 0x7e;
+        ctx.sliceData[280] = 0xa5;
+        ctx.sliceData[4095] = 0x7e;
         StepLog.computeRootHash(ctx);
     }
 
@@ -178,8 +184,8 @@ contract StateAccessRegistersTest is ManifestParser {
         StepLog.findPageForWrite(expected, addr);
         compareWritePc(actual, expected, ~pc);
         compareRoots(actual, expected);
-        assertEq(actual.pageData[280], bytes1(0xa5));
-        assertEq(actual.pageData[4095], bytes1(0x7e));
+        assertEq(actual.sliceData[280], bytes1(0xa5));
+        assertEq(actual.sliceData[4095], bytes1(0x7e));
     }
 
     function testFuzzNarrowOperands(uint256 rawReg, uint256 rawValue) public pure {
@@ -209,12 +215,7 @@ contract StateAccessRegistersTest is ManifestParser {
         if (witnessed) {
             ctx = registerContext();
         } else {
-            ctx.pageIndices = new uint64[](0);
-            ctx.slices = new uint256[](0);
-            for (uint256 si; si < ctx.slices.length; ++si) {
-                ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
-            }
-            ctx.pageData = new bytes(0);
+            ctx = contextWithPages(new uint64[](0));
         }
         if (warm) StepLog.readUarchWord(ctx, 0);
         if (op == 0) return fast ? StateAccess.readX(ctx, reg) : referenceReadX(ctx, reg);
@@ -232,14 +233,11 @@ contract StateAccessRegistersTest is ManifestParser {
         private
         view
     {
-        (bool actualOk, bytes memory actual) =
-            address(this).staticcall(abi.encodeCall(this.probe, (true, op, reg, witnessed, warm)));
-        (bool expectedOk, bytes memory expected) =
-            address(this).staticcall(abi.encodeCall(this.probe, (false, op, reg, witnessed, warm)));
-        assertFalse(actualOk);
-        assertFalse(expectedOk);
-        assertEq(actual, expected);
-        assertEq(actual, reason);
+        compareRevert(
+            abi.encodeCall(this.probe, (true, op, reg, witnessed, warm)),
+            abi.encodeCall(this.probe, (false, op, reg, witnessed, warm)),
+            reason
+        );
     }
 
     function testFuzzOutOfRangeReverts(uint8 seed) public view {

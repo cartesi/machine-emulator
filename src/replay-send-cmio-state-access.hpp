@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef CMIO_REPLAY_STATE_ACCESS_HPP
-#define CMIO_REPLAY_STATE_ACCESS_HPP
+#ifndef REPLAY_SEND_CMIO_STATE_ACCESS_HPP
+#define REPLAY_SEND_CMIO_STATE_ACCESS_HPP
 
 #include <algorithm>
 #include <array>
@@ -111,20 +111,20 @@ inline void merkle_tree_hash_padded(hash_function_type hash_function, const unsi
 // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast,misc-no-recursion)
 
 template <typename Dumper>
-class cmio_replay_state_access;
+class replay_send_cmio_state_access;
 
 template <typename Dumper>
-struct i_state_access_fast_addr<cmio_replay_state_access<Dumper>> {
+struct i_state_access_fast_addr<replay_send_cmio_state_access<Dumper>> {
     using type = uint64_t;
 };
 
 /// CMIO transitions accept slices and check each access; they never run the machine interpreter.
 template <typename Dumper = no_step_log_dumper>
 // NOLINTNEXTLINE(misc-multiple-inheritance)
-class cmio_replay_state_access :
-    public i_state_access<cmio_replay_state_access<Dumper>>,
-    public i_accept_scoped_notes<cmio_replay_state_access<Dumper>>,
-    public i_prefer_shadow_state<cmio_replay_state_access<Dumper>> {
+class replay_send_cmio_state_access :
+    public i_state_access<replay_send_cmio_state_access<Dumper>>,
+    public i_accept_scoped_notes<replay_send_cmio_state_access<Dumper>>,
+    public i_prefer_shadow_state<replay_send_cmio_state_access<Dumper>> {
 public:
     struct context {
         step_log log;
@@ -135,7 +135,7 @@ private:
     context &m_context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
-    cmio_replay_state_access(context &context, unsigned char *log_image, uint64_t log_size,
+    replay_send_cmio_state_access(context &context, unsigned char *log_image, uint64_t log_size,
         std::span<slice_entry> slice_storage) :
         m_context(context) {
         m_context.log = step_log::decode(log_image, log_size, slice_storage, hash_function_type::keccak256);
@@ -146,9 +146,9 @@ public:
     }
 
 private:
-    friend i_state_access<cmio_replay_state_access>;
-    friend i_prefer_shadow_state<cmio_replay_state_access>;
-    friend i_accept_scoped_notes<cmio_replay_state_access>;
+    friend i_state_access<replay_send_cmio_state_access>;
+    friend i_prefer_shadow_state<replay_send_cmio_state_access>;
+    friend i_accept_scoped_notes<replay_send_cmio_state_access>;
 
     uint64_t do_read_shadow_register(shadow_registers_what what) const {
         const auto paddr = static_cast<uint64_t>(what);
@@ -201,13 +201,13 @@ private:
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     constexpr const char *do_get_name() const {
-        return "cmio_replay_state_access";
+        return "replay_send_cmio_state_access";
     }
 
     // Preserve dump brackets; the default sink leaves no scoped-note overhead.
     auto do_make_scoped_note(const char *text) const {
         if constexpr (std::is_same_v<Dumper, no_step_log_dumper>) {
-            return i_accept_scoped_notes<cmio_replay_state_access>::do_make_scoped_note(text);
+            return i_accept_scoped_notes<replay_send_cmio_state_access>::do_make_scoped_note(text);
         } else {
             return scoped_note{*this, text};
         }

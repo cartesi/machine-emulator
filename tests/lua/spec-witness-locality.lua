@@ -29,6 +29,7 @@ lester.describe("whole-mcycle witness locality", function()
             end
             local before = m:get_root_hash()
             local log = m:log_step_uarch(1 << 20)
+            local cycles = m:read_reg("uarch_cycle")
             assert(m:read_reg("uarch_halt") ~= 0 and m:read_reg("mcycle") == case.mcycle + 1, "incomplete mcycle")
             assert(log:sub(1, 8) == "CTSI\4\0\0\0", "step-log format changed; review locality parser")
             local parsed = test_util.parse_step_log(log)
@@ -72,10 +73,14 @@ lester.describe("whole-mcycle witness locality", function()
                 end
             end
             assert(
-                pages <= expected.pages and #log <= expected.log_bytes and slice_bytes <= expected.slice_bytes,
+                pages <= expected.pages
+                    and #log <= expected.log_bytes
+                    and slice_bytes <= expected.slice_bytes
+                    and cycles <= expected.cycles,
                 string.format(
                     "%s locality regression: pages %d (limit %d, delta %+d); "
-                        .. "log bytes %d (limit %d, delta %+d); slice bytes %d (limit %d)",
+                        .. "log bytes %d (limit %d, delta %+d); slice bytes %d (limit %d); "
+                        .. "cycles %d (limit %d, delta %+d)",
                     case.name,
                     pages,
                     expected.pages,
@@ -84,7 +89,10 @@ lester.describe("whole-mcycle witness locality", function()
                     expected.log_bytes,
                     #log - expected.log_bytes,
                     slice_bytes,
-                    expected.slice_bytes
+                    expected.slice_bytes,
+                    cycles,
+                    expected.cycles,
+                    cycles - expected.cycles
                 )
             )
         end)

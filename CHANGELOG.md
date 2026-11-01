@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Added the uarch ecall `FLUSH_TLB_BATCH` (function 5), which invalidates 128 shadow TLB slots at once, and the Lua constants `UARCH_ECALL_FN_FLUSH_TLB_BATCH` and `UARCH_TLB_FLUSH_BATCH_SIZE`
 - Added `dump_step_uarch`, `dump_reset_uarch` and `dump_send_cmio_response`, which replay a binary step log into a human-readable dump, across the C++, C, and Lua APIs; `dump_step_uarch` takes a skip count so a later cycle of a multi-cycle log can be dumped on its own
 - Added `--log-send-cmio-response=<filename>,reason:<number>,data:<text>|data-file:<path>[,encoding:hex|base64|utf8]`, which sends a cmio response and writes its binary step log
 - Added a `dump` sub-key to `--log-step-uarch`, `--log-reset-uarch` and `--log-send-cmio-response`, which also writes the human-readable dump to stderr
@@ -16,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a bounds check on the write-TLB uarch ECALL indices, which now fail with `TLB index out of range` instead of wrapping the slot address
 
 ### Changed
+- Changed the binary step log to format version 4: uarch, uarch reset and cmio response logs witness page slices of 512 bytes to 4 KiB instead of whole pages; machine step logs keep whole pages; version 3 logs are rejected
+- Changed page-table walks to read page-table entries from RAM only; a page-table entry outside RAM raises an access fault instead of a page fault, and the virtual memory API reports "address translation failed"
+- Changed the PMA table to list RAM first and the remaining ranges sorted by start address
+- Bumped machine configuration archive version from 8 to 9 (the stored PMA page and uarch RAM image changed); machines stored by earlier versions must be re-stored from their images
+- Changed the uarch pristine image and hash (inlined ecall wrappers, TLB flush batching, code layout)
+- Changed cmio response payload keys to follow the rollup.cpp encodings
+- Changed uarch and cmio response step logs to require a Keccak-256 hash tree
+- Changed the `--log-*` command line options to overwrite an existing log file
+- Changed the RISC0 CLI: `verify` accepts a dev-mode receipt only with `--allow-dev-mode`, the seal selector is checked, and the guest reads the cycle count, the log length and the log bytes; the RISC0 guest accepts at most 65,536 witnessed slices
 - Bumped the JSON-RPC protocol version to 0.9.0 for binary step logs and the revised logging and verification methods
 - Changed `log_step`, `log_step_uarch`, `log_reset_uarch` and `log_send_cmio_response` to return the binary step log, and `verify_step`, `verify_step_uarch`, `verify_reset_uarch` and `verify_send_cmio_response` to take it, instead of going through a file; the command line still writes log files
 - Changed Lua `log_step` to return `(log, break_reason)`, with the binary step log first

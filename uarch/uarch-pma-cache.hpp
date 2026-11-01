@@ -37,7 +37,7 @@ class uarch_pma_cache {
 
     uarch_address_ranges m_ranges{};
     std::array<range_hit, 16> m_hits{};
-    size_t m_range_count{};
+    size_t m_hit_count{};
 
     template <typename READ_ENTRY>
     pmas_entry probe(uint64_t index, READ_ENTRY read_entry) const {
@@ -68,16 +68,15 @@ public:
         const uint64_t page = paddr & ~(AR_PAGE_SIZE - 1);
         const bool within_page = (paddr - page) <= AR_PAGE_SIZE - sizeof(T);
         if (within_page) {
-            for (size_t i = 0; i < m_range_count; ++i) {
+            for (size_t i = 0; i < m_hit_count; ++i) {
                 if (paddr >= m_hits[i].start && paddr < m_hits[i].end) {
                     index = m_hits[i].index;
                     return m_ranges[index];
                 }
             }
         }
-        // Probe RAM, then binary-search the sorted nonempty tail, treating
-        // empty suffix entries as +infinity. A miss returns the synthetic empty
-        // PMA entry at PMA_MAX. Only the selected address range is constructed and validated.
+        // Same search as find_pma_index. Kept inline here: sharing it changes the guest's
+        // inlining and costs witness pages and cycles (tests/lua/cartesi/tests/witness-locality-expectations.lua).
         index = PMA_RAM_INDEX;
         const auto ram_entry = probe(index, read_entry);
         const uint64_t ram_start = ram_entry.istart & PMA_ISTART_START_MASK;
@@ -88,8 +87,8 @@ public:
             paddr - ram_start <= ram_entry.ilength - sizeof(T)) {
             auto &ram = m_ranges[index];
             ram.initialize(ram_entry.istart, ram_entry.ilength, abrt);
-            if (within_page && m_range_count < m_hits.size()) {
-                m_hits[m_range_count++] = {.start = ram.get_start(),
+            if (within_page && m_hit_count < m_hits.size()) {
+                m_hits[m_hit_count++] = {.start = ram.get_start(),
                     .end = ram.get_start() + ram.get_length(),
                     .index = index};
             }
@@ -107,8 +106,8 @@ public:
             } else if (entry.ilength >= sizeof(T) && paddr - start <= entry.ilength - sizeof(T)) {
                 auto &ar = m_ranges[index];
                 ar.initialize(entry.istart, entry.ilength, abrt);
-                if (within_page && m_range_count < m_hits.size()) {
-                    m_hits[m_range_count++] = {.start = ar.get_start(),
+                if (within_page && m_hit_count < m_hits.size()) {
+                    m_hits[m_hit_count++] = {.start = ar.get_start(),
                         .end = ar.get_start() + ar.get_length(),
                         .index = index};
                 }
@@ -126,7 +125,7 @@ public:
         // Replay may accept unusual PMA entries permitting writes to PMA storage.
         // Cached entries stay valid; only the range cache is cleared.
         if (paddr >= AR_PMAS_START && paddr - AR_PMAS_START < AR_PMAS_LENGTH) [[unlikely]] {
-            m_range_count = 0;
+            m_hit_count = 0;
         }
     }
 };

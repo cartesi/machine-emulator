@@ -440,6 +440,17 @@ cases[#cases + 1] = {
     end,
 }
 
+cases[#cases + 1] = {
+    tag = "uarch_register_window_short",
+    kind = "cycle",
+    base = UARCH_BASE,
+    mutate = function(log)
+        -- A valid 256-byte slice covers the early registers, but not the full 280-byte window.
+        -- Keep the pre-root by moving the excluded leaves into the sibling proof.
+        test_util.restrict_step_log_slice(log, UARCH_SHADOW_PAGE, 0, 8)
+    end,
+}
+
 for _, args in ipairs({
     { "set", 3, 0 },
     { "wrap", 1 << 51, 0 },

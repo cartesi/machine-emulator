@@ -137,13 +137,13 @@ void boundary_slices() {
                 auto replay_wire = wire;
                 auto log = step_log::decode(wire.data(), wire.size(), slices);
                 require(log.root_hash_before == root);
-                require(log.find_data(address, data.size()) == log.pages[0].data);
-                require(log.find_data(address + data.size() - 8, 8) == log.pages[0].data + data.size() - 8);
-                rejects([&] { log.pages[0].find_data(address - 1, 1); }, "access outside witnessed slice");
-                rejects([&] { log.pages[0].find_data(address, data.size() + 1); }, "access outside witnessed slice");
-                rejects([&] { log.pages[0].find_data(address + data.size() - 8, 9); },
+                require(log.find_data(address, data.size()) == log.slices[0].data);
+                require(log.find_data(address + data.size() - 8, 8) == log.slices[0].data + data.size() - 8);
+                rejects([&] { log.slices[0].find_data(address - 1, 1); }, "access outside witnessed slice");
+                rejects([&] { log.slices[0].find_data(address, data.size() + 1); }, "access outside witnessed slice");
+                rejects([&] { log.slices[0].find_data(address + data.size() - 8, 9); },
                     "access outside witnessed slice");
-                rejects([&] { log.pages[0].find_data(address, UINT64_MAX); }, "access outside witnessed slice");
+                rejects([&] { log.slices[0].find_data(address, UINT64_MAX); }, "access outside witnessed slice");
                 replay_step_state_access<>::context context{};
                 std::array<slice_entry, 1> replay_slices{};
                 if (size != 12) {
@@ -163,7 +163,7 @@ void boundary_slices() {
                 const auto last = address + data.size() - 8;
                 copy.write_memory_word(copy.get_faddr(last, 0), 0, UINT64_C(42));
                 replay.read_memory_word(replay.get_faddr(last, 0), 0, &value);
-                require(value == 42 && *context.log.pages[0].hash == zero);
+                require(value == 42 && *context.log.slices[0].hash == zero);
                 require(context.log.compute_root_hash() != root);
                 wire[0] = 0;
                 rejects([&] { step_log::decode(wire.data(), wire.size(), slices); }, "invalid step log signature");
@@ -210,11 +210,11 @@ void full_page_equivalence() {
     auto wire = recorder.finish();
     std::array<slice_entry, 3> slices{};
     auto log = step_log::decode(wire.data(), wire.size(), slices);
-    require(log.root_hash_before == before && log.pages.size() == indices.size());
+    require(log.root_hash_before == before && log.slices.size() == indices.size());
     require(std::ranges::equal(log.siblings, siblings));
     for (size_t i = 0; i < indices.size(); ++i) {
-        require(log.pages[i].page_index() == indices[i] && log.pages[i].log2_size == 12);
-        require(std::memcmp(log.pages[i].data, saved[i].data(), 4096) == 0);
+        require(log.slices[i].page_index() == indices[i] && log.slices[i].log2_size == 12);
+        require(std::memcmp(log.slices[i].data, saved[i].data(), 4096) == 0);
     }
     require(log.compute_root_hash() == before);
     std::memcpy(log.find_data(AR_RAM_START + 88), &replacement, sizeof(replacement));

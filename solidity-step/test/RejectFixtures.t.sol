@@ -37,6 +37,20 @@ contract RejectFixturesTest is ManifestParser {
     string constant SEND_CMIO_RESPONSE_DIR = "test/fixtures/send-cmio-response";
     string constant SEND_CMIO_RESPONSE_MANIFEST = "test/fixtures/send-cmio-response/_manifest.csv";
 
+    function testEveryManifestRowHasAKnownKind() public {
+        assertEq(
+            readManifestRows(UARCH_MANIFEST, Kind.Cycle).length
+                + readManifestRows(UARCH_MANIFEST, Kind.ResetUarch).length,
+            manifestDataRowCount(UARCH_MANIFEST),
+            "uncovered uarch rows"
+        );
+        assertEq(
+            readManifestRows(REJECT_SEND_CMIO_RESPONSE_MANIFEST, Kind.SendCmioResponse).length,
+            manifestDataRowCount(REJECT_SEND_CMIO_RESPONSE_MANIFEST),
+            "uncovered cmio rows"
+        );
+    }
+
     function testRejectsUarchSteps() public {
         replayUarch(Kind.Cycle);
     }
@@ -103,7 +117,7 @@ contract RejectFixturesTest is ManifestParser {
             bytes memory log = vm.readFileBinary(string.concat(UARCH_DIR, "/", rows[i].name));
             if (isRootAfterMismatchTag(rows[i].expectError)) {
                 bytes32 obtained = kind == Kind.Cycle
-                    ? this.verifyCycle(log, rows[i].rootHashBefore)
+                    ? this.verifyStep(log, rows[i].rootHashBefore)
                     : this.verifyReset(log, rows[i].rootHashBefore);
                 assertEq(
                     obtained, trueAfter(rows[i]), "replay must return the true transition root"
@@ -113,7 +127,7 @@ contract RejectFixturesTest is ManifestParser {
             }
             expectRevertFor(rows[i].expectError);
             if (kind == Kind.Cycle) {
-                this.verifyCycle(log, rows[i].rootHashBefore);
+                this.verifyStep(log, rows[i].rootHashBefore);
             } else {
                 this.verifyReset(log, rows[i].rootHashBefore);
             }
@@ -167,16 +181,6 @@ contract RejectFixturesTest is ManifestParser {
     }
 
     // External wrappers so `log`/`data` arrive as calldata for StepLog.decode.
-
-    function verifyCycle(bytes calldata log, bytes32 rootBefore) external pure returns (bytes32) {
-        StepLog.Context memory ctx = StepLog.decode(log);
-        return Verify.verifyStep(ctx, rootBefore);
-    }
-
-    function verifyReset(bytes calldata log, bytes32 rootBefore) external pure returns (bytes32) {
-        StepLog.Context memory ctx = StepLog.decode(log);
-        return Verify.verifyReset(ctx, rootBefore);
-    }
 
     function verifyCmio(
         bytes calldata log,

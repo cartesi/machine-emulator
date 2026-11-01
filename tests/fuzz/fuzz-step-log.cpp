@@ -60,7 +60,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         auto log = cartesi::step_log::decode(image, size, slices, hash_function, shape);
         // A structurally valid log (an unmutated seed) also exercises the
         // queries and the post-state walk; both must be exception-safe.
-        log.try_find_page(log.pages[0].address);
+        log.try_find_page(log.slices[0].address);
         log.try_find_node(0);
         log.compute_root_hash();
     } catch (const std::exception &) {

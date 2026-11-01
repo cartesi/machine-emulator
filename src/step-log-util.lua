@@ -29,7 +29,7 @@ local STEP_LOG_SIGNATURE = cartesi and cartesi.STEP_LOG_SIGNATURE or "CTSI\x04\x
 local SIGNATURE_SIZE = #STEP_LOG_SIGNATURE
 
 -- step_log_header layout (see src/step-log.hpp):
---   signature(8) + hash_function(8) + page_count(8) + node_count(8) + sibling_count(8)
+--   signature(8) + hash_function(8) + slice_count(8) + node_count(8) + sibling_count(8)
 local HEADER_SIZE = SIGNATURE_SIZE + 4 * 8
 local SLICE_HEADER_SIZE = 16
 local NODE_ENTRY_SIZE = 8 + 8 + HASH_SIZE
@@ -97,7 +97,7 @@ local function parse_header(data)
     local hdr = {}
     hdr.hash_function = string.unpack("<I8", data, off)
     off = off + 8
-    hdr.page_count = string.unpack("<I8", data, off)
+    hdr.slice_count = string.unpack("<I8", data, off)
     off = off + 8
     hdr.node_count = string.unpack("<I8", data, off)
     off = off + 8
@@ -118,9 +118,9 @@ local function read_descriptors(path)
     info.file_size = file_size
 
     info.slices = {}
-    info.slice_bytes = 0
-    info.pages_bytes = 0
-    for i = 1, info.page_count do
+    info.slice_data_bytes = 0
+    info.slice_entries_bytes = 0
+    for i = 1, info.slice_count do
         local entry = f:read(SLICE_HEADER_SIZE)
         assert(entry and #entry == SLICE_HEADER_SIZE, string.format("step log truncated at slice %d", i))
         local address, log2_size = string.unpack("<I8I8", entry)
@@ -128,8 +128,8 @@ local function read_descriptors(path)
         local size = 1 << log2_size
         assert(address & (size - 1) == 0, "unaligned slice address")
         info.slices[i] = { address = address, log2_size = log2_size }
-        info.slice_bytes = info.slice_bytes + size
-        info.pages_bytes = info.pages_bytes + SLICE_HEADER_SIZE + size + HASH_SIZE
+        info.slice_data_bytes = info.slice_data_bytes + size
+        info.slice_entries_bytes = info.slice_entries_bytes + SLICE_HEADER_SIZE + size + HASH_SIZE
         assert(f:seek("cur", size + HASH_SIZE) <= file_size, "truncated slice data or hash")
     end
 
@@ -167,8 +167,8 @@ end
 local function print_header(info)
     print("Step log: " .. info.path)
     print("  hash_function:    " .. hash_function_name(info.hash_function))
-    print("  slice_count:      " .. info.page_count)
-    print("  slice_data_bytes: " .. info.slice_bytes)
+    print("  slice_count:      " .. info.slice_count)
+    print("  slice_data_bytes: " .. info.slice_data_bytes)
     print("  node_count:       " .. info.node_count)
     print("  sibling_count:    " .. info.sibling_count)
 end
@@ -178,14 +178,14 @@ local function print_stats(info)
     print(string.format("  file_size:        %s (%d bytes)", format_size(info.file_size), info.file_size))
     print(
         string.format(
-            "  breakdown:        header=%s  pages=%s  nodes=%s  siblings=%s",
+            "  breakdown:        header=%s  slices=%s  nodes=%s  siblings=%s",
             format_size(info.header_bytes),
-            format_size(info.pages_bytes),
+            format_size(info.slice_entries_bytes),
             format_size(info.nodes_bytes),
             format_size(info.siblings_bytes)
         )
     )
-    if REGIONS and info.page_count > 0 then
+    if REGIONS and info.slice_count > 0 then
         local region_counts = {}
         for _, slice in ipairs(info.slices) do
             local region = classify_address(slice.address)
@@ -208,7 +208,7 @@ local function print_stats_row(info)
     print(
         string.format(
             "%-6d %-6d %-8d %-12s %s",
-            info.page_count,
+            info.slice_count,
             info.node_count,
             info.sibling_count,
             format_size(info.file_size),
@@ -272,7 +272,7 @@ commands["batch-stats"] = function(args)
     assert(#files > 0, "no .log files found in " .. dir)
     table.sort(files)
 
-    print(string.format("%-6s %-6s %-8s %-12s %s", "pages", "nodes", "siblings", "size", "path"))
+    print(string.format("%-6s %-6s %-8s %-12s %s", "slices", "nodes", "siblings", "size", "path"))
     print(string.rep("-", 80))
 
     local total = { page = 0, node = 0, sibling = 0, size = 0 }
@@ -282,12 +282,12 @@ commands["batch-stats"] = function(args)
         local ok, info = pcall(read_descriptors, path)
         if ok then
             print_stats_row(info)
-            total.page = total.page + info.page_count
+            total.page = total.page + info.slice_count
             total.node = total.node + info.node_count
             total.sibling = total.sibling + info.sibling_count
             total.size = total.size + info.file_size
-            if info.page_count > max.page then
-                max.page = info.page_count
+            if info.slice_count > max.page then
+                max.page = info.slice_count
                 max_path.page = path
             end
             if info.node_count > max.node then
@@ -311,21 +311,21 @@ commands["batch-stats"] = function(args)
     print(string.format("Files: %d", #files))
     print(
         string.format(
-            "Avg pages: %.1f   Avg nodes: %.1f   Avg siblings: %.1f   Avg size: %s",
+            "Avg slices: %.1f   Avg nodes: %.1f   Avg siblings: %.1f   Avg size: %s",
             total.page / #files,
             total.node / #files,
             total.sibling / #files,
             format_size(total.size // #files)
         )
     )
-    print(string.format("Max pages: %d (%s)", max.page, max_path.page))
+    print(string.format("Max slices: %d (%s)", max.page, max_path.page))
     print(string.format("Max nodes: %d (%s)", max.node, max_path.node))
     print(string.format("Max siblings: %d (%s)", max.sibling, max_path.sibling))
     print(string.format("Max size: %s (%s)", format_size(max.size), max_path.size))
 end
 
-function commands.pages(args)
-    local path = assert(args[1], "usage: step-log-util.lua pages <step-log>")
+function commands.slices(args)
+    local path = assert(args[1], "usage: step-log-util.lua slices <step-log>")
     local info = read_descriptors(path)
     print(string.format("%-18s %-9s %-8s %s", "address", "log2_size", "bytes", "region"))
     for _, slice in ipairs(info.slices) do
@@ -359,7 +359,7 @@ end
 
 function commands.dump(args)
     commands.stats(args)
-    commands.pages(args)
+    commands.slices(args)
     commands.nodes(args)
 end
 
@@ -379,7 +379,7 @@ Commands:
   signature <step-log>         Verify the step log signature (exit non-zero on mismatch)
   stats <step-log> [...]       Full structural breakdown (sizes, regions)
   batch-stats <dir>            Aggregate stats table for all .log files in <dir>
-  pages <step-log>             List slice addresses, sizes, regions
+  slices <step-log>             List slice addresses, sizes, regions
   nodes <step-log>             List logged subtree-write nodes
 
 Region classification needs the cartesi shared library; if not available,

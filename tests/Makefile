@@ -537,7 +537,7 @@ check-lua:
 	luacheck lua/
 
 .PHONY: machine uarch misc riscv-tests riscv-arch-test build-tests-fuzz build-tests-fuzz-seed-corpus test-fuzz
-.PHONY: test-machine-step-uarch $(PARALLEL_TESTS) test-parallel test test-misc test-lua test-cm-cli test-evmu run-lua-spec-cm-cli \
+.PHONY: $(PARALLEL_TESTS) test-parallel test test-misc test-lua test-cm-cli test-evmu run-lua-spec-cm-cli \
 	test-coverage-uarch-pcs coverage-report coverage-all clean-coverage
 .PHONY: build-tests-computation-hash-fixtures build-computation-hash-corpus \
 	build-computation-hash-corpus-with-toolchain create-computation-hash-corpus archive-computation-hash-corpus \

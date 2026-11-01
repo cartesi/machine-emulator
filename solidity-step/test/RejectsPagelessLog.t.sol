@@ -15,15 +15,14 @@
 //
 pragma solidity ^0.8.30;
 
-import {Test} from "forge-std/Test.sol";
+import {StepLogTestBase} from "./StepLogTestBase.sol";
 
 import {EmulatorConstants} from "src/EmulatorConstants.sol";
 import {StepLog} from "src/StepLog.sol";
-import {Verify} from "src/Verify.sol";
 
 /// A zero-page log with a single root-sized node would stand up a "witnessed tree" that is
 /// nothing but one attacker-chosen hash. The page-count guard in decode rejects it.
-contract RejectsPagelessLogTest is Test {
+contract RejectsPagelessLogTest is StepLogTestBase {
     /// Build an 88-byte step log: 40-byte header + one root-sized node, no pages,
     /// no siblings. The single node covers the entire address space (addr 0,
     /// log2Size 64), so it alone would determine the pre-state root.
@@ -31,7 +30,7 @@ contract RejectsPagelessLogTest is Test {
         return abi.encodePacked(
             EmulatorConstants.STEP_LOG_SIGNATURE, // signature (8)
             le64(uint64(EmulatorConstants.HASH_FUNCTION_KECCAK256)), // hash_function (8)
-            le64(0), // page_count (8)
+            le64(0), // slice_count (8)
             le64(1), // node_count (8)
             le64(0), // sibling_count (8)
             // node entry (48):
@@ -46,17 +45,5 @@ contract RejectsPagelessLogTest is Test {
         bytes memory log = buildSingleRootNodeLog(rootBefore);
         vm.expectRevert(StepLog.PageCountZero.selector);
         this.verifyStep(log, rootBefore);
-    }
-
-    function verifyStep(bytes calldata log, bytes32 rootBefore) external pure {
-        StepLog.Context memory ctx = StepLog.decode(log);
-        Verify.verifyStep(ctx, rootBefore);
-    }
-
-    function le64(uint64 v) internal pure returns (bytes memory out) {
-        out = new bytes(8);
-        for (uint256 i = 0; i < 8; i++) {
-            out[i] = bytes1(uint8(v >> (8 * i)));
-        }
     }
 }

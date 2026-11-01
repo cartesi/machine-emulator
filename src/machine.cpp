@@ -37,7 +37,6 @@
 #include "algorithm.hpp"
 #include "assert-printf.hpp"
 #include "back-merkle-tree.hpp"
-#include "cmio-replay-state-access.hpp"
 #include "collect-mcycle-hashes-state-access.hpp"
 #include "collect-uarch-cycle-hashes-state-access.hpp"
 #include "device-state-access.hpp"
@@ -64,6 +63,7 @@
 #include "processor-state.hpp"
 #include "record-step-state-access.hpp"
 #include "rejected-manual-yield.hpp"
+#include "replay-send-cmio-state-access.hpp"
 #include "replay-step-state-access.hpp"
 #include "riscv-constants.hpp"
 #include "rtc.hpp"
@@ -2045,9 +2045,9 @@ machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned 
     }
     step_log_data image(log.begin(), log.end()); // the replay mutates the image in place
     std::vector<slice_entry> slices(step_log::get_slice_count(image.data(), image.size()));
-    cmio_replay_state_access<>::context context;
+    replay_send_cmio_state_access<>::context context;
     // Pinned, unlike verify_step: these logs exist for the Keccak-256 on-chain verifier.
-    cmio_replay_state_access<> a(context, image.data(), image.size(), slices);
+    replay_send_cmio_state_access<> a(context, image.data(), image.size(), slices);
     context.log.check_root_hash_before(root_hash_before);
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash);
     return a.finish();
@@ -2061,9 +2061,9 @@ std::string machine::dump_send_cmio_response(uint16_t reason, const unsigned cha
     }
     step_log_data image(log.begin(), log.end()); // the replay mutates the image in place
     std::vector<slice_entry> slices(step_log::get_slice_count(image.data(), image.size()));
-    cmio_replay_state_access<step_log_dumper>::context context;
+    replay_send_cmio_state_access<step_log_dumper>::context context;
     // Pinned, unlike verify_step: these logs exist for the Keccak-256 on-chain verifier.
-    const cmio_replay_state_access<step_log_dumper> a(context, image.data(), image.size(), slices);
+    const replay_send_cmio_state_access<step_log_dumper> a(context, image.data(), image.size(), slices);
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash);
     return context.dumper.str();
 }

@@ -34,6 +34,7 @@ import {ManifestParser} from "./ManifestParser.sol";
 contract VerifyUarchTestsPerCycleTest is ManifestParser {
     function testReplaysAllUarchTestsPerCycle() public {
         string[] memory dirs = programDirs();
+        require(dirs.length > 0, "no per-cycle uarch fixtures");
         uint256 totalGas;
         uint256 totalSteps;
         uint256 maxGas;

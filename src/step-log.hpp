@@ -23,7 +23,7 @@
 /// A step log is a fixed-size header followed by three variable-length arrays:
 ///
 ///     step_log_header header;
-///     { slice_entry_header; data[1 << log2_size]; machine_hash; } slices[header.page_count];
+///     { slice_entry_header; data[1 << log2_size]; machine_hash; } slices[header.slice_count];
 ///     node_entry      nodes[header.node_count];
 ///     machine_hash    siblings[header.sibling_count];
 ///
@@ -59,7 +59,7 @@ constexpr std::array<char, 8> STEP_LOG_SIGNATURE = {'C', 'T', 'S', 'I', 4, 0, 0,
 struct PACKED step_log_header {
     std::array<char, 8> signature; ///< STEP_LOG_SIGNATURE (magic + version + reserved)
     uint64_t hash_function;        ///< Value of hash_function_type used by the state tree
-    uint64_t page_count;           ///< Number of variable-size slices
+    uint64_t slice_count;          ///< Number of variable-size slices
     uint64_t node_count;           ///< Number of entries in the nodes array
     uint64_t sibling_count;        ///< Number of entries in the siblings array
 };
@@ -121,13 +121,13 @@ enum class step_log_shape { slices, whole_pages };
 struct step_log {
     machine_hash root_hash_before{}; ///< Root hash before the step, recomputed from the witnessed tree at decode
     hash_function_type hash_function{hash_function_type::keccak256}; ///< Hash function used for the step log
-    std::span<slice_entry> pages;           ///< Witnessed slices, rehashed into their scratch slots
+    std::span<slice_entry> slices;          ///< Witnessed slices, rehashed into their scratch slots
     std::span<node_entry> nodes;            ///< Subtree-write nodes, kept current during replay
     std::span<const machine_hash> siblings; ///< Sibling hashes for untouched subtrees
 
     /// \brief Read the slice count, bounded by log length, before allocating descriptor storage.
     static size_t get_slice_count(const unsigned char *log_image, uint64_t log_size) {
-        return static_cast<size_t>(read_header(log_image, log_size).page_count);
+        return static_cast<size_t>(read_header(log_image, log_size).slice_count);
     }
 
     /// \brief Decode and validate a binary step log without allocating memory.
@@ -161,12 +161,12 @@ struct step_log {
             THROW(std::runtime_error, "step log hash function not supported by this verifier");
         }
         uint64_t remaining = log_size - sizeof(step_log_header);
-        if (header.page_count > slice_storage.size()) {
+        if (header.slice_count > slice_storage.size()) {
             THROW(std::runtime_error, "slice count exceeds descriptor storage capacity");
         }
         auto *cursor = log_image + sizeof(step_log_header);
-        log.pages = slice_storage.first(static_cast<size_t>(header.page_count));
-        for (uint64_t i = 0; i < header.page_count; ++i) {
+        log.slices = slice_storage.first(static_cast<size_t>(header.slice_count));
+        for (uint64_t i = 0; i < header.slice_count; ++i) {
             if (remaining < sizeof(slice_entry_header)) {
                 THROW(std::runtime_error, "truncated slice header");
             }
@@ -187,7 +187,7 @@ struct step_log {
             if (remaining < size + sizeof(machine_hash)) {
                 THROW(std::runtime_error, "truncated slice data or hash");
             }
-            log.pages[i] = {.address = entry.address,
+            log.slices[i] = {.address = entry.address,
                 .log2_size = entry.log2_size,
                 .data = cursor,
                 .hash = reinterpret_cast<machine_hash *>(cursor + size)};
@@ -205,9 +205,9 @@ struct step_log {
             THROW(std::runtime_error, "step log byte length does not match counts");
         }
         log.siblings = {reinterpret_cast<const machine_hash *>(cursor), static_cast<size_t>(header.sibling_count)};
-        validate_pages_ordered(log.pages);
+        validate_slices_ordered(log.slices);
         validate_nodes_aligned(log.nodes);
-        validate_entries_ordered_and_disjoint(log.pages, log.nodes);
+        validate_entries_ordered_and_disjoint(log.slices, log.nodes);
         log.root_hash_before = log.compute_root_hash();
         return log;
     }
@@ -217,9 +217,9 @@ struct step_log {
     /// \return Pointer to the page entry if witnessed, nullptr otherwise.
     const slice_entry *try_find_page(uint64_t paddr_page) const {
         const auto page_index = paddr_page >> AR_LOG2_PAGE_SIZE;
-        auto it = std::ranges::lower_bound(pages, page_index, std::ranges::less{},
+        auto it = std::ranges::lower_bound(slices, page_index, std::ranges::less{},
             [](const auto &page) { return page.page_index(); });
-        if (it != pages.end() && it->page_index() == page_index) {
+        if (it != slices.end() && it->page_index() == page_index) {
             return &(*it);
         }
         return nullptr;
@@ -261,13 +261,13 @@ struct step_log {
     }
 
     /// \brief Recompute the machine root hash from the witnessed tree's current state.
-    /// \details A zero scratch slot means "needs hashing": pages arrive zero on the wire and replay
+    /// \details A zero scratch slot means "needs hashing": slices arrive zero on the wire and replay
     /// accessors re-zero a page's slot on write, so the decode-time pass hashes every page and the
-    /// finish-time pass rehashes only the pages the operation wrote. Node slots are used as they
+    /// finish-time pass rehashes only the slices the operation wrote. Node slots are used as they
     /// stand; replayed bulk writes keep them current.
     machine_hash compute_root_hash() const {
         static const machine_hash all_zeros{};
-        for (auto &page : pages) {
+        for (auto &page : slices) {
             if (*page.hash == all_zeros) {
                 merkle_tree_hash(hash_function, page.data, page.size(), reinterpret_cast<hash_type>(page.hash));
             }
@@ -276,7 +276,7 @@ struct step_log {
         size_t next_node = 0;
         size_t next_sibling = 0;
         auto root_hash = compute_subtree(0, HASH_TREE_LOG2_ROOT_SIZE, next_page, next_node, next_sibling);
-        if (next_page != pages.size()) {
+        if (next_page != slices.size()) {
             THROW(std::runtime_error, "too many pages in log");
         }
         if (next_node != nodes.size()) {
@@ -309,33 +309,33 @@ private:
         }
         constexpr uint64_t min_slice_bytes =
             sizeof(slice_entry_header) + (UINT64_C(1) << HASH_TREE_LOG2_WORD_SIZE) + sizeof(machine_hash);
-        if (header.page_count == 0) {
+        if (header.slice_count == 0) {
             THROW(std::runtime_error, "slice count is zero");
         }
-        if (header.page_count > (log_size - sizeof(step_log_header)) / min_slice_bytes ||
-            header.page_count > SIZE_MAX) {
+        if (header.slice_count > (log_size - sizeof(step_log_header)) / min_slice_bytes ||
+            header.slice_count > SIZE_MAX) {
             THROW(std::runtime_error, "slice count exceeds step log size");
         }
         return header;
     }
 
     /// \brief Validate address order, disjointness, page uniqueness and zero scratch hashes.
-    static void validate_pages_ordered(std::span<const slice_entry> pages) {
+    static void validate_slices_ordered(std::span<const slice_entry> slices) {
         const machine_hash zero{};
-        for (size_t i = 0; i < pages.size(); ++i) {
+        for (size_t i = 0; i < slices.size(); ++i) {
             if (i > 0) {
-                const auto &prev = pages[i - 1];
-                if (prev.address >= pages[i].address) {
+                const auto &prev = slices[i - 1];
+                if (prev.address >= slices[i].address) {
                     THROW(std::runtime_error, "invalid log format: slice addresses not in increasing order");
                 }
-                if (static_cast<uint128_t>(prev.address) + prev.size() > pages[i].address) {
+                if (static_cast<uint128_t>(prev.address) + prev.size() > slices[i].address) {
                     THROW(std::runtime_error, "invalid log format: slice overlaps previous slice");
                 }
-                if (prev.page_index() == pages[i].page_index()) {
+                if (prev.page_index() == slices[i].page_index()) {
                     THROW(std::runtime_error, "invalid log format: multiple slices in the same page");
                 }
             }
-            if (*pages[i].hash != zero) {
+            if (*slices[i].hash != zero) {
                 THROW(std::runtime_error, "invalid log format: slice scratch hash area is not zero");
             }
         }
@@ -367,32 +367,32 @@ private:
         }
     }
 
-    /// \brief Validate that the combined pages+nodes stream is strictly ascending and disjoint.
-    /// \param pages Witnessed slices, ascending by address.
+    /// \brief Validate that the combined slices+nodes stream is strictly ascending and disjoint.
+    /// \param slices Witnessed slices, ascending by address.
     /// \param nodes Subtree-write nodes, with validated sizes (see validate_nodes_aligned).
     /// \throw runtime_error if any entry starts before the previous entry's end.
     /// \details Same algorithm as StepLog.validateEntriesOrderedAndDisjoint in the Solidity replayer.
     /// 128-bit arithmetic so an entry ending at 2^64 cannot overflow.
-    static void validate_entries_ordered_and_disjoint(std::span<const slice_entry> pages,
+    static void validate_entries_ordered_and_disjoint(std::span<const slice_entry> slices,
         std::span<const node_entry> nodes) {
         size_t next_page = 0;
         size_t next_node = 0;
         uint128_t prev_end = 0;
-        while (next_page < pages.size() || next_node < nodes.size()) {
+        while (next_page < slices.size() || next_node < nodes.size()) {
             uint128_t entry_start{};
             uint128_t entry_end{};
             bool take_page = false;
-            if (next_page >= pages.size()) {
+            if (next_page >= slices.size()) {
                 take_page = false;
             } else if (next_node >= nodes.size()) {
                 take_page = true;
             } else {
-                const auto page_start = static_cast<uint128_t>(pages[next_page].address);
+                const auto page_start = static_cast<uint128_t>(slices[next_page].address);
                 take_page = page_start < nodes[next_node].address;
             }
             if (take_page) {
-                entry_start = static_cast<uint128_t>(pages[next_page].address);
-                entry_end = entry_start + pages[next_page].size();
+                entry_start = static_cast<uint128_t>(slices[next_page].address);
+                entry_end = entry_start + slices[next_page].size();
                 ++next_page;
             } else {
                 entry_start = nodes[next_node].address;
@@ -410,7 +410,7 @@ private:
     machine_hash compute_subtree(uint64_t address, int log2_size, size_t &next_page, size_t &next_node,
         size_t &next_sibling) const {
         const uint128_t end = static_cast<uint128_t>(address) + (static_cast<uint128_t>(1) << log2_size);
-        const bool page_in = next_page < pages.size() && static_cast<uint128_t>(pages[next_page].address) < end;
+        const bool page_in = next_page < slices.size() && static_cast<uint128_t>(slices[next_page].address) < end;
         const bool node_in = next_node < nodes.size() && static_cast<uint128_t>(nodes[next_node].address) < end;
         if (!page_in && !node_in) {
             if (next_sibling >= siblings.size()) {
@@ -421,8 +421,8 @@ private:
         if (node_in && nodes[next_node].address == address && std::cmp_equal(nodes[next_node].log2_size, log2_size)) {
             return nodes[next_node++].hash;
         }
-        if (page_in && pages[next_page].address == address && std::cmp_equal(pages[next_page].log2_size, log2_size)) {
-            return *pages[next_page++].hash;
+        if (page_in && slices[next_page].address == address && std::cmp_equal(slices[next_page].log2_size, log2_size)) {
+            return *slices[next_page++].hash;
         }
         if (log2_size <= HASH_TREE_LOG2_WORD_SIZE) {
             THROW(std::runtime_error, "invalid log format: slice or node crosses subtree boundary");

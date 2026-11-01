@@ -1,5 +1,18 @@
 // Copyright Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
 pragma solidity ^0.8.30;
 
 import {console} from "forge-std/Test.sol";
@@ -11,7 +24,7 @@ import {ManifestParser} from "./ManifestParser.sol";
 
 /// Differential coverage for the inline physical-read twin and its cache side effects.
 contract StateAccessReadWordTest is ManifestParser {
-    // The original readable readWord path, including its register aliases and reverts.
+    // Readable reference for readWord, including its register aliases and reverts.
     function referenceReadWord(StepLog.Context memory ctx, uint64 paddr)
         private
         pure
@@ -50,9 +63,9 @@ contract StateAccessReadWordTest is ManifestParser {
         private
         pure
     {
-        assertEq(actual.pageData, expected.pageData, "page bytes");
+        assertEq(actual.sliceData, expected.sliceData, "page bytes");
         assertEq(
-            keccak256(abi.encode(actual.pageHashes)), keccak256(abi.encode(expected.pageHashes))
+            keccak256(abi.encode(actual.sliceHashes)), keccak256(abi.encode(expected.sliceHashes))
         );
         assertEq(
             keccak256(abi.encode(actual.uarchRegisters)),
@@ -80,6 +93,7 @@ contract StateAccessReadWordTest is ManifestParser {
 
     function testEveryPerStepFixture() public {
         string[] memory dirs = programDirs();
+        require(dirs.length > 0, "no per-cycle uarch fixtures");
         uint256 fixtures;
         for (uint256 i; i < dirs.length; ++i) {
             Row[] memory rows =
@@ -115,32 +129,14 @@ contract StateAccessReadWordTest is ManifestParser {
         compareState(actual, expected);
     }
 
-    function physicalBase(uint64 seed) private pure returns (uint64 page) {
-        page = (seed >> 12) % ((uint64(1) << 52) - 183);
-        // This fuzz isolates physical reads; pending-register aliases have their
-        // own test below and are also present in the real fixture differential.
-        uint64 shadow = EmulatorConstants.UARCH_HALT_ADDR >> 12;
-        if (page <= shadow && page + 122 >= shadow) page = shadow + 1;
-    }
-
     function physicalContext(uint64 base, uint64 offset, uint64 value)
         private
         pure
         returns (StepLog.Context memory ctx)
     {
-        ctx.pageIndices = new uint64[](3);
-        ctx.slices = new uint256[](3);
-        for (uint256 si; si < ctx.slices.length; ++si) {
-            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
-        }
-        ctx.pageData = new bytes(3 * 4096);
-        ctx.pageHashes = new bytes32[](3);
+        ctx = collidingPageContext(base);
         for (uint64 i; i < 3; ++i) {
-            ctx.pageIndices[i] = base + i * 61;
-            ctx.slices[i] = StepLog.packSlice(ctx.pageIndices[i] << 12, 12, uint256(i) * 4096);
-            for (uint256 j; j < 8; ++j) {
-                ctx.pageData[uint256(i) * 4096 + offset + j] = bytes1(uint8(value >> (j * 8)));
-            }
+            setLE64(ctx.sliceData, uint256(i) * 4096 + offset, value);
         }
     }
 
@@ -191,14 +187,11 @@ contract StateAccessReadWordTest is ManifestParser {
         private
         view
     {
-        (bool actualOk, bytes memory actual) =
-            address(this).staticcall(abi.encodeCall(this.probe, (true, base, paddr, warm)));
-        (bool expectedOk, bytes memory expected) =
-            address(this).staticcall(abi.encodeCall(this.probe, (false, base, paddr, warm)));
-        assertFalse(actualOk);
-        assertFalse(expectedOk);
-        assertEq(actual, expected, "different reverts");
-        assertEq(actual, reason, "wrong revert");
+        compareRevert(
+            abi.encodeCall(this.probe, (true, base, paddr, warm)),
+            abi.encodeCall(this.probe, (false, base, paddr, warm)),
+            reason
+        );
     }
 
     function probe(bool fast, uint64 base, uint64 paddr, bool warm)
@@ -219,20 +212,8 @@ contract StateAccessReadWordTest is ManifestParser {
         pure
         returns (StepLog.Context memory ctx)
     {
-        ctx.pageIndices = new uint64[](1);
-        ctx.slices = new uint256[](1);
-        for (uint256 si; si < ctx.slices.length; ++si) {
-            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
-        }
-        ctx.pageIndices[0] = EmulatorConstants.UARCH_HALT_ADDR >> 12;
-        ctx.slices[0] = StepLog.packSlice(ctx.pageIndices[0] << 12, 12, uint256(0) * 4096);
-        ctx.pageData = new bytes(4096);
-        ctx.pageHashes = new bytes32[](1);
-        ctx.nodes = new StepLog.NodeEntry[](0);
-        ctx.siblings = new bytes32[](52);
-        for (uint256 i; i < 8; ++i) {
-            ctx.pageData[offset + i] = bytes1(uint8(value >> (i * 8)));
-        }
+        ctx = registerPageContext();
+        setLE64(ctx.sliceData, offset, value);
     }
 
     function testFuzzShadowReadWithPendingRegisters(

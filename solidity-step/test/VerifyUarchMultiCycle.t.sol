@@ -16,7 +16,6 @@
 pragma solidity ^0.8.30;
 
 import {StepLog} from "src/StepLog.sol";
-import {Verify} from "src/Verify.sol";
 
 import {ManifestParser} from "./ManifestParser.sol";
 
@@ -38,11 +37,5 @@ contract VerifyUarchMultiCycleTest is ManifestParser {
             one.rootHashAfter,
             "one step of a two-cycle log must land on the one-cycle root"
         );
-    }
-
-    /// External wrapper so `log` arrives as calldata for StepLog.decode.
-    function verifyStep(bytes calldata log, bytes32 rootBefore) external pure returns (bytes32) {
-        StepLog.Context memory ctx = StepLog.decode(log);
-        return Verify.verifyStep(ctx, rootBefore);
     }
 }

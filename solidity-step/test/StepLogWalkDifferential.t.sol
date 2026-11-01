@@ -1,5 +1,18 @@
 // Copyright Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
 pragma solidity ^0.8.30;
 
 import {console} from "forge-std/Test.sol";
@@ -37,10 +50,10 @@ contract StepLogWalkDifferentialTest is ManifestParser {
     function assertWalksAgree(bytes calldata log) external pure {
         StepLog.Context memory ctx = StepLog.decode(log);
         assertEq(compareWalks(ctx, 0, ROOT_LOG2_SIZE), ctx.rootHashBefore, "decoded root");
-        // There is no before/after flag in the current format. Replay updates the
-        // same hash slots. Exercise that distinction with different page/node hashes.
-        for (uint256 i; i < ctx.pageHashes.length; ++i) {
-            ctx.pageHashes[i] = keccak256(abi.encode(ctx.pageHashes[i], i));
+        // Replay rewrites page and node hash slots in place; perturb them so the walks
+        // are compared on non-decoded hashes.
+        for (uint256 i; i < ctx.sliceHashes.length; ++i) {
+            ctx.sliceHashes[i] = keccak256(abi.encode(ctx.sliceHashes[i], i));
         }
         for (uint256 i; i < ctx.nodes.length; ++i) {
             ctx.nodes[i].hash = keccak256(abi.encode(ctx.nodes[i].hash, i));
@@ -48,18 +61,18 @@ contract StepLogWalkDifferentialTest is ManifestParser {
         compareWalks(ctx, 0, ROOT_LOG2_SIZE);
     }
 
-    function compareWalks(StepLog.Context memory ctx, uint64 pageIndex, uint8 log2PageCount)
+    function compareWalks(StepLog.Context memory ctx, uint64 addr, uint8 log2Size)
         private
         pure
         returns (bytes32 expected)
     {
         bytes32 inputBefore = keccak256(
-            abi.encode(ctx.pageIndices, ctx.slices, ctx.pageHashes, ctx.nodes, ctx.siblings)
+            abi.encode(ctx.pageIndices, ctx.slices, ctx.sliceHashes, ctx.nodes, ctx.siblings)
         );
         StepLog.TreeWalkCursors memory cRef;
         StepLog.TreeWalkCursors memory cAsm;
-        expected = StepLog.computeSubtreeHash(ctx, cRef, pageIndex, log2PageCount);
-        bytes32 actual = StepLog.computeSubtreeHashAsm(ctx, cAsm, pageIndex, log2PageCount);
+        expected = StepLog.computeSubtreeHash(ctx, cRef, addr, log2Size);
+        bytes32 actual = StepLog.computeSubtreeHashAsm(ctx, cAsm, addr, log2Size);
         uint256 zeroSlot;
         assembly ("memory-safe") {
             zeroSlot := mload(0x60)
@@ -71,7 +84,7 @@ contract StepLogWalkDifferentialTest is ManifestParser {
         assertEq(zeroSlot, 0, "zero slot");
         assertEq(
             keccak256(
-                abi.encode(ctx.pageIndices, ctx.slices, ctx.pageHashes, ctx.nodes, ctx.siblings)
+                abi.encode(ctx.pageIndices, ctx.slices, ctx.sliceHashes, ctx.nodes, ctx.siblings)
             ),
             inputBefore,
             "walk changed input arrays"
@@ -118,18 +131,11 @@ contract StepLogWalkDifferentialTest is ManifestParser {
     function testFuzzWalkWithBoundaryPagesAndNodes(bytes32 seed) public pure {
         StepLog.Context memory ctx;
         ctx.pageIndices = new uint64[](4);
-        ctx.slices = new uint256[](4);
-        for (uint256 si; si < ctx.slices.length; ++si) {
-            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
-        }
         ctx.pageIndices[0] = 0;
-        ctx.slices[0] = StepLog.packSlice(ctx.pageIndices[0] << 12, 12, uint256(0) * 4096);
         ctx.pageIndices[1] = 1;
-        ctx.slices[1] = StepLog.packSlice(ctx.pageIndices[1] << 12, 12, uint256(1) * 4096);
         ctx.pageIndices[2] = uint64(1) << 51;
-        ctx.slices[2] = StepLog.packSlice(ctx.pageIndices[2] << 12, 12, uint256(2) * 4096);
         ctx.pageIndices[3] = (uint64(1) << 52) - 1;
-        ctx.slices[3] = StepLog.packSlice(ctx.pageIndices[3] << 12, 12, uint256(3) * 4096);
+        ctx = contextWithPages(ctx.pageIndices);
         for (uint256 i; i < ctx.slices.length; ++i) {
             uint64 log2Size = 5 + uint64(uint256(seed) >> (i * 8)) % 8;
             uint64 addr = StepLog.sliceAddress(ctx.slices[i])
@@ -137,9 +143,8 @@ contract StepLogWalkDifferentialTest is ManifestParser {
             ctx.slices[i] =
                 StepLog.packSlice(addr, log2Size, StepLog.sliceDataOffset(ctx.slices[i]));
         }
-        ctx.pageHashes = new bytes32[](4);
-        for (uint256 i; i < ctx.pageHashes.length; ++i) {
-            ctx.pageHashes[i] = keccak256(abi.encode(seed, i));
+        for (uint256 i; i < ctx.sliceHashes.length; ++i) {
+            ctx.sliceHashes[i] = keccak256(abi.encode(seed, i));
         }
         // Adjacent, disjoint nodes immediately after the first two pages. Different
         // sizes exercise both the node match and descent paths; other pages span
@@ -156,12 +161,7 @@ contract StepLogWalkDifferentialTest is ManifestParser {
 
     function testRootNodeAndEmptySubtree() public pure {
         StepLog.Context memory ctx;
-        ctx.pageIndices = new uint64[](0);
-        ctx.slices = new uint256[](0);
-        for (uint256 si; si < ctx.slices.length; ++si) {
-            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
-        }
-        ctx.pageHashes = new bytes32[](0);
+        ctx = contextWithPages(new uint64[](0));
         ctx.nodes = new StepLog.NodeEntry[](1);
         ctx.nodes[0] = StepLog.NodeEntry(0, 64, bytes32(uint256(0x1234)));
         ctx.siblings = new bytes32[](1);

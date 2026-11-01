@@ -119,9 +119,7 @@ library HashTree {
         if (start >= dataLength) return pristine[log2Size];
         uint256 size = uint256(1) << log2Size;
         if (log2Size == EmulatorConstants.HASH_TREE_LOG2_WORD_SIZE) {
-            // A full in-bounds leaf goes through merkleTreeHash. A leaf straddling the
-            // boundary is masked to zero past dataLength (bytes-memory padding is not
-            // guaranteed zero); matches the C++ recorder's zeroed-buffer write.
+            // The calldata-to-memory copy zeroes the trailing bytes of a partial leaf.
             if (start + size <= dataLength) {
                 return merkleTreeHash(data, start, size);
             }
@@ -129,8 +127,6 @@ library HashTree {
             assembly ("memory-safe") {
                 word := mload(add(add(data, 32), start))
             }
-            uint256 zeroBits = (size - (dataLength - start)) << 3;
-            word = bytes32((uint256(word) >> zeroBits) << zeroBits);
             return keccak256(abi.encodePacked(word));
         }
         if (start + size <= dataLength) return merkleTreeHash(data, start, size);

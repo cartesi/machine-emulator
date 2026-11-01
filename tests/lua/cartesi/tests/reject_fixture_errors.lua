@@ -21,6 +21,11 @@ local cartesi = require("cartesi")
 local M = {}
 
 M.errors = {
+    uarch_register_window_short = {
+        cpp_pattern = "access outside witnessed slice",
+        solidity_signature = "AccessOutsideSlice()",
+        solidity_message = "",
+    },
     old_signature = {
         cpp_pattern = "invalid step log signature",
         solidity_signature = "InvalidSignature()",
@@ -201,6 +206,10 @@ for tag, error_spec in pairs(M.errors) do
     M.machine_errors[tag] = M.machine_errors[tag] or error_spec.cpp_pattern
 end
 
+local risc0_errors = {
+    keccak256_declared = "step log hash function not supported by this verifier",
+}
+
 -- The RISC0 test reads this table instead of maintaining its own copy of the messages.
 function M.write_machine(dir)
     local out <close> = assert(io.open(dir .. "/_errors.tsv", "w"))
@@ -210,8 +219,7 @@ function M.write_machine(dir)
     end
     table.sort(tags)
     for _, tag in ipairs(tags) do
-        local pattern = tag == "keccak256_declared" and "step log hash function not supported by this verifier"
-            or M.machine_errors[tag]
+        local pattern = risc0_errors[tag] or M.machine_errors[tag]
         assert(out:write(tag, "\t", pattern, "\n"))
     end
 end

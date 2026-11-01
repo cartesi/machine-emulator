@@ -281,6 +281,7 @@ lint check-format format:
 
 check-format-lua check-lua format-lua:
 	@$(MAKE) $@-src $@-tests $@-doc
+	@$(MAKE) -C solidity-step $@
 
 # One pattern rule per target name. A pattern rule with several target patterns is a
 # grouped rule, so make would run the recipe once per stem and skip the remaining targets.

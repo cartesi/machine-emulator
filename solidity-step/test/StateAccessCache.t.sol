@@ -1,13 +1,26 @@
 // Copyright Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
 pragma solidity ^0.8.30;
 
-import {Test} from "forge-std/Test.sol";
+import {StepLogTestBase} from "./StepLogTestBase.sol";
 import {EmulatorConstants} from "src/EmulatorConstants.sol";
 import {StateAccess} from "src/StateAccess.sol";
 import {StepLog} from "src/StepLog.sol";
 
-contract StateAccessCacheTest is Test {
+contract StateAccessCacheTest is StepLogTestBase {
     function testFuzzByteSwap(uint64 value) public pure {
         uint64 expected;
         for (uint256 i; i < 8; ++i) {
@@ -21,32 +34,19 @@ contract StateAccessCacheTest is Test {
         StepLog.Context memory ctx = collidingPages();
         uint256 offset = uint256(slot % 512) * 8;
         for (uint256 i; i < 32; ++i) {
-            ctx.pageData[(offset & ~uint256(31)) + i] = bytes1(uint8(i + 1));
+            ctx.sliceData[(offset & ~uint256(31)) + i] = bytes1(uint8(i + 1));
         }
-        bytes memory expected = abi.encodePacked(ctx.pageData);
+        bytes memory expected = abi.encodePacked(ctx.sliceData);
         for (uint256 i; i < 8; ++i) {
             expected[offset + i] = bytes1(uint8(value >> (i * 8)));
         }
         StateAccess.writeWord(ctx, uint64(offset), value);
         assertEq(StateAccess.readWord(ctx, uint64(offset)), value);
-        assertEq(keccak256(ctx.pageData), keccak256(expected));
+        assertEq(keccak256(ctx.sliceData), keccak256(expected));
     }
 
     function testCacheLastPositionAndMaximumPhysicalPage() public pure {
-        StepLog.Context memory ctx;
-        ctx.pageIndices = new uint64[](64);
-        ctx.slices = new uint256[](64);
-        for (uint256 si; si < ctx.slices.length; ++si) {
-            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
-        }
-        ctx.pageData = new bytes(64 * 4096);
-        ctx.pageHashes = new bytes32[](64);
-        for (uint64 i; i < 63; ++i) {
-            ctx.pageIndices[i] = i;
-            ctx.slices[i] = StepLog.packSlice(ctx.pageIndices[i] << 12, 12, uint256(i) * 4096);
-        }
-        ctx.pageIndices[63] = type(uint64).max >> 12;
-        ctx.slices[63] = StepLog.packSlice(ctx.pageIndices[63] << 12, 12, uint256(63) * 4096);
+        StepLog.Context memory ctx = maximumPageContext();
         for (uint64 i; i < 64; ++i) {
             uint64 paddr = (ctx.pageIndices[i] << 12) | 4088;
             StateAccess.writeWord(ctx, paddr, 100 + i);
@@ -69,20 +69,14 @@ contract StateAccessCacheTest is Test {
             + slotIndex * EmulatorConstants.SHADOW_TLB_SLOT_SIZE;
         StepLog.Context memory ctx;
         ctx.pageIndices = new uint64[](1);
-        ctx.slices = new uint256[](1);
-        for (uint256 si; si < ctx.slices.length; ++si) {
-            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
-        }
         ctx.pageIndices[0] = slotAddr >> 12;
-        ctx.slices[0] = StepLog.packSlice(ctx.pageIndices[0] << 12, 12, uint256(0) * 4096);
-        ctx.pageData = new bytes(4096);
-        ctx.pageHashes = new bytes32[](1);
-        ctx.pageHashes[0] = bytes32(uint256(1));
+        ctx = contextWithPages(ctx.pageIndices);
+        ctx.sliceHashes[0] = bytes32(uint256(1));
         uint256 offset = slotAddr & 4095;
         for (uint256 i; i < 64; ++i) {
-            ctx.pageData[(offset & ~uint256(63)) + i] = bytes1(uint8(i + 1));
+            ctx.sliceData[(offset & ~uint256(63)) + i] = bytes1(uint8(i + 1));
         }
-        bytes memory expected = abi.encodePacked(ctx.pageData);
+        bytes memory expected = abi.encodePacked(ctx.sliceData);
         uint64[4] memory values = [vaddrPage, vpOffset, pmaIndex, uint64(0)];
         for (uint256 field; field < 4; ++field) {
             for (uint256 i; i < 8; ++i) {
@@ -90,8 +84,8 @@ contract StateAccessCacheTest is Test {
             }
         }
         StateAccess.writeTlbECALL(ctx, setIndex, slotIndex, vaddrPage, vpOffset, pmaIndex);
-        assertEq(keccak256(ctx.pageData), keccak256(expected));
-        assertEq(ctx.pageHashes[0], bytes32(0));
+        assertEq(keccak256(ctx.sliceData), keccak256(expected));
+        assertEq(ctx.sliceHashes[0], bytes32(0));
     }
 
     function testFuzzTlbSlotSerialization(
@@ -120,17 +114,9 @@ contract StateAccessCacheTest is Test {
     }
 
     function registerContext() private pure returns (StepLog.Context memory ctx) {
-        ctx.pageIndices = new uint64[](1);
-        ctx.slices = new uint256[](1);
-        for (uint256 si; si < ctx.slices.length; ++si) {
-            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
-        }
-        ctx.pageIndices[0] = EmulatorConstants.UARCH_HALT_ADDR >> 12;
-        ctx.slices[0] = StepLog.packSlice(ctx.pageIndices[0] << 12, 12, uint256(0) * 4096);
-        ctx.pageData = new bytes(4096);
-        ctx.pageData[280] = 0xa5;
-        ctx.pageData[4095] = 0x7e;
-        ctx.pageHashes = new bytes32[](1);
+        ctx = registerPageContext();
+        ctx.sliceData[280] = 0xa5;
+        ctx.sliceData[4095] = 0x7e;
         ctx.nodes = new StepLog.NodeEntry[](0);
         ctx.siblings = new bytes32[](52);
     }
@@ -139,9 +125,9 @@ contract StateAccessCacheTest is Test {
         uint256 offset = EmulatorConstants.UARCH_X_BASE_ADDR - EmulatorConstants.UARCH_HALT_ADDR
             + uint256(reg) * 8;
         for (uint256 i; i < 8; ++i) {
-            ctx.pageData[offset + i] = bytes1(uint8(value >> (i * 8)));
+            ctx.sliceData[offset + i] = bytes1(uint8(value >> (i * 8)));
         }
-        ctx.pageHashes[0] = bytes32(0);
+        ctx.sliceHashes[0] = bytes32(0);
     }
 
     function testFuzzRegisterAliasesAndRepeatedRoots(uint8 reg, uint64 first, uint64 second)
@@ -158,16 +144,16 @@ contract StateAccessCacheTest is Test {
 
         StateAccess.writeX(ctx, reg, first);
         assertEq(StateAccess.readWord(ctx, addr), first);
-        assertEq(ctx.pageHashes[0], bytes32(0));
+        assertEq(ctx.sliceHashes[0], bytes32(0));
         rawRegisterWrite(expected, reg, first);
         assertEq(StepLog.computeRootHash(ctx), StepLog.computeRootHash(expected));
-        assertEq(keccak256(ctx.pageData), keccak256(expected.pageData));
+        assertEq(keccak256(ctx.sliceData), keccak256(expected.sliceData));
 
         StateAccess.writeWord(ctx, addr, second);
         assertEq(StateAccess.readX(ctx, reg), second);
         rawRegisterWrite(expected, reg, second);
         assertEq(StepLog.computeRootHash(ctx), StepLog.computeRootHash(expected));
-        assertEq(keccak256(ctx.pageData), keccak256(expected.pageData));
+        assertEq(keccak256(ctx.sliceData), keccak256(expected.sliceData));
     }
 
     function testRawPointerReadFlushesRegisters() public pure {
@@ -202,10 +188,10 @@ contract StateAccessCacheTest is Test {
         rawRegisterWrite(expected, lastReg, ~registerValue);
         uint256 offset = followingAddr - EmulatorConstants.UARCH_HALT_ADDR;
         for (uint256 i; i < 8; ++i) {
-            expected.pageData[offset + i] = bytes1(uint8(followingValue >> (i * 8)));
+            expected.sliceData[offset + i] = bytes1(uint8(followingValue >> (i * 8)));
         }
         assertEq(StepLog.computeRootHash(ctx), StepLog.computeRootHash(expected));
-        assertEq(keccak256(ctx.pageData), keccak256(expected.pageData));
+        assertEq(keccak256(ctx.sliceData), keccak256(expected.sliceData));
     }
 
     function testRawPointerWriteInvalidatesRegisters() public pure {
@@ -221,21 +207,11 @@ contract StateAccessCacheTest is Test {
         rawRegisterWrite(expected, 1, 99);
         rawRegisterWrite(expected, 2, 123);
         assertEq(StepLog.computeRootHash(ctx), StepLog.computeRootHash(expected));
-        assertEq(keccak256(ctx.pageData), keccak256(expected.pageData));
+        assertEq(keccak256(ctx.sliceData), keccak256(expected.sliceData));
     }
 
-    function collidingPages() private pure returns (StepLog.Context memory ctx) {
-        ctx.pageIndices = new uint64[](3);
-        ctx.slices = new uint256[](3);
-        for (uint256 si; si < ctx.slices.length; ++si) {
-            ctx.slices[si] = StepLog.packSlice(0, 12, si * 4096);
-        }
-        ctx.pageIndices[1] = 61;
-        ctx.slices[1] = StepLog.packSlice(ctx.pageIndices[1] << 12, 12, uint256(1) * 4096);
-        ctx.pageIndices[2] = 122;
-        ctx.slices[2] = StepLog.packSlice(ctx.pageIndices[2] << 12, 12, uint256(2) * 4096);
-        ctx.pageData = new bytes(3 * 4096);
-        ctx.pageHashes = new bytes32[](3);
+    function collidingPages() private pure returns (StepLog.Context memory) {
+        return collidingPageContext(0);
     }
 
     function testCollisionsAndPageZero() public pure {
@@ -262,7 +238,6 @@ contract StateAccessCacheTest is Test {
     function readUnwitnessedPageZero() external pure returns (uint64) {
         StepLog.Context memory ctx = collidingPages();
         ctx.pageIndices[0] = 1;
-        ctx.slices[0] = StepLog.packSlice(ctx.pageIndices[0] << 12, 12, uint256(0) * 4096);
         return StateAccess.readWord(ctx, 0);
     }
 
@@ -289,9 +264,9 @@ contract StateAccessCacheTest is Test {
     function testCachedPageWriteInvalidatesHash() public pure {
         StepLog.Context memory ctx = collidingPages();
         StateAccess.readWord(ctx, 61 << 12);
-        ctx.pageHashes[1] = bytes32(uint256(1));
+        ctx.sliceHashes[1] = bytes32(uint256(1));
         StateAccess.writeWord(ctx, 61 << 12, 42);
-        assertEq(ctx.pageHashes[1], bytes32(0));
+        assertEq(ctx.sliceHashes[1], bytes32(0));
         assertEq(StateAccess.readWord(ctx, 61 << 12), 42);
     }
 }

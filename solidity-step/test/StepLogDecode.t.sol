@@ -24,7 +24,8 @@ import {ManifestParser} from "./ManifestParser.sol";
 contract StepLogDecodeTest is ManifestParser {
     // shadow uarch state at 0x400000 = page 1024; the first cycle of any uarch
     // program touches it, so it is the log's first page.
-    uint64 constant EXPECTED_FIRST_PAGE_INDEX = 1024;
+    uint64 constant EXPECTED_FIRST_PAGE_INDEX =
+        EmulatorConstants.AR_SHADOW_UARCH_STATE_START >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
 
     bytes fixture;
     bytes32 expectedRootBefore;
@@ -47,7 +48,9 @@ contract StepLogDecodeTest is ManifestParser {
     function testDecodeHappy() public view {
         StepLog.Context memory ctx = this.decode(fixture);
 
-        assertEq(ctx.hashFunction, 0, "hashFunction keccak256");
+        assertEq(
+            ctx.hashFunction, EmulatorConstants.HASH_FUNCTION_KECCAK256, "hashFunction keccak256"
+        );
         assertEq(
             ctx.rootHashBefore, expectedRootBefore, "recomputed rootHashBefore matches manifest"
         );
@@ -58,8 +61,8 @@ contract StepLogDecodeTest is ManifestParser {
         for (uint256 i; i < pageCount; ++i) {
             contentBytes += uint256(1) << StepLog.sliceLog2Size(ctx.slices[i]);
         }
-        assertEq(ctx.pageData.length, contentBytes, "pageData length tracks slice contents");
-        assertEq(ctx.pageHashes.length, pageCount, "pageHashes allocated per page");
+        assertEq(ctx.sliceData.length, contentBytes, "sliceData length tracks slice contents");
+        assertEq(ctx.sliceHashes.length, pageCount, "sliceHashes allocated per page");
         assertEq(ctx.pageIndices[0], EXPECTED_FIRST_PAGE_INDEX, "uarch shadow state page first");
     }
 
@@ -161,14 +164,47 @@ contract StepLogDecodeTest is ManifestParser {
         this.computeRoot(ctx);
     }
 
-    function computeRoot(StepLog.Context memory ctx) external pure returns (bytes32) {
-        return StepLog.computeRootHash(ctx);
+    function testAssemblyErrorSelectors() public pure {
+        assertEq(bytes4(0x245a1128), StepLog.TooFewSiblings.selector);
+        assertEq(bytes4(0xabe197a9), StepLog.InvalidSliceSubtree.selector);
+        assertEq(bytes4(0x10d24160), StepLog.AccessOutsideSlice.selector);
     }
 
-    function setLE64(bytes memory b, uint256 off, uint64 v) internal pure {
-        for (uint256 i = 0; i < 8; i++) {
-            b[off + i] = bytes1(uint8(v >> (8 * i)));
+    function testRejectsLeftoverSliceInContext() public {
+        uint64[] memory pages = new uint64[](1);
+        StepLog.Context memory ctx = contextWithPages(pages);
+        ctx.sliceHashes[0] = bytes32(uint256(1));
+        ctx.nodes = new StepLog.NodeEntry[](1);
+        ctx.nodes[0] =
+            StepLog.NodeEntry(0, EmulatorConstants.HASH_TREE_LOG2_ROOT_SIZE, bytes32(uint256(2)));
+        vm.expectRevert(StepLog.TooManyPages.selector);
+        this.computeRoot(ctx);
+    }
+
+    function testRejectsInvalidLeafSubtreeBothWalks() public {
+        StepLog.Context memory ctx = contextWithPages(new uint64[](1));
+        // The hand-built context deliberately leaves an earlier 32-byte slice unconsumed.
+        ctx.slices[0] = StepLog.packSlice(0, 5, 0);
+        for (uint256 twin; twin < 2; ++twin) {
+            vm.expectRevert(StepLog.InvalidSliceSubtree.selector);
+            this.invalidLeafSubtree(ctx, twin != 0);
         }
+    }
+
+    function invalidLeafSubtree(StepLog.Context memory ctx, bool twin) external pure {
+        StepLog.TreeWalkCursors memory cursors;
+        // Start one leaf after the slice: it is before the subtree end, but cannot be consumed.
+        if (twin) {
+            StepLog.computeSubtreeHashAsm(
+                ctx, cursors, 32, EmulatorConstants.HASH_TREE_LOG2_WORD_SIZE
+            );
+        } else {
+            StepLog.computeSubtreeHash(ctx, cursors, 32, EmulatorConstants.HASH_TREE_LOG2_WORD_SIZE);
+        }
+    }
+
+    function computeRoot(StepLog.Context memory ctx) external pure returns (bytes32) {
+        return StepLog.computeRootHash(ctx);
     }
 
     function decode(bytes calldata data) external pure returns (StepLog.Context memory ctx) {

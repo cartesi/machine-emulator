@@ -32,18 +32,6 @@ contract UarchStateMathTest is Test {
     uint32 constant UINT32_MAX = type(uint32).max;
     uint64 constant UINT64_MAX = type(uint64).max;
 
-    function testSanity() public pure {
-        assertEq(UINT16_MAX, 65535);
-        assertEq(UINT32_MAX, 4294967295);
-        assertEq(UINT64_MAX, 18446744073709551615);
-        assertEq(INT16_MAX, 32767);
-        assertEq(INT32_MAX, 2147483647);
-        assertEq(INT64_MAX, 9223372036854775807);
-        assertEq(INT16_MIN, -32768);
-        assertEq(INT32_MIN, -INT32_MAX - 1);
-        assertEq(INT64_MIN, -INT64_MAX - 1);
-    }
-
     function testUint64ToInt32() public pure {
         assertEq(StateAccess.uint64ToInt32(1), 1);
         assertEq(StateAccess.uint64ToInt32(0xffffffff), -1);

@@ -4,7 +4,7 @@
 -- SPDX-License-Identifier: LGPL-3.0-or-later
 
 local cartesi = require("cartesi")
-local usage = [[Usage: uarch-page-xray.lua (--config CONFIG.json | --stored DIR) MCYCLE [UARCH.elf]
+local usage = [[Usage: uarch-pcs-to-pages.lua (--config CONFIG.json | --stored DIR) MCYCLE [UARCH.elf]
 Trace one whole mcycle to revise the hot-function order in uarch/uarch-ram.ld.in.
 Run after eval "$(make -s env)" from the repository root. MCYCLE is the cycle
 before the instruction. Default ELF: uarch/uarch-ram.elf; NM selects the nm

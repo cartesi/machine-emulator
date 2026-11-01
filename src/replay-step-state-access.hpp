@@ -121,9 +121,9 @@ private:
     /// \param haddr Host address of page data
     /// \return A pointer to the slice_entry structure if found, nullptr otherwise
     const slice_entry *try_find_page(host_addr haddr_page) const {
-        auto it = std::ranges::lower_bound(m_context.log.pages, haddr_page, std::ranges::less{},
+        auto it = std::ranges::lower_bound(m_context.log.slices, haddr_page, std::ranges::less{},
             [](const auto &page) { return cast_ptr_to_host_addr(page.data); });
-        if (it != m_context.log.pages.end() && cast_ptr_to_host_addr(it->data) == haddr_page) {
+        if (it != m_context.log.slices.end() && cast_ptr_to_host_addr(it->data) == haddr_page) {
             return &(*it);
         }
         return nullptr;
@@ -147,7 +147,7 @@ private:
     /// rehashes it on the after-root pass.
     /// \details haddr is inside a witnessed page; see find_page.
     void invalidate_page_hash(host_addr haddr) const {
-        auto it = std::ranges::upper_bound(m_context.log.pages, haddr, std::ranges::less{},
+        auto it = std::ranges::upper_bound(m_context.log.slices, haddr, std::ranges::less{},
             [](const auto &page) { return cast_ptr_to_host_addr(page.data); });
         *(--it)->hash = machine_hash{};
     }

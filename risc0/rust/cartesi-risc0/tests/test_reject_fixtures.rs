@@ -15,6 +15,7 @@
 //
 
 use cartesi_risc0::{try_prove, REPLAY_STEP_ELF};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -25,35 +26,6 @@ use common::machine_rows;
 // malformed or declare an unsupported hash function. The guest must abort on each via
 // zk_abort_with_msg, which carries the C++ decoder's error, rather than produce a valid receipt. This
 // is the soundness statement: a malicious prover cannot get a proof for a forged log.
-
-/// The substring the guest abort message must contain for each reject tag (the C++ throw
-/// message, surfaced through zk_abort_with_msg).
-fn expected_message(tag: &str) -> &'static str {
-    match tag {
-        "bad_signature" => "invalid step log signature",
-        "unsupported_hash_function" => "unsupported hash function type",
-        "keccak256_declared" => "step log hash function not supported by this verifier",
-        "nonzero_scratch_hash" => "scratch hash area is not zero",
-        "page_count_zero" => "slice count is zero",
-        "page_count_exceeds_size" => "slice count exceeds step log size",
-        "sibling_count_mismatch" => "step log byte length does not match counts",
-        "page_index_not_increasing" => "slice addresses not in increasing order",
-        "too_few_siblings" => "too few sibling hashes in log",
-        "old_signature" => "invalid step log signature",
-        "slice_size_low" | "slice_size_high" => "slice log2 size out of range",
-        "slice_unaligned" => "slice address not aligned to its size",
-        "slice_unsorted" => "slice addresses not in increasing order",
-        "whole_page_only" | "slice_overlap" | "slice_same_page" => {
-            "machine replay requires whole-page witnesses"
-        }
-        "slice_node_overlap" => "slice or node overlaps a previous entry",
-        "slice_truncated" => "truncated slice data or hash",
-        "slice_trailing_bytes" | "slice_count_mismatch" => {
-            "step log byte length does not match counts"
-        }
-        other => panic!("unmapped reject tag: {other}"),
-    }
-}
 
 #[test]
 fn test_guest_rejects_forged_logs() {
@@ -75,6 +47,14 @@ fn test_guest_rejects_forged_logs() {
         dir.display()
     );
 
+    // Generated from tests/lua/cartesi/tests/reject_fixture_errors.lua.
+    let messages =
+        fs::read_to_string(dir.join("_errors.tsv")).expect("could not read reject messages");
+    let expected_messages: HashMap<_, _> = messages
+        .lines()
+        .map(|line| line.split_once('\t').expect("invalid reject message row"))
+        .collect();
+
     for row in &rows {
         let (name, tag) = (&row.name, &row.expect_error);
         let log = fs::read(dir.join(name)).expect("could not read step log");
@@ -88,7 +68,9 @@ fn test_guest_rejects_forged_logs() {
             &row.root_after,
         )
         .expect_err(&format!("guest ACCEPTED forged log {name} (tag {tag})"));
-        let want = expected_message(tag);
+        let want = *expected_messages
+            .get(tag.as_str())
+            .unwrap_or_else(|| panic!("unmapped reject tag: {tag}"));
         assert!(
             err.contains(want),
             "rejected {name} but message {err:?} lacks {want:?}"

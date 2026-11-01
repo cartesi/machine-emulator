@@ -222,10 +222,26 @@ void full_page_equivalence() {
     require(log.compute_root_hash() == m.get_root_hash());
     std::puts("floor 12: page set, contents, siblings and roots equal to page-level reference");
 }
+void node_end_at_root_boundary() {
+    machine_config config;
+    config.ram.length = 1 << 20;
+    machine m{config};
+    m.get_root_hash();
+    constexpr uint64_t high_half = UINT64_C(1) << 63;
+    step_log_recorder outer{hash_function_type::keccak256, m};
+    outer.touch_node(high_half, 63);
+    rejects([&] { outer.save_page(UINT64_MAX & ~PAGE_OFFSET_MASK); }, "page falls inside a recorded node's range");
+    rejects([&] { outer.touch_node(high_half + (UINT64_C(1) << 62), 62); }, "node overlaps an existing node");
+    step_log_recorder inner{hash_function_type::keccak256, m};
+    inner.touch_node(high_half + (UINT64_C(1) << 62), 62);
+    rejects([&] { inner.touch_node(high_half, 63); }, "node overlaps an existing node");
+    std::puts("node overlap checks at the 2^64 boundary");
+}
 } // namespace
 
 int main() {
     cuts();
     boundary_slices();
     full_page_equivalence();
+    node_end_at_root_boundary();
 }

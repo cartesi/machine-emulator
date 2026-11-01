@@ -28,8 +28,7 @@
 
 namespace cartesi {
 
-/// Guest PMA cache: memory ranges need only packed metadata, not host objects.
-/// Device objects hold no machine state; their existing handlers use the accessor.
+/// Guest-side PMA entry: packed istart/length for memory, a static device object for I/O ranges.
 class uarch_address_range {
     uint64_t m_istart{};
     uint64_t m_length{};
@@ -51,7 +50,7 @@ public:
 
     template <typename ABRT>
     void initialize(uint64_t istart, uint64_t ilength, ABRT abrt) {
-        // A previously cached descriptor takes precedence over newly read metadata.
+        // A previously cached entry takes precedence over newly read metadata.
         if (m_initialized) {
             return;
         }

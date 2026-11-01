@@ -2061,8 +2061,8 @@ describe("cartesi-machine CLI", function()
         local log_arg = "--log-send-cmio-response=" .. payload_file .. ",reason:1,"
         run_fail({ log_arg .. "data:0x00,data-file:" .. payload_file }, "exactly one of data:, data%-file:")
         run_fail({ log_arg:sub(1, -2) }, "exactly one of data:, data%-file:")
-        run_fail({ log_arg .. "data:0x00,encoding:rot13" }, "encoding must be one of hex, base64, utf8")
-        run_fail({ log_arg .. "data-file:" .. payload_file .. ",encoding:hex" }, "does not apply to data%-file:")
+        run_fail({ log_arg .. "data:0x00,encoding:rot13" }, "need encoding hex, base64, or utf8")
+        run_fail({ log_arg .. "data-file:" .. payload_file .. ",encoding:hex" }, "need data: to use encoding")
     end)
 
     -- -------------------------------------------------------------------------

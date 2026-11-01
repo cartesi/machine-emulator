@@ -896,15 +896,15 @@ static inline void executeECALL(const UarchState a, uint32 insn, uint64 pc) {
         return advancePc(a, pc);
     }
     if (fn == UARCH_ECALL_FN_FLUSH_TLB_BATCH) {
-        uint64 set_index = readX(a, 10);
-        uint64 start_slot_index = readX(a, 11);
+        uint64 set_index = readX(a, 10);        // a0 contains TLB set
+        uint64 start_slot_index = readX(a, 11); // a1 contains first slot of the batch
         if (set_index >= TLB_SET_COUNT || start_slot_index > TLB_SET_SIZE - UARCH_TLB_FLUSH_BATCH_SIZE ||
             start_slot_index % UARCH_TLB_FLUSH_BATCH_SIZE != 0) {
             throwRuntimeError(a, "TLB batch index out of range or unaligned");
         }
         uint64 end = start_slot_index + UARCH_TLB_FLUSH_BATCH_SIZE;
         for (uint64 slot_index = start_slot_index; slot_index < end; ++slot_index) {
-            writeTlbECALL(a, set_index, slot_index, UINT64_MAX, 0, UINT64_MAX);
+            writeTlbECALL(a, set_index, slot_index, TLB_INVALID_PAGE, 0, TLB_INVALID_PMA_INDEX);
         }
         return advancePc(a, pc);
     }

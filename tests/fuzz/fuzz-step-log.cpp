@@ -39,6 +39,14 @@
 #include <step-log.hpp>
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+    if (size == 0) {
+        return 0;
+    }
+    const auto shape = (data[0] & 1) != 0 ? cartesi::step_log_shape::whole_pages : cartesi::step_log_shape::slices;
+    const auto hash_function =
+        (data[0] & 2) != 0 ? cartesi::hash_function_type::sha256 : cartesi::hash_function_type::keccak256;
+    ++data;
+    --size;
     // decode needs a mutable image for its scratch hashes. Keep this fuzz buffer
     // aligned; the unit suite separately covers unaligned buffers.
     const size_t words = size / 8 + 1;
@@ -49,7 +57,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
     try {
         std::vector<cartesi::slice_entry> slices(cartesi::step_log::get_slice_count(image, size));
-        auto log = cartesi::step_log::decode(image, size, slices);
+        auto log = cartesi::step_log::decode(image, size, slices, hash_function, shape);
         // A structurally valid log (an unmutated seed) also exercises the
         // queries and the post-state walk; both must be exception-safe.
         log.try_find_page(log.pages[0].address);

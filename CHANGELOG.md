@@ -6,9 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- Added `dump_step_uarch`, `dump_reset_uarch` and `dump_send_cmio_response`, which replay a binary step log into a human-readable printout, across the C++, C, and Lua APIs; `dump_step_uarch` takes a skip count so a later cycle of a multi-cycle log can be dumped on its own
+- Added `dump_step_uarch`, `dump_reset_uarch` and `dump_send_cmio_response`, which replay a binary step log into a human-readable dump, across the C++, C, and Lua APIs; `dump_step_uarch` takes a skip count so a later cycle of a multi-cycle log can be dumped on its own
 - Added `--log-send-cmio-response=<filename>,reason:<number>,data:<text>|data-file:<path>[,encoding:hex|base64|utf8]`, which sends a cmio response and writes its binary step log
-- Added a `dump` sub-key to `--log-step-uarch`, `--log-reset-uarch` and `--log-send-cmio-response`, which also writes the human-readable printout to stderr
+- Added a `dump` sub-key to `--log-step-uarch`, `--log-reset-uarch` and `--log-send-cmio-response`, which also writes the human-readable dump to stderr
 - Added `root hash before:` and `root hash after:` lines to stderr around every `--log-*` option, the pair a verifier needs because the log omits these root hashes; for `--log-step` and `--log-reset-uarch` the hash after is the recorded revert root hash when the option leaves the machine paused on a rejected input
 - Added the public C constants `CM_AR_SHADOW_UARCH_STATE_START`, `CM_AR_SHADOW_UARCH_STATE_LENGTH`, `CM_AR_UARCH_RAM_START`, `CM_AR_UARCH_RAM_LENGTH`, `CM_STEP_LOG_SIGNATURE`, and `CM_STEP_LOG_SIGNATURE_SIZE`
 - Added the Lua constants `HASH_FUNCTION_KECCAK256` and `HASH_FUNCTION_SHA256`

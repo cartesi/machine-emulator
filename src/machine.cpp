@@ -2561,7 +2561,7 @@ machine_hashes machine::collect_mcycle_bundle(uint64_t bundle_offset, uint64_t l
         throw std::runtime_error{"cannot collect hashes when soft yield is enabled"};
     }
     if (read_reg(reg::uarch_cycle) != 0) {
-        throw std::runtime_error{"microarchitecture is not reset"};
+        throw std::runtime_error{"uarch is not reset"};
     }
 
     // Reserve the result before running, so an oversized bundle fails without advancing the machine

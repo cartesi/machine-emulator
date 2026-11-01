@@ -188,6 +188,34 @@ M.errors = {
     },
 }
 
+M.machine_errors = {
+    whole_page_only = "machine replay requires whole-page witnesses",
+    slice_overlap = "machine replay requires whole-page witnesses",
+    slice_same_page = "machine replay requires whole-page witnesses",
+    -- Host verify_step supports both hashes: the forged declaration fails the pre-root check.
+    keccak256_declared = "root hash before does not match step log",
+    page_count_exceeds_size = "slice count exceeds step log size",
+    sibling_count_mismatch = "step log byte length does not match counts",
+}
+for tag, error_spec in pairs(M.errors) do
+    M.machine_errors[tag] = M.machine_errors[tag] or error_spec.cpp_pattern
+end
+
+-- The RISC0 test reads this table instead of maintaining its own copy of the messages.
+function M.write_machine(dir)
+    local out <close> = assert(io.open(dir .. "/_errors.tsv", "w"))
+    local tags = {}
+    for tag in pairs(M.machine_errors) do
+        tags[#tags + 1] = tag
+    end
+    table.sort(tags)
+    for _, tag in ipairs(tags) do
+        local pattern = tag == "keccak256_declared" and "step log hash function not supported by this verifier"
+            or M.machine_errors[tag]
+        assert(out:write(tag, "\t", pattern, "\n"))
+    end
+end
+
 function M.write(dir)
     local out <close> = assert(io.open(dir .. "/_errors.json", "w"))
     assert(out:write(cartesi.tojson(M.errors)))

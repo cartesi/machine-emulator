@@ -167,8 +167,9 @@ for _, args in ipairs({ { 3, 0 }, { 1 << 51, 0 }, { -1, 0 }, { 0, 256 }, { 0, -1
         local m <close> = new_machine("keccak256")
         plant_batch(m, args[1], args[2])
         local before = m:get_root_hash()
-        local ok, err = pcall(m[method], m, 1)
-        assert(not ok and tostring(err):find("TLB batch index out of range or unaligned", 1, true))
+        test_util.assert_error("TLB batch index out of range or unaligned", function()
+            m[method](m, 1)
+        end, true)
         assert(m:get_root_hash() == before, "invalid batch mutated state")
     end
 end

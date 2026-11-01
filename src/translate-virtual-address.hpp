@@ -173,7 +173,7 @@ static NO_INLINE translation_status translate_virtual_address(STATE_ACCESS a, ui
         if (!ram.contains_absolute(pte_addr, sizeof(pte))) [[unlikely]] {
             return translation_status::access_fault;
         }
-        if (!read_ram_uint64(a, pte_addr, &pte, ram, 0)) [[unlikely]] {
+        if (!read_ram_uint64(a, pte_addr, &pte, ram, PMA_RAM_INDEX)) [[unlikely]] {
             return translation_status::access_fault;
         }
         // The OS can mark page table entries as invalid,
@@ -242,7 +242,7 @@ static NO_INLINE translation_status translate_virtual_address(STATE_ACCESS a, ui
                     update_pte |= PTE_D_MASK; // Set dirty bit
                 }
                 if (pte != update_pte) {
-                    write_ram_uint64(a, pte_addr, update_pte, ram, 0);
+                    write_ram_uint64(a, pte_addr, update_pte, ram, PMA_RAM_INDEX);
                 }
             }
             // Add page offset in vaddr to ppn to form physical address

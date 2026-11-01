@@ -31,7 +31,9 @@ end
 
 local function replay(row, log)
     local before = hash(row.rootHashBefore)
-    if row.kind == "cycle" then
+    if row.kind == "machine" then
+        return cartesi.machine:verify_step(before, log, tonumber(row.requestedCycleCount))
+    elseif row.kind == "cycle" then
         return cartesi.machine:verify_step_uarch(before, log, tonumber(row.requestedCycleCount))
     elseif row.kind == "reset_uarch" then
         return cartesi.machine:verify_reset_uarch(before, log)
@@ -65,37 +67,45 @@ local function true_after(row)
 end
 
 describe("shared reject fixtures", function()
-    local families = { "reject-uarch", "reject-send-cmio-response" }
-    -- The installed tests package does not include the make-generated corpus.
-    if not tests_util.file_exists(fixtures .. "reject-uarch/_manifest.csv") then
-        for _, family in ipairs(families) do
-            it(family .. " (fixtures unavailable)", function() end, false)
-        end
-        return
-    end
+    local families = { "reject-uarch", "reject-send-cmio-response", "reject-machine" }
     for _, family in ipairs(families) do
-        local dir = fixtures .. family
-        local rows = manifest.read_rows(dir)
-        assert(#rows > 0, "empty reject manifest: " .. dir)
-        for _, row in ipairs(rows) do
-            it(family .. "/" .. row.name .. " rejects " .. row.expectError, function()
-                local error_spec = assert(reject_errors.errors[row.expectError], "unmapped reject tag")
-                assert(error_spec.cpp_pattern and error_spec.solidity_signature and error_spec.solidity_message)
-                local src <close> = assert(io.open(dir .. "/" .. row.name, "rb"))
-                local log = assert(src:read("a"))
-                local obtained
-                local ok, err = pcall(function()
-                    local after = replay(row, log)
-                    obtained = after
-                    assert(after == hash(row.rootHashAfter), "root hash after does not match claimed hash")
-                end)
-                if row.expectError == "root_after_mismatch" then
-                    expect.equal(obtained, true_after(row))
-                end
-                expect.falsy(ok, "reject fixture was accepted")
-                assert(err and err:find(error_spec.cpp_pattern, 1, true), err)
-            end)
+        local path = fixtures .. family .. "/_manifest.csv"
+        if not tests_util.file_exists(path) then
+            assert(not os.getenv("CARTESI_REJECT_STEP_FIXTURES_PATH"), "missing reject manifest: " .. path)
+            it(family .. " (fixtures unavailable)", function() end, false)
+            goto continue
         end
+        do
+            local dir = fixtures .. family
+            local rows = manifest.read_rows(dir)
+            assert(#rows > 0, "empty reject manifest: " .. dir)
+            for _, row in ipairs(rows) do
+                it(family .. "/" .. row.name .. " rejects " .. row.expectError, function()
+                    local pattern
+                    if row.kind == "machine" then
+                        pattern = assert(reject_errors.machine_errors[row.expectError], "unmapped machine reject tag")
+                    else
+                        local error_spec = assert(reject_errors.errors[row.expectError], "unmapped reject tag")
+                        assert(error_spec.solidity_signature and error_spec.solidity_message)
+                        pattern = assert(error_spec.cpp_pattern)
+                    end
+                    local src <close> = assert(io.open(dir .. "/" .. row.name, "rb"))
+                    local log = assert(src:read("a"))
+                    local obtained
+                    local ok, err = pcall(function()
+                        local after = replay(row, log)
+                        obtained = after
+                        assert(after == hash(row.rootHashAfter), "root hash after does not match claimed hash")
+                    end)
+                    if row.expectError == "root_after_mismatch" then
+                        expect.equal(obtained, true_after(row))
+                    end
+                    expect.falsy(ok, "reject fixture was accepted")
+                    assert(err and err:find(pattern, 1, true), err)
+                end)
+            end
+        end
+        ::continue::
     end
 end)
 

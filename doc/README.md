@@ -5729,7 +5729,7 @@ assert(machine:read_reg("mcycle") == mcycle, "machine halted or yielded early")
 machine:run_uarch(ucycle)
 assert(machine:read_reg("uarch_cycle") == ucycle, "uarch halted before target")
 
--- Record the step into a binary log and dump its printout to screen
+-- Record the step into a binary log and display a readable dump
 local log = machine:log_step_uarch(1)
 io.stderr:write(string.format("\nStep log of uarch step at mcycle=%u uarch_cycle=%u:\n\n", mcycle, ucycle))
 io.stderr:write(cartesi.machine:dump_step_uarch(log, 0, 1))
@@ -7813,11 +7813,11 @@ tracking used for other writes.
 
 Lookup probes index 0 first, then binary-searches the sorted tail,
 treating empty entries as having an infinite start address. A miss
-returns the synthetic empty descriptor at index 32, outside the
-serialized array. Replay compares raw bounds before constructing and
-validating the selected descriptor. A malformed entry rejected by the
-search is not validated, even if its raw bounds were probed. Previously
-selected descriptor snapshots remain authoritative for later lookups.
+returns the synthetic empty PMA entry at PMA_MAX, outside the serialized
+array. Replay compares raw bounds before constructing and validating the
+selected address range. A malformed entry rejected by the search is not
+validated, even if its raw bounds were probed. Previously cached PMA
+entries remain authoritative for later lookups.
 
 ### Linux setup
 

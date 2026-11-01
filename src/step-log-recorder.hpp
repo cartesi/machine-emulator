@@ -61,16 +61,14 @@ class step_log_recorder {
     nodes_type m_touched_nodes; ///< Subtrees touched during execution
 
 public:
-    static constexpr int LOG2_SLICE_FLOOR = 9;
+    static constexpr int LOG2_MIN_SLICE_SIZE = 9;
 
     /// \brief Constructor
     /// \param hash_function hash function type to use for the log
     /// \param m machine being recorded
-    /// \param log2_floor minimum slice size, in log2 bytes (5..12)
+    /// \param log2_floor minimum slice size, in log2 bytes (5..12); machine steps pass the page size
     /// \details The log is serialized when finish() is called
-    // Machine steps pass the page size; slice-based operations use LOG2_SLICE_FLOOR.
-    // Tests may select any legal floor.
-    step_log_recorder(hash_function_type hash_function, machine &m, int log2_floor = LOG2_SLICE_FLOOR) :
+    step_log_recorder(hash_function_type hash_function, machine &m, int log2_floor = LOG2_MIN_SLICE_SIZE) :
         m_log2_floor(log2_floor),
         m_hash_function(hash_function),
         m_m(m) {
@@ -79,7 +77,7 @@ public:
         }
     }
 
-    /// Save the page before the first access or replay address-mapping dependency.
+    /// \brief Save the page before the first access or replay address-mapping dependency.
     void save_page(uint64_t address) {
         auto page = address & ~PAGE_OFFSET_MASK;
         if (m_touched_pages.contains(page)) {
@@ -89,7 +87,8 @@ public:
         auto node_it = m_touched_nodes.upper_bound(page);
         if (node_it != m_touched_nodes.begin()) {
             const auto prev_node_it = std::prev(node_it);
-            const auto prev_node_end = prev_node_it->first + (UINT64_C(1) << prev_node_it->second.log2_size);
+            const auto prev_node_end =
+                static_cast<uint128_t>(prev_node_it->first) + (UINT64_C(1) << prev_node_it->second.log2_size);
             // Reject if the page falls inside a previously recorded node's range.
             if (prev_node_end > page) {
                 throw std::runtime_error("page falls inside a recorded node's range");
@@ -99,7 +98,7 @@ public:
         m_m.read_memory(page, it->second.data.data(), it->second.data.size());
     }
 
-    /// Mark every leaf read or written; retain the full first-touch preimage until finish().
+    /// \brief Mark every leaf read or written; retain the full first-touch preimage until finish().
     void touch_page(uint64_t address, uint64_t length = sizeof(uint64_t)) {
         while (length != 0) {
             const auto page = address & ~PAGE_OFFSET_MASK;
@@ -138,7 +137,7 @@ public:
         if ((address & (node_size - 1)) != 0) {
             throw std::runtime_error("node address is not aligned to its size");
         }
-        const auto node_end = address + node_size;
+        const auto node_end = static_cast<uint128_t>(address) + node_size;
         // get first node with starting address >= address or end of map
         auto next_node_it = m_touched_nodes.lower_bound(address);
         // Reject if the next node starts inside this node's range.
@@ -147,7 +146,8 @@ public:
         }
         if (next_node_it != m_touched_nodes.begin()) {
             const auto prev_node_it = std::prev(next_node_it);
-            const auto prev_node_end = prev_node_it->first + (UINT64_C(1) << prev_node_it->second.log2_size);
+            const auto prev_node_end =
+                static_cast<uint128_t>(prev_node_it->first) + (UINT64_C(1) << prev_node_it->second.log2_size);
             // Reject if the previous node's range extends into this node's range.
             if (prev_node_end > address) {
                 throw std::runtime_error("node overlaps an existing node");
@@ -222,7 +222,7 @@ private:
         return hashes;
     }
 
-    /// Whole-tree walk; intra-page siblings come from the saved preimage.
+    /// \brief Whole-tree walk; intra-page siblings come from the saved preimage.
     void get_sibling_hashes_impl(uint64_t address, int log2_size, const slices_type &slices, size_t &next_slice,
         nodes_type::const_iterator &next_node, sibling_hashes_type &hashes) {
         const uint128_t end = static_cast<uint128_t>(address) + (static_cast<uint128_t>(1) << log2_size);

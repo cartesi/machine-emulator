@@ -79,20 +79,7 @@ local IFLAGS_PAGE = IFLAGS_Y_ADDR >> 12
 local IFLAGS_OFF = IFLAGS_Y_ADDR & 0xfff
 
 local function clear_iflags_y(log)
-    for _, page in ipairs(log.pages) do
-        if page.index == IFLAGS_PAGE then
-            local off = IFLAGS_OFF - (page.offset or 0)
-            page.data = page.data:sub(1, off) .. string.rep("\0", 8) .. page.data:sub(off + 9)
-            return
-        end
-    end
-    error("iflags page not found in cmio base log")
-end
-
--- Claimed before/after roots for a base fixture, from its directory's manifest row.
-local function base_claims(base_path)
-    local dir, name = base_path:match("^(.*)/([^/]+)$")
-    return manifest.read_claims(dir, name)
+    test_util.patch_step_log_page(log, IFLAGS_PAGE, IFLAGS_OFF, string.rep("\0", 8))
 end
 
 -- Each case: tag, base file, payload length, and a mutate(log) that tampers the log in
@@ -149,7 +136,7 @@ out:write(manifest.HEADER)
 for _, case in ipairs(cases) do
     assert(reject_errors.errors[case.tag], "unmapped reject tag: " .. case.tag)
     local log = test_util.read_step_log_file(case.base)
-    local claims = base_claims(case.base)
+    local claims = manifest.base_claims(case.base)
     local claim = case.mutate(log) or {}
     local name = (case.name or case.tag) .. ".log"
     test_util.write_step_log_file(log, output_dir .. "/" .. name)

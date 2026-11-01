@@ -103,6 +103,8 @@ library EmulatorConstants {
     uint64 internal constant SHARING_ALL = 0x2;
     uint64 internal constant SHARING_CONFIG = 0x1;
     uint64 internal constant SHARING_NONE = 0x0;
+    uint64 internal constant TLB_INVALID_PAGE = 0xffffffffffffffff;
+    uint64 internal constant TLB_INVALID_PMA_INDEX = 0xffffffffffffffff;
     uint64 internal constant UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE = 0x0;
     uint64 internal constant UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW = 0x2;
     uint64 internal constant UARCH_BREAK_REASON_UARCH_HALTED = 0x1;

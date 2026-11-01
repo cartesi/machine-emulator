@@ -36,6 +36,12 @@ machine-bind.lua
 machine-test.lua
 mcycle-overflow.lua
 mtime-interrupt.lua
+tlb-flush.lua
+pma-scan.lua
+pma-page-walk.lua
+pma-page-walk-branches.lua
+soft-float-division.lua
+soft-float-sqrt.lua
 )
 
 cd $SCRIPT_DIR/../lua

@@ -223,15 +223,6 @@ private:
         return m_m.get_host_addr(paddr, pma_index);
     }
 
-    /// \brief Record a cmio response write into the cmio rx buffer.
-    /// \param paddr Destination physical address; must be aligned to (1 << write_length_log2_size).
-    /// \param data Pointer to source bytes.
-    /// \param data_length Number of valid bytes at \p data.
-    /// \param write_length_log2_size Log2 of the full write length (data + zero padding).
-    /// \details Writes spanning more than a page are recorded as a single subtree
-    /// node (touch_node); writes fitting within a page fall back to page-level
-    /// recording (touch_page). In either case the actual memory write is delegated
-    /// to the machine, and the padding zeros are written via fill_memory.
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
         int write_length_log2_size) const {
         if (data == nullptr) {

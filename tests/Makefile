@@ -334,6 +334,9 @@ test-cmio: | $(CARTESI_CMIO_PATH)
 test-machine:
 	$(LUA) ./lua/cartesi-machine-tests.lua --jobs=$(NUM_JOBS) run
 
+test-machine-step-uarch:
+	$(LUA) ./lua/cartesi-machine-tests.lua --jobs=$(NUM_JOBS) --test='^rv64ui%-p%-add[i]?%.bin$$' run_step_uarch
+
 test-machine-with-log-step:
 	$(LUA) ./lua/cartesi-machine-tests.lua --jobs=$(NUM_JOBS) --hash-function=keccak256 run_step
 	$(LUA) ./lua/cartesi-machine-tests.lua --jobs=$(NUM_JOBS) --hash-function=sha256 run_step
@@ -382,6 +385,9 @@ create-reject-test-fixtures:
 	$(MAKE) create-uarch-step-fixtures \
 		CARTESI_UARCH_STEP_FIXTURES_PATH=$(CARTESI_REJECT_STEP_FIXTURES_PATH) \
 		UARCH_TEST_PATTERN='rv64ui%-uarch%-add%.bin'
+	$(MAKE) create-machine-step-fixtures \
+		CARTESI_MACHINE_STEP_FIXTURES_PATH=$(CARTESI_REJECT_STEP_FIXTURES_PATH) \
+		MACHINE_TEST='rv64mi%-p%-access%.bin'
 
 .PHONY: run-lua-spec-reject-fixtures create-reject-test-fixtures
 
@@ -452,7 +458,7 @@ test-coverage-uarch:
 # Tests that may run concurrently under make -j. Under coverage they share only
 # the .gcda files, which libgcov merges under a lock. Excludes the two coverage
 # tail steps ordered below.
-PARALLEL_TESTS = test-save-and-load test-machine test-lua test-jsonrpc \
+PARALLEL_TESTS = test-save-and-load test-machine test-machine-step-uarch test-lua test-jsonrpc \
 	test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine \
 	test-uarch-rv64ui test-uarch-rv64ui-replay test-uarch-interpreter test-uarch-address-range test-uarch-pma-cache test-step-log \
 	test-machine-with-log-step test-coverage-uarch test-computation-hash
@@ -516,7 +522,7 @@ coverage-all: | test-coverage-uarch-pcs
 	$(MAKE) coverage-report
 	$(MAKE) -C ../src swap-uarch-pristine-stock
 
-test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-rv64ui-replay test-uarch-interpreter test-uarch-address-range test-uarch-pma-cache test-step-log test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step create-computation-hash-corpus
+test: test-save-and-load test-yield-and-save test-machine test-machine-step-uarch test-uarch test-uarch-rv64ui test-uarch-rv64ui-replay test-uarch-interpreter test-uarch-address-range test-uarch-pma-cache test-step-log test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step create-computation-hash-corpus
 
 lint format check-format:
 	@$(MAKE) -C misc $@
@@ -531,7 +537,7 @@ check-lua:
 	luacheck lua/
 
 .PHONY: machine uarch misc riscv-tests riscv-arch-test build-tests-fuzz build-tests-fuzz-seed-corpus test-fuzz
-.PHONY: $(PARALLEL_TESTS) test-parallel test test-misc test-lua test-cm-cli test-evmu run-lua-spec-cm-cli \
+.PHONY: test-machine-step-uarch $(PARALLEL_TESTS) test-parallel test test-misc test-lua test-cm-cli test-evmu run-lua-spec-cm-cli \
 	test-coverage-uarch-pcs coverage-report coverage-all clean-coverage
 .PHONY: build-tests-computation-hash-fixtures build-computation-hash-corpus \
 	build-computation-hash-corpus-with-toolchain create-computation-hash-corpus archive-computation-hash-corpus \

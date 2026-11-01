@@ -15,13 +15,15 @@
 -- with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 --
 
--- Generates the big-machine (sha256) reject fixtures: recorded machine step logs tampered so the
--- shared replayer rejects them at decode. Replayed by the RISC0 guest and the C++/Lua host. Writes
--- <output-dir>/<case>.log plus <output-dir>/_manifest.csv.
+-- Generates SHA-256 machine-step reject fixtures by tampering recorded logs.
+-- The whole-page decoder or pre-root check rejects them. RISC0 also rejects a
+-- valid Keccak declaration at its SHA-only gate; the host rejects its forged root.
+-- Replayed by the RISC0 guest and spec-reject-fixtures.lua. Writes logs and _manifest.csv.
 
 local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
 local manifest = require("cartesi.tests.step_log_manifest")
+local reject_errors = require("cartesi.tests.reject_fixture_errors")
 
 local function stderr(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
@@ -59,7 +61,7 @@ do
         error(
             "adversarial base fixture not found: "
                 .. BASE
-                .. "\nGenerate the full fixture set first "
+                .. "\nGenerate fixtures with MACHINE_TEST=rv64mi%-p%-access first "
                 .. "(a MACHINE_TEST filter that excludes rv64mi-p-access removes it)."
         )
     end
@@ -146,6 +148,7 @@ for _, case in ipairs(require("cartesi.tests.step-log-slice-rejections")) do
 end
 
 test_util.prepare_empty_output_dir(output_dir)
+reject_errors.write_machine(output_dir)
 local out <close> = assert(io.open(output_dir .. "/" .. manifest.MANIFEST_NAME, "w"))
 out:write(manifest.HEADER)
 

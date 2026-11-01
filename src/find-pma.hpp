@@ -30,7 +30,7 @@ namespace cartesi {
 /// \param a Machine state accessor object.
 /// \param paddr Target physical address of word.
 /// \param index Receives index where PMA entry was found.
-/// \returns PMA entry where word falls, or empty sentinel.
+/// \returns Address range where word falls, or empty sentinel.
 template <typename T, typename STATE_ACCESS>
 auto &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
     [[maybe_unused]] auto note = a.make_scoped_note("find_pma");
@@ -39,7 +39,7 @@ auto &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
     } else if constexpr (requires { a.read_pma_bounds(index); }) {
         // Probe RAM, then binary-search the sorted nonempty tail, treating
         // empty suffix entries as +infinity. A miss returns the synthetic empty
-        // descriptor at index 32 (PMA_MAX). Only the selected descriptor is constructed and validated.
+        // PMA entry at PMA_MAX. Only the selected address range is constructed and validated.
         index = PMA_RAM_INDEX;
         const auto [ram_start, ram_length] = a.read_pma_bounds(index);
         if (ram_length == 0) [[unlikely]] {
@@ -62,14 +62,14 @@ auto &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
                 lower = index + 1;
             }
         }
-        // PMA_MAX selects the accessor's synthetic empty descriptor.
+        // PMA_MAX selects the accessor's synthetic empty PMA entry.
         index = PMA_MAX;
         return a.read_pma(index);
     } else {
-        // Native accessors already own constructed descriptors. Preserve their lookup path.
+        // Native accessors already own constructed address ranges. Preserve their lookup path.
         // Probe RAM, then binary-search the sorted nonempty tail, treating
         // empty suffix entries as +infinity. A miss returns the synthetic empty
-        // descriptor at index 32 (PMA_MAX). Only probed descriptors are validated.
+        // PMA entry at PMA_MAX. Only probed address ranges are validated.
         index = PMA_RAM_INDEX;
         auto &ram = a.read_pma(index);
         if (ram.is_empty()) [[unlikely]] {
@@ -92,7 +92,7 @@ auto &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
                 lower = index + 1;
             }
         }
-        // PMA_MAX selects the accessor's synthetic empty descriptor.
+        // PMA_MAX selects the accessor's synthetic empty PMA entry.
         index = PMA_MAX;
         return a.read_pma(index);
     }
@@ -103,7 +103,7 @@ auto &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param paddr Target physical address of word.
-/// \returns PMA entry where word falls, or empty sentinel.
+/// \returns Address range where word falls, or empty sentinel.
 template <typename T, typename STATE_ACCESS>
 FORCE_INLINE auto &find_pma(const STATE_ACCESS a, uint64_t paddr) {
     uint64_t index = 0;

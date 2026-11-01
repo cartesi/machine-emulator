@@ -35,7 +35,7 @@ namespace cartesi {
 
 /// \brief Hash function
 enum class hash_function_type : uint64_t {
-    keccak256, ///< Keccak-256 (recommended for fraud proofs based on Uarch)
+    keccak256, ///< Keccak-256 (recommended for fraud proofs using uarch)
     sha256,    ///< SHA-256 (recommended for fraud proofs using zkVMs)
 };
 

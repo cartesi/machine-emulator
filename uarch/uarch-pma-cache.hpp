@@ -26,23 +26,23 @@
 
 namespace cartesi {
 
-/// Guest descriptor snapshots and successful disjoint address intervals.
+/// Guest cached PMA entries and successful disjoint address ranges.
 /// All storage is part of the hashed guest memory and restored by guest reset.
 class uarch_pma_cache {
-    struct interval_lookup {
+    struct range_hit {
         uint64_t start{};
         uint64_t end{};
         uint64_t index{};
     };
 
     uarch_address_ranges m_ranges{};
-    std::array<interval_lookup, 16> m_intervals{};
-    size_t m_interval_count{};
+    std::array<range_hit, 16> m_hits{};
+    size_t m_range_count{};
 
     template <typename READ_ENTRY>
     pmas_entry probe(uint64_t index, READ_ENTRY read_entry) const {
         const auto &ar = m_ranges[index];
-        // Descriptor snapshots selected earlier remain authoritative.
+        // Cached entries selected earlier remain authoritative.
         if (ar.is_initialized()) {
             return {.istart = ar.get_istart(), .ilength = ar.get_length()};
         }
@@ -68,16 +68,16 @@ public:
         const uint64_t page = paddr & ~(AR_PAGE_SIZE - 1);
         const bool within_page = (paddr - page) <= AR_PAGE_SIZE - sizeof(T);
         if (within_page) {
-            for (size_t i = 0; i < m_interval_count; ++i) {
-                if (paddr >= m_intervals[i].start && paddr < m_intervals[i].end) {
-                    index = m_intervals[i].index;
+            for (size_t i = 0; i < m_range_count; ++i) {
+                if (paddr >= m_hits[i].start && paddr < m_hits[i].end) {
+                    index = m_hits[i].index;
                     return m_ranges[index];
                 }
             }
         }
         // Probe RAM, then binary-search the sorted nonempty tail, treating
         // empty suffix entries as +infinity. A miss returns the synthetic empty
-        // descriptor at index 32 (PMA_MAX). Only the selected descriptor is constructed and validated.
+        // PMA entry at PMA_MAX. Only the selected address range is constructed and validated.
         index = PMA_RAM_INDEX;
         const auto ram_entry = probe(index, read_entry);
         const uint64_t ram_start = ram_entry.istart & PMA_ISTART_START_MASK;
@@ -88,8 +88,8 @@ public:
             paddr - ram_start <= ram_entry.ilength - sizeof(T)) {
             auto &ram = m_ranges[index];
             ram.initialize(ram_entry.istart, ram_entry.ilength, abrt);
-            if (within_page && m_interval_count < m_intervals.size()) {
-                m_intervals[m_interval_count++] = {.start = ram.get_start(),
+            if (within_page && m_range_count < m_hits.size()) {
+                m_hits[m_range_count++] = {.start = ram.get_start(),
                     .end = ram.get_start() + ram.get_length(),
                     .index = index};
             }
@@ -101,14 +101,14 @@ public:
             index = lower + ((upper - lower) / 2);
             const auto entry = probe(index, read_entry);
             const uint64_t start = entry.istart & PMA_ISTART_START_MASK;
-            // Raw bounds suffice for rejection; construct only the selected descriptor.
+            // Raw bounds suffice for rejection; construct only the selected address range.
             if (entry.ilength == 0 || paddr < start) {
                 upper = index;
             } else if (entry.ilength >= sizeof(T) && paddr - start <= entry.ilength - sizeof(T)) {
                 auto &ar = m_ranges[index];
                 ar.initialize(entry.istart, entry.ilength, abrt);
-                if (within_page && m_interval_count < m_intervals.size()) {
-                    m_intervals[m_interval_count++] = {.start = ar.get_start(),
+                if (within_page && m_range_count < m_hits.size()) {
+                    m_hits[m_range_count++] = {.start = ar.get_start(),
                         .end = ar.get_start() + ar.get_length(),
                         .index = index};
                 }
@@ -117,16 +117,16 @@ public:
                 lower = index + 1;
             }
         }
-        // PMA_MAX selects the accessor's synthetic empty descriptor.
+        // PMA_MAX selects the accessor's synthetic empty PMA entry.
         index = PMA_MAX;
         return read(index, read_entry, abrt);
     }
 
     void invalidate_on_write(uint64_t paddr) {
-        // Replay may accept unusual descriptors permitting writes to PMA storage.
-        // Keep descriptor snapshots, as before, but repeat the uncached search.
+        // Replay may accept unusual PMA entries permitting writes to PMA storage.
+        // Cached entries stay valid; only the range cache is cleared.
         if (paddr >= AR_PMAS_START && paddr - AR_PMAS_START < AR_PMAS_LENGTH) [[unlikely]] {
-            m_interval_count = 0;
+            m_range_count = 0;
         }
     }
 };

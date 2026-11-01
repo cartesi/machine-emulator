@@ -145,10 +145,7 @@ private:
 
     /// \brief Zero the cached scratch hash of the page containing \p haddr so compute_root_hash
     /// rehashes it on the after-root pass.
-    /// \details A write through a raw host address only knows the address, not the page entry. Page
-    /// data pointers strictly ascend, so the containing page is the last one whose data is <= haddr.
-    /// \p haddr always falls inside a witnessed page (the interpreter resolved it via do_get_faddr,
-    /// which find_page'd it), so the lookup never steps before the first page.
+    /// \details haddr is inside a witnessed page; see find_page.
     void invalidate_page_hash(host_addr haddr) const {
         auto it = std::ranges::upper_bound(m_context.log.pages, haddr, std::ranges::less{},
             [](const auto &page) { return cast_ptr_to_host_addr(page.data); });
@@ -197,7 +194,7 @@ private:
 
     machine_hash do_read_revert_root_hash() const {
         machine_hash hash{};
-        std::copy_n(m_context.log.find_data(AR_SHADOW_REVERT_ROOT_HASH_START), hash.size(), hash.begin());
+        std::copy_n(m_context.log.find_data(AR_SHADOW_REVERT_ROOT_HASH_START, hash.size()), hash.size(), hash.begin());
         return hash;
     }
 
@@ -369,9 +366,7 @@ private:
     // -----
     friend i_accept_scoped_notes<replay_step_state_access>;
 
-    // A real scoped_note only when there is a dumper to receive the brackets. With the no-op sink the
-    // interpreter's notes must cost the zkVM guest nothing, which the base default guarantees (it still
-    // honors DUMP_SCOPED_NOTE builds)
+    // Preserve dump brackets; the default sink leaves no scoped-note overhead.
     auto do_make_scoped_note(const char *text) const {
         if constexpr (std::is_same_v<Dumper, no_step_log_dumper>) {
             return i_accept_scoped_notes<replay_step_state_access>::do_make_scoped_note(text);

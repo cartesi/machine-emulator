@@ -135,7 +135,10 @@ void machine_address_ranges::mark_always_dirty_pages() {
 template <typename AR>
     requires std::derived_from<AR, address_range>
 AR &machine_address_ranges::push_back(std::unique_ptr<AR> &&ar_ptr, register_where where) {
-    AR &ar_ref = *ar_ptr;               // Get reference to object, already in heap, to return later
+    AR &ar_ref = *ar_ptr; // Get reference to object, already in heap, to return later
+    if (where.pmas && ar_ref.is_empty()) {
+        throw std::invalid_argument("empty PMA entry");
+    }
     check(ar_ref, where);               // Check if we can register it
     const auto index = m_all.size();    // Get index the new address range will occupy
     m_all.push_back(std::move(ar_ptr)); // Move ptr to list of address ranges
@@ -338,12 +341,12 @@ machine_address_ranges::machine_address_ranges(const machine_config &config,
     }
     std::ranges::sort(
         m_pmas | std::views::drop(1), [](const auto &a, const auto &b) { return a.get_start() < b.get_start(); },
-        [this](const auto i) { return *m_all[i]; });
+        [this](const auto i) -> const address_range & { return *m_all[i]; });
 
     // Sort indices visible to hash tree by the start of corresponding address range
     std::ranges::sort(
         m_hash_tree, [](const auto &a, const auto &b) { return a.get_start() < b.get_start(); },
-        [this](const auto i) { return *m_all[i]; });
+        [this](const auto i) -> const address_range & { return *m_all[i]; });
 
     // Create descriptions and sort by start address
     auto src =

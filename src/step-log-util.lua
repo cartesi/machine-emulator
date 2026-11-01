@@ -50,8 +50,12 @@ if cartesi then
         { name = "shadow_state", start = cartesi.AR_SHADOW_STATE_START, length = cartesi.AR_SHADOW_STATE_LENGTH },
         { name = "shadow_tlb", start = cartesi.AR_SHADOW_TLB_START, length = cartesi.AR_SHADOW_TLB_LENGTH },
         { name = "shadow_pmas", start = cartesi.AR_PMAS_START, length = cartesi.AR_PMAS_LENGTH },
-        { name = "shadow_uarch", start = cartesi.UARCH_SHADOW_START_ADDRESS, length = cartesi.UARCH_SHADOW_LENGTH },
-        { name = "uarch_ram", start = cartesi.UARCH_RAM_START_ADDRESS, length = cartesi.UARCH_RAM_LENGTH },
+        {
+            name = "shadow_uarch",
+            start = cartesi.AR_SHADOW_UARCH_STATE_START,
+            length = cartesi.AR_SHADOW_UARCH_STATE_LENGTH,
+        },
+        { name = "uarch_ram", start = cartesi.AR_UARCH_RAM_START, length = cartesi.AR_UARCH_RAM_LENGTH },
         {
             name = "cmio_rx",
             start = cartesi.AR_CMIO_RX_BUFFER_START,
@@ -102,7 +106,7 @@ local function parse_header(data)
 end
 
 -- Read slice descriptors, skipping contents and scratch hashes to keep memory bounded.
-local function read_full(path)
+local function read_descriptors(path)
     local f <close> = assert(io.open(path, "rb"))
     local file_size = assert(f:seek("end"))
     f:seek("set", 0)
@@ -129,6 +133,17 @@ local function read_full(path)
         assert(f:seek("cur", size + HASH_SIZE) <= file_size, "truncated slice data or hash")
     end
 
+    local remaining = file_size - f:seek()
+    assert(
+        info.node_count >= 0 and info.node_count <= remaining // NODE_ENTRY_SIZE,
+        "step log byte length does not match counts"
+    )
+    remaining = remaining - info.node_count * NODE_ENTRY_SIZE
+    assert(
+        info.sibling_count >= 0 and info.sibling_count == remaining // SIBLING_SIZE and remaining % SIBLING_SIZE == 0,
+        "step log byte length does not match counts"
+    )
+
     info.nodes = {}
     for i = 1, info.node_count do
         local node_bytes = f:read(NODE_ENTRY_SIZE)
@@ -146,7 +161,6 @@ local function read_full(path)
     info.header_bytes = HEADER_SIZE
     info.nodes_bytes = info.node_count * NODE_ENTRY_SIZE
     info.siblings_bytes = info.sibling_count * SIBLING_SIZE
-    assert(f:seek() + info.siblings_bytes == file_size, "step log byte length does not match counts")
     return info
 end
 
@@ -207,7 +221,7 @@ local commands = {}
 
 function commands.info(args)
     local path = assert(args[1], "usage: step-log-util.lua info <step-log>")
-    local info = read_full(path)
+    local info = read_descriptors(path)
     print_header(info)
     for _, slice in ipairs(info.slices) do
         print(
@@ -242,7 +256,7 @@ end
 function commands.stats(args)
     assert(args[1], "usage: step-log-util.lua stats <step-log> [step-log ...]")
     for i, path in ipairs(args) do
-        print_stats(read_full(path))
+        print_stats(read_descriptors(path))
         if i < #args then print() end
     end
 end
@@ -265,7 +279,7 @@ commands["batch-stats"] = function(args)
     local max = { page = 0, node = 0, sibling = 0, size = 0 }
     local max_path = { page = "", node = "", sibling = "", size = "" }
     for _, path in ipairs(files) do
-        local ok, info = pcall(read_full, path)
+        local ok, info = pcall(read_descriptors, path)
         if ok then
             print_stats_row(info)
             total.page = total.page + info.page_count
@@ -312,7 +326,7 @@ end
 
 function commands.pages(args)
     local path = assert(args[1], "usage: step-log-util.lua pages <step-log>")
-    local info = read_full(path)
+    local info = read_descriptors(path)
     print(string.format("%-18s %-9s %-8s %s", "address", "log2_size", "bytes", "region"))
     for _, slice in ipairs(info.slices) do
         print(
@@ -329,7 +343,7 @@ end
 
 function commands.nodes(args)
     local path = assert(args[1], "usage: step-log-util.lua nodes <step-log>")
-    local info = read_full(path)
+    local info = read_descriptors(path)
     if info.node_count == 0 then
         print("No nodes recorded in " .. path)
         return
@@ -352,6 +366,8 @@ end
 local function help()
     io.stderr:write(string.format(
         [=[
+Inspect a step log without validating it; this tool is not a verifier.
+
 Usage:
 
   %s <command> [args...]

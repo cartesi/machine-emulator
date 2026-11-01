@@ -833,13 +833,13 @@ local function assert_dump_lines(text, expected)
     for line in text:gmatch("(.-)\n") do
         lines[#lines + 1] = line
     end
-    assert(#lines == #expected, string.format("printout has %d lines, expected %d:\n%s", #lines, #expected, text))
+    assert(#lines == #expected, string.format("dump has %d lines, expected %d:\n%s", #lines, #expected, text))
     for i, pat in ipairs(expected) do
-        assert(lines[i]:match(pat), string.format("printout line %d %q does not match %q", i, lines[i], pat))
+        assert(lines[i]:match(pat), string.format("dump line %d %q does not match %q", i, lines[i], pat))
     end
 end
 
-do_test("dump_step_uarch writes a readable printout", function(machine)
+do_test("dump_step_uarch writes a readable dump", function(machine)
     -- The log records 2 cycles, but the slices also cover the third (halting)
     -- instruction of the default program: "li a0,123", "li a7,halt", "ecall".
     local log = machine:log_step_uarch(2)
@@ -1420,6 +1420,46 @@ do_test("uarch ecall putchar should print char to console", function()
     assert(output == expected_output, "Output does not match expected output:\n" .. expected_output)
 end)
 
+do_test("receive_cmio_request fails if machine is not yielded", function(machine)
+    assert(machine:read_reg("iflags_X") == 0)
+    assert(machine:read_reg("iflags_Y") == 0)
+    tests_util.assert_error("machine is not yielded", function()
+        machine:receive_cmio_request()
+    end)
+end)
+
+do_test("receive_cmio_request fails if data is too big", function(machine)
+    machine:write_reg("iflags_Y", 1)
+    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+    machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+    machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+    machine:write_reg("htif_tohost_data", 1 + (1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE))
+    tests_util.assert_error("CMIO request data is too large", function()
+        machine:receive_cmio_request()
+    end)
+    -- a data length that fits in the tx buffer is accepted
+    local expected_data = "12345678"
+    machine:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, expected_data)
+    machine:write_reg("htif_tohost_data", 8)
+    local cmd, reason, data = machine:receive_cmio_request()
+    assert(cmd == cartesi.HTIF_YIELD_CMD_MANUAL)
+    assert(reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+    assert(data == expected_data)
+end)
+
+do_test("receive_cmio_request returns progress data", function(machine)
+    machine:write_reg("iflags_X", 1)
+    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+    machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_AUTOMATIC)
+    machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS)
+    machine:write_reg("htif_tohost_data", 500)
+    -- progress data comes from the tohost register itself, not the tx buffer
+    local cmd, reason, data = machine:receive_cmio_request()
+    assert(cmd == cartesi.HTIF_YIELD_CMD_AUTOMATIC)
+    assert(reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS)
+    assert(data == string.pack("<I4", 500))
+end)
+
 print("\n\ntesting send cmio response ")
 
 do_test("send_cmio_response is a no-op if iflags.Y is not set", function(machine)
@@ -1750,7 +1790,7 @@ do_test("send_cmio_response across data-size boundaries: machine state + log con
                 found.log2_size == c.write_log2,
                 string.format("node log2_size=%d != %d for data_len=%d", found.log2_size, c.write_log2, c.data_len)
             )
-            local expected_hash = tests_util.merkle_hash(string.rep("x", write_len), 0, c.write_log2, hash_fn)
+            local expected_hash = hash_tree.get_data_root_hash(string.rep("x", write_len), c.write_log2, hash_fn)
             assert(found.hash == expected_hash, string.format("node hash mismatch for data_len=%d", c.data_len))
         else
             local found

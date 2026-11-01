@@ -52,12 +52,10 @@
 namespace cartesi {
 
 /// \brief Signature at the start of a binary step log buffer: magic + version + reserved.
-/// Version byte is 4: variable-size page slices, with all counts in the header.
+/// Version 4.
 constexpr std::array<char, 8> STEP_LOG_SIGNATURE = {'C', 'T', 'S', 'I', 4, 0, 0, 0};
 
 /// \brief Fixed-size prefix of a step log buffer.
-/// \details The root hash before is recomputed from the witnessed tree at decode time; the cycle
-/// count and the root hash after are the caller's, driving the replay and checking its result.
 struct PACKED step_log_header {
     std::array<char, 8> signature; ///< STEP_LOG_SIGNATURE (magic + version + reserved)
     uint64_t hash_function;        ///< Value of hash_function_type used by the state tree
@@ -143,10 +141,7 @@ struct step_log {
     /// \param shape Accepted witness shape; machine replay requires whole pages.
     /// \return A validated step_log with root_hash_before recomputed from the witnessed tree.
     /// \throw runtime_error if the log is malformed.
-    /// \details Mirrors StepLog.decode in the Solidity replayer: header parse, per-count size bounds,
-    /// page ordering, per-node alignment/range, the combined pages+nodes disjointness walk, and the
-    /// initial-root recompute.
-    /// Solidity's per-count caps have no C++ wire-format counterpart; callers bound descriptor storage.
+    /// \details Mirrors StepLog.decode in the Solidity replayer.
     static step_log decode(unsigned char *log_image, uint64_t log_size, std::span<slice_entry> slice_storage,
         std::optional<hash_function_type> required_hash_function = std::nullopt,
         step_log_shape shape = step_log_shape::slices) {

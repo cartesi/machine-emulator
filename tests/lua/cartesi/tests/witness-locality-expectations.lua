@@ -3,6 +3,9 @@
 
 -- Upper bounds for page slices (floor 9), on rebased guest/base commit 690d2afd.
 -- Increases require review; do not regenerate these during tests.
+-- Regenerate: eval "$(make -s env)"; make -C tests run-lua-spec-witness-locality
+-- Temporarily lower these limits, then copy the printed values after reviewing the image change.
+-- Toolchain: cartesi/machine-emulator:toolchain (Dockerfile target toolchain).
 return {
     ["ordinary-alu"] = { pages = 12, slice_bytes = 14848, log_bytes = 19784 },
     ["tlb-miss-load"] = { pages = 19, slice_bytes = 18944, log_bytes = 25528 },

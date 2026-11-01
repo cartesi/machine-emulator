@@ -974,37 +974,32 @@ where options are:
 
   --log-step=<filename>,count:<mcycle-count>
     log and save a step of <mcycle-count> mcycles to <filename>.
-    prints the root hash before and after the step to stderr; a verifier
-    needs both, since the log carries neither. when the step leaves the
-    machine paused on a rejected input, the hash after is the recorded
+    when the step leaves the machine paused on a rejected input, the hash after is the recorded
     revert root hash, which is what the verifier returns.
 
     the logging options run in a fixed order once the machine stops:
     --log-step, then --max-uarch-cycle, then --log-step-uarch,
-    --log-reset-uarch and --log-send-cmio-response. each prints its own
-    pair of root hashes.
+    --log-reset-uarch and --log-send-cmio-response. each logging option
+    prints the root hashes before and after to stderr.
 
   --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,dump]
     log <uarch-cycle-count> uarch cycles (default 1) to <filename>
     as a binary step log. logging stops early at the uarch halt, so a count at
     or above the per-mcycle uarch budget records one whole mcycle.
-    prints the root hash before and after the step to stderr.
-    append ",dump" to also write a human-readable printout to stderr.
+    append ",dump" to also write a human-readable dump to stderr.
 
   --log-reset-uarch=<filename>[,dump]
     reset the uarch state and write a binary step log to <filename>.
-    prints the root hash before and after the reset to stderr; on a machine
-    paused on a rejected input the hash after is the recorded revert root
+    on a machine paused on a rejected input the hash after is the recorded revert root
     hash, which is what the verifier returns.
-    append ",dump" to also write a human-readable printout to stderr.
+    append ",dump" to also write a human-readable dump to stderr.
 
   --log-send-cmio-response=<filename>,<key>:<value>[,<key>:<value>[,...]...][,dump]
     send a cmio response to the rx buffer and write a binary step log to a file.
     runs after the machine has reached its terminal state. the machine should be
     in a yielded state (iflags.Y == 1); otherwise the logged transition is a no-op.
-    prints the root hash before and after the response to stderr; the hash before
-    is also the revert root hash recorded in the log.
-    append ",dump" to also write a human-readable printout to stderr.
+    the hash before is also the revert root hash recorded in the log.
+    append ",dump" to also write a human-readable dump to stderr.
 
     <key>:<value> is one of
         reason:<number>
@@ -1518,7 +1513,7 @@ end
 -- Payload encodings accepted by --log-send-cmio-response, named after the
 -- --hex-payload/--base64-payload/--utf8-payload options of rollup.cpp in
 -- machine-guest-tools. cartesi is only required later, so decode lazily.
-local ENCODINGS = {
+local cmio_response_encodings = {
     hex = function(v) return cartesi.fromhex(v) end,
     base64 = function(v) return cartesi.frombase64(v) end,
     utf8 = function(v) return v end,
@@ -2311,15 +2306,15 @@ options = {
         "--log-send-cmio-response=",
         function(keys, all, opts)
             local o = util.parse_options(keys, all, opts)
-            assert(o.reason, "missing reason for --log-send-cmio-response")
-            assert(o.filename, "missing filename for --log-send-cmio-response")
+            assertf(o.reason, "need reason in %s", all)
+            assertf(o.filename, "need filename in %s", all)
             local sources = (o.data and 1 or 0) + (o["data-file"] and 1 or 0)
-            assert(sources == 1, "--log-send-cmio-response requires exactly one of data:, data-file:")
+            assertf(sources == 1, "need exactly one of data:, data-file: in %s", all)
             if o["data-file"] then
-                assert(not o.encoding, "--log-send-cmio-response encoding does not apply to data-file:")
+                assertf(not o.encoding, "need data: to use encoding in %s", all)
             else
                 o.encoding = o.encoding or "hex"
-                assert(ENCODINGS[o.encoding], "--log-send-cmio-response encoding must be one of hex, base64, utf8")
+                assertf(cmio_response_encodings[o.encoding], "need encoding hex, base64, or utf8 in %s", all)
             end
             cmdline.log_send_cmio_response = o
             return true
@@ -2810,7 +2805,6 @@ local function print_root_hash(machine, print)
     (print or stderr)("%u: %s\n", machine:read_reg("mcycle"), cartesi.tohex(machine:get_root_hash()))
 end
 
--- The step log carries no root hashes, so every logging option prints the pair a verifier needs
 local function print_log_root_hash(when, hash) stderr_unsilenceable("root hash %s: %s\n", when, cartesi.tohex(hash)) end
 
 -- The root hash verify_step and verify_reset_uarch return: the recorded revert root hash when the
@@ -2820,7 +2814,7 @@ local function log_root_hash_after(machine)
         machine:read_reg("iflags_Y") ~= 0
         and machine:read_reg("htif_tohost_dev") == cartesi.HTIF_DEV_YIELD
         and machine:read_reg("htif_tohost_cmd") == cartesi.HTIF_YIELD_CMD_MANUAL
-        and machine:read_reg("htif_tohost_reason") == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED
+        and is_rx_rejected(machine:read_reg("htif_tohost_reason"))
     then
         return machine:read_memory(cartesi.AR_SHADOW_REVERT_ROOT_HASH_START, cartesi.HASH_SIZE)
     end
@@ -4834,7 +4828,7 @@ if cmdline.log_send_cmio_response then
     if o["data-file"] then
         data = util.read_file(o["data-file"])
     else
-        data = ENCODINGS[o.encoding](o.data)
+        data = cmio_response_encodings[o.encoding](o.data)
     end
     stderr("Logging cmio response: please wait\n")
     local revert_root_hash = machine:get_root_hash()

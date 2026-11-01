@@ -187,20 +187,12 @@ $(SEED_DIR)/.stamp: gen-seed-corpus.lua fuzz-common.h
 # explores the validation paths deeply instead of dying on the signature check. Sources
 # are the logs the solidity-step and risc0 test suites record.
 STEP_LOG_SEED_DIR = seed-corpus-step-log
-STEP_LOG_FIXTURE_DIRS = ../../solidity-step/test/fixtures ../../risc0/test/fixtures
+STEP_LOG_FIXTURE_DIRS = ../../solidity-step/test/fixtures ../../risc0/test/fixtures \
+	../build/uarch-step-fixtures ../build/reject-step-fixtures
 
 fuzz-step-log-seed-corpus:
 	@mkdir -p $(STEP_LOG_SEED_DIR)
-	@# Copy up to 40 small (<64k) recorded logs into the seed dir. Missing dirs are fine.
-	@find $(STEP_LOG_FIXTURE_DIRS) -name '*.log' -size -64k 2>/dev/null \
-		| head -40 \
-		| xargs -I{} cp {} $(STEP_LOG_SEED_DIR)/ \
-		|| true
-	@# A seeded run needs at least one fixture; warn (do not fail) if none were found.
-	@if [ -z "$$(ls -A $(STEP_LOG_SEED_DIR) 2>/dev/null)" ]; then \
-		echo "warning: no step-log fixtures found;" >&2; \
-		echo "  run 'make -C ../../solidity-step fixtures' first for a seeded run" >&2; \
-	fi
+	lua5.4 gen-step-log-seed-corpus.lua $(STEP_LOG_SEED_DIR) $(STEP_LOG_FIXTURE_DIRS)
 
 # -- Coverage report ----------------------------------------------------------
 #

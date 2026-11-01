@@ -138,22 +138,18 @@ function tests_util.prepare_empty_output_dir(dir)
     end
 end
 
-local function merkle_hash(data, start, log2_size, hash_fn)
-    assert(hash_fn, "hash_fn is nil")
-    local zero_hash_table = zero_hash_tables[hash_fn]
-    if log2_size == PAGE_LOG2_SIZE and data:sub(start + 1, start + PAGE_SIZE) == ZERO_PAGE then
-        return zero_hash_table[PAGE_LOG2_SIZE]
-    elseif log2_size > WORD_LOG2_SIZE then
-        local child_log2_size = log2_size - 1
-        local left = merkle_hash(data, start, child_log2_size, hash_fn)
-        local right = merkle_hash(data, start + (1 << child_log2_size), child_log2_size, hash_fn)
-        return cartesi[hash_fn](left, right)
-    else
-        return cartesi[hash_fn](data:sub(start + 1, start + (1 << WORD_LOG2_SIZE)), nil)
+-- Patch bytes at a page-relative offset in a witnessed slice.
+function tests_util.patch_step_log_page(log, index, offset, bytes)
+    for _, page in ipairs(log.pages) do
+        if page.index == index then
+            local at = offset - (page.offset or 0)
+            assert(at >= 0 and at + #bytes <= #page.data, "patch outside witnessed slice")
+            page.data = page.data:sub(1, at) .. bytes .. page.data:sub(at + #bytes + 1)
+            return
+        end
     end
+    error(string.format("page 0x%x not found in base log", index))
 end
-
-tests_util.merkle_hash = merkle_hash
 
 function tests_util.split_string(inputstr, sep)
     if sep == nil then
@@ -259,11 +255,11 @@ function tests_util.calculate_uarch_state_hash(machine)
 end
 
 -- Executes a function and asserts that it throws an error and that the error message matches the expected pattern
-function tests_util.assert_error(expected_error_text_pattern, fn)
+function tests_util.assert_error(expected_error_text_pattern, fn, plain)
     local status, actual_error_text = pcall(fn)
     assert(status == false, "Expected error to be thrown, but it was not")
     assert(
-        actual_error_text:match(expected_error_text_pattern),
+        tostring(actual_error_text):find(expected_error_text_pattern, 1, plain),
         string.format("Expected error to match '%s', but it was '%s'", expected_error_text_pattern, actual_error_text)
     )
 end
@@ -451,7 +447,7 @@ function tests_util.recompute_step_log_root(log, hash_fn)
     return walk_step_log(log, function(hash)
         return assert(hash, "missing sibling")
     end, function(page)
-        return merkle_hash(page.data, 0, page.log2_size or PAGE_LOG2_SIZE, hash_fn)
+        return hash_tree.get_data_root_hash(page.data, page.log2_size or PAGE_LOG2_SIZE, hash_fn)
     end, function(node)
         return node.hash
     end, function(left, right)

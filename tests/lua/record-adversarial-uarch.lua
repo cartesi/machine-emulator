@@ -23,6 +23,7 @@
 -- generator.
 
 local cartesi = require("cartesi")
+local hash_tree = require("cartesi.hash-tree")
 local test_util = require("cartesi.tests.util")
 local manifest = require("cartesi.tests.step_log_manifest")
 local reject_errors = require("cartesi.tests.reject_fixture_errors")
@@ -69,33 +70,12 @@ local BOGUS = string.rep("\186", 32)
 -- Overwrite a 64-bit word of the witnessed uarch shadow page (registers live there).
 local UARCH_SHADOW_PAGE = cartesi.UARCH_SHADOW_START_ADDRESS >> 12
 local function inject_uarch_register(log, off, value)
-    for _, page in ipairs(log.pages) do
-        if page.index == UARCH_SHADOW_PAGE then
-            off = off - (page.offset or 0)
-            page.data = page.data:sub(1, off) .. string.pack("<I8", value) .. page.data:sub(off + 9)
-            return
-        end
-    end
-    error(string.format("page 0x%x not found in base log", UARCH_SHADOW_PAGE))
+    test_util.patch_step_log_page(log, UARCH_SHADOW_PAGE, off, string.pack("<I8", value))
 end
 
 -- Overwrite the 32-bit instruction fetched at PC_INIT.
 local function inject_uarch_instruction(log, insn)
-    for _, page in ipairs(log.pages) do
-        if page.index == PC_PAGE then
-            local off = PC_OFF - (page.offset or 0)
-            local le = string.pack("<I4", insn)
-            page.data = page.data:sub(1, off) .. le .. page.data:sub(off + 5)
-            return
-        end
-    end
-    error(string.format("page 0x%x not found in base log", PC_PAGE))
-end
-
--- Claimed before/after roots for a base fixture, from its directory's manifest row.
-local function base_claims(base_path)
-    local dir, name = base_path:match("^(.*)/([^/]+)$")
-    return manifest.read_claims(dir, name)
+    test_util.patch_step_log_page(log, PC_PAGE, PC_OFF, string.pack("<I4", insn))
 end
 
 -- A rejected manual-yield reset reads the revert root hash (0xfe0) and htif.tohost,
@@ -134,7 +114,7 @@ local function refold_witness(log, edit)
     local tree = test_util.walk_step_log(log, function(hash)
         return { hash = assert(hash) }
     end, function(page)
-        return { page = page, hash = test_util.merkle_hash(page.data, 0, page.log2_size, "keccak256") }
+        return { page = page, hash = hash_tree.get_data_root_hash(page.data, page.log2_size, "keccak256") }
     end, function(node)
         return { node = node, hash = node.hash }
     end, function(left, right)
@@ -269,7 +249,7 @@ local cases = {
                     return true
                 end
             end)
-            assert(before == base_claims(UARCH_BASE).before, "omitting a page must preserve the pre-root")
+            assert(before == manifest.base_claims(UARCH_BASE).before, "omitting a page must preserve the pre-root")
             return { before = before }
         end,
     },
@@ -284,7 +264,7 @@ local cases = {
                     return true
                 end
             end)
-            assert(before == base_claims(RESET_BASE).before, "omitting a node must preserve the pre-root")
+            assert(before == manifest.base_claims(RESET_BASE).before, "omitting a node must preserve the pre-root")
             return { before = before }
         end,
     },
@@ -491,7 +471,7 @@ out:write(manifest.HEADER)
 for _, case in ipairs(cases) do
     assert(reject_errors.errors[case.tag], "unmapped reject tag: " .. case.tag)
     local log = test_util.read_step_log_file(case.base)
-    local claims = base_claims(case.base)
+    local claims = manifest.base_claims(case.base)
     local claim = (case.mutate and case.mutate(log)) or {}
     local bytes = test_util.serialize_step_log(log)
     if case.wire then

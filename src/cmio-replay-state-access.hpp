@@ -42,12 +42,8 @@ namespace cartesi {
 
 // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast,misc-no-recursion)
 
-/// Merkle hash of the subtree [start, start + 2^log2_size) of `data` (data_length
-/// bytes, zero-padded beyond). A subtree entirely past the data collapses to the
-/// precomputed pristine-zero hash for its level; a subtree entirely within falls
-/// through to merkle_tree_hash; only the boundary subtree at each level recurses.
-/// Mirrors HashTree.merkleSubtreeHashPadded in the Solidity replayer. Heap-free so it
-/// builds in a zkVM guest.
+/// \brief Merkle hash of a zero-padded subtree, using pristine hashes beyond the data.
+/// Mirrors Solidity's merkleSubtreeHashPadded; heap-free for zkVM guests.
 inline machine_hash merkle_subtree_hash_padded(hash_function_type hash_function, const unsigned char *data,
     uint64_t data_length, uint64_t start, int log2_size, const machine_hash *pristine) {
     constexpr int word_log2 = HASH_TREE_LOG2_WORD_SIZE;
@@ -98,8 +94,7 @@ inline void merkle_tree_hash_padded(hash_function_type hash_function, const unsi
     }
     constexpr int word_log2 = HASH_TREE_LOG2_WORD_SIZE;
     constexpr uint64_t word_size = UINT64_C(1) << word_log2;
-    // Pristine-zero hash per level, built from merkle_tree_hash + concat_hash alone
-    // (heap-free for the ZK guest).
+    // Pristine-zero hash per level.
     std::array<machine_hash, HASH_TREE_LOG2_ROOT_SIZE + 1> pristine{};
     std::array<unsigned char, word_size> zero_word{};
     merkle_tree_hash(hash_function, zero_word.data(), zero_word.size(),
@@ -170,14 +165,6 @@ private:
         aliased_aligned_write<uint64_t>(data, val);
     }
 
-    /// \brief Verify a padded memory write recorded in the log.
-    /// \param paddr Destination physical address; must be aligned to (1 << write_length_log2_size).
-    /// \param data Pointer to source bytes.
-    /// \param data_length Number of valid bytes at \p data.
-    /// \param write_length_log2_size Log2 of the full write length (data + padding).
-    /// \details Supra-page writes hash (data || zero padding) into the logged node's slot.
-    /// Sub-page writes mutate the logged page in place so its new hash feeds the
-    /// finish()-time root reconstruction.
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
         int write_length_log2_size) const {
         if (data == nullptr) {

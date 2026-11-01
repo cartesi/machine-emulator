@@ -107,6 +107,12 @@ function M.read_claims(dir, name)
     error("row for " .. name .. " not found in " .. manifest)
 end
 
+-- Read a base fixture's claims from its path.
+function M.base_claims(path)
+    local dir, name = path:match("^(.*)/([^/]+)$")
+    return M.read_claims(dir, name)
+end
+
 -- Columns inapplicable to a kind stay blank.
 function M.format_row(ctx)
     return string.format(

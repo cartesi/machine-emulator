@@ -44,8 +44,6 @@ using uint32 = uint32_t;
 using int64 = int64_t;
 using uint64 = uint64_t;
 using bytes = const unsigned char *;
-// Solidity's bytes32. The transpiler leaves the name unchanged, mapping it directly to Solidity's
-// native bytes32.
 using bytes32 = const_machine_hash_view;
 
 // Wrapper functions used to access data from the uarch state accessor
@@ -142,15 +140,14 @@ static inline uint64 readHtifTohost(State &a) {
 
 // The revert root hash is a 32-byte machine hash stored raw in its dedicated shadow slot. The page
 // model hashes the bytes as-is, so the write must produce the same page bytes across all replayers.
-static constexpr uint64 REVERT_ROOT_HASH_LENGTH = 32;
-static constexpr uint64 REVERT_ROOT_HASH_LOG2_LENGTH = 5;
+static constexpr uint64 REVERT_ROOT_HASH_LOG2_SIZE = 5;
 
 template <typename State>
 static inline void writeRevertRootHash(State &a, bytes32 revertRootHash) {
     // write_memory throws in the record and replay accessors: write_memory_with_padding is the
     // only bulk write they witness.
-    a.write_memory_with_padding(AR_SHADOW_REVERT_ROOT_HASH_START, revertRootHash.data(), REVERT_ROOT_HASH_LENGTH,
-        REVERT_ROOT_HASH_LOG2_LENGTH);
+    a.write_memory_with_padding(AR_SHADOW_REVERT_ROOT_HASH_START, revertRootHash.data(), MACHINE_HASH_SIZE,
+        REVERT_ROOT_HASH_LOG2_SIZE);
 }
 
 template <typename State>

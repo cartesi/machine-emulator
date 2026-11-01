@@ -50,6 +50,8 @@
 #define UARCH_ECALL_FN_PUTCHAR_DEF 2         // putchar
 #define UARCH_ECALL_FN_WRITE_TLB_DEF 4       // write_tlb
 #define UARCH_ECALL_FN_FLUSH_TLB_BATCH_DEF 5 // flush_tlb_batch
+
+/// \brief Number of TLB slots invalidated by one flush_tlb_batch ecall
 #define UARCH_TLB_FLUSH_BATCH_SIZE_DEF 128
 
 // helper for using UINT64_C with defines

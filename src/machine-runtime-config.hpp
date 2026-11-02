@@ -74,6 +74,8 @@ struct console_runtime_config {
 };
 
 /// \brief Concurrency runtime configuration
+/// \details On Linux, idle hash-tree threads spin unless OMP_WAIT_POLICY=passive is in the environment when the
+/// process starts. Spinning threads slow hash-tree updates down when the cores are busy.
 struct concurrency_runtime_config {
     uint64_t update_hash_tree{};
 };

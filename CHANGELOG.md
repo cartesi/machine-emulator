@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped JSON-RPC protocol version to 0.9.0
 - Changed `--assert-rolling-template` to require a pristine uarch state in Keccak-256 machines
 - Changed `replace_memory_range` to accept the CMIO rx buffer
+- Changed `cartesi-machine` and spawned JSON-RPC servers to default `OMP_WAIT_POLICY` to `passive`
 
 ### Removed
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`

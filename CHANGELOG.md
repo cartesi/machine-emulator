@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed machines created in a directory reporting and storing the backing stores they were created from
 - Fixed JSON-RPC servers exiting on responses that are not valid UTF-8
 - Fixed JSON-RPC clients altering the access logs they send for verification
+- Fixed forked JSON-RPC servers leaving zombie processes on macOS
 
 ## [0.22.0] - 2026-10-15
 ### Added

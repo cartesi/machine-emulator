@@ -307,6 +307,63 @@ BOOST_AUTO_TEST_CASE_NOLINT(spawn_inherits_no_client_sockets_test) {
     BOOST_CHECK_EQUAL(count_sockets(second.pid), alone);
 }
 
+// Counts the child processes of a process, zombies included, or returns -1 where the platform cannot tell.
+static int count_children(uint32_t pid) {
+#if defined(__linux__)
+    int count = 0;
+    for (const auto &entry : std::filesystem::directory_iterator("/proc")) {
+        std::ifstream stat(entry.path() / "stat");
+        std::string line;
+        if (!std::getline(stat, line)) {
+            continue;
+        }
+        // The parent pid is the second field after the parenthesized command name
+        std::istringstream fields(line.substr(line.rfind(')') + 1));
+        std::string state;
+        uint32_t ppid = 0;
+        if (fields >> state >> ppid && ppid == pid) {
+            ++count;
+        }
+    }
+    return count;
+#elif defined(__APPLE__)
+    std::vector<pid_t> children(256);
+    // Returns the number of child pids, unlike proc_listpids(), which returns bytes
+    return proc_listchildpids(static_cast<pid_t>(pid), children.data(),
+        static_cast<int>(children.size() * sizeof(pid_t)));
+#else
+    (void) pid;
+    return -1;
+#endif
+}
+
+// Waits up to 5 seconds for a process to have no children, and returns how many it has left.
+static int wait_for_no_children(uint32_t pid) {
+    int children = count_children(pid);
+    for (int i = 0; i < 50 && children != 0; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        children = count_children(pid);
+    }
+    return children;
+}
+
+// What: a forked server that exits is reaped by the server that forked it.
+// How:  fork the spawned server, which is itself a forked process, shut the fork down, and expect the spawned server
+//       to be left with no children, not even a zombie.
+BOOST_FIXTURE_TEST_CASE_NOLINT(forked_server_exit_leaves_no_zombie_test, spawned_server_fixture) {
+    if (count_children(pid) < 0) {
+        BOOST_TEST_MESSAGE("cannot count the children of a process on this platform");
+        return;
+    }
+    cm_machine *forked_m = nullptr;
+    const char *forked_address{};
+    uint32_t forked_pid{};
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_fork_server(m, &forked_m, &forked_address, &forked_pid), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_shutdown_server(forked_m), CM_ERROR_OK);
+    cm_delete(forked_m);
+    BOOST_CHECK_EQUAL(wait_for_no_children(pid), 0);
+}
+
 // Tells whether the environment of a process holds an entry, or returns nothing where the platform cannot tell.
 // Entries are NUL-terminated strings. On macOS, the arguments precede them.
 static std::optional<bool> has_environment_entry(uint32_t pid, const std::string &entry) {

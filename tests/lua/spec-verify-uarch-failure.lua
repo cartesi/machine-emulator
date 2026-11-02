@@ -728,5 +728,60 @@ describe("access proof sibling count", function()
     end
 end)
 
+describe("verification through a JSON-RPC machine object", function()
+    local jsonrpc = require("cartesi.jsonrpc")
+    local sibling_count_error = "access sibling hash count is inconsistent with proof size"
+    local corruptions = {
+        {
+            "empty siblings",
+            sibling_count_error,
+            function(log)
+                log.accesses[1].sibling_hashes = {}
+            end,
+        },
+        {
+            "missing siblings",
+            sibling_count_error,
+            function(log)
+                change_sibling_count(log, -1)
+            end,
+        },
+        {
+            "extra siblings",
+            sibling_count_error,
+            function(log)
+                change_sibling_count(log, 1)
+            end,
+        },
+        {
+            "written data on a read access",
+            "unexpected written data in 1st access read access",
+            function(log)
+                log.accesses[1].written = log.accesses[1].read
+            end,
+        },
+        {
+            "written hash on a read access",
+            "unexpected written hash in 1st access read access",
+            function(log)
+                log.accesses[1].written_hash = log.accesses[1].read_hash
+            end,
+        },
+    }
+    for _, corruption in ipairs(corruptions) do
+        local name, expected_error, corrupt = table.unpack(corruption)
+        it("should reject " .. name .. " in uarch step logs as the local verifier does", function()
+            local remote <close> = jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN)
+            local machine <close> = build_default_machine()
+            local initial_hash = machine:get_root_hash()
+            local log = machine:log_step_uarch()
+            corrupt(log)
+            expect.fail(function()
+                remote:verify_step_uarch(initial_hash, log)
+            end, expected_error)
+        end)
+    end
+end)
+
 lester.report()
 lester.exit()

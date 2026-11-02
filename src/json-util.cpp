@@ -2311,25 +2311,20 @@ void to_json(nlohmann::json &j, const access &a) {
         j["read"] = encode_base64(a.get_read().value());
     }
 
-    if (a.get_type() == access_type::write) {
-        if (a.get_written_hash().has_value()) {
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            j["written_hash"] = encode_base64(a.get_written_hash().value());
-        }
-        if (a.get_written().has_value()) {
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            j["written"] = encode_base64(a.get_written().value());
-        }
+    // Serialize every field present, so that whoever verifies the access sees exactly what was logged
+    if (a.get_written_hash().has_value()) {
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        j["written_hash"] = encode_base64(a.get_written_hash().value());
+    }
+    if (a.get_written().has_value()) {
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        j["written"] = encode_base64(a.get_written().value());
     }
     if (a.get_sibling_hashes().has_value()) {
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        const auto &sibling_hashes = a.get_sibling_hashes().value();
-        // Minimum logged data size is hash-tree word size
-        auto data_log2_size = std::max(a.get_log2_size(), HASH_TREE_LOG2_WORD_SIZE);
-        auto depth = HASH_TREE_LOG2_ROOT_SIZE - data_log2_size;
         nlohmann::json s = nlohmann::json::array();
-        for (int i = 0; i < depth; i++) {
-            s.push_back(encode_base64(sibling_hashes[i]));
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        for (const auto &sibling_hash : a.get_sibling_hashes().value()) {
+            s.push_back(encode_base64(sibling_hash));
         }
         j["sibling_hashes"] = s;
     }

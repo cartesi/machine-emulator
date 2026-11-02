@@ -660,7 +660,7 @@ void machine_address_ranges::replace(const memory_range_config &config) {
                 throw std::invalid_argument{
                     std::string{"attempted replace of protected memory range "}.append(ar->get_description())};
             }
-            if (ar->is_host_read_only() || !ar->is_writeable()) {
+            if (ar->is_host_read_only()) {
                 throw std::invalid_argument{
                     std::string{"attempted replace of read-only memory range "}.append(ar->get_description())};
             }

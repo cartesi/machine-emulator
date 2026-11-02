@@ -22,6 +22,7 @@
 #include <variant>
 #include <vector>
 
+#include "address-range-constants.hpp"
 #include "shadow-registers.hpp"
 #include "shadow-uarch-state.hpp"
 #include "variant-hasher.hpp"
@@ -237,6 +238,31 @@ struct machine_config final {
 
     /// \brief Adjusts the machine config filling in default values
     machine_config &adjust_defaults();
+
+    /// \brief Calls a function for each address range with a backing store
+    /// \param f Called as f(label, auto_label, start, length, backing_store). A flash drive or NVRAM passes
+    /// its user label, possibly empty, and its auto label ("flashdriveN" or "nvramN"). Other ranges pass a
+    /// fixed label starting with a dot, which no user label can match, and an empty auto label.
+    template <typename F>
+    void for_each_backing_store(const F &f) {
+        f(".ram", "", AR_RAM_START, ram.length, ram.backing_store);
+        f(".dtb", "", AR_DTB_START, AR_DTB_LENGTH, dtb.backing_store);
+        for (size_t i = 0; i < flash_drive.size(); ++i) {
+            auto &d = flash_drive[i];
+            f(d.label, "flashdrive" + std::to_string(i), d.start, d.length, d.backing_store);
+        }
+        for (size_t i = 0; i < nvram.size(); ++i) {
+            auto &n = nvram[i];
+            f(n.label, "nvram" + std::to_string(i), n.start, n.length, n.backing_store);
+        }
+        f(".shadow-state", "", AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH, processor.backing_store);
+        f(".cmio-rx-buffer", "", AR_CMIO_RX_BUFFER_START, AR_CMIO_RX_BUFFER_LENGTH, cmio.rx_buffer.backing_store);
+        f(".cmio-tx-buffer", "", AR_CMIO_TX_BUFFER_START, AR_CMIO_TX_BUFFER_LENGTH, cmio.tx_buffer.backing_store);
+        f(".pmas", "", AR_PMAS_START, AR_PMAS_LENGTH, pmas.backing_store);
+        f(".uarch-shadow-state", "", AR_SHADOW_UARCH_STATE_START, AR_SHADOW_UARCH_STATE_LENGTH,
+            uarch.processor.backing_store);
+        f(".uarch-ram", "", AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH, uarch.ram.backing_store);
+    }
 
     /// \brief Adjust backing stores to point to the directory
     /// \param dir Directory where "config" is stored

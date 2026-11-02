@@ -364,6 +364,29 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(forked_server_exit_leaves_no_zombie_test, spawned
     BOOST_CHECK_EQUAL(wait_for_no_children(pid), 0);
 }
 
+// What: a server forked by a fork request whose response cannot be sent is stopped.
+// How:  delay the fork request past the client timeout, so the client resets the connection before the server
+//       forks. The server must then stop the child it forked, leaving no child process behind.
+BOOST_FIXTURE_TEST_CASE_NOLINT(fork_timeout_stops_forked_server_test, spawned_server_fixture) {
+    if (count_children(pid) < 0) {
+        BOOST_TEST_MESSAGE("cannot count the children of a process on this platform");
+        return;
+    }
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_set_timeout(m, 100), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_delay_next_request(m, 500), CM_ERROR_OK);
+    cm_machine *forked_m = nullptr;
+    const char *forked_address{};
+    uint32_t forked_pid{};
+    BOOST_REQUIRE_NE(cm_jsonrpc_fork_server(m, &forked_m, &forked_address, &forked_pid), CM_ERROR_OK);
+    BOOST_CHECK(std::string_view{cm_get_last_error_message()}.contains("timeout"));
+    BOOST_CHECK(forked_m == nullptr);
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_set_timeout(m, -1), CM_ERROR_OK);
+    // The server handles requests one at a time, so this returns after it has forked and failed to respond
+    const char *version{};
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_get_server_version(m, &version), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(wait_for_no_children(pid), 0);
+}
+
 // Tells whether the environment of a process holds an entry, or returns nothing where the platform cannot tell.
 // Entries are NUL-terminated strings. On macOS, the arguments precede them.
 static std::optional<bool> has_environment_entry(uint32_t pid, const std::string &entry) {

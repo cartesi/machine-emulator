@@ -1816,6 +1816,33 @@ dofile(%q)
             "--quiet",
         })
 
+        -- --remote-spawn: a run that fails before using its server still shuts it down
+        do
+            local rc, _, log = run({
+                "--remote-spawn",
+                "--remote-address=127.0.0.1:0",
+                "--revert-mode=stored",
+                "--max-mcycle=0",
+                "--no-init-splash",
+            })
+            expect.not_equal(rc, 0)
+            expect.truthy(log:find("--revert-mode=stored requires --load or --create", 1, true))
+            local host, port = log:match("Spawned JSONRPC remote cartesi machine at '([^:']+):(%d+)'")
+            assert(host, "spawned address not reported")
+            local socket = require("socket")
+            local listening = true
+            for _ = 1, 100 do
+                local connection = socket.connect(host, tonumber(port))
+                if not connection then
+                    listening = false
+                    break
+                end
+                connection:close()
+                socket.sleep(0.1)
+            end
+            expect.falsy(listening)
+        end
+
         -- --remote-address with config inspection: hash_function propagates to remote machine
         do
             local server <close>, address = jsonrpc.spawn_server()

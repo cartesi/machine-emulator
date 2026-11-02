@@ -597,24 +597,26 @@ void clone_file(const std::string &from, const std::string &to) {
         throw make_copy_path_system_error(EISDIR, "unable to clone file"s, from, to);
     }
 
-    // Attempt to link the file, otherwise fall back to copy
+    // Attempt to link the file, otherwise fall back to copy.
+    // A copy uses the space a link saves, so it is the fallback only when links cannot be made here.
+    // A refusal by a filesystem that supports links is rethrown, since copying every clone could fill the disk.
+    const bool read_only = (st.st_mode & S_WRITE_ALL) == 0;
     try {
-        if ((st.st_mode & S_WRITE_ALL) != 0) {
+        if (!read_only) {
             reflink_file(from, to);
         } else {
             hardlink_file(from, to);
         }
     } catch (const std::system_error &e) {
-        if (e.code().value() == ENOTSUP || // Operation not supported
-            e.code().value() == EXDEV ||   // Not on the same mounted filesystem
-            e.code().value() == EPERM      // Can happen if the filesystem does not support hard link
-        ) {
-            // Fall back to regular copy
-            copy_file(from, to, UINT64_MAX);
-        } else {
-            // Error is not related to platform support, rethrow
+        const int error = e.code().value();
+        const bool cannot_link = error == ENOTSUP || // Operation not supported
+            error == EXDEV ||                        // Not on the same mounted filesystem
+            (read_only && error == EPERM) ||         // The filesystem does not support hard links
+            (read_only && error == EMLINK);          // Too many hard links, and the copy can take more of its own
+        if (!cannot_link) {
             throw;
         }
+        copy_file(from, to, UINT64_MAX);
     }
 }
 

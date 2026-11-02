@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped JSON-RPC protocol version to 0.9.0
 - Changed `--assert-rolling-template` to require a pristine uarch state in Keccak-256 machines
 - Changed `replace_memory_range` to accept the CMIO rx buffer
+- Changed `clone_stored` to fail instead of copying when a filesystem refuses a reference link with `EPERM`
 - Changed `cartesi-machine` and spawned JSON-RPC servers to default `OMP_WAIT_POLICY` to `passive`
 
 ### Removed
@@ -53,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed forked JSON-RPC servers leaving zombie processes on macOS
 - Fixed forked JSON-RPC servers left running when their fork response could not be sent
 - Fixed forked JSON-RPC servers serving connections accepted by their parent
+- Fixed `clone_stored` failing once a read-only backing store reaches the hard link limit
 
 ## [0.22.0] - 2026-10-15
 ### Added

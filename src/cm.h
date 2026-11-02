@@ -529,20 +529,26 @@ CM_API void cm_delete(cm_machine *m);
 /// ```
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \param dir Directory to create an on-disk machine. If NULL or empty, the machine will be created in-memory.
+/// \param sharing Sharing mode of the on-disk machine with its directory (ignored when created in-memory).
 /// \returns 0 for success, non zero code for error.
+/// \details Creating an on-disk machine is equivalent to creating it in-memory,
+/// storing it to \p dir with cm_store(), and loading it back from \p dir with cm_load() using \p sharing.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
-CM_API cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config, const char *dir);
+CM_API cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config, const char *dir,
+    cm_sharing_mode sharing);
 
 /// \brief Combines cm_new() and cm_create() for convenience.
 /// \param config Machine configuration as a JSON object in a string (at least RAM length must be set).
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
-/// \param new_m Receives the pointer to the new machine object with a machine instance. Set to NULL on failure.
 /// \param dir Directory to create an on-disk machine. If NULL or empty, the machine will be created in-memory.
+/// \param sharing Sharing mode of the on-disk machine with its directory (ignored when created in-memory).
+/// \param new_m Receives the pointer to the new machine object with a machine instance. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 /// \details Use cm_delete() to delete the object.
 /// \details See cm_new() and cm_create() for more details.
-CM_API cm_error cm_create_new(const char *config, const char *runtime_config, const char *dir, cm_machine **new_m);
+CM_API cm_error cm_create_new(const char *config, const char *runtime_config, const char *dir, cm_sharing_mode sharing,
+    cm_machine **new_m);
 
 /// \brief Loads a new machine instance from a previously stored directory.
 /// \param m Pointer to an empty machine object (does not hold a machine instance).

@@ -508,6 +508,67 @@ describe("backing stores", function()
         end
     end)
 
+    it("should create a machine on disk as if storing it and loading it back", function()
+        for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_CONFIG, cartesi.SHARING_ALL }) do
+            local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+            local created_config
+            do
+                local machine <close> = cartesi.machine(base_machine_config, {}, stored_dirname, sharing)
+                created_config = machine:get_initial_config()
+            end
+            local _ <close> = tests_util.scope_exit(function()
+                cartesi.machine:remove_stored(stored_dirname)
+            end)
+            local machine <close> = cartesi.machine(stored_dirname, {}, sharing)
+            expect.equal(created_config, machine:get_initial_config())
+        end
+    end)
+
+    it("should modify the directory of a machine created on disk as its sharing mode allows", function()
+        local config = tabular.deep_copy(base_machine_config)
+        config.flash_drive[1].backing_store.shared = true
+        local flash_start = config.flash_drive[1].start
+        local ram_start = cartesi.AR_RAM_START
+        for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_CONFIG, cartesi.SHARING_ALL }) do
+            local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+            local flash_filename, ram_filename, ram_data
+            do
+                local machine <close> = cartesi.machine(config, {}, stored_dirname, sharing)
+                local initial_config = machine:get_initial_config()
+                flash_filename = initial_config.flash_drive[1].backing_store.data_filename
+                ram_filename = initial_config.ram.backing_store.data_filename
+                ram_data = filesystem.read_file(ram_filename)
+                machine:write_memory(flash_start, string.rep("X", 0x2000))
+                machine:write_memory(ram_start, string.rep("Y", 0x1000))
+            end
+            local _ <close> = tests_util.scope_exit(function()
+                cartesi.machine:remove_stored(stored_dirname)
+            end)
+            expect.equal(filesystem.read_file(rw_data_filename), a_data)
+            local flash_data = sharing == cartesi.SHARING_NONE and a_data or string.rep("X", 0x2000)
+            expect.equal(filesystem.read_file(flash_filename), flash_data)
+            expect.equal(filesystem.read_file(ram_filename) == ram_data, sharing ~= cartesi.SHARING_ALL)
+        end
+    end)
+
+    it("should store the live state of a machine created on disk", function()
+        local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+        local _ <close>, copied_dirname = tests_util.scope_temp_pathname()
+        local expected_root_hash
+        do
+            local machine <close> = cartesi.machine(base_machine_config, {}, stored_dirname)
+            machine:run()
+            expected_root_hash = machine:get_root_hash()
+            machine:store(copied_dirname, cartesi.SHARING_CONFIG)
+        end
+        local _ <close> = tests_util.scope_exit(function()
+            cartesi.machine:remove_stored(stored_dirname)
+            cartesi.machine:remove_stored(copied_dirname)
+        end)
+        local machine <close> = cartesi.machine(copied_dirname, {}, cartesi.SHARING_NONE)
+        expect.equal(machine:get_root_hash(), expected_root_hash)
+    end)
+
     it("should load a machine fully mapped on disk", function()
         local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
         local expected_mid_root_hash

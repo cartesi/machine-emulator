@@ -298,9 +298,9 @@ void machine::init_dtb_contents(const machine_config &config) {
 }
 
 // ??D It is best to leave the std::move() on r because it may one day be necessary!
-machine::machine(machine_config c, machine_runtime_config r, const std::string &dir, scope_remove remover) :
+machine::machine(machine_config c, machine_runtime_config r, const std::string &dir, scope_remove &remover) :
     m_c{std::move(c).adjust_defaults()}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
-    m_initial_c{m_c},
+    m_initial_c{dir.empty() ? m_c : machine_config{m_c}.adjust_backing_stores(dir, sharing_mode::all)},
     m_r{std::move(r)}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
     m_console{m_r.console},
     m_ars{m_c, m_r, m_console, dir, remover},
@@ -324,6 +324,20 @@ machine::machine(machine_config c, machine_runtime_config r, const std::string &
     // when calling write() on closed file descriptors.
     // This can happen with the stdout console file descriptors or network file descriptors.
     os::disable_sigpipe();
+    if (!dir.empty()) {
+        // The address ranges copied the backing stores into the directory, and now map them from there
+        m_c = m_initial_c;
+    }
+}
+
+// ??D It is best to leave the std::move() on r because it may one day be necessary!
+machine::machine(machine_config c, machine_runtime_config r, const std::string &dir, sharing_mode sharing,
+    scope_remove remover) :
+    // With sharing all, building directly in the directory gives the machine the store and load would
+    machine{dir.empty() || sharing == sharing_mode::all ? std::move(c) :
+                                                          create_stored(std::move(c), r, dir, sharing, remover),
+        std::move(r), // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
+        sharing == sharing_mode::all ? dir : std::string{}, remover} {
     // Construction succeeded, keep all created files and directories
     remover.retain_all();
 }
@@ -616,6 +630,14 @@ static void for_each_stored_filename(const std::string &dir, const F &func) {
 
     // Config file
     func(machine_config::get_config_filename(dir));
+}
+
+machine_config machine::create_stored(machine_config c, const machine_runtime_config &r, const std::string &dir,
+    sharing_mode sharing, scope_remove &remover) {
+    machine{std::move(c), r, std::string{}, remover}.store(dir);
+    for_each_stored_filename(dir, [&remover](const std::string &filename) { remover.add_file(filename); });
+    remover.add_directory(dir);
+    return machine_config::load(dir, sharing);
 }
 
 void machine::remove_stored(const std::string &dir, remove_mode mode) {

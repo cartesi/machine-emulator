@@ -945,9 +945,9 @@ static json jsonrpc_machine_create_handler(const json &j, const std::shared_ptr<
     if (session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "machine exists");
     }
-    static const char *const param_name[] = {"config", "runtime_config", "directory"};
+    static const char *const param_name[] = {"config", "runtime_config", "directory", "sharing"};
     auto args = parse_args<cartesi::machine_config, cartesi::optional_param<cartesi::machine_runtime_config>,
-        cartesi::optional_param<std::string>>(j, param_name);
+        cartesi::optional_param<std::string>, cartesi::optional_param<cartesi::sharing_mode>>(j, param_name);
     switch (count_args(args)) {
         case 1:
             session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args));
@@ -960,6 +960,12 @@ static json jsonrpc_machine_create_handler(const json &j, const std::shared_ptr<
             session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args),
                 std::get<1>(args).value(),  // NOLINT(bugprone-unchecked-optional-access)
                 std::get<2>(args).value()); // NOLINT(bugprone-unchecked-optional-access)
+            break;
+        case 4:
+            session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args),
+                std::get<1>(args).value(),  // NOLINT(bugprone-unchecked-optional-access)
+                std::get<2>(args).value(),  // NOLINT(bugprone-unchecked-optional-access)
+                std::get<3>(args).value()); // NOLINT(bugprone-unchecked-optional-access)
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};

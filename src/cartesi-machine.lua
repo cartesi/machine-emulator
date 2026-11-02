@@ -885,13 +885,19 @@ where options are:
   --no-htif-yield-automatic
     do not honor yield requests with automatic reset by target.
 
-  --create=<directory>
-    initializes a machine using fully on-disk state stored to <directory>,
-    the effect is similar as creating a machine and using --store=<directory>,
-    however this is the only safe way to create machines with large address spaces
-    or to propagate "shared" backing stores to configuration files.
+  --create=<directory>[,<key>:<value>[,...]...]
+    creates a machine, stores it to <directory>, and loads it back from <directory>.
+    with sharing:all, this is the only safe way to create machines with large
+    address spaces or to propagate "shared" backing stores to configuration files.
 
-    MUST BE USED WITH --revert-mode=stored or none
+    <key>:<value> is one of
+        sharing:<mode>
+
+        sharing (optional)
+        affects how address ranges modifications reflect the backing stores in
+        <directory>, as in --load. the default mode is "all".
+        mode "config" MUST BE USED WITH --revert-mode=none.
+        mode "all" MUST BE USED WITH --revert-mode=stored or none.
 
   --load=<directory>[,<key>:<value>[,...]...]
     load machine stored in <directory>.
@@ -1219,6 +1225,7 @@ local cmdline = {
     store_dir = nil,
     load_dir = nil,
     create_dir = nil,
+    create_sharing = nil,
     clone_dir = nil,
     load_sharing = nil,
     load_sync = nil,
@@ -2302,12 +2309,18 @@ options = {
     },
     {
         "--create=",
-        function(_, _, opts)
-            if not opts or #opts < 1 then return false end
-            cmdline.create_dir = opts
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            assertf(o.directory, "need directory in %s", all)
+            cmdline.create_dir = o.directory
+            cmdline.create_sharing = to_sharing(o.sharing) or cartesi.SHARING_ALL
             return true
         end,
-        "dir",
+        {
+            "directory",
+            directory = "dir",
+            sharing = { none = "none", config = "config", all = "all" },
+        },
     },
     {
         "--load=",
@@ -2853,13 +2866,10 @@ if cmdline.create_dir then
         "cannot use --create and --no-remote-create at the same time"
     )
     assert(not cmdline.load_dir, "cannot use --create and --load at the same time")
-    assert(
-        cmdline.revert_mode == "stored" or cmdline.revert_mode == "none",
-        "--create requires --revert-mode=stored or none"
-    )
 end
 
-if cmdline.load_sharing and cmdline.load_sharing ~= cartesi.SHARING_NONE then
+local stored_sharing = cmdline.load_sharing or cmdline.create_sharing
+if stored_sharing and stored_sharing ~= cartesi.SHARING_NONE then
     assert(
         cmdline.revert_mode == "stored" or cmdline.revert_mode == "none",
         "shared stored machines require --revert-mode=stored or none"
@@ -2867,9 +2877,7 @@ if cmdline.load_sharing and cmdline.load_sharing ~= cartesi.SHARING_NONE then
 end
 if cmdline.revert_mode == "stored" then
     assertf(cmdline.load_dir or cmdline.create_dir, "--revert-mode=stored requires --load or --create")
-    if cmdline.load_dir then
-        assert(cmdline.load_sharing == cartesi.SHARING_ALL, "--revert-mode=stored requires --load sharing:all")
-    end
+    assert(stored_sharing == cartesi.SHARING_ALL, "--revert-mode=stored requires sharing:all")
     assert(#cmdline.memory_range_replace == 0, "--revert-mode=stored cannot be combined with --replace-memory-range")
 end
 
@@ -3139,7 +3147,7 @@ echo "
         config = loaded_config
     end
 
-    main_machine = main_machine:create(config, runtime_config, cmdline.create_dir)
+    main_machine = main_machine:create(config, runtime_config, cmdline.create_dir, cmdline.create_sharing)
 end
 
 -- Subsequent stored snapshot/revert loads clear caches only when explicitly requested.

@@ -78,8 +78,9 @@ public:
     }
 
     /// \brief Create a machine from config
-    void create(const machine_config &config, const machine_runtime_config &runtime = {}, const std::string &dir = {}) {
-        do_create(config, runtime, dir);
+    void create(const machine_config &config, const machine_runtime_config &runtime = {}, const std::string &dir = {},
+        sharing_mode sharing = sharing_mode::all) {
+        do_create(config, runtime, dir, sharing);
     }
 
     /// \brief Load Create a machine from config
@@ -392,8 +393,8 @@ public:
 private:
     virtual i_machine *do_clone_empty() const = 0;
     virtual bool do_is_empty() const = 0;
-    virtual void do_create(const machine_config &config, const machine_runtime_config &runtime,
-        const std::string &dir) = 0;
+    virtual void do_create(const machine_config &config, const machine_runtime_config &runtime, const std::string &dir,
+        sharing_mode sharing) = 0;
     virtual void do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) = 0;
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
     virtual mcycle_root_hashes do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t log2_mcycle_period,

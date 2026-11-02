@@ -187,7 +187,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
     const auto config_str = config.dump();
     cm_machine *machine = nullptr;
-    if (cm_create_new(config_str.c_str(), nullptr, nullptr, &machine) != CM_ERROR_OK) {
+    if (cm_create_new(config_str.c_str(), nullptr, nullptr, CM_SHARING_ALL, &machine) != CM_ERROR_OK) {
         return 0;
     }
 

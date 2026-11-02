@@ -236,7 +236,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(spawn_during_store_test) {
     const auto dir = base + "/machine";
 
     cm_machine *machine{};
-    const auto err = cm_create_new(R"({"ram":{"length":134217728}})", nullptr, nullptr, &machine);
+    const auto err = cm_create_new(R"({"ram":{"length":134217728}})", nullptr, nullptr, CM_SHARING_ALL, &machine);
     const machine_ptr owner{machine, cm_delete};
     BOOST_REQUIRE_EQUAL(err, CM_ERROR_OK);
 
@@ -537,7 +537,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_server_address_null_output_test) {
 BOOST_AUTO_TEST_CASE_NOLINT(local_handle_rejected_test) {
     cm_machine *local{};
     std::string cfg = minimal_machine_config();
-    cm_create_new(cfg.c_str(), nullptr, nullptr, &local);
+    cm_create_new(cfg.c_str(), nullptr, nullptr, CM_SHARING_ALL, &local);
     BOOST_REQUIRE(local != nullptr);
 
     // Every cm_jsonrpc_* function that accepts cm_machine* should reject a local handle.
@@ -733,7 +733,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(cleanup_destroy_test) {
 
     // Create a machine so that destroy has something to do.
     std::string cfg = minimal_machine_config();
-    cm_create(m, cfg.c_str(), nullptr, nullptr);
+    cm_create(m, cfg.c_str(), nullptr, nullptr, CM_SHARING_ALL);
 
     cm_jsonrpc_set_cleanup_call(m, CM_JSONRPC_DESTROY);
     cm_delete(m); // implicitly destroys the machine but leaves server alive
@@ -853,7 +853,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_parse_error_test, spawned_server_fixture)
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_nesting_request_test, spawned_server_fixture) {
-    BOOST_REQUIRE_EQUAL(cm_create(m, minimal_machine_config().c_str(), nullptr, nullptr), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_create(m, minimal_machine_config().c_str(), nullptr, nullptr, CM_SHARING_ALL), CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(cm_write_reg(m, CM_REG_X1, 42), CM_ERROR_OK);
     for (bool objects : {false, true}) {
         for (bool batch : {false, true}) {

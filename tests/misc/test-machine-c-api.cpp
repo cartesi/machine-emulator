@@ -139,9 +139,9 @@ cm_error test_create_new(const char *config, const char *runtime, const char *di
     if (g_server != nullptr && out != nullptr) {
         cm_destroy(g_server); // defensive: evict any leftover machine
         *out = g_server;
-        return cm_create(g_server, config, runtime, dir);
+        return cm_create(g_server, config, runtime, dir, CM_SHARING_ALL);
     }
-    return cm_create_new(config, runtime, dir, out);
+    return cm_create_new(config, runtime, dir, CM_SHARING_ALL, out);
 }
 
 // Loads a machine from disk: remotely on g_server when active, locally otherwise.
@@ -258,7 +258,8 @@ BOOST_AUTO_TEST_CASE_NOLINT(clone_empty_remote_cleanup_test) {
                     machine_ptr parent{raw_parent, &cm_delete};
                     const std::string parent_address = address;
                     if (!source_empty) {
-                        BOOST_REQUIRE_EQUAL(cm_create(parent.get(), config, nullptr, nullptr), CM_ERROR_OK);
+                        BOOST_REQUIRE_EQUAL(cm_create(parent.get(), config, nullptr, nullptr, CM_SHARING_ALL),
+                            CM_ERROR_OK);
                     }
 
                     cm_machine *raw_source = nullptr;
@@ -293,9 +294,11 @@ BOOST_AUTO_TEST_CASE_NOLINT(clone_empty_remote_cleanup_test) {
                     BOOST_REQUIRE_EQUAL(cm_is_empty(clone.get(), &empty), CM_ERROR_OK);
                     BOOST_CHECK(empty);
                     if (operation == "create") {
-                        BOOST_REQUIRE_EQUAL(cm_create(clone.get(), config, nullptr, nullptr), CM_ERROR_OK);
+                        BOOST_REQUIRE_EQUAL(cm_create(clone.get(), config, nullptr, nullptr, CM_SHARING_ALL),
+                            CM_ERROR_OK);
                     } else if (operation == "failed_create") {
-                        BOOST_CHECK_EQUAL(cm_create(clone.get(), R"({"ram":{"length":0}})", nullptr, nullptr),
+                        BOOST_CHECK_EQUAL(
+                            cm_create(clone.get(), R"({"ram":{"length":0}})", nullptr, nullptr, CM_SHARING_ALL),
                             CM_ERROR_INVALID_ARGUMENT);
                     } else {
                         BOOST_CHECK_EQUAL(cm_load(clone.get(), "/unknown_dir", nullptr, CM_SHARING_NONE),

@@ -150,6 +150,14 @@
           "schema": {
             "type": "string"
           }
+        },
+        {
+          "name": "sharing",
+          "description": "Backing stores sharing mode with the directory",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/SharingMode"
+          }
         }
       ],
       "result": {

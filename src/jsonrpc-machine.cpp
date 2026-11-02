@@ -698,9 +698,9 @@ i_machine *jsonrpc_machine::do_clone_empty() const {
 }
 
 void jsonrpc_machine::do_create(const machine_config &config, const machine_runtime_config &runtime,
-    const std::string &dir) {
+    const std::string &dir, sharing_mode sharing) {
     bool result = false;
-    request("machine.create", std::tie(config, runtime, dir), result);
+    request("machine.create", std::tie(config, runtime, dir, sharing), result);
 }
 
 jsonrpc_machine::~jsonrpc_machine() {

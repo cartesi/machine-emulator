@@ -1248,13 +1248,14 @@ static int machine_obj_index_is_empty(lua_State *L) {
 /// \brief This is the machine:create() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_create(lua_State *L) {
-    lua_settop(L, 4);
+    lua_settop(L, 5);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const char *runtime_config = !lua_isnil(L, 3) ? clua_tojson(L, 3) : nullptr;
     const char *dir = luaL_optstring(L, 4, nullptr);
+    const auto sharing = static_cast<cm_sharing_mode>(luaL_optinteger(L, 5, CM_SHARING_ALL));
     // Create or load a machine depending on the type of the first argument
     const char *config = clua_tojson(L, 2);
-    if (cm_create(m.get(), config, runtime_config, dir) != 0) {
+    if (cm_create(m.get(), config, runtime_config, dir, sharing) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     lua_settop(L, 1);
@@ -1550,7 +1551,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
 static int machine_meta_call(lua_State *L) {
     // This receives the source machine that is being "called" as the first argument,
     // either a config or a directory as second argument, and an optional runtime config as third argument.
-    lua_settop(L, 4);
+    lua_settop(L, 5);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1); // source machine
     // We could be creating a local machine or a remote machine.
     // When we call cm_clone_empty(m.get(), ...), it creates a new empty object from the same underlying type as
@@ -1564,7 +1565,8 @@ static int machine_meta_call(lua_State *L) {
     if (lua_isstring(L, 2) == 0) {
         const char *config = clua_tojson(L, 2);
         const char *dir = luaL_optstring(L, 4, nullptr);
-        if (cm_create(new_m.get(), config, runtime_config, dir) != 0) {
+        const auto sharing = static_cast<cm_sharing_mode>(luaL_optinteger(L, 5, CM_SHARING_ALL));
+        if (cm_create(new_m.get(), config, runtime_config, dir, sharing) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {

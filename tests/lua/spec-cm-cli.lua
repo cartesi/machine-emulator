@@ -1549,6 +1549,26 @@ dofile(%q)
         })
         assert(os.execute("test -d " .. create_dir), "--create: directory not created")
 
+        -- --create=<dir>,sharing:none: the directory keeps the initial state while the machine runs
+        local _ <close>, private_create_dir = scope_stored_dirname()
+        local _, create_err = run_ok({
+            "--create=" .. private_create_dir .. ",sharing:none",
+            "--initial-hash",
+            "--max-mcycle=1000",
+            "--no-init-splash",
+            "--quiet",
+        })
+        local _, load_err = run_ok({
+            "--load=" .. private_create_dir,
+            "--initial-hash",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        })
+        local initial_hash = create_err:match("%f[%d]0: (0x%x+)")
+        expect.truthy(initial_hash)
+        expect.equal(load_err:match("%f[%d]0: (0x%x+)"), initial_hash)
+
         -- --store=<dir>,sharing:all: store with memory sharing enabled
         local _ <close>, shared_store = scope_stored_dirname()
         run_ok({

@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the permissionless refereed tournament to the user manual
 - Added a recipe that runs the tournament against Dave's contracts on a local chain
 - Added the `mode` argument to `remove_stored` in the C, Lua, and JSON-RPC APIs
+- Added the `sharing` argument to `create` in the C, Lua, and JSON-RPC APIs
+- Added the `sharing` option to `--create`
 - Added automatic labels of flash drives and NVRAMs to `replace_memory_range`
 - Added the `.ram`, `.dtb`, `.cmio-rx-buffer`, `.cmio-tx-buffer`, and `.uarch-ram` labels to `replace_memory_range`
 
@@ -45,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed interrupted `clear_hash_tree` calls leaving clean pages with cleared hashes
 - Fixed `store` saving the original backing store of memory ranges replaced by `replace_memory_range`
 - Fixed spawned JSON-RPC servers inheriting the sockets of their client
+- Fixed machines created in a directory reporting and storing the backing stores they were created from
 
 ## [0.22.0] - 2026-10-15
 ### Added

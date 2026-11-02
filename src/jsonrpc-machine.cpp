@@ -38,6 +38,7 @@
 #include <system_error>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #ifdef HAVE_FORK
 #include <fcntl.h>
@@ -549,9 +550,23 @@ jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeo
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
     char *const args[] = {const_cast<char *>(bin), server_fd, nullptr};
 
+    // Idle OpenMP threads that spin slow hash-tree updates down on busy hosts. libgomp reads the wait policy only
+    // from the environment at startup, so the child gets a passive one unless the caller chose otherwise.
+    std::vector<char *> child_environ;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    for (char *const *entry = environ; *entry != nullptr; ++entry) {
+        child_environ.push_back(*entry);
+    }
+    static char passive_wait_policy[] = "OMP_WAIT_POLICY=passive";
+    if (getenv("OMP_WAIT_POLICY") == nullptr) {
+        child_environ.push_back(passive_wait_policy);
+    }
+    child_environ.push_back(nullptr);
+
     // Spawn the remote machine as a child process
     pid_t child_pid{};
-    if (const int error = posix_spawnp(&child_pid, bin, &actions, &attributes, args, environ); error != 0) {
+    if (const int error = posix_spawnp(&child_pid, bin, &actions, &attributes, args, child_environ.data());
+        error != 0) {
         throw std::system_error{error, std::generic_category(), "posix_spawnp() failed to spawn server process"};
     }
 

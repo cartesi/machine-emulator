@@ -42,14 +42,18 @@
 
 #ifdef __APPLE__
 #include <libproc.h>
+#include <sys/sysctl.h>
 #endif
 
 #include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iterator>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <system_error>
@@ -300,6 +304,60 @@ BOOST_AUTO_TEST_CASE_NOLINT(spawn_inherits_no_client_sockets_test) {
     BOOST_REQUIRE_EQUAL(cm_jsonrpc_get_server_version(first.m, &version), CM_ERROR_OK);
     const spawned_server_fixture second;
     BOOST_CHECK_EQUAL(count_sockets(second.pid), alone);
+}
+
+// Tells whether the environment of a process holds an entry, or returns nothing where the platform cannot tell.
+// Entries are NUL-terminated strings. On macOS, the arguments precede them.
+static std::optional<bool> has_environment_entry(uint32_t pid, const std::string &entry) {
+    std::string block(1, '\0'); // Every entry is preceded by a NUL, including the first
+#if defined(__linux__)
+    std::ifstream file("/proc/" + std::to_string(pid) + "/environ", std::ios::binary);
+    if (!file) {
+        return std::nullopt;
+    }
+    block.append(std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{});
+#elif defined(__APPLE__)
+    int mib[] = {CTL_KERN, KERN_PROCARGS2, static_cast<int>(pid)};
+    size_t size = 0;
+    if (sysctl(mib, std::size(mib), nullptr, &size, nullptr, 0) != 0) {
+        return std::nullopt;
+    }
+    block.resize(1 + size);
+    if (sysctl(mib, std::size(mib), block.data() + 1, &size, nullptr, 0) != 0) {
+        return std::nullopt;
+    }
+    block.resize(1 + size);
+#else
+    (void) pid;
+    return std::nullopt;
+#endif
+    return block.contains('\0' + entry + '\0');
+}
+
+// What: a spawned server waits passively in OpenMP unless its client chose a wait policy.
+// How:  spawn a server with OMP_WAIT_POLICY unset and expect it to receive passive, then spawn one with
+//       OMP_WAIT_POLICY=active and expect it to keep active.
+BOOST_AUTO_TEST_CASE_NOLINT(spawn_defaults_passive_wait_policy_test) {
+    const char *original = getenv("OMP_WAIT_POLICY");
+    const std::optional<std::string> saved = original != nullptr ? std::optional<std::string>{original} : std::nullopt;
+    const auto restore = cartesi::scope_exit([&saved] {
+        if (saved) {
+            setenv("OMP_WAIT_POLICY", saved->c_str(), 1);
+        } else {
+            unsetenv("OMP_WAIT_POLICY");
+        }
+    });
+    BOOST_REQUIRE_EQUAL(unsetenv("OMP_WAIT_POLICY"), 0);
+    const spawned_server_fixture unset;
+    const auto passive = has_environment_entry(unset.pid, "OMP_WAIT_POLICY=passive");
+    if (!passive) {
+        BOOST_TEST_MESSAGE("cannot read the environment of a process on this platform");
+        return;
+    }
+    BOOST_CHECK(*passive);
+    BOOST_REQUIRE_EQUAL(setenv("OMP_WAIT_POLICY", "active", 1), 0);
+    const spawned_server_fixture active;
+    BOOST_CHECK(has_environment_entry(active.pid, "OMP_WAIT_POLICY=active").value_or(false));
 }
 
 // ---------------------------------------------------------------------------

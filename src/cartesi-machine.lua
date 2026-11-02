@@ -647,6 +647,11 @@ where options are:
         when omitted or defined as 0, the number of hardware threads is used if
         it can be identified or else a single thread is used.
 
+    on Linux, idle threads spin unless OMP_WAIT_POLICY=passive is set before the
+    process starts. spinning threads slow the hash tree down when the cores are busy.
+    the installed cartesi-machine and the servers spawned by --remote-spawn default
+    to passive.
+
     --console-io=<key>:<value>[,<key>:<value>[,...]...]
         console input/output runtime options,
         allowing console redirection to pipes or files.

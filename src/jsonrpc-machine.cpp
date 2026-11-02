@@ -40,7 +40,9 @@
 #include <utility>
 
 #ifdef HAVE_FORK
+#include <fcntl.h>
 #include <spawn.h>
+#include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -128,6 +130,33 @@ static void shutdown_and_close_socket(auto &socket) {
     std::ignore = socket.close(ec);
 }
 
+// Opens a socket or acceptor that spawned processes do not inherit, which Asio does not do on its own.
+static void open_socket(auto &socket, const tcp &protocol) {
+#ifdef HAVE_FORK
+#ifdef SOCK_CLOEXEC
+    const int fd = ::socket(protocol.family(), protocol.type() | SOCK_CLOEXEC, protocol.protocol());
+#else
+    const int fd = ::socket(protocol.family(), protocol.type(), protocol.protocol());
+    if (fd >= 0 && fcntl(fd, F_SETFD, FD_CLOEXEC) < 0) {
+        const int fcntl_errno = errno;
+        ::close(fd);
+        throw std::system_error{fcntl_errno, std::generic_category(), "unable to set close-on-exec on socket"};
+    }
+#endif
+    if (fd < 0) {
+        throw std::system_error{errno, std::generic_category(), "unable to open socket"};
+    }
+    beast::error_code ec;
+    std::ignore = socket.assign(protocol, fd, ec);
+    if (ec) {
+        ::close(fd);
+        throw beast::system_error(ec);
+    }
+#else
+    socket.open(protocol);
+#endif
+}
+
 // Parses an endpoint from an address string in the format "<ip>:<port>"
 static asio::ip::tcp::endpoint parse_endpoint(const std::string &address) {
     try {
@@ -188,6 +217,7 @@ static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &st
 
     // Try to reuse an alive connection to the same endpoint, otherwise connect it
     if (!stream.socket().is_open()) {
+        open_socket(stream.socket(), remote_endpoint.protocol());
         // Connect, we perform an asynchronous operation in order to support timeouts
         stream.async_connect(remote_endpoint, [&](beast::error_code ec) {
             if (ec == beast::error::timeout) {
@@ -470,10 +500,13 @@ jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeo
         (std::chrono::steady_clock::now() + std::chrono::milliseconds(spawn_timeout_ms)) :
         std::chrono::time_point<std::chrono::steady_clock>::max();
 
-    // Create a TCP acceptor and bind it to the specified address
-    // The acceptor automatically performs open, bind and listen operations
-    boost::asio::ip::tcp::acceptor a(*m_ioc,
-        address_to_endpoint(address)); // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
+    // Create a TCP acceptor, bind it to the specified address, and listen on it
+    const auto endpoint = address_to_endpoint(address);
+    boost::asio::ip::tcp::acceptor a(*m_ioc);
+    open_socket(a, endpoint.protocol());
+    a.set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
+    a.bind(endpoint);
+    a.listen();
 
     // Determine which remote machine binary to use
     const char *bin = getenv("CARTESI_JSONRPC_MACHINE");
@@ -481,16 +514,45 @@ jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeo
         bin = "cartesi-jsonrpc-machine";
     }
 
+    // The child inherits only the standard streams and the acceptor. Our sockets are close-on-exec, and dup2 clears
+    // that flag on the copy, so the acceptor goes to a descriptor other than its own.
+    const int acceptor_fd = a.native_handle();
+    const int child_acceptor_fd = acceptor_fd == STDERR_FILENO + 1 ? STDERR_FILENO + 2 : STDERR_FILENO + 1;
+    posix_spawn_file_actions_t actions{};
+    if (const int error = posix_spawn_file_actions_init(&actions); error != 0) {
+        throw std::system_error{error, std::generic_category(), "posix_spawn_file_actions_init() failed"};
+    }
+    auto actions_destroyer = make_scope_exit([&] { std::ignore = posix_spawn_file_actions_destroy(&actions); });
+    if (const int error = posix_spawn_file_actions_adddup2(&actions, acceptor_fd, child_acceptor_fd); error != 0) {
+        throw std::system_error{error, std::generic_category(), "posix_spawn_file_actions_adddup2() failed"};
+    }
+    posix_spawnattr_t attributes{};
+    if (const int error = posix_spawnattr_init(&attributes); error != 0) {
+        throw std::system_error{error, std::generic_category(), "posix_spawnattr_init() failed"};
+    }
+    auto attributes_destroyer = make_scope_exit([&] { std::ignore = posix_spawnattr_destroy(&attributes); });
+#ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
+    // Other descriptors of the process may lack close-on-exec, so close everything but what the child needs
+    if (const int error = posix_spawnattr_setflags(&attributes, POSIX_SPAWN_CLOEXEC_DEFAULT); error != 0) {
+        throw std::system_error{error, std::generic_category(), "posix_spawnattr_setflags() failed"};
+    }
+    for (const int fd : {STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO}) {
+        if (const int error = posix_spawn_file_actions_addinherit_np(&actions, fd); error != 0) {
+            throw std::system_error{error, std::generic_category(), "posix_spawn_file_actions_addinherit_np() failed"};
+        }
+    }
+#endif
+
     // Prepare command-line arguments for the child process
     char server_fd[256] = "";
-    std::ignore = snprintf(server_fd, std::size(server_fd), "--server-fd=%d", a.native_handle());
+    std::ignore = snprintf(server_fd, std::size(server_fd), "--server-fd=%d", child_acceptor_fd);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
     char *const args[] = {const_cast<char *>(bin), server_fd, nullptr};
 
     // Spawn the remote machine as a child process
     pid_t child_pid{};
-    if (posix_spawnp(&child_pid, bin, nullptr, nullptr, args, environ) != 0) {
-        throw std::system_error{errno, std::generic_category(), "posix_spawnp() failed to spawn server process"};
+    if (const int error = posix_spawnp(&child_pid, bin, &actions, &attributes, args, environ); error != 0) {
+        throw std::system_error{error, std::generic_category(), "posix_spawnp() failed to spawn server process"};
     }
 
 #ifdef CODE_COVERAGE

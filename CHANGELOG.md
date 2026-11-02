@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed interrupted hash-tree updates freezing the root hash of stored sparse trees
 - Fixed interrupted `clear_hash_tree` calls leaving clean pages with cleared hashes
 - Fixed `store` saving the original backing store of memory ranges replaced by `replace_memory_range`
+- Fixed spawned JSON-RPC servers inheriting the sockets of their client
 
 ## [0.22.0] - 2026-10-15
 ### Added

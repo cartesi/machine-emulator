@@ -605,6 +605,97 @@ describe("backing stores", function()
         end
     end)
 
+    it("should store a replaced memory range as its replacement", function()
+        local flash_start = 0x0080000000000000
+        local _ <close>, base_dirname = tests_util.scope_temp_pathname()
+        local _ <close>, replacement_dirname = tests_util.scope_temp_pathname()
+        local replacement_root_hash
+        do
+            local machine <close> = cartesi.machine(base_machine_config, {})
+            machine:store(base_dirname)
+            machine:write_memory(flash_start, string.rep("X", 0x2000))
+            replacement_root_hash = machine:get_root_hash()
+            machine:store(replacement_dirname)
+        end
+        local _ <close> = tests_util.scope_exit(function()
+            cartesi.machine:remove_stored(base_dirname)
+            cartesi.machine:remove_stored(replacement_dirname)
+        end)
+        local replacement_data_filename = replacement_dirname .. "/0080000000000000-2000.bin"
+        for _, case in ipairs({
+            { shared = false, sharing = cartesi.SHARING_NONE, current = false },
+            { shared = false, sharing = cartesi.SHARING_CONFIG, current = false },
+            { shared = false, sharing = cartesi.SHARING_ALL, current = true },
+            { shared = true, sharing = cartesi.SHARING_CONFIG, current = true },
+            { shared = true, sharing = cartesi.SHARING_ALL, current = true },
+        }) do
+            -- A shared replacement is written through, so it uses a copy of the replacement image.
+            local _ <close>, data_filename =
+                filesystem.write_scope_temp_file(filesystem.read_file(replacement_data_filename))
+            local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+            local _ <close> = tests_util.scope_exit(function()
+                cartesi.machine:remove_stored(stored_dirname)
+            end)
+            local current_root_hash
+            do
+                local machine <close> = cartesi.machine(base_dirname, {}, cartesi.SHARING_NONE)
+                machine:replace_memory_range({
+                    start = flash_start,
+                    length = 0x2000,
+                    backing_store = { data_filename = data_filename, shared = case.shared },
+                })
+                -- The initial configuration keeps the original backing store.
+                local backing_store = machine:get_initial_config().flash_drive[1].backing_store
+                expect.equal(backing_store.data_filename, base_dirname .. "/0080000000000000-2000.bin")
+                machine:write_memory(flash_start + 0x1000, "Z")
+                current_root_hash = machine:get_root_hash()
+                machine:store(stored_dirname, case.sharing)
+            end
+            local machine <close> = cartesi.machine(stored_dirname, {}, cartesi.SHARING_NONE)
+            -- Unshared ranges roll back to their backing stores, which is now the replacement.
+            expect.equal(machine:read_memory(flash_start + 0x1000, 1), case.current and "Z" or "X")
+            expect.equal(machine:get_root_hash(), case.current and current_root_hash or replacement_root_hash)
+        end
+    end)
+
+    it("should replace memory ranges by label", function()
+        local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+        do
+            local machine <close> = cartesi.machine(base_machine_config, {})
+            machine:store(stored_dirname)
+        end
+        local _ <close> = tests_util.scope_exit(function()
+            cartesi.machine:remove_stored(stored_dirname)
+        end)
+        local machine <close> = cartesi.machine(stored_dirname, {}, cartesi.SHARING_NONE)
+        local config = machine:get_initial_config()
+        local root_hash = machine:get_root_hash()
+        -- Flash drives and NVRAMs answer to their auto labels, and other ranges to fixed labels.
+        for label, backing_store in pairs({
+            flashdrive0 = config.flash_drive[1].backing_store,
+            [".ram"] = config.ram.backing_store,
+            [".cmio-rx-buffer"] = config.cmio.rx_buffer.backing_store,
+        }) do
+            local _ <close>, data_filename =
+                filesystem.write_scope_temp_file(filesystem.read_file(backing_store.data_filename))
+            machine:replace_memory_range({ label = label, backing_store = { data_filename = data_filename } })
+            expect.equal(machine:get_root_hash(), root_hash)
+        end
+        expect.equal(machine:get_initial_config(), config)
+        expect.fail(function()
+            machine:replace_memory_range({ label = ".shadow-state", backing_store = {} })
+        end, "attempted replace of protected memory range")
+        expect.fail(function()
+            machine:replace_memory_range({ label = ".pmas", backing_store = {} })
+        end, "attempted replace of read-only memory range")
+        expect.fail(function()
+            machine:replace_memory_range({ label = "flashdrive1", backing_store = {} })
+        end, "attempted replace of read-only memory range")
+        expect.fail(function()
+            machine:replace_memory_range({ label = ".nothing", backing_store = {} })
+        end, 'no memory range with label ".nothing"')
+    end)
+
     describe("page hash-tree cache metadata", function()
         -- The persisted layout contains a tag, list size, sentinel links, and compact entries.
         -- Each entry contains next/previous links, page address, borrowed flag, and payload index.

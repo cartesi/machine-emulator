@@ -24,6 +24,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 #include <json.hpp>
 
@@ -113,24 +114,10 @@ void machine_config::adjust_ht_backing_store_config(const std::string &dir, shar
 }
 
 machine_config &machine_config::adjust_backing_stores(const std::string &dir, sharing_mode sharing) {
-    adjust_ar_backing_store_config(AR_RAM_START, ram.length, dir, sharing, ram.backing_store);
-    adjust_ar_backing_store_config(AR_DTB_START, AR_DTB_LENGTH, dir, sharing, dtb.backing_store);
-    for (auto &f : flash_drive) {
-        adjust_ar_backing_store_config(f.start, f.length, dir, sharing, f.backing_store);
-    }
-    for (auto &n : nvram) {
-        adjust_ar_backing_store_config(n.start, n.length, dir, sharing, n.backing_store);
-    }
-    adjust_ar_backing_store_config(AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH, dir, sharing,
-        processor.backing_store);
-    adjust_ar_backing_store_config(AR_CMIO_RX_BUFFER_START, AR_CMIO_RX_BUFFER_LENGTH, dir, sharing,
-        cmio.rx_buffer.backing_store);
-    adjust_ar_backing_store_config(AR_CMIO_TX_BUFFER_START, AR_CMIO_TX_BUFFER_LENGTH, dir, sharing,
-        cmio.tx_buffer.backing_store);
-    adjust_ar_backing_store_config(AR_PMAS_START, AR_PMAS_LENGTH, dir, sharing, pmas.backing_store);
-    adjust_ar_backing_store_config(AR_SHADOW_UARCH_STATE_START, AR_SHADOW_UARCH_STATE_LENGTH, dir, sharing,
-        uarch.processor.backing_store);
-    adjust_ar_backing_store_config(AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH, dir, sharing, uarch.ram.backing_store);
+    for_each_backing_store(
+        [&dir, sharing](std::string_view, std::string_view, uint64_t start, uint64_t length, backing_store_config &c) {
+            adjust_ar_backing_store_config(start, length, dir, sharing, c);
+        });
     adjust_ht_backing_store_config(dir, sharing, hash_tree);
     return *this;
 }

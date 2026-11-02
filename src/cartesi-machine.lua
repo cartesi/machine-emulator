@@ -361,7 +361,10 @@ where options are:
     the memory range can be identified by label, by start and length, or both.
     when both label and start/length are given, they must be consistent with
     the existing memory range. when only label is given, start and length are
-    resolved from the machine's initial configuration.
+    taken from the memory range the label names. flash drives and nvrams
+    also match their automatic labels (flashdriveN and nvramN). the other
+    memory ranges match the labels .ram, .dtb, .cmio-rx-buffer,
+    .cmio-tx-buffer, and .uarch-ram.
 
   --ram=<key>:<value>[,<key>:<value>[,...]...]
   --dtb=<key>:<value>[,<key>:<value>[,...]...]

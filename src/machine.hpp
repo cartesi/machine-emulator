@@ -68,7 +68,8 @@ constexpr skip_hash_tree_update_t skip_hash_tree_update;
 /// \brief Cartesi Machine implementation
 class machine final {
 private:
-    const machine_config m_c;             ///< Copy of initialization config
+    machine_config m_c;                   ///< Current config, which replace_memory_range updates
+    const machine_config m_initial_c;     ///< Copy of initialization config
     machine_runtime_config m_r;           ///< Copy of initialization runtime config
     machine_console m_console;            ///< Console instance
     mutable machine_address_ranges m_ars; ///< Address ranges

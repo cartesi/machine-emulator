@@ -679,8 +679,10 @@ CM_API cm_error cm_get_runtime_config(const cm_machine *m, const char **runtime_
 /// }
 /// ```
 /// \returns 0 for success, non zero code for error.
-/// \details The machine must have been initialized with an existing memory range that
-/// has the same start and length specified in the new range.
+/// \details The memory range being replaced is identified by "label", or by "start" and "length".
+/// A flash drive or NVRAM matches its own label and its automatic label ("flashdrive0", "nvram0", and so on).
+/// The other memory ranges match the labels ".ram", ".dtb", ".cmio-rx-buffer", ".cmio-tx-buffer", and
+/// ".uarch-ram", which no user label can take. A later cm_store() uses the new backing store.
 CM_API cm_error cm_replace_memory_range(cm_machine *m, const char *range_config);
 
 /// \brief Returns a JSON object with the machine config used to initialize the machine.

@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the permissionless refereed tournament to the user manual
 - Added a recipe that runs the tournament against Dave's contracts on a local chain
 - Added the `mode` argument to `remove_stored` in the C, Lua, and JSON-RPC APIs
+- Added automatic labels of flash drives and NVRAMs to `replace_memory_range`
+- Added the `.ram`, `.dtb`, `.cmio-rx-buffer`, `.cmio-tx-buffer`, and `.uarch-ram` labels to `replace_memory_range`
 
 ### Changed
 - Changed the stored page hash-tree cache layout, making stored machines much faster to load
@@ -27,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped machine configuration archive version from 8 to 9
 - Bumped JSON-RPC protocol version to 0.9.0
 - Changed `--assert-rolling-template` to require a pristine uarch state in Keccak-256 machines
+- Changed `replace_memory_range` to accept the CMIO rx buffer
 
 ### Removed
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`
@@ -39,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed stored machines left unloadable or with stale root hashes by interrupted hash-tree updates
 - Fixed interrupted hash-tree updates freezing the root hash of stored sparse trees
 - Fixed interrupted `clear_hash_tree` calls leaving clean pages with cleared hashes
+- Fixed `store` saving the original backing store of memory ranges replaced by `replace_memory_range`
 
 ## [0.22.0] - 2026-10-15
 ### Added

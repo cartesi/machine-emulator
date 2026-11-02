@@ -862,6 +862,8 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
 #endif
         // Notify to ASIO that we are the child
         session->handler->ioc.notify_fork(asio::io_context::fork_child);
+        // The child inherits SIGCHLD ignored, but on macOS it must ignore it again for its dead children to be reaped
+        install_signal_handler(SIGCHLD, SIG_IGN);
         // Close all sessions that were initiated by the parent
         session->handler->close_sessions();
         // Swap current handler acceptor with the new one

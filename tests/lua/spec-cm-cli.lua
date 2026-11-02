@@ -73,6 +73,19 @@ describe("cartesi-machine CLI", function()
             dir
     end
 
+    -- Spawns a server for CLI runs, which may replace its process with a fork, and shuts down whichever
+    -- process serves its address when the returned owner closes.
+    local function scope_spawned_server()
+        local jsonrpc = require("cartesi.jsonrpc")
+        local server, address = jsonrpc.spawn_server()
+        server:set_cleanup_call(jsonrpc.NOTHING)
+        return tests_util.scope_exit(function()
+            local connection <close> = jsonrpc.connect_server(address)
+            connection:shutdown_server()
+        end),
+            address
+    end
+
     -- EVM ABI function signature for EvmAdvance (must match libcmt's EVM_ADVANCE)
     local ADVANCE_SIG = [[
     EvmAdvance(
@@ -1811,6 +1824,7 @@ dofile(%q)
         run_ok({
             "--remote-spawn",
             "--remote-address=127.0.0.1:0",
+            "--remote-shutdown",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -1845,8 +1859,7 @@ dofile(%q)
 
         -- --remote-address with config inspection: hash_function propagates to remote machine
         do
-            local server <close>, address = jsonrpc.spawn_server()
-            server:set_cleanup_call(jsonrpc.NOTHING) -- let the CLI subprocess shut it down
+            local _ <close>, address = jsonrpc.spawn_server()
             local cfg = config_for({
                 "--remote-address=" .. address,
                 "--hash-tree=hash_function:sha256",
@@ -2508,9 +2521,7 @@ dofile(%q)
     --       takes the revert path while inputs 0 and 2 take snapshot + commit.
     -- -------------------------------------------------------------------------
     it("rollup revert flow", function()
-        local jsonrpc = require("cartesi.jsonrpc")
-        local server <close>, address = jsonrpc.spawn_server()
-        server:set_cleanup_call(jsonrpc.NOTHING)
+        local _ <close>, address = scope_spawned_server()
         local _ <close>, prefix = tests_util.scope_temp_pathname()
         local _ <close> = tests_util.scope_exit(function()
             for _, p in ipairs({
@@ -2639,9 +2650,7 @@ dofile(%q)
     end)
 
     it("rollup stored revert flow", function()
-        local jsonrpc = require("cartesi.jsonrpc")
-        local server <close>, address = jsonrpc.spawn_server()
-        server:set_cleanup_call(jsonrpc.NOTHING)
+        local _ <close>, address = scope_spawned_server()
         local _ <close>, template_dir = scope_stored_dirname()
         local _ <close>, machine_dir = scope_stored_dirname()
         local _ <close>, prefix = tests_util.scope_temp_pathname()
@@ -2886,9 +2895,7 @@ dofile(%q)
     end
 
     it("mcycle computation hash across an epoch with a reject", function()
-        local jsonrpc = require("cartesi.jsonrpc")
-        local server <close>, address = jsonrpc.spawn_server()
-        server:set_cleanup_call(jsonrpc.NOTHING)
+        local _ <close>, address = scope_spawned_server()
         local _ <close>, prefix = tests_util.scope_temp_pathname()
         local _ <close> = tests_util.scope_exit(function()
             for _, p in ipairs({
@@ -3552,9 +3559,7 @@ dofile(%q)
     --       at the rejected yield, and the reverted-state padding.
     -- -------------------------------------------------------------------------
     it("uarch cycle computation hash across an epoch with a reject", function()
-        local jsonrpc = require("cartesi.jsonrpc")
-        local server <close>, address = jsonrpc.spawn_server()
-        server:set_cleanup_call(jsonrpc.NOTHING)
+        local _ <close>, address = scope_spawned_server()
         local _ <close>, prefix = tests_util.scope_temp_pathname()
         local _ <close> = tests_util.scope_exit(function()
             for _, p in ipairs({
@@ -3724,9 +3729,7 @@ dofile(%q)
 
         -- Rejection before the selected period must pad from the same virgin boundary.
         -- Select the last period of input zero, well beyond the guest's rejecting execution.
-        local jsonrpc = require("cartesi.jsonrpc")
-        local server <close>, address = jsonrpc.spawn_server()
-        server:set_cleanup_call(jsonrpc.NOTHING)
+        local _ <close>, address = scope_spawned_server()
         local _ <close>, input = filesystem.write_scope_temp_file(encode_advance(0, "reject"))
         local _ <close>, rejected_hash = scope_temp_pathname()
         local period_index = (1 << (ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_MCYCLE_COMPUTATION_HASH_PERIOD))
@@ -3771,9 +3774,7 @@ dofile(%q)
     --       in epoch 2, while rejected input 3 advances nothing.
     -- -------------------------------------------------------------------------
     it("two-epoch continuation via last_output_proof", function()
-        local jsonrpc = require("cartesi.jsonrpc")
-        local server <close>, address = jsonrpc.spawn_server()
-        server:set_cleanup_call(jsonrpc.NOTHING)
+        local _ <close>, address = scope_spawned_server()
         local _ <close>, prefix = tests_util.scope_temp_pathname()
         local files = {
             prefix .. "-ein-0.bin",
@@ -5074,21 +5075,22 @@ dofile(%q)
 
         -- Fork without rebind: forked server is left alive (hits "Left alive" log path)
         do
-            local server <close>, address = jsonrpc.spawn_server()
-            server:set_cleanup_call(jsonrpc.NOTHING)
-            run_ok({
+            local _ <close>, address = jsonrpc.spawn_server()
+            local _, log = run_ok({
                 "--remote-address=" .. address,
                 "--remote-fork",
                 "--max-mcycle=0",
                 "--no-init-splash",
-                "--quiet",
             })
+            local fork_address = assert(log:match("Forked JSONRPC remote cartesi machine at '([^']+)'"))
+            expect.truthy(log:find("Left alive JSONRPC remote cartesi machine at '" .. fork_address .. "'", 1, true))
+            local fork <close> = jsonrpc.connect_server(fork_address)
+            fork:shutdown_server()
         end
 
         -- Fork with rebind to explicit address
         do
-            local server2 <close>, address2 = jsonrpc.spawn_server()
-            server2:set_cleanup_call(jsonrpc.NOTHING)
+            local _ <close>, address2 = jsonrpc.spawn_server()
             -- Obtain a free port by spawning and immediately shutting down
             local tmp_srv <close>, rebind_addr = jsonrpc.spawn_server()
             tmp_srv:shutdown_server()

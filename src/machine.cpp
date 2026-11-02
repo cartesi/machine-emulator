@@ -30,6 +30,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -299,7 +300,8 @@ void machine::init_dtb_contents(const machine_config &config) {
 // ??D It is best to leave the std::move() on r because it may one day be necessary!
 machine::machine(machine_config c, machine_runtime_config r, const std::string &dir, scope_remove remover) :
     m_c{std::move(c).adjust_defaults()}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
-    m_r{std::move(r)},                   // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
+    m_initial_c{m_c},
+    m_r{std::move(r)}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
     m_console{m_r.console},
     m_ars{m_c, m_r, m_console, dir, remover},
     m_ht{m_c.hash_tree, m_r.concurrency.update_hash_tree, m_ars, dir, remover},
@@ -381,7 +383,7 @@ bool machine::has_htif_console() const {
 
 /// \brief Returns copy of initialization config.
 const machine_config &machine::get_initial_config() const {
-    return m_c;
+    return m_initial_c;
 }
 
 /// \brief Returns the machine runtime config.
@@ -441,12 +443,16 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
             }
             os::copy_file(c.data_filename, data_filename, ar.get_length());
             remover.add_file(data_filename);
-            if (!c.dht_filename.empty()) {
+            // Only a pair of trees describes the data. Without one, blank trees make the load rehash it.
+            if (!c.dht_filename.empty() && !c.dpt_filename.empty()) {
                 os::copy_file(c.dht_filename, dht_filename);
                 remover.add_file(dht_filename);
-            }
-            if (!c.dpt_filename.empty()) {
                 os::copy_file(c.dpt_filename, dpt_filename);
+                remover.add_file(dpt_filename);
+            } else {
+                os::truncate_file(dht_filename, memory_address_range::get_dht_storage_length(ar.get_length()), true);
+                remover.add_file(dht_filename);
+                os::truncate_file(dpt_filename, memory_address_range::get_dpt_storage_length(ar.get_length()), true);
                 remover.add_file(dpt_filename);
             }
         }
@@ -674,38 +680,8 @@ void machine::sync_stored(const std::string &dir) {
 }
 
 void machine::replace_memory_range(const memory_range_config &config) {
-    auto resolved = config;
-    if (!config.label.empty()) {
-        // Find the memory range with the matching label
-        const memory_range_config *found = nullptr;
-        for (const auto &f : m_c.flash_drive) {
-            if (f.label == config.label) {
-                found = &f;
-                break;
-            }
-        }
-        if (found == nullptr) {
-            for (const auto &n : m_c.nvram) {
-                if (n.label == config.label) {
-                    found = &n;
-                    break;
-                }
-            }
-        }
-        if (found == nullptr) {
-            throw std::invalid_argument{"no memory range with label \""s + config.label + "\""};
-        }
-        if (config.start != UINT64_C(-1) && config.start != found->start) {
-            throw std::invalid_argument{"memory range label \""s + config.label + "\" start mismatch: expected "s +
-                std::to_string(found->start) + ", got "s + std::to_string(config.start)};
-        }
-        if (config.length != UINT64_C(-1) && config.length != found->length) {
-            throw std::invalid_argument{"memory range label \""s + config.label + "\" length mismatch: expected "s +
-                std::to_string(found->length) + ", got "s + std::to_string(config.length)};
-        }
-        resolved.start = found->start;
-        resolved.length = found->length;
-    } else {
+    const bool by_label = !config.label.empty();
+    if (!by_label) {
         const bool missing_start = config.start == UINT64_C(-1);
         const bool missing_length = config.length == UINT64_C(-1);
         if (missing_start && missing_length) {
@@ -718,7 +694,42 @@ void machine::replace_memory_range(const memory_range_config &config) {
             throw std::invalid_argument{"memory range replacement without a label requires length"};
         }
     }
-    m_ars.replace(resolved);
+    // Find the configuration of the existing memory range, which labels and addresses identify uniquely
+    const auto matches = [by_label, &config](std::string_view label, std::string_view auto_label, uint64_t start,
+                             uint64_t length) {
+        if (by_label) {
+            return label == config.label || auto_label == config.label;
+        }
+        return start == config.start && length == config.length;
+    };
+    auto replacement = config;
+    backing_store_config *existing_backing_store = nullptr;
+    m_c.for_each_backing_store(
+        [&matches, &replacement, &existing_backing_store](std::string_view label, std::string_view auto_label,
+            uint64_t start, uint64_t length, backing_store_config &backing_store) {
+            if (matches(label, auto_label, start, length)) {
+                replacement.start = start;
+                replacement.length = length;
+                existing_backing_store = &backing_store;
+            }
+        });
+    if (existing_backing_store == nullptr) {
+        throw std::invalid_argument{by_label ? "no memory range with label \""s + config.label + "\""s :
+                                               "attempted replace of inexistent memory range"s};
+    }
+    if (by_label) {
+        if (config.start != UINT64_C(-1) && config.start != replacement.start) {
+            throw std::invalid_argument{"memory range label \""s + config.label + "\" start mismatch: expected "s +
+                std::to_string(replacement.start) + ", got "s + std::to_string(config.start)};
+        }
+        if (config.length != UINT64_C(-1) && config.length != replacement.length) {
+            throw std::invalid_argument{"memory range label \""s + config.label + "\" length mismatch: expected "s +
+                std::to_string(replacement.length) + ", got "s + std::to_string(config.length)};
+        }
+    }
+    m_ars.replace(replacement);
+    // The current configuration records the replacement, so store sees it.
+    *existing_backing_store = std::move(replacement.backing_store);
     // Cached host pointers must be rebuilt for the new mapping.
     init_hot_tlb_contents();
 }

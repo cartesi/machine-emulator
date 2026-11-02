@@ -2828,13 +2828,16 @@ local runtime_config = {
     clear_hash_tree = not not cmdline.clear_hash_tree,
 }
 
-if cmdline.remote_spawn then
+local function spawn_server()
     local jsonrpc = require("cartesi.jsonrpc")
-    local server <close>, address, pid = jsonrpc.spawn_server(cmdline.remote_address)
-    server:set_cleanup_call(jsonrpc.NOTHING) -- we will perform shutdown manually
+    local server, address, pid = jsonrpc.spawn_server(cmdline.remote_address)
     stderr("Spawned JSONRPC remote cartesi machine at '%s' with pid %d\n", address, pid)
     cmdline.remote_address = address
+    return server
 end
+
+-- The spawned server shuts down with this handle until the remote machine takes over its shutdown.
+local spawned_server <close> = cmdline.remote_spawn and spawn_server() or nil
 
 if cmdline.create_dir then
     assert(
@@ -2994,6 +2997,7 @@ check_computation_hash_selection()
 if cmdline.cmio_advance then check_epoch_options(cmdline.cmio_advance) end
 
 local main_machine = new_machine()
+if spawned_server then spawned_server:set_cleanup_call(require("cartesi.jsonrpc").NOTHING) end
 if cmdline.load_dir then
     stderr("Loading machine: please wait\n")
     if cmdline.clone_dir then main_machine:clone_stored(cmdline.clone_dir, cmdline.load_dir) end

@@ -321,7 +321,7 @@ clean-uarch-step-fixtures:
 # No clean twin here: the machine fixture dir also holds the risc0 receipt, seal and journal,
 # and re-recording must not force a re-prove. The recorder script clears what it must.
 create-machine-step-fixtures:
-	RECORDERS_DIR=$(abspath ./lua) MACHINE_TESTS_PATH=$(CARTESI_TESTS_PATH) \
+	$(LD_PRELOAD_PREFIX) RECORDERS_DIR=$(abspath ./lua) MACHINE_TESTS_PATH=$(CARTESI_TESTS_PATH) \
 		LUA='$(LUA_BIN)' JOBS=$(NUM_JOBS) MACHINE_TEST='$(MACHINE_TEST)' \
 		./scripts/record-machine-step-fixtures.sh $(CARTESI_MACHINE_STEP_FIXTURES_PATH)
 

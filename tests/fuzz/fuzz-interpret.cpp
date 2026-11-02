@@ -62,7 +62,7 @@ static bool setup_persistent(fuzz_reader &r, const cartesi::registers_state &reg
         nlohmann::json config;
         config["ram"]["length"] = RAM_LENGTH;
         const auto config_str = config.dump();
-        if (cm_create_new(config_str.c_str(), nullptr, nullptr, &g_machine) != CM_ERROR_OK) {
+        if (cm_create_new(config_str.c_str(), nullptr, nullptr, CM_SHARING_ALL, &g_machine) != CM_ERROR_OK) {
             fuzz_abort("failed to create persistent machine");
         }
     }

@@ -616,7 +616,8 @@ cm_error cm_is_jsonrpc_machine(const cm_machine *m, bool *yes) try {
     return cm_result_failure();
 }
 
-cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config, const char *dir) try {
+cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config, const char *dir,
+    cm_sharing_mode sharing) try {
     auto *cpp_m = convert_from_c(m);
     if (config == nullptr) {
         throw std::invalid_argument("invalid machine configuration");
@@ -626,7 +627,7 @@ cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config
     if (runtime_config != nullptr) {
         r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config, "runtime_config");
     }
-    cpp_m->create(c, r, dir != nullptr ? std::string(dir) : std::string());
+    cpp_m->create(c, r, dir != nullptr ? std::string(dir) : std::string(), convert_from_c(sharing));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -660,12 +661,13 @@ cm_error cm_load_new(const char *dir, const char *runtime_config, cm_sharing_mod
     return err;
 }
 
-cm_error cm_create_new(const char *config, const char *runtime_config, const char *dir, cm_machine **new_m) {
+cm_error cm_create_new(const char *config, const char *runtime_config, const char *dir, cm_sharing_mode sharing,
+    cm_machine **new_m) {
     auto err = cm_new(new_m);
     if (err != 0) {
         return err;
     }
-    err = cm_create(*new_m, config, runtime_config, dir);
+    err = cm_create(*new_m, config, runtime_config, dir, sharing);
     if (err != 0) {
         cm_delete(*new_m);
         *new_m = nullptr;

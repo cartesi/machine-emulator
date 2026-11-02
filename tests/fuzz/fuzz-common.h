@@ -216,7 +216,7 @@ static cm_machine *fuzz_create_machine(fuzz_reader &r, bool enable_vm) {
     const auto config_str = config.dump();
 
     cm_machine *machine = nullptr;
-    if (cm_create_new(config_str.c_str(), nullptr, nullptr, &machine) != CM_ERROR_OK) {
+    if (cm_create_new(config_str.c_str(), nullptr, nullptr, CM_SHARING_ALL, &machine) != CM_ERROR_OK) {
         return nullptr;
     }
 

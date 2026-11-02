@@ -116,6 +116,23 @@ private:
     /// \param config Machine configuration
     void init_dtb_contents(const machine_config &config);
 
+    /// \brief Constructor from machine configuration, keeping the files it creates in a remover
+    /// \param config Machine config to use instantiating machine
+    /// \param runtime Runtime config to use with machine
+    /// \param dir Directory to store the machine into and load it from with sharing all. Can be empty.
+    /// \param remover Object that removes created files and directories unless they are retained
+    machine(machine_config config, machine_runtime_config runtime, const std::string &dir, scope_remove &remover);
+
+    /// \brief Creates a machine in memory, stores it to a directory, and loads its configuration back
+    /// \param config Machine config to use instantiating machine
+    /// \param runtime Runtime config to use with machine
+    /// \param dir Directory to store the machine into
+    /// \param sharing Sharing mode to load the configuration with
+    /// \param remover Object that removes the stored files and directory unless they are retained
+    /// \returns Configuration of the machine loaded from the directory
+    static machine_config create_stored(machine_config config, const machine_runtime_config &runtime,
+        const std::string &dir, sharing_mode sharing, scope_remove &remover);
+
     /// \brief Dumps statistics
     void dump_stats();
 
@@ -161,9 +178,11 @@ public:
     /// \brief Constructor from machine configuration
     /// \param config Machine config to use instantiating machine
     /// \param runtime Runtime config to use with machine
+    /// \param dir Directory to store the machine into and load it from. If empty, the machine is created in-memory.
+    /// \param sharing Sharing mode to load the machine from the directory with
     /// \param remover Object that may remove created files and directories if construction fails
     explicit machine(machine_config config, machine_runtime_config runtime = {}, const std::string &dir = {},
-        scope_remove remover = {});
+        sharing_mode sharing = sharing_mode::all, scope_remove remover = {});
 
     /// \brief Constructor from previously serialized directory
     /// \param directory Directory to load stored machine from

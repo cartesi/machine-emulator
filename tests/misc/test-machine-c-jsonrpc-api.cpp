@@ -40,6 +40,11 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#ifdef __APPLE__
+#include <libproc.h>
+#endif
+
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
@@ -47,6 +52,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -247,6 +253,53 @@ BOOST_AUTO_TEST_CASE_NOLINT(spawn_during_store_test) {
     spawner.join();
     BOOST_CHECK_MESSAGE(spawn_error.empty(), spawn_error);
     BOOST_CHECK(!servers.empty());
+}
+
+// Counts the socket descriptors a process holds, or returns -1 where the platform cannot tell.
+static int count_sockets(uint32_t pid) {
+#if defined(__linux__)
+    int count = 0;
+    for (const auto &entry : std::filesystem::directory_iterator("/proc/" + std::to_string(pid) + "/fd")) {
+        std::error_code ec;
+        if (std::filesystem::read_symlink(entry.path(), ec).string().starts_with("socket:")) {
+            ++count;
+        }
+    }
+    return count;
+#elif defined(__APPLE__)
+    const int size = proc_pidinfo(static_cast<int>(pid), PROC_PIDLISTFDS, 0, nullptr, 0);
+    if (size <= 0) {
+        return -1;
+    }
+    std::vector<proc_fdinfo> fds(static_cast<size_t>(size) / sizeof(proc_fdinfo));
+    const int used = proc_pidinfo(static_cast<int>(pid), PROC_PIDLISTFDS, 0, fds.data(), size);
+    if (used <= 0) {
+        return -1;
+    }
+    fds.resize(static_cast<size_t>(used) / sizeof(proc_fdinfo));
+    return static_cast<int>(
+        std::ranges::count_if(fds, [](const proc_fdinfo &fd) { return fd.proc_fdtype == PROX_FDTYPE_SOCKET; }));
+#else
+    (void) pid;
+    return -1;
+#endif
+}
+
+// What: a spawned server must not inherit the sockets of its client.
+// How:  count the sockets of a server spawned while the client is connected to no other server, then of one spawned
+//       while the client keeps its connection to the first one. The counts must match.
+BOOST_AUTO_TEST_CASE_NOLINT(spawn_inherits_no_client_sockets_test) {
+    const spawned_server_fixture first;
+    const int alone = count_sockets(first.pid);
+    if (alone < 0) {
+        BOOST_TEST_MESSAGE("cannot count the sockets of a process on this platform");
+        return;
+    }
+    // A request keeps the client connected to the first server
+    const char *version{};
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_get_server_version(first.m, &version), CM_ERROR_OK);
+    const spawned_server_fixture second;
+    BOOST_CHECK_EQUAL(count_sockets(second.pid), alone);
 }
 
 // ---------------------------------------------------------------------------

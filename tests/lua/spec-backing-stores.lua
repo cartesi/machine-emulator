@@ -1411,6 +1411,37 @@ describe("backing stores", function()
             expect.falsy(filesystem.exists(dir))
         end)
 
+        it("should rename and remove stored machines named with trailing separators", function()
+            local _ <close>, dir = store_machine()
+            local _ <close>, renamed_dir = tests_util.scope_temp_pathname()
+            cartesi.machine:rename_stored(dir .. "/", renamed_dir .. "/")
+            expect.falsy(filesystem.exists(dir))
+            do
+                local _ <close> = cartesi.machine(renamed_dir)
+            end
+            cartesi.machine:remove_stored(renamed_dir .. "//")
+            expect.falsy(filesystem.exists(renamed_dir))
+        end)
+
+        it("should refuse stored machine names ending in . or .. before changing anything", function()
+            local _ <close>, dir, names = store_machine()
+            local _ <close> = tests_util.scope_exit(function()
+                cartesi.machine:remove_stored(dir)
+            end)
+            local _ <close>, other_dir = tests_util.scope_temp_pathname()
+            for _, suffix in ipairs({ "/.", "/..", "/./", "/../" }) do
+                expect.fail(function()
+                    cartesi.machine:remove_stored(dir .. suffix)
+                end, "directory name cannot end in")
+                expect.fail(function()
+                    cartesi.machine:rename_stored(dir .. suffix, other_dir)
+                end, "directory name cannot end in")
+            end
+            expect.equal(filesystem.list_directory(dir), names)
+            expect.falsy(filesystem.exists(other_dir))
+            local _ <close> = cartesi.machine(dir)
+        end)
+
         it("should complete an interrupted removal in the default mode", function()
             local _ <close>, dir, names = store_machine()
             -- The config is removed last, so an interrupted removal leaves it with some of the other files

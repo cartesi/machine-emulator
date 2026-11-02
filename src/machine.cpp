@@ -569,8 +569,18 @@ void machine::clone_stored(const std::string &from_dir, const std::string &to_di
 
 /// \brief Returns the parent directory whose entries must be synced when a directory changes.
 /// \param dir Path to the directory.
+/// \details Like rename() and rmdir(), it takes the parent to be everything but the last element, which cannot be
+/// "." or "..". Call it before changing anything, so such a path is rejected first.
 static std::string parent_directory(const std::string &dir) {
-    const auto parent = std::filesystem::path(dir).parent_path();
+    auto path = std::filesystem::path(dir);
+    // A trailing separator leaves an empty last element, whose parent would be the directory itself
+    while (!path.has_filename() && path.has_relative_path()) {
+        path = path.parent_path();
+    }
+    if (path.filename() == "." || path.filename() == "..") {
+        throw std::invalid_argument{"directory name cannot end in '.' or '..'"};
+    }
+    const auto parent = path.parent_path();
     if (parent.empty()) {
         return ".";
     }
@@ -581,10 +591,9 @@ void machine::rename_stored(const std::string &from_dir, const std::string &to_d
     if (from_dir.empty() || to_dir.empty()) {
         throw std::invalid_argument{"directory name cannot be empty"};
     }
-    static_cast<void>(machine_config::load(from_dir));
-
     const auto from_parent = parent_directory(from_dir);
     const auto to_parent = parent_directory(to_dir);
+    static_cast<void>(machine_config::load(from_dir));
 
     os::rename_directory(from_dir, to_dir);
     os::sync_directory(to_parent);
@@ -644,6 +653,7 @@ void machine::remove_stored(const std::string &dir, remove_mode mode) {
     if (dir.empty()) {
         throw std::invalid_argument{"directory name cannot be empty"};
     }
+    const auto parent = parent_directory(dir);
     std::vector<std::string> filenames;
     for (const auto &name : os::list_directory(dir)) {
         filenames.push_back(std::string{dir}.append("/").append(name));
@@ -687,7 +697,7 @@ void machine::remove_stored(const std::string &dir, remove_mode mode) {
     os::remove_directory(dir);
 
     // Sync the removed directory entry in its parent, making the removal durable
-    os::sync_directory(parent_directory(dir));
+    os::sync_directory(parent);
 }
 
 void machine::sync_stored(const std::string &dir) {

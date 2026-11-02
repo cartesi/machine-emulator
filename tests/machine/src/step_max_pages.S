@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-/* Worst-case step-log page footprint for a single mcycle.
+/* Cold Sv48 fetch and load walks through disjoint table pages in one mcycle.
  *
  * One mcycle records every distinct 4 KiB page the interpreter reads or writes
- * while executing one big-machine instruction. This program maximizes that set:
+ * while executing one big-machine instruction. This program builds a large such set:
  * it runs a load in S-mode under sv48 (4-level page walk -- the deepest mode the
  * Cartesi machine supports; sv57 is compiled out via NO_SATP_MODE_SV57), with the
  * code and data virtual addresses routed through disjoint page-table pages, and an

@@ -2264,6 +2264,23 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_hash_tree_basic_test, ordinary_machine_fix
     BOOST_CHECK(ret);
 }
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_machine_and_static_test, default_machine_fixture) {
+    BOOST_REQUIRE_EQUAL(test_create_new(R"({"ram":{"length":131072}})", nullptr, nullptr, &_machine), CM_ERROR_OK);
+    cm_hash before{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &before), CM_ERROR_OK);
+    const uint8_t *log{};
+    uint64_t length{};
+    BOOST_REQUIRE_EQUAL(cm_log_step(_machine, 1, &log, &length, nullptr), CM_ERROR_OK);
+    const std::vector<uint8_t> saved_log(log, log + length);
+    cm_hash after{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &after), CM_ERROR_OK);
+    for (const auto *m : {_machine, static_cast<cm_machine *>(nullptr)}) {
+        cm_hash obtained{};
+        BOOST_REQUIRE_EQUAL(cm_verify_step(m, &before, saved_log.data(), saved_log.size(), 1, &obtained), CM_ERROR_OK);
+        BOOST_CHECK_EQUAL(memcmp(obtained, after, sizeof(cm_hash)), 0);
+    }
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_log_test, default_machine_fixture) {
     cm_error error_code = cm_verify_step_uarch(nullptr, nullptr, nullptr, 0, 0, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);

@@ -59,6 +59,34 @@ fn test_prove_and_verify() {
     }
 }
 
+#[test]
+fn test_mcycle_count_saturates() {
+    let dir = Path::new(env!("CARTESI_STEP_LOGS_PATH"))
+        .parent()
+        .unwrap()
+        .join("one-mcycle");
+    let row = machine_rows(&dir)
+        .into_iter()
+        .find(|row| row.name == "mcycle-overflow.log")
+        .expect("missing mcycle-overflow fixture");
+    let log = fs::read(dir.join(&row.name)).unwrap();
+    let receipt = prove(
+        REPLAY_STEP_ELF,
+        &row.root_before,
+        &log,
+        row.cycle_count,
+        &row.root_after,
+    );
+    verify(
+        &REPLAY_STEP_ID,
+        &receipt,
+        &row.root_before,
+        row.cycle_count,
+        &row.root_after,
+        true,
+    );
+}
+
 // A fake (dev-mode) receipt must be rejected unless the caller explicitly opts in:
 // the receipt file is untrusted input, and the ambient RISC0_DEV_MODE variable alone
 // must not be enough to accept it.

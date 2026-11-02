@@ -305,6 +305,7 @@ verify-existing-computation-hash-corpus: | $(TEST_COMPUTATION_HASH_ORDER)
 # suite (the uarch corpus has no -p-/-v- variants), so any instruction-handler or ECALL
 # transpilation regression is caught. Override for quick iteration, e.g.
 #   make UARCH_TEST_PATTERN='rv64ui%-uarch%-add.-%.bin' create-uarch-step-fixtures
+# The pattern must include rv64ui-uarch-add, which the reject recorder uses as its base.
 UARCH_TEST_PATTERN ?= rv64ui%-uarch%-.+%.bin
 # Restricts which machine tests are recorded (Lua pattern, full match); default = all.
 MACHINE_TEST ?=

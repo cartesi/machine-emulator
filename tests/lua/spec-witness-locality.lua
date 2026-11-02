@@ -9,8 +9,11 @@ local expectations = require("cartesi.tests.witness-locality-expectations")
 lester.parse_args()
 
 local function tlb_hit(m, set, va)
-    local slot = cartesi.AR_SHADOW_TLB_START + set * 8192 + ((va >> 12) & 255) * 32
-    return string.unpack("<I8", m:read_memory(slot, 8)) == (va & ~4095)
+    local page_size = 1 << cartesi.HASH_TREE_LOG2_PAGE_SIZE
+    -- Each shadow TLB slot occupies 32 bytes; the slot size is not exported to Lua.
+    local slot_index = (va >> cartesi.HASH_TREE_LOG2_PAGE_SIZE) & (cartesi.TLB_SET_SIZE - 1)
+    local slot = cartesi.AR_SHADOW_TLB_START + (set * cartesi.TLB_SET_SIZE + slot_index) * 32
+    return string.unpack("<I8", m:read_memory(slot, 8)) == (va & ~(page_size - 1))
 end
 
 lester.describe("whole-mcycle witness locality", function()

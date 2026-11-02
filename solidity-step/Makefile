@@ -108,8 +108,9 @@ fixtures-clean:
 	rm -rf $(FIXTURES_DIR)
 
 # Gas per verified uarch step over the whole per-cycle corpus. Needs `fixtures`.
+gas-report: SHELL := /bin/bash
 gas-report:
-	@forge test --match-contract VerifyUarchTestsPerCycle -vv 2>&1 \
+	@set -o pipefail; forge test --match-contract VerifyUarchTestsPerCycle -vv 2>&1 \
 	  | grep -E '^ +(uarch step gas|avg |worst )'
 
 # No forge dependency, so the top-level clean works without Foundry installed.

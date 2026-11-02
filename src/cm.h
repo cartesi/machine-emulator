@@ -1082,6 +1082,9 @@ CM_API cm_error cm_log_step_uarch(cm_machine *m, uint64_t uarch_cycle_count, con
 /// called from the same thread.
 /// \param log_length Receives the length of the binary step log.
 /// \returns 0 for success, non zero code for error.
+/// \details When the machine has rejected an input (a manual yield with reason rx-rejected is pending), the
+/// canonical state after the logged operation is the one recorded in the revert root hash, even though the
+/// physical machine only has its uarch reset.
 CM_API cm_error cm_log_reset_uarch(cm_machine *m, const uint8_t **log, uint64_t *log_length);
 
 /// \brief Sends a cmio response and records a binary step log.
@@ -1109,14 +1112,15 @@ CM_API cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const 
 // ------------------------------------
 
 /// \brief Checks the validity of a step log.
+/// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param root_hash_before State hash before step.
 /// \param log Binary step log to be verified.
 /// \param log_length Length of the binary step log.
 /// \param mcycle_count Number of mcycles in the step.
 /// \param obtained_root_hash Receives the state hash after step, for the caller to check (can be NULL).
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_verify_step(const cm_hash *root_hash_before, const uint8_t *log, uint64_t log_length,
-    uint64_t mcycle_count, cm_hash *obtained_root_hash);
+CM_API cm_error cm_verify_step(const cm_machine *m, const cm_hash *root_hash_before, const uint8_t *log,
+    uint64_t log_length, uint64_t mcycle_count, cm_hash *obtained_root_hash);
 
 /// \brief Checks the validity of a state transition produced by cm_log_step_uarch.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).

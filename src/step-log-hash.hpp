@@ -33,6 +33,7 @@
 
 namespace cartesi {
 
+// The extern "C" zk hashing hooks take a pointer to a fixed-size array; host helpers convert back.
 using hash_type = unsigned char (*)[MACHINE_HASH_SIZE];
 using const_hash_type = const unsigned char (*)[MACHINE_HASH_SIZE];
 

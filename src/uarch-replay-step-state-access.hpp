@@ -18,7 +18,7 @@
 #define UARCH_REPLAY_STEP_STATE_ACCESS_HPP
 
 /// \file
-/// \brief State access that replays a uarch step from a binary step log file
+/// \brief State access that replays a uarch step from a binary step log buffer
 
 #include <algorithm>
 #include <cstdint>
@@ -66,7 +66,7 @@ private:
 public:
     /// \brief Construct from a log image
     /// \param context Context to be filled with replay step log data
-    /// \param log_image Pointer to the step log file bytes
+    /// \param log_image Pointer to the step log buffer bytes
     /// \param log_size Size of the log bytes
     /// \param slice_storage Caller-owned descriptors; must outlive this replay
     /// \throw runtime_error if the log is malformed or declares a hash function other than

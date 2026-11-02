@@ -21,7 +21,8 @@
 -- keeps it dependency-free (no images or test binaries): the first fetched instruction
 -- traps, which is one well-defined mcycle. Defaults to sha256, the risc0 guest's hash.
 --
--- Writes <output-dir>/one-mcycle.log plus <output-dir>/_manifest.csv.
+-- Also records a saturating cycle-count request near MCYCLE_MAX for the dev-mode consumer.
+-- Writes both logs plus <output-dir>/_manifest.csv.
 
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
@@ -80,3 +81,21 @@ local manifest <close> = assert(io.open(output_dir .. "/" .. manifest_mod.MANIFE
 manifest:write(manifest_mod.HEADER)
 manifest_mod.write_row(manifest, ctx)
 stderr("\n1-mcycle step log written to %s\n", log_path)
+
+-- Request two cycles when only one remains: both host and guest must saturate the target.
+machine:write_reg("mcycle", cartesi.MCYCLE_MAX - 1)
+local overflow_before = machine:get_root_hash()
+local overflow_log, status = machine:log_step(2)
+assert(status == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
+assert(machine:read_reg("mcycle") == cartesi.MCYCLE_MAX)
+local overflow_after = machine:get_root_hash()
+assert(cartesi.machine:verify_step(overflow_before, overflow_log, 2) == overflow_after)
+util.write_file(overflow_log, output_dir .. "/mcycle-overflow.log")
+manifest_mod.write_row(manifest, {
+    kind = "machine",
+    name = "mcycle-overflow.log",
+    hash_function = hash_function,
+    requested_cycle_count = 2,
+    initial_root_hash = overflow_before,
+    final_root_hash = overflow_after,
+})

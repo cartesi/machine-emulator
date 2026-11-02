@@ -215,7 +215,9 @@ pub fn verify(
     root_hash_after: &MachineHash,
     allow_dev_mode: bool,
 ) -> (MachineHash, u64, MachineHash) {
-    if matches!(receipt.inner, InnerReceipt::Fake(_)) {
+    let fake = matches!(receipt.inner, InnerReceipt::Fake(_));
+    let previous_dev_mode = std::env::var_os("RISC0_DEV_MODE");
+    if fake {
         assert!(
             allow_dev_mode,
             "dev-mode (fake) receipt rejected: it carries no cryptographic proof; \
@@ -225,7 +227,14 @@ pub fn verify(
         // RISC0_DEV_MODE is set at verification time.
         std::env::set_var("RISC0_DEV_MODE", "1");
     }
-    receipt.verify(*image_id).unwrap();
+    let verification = receipt.verify(*image_id);
+    if fake {
+        match previous_dev_mode {
+            Some(value) => std::env::set_var("RISC0_DEV_MODE", value),
+            None => std::env::remove_var("RISC0_DEV_MODE"),
+        }
+    }
+    verification.unwrap();
     let (j_hash_before, j_mcycle, j_hash_after) = decode_journal(&receipt.journal.bytes);
     assert!(
         j_hash_before == *root_hash_before,
@@ -245,6 +254,40 @@ pub fn verify(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verify_restores_dev_mode_environment() {
+        use risc0_zkvm::{FakeReceipt, ReceiptClaim};
+
+        let image_id = [1u32; 8];
+        let journal = vec![0u8; 96];
+        let receipt = Receipt::new(
+            InnerReceipt::Fake(FakeReceipt::new(ReceiptClaim::ok(
+                image_id,
+                journal.clone(),
+            ))),
+            journal,
+        );
+        let original = std::env::var_os("RISC0_DEV_MODE");
+        let zero: MachineHash = [0; 32];
+        for value in [None, Some("0"), Some("1")] {
+            match value {
+                Some(value) => std::env::set_var("RISC0_DEV_MODE", value),
+                None => std::env::remove_var("RISC0_DEV_MODE"),
+            }
+            verify(&image_id, &receipt, &zero, 0, &zero, true);
+            assert_eq!(std::env::var("RISC0_DEV_MODE").ok().as_deref(), value);
+            let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                verify(&[2u32; 8], &receipt, &zero, 0, &zero, true);
+            }));
+            assert!(rejected.is_err());
+            assert_eq!(std::env::var("RISC0_DEV_MODE").ok().as_deref(), value);
+        }
+        match original {
+            Some(value) => std::env::set_var("RISC0_DEV_MODE", value),
+            None => std::env::remove_var("RISC0_DEV_MODE"),
+        }
+    }
 
     // The seal's 4-byte selector prefix routes the on-chain Verifier Router.
     #[test]

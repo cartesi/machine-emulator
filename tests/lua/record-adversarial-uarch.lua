@@ -55,6 +55,7 @@ assert(fixtures_dir, "--fixtures-dir is required")
 assert(output_dir, "--output-dir is required")
 
 local UARCH_BASE = fixtures_dir .. "/uarch-tests-per-cycle/rv64ui-uarch-add/00000.log"
+assert(test_util.file_exists(UARCH_BASE), "reject recorder needs rv64ui-uarch-add; include it in the fixture pattern")
 local RESET_BASE = fixtures_dir .. "/reset-uarch/reset-uarch.log"
 -- Cycle 0 fetches its first instruction at UARCH_PC_INIT (start of uarch RAM).
 local PC_INIT = cartesi.UARCH_RAM_START_ADDRESS

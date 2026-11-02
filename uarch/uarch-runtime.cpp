@@ -15,7 +15,7 @@
 //
 
 #include "uarch-runtime.hpp"
-#include "uarch-ecall.h"
+#include "uarch-ecall.hpp"
 
 #include <cstddef>
 

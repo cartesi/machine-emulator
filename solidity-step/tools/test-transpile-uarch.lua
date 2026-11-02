@@ -12,21 +12,11 @@
 -- src/EmulatorConstants.sol from disk to know which names to prefix, so the
 -- test must be invoked with solidity-step/ as the working directory.
 
-package.path = "tools/?.lua;" .. package.path
+package.path = "tools/?.lua;../tests/lua/?.lua;" .. package.path
 local gen = require("transpile-uarch")
 
--- Self-contained harness because lester lives under tests/lua.
-local pass, fail = 0, 0
-
-local function test(name, fn)
-    local ok, err = pcall(fn)
-    if ok then
-        pass = pass + 1
-    else
-        fail = fail + 1
-        io.stderr:write("FAIL: " .. name .. "\n  " .. tostring(err) .. "\n")
-    end
-end
+local lester = require("cartesi.third-party.lester")
+local test = lester.it
 
 local function normalize(s)
     -- Strip // comments and collapse whitespace so test assertions are robust
@@ -44,8 +34,9 @@ local function assert_transpiles(input_cpp, input_h, lib, entry, expected_sol)
     assert(actual == expected, "\nexpected:\n" .. expected .. "\n\ngot:\n" .. actual)
 end
 
-test("uarch-step: templates stripped, STATE access prefixed, UINT64_MAX rewritten", function()
-    local input_cpp = [==[
+lester.describe("uarch transpiler", function()
+    test("uarch-step: templates stripped, STATE access prefixed, UINT64_MAX rewritten", function()
+        local input_cpp = [==[
         // Copyright Cartesi and individual authors (see AUTHORS)
         // SPDX-License-Identifier: LGPL-3.0-or-later
 
@@ -74,9 +65,9 @@ test("uarch-step: templates stripped, STATE access prefixed, UINT64_MAX rewritte
         }
         // NOLINTEND(google-readability-casting,misc-const-correctness)
     ]==]
-    local input_h = "enum class UArchStepStatus : int { Success, CycleOverflow, UArchHalted };"
+        local input_h = "enum class UArchStepStatus : int { Success, CycleOverflow, UArchHalted };"
 
-    local expected_sol = [=[
+        local expected_sol = [=[
         pragma solidity ^0.8.30;
 
         import {StepLog}           from "src/StepLog.sol";
@@ -99,11 +90,11 @@ test("uarch-step: templates stripped, STATE access prefixed, UINT64_MAX rewritte
         }
     ]=]
 
-    assert_transpiles(input_cpp, input_h, "UArchStep", "uarchStep", expected_sol)
-end)
+        assert_transpiles(input_cpp, input_h, "UArchStep", "uarchStep", expected_sol)
+    end)
 
-test("uarch-reset-state: 'UarchState &a' reference form, entrypoint rename", function()
-    local input_cpp = [==[
+    test("uarch-reset-state: 'UarchState &a' reference form, entrypoint rename", function()
+        local input_cpp = [==[
         // Copyright Cartesi and individual authors (see AUTHORS)
         // SPDX-License-Identifier: LGPL-3.0-or-later
 
@@ -118,7 +109,7 @@ test("uarch-reset-state: 'UarchState &a' reference form, entrypoint rename", fun
         }
     ]==]
 
-    local expected_sol = [=[
+        local expected_sol = [=[
         pragma solidity ^0.8.30;
 
         import {StepLog}           from "src/StepLog.sol";
@@ -133,11 +124,11 @@ test("uarch-reset-state: 'UarchState &a' reference form, entrypoint rename", fun
         }
     ]=]
 
-    assert_transpiles(input_cpp, nil, "UArchReset", "uarchResetState", expected_sol)
-end)
+        assert_transpiles(input_cpp, nil, "UArchReset", "uarchResetState", expected_sol)
+    end)
 
-test("send-cmio-response: bytes32 passes through, bytes data to calldata, constants prefixed", function()
-    local input_cpp = [==[
+    test("send-cmio-response: bytes32 passes through, bytes data to calldata, constants prefixed", function()
+        local input_cpp = [==[
         // Copyright Cartesi and individual authors (see AUTHORS)
         // SPDX-License-Identifier: LGPL-3.0-or-later
 
@@ -160,7 +151,7 @@ test("send-cmio-response: bytes32 passes through, bytes data to calldata, consta
         }
     ]==]
 
-    local expected_sol = [=[
+        local expected_sol = [=[
         pragma solidity ^0.8.30;
 
         import {StepLog}           from "src/StepLog.sol";
@@ -184,11 +175,11 @@ test("send-cmio-response: bytes32 passes through, bytes data to calldata, consta
         }
     ]=]
 
-    assert_transpiles(input_cpp, nil, "SendCmioResponse", "sendCmioResponse", expected_sol)
-end)
+        assert_transpiles(input_cpp, nil, "SendCmioResponse", "sendCmioResponse", expected_sol)
+    end)
 
-test("namespace body: a brace inside a string literal does not truncate the output", function()
-    local input_cpp = [==[
+    test("namespace body: a brace inside a string literal does not truncate the output", function()
+        local input_cpp = [==[
         namespace cartesi {
         template <typename UarchState>
         void f(const UarchState a) {
@@ -197,7 +188,7 @@ test("namespace body: a brace inside a string literal does not truncate the outp
         }
         }
     ]==]
-    local expected_sol = [=[
+        local expected_sol = [=[
         pragma solidity ^0.8.30;
 
         import {StepLog}           from "src/StepLog.sol";
@@ -211,11 +202,11 @@ test("namespace body: a brace inside a string literal does not truncate the outp
             }
         }
     ]=]
-    assert_transpiles(input_cpp, nil, "UArchStep", "uarch_step", expected_sol)
-end)
+        assert_transpiles(input_cpp, nil, "UArchStep", "uarch_step", expected_sol)
+    end)
 
-test("strip: a semicolon inside a string literal does not end the stripped statement early", function()
-    local input_cpp = [==[
+    test("strip: a semicolon inside a string literal does not end the stripped statement early", function()
+        local input_cpp = [==[
         namespace cartesi {
         static inline void g(const UarchState a) {
             [[maybe_unused]] auto note = dumpInsn(a, "has ; semicolon");
@@ -223,7 +214,7 @@ test("strip: a semicolon inside a string literal does not end the stripped state
         }
         }
     ]==]
-    local expected_sol = [=[
+        local expected_sol = [=[
         pragma solidity ^0.8.30;
 
         import {StepLog}           from "src/StepLog.sol";
@@ -236,13 +227,13 @@ test("strip: a semicolon inside a string literal does not end the stripped state
             }
         }
     ]=]
-    assert_transpiles(input_cpp, nil, "UArchStep", "uarch_step", expected_sol)
-end)
+        assert_transpiles(input_cpp, nil, "UArchStep", "uarch_step", expected_sol)
+    end)
 
-test("params left unused after stripping a debug line get their names blanked", function()
-    -- dumpInsn is stripped via [[maybe_unused]]; insn and pc are used only there, so their
-    -- names are blanked while their types stay. a is used, so it keeps its name.
-    local input_cpp = [==[
+    test("params left unused after stripping a debug line get their names blanked", function()
+        -- dumpInsn is stripped via [[maybe_unused]]; insn and pc are used only there, so their
+        -- names are blanked while their types stay. a is used, so it keeps its name.
+        local input_cpp = [==[
         namespace cartesi {
         static inline void executeEBREAK(const UarchState a, uint32 insn, uint64 pc) {
             [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "ebreak");
@@ -250,7 +241,7 @@ test("params left unused after stripping a debug line get their names blanked", 
         }
         }
     ]==]
-    local expected_sol = [=[
+        local expected_sol = [=[
         pragma solidity ^0.8.30;
 
         import {StepLog}           from "src/StepLog.sol";
@@ -263,21 +254,21 @@ test("params left unused after stripping a debug line get their names blanked", 
             }
         }
     ]=]
-    assert_transpiles(input_cpp, nil, "UArchStep", "uarch_step", expected_sol)
-end)
+        assert_transpiles(input_cpp, nil, "UArchStep", "uarch_step", expected_sol)
+    end)
 
-local function assert_rejects(input_cpp, msg_substring)
-    local ok, err = pcall(gen.transpile, input_cpp, nil, "Lib", "entry")
-    assert(not ok, "expected transpile to reject the input, but it succeeded")
-    assert(
-        tostring(err):find(msg_substring, 1, true),
-        "error did not mention '" .. msg_substring .. "':\n  " .. tostring(err)
-    )
-end
+    local function assert_rejects(input_cpp, msg_substring)
+        local ok, err = pcall(gen.transpile, input_cpp, nil, "Lib", "entry")
+        assert(not ok, "expected transpile to reject the input, but it succeeded")
+        assert(
+            tostring(err):find(msg_substring, 1, true),
+            "error did not mention '" .. msg_substring .. "':\n  " .. tostring(err)
+        )
+    end
 
-test("dialect guard: rejects a raw shift on a non-literal operand", function()
-    assert_rejects(
-        [==[
+    test("dialect guard: rejects a raw shift on a non-literal operand", function()
+        assert_rejects(
+            [==[
         namespace cartesi {
         template <typename UarchState>
         uint64 f(UarchState a) {
@@ -285,13 +276,13 @@ test("dialect guard: rejects a raw shift on a non-literal operand", function()
         }
         }
     ]==],
-        "raw shift"
-    )
-end)
+            "raw shift"
+        )
+    end)
 
-test("dialect guard: rejects a native fixed-width C++ type", function()
-    assert_rejects(
-        [==[
+    test("dialect guard: rejects a native fixed-width C++ type", function()
+        assert_rejects(
+            [==[
         namespace cartesi {
         template <typename UarchState>
         void f(UarchState a) {
@@ -299,102 +290,100 @@ test("dialect guard: rejects a native fixed-width C++ type", function()
         }
         }
     ]==],
-        "native C++ type"
-    )
-end)
+            "native C++ type"
+        )
+    end)
 
-local function golden(cpp, expected)
-    assert_transpiles("namespace cartesi {\n" .. cpp .. "\n}", nil, "Lib", "entry", [[
+    local function golden(cpp, expected)
+        assert_transpiles("namespace cartesi {\n" .. cpp .. "\n}", nil, "Lib", "entry", [[
         pragma solidity ^0.8.30;
         import {StepLog} from "src/StepLog.sol";
         import {StateAccess} from "src/StateAccess.sol";
         import {EmulatorConstants} from "src/EmulatorConstants.sol";
         library Lib { ]] .. expected .. " }")
-end
-
-test("literal shifts stay below signed-int overflow", function()
-    golden(
-        "uint32 entry() { return (7 << 12); }",
-        "function entry() internal pure returns (uint32) { return (7 << 12); }"
-    )
-    for _, expr in ipairs({ "1 << 31", "0x7f << 25", "0x40000000 << 2", "1 << 64" }) do
-        assert_rejects("namespace cartesi { uint32 entry() { return " .. expr .. "; } }", "signed 32-bit range")
     end
-end)
 
-test("literal shifts reject adjacent expression operators", function()
-    for _, expr in ipairs({ "x + 1 << 2", "1 << 2 + x", "-1 << 2", "1 << 2 * x" }) do
-        assert_rejects("namespace cartesi { uint32 entry(uint32 x) { return " .. expr .. "; } }", "raw shift")
-    end
-    golden(
-        "uint32 entry(uint32 x) { return x + (1 << 2); }",
-        "function entry(uint32 x) internal pure returns (uint32) { return x + (1 << 2); }"
-    )
-end)
+    test("literal shifts stay below signed-int overflow", function()
+        golden(
+            "uint32 entry() { return (7 << 12); }",
+            "function entry() internal pure returns (uint32) { return (7 << 12); }"
+        )
+        for _, expr in ipairs({ "1 << 31", "0x7f << 25", "0x40000000 << 2", "1 << 64" }) do
+            assert_rejects("namespace cartesi { uint32 entry() { return " .. expr .. "; } }", "signed 32-bit range")
+        end
+    end)
 
-test("prefix only whole identifiers, without duplicating member prefixes", function()
-    golden(
-        [[uint64 entry(const StateAccess a, uint64 _readWord) {
+    test("literal shifts reject adjacent expression operators", function()
+        for _, expr in ipairs({ "x + 1 << 2", "1 << 2 + x", "-1 << 2", "1 << 2 * x" }) do
+            assert_rejects("namespace cartesi { uint32 entry(uint32 x) { return " .. expr .. "; } }", "raw shift")
+        end
+        golden(
+            "uint32 entry(uint32 x) { return x + (1 << 2); }",
+            "function entry(uint32 x) internal pure returns (uint32) { return x + (1 << 2); }"
+        )
+    end)
+
+    test("prefix only whole identifiers, without duplicating member prefixes", function()
+        golden(
+            [[uint64 entry(const StateAccess a, uint64 _readWord) {
         return StateAccess.readWord(a, _readWord) + readWord(a, EmulatorConstants.UARCH_CYCLE_MAX);
     }]],
-        [[function entry(StepLog.Context memory a, uint64 _readWord) internal pure returns (uint64) {
+            [[function entry(StepLog.Context memory a, uint64 _readWord) internal pure returns (uint64) {
         return StateAccess.readWord(a, _readWord) + StateAccess.readWord(a, EmulatorConstants.UARCH_CYCLE_MAX);
     }]]
-    )
-end)
+        )
+    end)
 
-test("control flow is not a function signature", function()
-    golden(
-        [[uint64 entry(uint64 x) { if (x == 0) { return 1; } else if (x == 1) { return 2; } return 3; }]],
-        [[function entry(uint64 x) internal pure returns (uint64) {
+    test("control flow is not a function signature", function()
+        golden(
+            [[uint64 entry(uint64 x) { if (x == 0) { return 1; } else if (x == 1) { return 2; } return 3; }]],
+            [[function entry(uint64 x) internal pure returns (uint64) {
             if (x == 0) { return 1; } else if (x == 1) { return 2; } return 3; }]]
-    )
-end)
+        )
+    end)
 
-test("block comments and character literals are opaque to rewrites and guards", function()
-    golden(
-        [[uint32 entry() { /* { uint32_t x << 32; readWord(a); */ return 'x'; }]],
-        [[function entry() internal pure returns (uint32) { /* { uint32_t x << 32; readWord(a); */ return 'x'; }]]
-    )
-end)
+    test("block comments and character literals are opaque to rewrites and guards", function()
+        golden(
+            [[uint32 entry() { /* { uint32_t x << 32; readWord(a); */ return 'x'; }]],
+            [[function entry() internal pure returns (uint32) { /* { uint32_t x << 32; readWord(a); */ return 'x'; }]]
+        )
+    end)
 
-test("void note, constexpr and const int aliases", function()
-    golden(
-        [=[int32 entry(const StateAccess a) {
+    test("void note, constexpr and const int aliases", function()
+        golden(
+            [=[int32 entry(const StateAccess a) {
         [[maybe_unused]] auto note = dumpInsn(a, "test");
         (void) note;
         constexpr const int32 x = 3;
         const uint64 y = readWord(a, 0);
         return x + int32(y);
     }]=],
-        [[function entry(StepLog.Context memory a) internal pure returns (int32) {
+            [[function entry(StepLog.Context memory a) internal pure returns (int32) {
         int32 x = 3;
         uint64 y = StateAccess.readWord(a, 0);
         return x + int32(y);
     }]]
-    )
-end)
+        )
+    end)
 
-test("StateAccess reference and unsigned-char pointer parameters", function()
-    golden(
-        [[void entry(StateAccess &a, const unsigned char *data) {
+    test("StateAccess reference and unsigned-char pointer parameters", function()
+        golden(
+            [[void entry(StateAccess &a, const unsigned char *data) {
         writeMemoryWithPadding(a, AR_CMIO_RX_BUFFER_START, data, 1, 5);
     }]],
-        [[function entry(StepLog.Context memory a, bytes calldata data) internal pure {
+            [[function entry(StepLog.Context memory a, bytes calldata data) internal pure {
         StateAccess.writeMemoryWithPadding(a, EmulatorConstants.AR_CMIO_RX_BUFFER_START, data, 1, 5);
     }]]
-    )
-end)
+        )
+    end)
 
-test("escaped quotes do not make an unused parameter appear used", function()
-    golden(
-        [=[void entry(const StateAccess a, uint32 unused) { throwRuntimeError(a, "escaped \" unused }"); }]=],
-        [=[function entry(StepLog.Context memory a, uint32) internal pure {
+    test("escaped quotes do not make an unused parameter appear used", function()
+        golden(
+            [=[void entry(const StateAccess a, uint32 unused) { throwRuntimeError(a, "escaped \" unused }"); }]=],
+            [=[function entry(StepLog.Context memory a, uint32) internal pure {
             StateAccess.throwRuntimeError(a, "escaped \" unused }"); }]=]
-    )
+        )
+    end)
 end)
-
-print(string.format("\n%d passed, %d failed", pass, fail))
-if fail > 0 then
-    os.exit(1)
-end
+lester.report()
+lester.exit()

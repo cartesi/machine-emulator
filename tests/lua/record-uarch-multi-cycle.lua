@@ -22,7 +22,8 @@
 -- That is the property VerifyUarchMultiCycle pins; neither log is adversarial.
 -- Fixtures use keccak256, the Solidity verifier's hash function.
 --
--- Writes <output-dir>/{one-cycle.log, two-cycle.log, _manifest.csv}.
+-- Also records advancing to the cycle ceiling, with and without a halt ECALL.
+-- Writes the logs and _manifest.csv into <output-dir>.
 
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
@@ -30,7 +31,12 @@ local test_util = require("cartesi.tests.util")
 local manifest_mod = require("cartesi.tests.step_log_manifest")
 
 local HASH_FUNCTION = "keccak256"
-local LOGS = { { 1, "one-cycle.log" }, { 2, "two-cycle.log" } }
+local LOGS = {
+    { 1, "one-cycle.log" },
+    { 2, "two-cycle.log" },
+    { 1, "last-cycle.log", true },
+    { 1, "last-cycle-halt.log", true, true },
+}
 
 local function stderr(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
@@ -61,15 +67,25 @@ local function build_machine()
     }))
 end
 
-local function record(cycle_count, name)
+local function record(cycle_count, name, last_cycle, halt)
     local machine <close> = build_machine()
+    if last_cycle then
+        machine:write_reg("uarch_cycle", cartesi.UARCH_CYCLE_MAX - 1)
+    end
+    if halt then
+        machine:write_memory(machine:read_reg("uarch_pc"), string.pack("<I4", 0x00000073))
+        machine:write_reg("uarch_x17", cartesi.UARCH_ECALL_FN_HALT)
+    end
     local log_path = output_dir .. "/" .. name
     local initial_root_hash = machine:get_root_hash()
     local log, status = machine:log_step_uarch(cycle_count)
-    assert(
-        status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE,
-        "expected the uarch to advance the full cycle budget, not halt early"
-    )
+    if last_cycle then
+        assert(status == cartesi.UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW)
+        assert(machine:read_reg("uarch_cycle") == cartesi.UARCH_CYCLE_MAX)
+        assert(machine:read_reg("uarch_halt") == (halt and 1 or 0))
+    else
+        assert(status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE)
+    end
     local final_root_hash = machine:get_root_hash()
     assert(cartesi.machine:verify_step_uarch(initial_root_hash, log, cycle_count) == final_root_hash)
     util.write_file(log, log_path)
@@ -87,6 +103,6 @@ test_util.prepare_empty_output_dir(output_dir)
 local out <close> = assert(io.open(output_dir .. "/" .. manifest_mod.MANIFEST_NAME, "w"))
 out:write(manifest_mod.HEADER)
 for _, entry in ipairs(LOGS) do
-    manifest_mod.write_row(out, record(entry[1], entry[2]))
+    manifest_mod.write_row(out, record(table.unpack(entry)))
 end
 stderr("wrote %d uarch step logs to %s\n", #LOGS, output_dir)

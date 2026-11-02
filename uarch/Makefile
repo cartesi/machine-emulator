@@ -175,28 +175,30 @@ validate-instruction-set: uarch-ram.elf.insn.txt
 	fi
 
 # Keep every explicitly ordered hot function within the first 64 KiB of guest RAM.
-validate-layout: uarch-ram.elf uarch-ram.ld.in
+validate-layout: uarch-ram.elf uarch-ram.ld.in $(EMULATOR_SRC_DIR)/address-range-defines.h
 	@set -ef; symbols=$$(mktemp); trap 'rm -f "$$symbols"' EXIT; \
 	$(NM) --defined-only --format=posix uarch-ram.elf > "$$symbols"; \
 	patterns=$$(sed -n 's/^[[:space:]]*\*(\.text\.\([^ )]*\)).*/\1/p' uarch-ram.ld.in); \
 	test -n "$$patterns" || { echo "No hot layout patterns found"; exit 1; }; \
-	limit=$$((0x610000)); total=0; \
+	ram_start=$$(sed -n 's/^\#define AR_UARCH_RAM_START_DEF[[:space:]]*\(0x[[:xdigit:]]*\).*/\1/p' $(EMULATOR_SRC_DIR)/address-range-defines.h); \
+	test -n "$$ram_start" || { echo "AR_UARCH_RAM_START_DEF not found"; exit 1; }; window_size=$$((64 * 1024)); \
+	ram_start=$$((ram_start)); limit=$$((ram_start + window_size)); total=0; \
 	for pattern in $$patterns; do \
 		count=0; \
 		while read -r name type address size; do \
 			case "$$type:$$name" in [tTwW]:$$pattern) \
 				start=$$((0x$$address)); end=$$((start + 0x$${size:-0})); \
-				if [ "$$start" -lt $$((0x600000)) ] || [ "$$start" -ge "$$limit" ] || [ "$$end" -gt "$$limit" ]; then \
-					echo "Hot function outside [0x600000, 0x610000): $$name at 0x$$address, size 0x$$size"; exit 1; \
+				if [ "$$start" -lt "$$ram_start" ] || [ "$$start" -ge "$$limit" ] || [ "$$end" -gt "$$limit" ]; then \
+					printf 'Hot function outside [0x%x, 0x%x): %s at 0x%s, size 0x%s\n' "$$ram_start" "$$limit" "$$name" "$$address" "$$size"; exit 1; \
 				fi; \
 				count=$$((count + 1));; \
 			esac; \
 		done < "$$symbols"; \
 		[ "$$count" -gt 0 ] || { echo "Missing hot function pattern: $$pattern"; exit 1; }; \
-		printf 'Layout: %s: %s symbol(s) below 0x610000\n' "$$pattern" "$$count"; \
+		printf 'Layout: %s: %s symbol(s) below 0x%x\n' "$$pattern" "$$count" "$$limit"; \
 		total=$$((total + count)); \
 	done; \
-	printf 'Validated %s hot symbols within the first 64 KiB of guest RAM\n' "$$total"
+	printf 'Validated %s hot symbols within %s KiB of guest RAM at 0x%x\n' "$$total" "$$((window_size / 1024))" "$$ram_start"
 
 uarch-ram.elf: $(EMULATOR_OBJS) $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) uarch-ram-entry.o uarch-ram.ld
 	$(CXX) $(CFLAGS) $(CXXFLAGS) -Wl,-Tuarch-ram.ld -Wl,--no-warn-rwx-segments -o $@ $(EMULATOR_OBJS) $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) uarch-ram-entry.o $(TOOLCHAIN_LIBS)

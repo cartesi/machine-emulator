@@ -35,8 +35,10 @@ class uarch_pma_cache {
         uint64_t index{};
     };
 
+    // The cache, including its ranges, must fit one witness page (see uarch-run.cpp).
+    static constexpr size_t HIT_CAPACITY = 16;
     uarch_address_ranges m_ranges{};
-    std::array<range_hit, 16> m_hits{};
+    std::array<range_hit, HIT_CAPACITY> m_hits{};
     size_t m_hit_count{};
 
     template <typename READ_ENTRY>

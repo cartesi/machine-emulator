@@ -14,10 +14,10 @@ Three kinds of transition can be verified:
 - a `send_cmio_response`.
 
 The libraries that execute them (`UArchStep`, `UArchReset`, `SendCmioResponse`) are
-transpiled directly from the emulator's C++ sources, so on-chain execution is bit-for-bit
-identical to the off-chain machine. The same library is used for both testing (replaying
-emulator-generated fixtures) and on-chain dispute verification (used by dave /
-rollups-contracts).
+transpiled directly from the emulator's C++ sources. Differential tests check replay against
+emulator-recorded fixtures, and CI's `check-gen-all` checks for generated-source drift. The
+same library is used for both testing (replaying emulator-generated fixtures) and on-chain
+dispute verification (used by dave / rollups-contracts).
 
 ## Quick start
 

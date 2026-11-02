@@ -1970,7 +1970,7 @@ test_cmio_buffers_backed_by_files()
 -- spec-verify-step-failure.lua.
 for _, hash_fn in pairs({ "keccak256", "sha256" }) do
     tests_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_function = hash_fn }, uarch = {} })(
-        "log_step sanity check",
+        "log_step verifies through the machine and local static verifier",
         function(machine)
             local _, err
             machine:write_reg("mcycle", 0)
@@ -1986,6 +1986,7 @@ for _, hash_fn in pairs({ "keccak256", "sha256" }) do
             -- verify step should pass and return the obtained root hash
             local obtained_root_hash = machine:verify_step(root_hash_before, log, mcycle_count)
             assert(obtained_root_hash == root_hash_after)
+            assert(cartesi.machine:verify_step(root_hash_before, log, mcycle_count) == root_hash_after)
 
             if hash_fn == "keccak256" then
                 -- log_step requires uarch to be reset

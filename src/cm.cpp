@@ -935,14 +935,20 @@ cm_error cm_log_step_uarch(cm_machine *m, uint64_t uarch_cycle_count, const uint
     return cm_result_failure();
 }
 
-cm_error cm_verify_step(const cm_hash *root_hash_before, const uint8_t *log, uint64_t log_length, uint64_t mcycle_count,
-    cm_hash *obtained_root_hash) try {
+cm_error cm_verify_step(const cm_machine *m, const cm_hash *root_hash_before, const uint8_t *log, uint64_t log_length,
+    uint64_t mcycle_count, cm_hash *obtained_root_hash) try {
     if (log == nullptr) {
         throw std::invalid_argument("invalid log");
     }
     const cartesi::machine_hash cpp_root_hash_before = convert_from_c(root_hash_before);
-    const cartesi::machine_hash cpp_obtained_root_hash = cartesi::machine::verify_step(cpp_root_hash_before,
-        std::span<const unsigned char>{log, log_length}, mcycle_count);
+    const std::span<const unsigned char> cpp_log{log, log_length};
+    cartesi::machine_hash cpp_obtained_root_hash{};
+    if (m != nullptr) {
+        const auto *cpp_m = convert_from_c(m);
+        cpp_obtained_root_hash = cpp_m->verify_step(cpp_root_hash_before, cpp_log, mcycle_count);
+    } else {
+        cpp_obtained_root_hash = cartesi::machine::verify_step(cpp_root_hash_before, cpp_log, mcycle_count);
+    }
     if (obtained_root_hash != nullptr) {
         convert_to_c(cpp_obtained_root_hash, obtained_root_hash);
     }

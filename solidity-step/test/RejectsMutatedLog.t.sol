@@ -42,8 +42,6 @@ contract RejectsMutatedLogTest is ManifestParser {
             address(this).call(abi.encodeCall(this.verifyStep, (bad, rootHashBefore)));
         assertCleanRevert(ok, reason);
     }
-
-    /// External wrapper so `log` arrives as calldata for StepLog.decode.
 }
 
 /// Same soundness invariant for the uarch-reset proof. The reset accesses the revert root hash and
@@ -74,6 +72,4 @@ contract RejectsMutatedResetLogTest is ManifestParser {
             address(this).call(abi.encodeCall(this.verifyReset, (bad, rootHashBefore)));
         assertCleanRevert(ok, reason);
     }
-
-    /// External wrapper so `log` arrives as calldata for StepLog.decode.
 }

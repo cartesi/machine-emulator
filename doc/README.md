@@ -5685,9 +5685,9 @@ after is whatever the replay produces, returned for the caller to
 compare. Besides the log, `verify_step` and `verify_step_uarch` take the
 number of cycles to replay, `verify_reset_uarch` takes nothing, and
 `verify_send_cmio_response` takes the response reason and data and the
-revert root hash recorded with the log. A step log is therefore
-self-contained, and anyone can check one against a pair of state hashes
-without instantiating a machine.
+revert root hash recorded with the log. Checking a step log therefore
+needs no machine instance: anyone can check one against a pair of state
+hashes.
 
 #### Inspecting step logs
 

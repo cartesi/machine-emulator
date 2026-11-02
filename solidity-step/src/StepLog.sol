@@ -242,7 +242,10 @@ library StepLog {
             uint64 addr = readLE64(data, cursor);
             uint64 log2Size = readLE64(data, cursor + U64_SIZE);
             cursor += SLICE_HEADER_SIZE;
-            if (log2Size < 5 || log2Size > 12) revert SliceLog2SizeOutOfRange(log2Size);
+            if (
+                log2Size < EmulatorConstants.HASH_TREE_LOG2_WORD_SIZE
+                    || log2Size > EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE
+            ) revert SliceLog2SizeOutOfRange(log2Size);
             uint256 size = uint256(1) << log2Size;
             if (uint256(addr) & (size - 1) != 0) revert SliceNotAligned(addr, log2Size);
             if (data.length - cursor < size + HASH_SIZE) revert LogTruncated();

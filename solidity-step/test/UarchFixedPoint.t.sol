@@ -32,6 +32,32 @@ contract UarchFixedPointTest is ManifestParser {
         (stepLog,) = sampleStepLog();
     }
 
+    function testRecordedLastCycle() public {
+        checkLastCycle("last-cycle.log", false);
+    }
+
+    function testRecordedHaltOnLastCycle() public {
+        checkLastCycle("last-cycle-halt.log", true);
+    }
+
+    function checkLastCycle(string memory name, bool halted) private {
+        Row memory row =
+            findManifestRowByName("test/fixtures/uarch-multi-cycle/_manifest.csv", Kind.Cycle, name);
+        bytes memory log =
+            vm.readFileBinary(string.concat("test/fixtures/uarch-multi-cycle/", name));
+        assertEq(row.requestedCycleCount, 1);
+        assertEq(this.verifyStep(log, row.rootHashBefore), row.rootHashAfter);
+        this.checkLastCycleState(log, halted);
+    }
+
+    function checkLastCycleState(bytes calldata log, bool halted) external pure {
+        StepLog.Context memory ctx = StepLog.decode(log);
+        assertEq(StateAccess.readCycle(ctx), EmulatorConstants.UARCH_CYCLE_MAX - 1);
+        UArchStep.uarchStep(ctx);
+        assertEq(StateAccess.readCycle(ctx), EmulatorConstants.UARCH_CYCLE_MAX);
+        assertEq(StateAccess.readHalt(ctx), halted ? 1 : 0);
+    }
+
     function testCycleOverflowIsFixedPoint() public view {
         assertEq(
             this.stepStatusAtCycleCeiling(stepLog, false),

@@ -129,8 +129,15 @@ end
 function tests_util.prepare_empty_output_dir(dir)
     assert(type(dir) == "string" and #dir > 0, "output dir must be a non-empty string")
     assert(not dir:match("^/+$"), "refusing to use the filesystem root as an output dir")
-    assert(not dir:find("'", 1, true), "output dir must not contain a single quote: " .. dir)
-    assert(os.execute("mkdir -p '" .. dir .. "'"))
+    local stat = require("posix.sys.stat")
+    local path = dir:sub(1, 1) == "/" and "/" or ""
+    for component in dir:gmatch("[^/]+") do
+        path = path .. component
+        local ok, err = stat.mkdir(path)
+        local info = not ok and stat.stat(path)
+        assert(ok or (info and stat.S_ISDIR(info.st_mode) ~= 0), err)
+        path = path .. "/"
+    end
     for _, entry in ipairs(require("posix.dirent").dir(dir)) do
         if entry ~= "." and entry ~= ".." then
             error("output dir is not empty: " .. dir .. "\nremove it or clean the fixture root before recording")

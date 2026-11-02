@@ -122,7 +122,7 @@ brew install cartesi-machine
 - Boost >= 1.83
 - Lua >= 5.4.6 (optional, required for scripting support and interactive terminal)
 - Libslirp >= 4.6.0 (optional, required for networking support)
-- luaposix (optional, required for running the test suite; install into the same Lua tree, e.g. `luarocks install luaposix`)
+- luaposix (optional, required for running the test suite; prefer the distribution package for your Lua version, e.g. `lua-posix`; alternatively, install into the same Lua tree with `luarocks install luaposix`)
 - Rust and RISC Zero toolchain (optional, required for building the RISC Zero prover)
 - Foundry (optional, required for the Solidity step library)
 

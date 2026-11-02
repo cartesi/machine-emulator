@@ -29,7 +29,7 @@
 #include "shadow-tlb.hpp"
 #include "uarch-constants.hpp"
 #include "uarch-defines.h"
-#include "uarch-ecall.h"
+#include "uarch-ecall.hpp"
 #include "uarch-pma-cache.hpp"
 #include "uarch-strict-aliasing.hpp"
 

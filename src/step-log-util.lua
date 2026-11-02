@@ -18,6 +18,7 @@
 
 -- The cartesi module is optional: without it a log can still be inspected on a machine
 -- with no built emulator, minus the region names.
+-- This tool runs from the source tree and is not installed.
 local cartesi
 do
     local ok, mod = pcall(require, "cartesi")
@@ -25,6 +26,8 @@ do
 end
 
 local HASH_SIZE = cartesi and cartesi.HASH_SIZE or 32
+local HASH_TREE_LOG2_WORD_SIZE = cartesi and cartesi.HASH_TREE_LOG2_WORD_SIZE or 5
+local HASH_TREE_LOG2_PAGE_SIZE = cartesi and cartesi.HASH_TREE_LOG2_PAGE_SIZE or 12
 local STEP_LOG_SIGNATURE = cartesi and cartesi.STEP_LOG_SIGNATURE or "CTSI\x04\x00\x00\x00"
 local SIGNATURE_SIZE = #STEP_LOG_SIGNATURE
 
@@ -124,7 +127,10 @@ local function read_descriptors(path)
         local entry = f:read(SLICE_HEADER_SIZE)
         assert(entry and #entry == SLICE_HEADER_SIZE, string.format("step log truncated at slice %d", i))
         local address, log2_size = string.unpack("<I8I8", entry)
-        assert(log2_size >= 5 and log2_size <= 12, "invalid slice log2_size")
+        assert(
+            log2_size >= HASH_TREE_LOG2_WORD_SIZE and log2_size <= HASH_TREE_LOG2_PAGE_SIZE,
+            "invalid slice log2_size"
+        )
         local size = 1 << log2_size
         assert(address & (size - 1) == 0, "unaligned slice address")
         info.slices[i] = { address = address, log2_size = log2_size }
@@ -262,14 +268,8 @@ function commands.stats(args)
 end
 
 commands["batch-stats"] = function(args)
-    local dir = assert(args[1], "usage: step-log-util.lua batch-stats <dir>")
-    local files = {}
-    local pipe = assert(io.popen(string.format('ls -1 "%s"/*.log 2>/dev/null', dir)))
-    for line in pipe:lines() do
-        files[#files + 1] = line
-    end
-    pipe:close()
-    assert(#files > 0, "no .log files found in " .. dir)
+    assert(args[1], "usage: step-log-util.lua batch-stats <file> [file ...]")
+    local files = args
     table.sort(files)
 
     print(string.format("%-6s %-6s %-8s %-12s %s", "slices", "nodes", "siblings", "size", "path"))
@@ -378,7 +378,7 @@ Commands:
   dump <step-log>              Size breakdown, slices and nodes
   signature <step-log>         Verify the step log signature (exit non-zero on mismatch)
   stats <step-log> [...]       Full structural breakdown (sizes, regions)
-  batch-stats <dir>            Aggregate stats table for all .log files in <dir>
+  batch-stats <file> [...]     Aggregate stats for files (the shell expands globs)
   slices <step-log>             List slice addresses, sizes, regions
   nodes <step-log>             List logged subtree-write nodes
 

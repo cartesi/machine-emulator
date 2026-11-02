@@ -235,7 +235,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             const std::vector<uint8_t> step_log(log, log + log_length);
             cm_get_root_hash(m4, &ha);
             cm_hash obtained{};
-            if (cm_verify_step(&hb, step_log.data(), step_log.size(), 1, &obtained) != CM_ERROR_OK) {
+            if (cm_verify_step(nullptr, &hb, step_log.data(), step_log.size(), 1, &obtained) != CM_ERROR_OK) {
                 fuzz_abort("cm_verify_step failed");
             }
             if (memcmp(&obtained, &ha, sizeof(cm_hash)) != 0) {

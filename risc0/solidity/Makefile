@@ -24,7 +24,7 @@ dep:
 # the binary -- and thus the Image ID -- even when this Makefile is invoked directly.
 # The generator below rewrites src/ImageID.sol only when the ID actually changes.
 $(CARTESI_RISC0_CLI): FORCE
-	@$(MAKE) -C ../rust
+	@$(MAKE) -C .. rust
 
 FORCE:
 

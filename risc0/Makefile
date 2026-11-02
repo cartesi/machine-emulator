@@ -55,10 +55,10 @@ check-format:
 format:
 	@$(MAKE) -C rust format
 
-test-dev-mode:
+test-dev-mode: rust
 	@$(MAKE) -C rust test
 
-test-pipeline: $(SEAL)
+test-pipeline: rust $(SEAL)
 	@echo "--- Verifying receipt ---"
 	@CLAIMS=$$($(READ_CLAIMS)) && eval "$$CLAIMS" && \
 	$(CARTESI_RISC0_CLI) verify \
@@ -70,7 +70,7 @@ test-pipeline: $(SEAL)
 
 # Depends on $(SEAL) so parallel make cannot start the Solidity fork tests
 # before the pipeline has produced the seal fixture they consume.
-test-solidity: $(SEAL)
+test-solidity: rust $(SEAL)
 	@$(MAKE) -C solidity test
 
 # Host-side Rust coverage, mirroring `test`: dev-mode suite always; the real proving
@@ -111,6 +111,9 @@ fixtures:
 $(STEP_LOG):
 	@echo "$(STEP_LOG) not found; run 'make fixtures' (needs a built emulator)" >&2
 	@exit 1
+
+# Under parallel make the receipt rule needs the CLI before a sibling rust target has built it.
+$(CARTESI_RISC0_CLI): | rust
 
 $(RECEIPT): $(STEP_LOG) $(CARTESI_RISC0_CLI)
 	@mkdir -p $(FIXTURES_DIR)

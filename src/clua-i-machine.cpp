@@ -1372,13 +1372,15 @@ static int machine_obj_index_get_uarch_pristine_hash(lua_State *L) {
 /// \brief This is the machine.verify_step() method implementation.
 static int machine_obj_index_verify_step(lua_State *L) {
     lua_settop(L, 4);
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     cm_hash root_hash_before{};
     clua_check_cm_hash(L, 2, &root_hash_before);
     size_t log_length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *log = reinterpret_cast<const uint8_t *>(luaL_checklstring(L, 3, &log_length));
     cm_hash obtained_root_hash{};
-    if (cm_verify_step(&root_hash_before, log, log_length, luaL_checkinteger(L, 4), &obtained_root_hash) != 0) {
+    if (cm_verify_step(m.get(), &root_hash_before, log, log_length, luaL_checkinteger(L, 4), &obtained_root_hash) !=
+        0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_cm_hash(L, &obtained_root_hash);

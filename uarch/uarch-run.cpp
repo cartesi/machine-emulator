@@ -20,7 +20,7 @@
 #include "compiler-defines.hpp"
 #include "interpret.hpp"
 #include "uarch-bridge-state-access.hpp"
-#include "uarch-ecall.h"
+#include "uarch-ecall.hpp"
 #include "uarch-pma-cache.hpp"
 
 #include <cstdint>

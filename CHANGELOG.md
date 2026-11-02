@@ -51,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed JSON-RPC servers exiting on responses that are not valid UTF-8
 - Fixed JSON-RPC clients altering the access logs they send for verification
 - Fixed forked JSON-RPC servers leaving zombie processes on macOS
+- Fixed forked JSON-RPC servers left running when their fork response could not be sent
+- Fixed forked JSON-RPC servers serving connections accepted by their parent
 
 ## [0.22.0] - 2026-10-15
 ### Added

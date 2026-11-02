@@ -195,6 +195,7 @@ struct http_session : std::enable_shared_from_this<http_session> {
     beast::flat_buffer buffer;
     std::unique_ptr<http::request_parser<http::string_body>> req_parser;
     std::shared_ptr<http_handler> handler;
+    pid_t fork_child_pid{0}; ///< Server forked by the request being answered, until the response is sent
 
     // Take ownership of the stream
     http_session(tcp::socket &&socket, std::shared_ptr<http_handler> handler) :
@@ -258,6 +259,15 @@ struct http_session : std::enable_shared_from_this<http_session> {
 
     // Called when HTTP response is fully sent
     void on_send_response(bool keep_alive, beast::error_code ec, std::size_t /*bytes_transferred*/) {
+        // A forked server whose response was not sent is unknown to the client, so nobody else would stop it.
+        // It may not have set up its own signal handling yet, and it holds nothing to clean up, so it gets SIGKILL.
+        const auto undelivered_fork_child_pid = ec ? fork_child_pid : 0;
+        fork_child_pid = 0;
+        if (undelivered_fork_child_pid > 0) {
+            SLOG(warning) << "killing forked server pid " << undelivered_fork_child_pid
+                          << " because its fork response could not be sent";
+            std::ignore = kill(undelivered_fork_child_pid, SIGKILL);
+        }
         // Check error code
         if (ec == asio::error::operation_aborted) { // Operation may be aborted
             return;
@@ -310,6 +320,7 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
     tcp::endpoint local_endpoint;                      ///< Address server receives requests at
     tcp::acceptor acceptor;                            ///< TCP connection acceptor
     uint64_t delay{0};                                 ///< How much to delay next request in ms
+    uint64_t acceptor_generation{0};                   ///< Incremented whenever the acceptor is replaced
     std::unique_ptr<cartesi::machine> machine;         ///< Cartesi Machine, if any
     std::vector<std::weak_ptr<http_session>> sessions; ///< HTTP sessions
 
@@ -338,7 +349,8 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
 
     // Begins an asynchronous accept
     void next_accept() {
-        acceptor.async_accept(ioc, beast::bind_front_handler(&http_handler::on_accept, shared_from_this()));
+        acceptor.async_accept(ioc,
+            beast::bind_front_handler(&http_handler::on_accept, shared_from_this(), acceptor_generation));
     }
 
     // Bind the HTTP server to a new TCP port
@@ -350,6 +362,7 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
         // Replace current acceptor with the new one
         acceptor = std::move(new_acceptor);
         local_endpoint = acceptor.local_endpoint();
+        ++acceptor_generation;
         next_accept();
     }
 
@@ -384,9 +397,14 @@ private:
     }
 
     // Receives an incoming TCP connection
-    void on_accept(const beast::error_code ec, tcp::socket socket) {
+    void on_accept(uint64_t generation, const beast::error_code ec, tcp::socket socket) {
         // Operation may be aborted (e.g rebind() or close_acceptor() was called)
         if (ec == asio::error::operation_aborted || !acceptor.is_open()) {
+            return;
+        }
+        // A connection accepted before the acceptor was replaced, as when a forked server rebinds, is not ours
+        if (generation != acceptor_generation) {
+            SLOG(warning) << local_endpoint << " dropping a connection accepted before the acceptor was replaced";
             return;
         }
         if (ec) {
@@ -882,6 +900,7 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
             return jsonrpc_response_server_error(j, "fork failed ("s + strerror(fork_errno) + ")"s);
         }
         SLOG(trace) << session->handler->local_endpoint << " fork parent";
+        session->fork_child_pid = pid;
     }
     const cartesi::fork_result result{
         .address = new_server_address,

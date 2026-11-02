@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `store` saving the original backing store of memory ranges replaced by `replace_memory_range`
 - Fixed spawned JSON-RPC servers inheriting the sockets of their client
 - Fixed machines created in a directory reporting and storing the backing stores they were created from
+- Fixed JSON-RPC servers exiting on responses that are not valid UTF-8
 
 ## [0.22.0] - 2026-10-15
 ### Added

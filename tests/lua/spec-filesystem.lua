@@ -11,6 +11,8 @@ local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 local describe, it, expect = lester.describe, lester.it, lester.expect
 local filesystem = require("cartesi.filesystem")
+local has_posix, unistd = pcall(require, "posix.unistd")
+local _, stat = pcall(require, "posix.sys.stat")
 
 -- A new empty directory, removed with its files when the scope ends.
 local function new_scope_directory()
@@ -91,6 +93,29 @@ describe("filesystem", function()
             filesystem.clone_file(dirname .. "/missing", dirname .. "/other")
         end, "unable to clone file")
     end)
+
+    if has_posix then
+        it("clones the read-only file a symbolic link refers to", function()
+            local scope <close>, dirname = new_scope_directory() -- luacheck: ignore 211
+            local clones_scope <close>, clones_dirname = new_scope_directory() -- luacheck: ignore 211
+            local original = dirname .. "/original"
+            filesystem.write_file("contents", original)
+            assert(stat.chmod(original, tonumber("444", 8)))
+            assert(unistd.link("original", dirname .. "/relative", true))
+            assert(unistd.link(original, dirname .. "/absolute", true))
+            for _, name in ipairs({ "relative", "absolute" }) do
+                local clone = clones_dirname .. "/" .. name
+                filesystem.clone_file(dirname .. "/" .. name, clone)
+                expect.truthy(stat.S_ISREG(assert(stat.lstat(clone)).st_mode) ~= 0)
+                expect.equal(filesystem.read_file(clone), "contents")
+            end
+            -- The clones must not depend on the original
+            filesystem.remove_file(original)
+            filesystem.write_file("replaced", original)
+            expect.equal(filesystem.read_file(clones_dirname .. "/relative"), "contents")
+            expect.equal(filesystem.read_file(clones_dirname .. "/absolute"), "contents")
+        end)
+    end
 
     it("truncates and extends files", function()
         local scope <close>, dirname = new_scope_directory() -- luacheck: ignore 211

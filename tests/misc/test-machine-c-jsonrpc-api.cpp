@@ -56,6 +56,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -850,6 +851,41 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_parse_error_test, spawned_server_fixture)
     BOOST_REQUIRE(j.contains("error"));
     BOOST_CHECK_EQUAL(j["error"]["code"].get<int>(), -32700);
     BOOST_CHECK(j["id"].is_null());
+}
+
+// What: errors quoting bytes that are not valid UTF-8 reach the client, and the server keeps running.
+// How:  POST a body made of such bytes and expect a parse error, then load a directory whose config.json holds one
+//       and expect an error with U+FFFD in its place. The server must answer get_version after each. Finally, send
+//       that load in a batch with get_version and expect both responses.
+BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_invalid_utf8_error_test, spawned_server_fixture) {
+    const std::string get_version = R"({"jsonrpc":"2.0","id":1,"method":"get_version"})";
+    const auto parse_error = jsonrpc_post(bound_address, "\xff\xfe");
+    BOOST_REQUIRE(parse_error.contains("error"));
+    BOOST_CHECK_EQUAL(parse_error["error"]["code"].get<int>(), -32700);
+    BOOST_CHECK(jsonrpc_post(bound_address, get_version).contains("result"));
+
+    const auto dir = std::filesystem::temp_directory_path() / ("invalid-utf8-config-" + std::to_string(::getpid()));
+    const auto config = dir / "config.json";
+    BOOST_REQUIRE(std::filesystem::create_directory(dir));
+    const auto cleanup = cartesi::scope_exit([&dir, &config] {
+        std::filesystem::remove(config);
+        std::filesystem::remove(dir);
+    });
+    std::ofstream(config, std::ios::binary) << "{\"a\":\xff}";
+    BOOST_CHECK_NE(cm_load(m, dir.c_str(), nullptr, CM_SHARING_NONE), CM_ERROR_OK);
+    BOOST_CHECK(std::string_view{cm_get_last_error_message()}.contains("\xef\xbf\xbd"));
+    BOOST_CHECK(jsonrpc_post(bound_address, get_version).contains("result"));
+
+    // In a batch, such an error must not take the other responses with it
+    const nlohmann::json batch = nlohmann::json::array({
+        {{"jsonrpc", "2.0"}, {"id", 1}, {"method", "machine.load"}, {"params", {dir.string()}}},
+        {{"jsonrpc", "2.0"}, {"id", 2}, {"method", "get_version"}},
+    });
+    const auto responses = jsonrpc_post(bound_address, batch.dump());
+    BOOST_REQUIRE(responses.is_array());
+    BOOST_REQUIRE_EQUAL(responses.size(), 2);
+    BOOST_CHECK(responses[0]["error"]["message"].get<std::string>().contains("\xef\xbf\xbd"));
+    BOOST_CHECK(responses[1].contains("result"));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_nesting_request_test, spawned_server_fixture) {

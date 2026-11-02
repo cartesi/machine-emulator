@@ -445,8 +445,10 @@ static json jsonrpc_response_ok(const json &j, const json &result = true) {
 /// \param message Error message
 /// \returns JSON object with response
 static json jsonrpc_response_error(const json &j, jsonrpc_error_code code, const std::string &message) {
+    // Messages can quote bytes from requests or files, so bytes that are not valid UTF-8 become U+FFFD
+    auto valid_message = json::parse(json(message).dump(-1, ' ', false, json::error_handler_t::replace));
     return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : json(nullptr)},
-        {"error", {{"code", code}, {"message", message}}}};
+        {"error", {{"code", code}, {"message", std::move(valid_message)}}}};
 }
 
 /// \brief Returns a parse error JSONRPC response as a JSON object
@@ -488,8 +490,9 @@ static json jsonrpc_response_method_not_found(const json &j, const std::string &
 /// \returns JSON object with response
 static json jsonrpc_response_machine_error(const json &j, jsonrpc_error_code code, const std::string &message,
     int cm_error_code) {
-    return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : json(nullptr)},
-        {"error", {{"code", code}, {"message", message}, {"data", cm_error_code}}}};
+    auto response = jsonrpc_response_error(j, code, message);
+    response["error"]["data"] = cm_error_code;
+    return response;
 }
 
 /// \brief Returns a failed JSONRPC response for the exception currently being handled
@@ -1797,7 +1800,12 @@ static json jsonrpc_machine_verify_send_cmio_response_handler(const json &j,
 /// \returns HTTP response message
 static http::message_generator jsonrpc_http_reply(const http::request<http::string_body> &req, const json &j,
     const std::shared_ptr<http_session> &session) {
-    std::string body = j.dump();
+    std::string body;
+    try {
+        body = j.dump();
+    } catch (const json::type_error &) { // Results holding strings that are not valid UTF-8, such as some paths
+        body = jsonrpc_response_error(j, jsonrpc_error_code::internal_error, "result is not valid UTF-8").dump();
+    }
     SLOG(trace) << session->handler->local_endpoint << " response is " << body;
     http::response<http::string_body> res{http::status::ok, req.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);

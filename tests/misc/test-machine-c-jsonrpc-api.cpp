@@ -1138,6 +1138,25 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_empty_method_test, spawned_server_fixture
     BOOST_CHECK_EQUAL(j["error"]["code"].get<int>(), -32600);
 }
 
+// What: a request with an "id" that is not a string, number, or null yields
+//       invalid_request (-32600) and is not executed.
+// How:  POST machine.create with "id":true, assert the single reply is the error
+//       and that the server still holds no machine. Then POST a batch with one
+//       such request and assert it gets exactly one reply.
+BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_invalid_id_not_executed_test, spawned_server_fixture) {
+    auto j = jsonrpc_post(bound_address,
+        R"({"jsonrpc":"2.0","method":"machine.create","id":true,"params":[{"ram":{"length":4096}}]})");
+    BOOST_REQUIRE(j.contains("error"));
+    BOOST_CHECK_EQUAL(j["error"]["code"].get<int>(), -32600);
+    auto is_empty = jsonrpc_post(bound_address, R"({"jsonrpc":"2.0","method":"machine.is_empty","id":1})");
+    BOOST_REQUIRE(is_empty.contains("result"));
+    BOOST_CHECK(is_empty["result"].get<bool>());
+    auto batch = jsonrpc_post(bound_address, R"([{"jsonrpc":"2.0","method":"get_version","id":{}}])");
+    BOOST_REQUIRE(batch.is_array());
+    BOOST_REQUIRE_EQUAL(batch.size(), 1U);
+    BOOST_CHECK_EQUAL(batch[0]["error"]["code"].get<int>(), -32600);
+}
+
 // What: an unrecognized method name yields method_not_found (-32601).
 // How:  POST a well-formed request with method "does.not.exist" and assert
 //       the reply carries code -32601.

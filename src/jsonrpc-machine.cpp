@@ -69,6 +69,7 @@
 #include <json.hpp>
 
 #include "access-log.hpp"
+#include "address-range-constants.hpp"
 #include "address-range-description.hpp"
 #include "back-merkle-tree.hpp"
 #include "base64.hpp"
@@ -836,6 +837,9 @@ void jsonrpc_machine::emancipate_server() const {
 }
 
 void jsonrpc_machine::do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const {
+    if (data == nullptr && length > 0) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     std::string result;
     request("machine.read_memory", std::tie(address, length), result);
     std::string bin = cartesi::decode_base64(result);
@@ -846,12 +850,18 @@ void jsonrpc_machine::do_read_memory(uint64_t address, unsigned char *data, uint
 }
 
 void jsonrpc_machine::do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) {
+    if (data == nullptr && length > 0) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     bool result = false;
     std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
     request("machine.write_memory", std::tie(address, b64), result);
 }
 
 void jsonrpc_machine::do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) {
+    if (data == nullptr && length > 0) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     std::string result;
     request("machine.read_virtual_memory", std::tie(address, length), result);
     std::string bin = cartesi::decode_base64(result);
@@ -862,6 +872,9 @@ void jsonrpc_machine::do_read_virtual_memory(uint64_t address, unsigned char *da
 }
 
 void jsonrpc_machine::do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) {
+    if (data == nullptr && length > 0) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     bool result = false;
     std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
     request("machine.write_virtual_memory", std::tie(address, b64), result);
@@ -1051,10 +1064,27 @@ machine_cmio_request jsonrpc_machine::do_receive_cmio_request(std::span<uint8_t>
             !data.empty() ? std::span<const uint8_t>{data.first(result.available_length)} : std::span<const uint8_t>{}};
 }
 
+/// \brief Encodes the data of a cmio response for the server
+/// \param data Response data, which can be NULL when \p length is oversized.
+/// \param length Response data length.
+/// \returns Base64 encoding of the data to send.
+/// \details A response that does not fit in the rx buffer is a no-op that never reads its data, so it is sent as
+/// the shortest such response, which needs no data from the caller and avoids sending data that is discarded.
+static std::string encode_cmio_response_data(const unsigned char *data, uint32_t length) {
+    if (length > AR_CMIO_RX_BUFFER_LENGTH) {
+        const std::vector<unsigned char> oversized(AR_CMIO_RX_BUFFER_LENGTH + 1);
+        return cartesi::encode_base64(std::span<const unsigned char>{oversized});
+    }
+    if (data == nullptr && length > 0) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
+    return cartesi::encode_base64(std::span<const unsigned char>{data, length});
+}
+
 void jsonrpc_machine::do_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
     std::optional<const_machine_hash_view> revert_root_hash) {
     bool result = false;
-    std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
+    std::string b64 = encode_cmio_response_data(data, length);
     if (revert_root_hash.has_value()) {
         auto b64_revert_root_hash = encode_base64(*revert_root_hash);
         request("machine.send_cmio_response", std::tie(reason, b64, b64_revert_root_hash), result);
@@ -1067,7 +1097,7 @@ access_log jsonrpc_machine::do_log_send_cmio_response(uint16_t reason, const uns
     const_machine_hash_view revert_root_hash, const access_log::type &log_type) {
     not_default_constructible<access_log> result;
     auto b64_revert_root_hash = encode_base64(revert_root_hash);
-    std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
+    std::string b64 = encode_cmio_response_data(data, length);
     request("machine.log_send_cmio_response", std::tie(reason, b64, b64_revert_root_hash, log_type), result);
     if (!result.has_value()) {
         throw std::runtime_error("jsonrpc server error: missing result");
@@ -1126,7 +1156,7 @@ machine_hash jsonrpc_machine::do_verify_reset_uarch(const_machine_hash_view root
 machine_hash jsonrpc_machine::do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
     const_machine_hash_view root_hash_before, const access_log &log, const_machine_hash_view revert_root_hash) const {
     machine_hash result;
-    std::string b64_data = cartesi::encode_base64(std::span<const unsigned char>{data, length});
+    std::string b64_data = encode_cmio_response_data(data, length);
     auto b64_root_hash_before = encode_base64(root_hash_before);
     auto b64_revert_root_hash = encode_base64(revert_root_hash);
     request("machine.verify_send_cmio_response",

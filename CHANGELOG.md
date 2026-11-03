@@ -70,6 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `log_step` crashing on an empty or destroyed local machine
 - Fixed `cm_translate_virtual_address` crashing on a NULL output
 - Fixed `cm_jsonrpc_rebind_server` accepting a NULL address
+- Fixed JSON-RPC clients crashing on NULL data in memory accesses and cmio responses
+- Fixed JSON-RPC clients sending the data of cmio responses that do not fit in the rx buffer
 
 ## [0.22.0] - 2026-10-15
 ### Added

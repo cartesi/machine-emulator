@@ -735,6 +735,58 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(rebind_server_test, spawned_server_fixture) {
     BOOST_CHECK_EQUAL(cm_jsonrpc_get_server_version(m, &ver), CM_ERROR_OK);
 }
 
+// What: the client handles NULL data buffers as a local machine does.
+// How:  memory accesses and cmio responses that fit in the rx buffer fail on NULL data. An oversized cmio response
+//       with NULL data must log the same no-op a local machine logs from real data, and verify against that log.
+BOOST_FIXTURE_TEST_CASE_NOLINT(null_data_buffer_test, spawned_server_fixture) {
+    const auto config = minimal_machine_config();
+    BOOST_REQUIRE_EQUAL(cm_create(m, config.c_str(), nullptr, nullptr, CM_SHARING_ALL), CM_ERROR_OK);
+    const auto check_invalid_data_buffer = [](cm_error error) {
+        BOOST_CHECK_EQUAL(error, CM_ERROR_INVALID_ARGUMENT);
+        BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), std::string("invalid data buffer"));
+    };
+    check_invalid_data_buffer(cm_read_memory(m, CM_AR_RAM_START, nullptr, 8));
+    check_invalid_data_buffer(cm_write_memory(m, CM_AR_RAM_START, nullptr, 8));
+    check_invalid_data_buffer(cm_read_virtual_memory(m, CM_AR_RAM_START, nullptr, 8));
+    check_invalid_data_buffer(cm_write_virtual_memory(m, CM_AR_RAM_START, nullptr, 8));
+
+    cm_machine *local = nullptr;
+    BOOST_REQUIRE_EQUAL(cm_create_new(config.c_str(), nullptr, nullptr, CM_SHARING_ALL, &local), CM_ERROR_OK);
+    const auto local_deleter = cartesi::scope_exit([local] { cm_delete(local); });
+    const uint64_t tohost = (uint64_t{CM_HTIF_DEV_YIELD} << CM_HTIF_DEV_SHIFT) |
+        (uint64_t{CM_HTIF_YIELD_CMD_MANUAL} << CM_HTIF_CMD_SHIFT) |
+        (uint64_t{CM_HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED} << CM_HTIF_REASON_SHIFT);
+    for (auto *machine : {m, local}) {
+        BOOST_REQUIRE_EQUAL(cm_write_reg(machine, CM_REG_IFLAGS_Y, 1), CM_ERROR_OK);
+        BOOST_REQUIRE_EQUAL(cm_write_reg(machine, CM_REG_HTIF_TOHOST, tohost), CM_ERROR_OK);
+    }
+    cm_hash root_hash{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(m, &root_hash), CM_ERROR_OK);
+    const uint16_t reason = CM_HTIF_YIELD_REASON_ADVANCE_STATE;
+    const char *log = nullptr;
+    check_invalid_data_buffer(cm_send_cmio_response(m, reason, nullptr, 5, &root_hash));
+    check_invalid_data_buffer(cm_log_send_cmio_response(m, reason, nullptr, 5, &root_hash, 0, &log));
+
+    const uint32_t oversized_length = CM_AR_CMIO_RX_BUFFER_LENGTH + 100;
+    const std::vector<uint8_t> oversized_data(oversized_length, 0xab);
+    BOOST_REQUIRE_EQUAL(
+        cm_log_send_cmio_response(local, reason, oversized_data.data(), oversized_length, &root_hash, 0, &log),
+        CM_ERROR_OK);
+    const std::string local_log{log};
+    BOOST_REQUIRE_EQUAL(cm_log_send_cmio_response(m, reason, nullptr, oversized_length, &root_hash, 0, &log),
+        CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string{log}, local_log);
+    cm_hash obtained_root_hash{};
+    BOOST_CHECK_EQUAL(cm_verify_send_cmio_response(m, reason, nullptr, oversized_length, &root_hash, local_log.c_str(),
+                          &root_hash, &obtained_root_hash),
+        CM_ERROR_OK);
+    BOOST_CHECK(std::ranges::equal(obtained_root_hash, root_hash));
+    BOOST_CHECK_EQUAL(cm_send_cmio_response(m, reason, nullptr, oversized_length, &root_hash), CM_ERROR_OK);
+    cm_hash root_hash_after{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(m, &root_hash_after), CM_ERROR_OK);
+    BOOST_CHECK(std::ranges::equal(root_hash_after, root_hash));
+}
+
 // What: cm_jsonrpc_rebind_server rejects a NULL address.
 // How:  call it with a NULL address and expect an invalid argument error.
 BOOST_FIXTURE_TEST_CASE_NOLINT(rebind_server_null_address_test, spawned_server_fixture) {

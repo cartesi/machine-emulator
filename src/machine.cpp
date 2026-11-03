@@ -1905,26 +1905,21 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
     if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
-    const uint64_t vaddr_limit = vaddr_start + length;
-    const uint64_t vaddr_page_start = vaddr_start & ~(AR_PAGE_SIZE - 1);                      // align page backward
-    const uint64_t vaddr_page_limit = (vaddr_limit + AR_PAGE_SIZE - 1) & ~(AR_PAGE_SIZE - 1); // align page forward
+    if (length - 1 > UINT64_MAX - vaddr_start) {
+        throw std::invalid_argument{"virtual memory range wraps around the address space"};
+    }
     // copy page by page, because we need to perform address translation again for each page
-    for (uint64_t vaddr_page = vaddr_page_start; vaddr_page < vaddr_page_limit; vaddr_page += AR_PAGE_SIZE) {
+    for (uint64_t chunk_offset = 0; chunk_offset < length;) {
+        const uint64_t vaddr = vaddr_start + chunk_offset;
+        const uint64_t vaddr_page = vaddr & ~(AR_PAGE_SIZE - 1);
         uint64_t paddr_page = 0;
         if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
             throw std::domain_error{"page fault"};
         }
-        uint64_t paddr = paddr_page;
-        uint64_t vaddr = vaddr_page;
-        uint64_t chunklen = std::min<uint64_t>(AR_PAGE_SIZE, vaddr_limit - vaddr);
-        if (vaddr_page < vaddr_start) {
-            const uint64_t off = vaddr_start - vaddr_page;
-            paddr += off;
-            vaddr += off;
-            chunklen -= off;
-        }
-        const uint64_t chunkoff = vaddr - vaddr_start;
-        read_memory(paddr, data + chunkoff, chunklen);
+        const uint64_t offset = vaddr - vaddr_page;
+        const uint64_t chunk_length = std::min<uint64_t>(AR_PAGE_SIZE - offset, length - chunk_offset);
+        read_memory(paddr_page + offset, data + chunk_offset, chunk_length);
+        chunk_offset += chunk_length;
     }
 }
 
@@ -1936,28 +1931,23 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
     if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
-    const uint64_t vaddr_limit = vaddr_start + length;
-    const uint64_t vaddr_page_start = vaddr_start & ~(AR_PAGE_SIZE - 1);                      // align page backward
-    const uint64_t vaddr_page_limit = (vaddr_limit + AR_PAGE_SIZE - 1) & ~(AR_PAGE_SIZE - 1); // align page forward
+    if (length - 1 > UINT64_MAX - vaddr_start) {
+        throw std::invalid_argument{"virtual memory range wraps around the address space"};
+    }
     // copy page by page, because we need to perform address translation again for each page
-    for (uint64_t vaddr_page = vaddr_page_start; vaddr_page < vaddr_page_limit; vaddr_page += AR_PAGE_SIZE) {
+    for (uint64_t chunk_offset = 0; chunk_offset < length;) {
+        const uint64_t vaddr = vaddr_start + chunk_offset;
+        const uint64_t vaddr_page = vaddr & ~(AR_PAGE_SIZE - 1);
         uint64_t paddr_page = 0;
         // perform address translation using read access mode,
         // so we can write any reachable virtual memory range
         if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
             throw std::domain_error{"page fault"};
         }
-        uint64_t paddr = paddr_page;
-        uint64_t vaddr = vaddr_page;
-        uint64_t chunklen = std::min<uint64_t>(AR_PAGE_SIZE, vaddr_limit - vaddr);
-        if (vaddr_page < vaddr_start) {
-            const uint64_t off = vaddr_start - vaddr_page;
-            paddr += off;
-            vaddr += off;
-            chunklen -= off;
-        }
-        const uint64_t chunkoff = vaddr - vaddr_start;
-        write_memory(paddr, data + chunkoff, chunklen);
+        const uint64_t offset = vaddr - vaddr_page;
+        const uint64_t chunk_length = std::min<uint64_t>(AR_PAGE_SIZE - offset, length - chunk_offset);
+        write_memory(paddr_page + offset, data + chunk_offset, chunk_length);
+        chunk_offset += chunk_length;
     }
 }
 

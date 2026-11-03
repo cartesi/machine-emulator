@@ -532,8 +532,9 @@ public:
         return m_ht.get_node_hash(m_ars, address, log2_size);
     }
 
-    /// \brief Verifies integrity of hash tree without making any modifications to it tree.
-    /// \returns True if tree is self-consistent, false otherwise.
+    /// \brief Checks page hashes and dirty page tracking against memory, without modifying the hash tree.
+    /// \returns True if every page is either marked dirty or has the hash of its contents, false otherwise.
+    /// \details It does not check inner nodes or the root hash. For tests and debugging only.
     bool verify_hash_tree() const;
 
     /// \brief Validate integrity of processor shadow.

@@ -1185,11 +1185,13 @@ CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reaso
 /// Shared hash-tree backing stores are reset in place. Hashes are rebuilt lazily on the next hash or proof request.
 CM_API cm_error cm_clear_hash_tree(cm_machine *m);
 
-/// \brief Verifies integrity of hash tree against current machine state.
+/// \brief Checks the page hashes and dirty page tracking of the hash tree against current machine state.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param result True if tree is self-consistent, false otherwise.
+/// \param result True if every page is either marked dirty or has the hash of its contents, false otherwise.
 /// \returns 0 for success, non zero code for error.
-/// \details This method is used only for emulator internal tests.
+/// \details It does not check inner nodes or the root hash, which would cost more than rebuilding the tree.
+/// To get a hash tree that can be trusted, rebuild it with cm_clear_hash_tree().
+/// \details This method is used only for emulator internal tests and debugging.
 CM_API cm_error cm_verify_hash_tree(cm_machine *m, bool *result);
 
 /// \brief Obtains hash tree statistics

@@ -1218,11 +1218,11 @@
     },
     {
       "name": "machine.verify_hash_tree",
-      "summary": "Verifies sanity of hash tree",
+      "summary": "Checks page hashes and dirty page tracking against memory, for tests and debugging (not inner nodes or the root hash)",
       "params": [],
       "result": {
         "name": "valid",
-        "description": "True if hash tree is sane",
+        "description": "True if every page is either marked dirty or has the hash of its contents",
         "schema": {
           "type": "boolean"
         }

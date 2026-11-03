@@ -66,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed operations that require a reset microarchitecture accepting one that is halted, aborting `collect_uarch_cycle_root_hashes`
 - Fixed `collect_uarch_cycle_root_hashes` accepting revert uarch tails longer than the steps of an mcycle
 - Fixed `collect_uarch_cycle_root_hashes` accepting `log2_bundle_uarch_cycle_count` above 20
+- Fixed `write_memory` of the whole processor shadow accepting a shadow that a load would reject
 
 ## [0.22.0] - 2026-10-15
 ### Added

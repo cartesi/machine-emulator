@@ -193,36 +193,36 @@ void machine::init_processor(const processor_config &p, const machine_runtime_co
     }
 
     // Check if registers are consistent
-    validate_processor_shadow(r.skip_version_check);
+    validate_processor_shadow(m_s->shadow, r.skip_version_check);
 }
 
-void machine::validate_processor_shadow(bool skip_version_check) const {
+void machine::validate_processor_shadow(const shadow_state &shadow, bool skip_version_check) const {
     // Ensure emulator version is compatible
     if (!skip_version_check) {
-        if (m_s->shadow.registers.marchid != MARCHID_INIT) {
+        if (shadow.registers.marchid != MARCHID_INIT) {
             throw std::invalid_argument{"marchid mismatch, emulator version is incompatible"};
         }
-        if (m_s->shadow.registers.mvendorid != MVENDORID_INIT) {
+        if (shadow.registers.mvendorid != MVENDORID_INIT) {
             throw std::invalid_argument{"mvendorid mismatch, emulator version is incompatible"};
         }
-        if (m_s->shadow.registers.mimpid != MIMPID_INIT) {
+        if (shadow.registers.mimpid != MIMPID_INIT) {
             throw std::invalid_argument{"mimpid mismatch, emulator version is incompatible"};
         }
     }
     // Ensure x0 is actually zero
-    if (m_s->shadow.registers.x[0] != 0) {
+    if (shadow.registers.x[0] != 0) {
         throw std::invalid_argument{"x0 register is corrupt"};
     }
     // Ensure iunrep in shadow state matches the config value
-    if (m_s->shadow.registers.iunrep != m_c.processor.registers.iunrep) {
+    if (shadow.registers.iunrep != m_c.processor.registers.iunrep) {
         throw std::invalid_argument{"iunrep mismatch between shadow state and config"};
     }
     // Ensure padding bytes are consistent
     if (!is_pristine(std::span<const unsigned char>{// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            reinterpret_cast<unsigned char *>(&m_s->shadow.registers_padding_[0]),
-            sizeof(m_s->shadow.registers_padding_)}) ||
+            reinterpret_cast<const unsigned char *>(&shadow.registers_padding_[0]),
+            sizeof(shadow.registers_padding_)}) ||
         !is_pristine(std::span<const unsigned char>{// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            reinterpret_cast<unsigned char *>(&m_s->shadow.tlb_padding_[0]), sizeof(m_s->shadow.tlb_padding_)})) {
+            reinterpret_cast<const unsigned char *>(&shadow.tlb_padding_[0]), sizeof(shadow.tlb_padding_)})) {
         throw std::invalid_argument{"shadow padding bytes are corrupt"};
     }
 }
@@ -1835,11 +1835,15 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
     if (paddr == AR_SHADOW_STATE_START && length == AR_SHADOW_STATE_LENGTH) {
         // Overwrite the processor shadow state with the provided data
         static_assert(AR_SHADOW_STATE_LENGTH == sizeof(m_s->shadow));
+        // Validate a copy first, because the data need not be aligned, and the machine must be untouched on failure
+        shadow_state shadow{};
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        memcpy(reinterpret_cast<unsigned char *>(&shadow), data, sizeof(shadow));
+        validate_processor_shadow(shadow, m_r.skip_version_check);
         // Make sure we marked as dirty whatever pages were in the write TLB
         mark_write_tlb_dirty_pages();
         // Overwrite shadow
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        memcpy(reinterpret_cast<unsigned char *>(&m_s->shadow), data, sizeof(m_s->shadow));
+        m_s->shadow = shadow;
         // Reinitialize the hot TLB to reflect changes in the shadow TLB
         init_hot_tlb_contents();
         return;

@@ -1168,6 +1168,9 @@ cm_error cm_write_virtual_memory(cm_machine *m, uint64_t address, const uint8_t 
 }
 
 cm_error cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr) try {
+    if (paddr == nullptr) {
+        throw std::invalid_argument("invalid paddr output");
+    }
     auto *cpp_m = convert_from_c(m);
     *paddr = cpp_m->translate_virtual_address(vaddr);
     return cm_result_success();

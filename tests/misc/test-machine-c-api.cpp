@@ -1110,6 +1110,11 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_root_hash_null_machine_test) {
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(translate_virtual_address_null_output_test, ordinary_machine_fixture) {
+    BOOST_CHECK_EQUAL(cm_translate_virtual_address(_machine, 0, nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), std::string("invalid paddr output"));
+}
+
 BOOST_AUTO_TEST_CASE_NOLINT(get_uarch_pristine_hash_null_machine_test) {
     cm_hash hash{};
     BOOST_REQUIRE_EQUAL(cm_get_uarch_pristine_hash(nullptr, &hash), CM_ERROR_OK);

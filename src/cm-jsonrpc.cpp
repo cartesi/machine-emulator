@@ -159,6 +159,9 @@ cm_error cm_jsonrpc_fork_server(const cm_machine *m, cm_machine **forked_m, cons
 }
 
 cm_error cm_jsonrpc_rebind_server(cm_machine *m, const char *address, const char **address_bound) try {
+    if (address == nullptr) {
+        throw std::invalid_argument("invalid address");
+    }
     auto *cpp_m = convert_from_c(m);
     const auto cpp_address_bound = cpp_m->rebind_server(address);
     if (address_bound != nullptr) {

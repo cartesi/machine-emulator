@@ -410,6 +410,9 @@ void machine::set_runtime_config(machine_runtime_config r) {
     // Update console configuration
     m_console.set_config(r.console);
 
+    // Update hash-tree concurrency
+    m_ht.set_concurrency(r.concurrency.update_hash_tree);
+
     // Set runtime configuration last, as previous operations may fail
     m_r = std::move(r);
 }

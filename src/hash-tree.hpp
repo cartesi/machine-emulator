@@ -190,6 +190,9 @@ public:
 
     hash_tree_stats get_stats(bool clear = false) noexcept;
 
+    /// \brief Sets the number of threads used by hash-tree updates (0 means all available threads)
+    void set_concurrency(uint64_t concurrency) noexcept;
+
 private:
     using changed_address_ranges = std::pmr::vector<int>;
 

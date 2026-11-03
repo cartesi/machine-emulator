@@ -12,6 +12,7 @@ local describe, it, expect = lester.describe, lester.it, lester.expect
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
 local fs = require("cartesi.filesystem")
+local tabular = require("cartesi.tabular")
 local tests_util = require("cartesi.tests.util")
 
 local H = cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT
@@ -1606,6 +1607,48 @@ describe("hash-tree.lua", function()
             expect.fail(function()
                 hash_tree.verify_slice(proof)
             end)
+        end)
+
+        it("rejects proofs whose shape does not match their sizes", function()
+            local machine <close> = cartesi.machine({ ram = { length = 0x1000 } })
+            local frontier_proof = hash_tree.frontier_next_proofs(hash_tree.frontier(H, "keccak256"), make_leaves(4))[3]
+            local word_proof = machine:get_proof(cartesi.AR_RAM_START, 5)
+            local cases = {
+                {
+                    word_proof,
+                    "target address not aligned",
+                    function(p)
+                        p.target_address = p.target_address | 7
+                    end,
+                },
+                {
+                    frontier_proof,
+                    "wrong number of siblings",
+                    function(p)
+                        p.sibling_hashes[#p.sibling_hashes + 1] = p.sibling_hashes[1]
+                    end,
+                },
+                {
+                    frontier_proof,
+                    "invalid proof sizes",
+                    function(p)
+                        p.log2_target_size, p.target_hash, p.sibling_hashes = H + 1, p.root_hash, {}
+                    end,
+                },
+            }
+            for _, case in ipairs(cases) do
+                local proof, expected_error, corrupt = table.unpack(case)
+                hash_tree.verify_slice(proof)
+                local corrupted = tabular.deep_copy(proof)
+                corrupt(corrupted)
+                expect.fail(function()
+                    hash_tree.verify_slice(corrupted)
+                end, expected_error)
+            end
+            -- Address bits above the root size locate the tree and take no part in verification
+            local located = tabular.deep_copy(frontier_proof)
+            located.target_address = located.target_address | (1 << H)
+            hash_tree.verify_slice(located)
         end)
     end)
 end)

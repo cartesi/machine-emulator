@@ -212,6 +212,13 @@ describe("verify_step_uarch", function()
             end)
         end)
 
+        it("should reject a log2_size that does not fit an int on read access", function()
+            -- Truncated to an int, it would be 3, the right size for this access
+            step_should_fail(build_default_machine, 'log2_size" is out of bounds', function(log)
+                log.accesses[1].log2_size = (1 << 32) + 3
+            end)
+        end)
+
         it("should reject corrupt sibling hash on read access", function()
             step_should_fail(
                 build_default_machine,

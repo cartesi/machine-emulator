@@ -537,8 +537,10 @@ public:
     /// \details It does not check inner nodes or the root hash. For tests and debugging only.
     bool verify_hash_tree() const;
 
-    /// \brief Validate integrity of processor shadow.
-    void validate_processor_shadow(bool skip_version_check) const;
+    /// \brief Validate integrity of a processor shadow.
+    /// \param shadow Processor shadow to validate.
+    /// \param skip_version_check Whether to skip checking the emulator version registers.
+    void validate_processor_shadow(const shadow_state &shadow, bool skip_version_check) const;
 
     /// \brief Read the value of any register
     /// \param r Register to read

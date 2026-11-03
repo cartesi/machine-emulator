@@ -210,6 +210,22 @@ for _, variant in ipairs(variants) do
             end)
         end)
 
+        describe("hash-tree concurrency", function()
+            it("should clamp values above the thread count at create and at run time", function()
+                local source <close> = variant.create(
+                    { ram = { length = 0x1000 } },
+                    { concurrency = { update_hash_tree = 0xffffffff } }
+                )
+                expect.equal(source:get_root_hash(), tests_util.calculate_emulator_hash(source))
+                for i, update_hash_tree in ipairs({ -1, 1, 0 }) do
+                    source:set_runtime_config({ concurrency = { update_hash_tree = update_hash_tree } })
+                    expect.equal(source:get_runtime_config().concurrency.update_hash_tree, update_hash_tree)
+                    source:write_word(0x80000000, i)
+                    expect.equal(source:get_root_hash(), tests_util.calculate_emulator_hash(source))
+                end
+            end)
+        end)
+
         describe("virtual memory", function()
             it("should access ranges up to the end of the address space and reject ranges past it", function()
                 local source <close> = variant.create({ ram = { length = 0x4000 } })

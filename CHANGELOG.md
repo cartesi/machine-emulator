@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `decode_abi` and `decode_calldata` rejecting empty arrays of dynamic elements
 - Fixed `decode_abi` and `decode_calldata` rejecting dynamic data stored out of order
 - Fixed uarch TLB writes to an invalid set writing host memory out of bounds
+- Fixed JSON access logs and proofs accepting log2 sizes that do not fit an int, truncated to smaller sizes
 
 ## [0.22.0] - 2026-10-15
 ### Added

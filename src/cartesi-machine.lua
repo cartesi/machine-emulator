@@ -146,19 +146,19 @@ where options are:
   --no-remote-destroy
     do not destroy the cartesi machine in the remote server after the execution.
 
-  --revert-mode=<fork|stored|none>
-    select how advance and inspect states are reverted (default: fork).
+  --revert-mode=<mode>
+    select how advance and inspect states are reverted.
 
-    fork snapshots by forking a remote machine server.
-
-    stored snapshots a machine loaded from <directory> with sharing:all or
-    created with --create=<directory> by cloning it to <directory>.revert.
-    this mode cannot be combined with --replace-memory-range.
-    accepted state is synced before the snapshot is removed, and rejected or
-    inspected state is replaced by the synced snapshot.
-
-    none disables snapshots. inspect states are not reverted. a rejected
-    advance cannot be reverted and aborts the run.
+    <mode> is one of
+        fork: snapshot by forking a remote machine server.
+        stored: snapshot a machine loaded from <directory> with sharing:all or
+            created with --create=<directory> by cloning it to <directory>.revert.
+            this mode cannot be combined with --replace-memory-range.
+            accepted state is synced before the snapshot is removed, and rejected or
+            inspected state is replaced by the synced snapshot.
+        none: disable snapshots. inspect states are not reverted. a rejected
+            advance cannot be reverted and aborts the run.
+    the default mode is "fork".
 
     DON'T USE revert-mode=none IN PRODUCTION
 

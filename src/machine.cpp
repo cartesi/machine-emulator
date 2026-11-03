@@ -2284,7 +2284,7 @@ interpreter_break_reason machine::get_state_break_reason(interpreter_break_reaso
 }
 
 interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::string &filename) {
-    if (read_reg(reg::uarch_cycle) != 0) {
+    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
         throw std::runtime_error{"microarchitecture is not reset"};
     }
     auto root_hash_before = get_root_hash();
@@ -2328,8 +2328,7 @@ interpreter_break_reason machine::run(uint64_t mcycle_end) {
     if (mcycle_end < mcycle) {
         throw std::invalid_argument{"mcycle is past"};
     }
-    const auto uarch_cycle = read_reg(reg::uarch_cycle);
-    if (uarch_cycle != 0) {
+    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
         throw std::invalid_argument{"microarchitecture is not reset"};
     }
     const state_access a(*this);
@@ -2446,7 +2445,7 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
     if (!update_hash_tree()) {
         throw std::runtime_error{"update hash tree failed"};
     }
-    if (read_reg(reg::uarch_cycle) != 0) {
+    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
         throw std::runtime_error{"microarchitecture is not reset"};
     }
 
@@ -2607,7 +2606,7 @@ machine_hashes machine::collect_mcycle_bundle(uint64_t bundle_offset, uint64_t l
     if (m_r.soft_yield) {
         throw std::runtime_error{"cannot collect hashes when soft yield is enabled"};
     }
-    if (read_reg(reg::uarch_cycle) != 0) {
+    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
         throw std::runtime_error{"microarchitecture is not reset"};
     }
 
@@ -2747,6 +2746,11 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
     if (mcycle_end < mcycle_start) {
         throw std::runtime_error{"mcycle is past"};
     }
+    if (log2_bundle_uarch_cycle_count < 0 ||
+        static_cast<uint64_t>(log2_bundle_uarch_cycle_count) > ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) {
+        throw std::runtime_error{"log2_bundle_uarch_cycle_count must be in {0, ..., " +
+            std::to_string(ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) + "}"};
+    }
     if (is_unreproducible()) {
         throw std::runtime_error{"cannot collect hashes from unreproducible machines"};
     }
@@ -2760,7 +2764,7 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
     if (!update_hash_tree()) {
         throw std::runtime_error{"update hash tree failed"};
     }
-    if (read_reg(reg::uarch_cycle) != 0) {
+    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
         throw std::runtime_error{"microarchitecture is not reset"};
     }
 
@@ -2788,6 +2792,10 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
         }
         if (revert_uarch_tail.size() < 2) {
             throw std::runtime_error{"revert uarch tail is too short"};
+        }
+        // One state root hash per step of an mcycle: up to its maximum number of uarch cycles, then the reset
+        if (revert_uarch_tail.size() > (UINT64_C(1) << ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE)) {
+            throw std::runtime_error{"revert uarch tail is too long"};
         }
         if (revert_uarch_tail.back() != read_revert_root_hash()) {
             throw std::runtime_error{"revert uarch tail does not end with the revert root hash"};

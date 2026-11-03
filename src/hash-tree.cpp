@@ -20,12 +20,15 @@
 #include <array>
 #include <bit>
 #include <cassert>
+#include <cmath>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <iostream>
 #include <iterator>
+#include <numbers>
+#include <numeric>
 #include <queue>
 #include <ranges>
 #include <span>
@@ -277,39 +280,28 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
     if (batch.empty()) {
         return false;
     }
-    //??D The batch size past which we switch to parallel updates needs to be tuned empirically
     const int batch_size = static_cast<int>(batch.size());
     // Set block size to maximize SIMD lane utilization by hashing multiple pages together
     const int block_size = std::min(static_cast<int>(variant_hasher{m_hash_function}.get_optimal_lane_count()),
         page_hash_tree_cache::simd_page_hasher<variant_hasher>::QUEUE_MAX_PAGE_COUNT);
-    // It's only worth to use multi-threading if we have enough entries to process
-    [[maybe_unused]] const int threads =
-        (m_concurrency > 1 && batch_size > m_concurrency && batch_size > block_size) ? m_concurrency : 1;
-    uint64_t update_failures{0};
-    uint64_t word_hits{0};
-    uint64_t word_misses{0};
-    uint64_t page_changes{0};
-    uint64_t inner_page_hashes{0};
-    uint64_t pristine_pages{0};
-    uint64_t non_pristine_pages{0};
-#pragma omp parallel for schedule(dynamic) if (threads > 1) num_threads(threads) reduction(+ : update_failures,        \
-        word_hits, word_misses, page_changes, inner_page_hashes, pristine_pages, non_pristine_pages)
-    for (int i = 0; i < batch_size; i += block_size) {
+    // Hashes the block of entries starting at batch index i
+    const auto update_block = [this, &batch, &ars, batch_size, block_size](int i, page_hash_tree_cache_stats &stats,
+                                  uint64_t &failures) {
+        const int block_end = std::min(batch_size, i + block_size);
         // Queue entries to be hashed
         variant_hasher h{m_hash_function};
         page_hash_tree_cache::simd_page_hasher<variant_hasher> queue(h);
-        page_hash_tree_cache_stats stats;
-        for (int j = i; j < std::min(batch_size, i + block_size); ++j) {
+        for (int j = i; j < block_end; ++j) {
             auto &[ar_index, br, changed] = batch[j];
             auto &ar = ars[ar_index];
             if (!enqueue_hash_dirty_page(queue, ar, br, stats)) {
-                ++update_failures;
+                ++failures;
             }
         }
         // Flush SIMD hasher queue
         stats.inner_page_hashes += queue.flush();
         // Update changed entries
-        for (int j = i; j < std::min(batch_size, i + block_size); ++j) {
+        for (int j = i; j < block_end; ++j) {
             auto &[ar_index, br, changed] = batch[j];
             auto &ar = ars[ar_index];
             const auto offset = br.get_paddr_page() - ar.get_start();
@@ -321,22 +313,69 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
                 ++stats.page_changes;
             }
         }
-        // Increment stats
-        word_hits += stats.word_hits;
-        word_misses += stats.word_misses;
-        page_changes += stats.page_changes;
-        inner_page_hashes += stats.inner_page_hashes;
-        pristine_pages += stats.pristine_pages;
-        non_pristine_pages += stats.non_pristine_pages;
+    };
+    // How much work a dirty page takes is unknown until the page is compared with its cached copy, so blocks are
+    // updated serially until the hashes counted so far, scaled to the pages left, pay for at least two threads (see
+    // get_parallel_threads). The remaining blocks are then updated in parallel. Blocks are visited in an order that
+    // spreads every prefix across the batch, so the blocks updated serially represent the whole batch rather than
+    // its first address ranges. Multiplying by a stride coprime to the block count permutes the blocks, and a stride
+    // near the block count divided by the golden ratio spreads every prefix almost evenly (three-gap theorem).
+    const int block_count = (batch_size + block_size - 1) / block_size;
+    const int64_t golden_stride = std::llround(block_count / std::numbers::phi);
+    auto stride = std::max<int64_t>(1, golden_stride);
+    while (std::gcd(stride, int64_t{block_count}) != 1) {
+        ++stride;
     }
-
-    auto &page_stats = m_page_cache.get_stats_ref();
-    page_stats.word_hits += word_hits;
-    page_stats.word_misses += word_misses;
-    page_stats.page_changes += page_changes;
-    page_stats.inner_page_hashes += inner_page_hashes;
-    page_stats.pristine_pages += pristine_pages;
-    page_stats.non_pristine_pages += non_pristine_pages;
+    const auto block_starts =
+        std::views::iota(0, block_count) | std::views::transform([block_count, block_size, stride](int k) {
+            const auto block_index = static_cast<int>((int64_t{k} * stride) % block_count);
+            return block_index * block_size;
+        });
+    uint64_t update_failures{0};
+    page_hash_tree_cache_stats batch_stats;
+    int blocks_done = 0;
+    int pages_done = 0;
+    [[maybe_unused]] int threads = 1;
+    for (const int i : block_starts) {
+        if (blocks_done >= SERIAL_BLOCKS_BEFORE_ESTIMATE) {
+            const auto hashes_done = batch_stats.word_misses + batch_stats.inner_page_hashes;
+            const auto pages_left = static_cast<uint64_t>(batch_size - pages_done);
+            const auto hashes_left = hashes_done * pages_left / static_cast<uint64_t>(pages_done);
+            const auto scans_left = pages_left * PAGE_SCAN_HASHES;
+            threads = get_parallel_threads(hashes_left + scans_left, block_count - blocks_done);
+            if (threads > 1) {
+                break;
+            }
+        }
+        update_block(i, batch_stats, update_failures);
+        const int block_pages = std::min(block_size, batch_size - i);
+        pages_done += block_pages;
+        ++blocks_done;
+    }
+    // Use scalar reductions: Clang can lower a struct reduction to a critical section whose libomp lock becomes
+    // stale after the hard pause before fork (https://github.com/llvm/llvm-project/issues/154201).
+    auto &word_hits = batch_stats.word_hits;
+    auto &word_misses = batch_stats.word_misses;
+    auto &page_changes = batch_stats.page_changes;
+    auto &inner_page_hashes = batch_stats.inner_page_hashes;
+    auto &pristine_pages = batch_stats.pristine_pages;
+    auto &non_pristine_pages = batch_stats.non_pristine_pages;
+#pragma omp parallel if (threads > 1) num_threads(threads) reduction(+ : update_failures, word_hits, word_misses,      \
+        page_changes, inner_page_hashes, pristine_pages, non_pristine_pages)
+    {
+        page_hash_tree_cache_stats thread_stats;
+#pragma omp for schedule(dynamic)
+        for (const int i : block_starts | std::views::drop(blocks_done)) {
+            update_block(i, thread_stats, update_failures);
+        }
+        word_hits += thread_stats.word_hits;
+        word_misses += thread_stats.word_misses;
+        page_changes += thread_stats.page_changes;
+        inner_page_hashes += thread_stats.inner_page_hashes;
+        pristine_pages += thread_stats.pristine_pages;
+        non_pristine_pages += thread_stats.non_pristine_pages;
+    }
+    m_page_cache.get_stats_ref() += batch_stats;
 
     // Return all entries and collect address ranges that were actually changed by update
     for (auto &[ar_index, br, changed] : batch) {
@@ -437,12 +476,12 @@ void hash_tree::update_and_clear_dense_node_entries(dense_node_entries &batch, i
     if (batch.empty()) {
         return;
     }
-    //??D The batch size past which we switch to parallel updates needs to be tuned empirically
     const int batch_size = static_cast<int>(batch.size());
     const int block_size = static_cast<int>(variant_hasher{m_hash_function}.get_optimal_lane_count());
-    // It's only worth to use multi-threading if we have enough entries to process
-    [[maybe_unused]] const int threads =
-        (m_concurrency > 1 && batch_size > m_concurrency * block_size) ? m_concurrency : 1;
+    const int block_count = (batch_size + block_size - 1) / block_size;
+    // Each entry takes one hash
+    const auto work = static_cast<uint64_t>(batch_size);
+    [[maybe_unused]] const int threads = get_parallel_threads(work, block_count);
 #pragma omp parallel for schedule(static) if (threads > 1) num_threads(threads)
     for (int block_start = 0; block_start < batch_size; block_start += block_size) {
         variant_hasher h{m_hash_function};
@@ -996,6 +1035,13 @@ hash_tree::hash_tree(const hash_tree_config &config, uint64_t concurrency, machi
 
 void hash_tree::set_concurrency(uint64_t concurrency) noexcept {
     m_concurrency = get_concurrency(concurrency);
+}
+
+int hash_tree::get_parallel_threads(uint64_t work, int blocks) const noexcept {
+    const auto threads_paid_for = work / PARALLEL_HASHES_PER_THREAD;
+    const auto threads =
+        std::min({static_cast<uint64_t>(m_concurrency), threads_paid_for, static_cast<uint64_t>(blocks)});
+    return threads > 1 ? static_cast<int>(threads) : 1;
 }
 
 void hash_tree::check_address_ranges(const_address_ranges ars) {

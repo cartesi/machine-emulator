@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed `replace_memory_range` to accept the CMIO rx buffer
 - Changed `clone_stored` to fail instead of copying when a filesystem refuses a reference link with `EPERM`
 - Changed `cartesi-machine` and spawned JSON-RPC servers to default `OMP_WAIT_POLICY` to `passive`
+- Changed hash-tree updates to use as many threads as their estimated hashing work pays for
 
 ### Removed
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`

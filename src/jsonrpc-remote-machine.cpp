@@ -2025,6 +2025,7 @@ http::message_generator handle_request(HTTP_REQ &&rreq, const std::shared_ptr<ht
             if (!jiid.is_string() && !jiid.is_number() && !jiid.is_null()) {
                 jr.push_back(
                     jsonrpc_response_invalid_request(ji, "invalid field \"id\" (expected string, number, or null)"));
+                continue;
             }
         }
         if (session->handler->delay != 0) {

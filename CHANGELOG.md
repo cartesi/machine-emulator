@@ -68,6 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `collect_uarch_cycle_root_hashes` accepting `log2_bundle_uarch_cycle_count` above 20
 - Fixed `write_memory` of the whole processor shadow accepting a shadow that a load would reject
 - Fixed `log_step` crashing on an empty or destroyed local machine
+- Fixed `cm_translate_virtual_address` crashing on a NULL output
+- Fixed `cm_jsonrpc_rebind_server` accepting a NULL address
 
 ## [0.22.0] - 2026-10-15
 ### Added

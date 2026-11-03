@@ -441,6 +441,17 @@ describe("collect hashes", function()
                 expect.fail(function()
                     machine:collect_uarch_cycle_root_hashes(0)
                 end, "mcycle is past")
+                expect.fail(function()
+                    machine:collect_uarch_cycle_root_hashes(32, cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE + 1)
+                end, "log2_bundle_uarch_cycle_count must be in")
+                -- A halted uarch is not reset, even before it counts any cycle
+                machine:write_reg("uarch_halt", 1)
+                expect.fail(function()
+                    machine:collect_uarch_cycle_root_hashes(32)
+                end, "microarchitecture is not reset")
+                expect.fail(function()
+                    machine:run(32)
+                end, "microarchitecture is not reset")
             end)
 
             it("should fail when collecting with an incompatible partial bundle", function()
@@ -767,6 +778,28 @@ describe("collect hashes", function()
                 local collected = machine:collect_uarch_cycle_root_hashes(2, 0, pristine_revert_uarch_tail)
                 local expected_collected = expect_uarch_cycle_root_hashes(compare_machine, 2)
                 expect.equal(collected, expected_collected)
+            end)
+
+            it("should accept a revert uarch tail with one hash per step of an mcycle and no more", function()
+                local revert_root_hash = string.rep("\x5a", cartesi.HASH_SIZE)
+                local machine <close> = create_machine({ ram = { length = 4096 } })
+                machine:write_revert_root_hash(revert_root_hash)
+                machine:write_reg("iflags_Y", 1)
+                machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+                machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+                machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+                local step_count = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+                local revert_uarch_tail = {}
+                for i = 1, step_count - 1 do
+                    revert_uarch_tail[i] = string.rep("\x01", cartesi.HASH_SIZE)
+                end
+                revert_uarch_tail[step_count] = revert_root_hash
+                local collected = machine:collect_uarch_cycle_root_hashes(32, 0, revert_uarch_tail)
+                expect.equal(#collected.hashes, step_count)
+                table.insert(revert_uarch_tail, 1, string.rep("\x01", cartesi.HASH_SIZE))
+                expect.fail(function()
+                    machine:collect_uarch_cycle_root_hashes(32, 0, revert_uarch_tail)
+                end, "revert uarch tail is too long")
             end)
 
             it("should collect the revert uarch tail period when starting from a rejected machine", function()

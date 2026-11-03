@@ -63,6 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed uarch TLB writes to an invalid set writing host memory out of bounds
 - Fixed JSON access logs and proofs accepting log2 sizes that do not fit an int, truncated to smaller sizes
 - Fixed `verify_slice` and `verify_splice` accepting proofs whose shape does not match their sizes
+- Fixed operations that require a reset microarchitecture accepting one that is halted, aborting `collect_uarch_cycle_root_hashes`
+- Fixed `collect_uarch_cycle_root_hashes` accepting revert uarch tails longer than the steps of an mcycle
+- Fixed `collect_uarch_cycle_root_hashes` accepting `log2_bundle_uarch_cycle_count` above 20
 
 ## [0.22.0] - 2026-10-15
 ### Added

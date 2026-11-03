@@ -5006,7 +5006,8 @@ dofile(%q)
             {
                 hash_function = "keccak256",
                 change = function(machine)
-                    machine:write_reg("uarch_halt", 1)
+                    -- A halted uarch is refused before the check, so change a register only the check covers
+                    machine:write_reg("uarch_pc", machine:read_reg("uarch_pc") + 4)
                 end,
                 rc = 2,
             },

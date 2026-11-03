@@ -739,13 +739,16 @@ local function decode_array(calldata, offset, parsed_type_spec, prefer)
     local result = {}
     local is_dynamic_element = is_dynamic_type(element_type)
     if is_dynamic_element then
-        local last_offset
+        local last_offset = new_offset + size * 32 -- Position to return (end of data), past the offsets if empty
         -- Dynamic elements: read offset and decode immediately
         for i = 1, size do
             local offset_val = decode_uint(calldata, new_offset + (i - 1) * 32)
             -- Offsets are relative to the start of the array data section
             local element_offset = array_data_start + check_lua_uint(offset_val, "array offset")
-            result[i], last_offset = decode_value(calldata, element_offset, element_type, prefer)
+            local element_new_offset
+            result[i], element_new_offset = decode_value(calldata, element_offset, element_type, prefer)
+            -- Element data need not follow the order of the offsets
+            last_offset = math.max(last_offset, element_new_offset)
         end
         return result, last_offset
     else
@@ -773,7 +776,10 @@ local function decode_tuple(calldata, offset, parsed_type_spec, prefer)
             offset_val, static_offset = decode_uint(calldata, static_offset)
             -- Offsets are relative to the start of the tuple
             local dynamic_offset = tuple_start + check_lua_uint(offset_val, "tuple offset")
-            result[i], new_offset = decode_value(calldata, dynamic_offset, comp_type, prefer)
+            local component_new_offset
+            result[i], component_new_offset = decode_value(calldata, dynamic_offset, comp_type, prefer)
+            -- Component data need not follow the order of the offsets
+            new_offset = math.max(new_offset, component_new_offset)
         else
             result[i], static_offset = decode_value(calldata, static_offset, comp_type, prefer)
         end

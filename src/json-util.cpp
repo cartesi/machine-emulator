@@ -1254,7 +1254,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constru
     }
     uint64_t log2_target_size = 0;
     ju_get_field(jk, "log2_target_size"s, log2_target_size, new_path);
-    if (log2_root_size > INT_MAX) {
+    if (log2_target_size > INT_MAX) {
         throw std::domain_error("\""s + new_path + "log2_target_size\" is out of bounds");
     }
     value.emplace(static_cast<int>(log2_root_size), static_cast<int>(log2_target_size));
@@ -1417,6 +1417,9 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
     access.set_type(type);
     uint64_t log2_size = 0;
     ju_get_field(jk, "log2_size"s, log2_size, new_path);
+    if (log2_size > INT_MAX) {
+        throw std::domain_error("\""s + new_path + "log2_size\" is out of bounds");
+    }
     access.set_log2_size(static_cast<int>(log2_size));
     uint64_t address = 0;
     ju_get_field(jk, "address"s, address, new_path);

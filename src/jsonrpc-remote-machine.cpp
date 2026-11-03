@@ -78,6 +78,7 @@
 #include "cm-exception.hpp"
 #include "json-util.hpp"
 #include "jsonrpc-discover.hpp"
+#include "jsonrpc-endpoint.hpp"
 #include "jsonrpc-fork-result.hpp"
 #include "jsonrpc-version.hpp"
 #include "machine-config.hpp"
@@ -825,26 +826,6 @@ static json jsonrpc_get_version_handler(const json &j, const std::shared_ptr<htt
 /// \brief Parse a address from a string to an endpoint.
 /// \param address Address string (e.g "127.0.0.1:8000")
 /// \returns Endpoint address
-static tcp::endpoint address_to_endpoint(const std::string &address) {
-    try {
-        const auto pos = address.find_last_of(':');
-        const std::string ip = address.substr(0, pos);
-        const int port = std::stoi(address.substr(pos + 1));
-        if (port < 0 || port > 65535) {
-            throw std::runtime_error{"invalid port"};
-        }
-        return {asio::ip::make_address(ip), static_cast<uint16_t>(port)};
-    } catch (const std::exception &e) {
-        throw std::runtime_error{"invalid endpoint address \"" + address + "\""};
-    }
-}
-
-static std::string endpoint_to_string(const tcp::endpoint &endpoint) {
-    std::ostringstream ss;
-    ss << endpoint;
-    return ss.str();
-}
-
 /// \brief JSONRPC handler for the fork method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -862,7 +843,7 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
     // Listen in desired port before fork so failures happen still in parent,
     // who can directly report them to client
     tcp::acceptor acceptor{session->handler->ioc, tcp::endpoint{session->handler->local_endpoint.address(), 0}};
-    const std::string new_server_address = endpoint_to_string(acceptor.local_endpoint());
+    const std::string new_server_address = cartesi::endpoint_to_string(acceptor.local_endpoint());
     // Notify ASIO that we are about to fork
     session->handler->ioc.notify_fork(asio::io_context::fork_prepare);
 #ifdef HAVE_OPENMP
@@ -925,7 +906,7 @@ static json jsonrpc_rebind_handler(const json &j, const std::shared_ptr<http_ses
     static const char *const param_name[] = {"address"};
     auto args = parse_args<std::string>(j, param_name);
     const std::string new_server_address = std::get<0>(args);
-    const tcp::endpoint new_local_endpoint = address_to_endpoint(new_server_address);
+    const tcp::endpoint new_local_endpoint = cartesi::address_to_endpoint(new_server_address);
     if (new_local_endpoint != session->handler->local_endpoint) {
         SLOG(trace) << session->handler->local_endpoint << " rebinding to " << new_local_endpoint;
         session->handler->rebind(tcp::acceptor{session->handler->ioc, new_local_endpoint});
@@ -933,7 +914,7 @@ static json jsonrpc_rebind_handler(const json &j, const std::shared_ptr<http_ses
     } else {
         SLOG(trace) << session->handler->local_endpoint << " rebind unnecessary";
     }
-    const std::string result = endpoint_to_string(session->handler->local_endpoint);
+    const std::string result = cartesi::endpoint_to_string(session->handler->local_endpoint);
     return jsonrpc_response_ok(j, result);
 }
 
@@ -2074,7 +2055,7 @@ where options are
       gives the address server should bind to
       <server-address> can be
         <ipv4-address>:<port>
-        <ipv6-address>:<port>
+        [<ipv6-address>]:<port>
       when <port> is 0, an ephemeral port will be automatically selected
       default is "127.0.0.1:0"
 
@@ -2216,7 +2197,7 @@ int main(int argc, char *argv[]) try {
         if (server_address == nullptr) {
             server_address = "127.0.0.1:0";
         }
-        acceptor = tcp::acceptor{ioc, address_to_endpoint(server_address)};
+        acceptor = tcp::acceptor{ioc, cartesi::address_to_endpoint(server_address)};
     }
 
     SLOG(info) << "initial server address is '" << acceptor.local_endpoint() << "'";

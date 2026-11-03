@@ -79,6 +79,7 @@
 #include "interpret.hpp"
 #include "json-util.hpp"
 #include "jsonrpc-cmio-request.hpp"
+#include "jsonrpc-endpoint.hpp"
 #include "jsonrpc-fork-result.hpp"
 #include "jsonrpc-version.hpp"
 #include "machine-config.hpp"
@@ -159,24 +160,6 @@ static void open_socket(auto &socket, const tcp &protocol) {
 #endif
 }
 
-// Parses an endpoint from an address string in the format "<ip>:<port>"
-static asio::ip::tcp::endpoint parse_endpoint(const std::string &address) {
-    try {
-        const auto colon_pos = address.find_first_of(':');
-        if (colon_pos == std::string::npos) {
-            throw std::runtime_error("missing port number"s);
-        }
-        const std::string host = address.substr(0, colon_pos);
-        const int port = std::stoi(address.substr(colon_pos + 1));
-        if (port <= 0 || port >= 65536) {
-            throw std::runtime_error("invalid port number"s);
-        }
-        return {asio::ip::make_address(host), static_cast<uint16_t>(port)};
-    } catch (const std::exception &e) {
-        throw std::runtime_error("failed to parse endpoint from address \""s + address + "\": "s + e.what());
-    }
-}
-
 class expiration {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     beast::tcp_stream &m_stream;
@@ -203,7 +186,10 @@ public:
 static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &stream, const std::string &remote_address,
     const std::string &post_data, std::chrono::time_point<std::chrono::steady_clock> timeout_at, bool keep_alive) {
     // Determine remote endpoint from remote address
-    const asio::ip::tcp::endpoint remote_endpoint = parse_endpoint(remote_address);
+    const asio::ip::tcp::endpoint remote_endpoint = cartesi::address_to_endpoint(remote_address);
+    if (remote_endpoint.port() == 0) {
+        throw std::invalid_argument{"cannot connect to port 0 of \"" + remote_address + "\""};
+    }
 
     // Set expiration to ms milliseconds into the future, automatically clear it when function exits
     const expiration exp(stream, timeout_at);
@@ -471,26 +457,6 @@ jsonrpc_machine::jsonrpc_machine(std::string address) :
 }
 
 #ifdef HAVE_FORK
-
-static boost::asio::ip::tcp::endpoint address_to_endpoint(const std::string &address) {
-    try {
-        const auto pos = address.find_last_of(':');
-        const std::string ip = address.substr(0, pos);
-        const int port = std::stoi(address.substr(pos + 1));
-        if (port < 0 || port > 65535) {
-            throw std::runtime_error{"invalid port"};
-        }
-        return {boost::asio::ip::make_address(ip), static_cast<uint16_t>(port)};
-    } catch (const std::exception &e) {
-        throw std::runtime_error{"invalid endpoint address \"" + address + "\""};
-    }
-}
-
-static std::string endpoint_to_string(const boost::asio::ip::tcp::endpoint &endpoint) {
-    std::ostringstream ss;
-    ss << endpoint;
-    return ss.str();
-}
 
 jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeout_ms, fork_result &spawned) :
     m_ioc(new boost::asio::io_context{1}),

@@ -77,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `create` and `load` on a local machine object that already holds a machine leaking that machine
 - Fixed read-only memory ranges longer than their page-aligned backing image being rejected
 - Fixed the JSON-RPC server executing requests it rejects for an invalid `id`
+- Fixed `spawn_server` hanging on failure when the calling thread blocks `SIGTERM`
 
 ## [0.22.0] - 2026-10-15
 ### Added

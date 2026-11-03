@@ -196,6 +196,21 @@ public:
 private:
     using changed_address_ranges = std::pmr::vector<int>;
 
+    /// \brief Work, in hashes, that each thread of a parallel update must have for the thread to pay for itself
+    /// \details Tuned on hosts whose OpenMP runtime puts idle threads to sleep, the default on macOS and the
+    /// recommended setting elsewhere (OMP_WAIT_POLICY=passive).
+    static constexpr uint64_t PARALLEL_HASHES_PER_THREAD{300};
+    /// \brief Work, in hashes, of comparing a dirty page with its cached copy
+    static constexpr uint64_t PAGE_SCAN_HASHES{3};
+    /// \brief Blocks of a page batch updated serially before its remaining work is estimated
+    static constexpr int SERIAL_BLOCKS_BEFORE_ESTIMATE{2};
+
+    /// \brief Returns the number of threads worth using for a given amount of work
+    /// \param work Estimated work, in hashes
+    /// \param blocks Number of blocks the work can be split into
+    /// \returns Number of threads, or 1 if the work does not pay for a parallel update
+    int get_parallel_threads(uint64_t work, int blocks) const noexcept;
+
     void get_pristine_proof(int curr_log2_size, proof_type &proof) const;
     void get_dense_proof(address_range &ar, int ar_log2_size, uint64_t address, proof_type &proof);
     void get_page_proof(address_range &ar, uint64_t address, proof_type &proof);

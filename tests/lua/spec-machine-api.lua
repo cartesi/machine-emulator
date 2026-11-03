@@ -224,6 +224,36 @@ for _, variant in ipairs(variants) do
                     expect.equal(source:get_root_hash(), tests_util.calculate_emulator_hash(source))
                 end
             end)
+
+            it("should hash the same serially and in parallel", function()
+                local config = { ram = { length = 16 << 20 } }
+                local serial <close> = variant.create(config, { concurrency = { update_hash_tree = 1 } })
+                local parallel <close> = variant.create(config, { concurrency = { update_hash_tree = 0 } })
+                local page = string.rep("\x5a", 4096)
+                -- Rounds of fully changed pages, of one changed word per page, and of unchanged rewritten pages
+                local writes = {
+                    function(target, address)
+                        target:write_memory(address, page)
+                    end,
+                    function(target, address, i)
+                        target:write_memory(address, string.pack("<I8", i))
+                    end,
+                    function(target, address, i)
+                        target:write_memory(address, "\1")
+                        target:write_memory(address, string.pack("<I8", i))
+                    end,
+                }
+                for _, write in ipairs(writes) do
+                    for i = 0, 2047 do
+                        local address = cartesi.AR_RAM_START + ((i * 7919) % 4096) * 4096
+                        write(serial, address, i)
+                        write(parallel, address, i)
+                    end
+                    expect.equal(parallel:get_root_hash(), serial:get_root_hash())
+                    expect.equal(parallel:get_hash_tree_stats(true), serial:get_hash_tree_stats(true))
+                end
+                expect.truthy(parallel:verify_hash_tree())
+            end)
         end)
 
         describe("virtual memory", function()
@@ -851,6 +881,31 @@ describe("JSON-RPC fork", function()
         expect.truthy(child:is_empty())
         expect.truthy(pid > 0)
         expect.not_equal(address, server:get_server_address())
+    end)
+
+    it("should hash in both servers after a fork", function()
+        local config = { ram = { length = 1 << 20 } }
+        local runtime = { concurrency = { update_hash_tree = 2 } }
+        local serial <close> = cartesi.machine(config, { concurrency = { update_hash_tree = 1 } })
+        local server <close> = jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN):set_timeout(5000)
+        server:create(config, runtime)
+        local data = string.rep("A", config.ram.length)
+        serial:write_memory(cartesi.AR_RAM_START, data)
+        server:write_memory(cartesi.AR_RAM_START, data)
+        local root = serial:get_root_hash()
+        -- Exercise the parallel reduction before fork hard-pauses the OpenMP runtime.
+        expect.equal(server:get_root_hash(), root)
+        local child <close> = server:fork_server()
+        child:set_cleanup_call(jsonrpc.SHUTDOWN)
+        for _, target in ipairs({ server, child }) do
+            expect.equal(target:get_root_hash(), root)
+            -- Recreate and hash a machine in each process, as successive CLI invocations do.
+            target:destroy()
+            target:create(config, runtime)
+            target:write_memory(cartesi.AR_RAM_START, data)
+            expect.equal(target:get_root_hash(), root)
+            expect.truthy(target:verify_hash_tree())
+        end
     end)
 
     it("should reject a shared memory range", function()

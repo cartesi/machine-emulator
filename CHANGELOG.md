@@ -72,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `cm_jsonrpc_rebind_server` accepting a NULL address
 - Fixed JSON-RPC clients crashing on NULL data in memory accesses and cmio responses
 - Fixed JSON-RPC clients sending the data of cmio responses that do not fit in the rx buffer
+- Fixed `read_virtual_memory` and `write_virtual_memory` doing nothing for ranges that reach the end of the address space
 
 ## [0.22.0] - 2026-10-15
 ### Added

@@ -210,6 +210,31 @@ for _, variant in ipairs(variants) do
             end)
         end)
 
+        describe("virtual memory", function()
+            it("should access ranges up to the end of the address space and reject ranges past it", function()
+                local source <close> = variant.create({ ram = { length = 0x4000 } })
+                -- Without paging, the last page is unmapped physical memory, so it reads as zeros and refuses writes
+                for _, range in ipairs({ { -4096, 4096 }, { -1, 1 } }) do
+                    local vaddr, length = table.unpack(range)
+                    expect.equal(source:read_virtual_memory(vaddr, length), string.rep("\0", length))
+                    expect.fail(function()
+                        source:write_virtual_memory(vaddr, string.rep("x", length))
+                    end, "not entirely within single memory range")
+                end
+                expect.fail(function()
+                    source:read_virtual_memory(-4096, 8192)
+                end, "wraps around the address space")
+                expect.fail(function()
+                    source:write_virtual_memory(-4096, string.rep("x", 8192))
+                end, "wraps around the address space")
+                -- A range that crosses a page boundary is copied page by page
+                local vaddr = cartesi.AR_RAM_START + 0x1000 - 3
+                source:write_virtual_memory(vaddr, "abcdefgh")
+                expect.equal(source:read_virtual_memory(vaddr, 8), "abcdefgh")
+                expect.equal(source:read_memory(vaddr, 8), "abcdefgh")
+            end)
+        end)
+
         describe("log_step", function()
             it("should reject an empty or destroyed machine", function()
                 local _ <close>, log_filename = tests_util.scope_temp_pathname()

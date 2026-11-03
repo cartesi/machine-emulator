@@ -60,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `clone_stored` and `clone_file` hard-linking a symbolic link instead of the read-only file it refers to
 - Fixed `decode_abi` and `decode_calldata` rejecting empty arrays of dynamic elements
 - Fixed `decode_abi` and `decode_calldata` rejecting dynamic data stored out of order
+- Fixed uarch TLB writes to an invalid set writing host memory out of bounds
 
 ## [0.22.0] - 2026-10-15
 ### Added

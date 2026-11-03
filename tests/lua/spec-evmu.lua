@@ -869,6 +869,39 @@ describe("selectorless ABI", function()
         assert(not pcall(evmu.decode_abi, "bytes32", string.rep("\0", 32)))
         assert(not pcall(evmu.decode_abi, "()", string.rep("\0", 32)))
     end)
+    it("decodes empty arrays of dynamic elements", function()
+        local cases = {
+            { "(bytes[])", { {} } },
+            { "(string[])", { {} } },
+            { "(uint256,string[])", { 1, {} } },
+            { "((uint256,bytes)[])", { {} } },
+            { "(bytes[],uint256)", { {}, 7 } },
+            { "(bytes[][])", { { {} } } },
+        }
+        for _, case in ipairs(cases) do
+            local types, values = case[1], case[2]
+            local data = evmu.encode_abi(types, values)
+            assert(evmu.encode_abi(types, evmu.decode_abi(types, data)) == data, types)
+            assert(not pcall(evmu.decode_abi, types, data .. string.rep("\0", 32)), types)
+        end
+        for _, case in ipairs({ { "f(bytes[])", { {} } }, { "f(string[],uint256)", { {}, 7 } } }) do
+            local signature, values = case[1], case[2]
+            local calldata = evmu.encode_calldata(signature, values)
+            assert(evmu.encode_calldata(signature, evmu.decode_calldata(signature, calldata)) == calldata, signature)
+        end
+    end)
+    it("decodes dynamic components whose data is out of order", function()
+        local function word(n)
+            return string.rep("\0", 24) .. string.pack(">I8", n)
+        end
+        local function padded(s)
+            return s .. string.rep("\0", 32 - #s)
+        end
+        -- The second component's data comes before the first one's
+        local data = word(0x80) .. word(0x40) .. word(2) .. padded("\2\3") .. word(1) .. padded("\1")
+        local decoded = evmu.decode_abi("(bytes,bytes)", data, "raw")
+        assert(decoded[1] == "\1" and decoded[2] == "\2\3")
+    end)
 end)
 
 lester.report()

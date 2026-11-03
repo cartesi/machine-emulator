@@ -114,7 +114,7 @@ machine_hashes local_machine::do_collect_mcycle_bundle(uint64_t bundle_offset, u
 }
 
 interpreter_break_reason local_machine::do_log_step(uint64_t mcycle_count, const std::string &filename) {
-    return m_machine->log_step(mcycle_count, filename);
+    return get_machine()->log_step(mcycle_count, filename);
 }
 
 access_log local_machine::do_log_step_uarch(const access_log::type &log_type) {

@@ -508,6 +508,36 @@ describe("backing stores", function()
         end
     end)
 
+    it("should map images shorter than their memory range followed by zeros", function()
+        -- 64 KiB is a whole number of host pages for every supported host page size
+        local _ <close>, aligned_filename = filesystem.write_scope_temp_file(string.rep("A", 0x10000))
+        local _ <close>, unaligned_filename = filesystem.write_scope_temp_file(string.rep("B", 5000))
+        local function new_machine(data_filename, read_only)
+            return cartesi.machine({
+                ram = { length = 0x1000 },
+                flash_drive = {
+                    { length = 0x20000, read_only = read_only, backing_store = { data_filename = data_filename } },
+                },
+            })
+        end
+        local function expect_drive(machine, data)
+            local start = machine:get_initial_config().flash_drive[1].start
+            expect.equal(machine:read_memory(start, 0x20000), data .. string.rep("\0", 0x20000 - #data))
+        end
+        do -- an image that ends on a page boundary leaves no partial page to clear, even when read-only
+            local machine <close> = new_machine(aligned_filename, true)
+            expect_drive(machine, string.rep("A", 0x10000))
+        end
+        do -- a writable mapping clears the partial page after an image that ends mid-page
+            local machine <close> = new_machine(unaligned_filename, false)
+            expect_drive(machine, string.rep("B", 5000))
+        end
+        -- a read-only mapping cannot clear that partial page
+        expect.fail(function()
+            local _ <close> = new_machine(unaligned_filename, true)
+        end, "possible non zero partial page")
+    end)
+
     it("should create a machine on disk as if storing it and loading it back", function()
         for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_CONFIG, cartesi.SHARING_ALL }) do
             local _ <close>, stored_dirname = tests_util.scope_temp_pathname()

@@ -420,6 +420,46 @@ BOOST_AUTO_TEST_CASE_NOLINT(spawn_failure_with_sigterm_blocked_test) {
     BOOST_CHECK(child_succeeded);
 }
 
+// What: server addresses are an IPv4 address or a bracketed IPv6 address followed by a port.
+// How:  spawn servers at malformed addresses and expect errors naming the address. Then, where the host has an IPv6
+//       loopback, spawn a server at [::1]:0, use it, fork it, and use the fork, expecting bracketed addresses.
+BOOST_AUTO_TEST_CASE_NOLINT(spawn_server_address_test) {
+    for (const char *address : {"127.0.0.1", "127.0.0.1:65536", "127.0.0.1:12ab", "::1:0", "[::1]", "localhost:0"}) {
+        cm_machine *server = nullptr;
+        BOOST_CHECK_NE(cm_jsonrpc_spawn_server(address, 5000, &server, nullptr, nullptr), CM_ERROR_OK);
+        BOOST_CHECK(std::string_view{cm_get_last_error_message()}.contains("invalid endpoint address"));
+    }
+    boost::asio::io_context ioc;
+    boost::asio::ip::tcp::acceptor probe{ioc};
+    boost::system::error_code ec;
+    std::ignore = probe.open(boost::asio::ip::tcp::v6(), ec);
+    if (!ec) {
+        std::ignore = probe.bind({boost::asio::ip::address_v6::loopback(), 0}, ec);
+    }
+    if (ec) {
+        BOOST_TEST_MESSAGE("IPv6 loopback is unavailable on this host");
+        return;
+    }
+    std::ignore = probe.close(ec);
+    cm_machine *server = nullptr;
+    const char *address{};
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_spawn_server("[::1]:0", 5000, &server, &address, nullptr), CM_ERROR_OK);
+    auto server_shutdown = cartesi::make_scope_exit([&] {
+        std::ignore = cm_jsonrpc_shutdown_server(server);
+        cm_delete(server);
+    });
+    BOOST_CHECK(std::string_view{address}.starts_with("[::1]:"));
+    const char *version{};
+    BOOST_CHECK_EQUAL(cm_jsonrpc_get_server_version(server, &version), CM_ERROR_OK);
+    cm_machine *forked = nullptr;
+    const char *forked_address{};
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_fork_server(server, &forked, &forked_address, nullptr), CM_ERROR_OK);
+    BOOST_CHECK(std::string_view{forked_address}.starts_with("[::1]:"));
+    BOOST_CHECK_EQUAL(cm_jsonrpc_get_server_version(forked, &version), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(cm_jsonrpc_shutdown_server(forked), CM_ERROR_OK);
+    cm_delete(forked);
+}
+
 // Tells whether the environment of a process holds an entry, or returns nothing where the platform cannot tell.
 // Entries are NUL-terminated strings. On macOS, the arguments precede them.
 static std::optional<bool> has_environment_entry(uint32_t pid, const std::string &entry) {

@@ -475,6 +475,33 @@ for _, variant in ipairs(variants) do
                 end
             end)
 
+            it("should reject restoring a processor shadow that would not load", function()
+                local start, length = cartesi.AR_SHADOW_STATE_START, cartesi.AR_SHADOW_STATE_LENGTH
+                local shadow = machine:read_memory(start, length)
+                local root_hash = machine:get_root_hash()
+                local function patch(offset, bytes)
+                    return shadow:sub(1, offset) .. bytes .. shadow:sub(offset + #bytes + 1)
+                end
+                local padding_offset = cartesi.AR_SHADOW_TLB_START + cartesi.AR_SHADOW_TLB_LENGTH - start
+                for _, case in ipairs({
+                    { machine:get_reg_address("x0") - start, string.pack("<I8", 1), "x0 register is corrupt" },
+                    {
+                        machine:get_reg_address("iunrep") - start,
+                        string.pack("<I8", 1 ~ machine:read_reg("iunrep")),
+                        "iunrep mismatch",
+                    },
+                    { padding_offset, "X", "shadow padding bytes are corrupt" },
+                }) do
+                    local offset, bytes, expected_error = table.unpack(case)
+                    expect.fail(function()
+                        machine:write_memory(start, patch(offset, bytes))
+                    end, expected_error)
+                    expect.equal(machine:get_root_hash(), root_hash)
+                end
+                machine:write_memory(start, shadow)
+                expect.equal(machine:get_root_hash(), root_hash)
+            end)
+
             it("should return correct names for TLB slot fields", function()
                 -- shadow_tlb_slot layout (32 bytes): vaddr_page@0, vp_offset@8, pma_index@16, zero_padding_@24
                 local tlb_slot_size = 32 -- sizeof(shadow_tlb_slot)

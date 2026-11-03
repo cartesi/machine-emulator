@@ -4675,7 +4675,7 @@ The result must be the hash of the parent node to the target and its sibling.
 The loop then goes up the `proof.sibling_hashes` array, and obtains the sibling of this parent node.
 This is again concatenated with the just-calculated hash of the parent node (in the correct order) to obtain what must be the hash of the grandparent node.
 This process is repeated until the hash of what must be the root node is found and returned.
-Function `verify_slice(<proof>)` then compares this to `proof.root_hash`.
+Function `verify_slice(<proof>)` first checks that the shape of the proof matches its sizes, and then compares this hash to `proof.root_hash`.
 If they match, the proof passes.
 Otherwise, something is amiss.
 

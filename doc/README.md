@@ -4848,7 +4848,7 @@ The client shell produces
 
 ``` text
 Connecting to remote cartesi machine at '127.0.0.1:8084'
-Connected: remote version is 0.8.0
+Connected: remote version is 0.9.0
 
 Halted
 Cycles: 49120357
@@ -5133,7 +5133,7 @@ exits and shuts down the server. The full transcript is
 
 ``` text
 Connecting to remote cartesi machine at '127.0.0.1:8085'
-Connected: remote version is 0.8.0
+Connected: remote version is 0.9.0
 feeding expression 0
 6*2^1024 + 3*2^512
 result is
@@ -5398,7 +5398,7 @@ transcript is
 
 ``` text
 Connecting to remote cartesi machine at '127.0.0.1:8089'
-Connected: remote version is 0.8.0
+Connected: remote version is 0.9.0
 feeding expression 0
 6*2^1024 + 3*2^512
 result is
@@ -5434,12 +5434,15 @@ supports them.
 atomically renames a stored machine without overwriting the destination
 and syncs the affected parent directories before returning.
 `machine:sync_stored(<directory>)` flushes the state held in the backing
-stores of a loaded directory to permanent storage.
-`machine:remove_stored(<directory>)` removes a stored machine from disk
-and makes the removal durable. All four are also available on
-`cartesi.machine` itself, so a script can manipulate stored machines
-without holding a loaded instance. These functions are the basis for the
-`clone:` and `sync` keys of the command-line utility’s `--load` option.
+stores of a loaded directory to permanent storage. A machine using the
+stored files changes them on any call, including `get_root_hash` and
+`get_proof`, so the stored machine is durable only as of the last
+`sync_stored`. `machine:remove_stored(<directory>)` removes a stored
+machine from disk and makes the removal durable. All four are also
+available on `cartesi.machine` itself, so a script can manipulate stored
+machines without holding a loaded instance. These functions are the
+basis for the `clone:` and `sync` keys of the command-line utility’s
+`--load` option.
 
 The disk-based driver is the calculator driver from the Rolling Cartesi
 Machine [example](#rolling-cartesi-machines-1), with the fork-based
@@ -8215,7 +8218,8 @@ this parent node. This is again concatenated with the just-calculated
 hash of the parent node (in the correct order) to obtain what must be
 the hash of the grandparent node. This process is repeated until the
 hash of what must be the root node is found and returned. Function
-`verify_slice(<proof>)` then compares this to `proof.root_hash`. If they
+`verify_slice(<proof>)` first checks that the shape of the proof matches
+its sizes, and then compares this hash to `proof.root_hash`. If they
 match, the proof passes. Otherwise, something is amiss.
 
 The slicing check `verify_slice` wires this walk into the proof
@@ -8223,6 +8227,12 @@ structure returned by `machine:get_proof()`:
 
 ``` lua
 local function verify_slice(proof, hash_type)
+    local log2_target_size, log2_root_size = proof.log2_target_size, proof.log2_root_size
+    assert(math.type(log2_target_size) == "integer" and math.type(log2_root_size) == "integer", "invalid proof sizes")
+    assert(0 <= log2_target_size and log2_target_size <= log2_root_size and log2_root_size <= 64, "invalid proof sizes")
+    assert(#proof.sibling_hashes == log2_root_size - log2_target_size, "wrong number of siblings")
+    assert(proof.target_address & ((1 << log2_target_size) - 1) == 0, "target address not aligned")
+    assert(proof.target_address >> log2_root_size == 0, "target address outside tree")
     assert(roll_hash_up_tree(proof, proof.target_hash, hash_type) == proof.root_hash, "target node not in tree")
 end
 ```
@@ -8900,9 +8910,8 @@ sequence of complete trees of equal height, its *base values*, and the
 last of them repeats to fill the tree. Two complete trees of equal
 height that were built separately are joined as the left and right
 children of a *mixed tree*. A fixed-point or mixed tree can be descended
-into, down to its base values and through them, until a query reaches
-its target or an opaque hash. A mixed tree always joins two fixed-point
-or mixed trees, so a raw hash occurs only as a base value.
+into, down to its base values and children and through them, until a
+query reaches its target or an opaque hash.
 
 A fixed-point tree is a table with one array per level. The first array
 holds its base values, and each array above holds the hashes of the
@@ -8939,8 +8948,8 @@ In the excerpt, `<values>` holds the base values starting at `<first>`,
 `<base_height>` is their height, and `<log2_count>` is the number of
 levels built above them. The helper `get_or_last` reads the entry at a
 0-based index of a level, returning the last stored entry for any index
-past the end. The helper `get_value_hash` returns the hash of an entry,
-the entry itself when it is a raw hash and its root hash when it is a
+past the end. The helper `get_value_hash` returns the hash of a value,
+the value itself when it is a raw hash and its root hash when it is a
 tree. Each level stores the distinct parents of its children plus the
 first repeated one. With *n* stored children, the explicit pairs give
 the first *n*/2 parents, rounded down. The next parent pairs the last
@@ -8971,14 +8980,13 @@ root.
 A mixed tree is the simpler form:
 
 ``` lua
-local function new_mixed_tree(hash_function, left, right)
-    assert(left.height == right.height, "mixed children have different heights")
+local function new_mixed_tree(hash_function, height, left, right)
     return {
         kind = "mixed",
-        height = left.height + 1,
+        height = height,
         left = left,
         right = right,
-        hash = hash_function(left.hash, right.hash),
+        hash = hash_function(get_value_hash(left), get_value_hash(right)),
     }
 end
 ```
@@ -9007,11 +9015,11 @@ range with the same defaults as `frontier_append`, and
 `frontier_forest_pad_back` appends a number of copies of one value, or
 fills the rest of the forest when the count is omitted. Each also takes
 the height of what it appends. A value is a raw hash, standing for a
-subtree of that height, or a completed forest, which keeps its own
-height and all of its nodes. A completed forest goes in as the complete
-tree at its top level, which can then become a base value of a
-fixed-point tree. Appending a completed forest is how small trees, built
-separately, nest into a larger one.
+subtree of that height, or a full forest, which keeps its own height and
+all of its nodes. A full forest goes in as the complete tree at its top
+level, which can then become a base value of a fixed-point tree.
+Appending a full forest is how small trees, built separately, nest into
+a larger one.
 
 Appended values do not go into the levels right away. They accumulate in
 a pending array of equal-height values, together with a count of how
@@ -9073,13 +9081,13 @@ local function forest_flush(forest, next_height)
             subtree_count = subtree_count << 1
         end
         local subtree = get_or_last(values, offset)
-        if added_height > 0 or not is_tree(subtree) then
+        if added_height > 0 then
             subtree = new_fixed_point_tree(forest.hash_function, height, added_height, values, offset + 1)
         end
         local level = first_level + added_height
         while forest[level] do
             assert(level < #forest, "too many leaves")
-            subtree = new_mixed_tree(forest.hash_function, forest[level], subtree)
+            subtree = new_mixed_tree(forest.hash_function, level, forest[level], subtree)
             forest[level] = false
             level = level + 1
         end
@@ -9109,12 +9117,11 @@ from the node upward:
 
 ``` lua
 local function frontier_forest_get_siblings(forest, position, height, into)
-    local top = assert(forest[forest.height + 1], "the forest is not full")
+    local top = forest.height + 1
+    assert(forest[top], "the forest is not full")
     assert_valid_forest_node(forest, position, height)
-    local current_bit = 1 << top.height
-    local stop_bit = 1 << height
     local siblings = {}
-    local node, err = descend_tree(forest, top, position, current_bit, stop_bit, siblings)
+    local node, err = descend_tree(forest, forest, top, forest.height, position, height, siblings)
     if not node then return nil, err end
     into = into or {}
     for i = #siblings, 1, -1 do
@@ -9137,48 +9144,43 @@ Such a raw hash can be opened later with `frontier_forest_expand_leaf`:
 
 ``` lua
 local function frontier_forest_expand_leaf(forest, position, subtree)
-    local tree = assert(forest[forest.height + 1], "the forest is not full")
+    local container, key, container_height = forest, forest.height + 1, forest.height
+    assert(container[key], "the forest is not full")
     assert(is_forest(subtree), "the subtree is not a forest")
     local replacement, height = normalize_forest_value(forest, subtree)
     assert_valid_forest_node(forest, position, height)
-    -- Unwrap single-value trees. An opaque replacement exposes no descendants, and
-    -- accepting one could introduce a cycle when it references the leaf being expanded.
-    while replacement.kind == "fixed_point" and replacement.base_height == replacement.height do
-        replacement = replacement[1][1]
-        assert(is_tree(replacement), "the replacement leaf is opaque")
-    end
+    -- An opaque replacement exposes no descendants, and accepting one could introduce a cycle
+    -- when it references the leaf being expanded.
+    assert(is_tree(replacement), "the replacement leaf is opaque")
     while true do
+        local tree = load_value(forest, container, key, container_height)
+        if not is_tree(tree) then
+            assert(container_height == height, "leaf height mismatch")
+            assert(tree == replacement.hash, "leaf hash mismatch")
+            container[key] = replacement
+            if forest.directory then store_expansion(forest, replacement) end
+            return
+        end
         if tree.kind == "mixed" then
             local half = 1 << (tree.height - 1)
             if position < half then
-                tree = tree.left
+                key = "left"
             else
-                tree, position = tree.right, position - half
+                key, position = "right", position - half
             end
+            container, container_height = tree, tree.height - 1
         else
             local values = tree[1]
-            local index = math.min((position >> tree.base_height) + 1, #values)
-            local value = values[index]
-            if not is_tree(value) then
-                value = load_tree(forest, value, tree.base_height)
-                if not value then
-                    assert(tree.base_height == height, "leaf height mismatch")
-                    assert(values[index] == replacement.hash, "leaf hash mismatch")
-                    values[index] = replacement
-                    if forest.directory then store_expansion(forest, replacement) end
-                    return
-                end
-                values[index] = value
-            end
+            container, key, container_height =
+                values, math.min((position >> tree.base_height) + 1, #values), tree.base_height
             position = position & ((1 << tree.base_height) - 1)
-            tree = value
         end
     end
 end
 ```
 
-It replaces the opaque hash at `<position>` with a completed forest of
-the same height, after checking that the forest’s root is the hash it
+It replaces the opaque hash at `<position>` with a full forest of the
+same height, after checking that the forest’s root is the hash it
 replaces. No ancestor hash changes, so the forest’s root is unaffected.
 When the opaque hash is the repeated last value of a fixed-point tree,
 every repetition reads the same entry, so all of them share the
@@ -9186,7 +9188,9 @@ expansion. A forest stored with `frontier_forest_store` keeps its trees
 in a directory, one file per tree named by its hash, and
 `frontier_forest_load` reopens it. Queries and expansions then load the
 stored tree in place of a raw hash when they reach one, and an expansion
-also stores its new trees there.
+also stores its new trees there. A stored or loaded forest cannot be
+appended to another forest or used in an expansion, since some of its
+trees may exist only as files in its own directory.
 
 ## Verification game
 

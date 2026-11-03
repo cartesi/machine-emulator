@@ -38,6 +38,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #ifdef __APPLE__
@@ -47,6 +48,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <csignal>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -385,6 +387,37 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(fork_timeout_stops_forked_server_test, spawned_se
     const char *version{};
     BOOST_REQUIRE_EQUAL(cm_jsonrpc_get_server_version(m, &version), CM_ERROR_OK);
     BOOST_CHECK_EQUAL(wait_for_no_children(pid), 0);
+}
+
+// What: a spawn that fails after starting its server returns an error even when the caller blocks SIGTERM.
+// How:  in a child process, block SIGTERM and spawn a server with a 1 ms timeout, so the spawn fails after starting
+//       the server and must stop it. The child must finish within 10 seconds, with the error and no server left.
+BOOST_AUTO_TEST_CASE_NOLINT(spawn_failure_with_sigterm_blocked_test) {
+    const pid_t child = fork();
+    BOOST_REQUIRE(child >= 0);
+    if (child == 0) {
+        sigset_t blocked_signals{};
+        sigemptyset(&blocked_signals);
+        sigaddset(&blocked_signals, SIGTERM);
+        pthread_sigmask(SIG_BLOCK, &blocked_signals, nullptr);
+        cm_machine *server = nullptr;
+        const auto err = cm_jsonrpc_spawn_server("127.0.0.1:0", 1, &server, nullptr, nullptr);
+        const bool failed_cleanly = err != CM_ERROR_OK && count_children(static_cast<uint32_t>(getpid())) <= 0;
+        _exit(failed_cleanly ? 0 : 1);
+    }
+    int status = 0;
+    pid_t waited = 0;
+    for (int i = 0; i < 100 && waited == 0; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        waited = waitpid(child, &status, WNOHANG);
+    }
+    if (waited == 0) {
+        kill(child, SIGKILL);
+        waitpid(child, nullptr, 0);
+    }
+    BOOST_CHECK_EQUAL(waited, child);
+    const bool child_succeeded = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    BOOST_CHECK(child_succeeded);
 }
 
 // Tells whether the environment of a process holds an entry, or returns nothing where the platform cannot tell.

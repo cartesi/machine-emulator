@@ -180,6 +180,12 @@ static void install_signal_handlers() {
     // Reset signal handlers that might have been set by the parent process who spawned us
     install_signal_handler(SIGINT, SIG_DFL);
     install_signal_handler(SIGTERM, SIG_DFL);
+    // Unblock the signals that stop us, which the process that started us may have blocked
+    sigset_t stop_signals{};
+    sigemptyset(&stop_signals);
+    sigaddset(&stop_signals, SIGINT);
+    sigaddset(&stop_signals, SIGTERM);
+    pthread_sigmask(SIG_UNBLOCK, &stop_signals, nullptr);
 }
 
 //------------------------------------------------------------------------------

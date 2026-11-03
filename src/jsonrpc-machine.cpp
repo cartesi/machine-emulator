@@ -533,11 +533,32 @@ jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeo
         throw std::system_error{error, std::generic_category(), "posix_spawnattr_init() failed"};
     }
     auto attributes_destroyer = make_scope_exit([&] { std::ignore = posix_spawnattr_destroy(&attributes); });
+    // The child starts with no signals blocked and with the default actions for the signals that stop it, whatever
+    // the calling thread blocks or handles. Otherwise a caller that blocks SIGTERM leaves us unable to stop the child.
+    sigset_t blocked_signals{};
+    sigemptyset(&blocked_signals);
+    if (const int error = posix_spawnattr_setsigmask(&attributes, &blocked_signals); error != 0) {
+        throw std::system_error{error, std::generic_category(), "posix_spawnattr_setsigmask() failed"};
+    }
+    sigset_t default_signals{};
+    sigemptyset(&default_signals);
+    for (const int signal : {SIGINT, SIGTERM, SIGCHLD}) {
+        sigaddset(&default_signals, signal);
+    }
+    if (const int error = posix_spawnattr_setsigdefault(&attributes, &default_signals); error != 0) {
+        throw std::system_error{error, std::generic_category(), "posix_spawnattr_setsigdefault() failed"};
+    }
 #ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
     // Other descriptors of the process may lack close-on-exec, so close everything but what the child needs
-    if (const int error = posix_spawnattr_setflags(&attributes, POSIX_SPAWN_CLOEXEC_DEFAULT); error != 0) {
+    const auto flags =
+        static_cast<int16_t>(POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_CLOEXEC_DEFAULT);
+#else
+    const auto flags = static_cast<int16_t>(POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF);
+#endif
+    if (const int error = posix_spawnattr_setflags(&attributes, flags); error != 0) {
         throw std::system_error{error, std::generic_category(), "posix_spawnattr_setflags() failed"};
     }
+#ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
     for (const int fd : {STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO}) {
         if (const int error = posix_spawn_file_actions_addinherit_np(&actions, fd); error != 0) {
             throw std::system_error{error, std::generic_category(), "posix_spawn_file_actions_addinherit_np() failed"};

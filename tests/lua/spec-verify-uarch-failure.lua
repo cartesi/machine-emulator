@@ -728,6 +728,51 @@ describe("access proof sibling count", function()
     end
 end)
 
+describe("uarch TLB writes with an invalid set index", function()
+    -- A uarch program that issues the WRITE_TLB ecall for slot 0 of a set the TLB does not have
+    local programs = {
+        ["3"] = { 0x00300513 }, -- li a0,3
+        ["0x40000"] = { 0x00040537 }, -- lui a0,0x40
+    }
+    for name, set_index_program in pairs(programs) do
+        local program = { table.unpack(set_index_program) }
+        program[#program + 1] = 0x00000593 -- li a1,0
+        program[#program + 1] = 0x00001637 -- lui a2,0x1
+        program[#program + 1] = (cartesi.UARCH_ECALL_FN_WRITE_TLB << 20) | 0x00893 -- li a7,write_tlb
+        program[#program + 1] = 0x00000073 -- ecall
+        local function build_machine()
+            local data_filename = create_test_uarch_program(program)
+            local machine = cartesi.machine({
+                ram = { length = 0x20000 },
+                uarch = { ram = { length = 0x1000, backing_store = { data_filename = data_filename } } },
+            }, {})
+            os.remove(data_filename)
+            return machine
+        end
+        it("should fail cleanly when running, logging and collecting set index " .. name, function()
+            for _, step in ipairs({
+                function(machine)
+                    machine:run_uarch(16)
+                end,
+                function(machine)
+                    for _ = 1, 16 do
+                        machine:log_step_uarch()
+                    end
+                end,
+                function(machine)
+                    local revert_tail = { string.rep("\0", cartesi.HASH_SIZE), string.rep("\0", cartesi.HASH_SIZE) }
+                    machine:collect_uarch_cycle_root_hashes(1, 0, revert_tail)
+                end,
+            }) do
+                local machine <close> = build_machine()
+                expect.fail(function()
+                    step(machine)
+                end, "TLB set index out of bounds")
+            end
+        end)
+    end
+end)
+
 describe("verification through a JSON-RPC machine object", function()
     local jsonrpc = require("cartesi.jsonrpc")
     local sibling_count_error = "access sibling hash count is inconsistent with proof size"

@@ -742,6 +742,9 @@ public:
     /// \param pma_index Index of PMA where address falls
     void write_unverified_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
         uint64_t pma_index) {
+        if (set_index > TLB_LAST_) {
+            throw std::out_of_range{"TLB set index out of bounds"};
+        }
         if (slot_index >= TLB_SET_SIZE) {
             throw std::out_of_range{"TLB slot index out of bounds"};
         }

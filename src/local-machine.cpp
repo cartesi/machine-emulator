@@ -47,10 +47,16 @@ bool local_machine::do_is_empty() const {
 
 void local_machine::do_create(const machine_config &config, const machine_runtime_config &runtime,
     const std::string &dir, sharing_mode sharing) {
+    if (m_machine != nullptr) {
+        throw std::runtime_error{"machine exists"};
+    }
     m_machine = new machine(config, runtime, dir, sharing);
 }
 
 void local_machine::do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) {
+    if (m_machine != nullptr) {
+        throw std::runtime_error{"machine exists"};
+    }
     m_machine = new machine(directory, runtime, sharing);
 }
 

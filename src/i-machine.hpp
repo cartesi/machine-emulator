@@ -181,7 +181,7 @@ public:
         do_clear_hash_tree();
     }
 
-    /// \brief Verifies integrity of hash tree.
+    /// \brief Checks page hashes and dirty page tracking against memory, for tests and debugging.
     bool verify_hash_tree() const {
         return do_verify_hash_tree();
     }

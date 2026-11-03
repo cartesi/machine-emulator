@@ -79,6 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed the JSON-RPC server executing requests it rejects for an invalid `id`
 - Fixed `spawn_server` hanging on failure when the calling thread blocks `SIGTERM`
 - Fixed the JSON-RPC client and server rejecting IPv6 addresses, which are now written `[<ipv6-address>]:<port>`
+- Fixed the JSON-RPC server no longer accepting connections after it runs out of descriptors
+- Fixed the JSON-RPC server lingering after an accept error stops it from accepting connections
 
 ## [0.22.0] - 2026-10-15
 ### Added

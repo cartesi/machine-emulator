@@ -60,6 +60,7 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #include <boost/asio/signal_set.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/beast/core.hpp> // IWYU pragma: keep
 #include <boost/beast/http.hpp> // IWYU pragma: keep
 #include <boost/beast/version.hpp>
@@ -319,6 +320,16 @@ struct http_session : std::enable_shared_from_this<http_session> {
 
 //------------------------------------------------------------------------------
 
+/// \brief Delay before accepting again after a transient accept error
+static constexpr auto ACCEPT_RETRY_DELAY = std::chrono::milliseconds{50};
+
+/// \brief Tells whether an accept error comes from a shortage of descriptors or memory, which passes on its own
+static bool is_transient_accept_error(const beast::error_code &ec) {
+    namespace errc = boost::system::errc;
+    return ec == errc::too_many_files_open || ec == errc::too_many_files_open_in_system ||
+        ec == errc::no_buffer_space || ec == errc::not_enough_memory;
+}
+
 // Accepts incoming connections and launches HTTP sessions
 struct http_handler : std::enable_shared_from_this<http_handler> {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -328,6 +339,8 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
     tcp::acceptor acceptor;                            ///< TCP connection acceptor
     uint64_t delay{0};                                 ///< How much to delay next request in ms
     uint64_t acceptor_generation{0};                   ///< Incremented whenever the acceptor is replaced
+    asio::steady_timer accept_retry_timer;             ///< Delays accepting again after a transient accept error
+    bool accept_retrying{false};                       ///< Whether accepting failed with a transient error
     std::unique_ptr<cartesi::machine> machine;         ///< Cartesi Machine, if any
     std::vector<std::weak_ptr<http_session>> sessions; ///< HTTP sessions
 
@@ -335,7 +348,8 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
         ioc(ioc),
         signals(ioc),
         local_endpoint(acceptor.local_endpoint()),
-        acceptor(std::move(acceptor)) {
+        acceptor(std::move(acceptor)),
+        accept_retry_timer(ioc) {
         SLOG(info) << "remote machine server bound to " << local_endpoint;
     }
 
@@ -378,6 +392,7 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
         beast::error_code ec;
         std::ignore = acceptor.cancel(ec);
         std::ignore = acceptor.close(ec);
+        std::ignore = accept_retry_timer.cancel();
     }
 
     // Close open sessions
@@ -403,6 +418,15 @@ private:
         close_sessions();
     }
 
+    // Accepts again after a transient accept error
+    void on_accept_retry(uint64_t generation, const beast::error_code &ec) {
+        // Operation may be aborted (e.g close_acceptor() was called), or the acceptor replaced and accepting already
+        if (ec == asio::error::operation_aborted || !acceptor.is_open() || generation != acceptor_generation) {
+            return;
+        }
+        next_accept();
+    }
+
     // Receives an incoming TCP connection
     void on_accept(uint64_t generation, const beast::error_code ec, tcp::socket socket) {
         // Operation may be aborted (e.g rebind() or close_acceptor() was called)
@@ -415,12 +439,29 @@ private:
             return;
         }
         if (ec) {
-            SLOG(error) << local_endpoint << " accept error: " << format_ec(ec);
-            // If we can't accept, the listening socket is probably in a broken state,
-            // close the acceptor so the client abort new connection attempts.
-            // This may happen when amount of open files is reached.
+            // Running out of descriptors or memory passes once connections close, so accept again a little later
+            if (is_transient_accept_error(ec)) {
+                if (!accept_retrying) {
+                    SLOG(warning) << local_endpoint << " accept error: " << format_ec(ec) << ", retrying every "
+                                  << ACCEPT_RETRY_DELAY.count() << "ms";
+                    accept_retrying = true;
+                }
+                accept_retry_timer.expires_after(ACCEPT_RETRY_DELAY);
+                accept_retry_timer.async_wait(
+                    beast::bind_front_handler(&http_handler::on_accept_retry, shared_from_this(), generation));
+                return;
+            }
+            // Any other error leaves the listening socket unusable. Without it and without the termination signal
+            // handlers, the IO main loop stops and the server exits once its open sessions end.
+            SLOG(error) << local_endpoint << " accept error: " << format_ec(ec) << ", no longer accepting connections";
             close_acceptor();
+            uninstall_termination_signal_handlers();
             return;
+        }
+
+        if (accept_retrying) {
+            SLOG(info) << local_endpoint << " accepting connections again";
+            accept_retrying = false;
         }
 
         // Disable Nagle's algorithm to minimize TCP connection latency

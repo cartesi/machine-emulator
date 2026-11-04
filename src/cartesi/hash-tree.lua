@@ -5,6 +5,8 @@ local fs = require("cartesi.filesystem")
 local WORD_LOG2_SIZE = cartesi.HASH_TREE_LOG2_WORD_SIZE
 local WORD_LENGTH = 1 << WORD_LOG2_SIZE
 
+local function is_raw_hash(value) return type(value) == "string" and #value == cartesi.HASH_SIZE end
+
 -- docs:begin roll_hash_up_tree
 local function roll_hash_up_tree(proof, target_hash, hash_type)
     local hash_function = cartesi[hash_type or "keccak256"]
@@ -171,6 +173,7 @@ end
 -- docs:begin frontier_push_back
 local function frontier_push_back(frontier, hash, height)
     local hash_function = assert(frontier.hash_function)
+    assert(is_raw_hash(hash), "invalid hash")
     local level = (height or 0) + 1
     assert_aligned_below(frontier, level, "frontier is not aligned to the subtree size")
     assert(not frontier[#frontier], "too many leaves")
@@ -196,6 +199,9 @@ local function frontier_append(frontier, hashes, begin_index, end_index, height)
     local first_level = (height or 0) + 1
     assert_aligned_below(frontier, first_level, "frontier is not aligned to the subtree size")
     assert(frontier_padding_fits(frontier, end_index - begin_index, first_level), "too many leaves")
+    for i = begin_index, end_index - 1 do
+        assert(is_raw_hash(hashes[i]), "invalid hash")
+    end
     while begin_index < end_index do
         local added_height = 0
         local subtree_count = 1
@@ -225,6 +231,7 @@ end
 -- docs:begin frontier_get_root_hash
 local function frontier_get_root_hash(frontier, pad, pad_height)
     local hash_function = assert(frontier.hash_function)
+    assert(pad == nil or is_raw_hash(pad), "invalid pad hash")
     local height = #frontier - 1
     if frontier[height + 1] then return frontier[height + 1] end
     pad = pad or pristine_leaf
@@ -254,6 +261,7 @@ end
 -- entry. Omitting count pads to the root, including for trees taller than a Lua integer.
 local function frontier_pad_back(frontier, hash, count, pad_height)
     local hash_function = assert(frontier.hash_function)
+    assert(is_raw_hash(hash), "invalid hash")
     pad_height = pad_height or 0
     local first_level = pad_height + 1
     local top = #frontier
@@ -319,6 +327,9 @@ local function frontier_next_proofs(frontier, next_output_hashes)
     local log2_max_leaves = #frontier - 1
     local next_output_count = #next_output_hashes
     if next_output_count == 0 then return {} end
+    for i = 1, next_output_count do
+        assert(is_raw_hash(next_output_hashes[i]), "invalid hash")
+    end
     local leaf_count = frontier_get_leaf_count(frontier)
     -- Allocate each proof's sibling array.
     local siblings = {}
@@ -508,8 +519,6 @@ local STORED_SCHEMAS = {
 }
 
 local function get_tree_path(directory, hash) return directory .. "/" .. cartesi.tohex(hash) .. ".json" end
-
-local function is_raw_hash(value) return type(value) == "string" and #value == cartesi.HASH_SIZE end
 
 -- Loads the tree stored for a raw hash at the given height. Returns nil when the forest has
 -- no directory or the directory has no file for the hash. A file whose contents do not

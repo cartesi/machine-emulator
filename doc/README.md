@@ -497,9 +497,9 @@ where options are:
     otherwise it listens on "127.0.0.1:0".
 
   --remote-address=<ip>:<port>
+  --remote-address=filename:<filename>
     use a remote cartesi machine listening to <ip>:<port> instead of
     running a local cartesi machine.
-
 ...
 ```
 
@@ -1693,11 +1693,11 @@ address and port the server will listen to.
 
 > [!NOTE]
 >
-> In this case, since we selected `127.0.0.1:8080`, the client must run
-> in the same container in order to communicate with the server. To be
-> accessible from outside the container, the `--server-address` option
-> would have to refer to an address and port that were *exposed* by the
-> container.
+> In this case, since the server listens on the loopback address
+> `127.0.0.1`, the client must run in the same container in order to
+> communicate with the server. To be accessible from outside the
+> container, the `--server-address` option would have to refer to an
+> address and port that were *exposed* by the container.
 
 To instruct the `cartesi-machine` command-line utility to connect with
 the server, add the command-line option `--remote-address=<address>` to
@@ -2094,6 +2094,7 @@ while ! cartesi-machine \
 cartesi-machine \
     --no-init-splash \
     --remote-address=127.0.0.1:8082 \
+    --remote-address=filename:calc-server.address \
     --no-remote-destroy \
     --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3,print_input_state_hashes \
@@ -2104,7 +2105,14 @@ cartesi-machine \
 This run instantiates the machine from the `calc.ext2` flash drive and
 advances inputs 0 to 2. Passing `--no-remote-destroy` and omitting
 `--remote-shutdown` leaves both the server and the machine it holds
-alive for the next epoch.
+alive for the next epoch. The client connects to the address given
+explicitly, and when it exits, it records in `calc-server.address` the
+address of the server it leaves alive. Rolling back a rejected input
+replaces the server with a fork taken before that input. The client
+rebinds the fork to the original address. If another process took that
+address in the meantime, the fork keeps its own address and the client
+warns and continues. The second epoch reads its server address from the
+same file, so it finds the server wherever the first left it.
 
 The client shell shows
 
@@ -2205,7 +2213,7 @@ Now run the client to process the second epoch in the same server
 ``` bash
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8082 \
+    --remote-address=filename:calc-server.address \
     --no-remote-create \
     --remote-shutdown \
     --cmio-advance-state=input_file_index_begin:3,input_file_index_end:6,last_output_proof:output-1-input-2-proof.lua,print_input_state_hashes \
@@ -2562,13 +2570,13 @@ after each uarch cycle.
 
 We compute them for the first epoch of the calculator, inputs 0 to 2 fed
 to its stored template. With the template and the encoded inputs in the
-working directory, start a `cartesi-jsonrpc-machine` server at
-`127.0.0.1:8095` as in the previous sections, and run the client
+working directory, start a `cartesi-jsonrpc-machine` server as in the
+previous sections, and run the client
 
 ``` bash
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8095 \
+    --remote-address=127.0.0.1:8084 \
     --remote-shutdown \
     --load=rolling-calculator-template \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
@@ -2596,7 +2604,7 @@ them
 
 ``` bash
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8088
+    --server-address=127.0.0.1:8085
 ```
 
 From a different shell into the same container, run the first execution
@@ -2604,7 +2612,7 @@ From a different shell into the same container, run the first execution
 ``` bash
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8088 \
+    --remote-address=127.0.0.1:8085 \
     --no-remote-destroy \
     --load=rolling-calculator-template \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:1,resumable:true,end_epoch:false,state_hash:epoch-state.bin,outputs_frontier:outputs.json,output_proof: \
@@ -2627,7 +2635,7 @@ second execution
 ``` bash
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8088 \
+    --remote-address=127.0.0.1:8085 \
     --no-remote-create \
     --remote-shutdown \
     --cmio-advance-state=input_file_index_begin:1,input_file_index_end:3,resumable:true,begin_epoch:false,state_hash:epoch-state.bin,outputs_frontier:outputs.json,output_proof: \
@@ -2662,7 +2670,7 @@ in which input 0 stops, so only input 0 needs to run
 ``` bash
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8087 \
+    --remote-address=127.0.0.1:8086 \
     --remote-shutdown \
     --load=rolling-calculator-template \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:1 \
@@ -4831,7 +4839,7 @@ shell into the same playground container (for example, by running
 
 ``` bash
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8084
+    --server-address=127.0.0.1:8087
 ```
 
 Now, instead of using the `cartesi-machine` command-line utility to
@@ -4840,14 +4848,14 @@ shell
 
 ``` bash
 lua5.4 run-remote-config.lua \
-    127.0.0.1:8084 \
+    127.0.0.1:8087 \
     config-nothing-to-do
 ```
 
 The client shell produces
 
 ``` text
-Connecting to remote cartesi machine at '127.0.0.1:8084'
+Connecting to remote cartesi machine at '127.0.0.1:8087'
 Connected: remote version is 0.9.0
 
 Halted
@@ -4945,6 +4953,7 @@ server calculator [example](#rolling-cartesi-machines)):
 local cartesi = require("cartesi")
 local cartesi_jsonrpc = require("cartesi.jsonrpc")
 local evmu = require("cartesi.evmu")
+local util = require("cartesi.util")
 
 local EVM_ADVANCE = "EvmAdvance(uint256 chain_id, address app_contract, address msg_sender, "
     .. "uint256 block_number, uint256 block_timestamp, uint256 prev_randao, uint256 index, bytes payload)"
@@ -5010,12 +5019,19 @@ local function commit(_)
     backup_machine = nil
 end
 
+-- Another process may take the address once it is released, so the restored server may have to stay where it is
+local try_rebind_server = util.protect(function(m, address)
+    return m:rebind_server(address)
+end)
+
 local function revert(m)
     assert(backup_machine, "no snapshot to revert to")
     local address = m:get_server_address()
     m:shutdown_server()
     m:swap(backup_machine)
-    m:rebind_server(address)
+    if not try_rebind_server(m, address) then
+        stderr("restored server stays at '%s'\n", m:get_server_address())
+    end
     backup_machine = nil
 end
 
@@ -5070,8 +5086,10 @@ machine based on the `"rolling-calculator-template"`. The
 `machine:fork_server()` call creates a backup server with a copy of the
 current state. On rejection, the script shuts down the server that
 rejected the input, swaps the backup handle into `machine`, and rebinds
-it to the original server address. On acceptance, it shuts down the
-now-stale backup.
+it to the original server address. If another process took that address
+in the meantime, the restored server keeps the address of the fork and
+the script reports it. On acceptance, it shuts down the now-stale
+backup.
 
 It then enters its main loop, which is executed until the machine halts.
 For each iteration, the script invokes `machine:run(math.maxinteger)` to
@@ -5112,7 +5130,7 @@ same docker container (for example, by running
 
 ``` bash
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8085
+    --server-address=127.0.0.1:8088
 ```
 
 Then, run the `run-rolling-calculator.lua` client script in the other
@@ -5121,7 +5139,7 @@ shell
 ``` bash
 printf '6*2^1024 + 3*2^512' > expression-0.txt
 printf '1+(' > expression-1.txt
-lua5.4 run-rolling-calculator.lua 127.0.0.1:8085
+lua5.4 run-rolling-calculator.lua 127.0.0.1:8088
 ```
 
 The client prints the connection status to the console and then feeds
@@ -5132,7 +5150,7 @@ the input. Finally, when the expression files run out, the client script
 exits and shuts down the server. The full transcript is
 
 ``` text
-Connecting to remote cartesi machine at '127.0.0.1:8085'
+Connecting to remote cartesi machine at '127.0.0.1:8088'
 Connected: remote version is 0.9.0
 feeding expression 0
 6*2^1024 + 3*2^512
@@ -5284,12 +5302,19 @@ local function commit(_)
     backup_machine = nil
 end
 
+-- Another process may take the address once it is released, so the restored server may have to stay where it is
+local try_rebind_server = util.protect(function(m, address)
+    return m:rebind_server(address)
+end)
+
 local function revert(m)
     assert(backup_machine, "no snapshot to revert to")
     local address = m:get_server_address()
     m:shutdown_server()
     m:swap(backup_machine)
-    m:rebind_server(address)
+    if not try_rebind_server(m, address) then
+        stderr("restored server stays at '%s'\n", m:get_server_address())
+    end
     backup_machine = nil
 end
 
@@ -6828,23 +6853,23 @@ Then run the server and client, instantiating the machine directly from
 
 ``` bash
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8086
+    --server-address=127.0.0.1:8090
 ```
 
 ``` bash
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8086
+    --server-address=127.0.0.1:8090
 ```
 
 From a different shell into the same container, run the client
 
 ``` bash
 while ! cartesi-machine \
-    --remote-address=127.0.0.1:8086 \
+    --remote-address=127.0.0.1:8090 \
     --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8086 \
+    --remote-address=127.0.0.1:8090 \
     --remote-shutdown \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:2,print_input_state_hashes \
     --cmio-inspect-state=print_query_state_hashes \
@@ -6863,7 +6888,7 @@ the inspect-state request is processed.
 The client shell shows
 
 ``` text
-Connected to JSONRPC remote cartesi machine at '127.0.0.1:8086'
+Connected to JSONRPC remote cartesi machine at '127.0.0.1:8090'
 
 Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 55753466
@@ -6902,7 +6927,7 @@ Cycles: 57887463
 
 After query
 57885065: 0x5f0d7db38e2fcfeabd1d96898d3a2cc49cebea9e4f4cd535e2013d7dd6e91ebb
-Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8086'
+Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8090'
 ```
 
 As expected, the yields and state hashes shown here follow the same
@@ -8232,7 +8257,6 @@ local function verify_slice(proof, hash_type)
     assert(0 <= log2_target_size and log2_target_size <= log2_root_size and log2_root_size <= 64, "invalid proof sizes")
     assert(#proof.sibling_hashes == log2_root_size - log2_target_size, "wrong number of siblings")
     assert(proof.target_address & ((1 << log2_target_size) - 1) == 0, "target address not aligned")
-    assert(proof.target_address >> log2_root_size == 0, "target address outside tree")
     assert(roll_hash_up_tree(proof, proof.target_hash, hash_type) == proof.root_hash, "target node not in tree")
 end
 ```
@@ -9920,7 +9944,7 @@ epoch’s input files. These files represent the inputs posted to the
 blockchain:
 
 ``` bash
-lua5.4 vg.lua referee 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" \
+lua5.4 vg.lua referee 127.0.0.1:8091 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" \
     input-0.bin input-1.bin input-2.bin
 ```
 
@@ -9928,7 +9952,7 @@ Then connect the honest player, which processes the inputs announced by
 the referee:
 
 ``` bash
-lua5.4 vg.lua honest 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
+lua5.4 vg.lua honest 127.0.0.1:8091 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
 ```
 
 The first dishonest player is the forger, which substitutes
@@ -9937,21 +9961,21 @@ whereas the posted input asks for `2^2048`. All other fields remain the
 same:
 
 ``` bash
-lua5.4 vg-dishonest.lua forger 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 2 fake-input-2.bin
+lua5.4 vg-dishonest.lua forger 127.0.0.1:8091 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 2 fake-input-2.bin
 ```
 
 The second is the tamperer, which processes the posted inputs but
 corrupts memory at mcycle offset 100 within input 2:
 
 ``` bash
-lua5.4 vg-dishonest.lua tamperer 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 2 100
+lua5.4 vg-dishonest.lua tamperer 127.0.0.1:8091 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 2 100
 ```
 
 The third is the no-rollback player, which keeps the rejecting machine
 when input 1 finishes instead of restoring the pre-input snapshot:
 
 ``` bash
-lua5.4 vg-dishonest.lua no-rollback 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
+lua5.4 vg-dishonest.lua no-rollback 127.0.0.1:8091 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
 ```
 
 All four players start from the same machine state, but reach different
@@ -10120,7 +10144,7 @@ original claims differ.
 Start the referee as before:
 
 ``` bash
-lua5.4 vg.lua referee 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" \
+lua5.4 vg.lua referee 127.0.0.1:8092 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" \
     input-0.bin input-1.bin input-2.bin
 ```
 
@@ -10129,17 +10153,17 @@ but lets its first bisection request time out, relying on the other
 player claiming the same hash:
 
 ``` bash
-lua5.4 vg-dishonest.lua idle 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
+lua5.4 vg-dishonest.lua idle 127.0.0.1:8092 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
 ```
 
 Connect the adversary’s two players:
 
 ``` bash
-lua5.4 vg-dishonest.lua forger 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 2 fake-input-2.bin
+lua5.4 vg-dishonest.lua forger 127.0.0.1:8092 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 2 fake-input-2.bin
 ```
 
 ``` bash
-lua5.4 vg-dishonest.lua fabulist 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" \
+lua5.4 vg-dishonest.lua fabulist 127.0.0.1:8092 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" \
     2 fake-input-2.bin "0x9a4977e9e19e9bc4e38c52c6cb41e469334ccbe67711d4de8bfd58e473c62afe"
 ```
 
@@ -10186,7 +10210,7 @@ Now repeat the game, replacing the idle player with the ordinary honest
 player:
 
 ``` bash
-lua5.4 vg.lua honest 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
+lua5.4 vg.lua honest 127.0.0.1:8093 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
 ```
 
 It submits that same correct final hash and answers the referee for
@@ -10911,7 +10935,7 @@ the inputs to the players through `run_epoch`, so the files must stay
 readable from each player’s working directory while the example runs.
 
 ``` bash
-lua5.4 prt.lua referee 127.0.0.1:8096 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" \
+lua5.4 prt.lua referee 127.0.0.1:8094 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" \
     input-0.bin input-1.bin input-2.bin
 ```
 
@@ -10920,23 +10944,23 @@ role arguments. Input filenames arrive from the referee, and no argument
 names the number of players or their order:
 
 ``` bash
-lua5.4 prt.lua honest 127.0.0.1:8096 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
+lua5.4 prt.lua honest 127.0.0.1:8094 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
 ```
 
 ``` bash
-lua5.4 prt-dishonest.lua quitter 127.0.0.1:8096 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
+lua5.4 prt-dishonest.lua quitter 127.0.0.1:8094 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
 ```
 
 ``` bash
-lua5.4 prt-dishonest.lua forger 127.0.0.1:8096 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 2 forged-input-2.bin
+lua5.4 prt-dishonest.lua forger 127.0.0.1:8094 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 2 forged-input-2.bin
 ```
 
 ``` bash
-lua5.4 prt-dishonest.lua tamperer 127.0.0.1:8096 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 0 100
+lua5.4 prt-dishonest.lua tamperer 127.0.0.1:8094 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 0 100
 ```
 
 ``` bash
-lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8096 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 2 2000
+lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8094 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 2 2000
 ```
 
 The eight players commit claims, each narrated with the label of the

@@ -83,6 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed the JSON-RPC server no longer accepting connections after it runs out of descriptors
 - Fixed the JSON-RPC server lingering after an accept error stops it from accepting connections
 - Fixed `cartesi-machine` aborting a revert when it cannot rebind the restored server to its address
+- Fixed `--dump-memory-ranges` passing its directory name to the shell
 
 ## [0.22.0] - 2026-10-15
 ### Added

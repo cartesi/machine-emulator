@@ -23,6 +23,7 @@
 #include <cstring>
 #include <exception>
 #include <new>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -420,6 +421,9 @@ static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx,
             if (lua_isinteger(L, idx) != 0) {
                 int64_t v = lua_tointeger(L, idx);
                 if (schema.is_string() && schema.template get<std::string_view>() == "ArrayIndex") {
+                    if (v == INT64_MIN) {
+                        throw std::invalid_argument{"ArrayIndex out of range"};
+                    }
                     v -= 1;
                 }
                 j = v;
@@ -511,17 +515,24 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nl
         case nlohmann::json::value_t::number_integer: {
             int64_t v = j.template get<int64_t>();
             if (schema.is_string() && schema.template get<std::string_view>() == "ArrayIndex") {
+                if (v == INT64_MAX) {
+                    throw std::invalid_argument{"ArrayIndex out of range"};
+                }
                 v += 1;
             }
             lua_pushinteger(L, v);
             break;
         }
         case nlohmann::json::value_t::number_unsigned: {
-            auto v = static_cast<int64_t>(j.template get<uint64_t>());
+            const auto value = j.template get<uint64_t>();
             if (schema.is_string() && schema.template get<std::string_view>() == "ArrayIndex") {
-                v += 1;
+                if (value >= static_cast<uint64_t>(INT64_MAX)) {
+                    throw std::invalid_argument{"ArrayIndex out of range"};
+                }
+                lua_pushinteger(L, static_cast<int64_t>(value) + 1);
+            } else {
+                lua_pushinteger(L, static_cast<int64_t>(value));
             }
-            lua_pushinteger(L, v);
             break;
         }
         case nlohmann::json::value_t::number_float:

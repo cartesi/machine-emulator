@@ -125,7 +125,8 @@ private:
 /// therefore the stack index can only be removed via lua_pop (e.g. don't use lua_remove).
 template <typename T>
 T *clua_push_new_managed_toclose_ptr(lua_State *L, T &&value, int ctxidx = lua_upvalueindex(1)) {
-    auto &managed_value = clua_push_to(L, clua_managed_cm_ptr<T>(new T(std::forward<T>(value))), ctxidx);
+    auto &managed_value = clua_push_to(L, clua_managed_cm_ptr<T>(nullptr), ctxidx);
+    managed_value.get() = new T(std::forward<T>(value));
     // ??(edubart): Unfortunately Lua 5.4.4 (default on Ubuntu 22.04) has a bug that causes a crash
     // when using lua_settop with lua_toclose, it was fixed only in Lua 5.4.5 in
     // https://github.com/lua/lua/commit/196bb94d66e727e0aec053a0276c3ad701500762 .

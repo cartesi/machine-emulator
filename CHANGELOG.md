@@ -85,6 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `cartesi-machine` aborting a revert when it cannot rebind the restored server to its address
 - Fixed `--dump-memory-ranges` passing its directory name to the shell
 - Fixed `cartesi.filesystem.write_file` ignoring errors that only show when the file is closed
+- Fixed `cartesi-machine` ignoring runtime options such as `--clear-hash-tree` with `--no-remote-create`
 
 ## [0.22.0] - 2026-10-15
 ### Added

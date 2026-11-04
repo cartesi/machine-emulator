@@ -5102,6 +5102,40 @@ dofile(%q)
     --       alive).  Then spawn again and run with --remote-fork=<free addr>
     --       and --remote-shutdown to exercise the rebind path.
     -- -------------------------------------------------------------------------
+    -- What: attaching to an existing remote machine applies the runtime options given to the run, and only them.
+    -- How:  leave a hashed machine in a server with concurrency 1, attach with --clear-hash-tree and
+    --       --skip-version-check, and expect the page cache cleared, the concurrency kept, and the version check
+    --       skipped. Expect --no-reserve to be refused, since memory is already mapped.
+    it("runtime options of an existing remote machine", function()
+        local jsonrpc = require("cartesi.jsonrpc")
+        local server <close>, address = jsonrpc.spawn_server()
+        server:create({ ram = { length = 0x10000 } }, { concurrency = { update_hash_tree = 1 } })
+        server:get_root_hash()
+        run_fail({
+            "--remote-address=" .. address,
+            "--no-remote-create",
+            "--no-remote-destroy",
+            "--no-reserve",
+            "--max-mcycle=0",
+        }, "cannot use %-%-no%-reserve and %-%-no%-remote%-create")
+        run_ok({
+            "--remote-address=" .. address,
+            "--no-remote-create",
+            "--no-remote-destroy",
+            "--clear-hash-tree",
+            "--skip-version-check",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        })
+        local runtime = server:get_runtime_config()
+        expect.equal(runtime.concurrency.update_hash_tree, 1)
+        expect.truthy(runtime.skip_version_check)
+        server:get_hash_tree_stats(true)
+        server:get_root_hash()
+        expect.truthy(server:get_hash_tree_stats().phtc.page_misses > 0)
+    end)
+
     it("remote fork", function()
         local jsonrpc = require("cartesi.jsonrpc")
 

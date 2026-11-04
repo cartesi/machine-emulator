@@ -2010,7 +2010,11 @@ http::message_generator handle_request(HTTP_REQ &&rreq, const std::shared_ptr<ht
     // Parse request body into a JSON object
     json j;
     try {
-        j = json::parse(req.body().data(), jsonrpc_parse_callback);
+        // The JSON lexer treats a raw NUL as end-of-input even with an explicit length.
+        if (req.body().contains('\0')) {
+            throw std::runtime_error{"unexpected NUL byte in JSON input"};
+        }
+        j = json::parse(req.body(), jsonrpc_parse_callback);
     } catch (const std::exception &x) {
         return jsonrpc_http_reply(req, jsonrpc_response_parse_error(x.what()), session);
     }

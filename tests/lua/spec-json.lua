@@ -10,6 +10,33 @@ lester.parse_args()
 local cartesi = require("cartesi")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
+describe("JSON NUL bytes", function()
+    it("should preserve distinct object keys containing NUL bytes", function()
+        local value = { a = 1, ["a\0b"] = 2, ["\0"] = 3, ["a\0"] = 4 }
+        local encoded = '{"\\u0000":3,"a":1,"a\\u0000":4,"a\\u0000b":2}'
+        expect.equal(cartesi.tojson(value), encoded)
+        expect.equal(cartesi.fromjson(encoded), value)
+    end)
+
+    it("should use complete object keys for schema lookup", function()
+        local schema = { Record = { a = "Hex", ["a\0b"] = "Base64" } }
+        local value = { a = "foo", ["a\0b"] = "bar", ["a\0c"] = "plain" }
+        local encoded = '{"a":"0x666f6f","a\\u0000b":"YmFy","a\\u0000c":"plain"}'
+        expect.equal(cartesi.tojson(value, nil, "Record", schema), encoded)
+        expect.equal(cartesi.fromjson(encoded, "Record", schema), value)
+    end)
+
+    it("should reject raw NUL bytes anywhere in JSON input", function()
+        for _, input in ipairs({ "{}\0", "{}\0garbage", "\0{}", '{"a":"x\0y"}', "[1,\0 2]" }) do
+            expect.fail(function()
+                cartesi.fromjson(input)
+            end, "unexpected NUL byte")
+        end
+        expect.equal(cartesi.fromjson('"a\\u0000b"'), "a\0b")
+        expect.equal(cartesi.tojson("a\0b"), '"a\\u0000b"')
+    end)
+end)
+
 describe("JSON nesting", function()
     for _, kind in ipairs({ "arrays", "objects" }) do
         local opening = kind == "arrays" and "[" or '{"child":'

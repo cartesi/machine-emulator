@@ -18,6 +18,7 @@
 #define CLUA_I_MACHINE_HPP
 
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <json.hpp>
@@ -187,7 +188,7 @@ const char *clua_tojson(lua_State *L, int idx, int indent = -1, const char *sche
 /// \param user_schema_dict User-supplied schema dictionary (empty object means none)
 /// \param ctxidx Index (or pseudo-index) of clua context
 /// \returns It traverses the JSON object while converting to a Lua object
-void clua_fromjson(lua_State *L, const char *s, const char *schema_name = nullptr,
+void clua_fromjson(lua_State *L, std::string_view s, const char *schema_name = nullptr,
     const nlohmann::json &user_schema_dict = nlohmann::json(), int ctxidx = lua_upvalueindex(1));
 
 } // namespace cartesi

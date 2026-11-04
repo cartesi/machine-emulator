@@ -129,6 +129,10 @@
 --                       time. Contents-form entries are written to cache/<K>/spec
 --                       and expanded by vars.lua at runner time (producing
 --                       body.run.<ext>). Both forms also add make prereqs.
+--                       A replace=K/source[/<region>] display substitutes K's
+--                       contents-form entries. A contents-form entry with the
+--                       same VAR on the display block overrides K's. K's
+--                       path-form entries are already part of its source.
 --
 --   runner=<name>       Optional, key= blocks only. Overrides the runner (and body
 --                       file extension) that replace.lua would otherwise infer from
@@ -204,6 +208,7 @@
 --   K/path              Cross-block: absolute path of cache/<K>/ directory.
 --   K/<thing>           Cross-block: render K's thing.
 --                       thing is stdout|stderr|both|source[/<region>]|<artifact>.
+--                       K/source[/<region>] substitutes K's vars= (see vars=).
 --                       When K was defined with include=, only the bare K, K/both,
 --                       K/path, K/both/path, K/source, and K/source/<region> forms
 --                       are accepted (K/source selects from the included file's
@@ -888,14 +893,23 @@ local function cross_read(K, thing, vars_spec, label)
         assertf(ports[thing], "%s: ports/%s: not allocated", label, thing)
         return read_output(K, thing, label)
     end
-    if thing == "source" then
+    if thing == "source" or thing:sub(1, 7) == "source/" then
         assertf(sources[K], "%s: replace=source: source not stored for '%s'", label, K)
-        return render_source(sources[K], nil, vars_spec, label)
-    end
-    if thing:sub(1, 7) == "source/" then
-        local region = thing:sub(8)
-        assertf(sources[K], "%s: replace=source: source not stored for '%s'", label, K)
-        return render_source(sources[K], region, vars_spec, label)
+        -- K's contents-form vars= apply too, unless the display maps the same VAR.
+        local merged, overridden = {}, {}
+        for _, p in ipairs(vars_spec or {}) do
+            merged[#merged + 1] = p
+            if p.kind == "contents" then
+                overridden[p.var] = true
+            end
+        end
+        for _, p in ipairs(pending[K] and pending[K].vars or {}) do
+            if p.kind == "contents" and not overridden[p.var] then
+                merged[#merged + 1] = p
+            end
+        end
+        local region = thing ~= "source" and thing:sub(8) or nil
+        return render_source(sources[K], region, merged, label)
     end
     if thing == "stdout" or thing == "stderr" or thing == "both" then
         return read_output(K, thing, label)

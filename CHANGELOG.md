@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`
 
 ### Fixed
+- Fixed ABI decoding accepting out-of-bounds offsets and lengths after integer overflow
 - Fixed Lua JSON conversions truncating object keys containing NUL bytes
 - Fixed Lua and JSON-RPC parsing accepting JSON followed by a raw NUL byte and trailing data
 - Fixed Lua bindings leaking C++ exceptions when handling conversion and allocation errors

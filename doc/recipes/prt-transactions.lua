@@ -25,18 +25,10 @@ local function hex(value)
     return "0x" .. evmu.bint.tobase(evmu.bint(value), 16)
 end
 
--- Writes the journal through a temporary file in the same directory, synced before the rename,
--- then syncs the directory.
+-- Writes the journal durably, then syncs its directory.
 function methods:store()
-    local directory, name = self.path:match("^(.*)/([^/]*)$")
-    if not directory then
-        directory, name = ".", self.path
-    end
-    local temporary <close> = fs.new_temporary_file(directory, name .. ".tmp.")
-    temporary.file:write(json.encode(self.state, { indent = true }), "\n")
-    fs.sync_file(temporary.file)
-    temporary:rename(self.path)
-    fs.sync_directory(directory)
+    fs.write_durable_file(json.encode(self.state, { indent = true }) .. "\n", self.path)
+    fs.sync_directory(fs.get_parent_directory(self.path))
 end
 
 function methods:nonce(address, block)

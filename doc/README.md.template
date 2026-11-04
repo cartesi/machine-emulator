@@ -1415,7 +1415,7 @@ The server provides the fork functionality the client uses to roll the machine s
 With the encoded inputs and `calc.ext2` in the working directory, run the remote server with the command
 ```{.bash key=rolling_calc_run vars=rolling_calc_encode,calc_ext2->calc_ext2/calc.ext2/path outputs=server,client1,client2,output-0-input-0.bin,output-1-input-2.bin,output-2-input-3.bin,output-3-input-4.bin,output-4-input-5.bin,rejected-output-1-input-1.bin,output-0-input-0-proof.lua,output-1-input-2-proof.lua,output-2-input-3-proof.lua,output-3-input-4-proof.lua,output-4-input-5-proof.lua,input-0-outputs-merkle-root.bin,input-2-outputs-merkle-root.bin,input-3-outputs-merkle-root.bin,input-4-outputs-merkle-root.bin,input-5-outputs-merkle-root.bin,input-0-outputs-merkle-root-proof.lua,input-2-outputs-merkle-root-proof.lua,input-3-outputs-merkle-root-proof.lua,input-4-outputs-merkle-root-proof.lua,input-5-outputs-merkle-root-proof.lua,epoch-0-state-hash.bin,query-report-0.bin replace=source/server}
 ln -sf $rolling_calc_encode/*.bin .
-rm -f calc.ext2
+rm -f calc.ext2 calc-server.address
 ln -sf "$calc_ext2" .
 {
 # docs:begin server
@@ -1432,6 +1432,7 @@ while ! cartesi-machine \
 cartesi-machine \
     --no-init-splash \
     --remote-address=127.0.0.1:8082 \
+    --remote-address=filename:calc-server.address \
     --no-remote-destroy \
     --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3,print_input_state_hashes \
@@ -1444,7 +1445,7 @@ client1_status=$?
 # docs:begin client2
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8082 \
+    --remote-address=filename:calc-server.address \
     --no-remote-create \
     --remote-shutdown \
     --cmio-advance-state=input_file_index_begin:3,input_file_index_end:6,last_output_proof:output-1-input-2-proof.lua,print_input_state_hashes \
@@ -1462,6 +1463,11 @@ From a different shell into the same container, run the client to process the fi
 ```
 This run instantiates the machine from the `calc.ext2` flash drive and advances inputs 0 to 2.
 Passing `--no-remote-destroy` and omitting `--remote-shutdown` leaves both the server and the machine it holds alive for the next epoch.
+The client connects to `127.0.0.1:8082`, and when it exits, it records in `calc-server.address` the address of the server it leaves alive.
+Rolling back a rejected input replaces the server with a fork taken before that input.
+The client rebinds the fork to the original address.
+If another process took that address in the meantime, the fork keeps its own address and the client warns and continues.
+The second epoch reads its server address from the same file, so it finds the server wherever the first left it.
 
 The client shell shows
 ```{replace=rolling_calc_run/client1}
@@ -2941,6 +2947,7 @@ This requires snapshot and rollback support, which are easy to implement using t
 The script therefore uses the `cartesi.jsonrpc` module to instantiate a remote machine based on the `"rolling-calculator-template"`.
 The `machine:fork_server()` call creates a backup server with a copy of the current state.
 On rejection, the script shuts down the server that rejected the input, swaps the backup handle into `machine`, and rebinds it to the original server address.
+If another process took that address in the meantime, the restored server keeps the address of the fork and the script reports it.
 On acceptance, it shuts down the now-stale backup.
 
 It then enters its main loop, which is executed until the machine halts.

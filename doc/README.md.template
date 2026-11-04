@@ -4796,8 +4796,10 @@ Writing *c* in binary, such a subtree spans 2<sup>*l*</sup> leaves and is presen
 These subtrees tile the leaves left to right, largest first, so the frontier holds one root hash per set bit of *c*, and *c* itself can be read back from which entries are present.
 The module stores it as a fixed-length array with one slot per level, holding that level's subtree root hash, or `false` where its bit is clear.
 
-The accessor `frontier_node` reads the hash of a node at one level from three regions that sit left to right in the tree, the frontier, an active region of nodes being worked on, and pristine padding:
-```{.lua replace=proof_module/source/frontier_node title="hash-tree.lua (excerpt)"}
+The helper `get_or_outside` reads the hash of a node at one level by its index.
+Nodes being worked on at that level form an active region.
+To its left the hash comes from the frontier, and to its right it is pristine padding, the two values the caller passes in:
+```{.lua replace=proof_module/source/get_or_outside title="hash-tree.lua (excerpt)"}
 ```
 A node index that falls to the left of the active region is supplied by the frontier, a complete left subtree's root hash.
 One that falls to the right is the root hash of an all-pristine subtree.
@@ -4851,7 +4853,7 @@ Finally, `frontier_next_proofs` produces an epoch's output proofs:
 Given the starting frontier and the output hashes accepted during the epoch, in order, it returns one proof per new output, all against the single final root.
 The only thing a new output's proof needs from the earlier leaves in the range [0, *c*) is the frontier.
 A left sibling on a new leaf's path to the root always ends at an aligned boundary at or before *c*, so it is a complete subtree whose root hash the frontier already holds, never an individual old leaf.
-The function sweeps the new leaves up one level at a time, reading each proof sibling through `frontier_node`, which supplies a frontier entry or pristine padding at the boundaries.
+The function sweeps the new leaves up one level at a time, reading each proof sibling through `get_or_outside`, which supplies a frontier entry or pristine padding at the boundaries.
 The proofs are built together, in one batch at the end of the epoch, because an early output's low siblings are later outputs of the same epoch.
 Note that proofs issued for outputs in previous epochs are produced and stored by the Cartesi Node as soon as those epochs were finalized.
 They are checked against the state hash (and outputs Merkle root) finalized then, not against what gets finalized in later epochs.

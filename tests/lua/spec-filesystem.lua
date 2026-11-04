@@ -78,6 +78,16 @@ describe("filesystem", function()
         expect.equal(filesystem.get_file_size(filename), 3)
     end)
 
+    it("reports write errors that only show when the file is closed", function()
+        -- /dev/full accepts buffered writes and fails every flush with ENOSPC, but only Linux has it
+        if not filesystem.exists("/dev/full") then
+            return
+        end
+        expect.fail(function()
+            filesystem.write_file("contents", "/dev/full")
+        end, "No space left on device")
+    end)
+
     it("clones files", function()
         local scope <close>, dirname = new_scope_directory() -- luacheck: ignore 211
         local original, clone = dirname .. "/original", dirname .. "/clone"

@@ -1260,16 +1260,6 @@ function machine_cache_methods:nearer_not_past_epoch_input_offset_or(
     return advancing_pair:move(), cached_epoch_input_offset
 end
 
--- Writes a file through a temporary file in the same directory, synced before the rename. The
--- caller syncs the directory.
-local function write_durable_file(contents, path)
-    local directory, name = path:match("^(.*)/([^/]*)$")
-    local temporary <close> = fs.new_temporary_file(directory, name .. ".tmp.")
-    temporary.file:write(contents)
-    fs.sync_file(temporary.file)
-    temporary:rename(path)
-end
-
 -- A stored cache keeps its entries as stored machines under entries/ in the epoch directory, and
 -- its one temporary pair runs on a clone in pair/. Evicted entries stay on disk until remove_evicted,
 -- once the player's state no longer lists them.
@@ -1369,14 +1359,14 @@ function stored_machine_cache_methods:store(path)
     for i, entry in ipairs(self.entries) do
         entries[i] = { epoch_input_offset = entry.epoch_input_offset, root_hash = cartesi.tohex(entry.root_hash) }
     end
-    write_durable_file(cartesi.tojson({
+    fs.write_durable_file(cartesi.tojson({
         capacity = self.capacity,
         input_gap = self.input_gap,
         replace_cursor = self.replace_cursor,
         last_epoch_input_offset = self.last_epoch_input_offset,
         entries = entries,
     }, 2) .. "\n", path)
-    fs.sync_directory(path:match("^(.*)/[^/]*$"))
+    fs.sync_directory(fs.get_parent_directory(path))
 end
 
 -- Runs the builder until a fixed point or mcycle_end and returns the break reason. Automatic yields
@@ -2395,7 +2385,7 @@ local function store_outputs(self, outputs)
     local directory = self.epoch_directory
     local first = self.output_count - #outputs
     for i, output_data in ipairs(outputs) do
-        write_durable_file(output_data, get_output_path(directory, first + i - 1))
+        fs.write_durable_file(output_data, get_output_path(directory, first + i - 1))
     end
     fs.sync_directory(directory .. "/outputs")
     local log <close> = assert(io.open(get_outputs_log_path(directory), "r+b"))
@@ -2431,7 +2421,10 @@ local function store_epoch_state(self, root_hash, files, pad_bundle)
             }
         end)
     end
-    write_durable_file(cartesi.tojson(state, 2, "EpochState", EPOCH_STATE_SCHEMAS) .. "\n", directory .. "/state.json")
+    fs.write_durable_file(
+        cartesi.tojson(state, 2, "EpochState", EPOCH_STATE_SCHEMAS) .. "\n",
+        directory .. "/state.json"
+    )
     fs.sync_directory(directory)
     self.machine_cache:remove_evicted()
     local named = {}
@@ -2480,7 +2473,7 @@ local function store_checkpoint_files(self, directory)
         "checkpoint output history does not match the machine"
     )
     hash_tree.frontier_store(self.outputs_frontier, directory .. "/outputs-frontier.json")
-    write_durable_file(cartesi.tojson({
+    fs.write_durable_file(cartesi.tojson({
         version = 2,
         initial_state_hash = cartesi.tohex(self.dapp_contract.initial_state_hash),
         final_state_hash = cartesi.tohex(self.final_state_hash),
@@ -2550,7 +2543,7 @@ local function store_first_epoch_checkpoint(template_directory, geometry, direct
         template_hash = machine:get_root_hash()
     end
     hash_tree.frontier_store(outputs_frontier, temporary_directory .. "/outputs-frontier.json")
-    write_durable_file(cartesi.tojson({
+    fs.write_durable_file(cartesi.tojson({
         version = 2,
         initial_state_hash = cartesi.tohex(template_hash),
         final_state_hash = cartesi.tohex(template_hash),
@@ -2600,7 +2593,7 @@ local function create_epoch_directory(directory)
     for _, name in ipairs(EPOCH_SUBDIRECTORIES) do
         fs.create_directory(directory .. "/" .. name)
     end
-    write_durable_file("", get_outputs_log_path(directory))
+    fs.write_durable_file("", get_outputs_log_path(directory))
     fs.sync_directory(directory)
 end
 

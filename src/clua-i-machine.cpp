@@ -561,8 +561,8 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nl
 static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) {
     char message[1024]{};
     try {
-        // In order to convert Lua tables <-> JSON objects we have to define a schema
-        // to transform some special fields, we only care about:
+        // In order to convert Lua tables <-> JSON objects we define schemas for:
+        // - Container types (distinguish empty objects from empty arrays)
         // - Binary strings (translate Base64 or Hex strings in JSON to binary strings in Lua)
         // - Enumeration strings (convert to integers of an enumeration)
         // - Array indexes (translate 0 based index in JSON to 1 based index in Lua)
@@ -588,6 +588,39 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) {
                 {
                     {"items", "ArrayIndex"},
                 }},
+            {"BackingStoreConfig", nlohmann::json::object()},
+            {"IflagsConfig", nlohmann::json::object()},
+            {"CLINTConfig", nlohmann::json::object()},
+            {"PLICConfig", nlohmann::json::object()},
+            {"HTIFConfig", nlohmann::json::object()},
+            {"RegistersConfig",
+                {{"iflags", "IflagsConfig"}, {"clint", "CLINTConfig"}, {"plic", "PLICConfig"}, {"htif", "HTIFConfig"}}},
+            {"ProcessorConfig", {{"registers", "RegistersConfig"}, {"backing_store", "BackingStoreConfig"}}},
+            {"RAMConfig", {{"backing_store", "BackingStoreConfig"}}},
+            {"DTBConfig", {{"backing_store", "BackingStoreConfig"}}},
+            {"MemoryRangeConfig", {{"backing_store", "BackingStoreConfig"}}},
+            {"MemoryRangeConfigs", {{"items", "MemoryRangeConfig"}}},
+            {"VirtIOHostfwd", nlohmann::json::object()},
+            {"VirtIOHostfwdArray", {{"items", "VirtIOHostfwd"}}},
+            {"VirtIODeviceConfig", {{"hostfwd", "VirtIOHostfwdArray"}}},
+            {"VirtIOConfigs", {{"items", "VirtIODeviceConfig"}}},
+            {"CMIOBufferConfig", {{"backing_store", "BackingStoreConfig"}}},
+            {"CMIOConfig", {{"rx_buffer", "CMIOBufferConfig"}, {"tx_buffer", "CMIOBufferConfig"}}},
+            {"PMAsConfig", {{"backing_store", "BackingStoreConfig"}}},
+            {"UarchRegistersConfig", nlohmann::json::object()},
+            {"UarchProcessorConfig", {{"registers", "UarchRegistersConfig"}, {"backing_store", "BackingStoreConfig"}}},
+            {"UarchRAMConfig", {{"backing_store", "BackingStoreConfig"}}},
+            {"UarchConfig", {{"processor", "UarchProcessorConfig"}, {"ram", "UarchRAMConfig"}}},
+            {"HashTreeConfig", nlohmann::json::object()},
+            {"MachineConfig",
+                {{"processor", "ProcessorConfig"}, {"ram", "RAMConfig"}, {"dtb", "DTBConfig"},
+                    {"flash_drive", "MemoryRangeConfigs"}, {"nvram", "MemoryRangeConfigs"}, {"virtio", "VirtIOConfigs"},
+                    {"cmio", "CMIOConfig"}, {"pmas", "PMAsConfig"}, {"uarch", "UarchConfig"},
+                    {"hash_tree", "HashTreeConfig"}}},
+            {"ConsoleRuntimeConfig", nlohmann::json::object()},
+            {"ConcurrencyRuntimeConfig", nlohmann::json::object()},
+            {"MachineRuntimeConfig",
+                {{"console", "ConsoleRuntimeConfig"}, {"concurrency", "ConcurrencyRuntimeConfig"}}},
             {"Proof",
                 {
                     {"target_hash", "Base64"},
@@ -778,7 +811,7 @@ static int machine_obj_index_get_initial_config(lua_State *L) {
     if (cm_get_initial_config(m.get(), &config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_fromjson(L, config);
+    clua_fromjson(L, config, "MachineConfig");
     return 1;
 }
 
@@ -790,7 +823,7 @@ static int machine_obj_index_get_runtime_config(lua_State *L) {
     if (cm_get_runtime_config(m.get(), &runtime_config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_fromjson(L, runtime_config);
+    clua_fromjson(L, runtime_config, "MachineRuntimeConfig");
     return 1;
 }
 
@@ -798,7 +831,7 @@ static int machine_obj_index_get_runtime_config(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_set_runtime_config(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const char *runtime_config = clua_tojson(L, 2);
+    const char *runtime_config = clua_tojson(L, 2, -1, "MachineRuntimeConfig");
     if (cm_set_runtime_config(m.get(), runtime_config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -1238,7 +1271,7 @@ static int machine_obj_index_write_console_input(lua_State *L) {
 static int machine_obj_index_replace_memory_range(lua_State *L) {
     lua_settop(L, 2);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const char *range_config = clua_tojson(L, 2);
+    const char *range_config = clua_tojson(L, 2, -1, "MemoryRangeConfig");
     if (cm_replace_memory_range(m.get(), range_config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -1357,11 +1390,11 @@ static int machine_obj_index_is_empty(lua_State *L) {
 static int machine_obj_index_create(lua_State *L) {
     lua_settop(L, 5);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const char *runtime_config = !lua_isnil(L, 3) ? clua_tojson(L, 3) : nullptr;
+    const char *runtime_config = !lua_isnil(L, 3) ? clua_tojson(L, 3, -1, "MachineRuntimeConfig") : nullptr;
     const char *dir = luaL_optstring(L, 4, nullptr);
     const auto sharing = static_cast<cm_sharing_mode>(luaL_optinteger(L, 5, CM_SHARING_ALL));
     // Create or load a machine depending on the type of the first argument
-    const char *config = clua_tojson(L, 2);
+    const char *config = clua_tojson(L, 2, -1, "MachineConfig");
     if (cm_create(m.get(), config, runtime_config, dir, sharing) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -1443,7 +1476,7 @@ static int machine_obj_index_collect_uarch_cycle_bundle(lua_State *L) {
 static int machine_obj_index_load(lua_State *L) {
     lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const char *runtime_config = !lua_isnil(L, 3) ? clua_tojson(L, 3) : nullptr;
+    const char *runtime_config = !lua_isnil(L, 3) ? clua_tojson(L, 3, -1, "MachineRuntimeConfig") : nullptr;
     const char *dir = luaL_checkstring(L, 2);
     const auto sharing = static_cast<cm_sharing_mode>(luaL_optinteger(L, 4, CM_SHARING_NONE));
     if (cm_load(m.get(), dir, runtime_config, sharing) != 0) {
@@ -1461,7 +1494,7 @@ static int machine_obj_index_get_default_config(lua_State *L) {
     if (cm_get_default_config(m.get(), &config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_fromjson(L, config);
+    clua_fromjson(L, config, "MachineConfig");
     return 1;
 }
 
@@ -1667,10 +1700,10 @@ static int machine_meta_call(lua_State *L) {
     if (cm_clone_empty(m.get(), &new_m.get()) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    const char *runtime_config = !lua_isnil(L, 3) ? clua_tojson(L, 3) : nullptr;
+    const char *runtime_config = !lua_isnil(L, 3) ? clua_tojson(L, 3, -1, "MachineRuntimeConfig") : nullptr;
     // Create or load a machine depending on the type of the first argument
     if (lua_isstring(L, 2) == 0) {
-        const char *config = clua_tojson(L, 2);
+        const char *config = clua_tojson(L, 2, -1, "MachineConfig");
         const char *dir = luaL_optstring(L, 4, nullptr);
         const auto sharing = static_cast<cm_sharing_mode>(luaL_optinteger(L, 5, CM_SHARING_ALL));
         if (cm_create(new_m.get(), config, runtime_config, dir, sharing) != 0) {

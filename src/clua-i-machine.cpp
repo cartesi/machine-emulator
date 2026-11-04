@@ -404,7 +404,9 @@ static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx,
                     if (lua_isstring(L, -2) == 0) {
                         luaL_error(L, "table maps cannot contain keys of type %s", lua_typename(L, lua_type(L, -2)));
                     }
-                    const char *field_name = lua_tostring(L, -2);
+                    size_t len = 0;
+                    const char *ptr = lua_tolstring(L, -2, &len);
+                    const std::string_view field_name(ptr, len);
                     const auto &field_schema = clua_get_field_schema(L, field_name, schema, user_schema_dict);
                     j[field_name] =
                         clua_push_managed_toclose_json_ref(L, -1, field_schema, user_schema_dict, ctxidx, depth + 1);
@@ -476,8 +478,9 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nl
             for (const auto &el : j.items()) {
                 const auto &field_name = el.key();
                 const auto &field_schema = clua_get_field_schema(L, field_name, schema, user_schema_dict);
+                lua_pushlstring(L, field_name.data(), field_name.size());
                 clua_push_json_value(L, el.value(), field_schema, user_schema_dict, ctxidx, depth + 1);
-                lua_setfield(L, -2, field_name.c_str());
+                lua_rawset(L, -3);
             }
             break;
         }
@@ -657,7 +660,7 @@ const char *clua_tojson(lua_State *L, int idx, int indent, const char *schema_na
     return nullptr; // will not be reached
 }
 
-void clua_fromjson(lua_State *L, const char *s, const char *schema_name, const nlohmann::json &user_schema_dict,
+void clua_fromjson(lua_State *L, std::string_view s, const char *schema_name, const nlohmann::json &user_schema_dict,
     int ctxidx) {
     ctxidx = lua_absindex(L, ctxidx);
     char message[1024]{};
@@ -665,6 +668,10 @@ void clua_fromjson(lua_State *L, const char *s, const char *schema_name, const n
         const nlohmann::json &schema = clua_get_type_schema(L, schema_name, user_schema_dict);
         lua_pushnil(L); // reserve the result slot below the to-be-closed JSON object
         nlohmann::json &j = *clua_push_new_managed_toclose_ptr(L, nlohmann::json(), ctxidx);
+        // The JSON lexer treats a raw NUL as end-of-input even with an explicit length.
+        if (s.contains('\0')) {
+            throw std::runtime_error{"unexpected NUL byte in JSON input"};
+        }
         j = nlohmann::json::parse(s, clua_json_parse_callback);
         clua_push_json_value(L, j, schema, user_schema_dict, ctxidx);
         lua_replace(L, -3); // move into the result slot

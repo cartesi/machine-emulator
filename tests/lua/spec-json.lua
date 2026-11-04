@@ -236,6 +236,27 @@ describe("tojson / fromjson schema dictionary", function()
         expect.equal(back, { hash = HASH, n = 5, label = "hi" })
     end)
 
+    it("should convert ArrayIndex values at the integer boundaries", function()
+        for _, value in ipairs({ math.mininteger + 1, 0, 1, math.maxinteger }) do
+            local encoded = tostring(value - 1)
+            expect.equal(cartesi.tojson(value, nil, "ArrayIndex"), encoded)
+            expect.equal(cartesi.fromjson(encoded, "ArrayIndex"), value)
+        end
+    end)
+
+    it("should reject ArrayIndex conversion overflow", function()
+        for _, encoded in ipairs({ "9223372036854775807", "9223372036854775808", "18446744073709551615" }) do
+            expect.fail(function()
+                cartesi.fromjson(encoded, "ArrayIndex")
+            end, "ArrayIndex out of range")
+        end
+        expect.fail(function()
+            cartesi.tojson(math.mininteger, nil, "ArrayIndex")
+        end, "ArrayIndex out of range")
+        expect.equal(cartesi.fromjson("9223372036854775807"), math.maxinteger)
+        expect.equal(cartesi.tojson(math.mininteger), "-9223372036854775808")
+    end)
+
     it("should apply a different schema to each tuple item", function()
         local SCHEMA = { Tuple = { items = { "Base64", "ArrayIndex", "Default", "Hex" } } }
         local tuple = { HASH, 5, true, BINARY }

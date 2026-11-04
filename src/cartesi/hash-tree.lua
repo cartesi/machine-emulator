@@ -97,22 +97,15 @@ end
 -- pristine subtrees double on demand inside each loop (keccak256(pristine, pristine)).
 local pristine_leaf = string.rep("\0", cartesi.HASH_SIZE)
 
--- The hash of node "index" at one level, given that level's frontier entry (the complete left
--- subtree to the left, or false) and pristine entry (the all-pristine subtree to the right). The
--- three regions read left-to-right as they sit in the tree: the frontier, the active region
--- covering global indices base..base+#active-1, and pristine.
--- docs:begin frontier_node
-local function frontier_node(frontier_entry, base, active, pristine_entry, index)
-    local lo, hi = base, base + #active - 1
-    if index < lo then
-        return frontier_entry -- fell left: a complete left subtree from the frontier
-    elseif index > hi then
-        return pristine_entry -- fell right: an all-pristine subtree
-    else
-        return active[index - lo + 1] -- inside the active region
-    end
+-- Returns the value at index in values, whose first value has index base, or left before the
+-- values and right after them.
+-- docs:begin get_or_outside
+local function get_or_outside(values, base, index, left, right)
+    if index < base then return left end
+    if index > base + #values - 1 then return right end
+    return values[index - base + 1]
 end
--- docs:end frontier_node
+-- docs:end get_or_outside
 
 -- Asserts that every level of the accumulator below level is empty, so the filled leaf
 -- count is a multiple of the entry size standing at level.
@@ -348,14 +341,14 @@ local function frontier_next_proofs(frontier, next_output_hashes)
         -- Add each output's sibling at this level.
         for i = 1, next_output_count do
             local node = (leaf_count + i - 1) >> bit
-            siblings[i][level] = frontier_node(frontier_entry, base, active, pristine, node ~ 1)
+            siblings[i][level] = get_or_outside(active, base, node ~ 1, frontier_entry, pristine)
         end
         -- Hash the active nodes into their parents.
         local parents = {}
         local parents_base = base >> 1
         for p = parents_base, (base + #active - 1) >> 1 do
-            local left = frontier_node(frontier_entry, base, active, pristine, 2 * p)
-            local right = frontier_node(frontier_entry, base, active, pristine, 2 * p + 1)
+            local left = get_or_outside(active, base, 2 * p, frontier_entry, pristine)
+            local right = get_or_outside(active, base, 2 * p + 1, frontier_entry, pristine)
             parents[p - parents_base + 1] = hash_function(left, right)
         end
         active, base = parents, parents_base

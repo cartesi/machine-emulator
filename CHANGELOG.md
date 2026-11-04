@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Added Lua JSON schemas for machine, runtime, and memory range configurations
 - Added `clear_hash_tree` to the C, Lua, and JSON-RPC APIs
 - Added the `clear_hash_tree` runtime option
 - Added the `--clear-hash-tree` command-line option

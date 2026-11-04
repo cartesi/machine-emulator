@@ -211,6 +211,54 @@ describe("tojson / fromjson schema dictionary", function()
         end
     end)
 
+    it("should preserve empty containers in machine configurations", function()
+        local configurations = {
+            '{"cmio":{},"dtb":{},"flash_drive":[],"hash_tree":{},"nvram":[],"pmas":{},'
+                .. '"processor":{},"ram":{},"uarch":{},"virtio":[]}',
+            '{"cmio":{"rx_buffer":{"backing_store":{}},"tx_buffer":{"backing_store":{}}},'
+                .. '"dtb":{"backing_store":{}},"flash_drive":[{"backing_store":{}}],'
+                .. '"nvram":[{"backing_store":{}}],"pmas":{"backing_store":{}},'
+                .. '"processor":{"backing_store":{},"registers":{"clint":{},"htif":{},"iflags":{},"plic":{}}},'
+                .. '"ram":{"backing_store":{}},"uarch":{"processor":{"backing_store":{},"registers":{}},'
+                .. '"ram":{"backing_store":{}}},"virtio":[{"hostfwd":[],"type":"net-user"}]}',
+            '{"cmio":{"rx_buffer":{},"tx_buffer":{}},"flash_drive":[{}],"nvram":[{}],'
+                .. '"processor":{"registers":{}},"uarch":{"processor":{},"ram":{}},'
+                .. '"virtio":[{"hostfwd":[{}],"type":"net-user"}]}',
+        }
+        for _, encoded in ipairs(configurations) do
+            expect.equal(cartesi.tojson(cartesi.fromjson(encoded), nil, "MachineConfig"), encoded)
+        end
+        expect.equal(cartesi.tojson({}, nil, "MachineConfig"), "{}")
+    end)
+
+    it("should preserve empty containers in runtime and memory range configurations", function()
+        expect.equal(cartesi.tojson({}, nil, "MachineRuntimeConfig"), "{}")
+        expect.equal(
+            cartesi.tojson({ console = {}, concurrency = {} }, nil, "MachineRuntimeConfig"),
+            '{"concurrency":{},"console":{}}'
+        )
+        expect.equal(
+            cartesi.tojson({ label = "data", backing_store = {} }, nil, "MemoryRangeConfig"),
+            '{"backing_store":{},"label":"data"}'
+        )
+    end)
+
+    it("should roundtrip machine configurations without changing state or runtime settings", function()
+        local config = machine:get_initial_config()
+        local encoded = cartesi.tojson(config, nil, "MachineConfig")
+        local decoded = cartesi.fromjson(encoded, "MachineConfig")
+        expect.equal(decoded, config)
+        local copy <close> = cartesi.machine(decoded, { console = {}, concurrency = {} })
+        expect.equal(copy:get_root_hash(), machine:get_root_hash())
+        local runtime = copy:get_runtime_config()
+        copy:set_runtime_config(
+            cartesi.fromjson(cartesi.tojson(runtime, nil, "MachineRuntimeConfig"), "MachineRuntimeConfig")
+        )
+        expect.equal(copy:get_runtime_config(), runtime)
+        copy:set_runtime_config({})
+        expect.equal(copy:get_runtime_config(), runtime)
+    end)
+
     it("should honor the indent argument", function()
         expect.truthy(cartesi.tojson({ a = 1 }, 2):find("\n", 1, true))
     end)

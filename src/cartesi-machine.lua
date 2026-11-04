@@ -1185,7 +1185,6 @@ local cmdline = {
         },
         flash_drive = {},
         nvram = {},
-        tlb = {},
         virtio = {},
         cmio = {
             rx_buffer = {},
@@ -3184,7 +3183,7 @@ echo "
 
     local loaded_config
     if cmdline.load_config and cmdline.load_config_format == "json" then
-        loaded_config = cartesi.fromjson(fs.read_file(cmdline.load_config))
+        loaded_config = cartesi.fromjson(fs.read_file(cmdline.load_config), "MachineConfig")
     elseif cmdline.load_config then
         local env = {}
         local chunk, err = loadfile(cmdline.load_config, "t", env)
@@ -3227,7 +3226,7 @@ runtime_config.clear_hash_tree = cmdline.clear_hash_tree == "always"
 
 local function serialize_config(out, config, format)
     if format == "json" then
-        out:write(cartesi.tojson(config, 2), "\n")
+        out:write(cartesi.tojson(config, 2, "MachineConfig"), "\n")
     elseif format == "lua" then
         out:write("return ")
         util.dump_table(config, out, default_config)

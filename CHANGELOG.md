@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the `mode` argument to `remove_stored` in the C, Lua, and JSON-RPC APIs
 - Added the `sharing` argument to `create` in the C, Lua, and JSON-RPC APIs
 - Added the `sharing` option to `--create`
+- Added the `filename` option to `--remote-address`
 - Added automatic labels of flash drives and NVRAMs to `replace_memory_range`
 - Added the `.ram`, `.dtb`, `.cmio-rx-buffer`, `.cmio-tx-buffer`, and `.uarch-ram` labels to `replace_memory_range`
 
@@ -81,6 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed the JSON-RPC client and server rejecting IPv6 addresses, which are now written `[<ipv6-address>]:<port>`
 - Fixed the JSON-RPC server no longer accepting connections after it runs out of descriptors
 - Fixed the JSON-RPC server lingering after an accept error stops it from accepting connections
+- Fixed `cartesi-machine` aborting a revert when it cannot rebind the restored server to its address
 
 ## [0.22.0] - 2026-10-15
 ### Added

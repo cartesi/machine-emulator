@@ -640,7 +640,9 @@ local decode_value -- forward declaration
 -- reads a 32-byte word from 'calldata' at 'offset' and returns it as a bint
 local word_padding = string.rep("\0", bint_extra / 8)
 local function read_word(calldata, offset)
-    if offset + 32 > #calldata then errorf("insufficient calldata for 256-bit word at offset %d", offset) end
+    if offset < 0 or offset > #calldata - 32 then
+        errorf("insufficient calldata for 256-bit word at offset %d", offset)
+    end
     local word = calldata:sub(offset + 1, offset + 32)
     return bint.frombe(word_padding .. word)
 end
@@ -691,8 +693,9 @@ end
 local function decode_string(calldata, offset, prefer)
     local length, new_offset = decode_uint(calldata, offset)
     local len = check_lua_uint(length, "string length")
+    -- Bound the length by the available complete words before rounding it up.
+    if len > (#calldata - new_offset) // 32 * 32 then errorf("insufficient calldata for string of length %d", len) end
     local padded_len = ceil32(len)
-    if new_offset + padded_len > #calldata then errorf("insufficient calldata for string of length %d", len) end
     local str_data = calldata:sub(new_offset + 1, new_offset + len)
     if prefer == "hex" then str_data = tohex(str_data) end
     -- Skip padding
@@ -702,7 +705,7 @@ end
 local function decode_bytes_sized(calldata, offset, size, prefer)
     -- Fixed-size bytes
     local padded_len = ceil32(size)
-    if offset + padded_len > #calldata then errorf("insufficient calldata for bytes%d", size) end
+    if offset < 0 or padded_len > #calldata - offset then errorf("insufficient calldata for bytes%d", size) end
     local bytes_data = calldata:sub(offset + 1, offset + size)
     if prefer ~= "raw" then bytes_data = tohex(bytes_data) end
     return bytes_data, offset + padded_len
@@ -714,8 +717,10 @@ local function decode_bytes(calldata, offset, size, prefer)
         -- Dynamic bytes (same as string but return as hex by default)
         local length, new_offset = decode_uint(calldata, offset)
         local len = check_lua_uint(length, "bytes length")
+        if len > (#calldata - new_offset) // 32 * 32 then
+            errorf("insufficient calldata for bytes of length %d", len)
+        end
         local padded_len = ceil32(len)
-        if new_offset + padded_len > #calldata then errorf("insufficient calldata for bytes of length %d", len) end
         local bytes_data = calldata:sub(new_offset + 1, new_offset + len)
         if prefer ~= "raw" then bytes_data = tohex(bytes_data) end
         return bytes_data, new_offset + padded_len
@@ -739,12 +744,17 @@ local function decode_array(calldata, offset, parsed_type_spec, prefer)
     local result = {}
     local is_dynamic_element = is_dynamic_type(element_type)
     if is_dynamic_element then
+        if size > (#calldata - new_offset) // 32 then errorf("insufficient calldata for array of size %d", size) end
         local last_offset = new_offset + size * 32 -- Position to return (end of data), past the offsets if empty
         -- Dynamic elements: read offset and decode immediately
         for i = 1, size do
             local offset_val = decode_uint(calldata, new_offset + (i - 1) * 32)
             -- Offsets are relative to the start of the array data section
-            local element_offset = array_data_start + check_lua_uint(offset_val, "array offset")
+            local relative_offset = check_lua_uint(offset_val, "array offset")
+            if relative_offset > #calldata - array_data_start then
+                errorf("insufficient calldata for array offset %d", relative_offset)
+            end
+            local element_offset = array_data_start + relative_offset
             local element_new_offset
             result[i], element_new_offset = decode_value(calldata, element_offset, element_type, prefer)
             -- Element data need not follow the order of the offsets
@@ -766,8 +776,7 @@ local function decode_tuple(calldata, offset, parsed_type_spec, prefer)
     local result = {}
     local static_offset = offset -- Position within the static portion
     local tuple_start = offset -- Start of the tuple data
-    local _, static_size = is_dynamic_type(parsed_type_spec)
-    local new_offset = tuple_start + static_size -- Position to return (end of data)
+    local new_offset = tuple_start -- Position to return (end of data)
     -- Process components
     for i, comp_type in ipairs(components) do
         local is_dynamic_component = is_dynamic_type(comp_type)
@@ -775,7 +784,11 @@ local function decode_tuple(calldata, offset, parsed_type_spec, prefer)
             local offset_val
             offset_val, static_offset = decode_uint(calldata, static_offset)
             -- Offsets are relative to the start of the tuple
-            local dynamic_offset = tuple_start + check_lua_uint(offset_val, "tuple offset")
+            local relative_offset = check_lua_uint(offset_val, "tuple offset")
+            if relative_offset > #calldata - tuple_start then
+                errorf("insufficient calldata for tuple offset %d", relative_offset)
+            end
+            local dynamic_offset = tuple_start + relative_offset
             local component_new_offset
             result[i], component_new_offset = decode_value(calldata, dynamic_offset, comp_type, prefer)
             -- Component data need not follow the order of the offsets
@@ -786,7 +799,7 @@ local function decode_tuple(calldata, offset, parsed_type_spec, prefer)
         local name = comp_type.name
         if name then result[name] = result[i] end
     end
-    return result, new_offset
+    return result, math.max(new_offset, static_offset)
 end
 
 -- Reads a value of the specified type from 'calldata' at 'offset'

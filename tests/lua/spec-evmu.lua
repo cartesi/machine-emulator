@@ -890,6 +890,52 @@ describe("selectorless ABI", function()
             assert(evmu.encode_calldata(signature, evmu.decode_calldata(signature, calldata)) == calldata, signature)
         end
     end)
+    it("rejects overflowing ABI offsets and lengths", function()
+        local function word(n)
+            return string.rep("\0", 24) .. string.pack(">I8", n)
+        end
+        local tail = word(1) .. "x" .. string.rep("\0", 31)
+        local cases = {
+            { "(bytes,bytes)", word(0x7ffffffffffffff0) .. word(64) .. tail },
+            { "(string,string)", word(0x7ffffffffffffff0) .. word(64) .. tail },
+            { "(bytes,bytes)", word(64) .. word(96) .. word(math.maxinteger) .. tail },
+            { "(string,string)", word(64) .. word(96) .. word(math.maxinteger) .. tail },
+            { "(bytes[])", word(32) .. word(1) .. word(math.maxinteger) },
+            { "(bytes[])", word(32) .. word(1 << 59) },
+            { "(bytes[1])", word(32) .. word(math.maxinteger) },
+            { "((bytes))", word(32) .. word(math.maxinteger) },
+            { "(bytes[],bytes)", word(64) .. word(160) .. word(1) .. word(0x7fffffffffffffd0) .. word(0) .. tail },
+            {
+                "(address,uint256,bytes,bytes)",
+                string.rep("\0", 12)
+                    .. string.rep("\x11", 20)
+                    .. word(5)
+                    .. word(0x7fffffffffffffe0)
+                    .. word(128)
+                    .. word(0),
+            },
+        }
+        for _, case in ipairs(cases) do
+            local types, data = case[1], case[2]
+            local ok, err = pcall(evmu.decode_abi, types, data)
+            assert(not ok and err:find("insufficient calldata", 1, true), types)
+            local signature = "f" .. types
+            local _, selector = evmu.parse_func_sig(signature)
+            ok, err = pcall(evmu.decode_calldata, signature, selector .. data)
+            assert(not ok and err:find("insufficient calldata", 1, true), signature)
+        end
+    end)
+    it("checks dynamic data padding at the input boundary", function()
+        for _, types in ipairs({ "(bytes)", "(string)" }) do
+            for _, size in ipairs({ 0, 1, 31, 32, 33 }) do
+                local values = { evmu.raw(string.rep("x", size)) }
+                local data = evmu.encode_abi(types, values)
+                local decoded = evmu.decode_abi(types, data, "raw")
+                assert(decoded[1] == string.rep("x", size))
+                assert(not pcall(evmu.decode_abi, types, data:sub(1, -2)))
+            end
+        end
+    end)
     it("decodes dynamic components whose data is out of order", function()
         local function word(n)
             return string.rep("\0", 24) .. string.pack(">I8", n)

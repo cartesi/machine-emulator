@@ -50,6 +50,7 @@ end
 -- docs:begin get_data_root_hash
 local function get_data_root_hash(data, log2_root_size, hash_type)
     local hash_function = cartesi[hash_type or "keccak256"]
+    assert(WORD_LOG2_SIZE <= log2_root_size and log2_root_size < 63, "invalid tree size")
     assert(#data <= (1 << log2_root_size), "data does not fit in the tree")
     -- Level zero is one hash per word, a trailing partial word zero-padded after the loop.
     local level = {}
@@ -70,7 +71,8 @@ local function get_data_root_hash(data, log2_root_size, hash_type)
         end
         level, pristine = parents, hash_function(pristine, pristine)
     end
-    return level[1]
+    -- Empty data pads to all zeros.
+    return level[1] or pristine
 end
 -- docs:end get_data_root_hash
 

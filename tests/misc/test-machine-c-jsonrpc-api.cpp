@@ -1065,6 +1065,29 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_parse_error_test, spawned_server_fixture)
     BOOST_CHECK(j["id"].is_null());
 }
 
+// What: raw NUL bytes invalidate the entire request, including an otherwise valid prefix.
+// How: send writes with NUL bytes in different positions, check parse errors and unchanged state,
+//      then check that an escaped NUL in a JSON string is still accepted.
+BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_nul_request_test, spawned_server_fixture) {
+    BOOST_REQUIRE_EQUAL(cm_create(m, minimal_machine_config().c_str(), nullptr, nullptr, CM_SHARING_ALL), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_write_reg(m, CM_REG_X1, 42), CM_ERROR_OK);
+    const std::string request = R"({"jsonrpc":"2.0","id":1,"method":"machine.write_reg","params":["x1",99]})";
+    for (const auto &body :
+        {request + '\0', request + '\0' + "garbage", '\0' + request, request.substr(0, 1) + '\0' + request.substr(1),
+            request.substr(0, request.size() - 1) + R"(,"ignored":"a)" + '\0' + "b\"}"}) {
+        const auto response = jsonrpc_post(bound_address, body);
+        BOOST_REQUIRE(response.contains("error"));
+        BOOST_CHECK_EQUAL(response["error"]["code"].get<int>(), -32700);
+        BOOST_CHECK(response["id"].is_null());
+        uint64_t value{};
+        BOOST_REQUIRE_EQUAL(cm_read_reg(m, CM_REG_X1, &value), CM_ERROR_OK);
+        BOOST_CHECK_EQUAL(value, 42);
+    }
+    const auto response = jsonrpc_post(bound_address, R"({"jsonrpc":"2.0","id":"a\u0000b","method":"get_version"})");
+    BOOST_REQUIRE(response.contains("result"));
+    BOOST_CHECK_EQUAL(response["id"].get<std::string>(), std::string("a\0b", 3));
+}
+
 // What: errors quoting bytes that are not valid UTF-8 reach the client, and the server keeps running.
 // How:  POST a body made of such bytes and expect a parse error, then load a directory whose config.json holds one
 //       and expect an error with U+FFFD in its place. The server must answer get_version after each. Finally, send

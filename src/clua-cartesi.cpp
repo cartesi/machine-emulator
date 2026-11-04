@@ -210,7 +210,9 @@ static int cartesi_mod_fromjson(lua_State *L) {
     char message[1024]{};
     try {
         const char *schema_name = luaL_optstring(L, 2, nullptr);
-        clua_fromjson(L, luaL_checkstring(L, 1), schema_name, clua_tojsonschemadict(L, 3));
+        size_t len = 0;
+        const char *data = luaL_checklstring(L, 1, &len);
+        clua_fromjson(L, std::string_view(data, len), schema_name, clua_tojsonschemadict(L, 3));
         return 1;
     } catch (const std::exception &e) {
         std::ignore = snprintf(message, sizeof(message), "%s", e.what());

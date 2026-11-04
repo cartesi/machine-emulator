@@ -66,7 +66,7 @@ local function run(initial_hash, paths, delegate)
                 -- The outsider answers the honest player's bisection requests
                 -- using the forger's history.
                 local response = fabulist.event_handler[event.name](fabulist, table.unpack(arguments))
-                inject(cartesi.fromjson(cartesi.tojson(response, -1, event.response_schema, vgu.protocol.schemas)))
+                inject(cartesi.tojson(response, -1, event.response_schema, vgu.protocol.schemas))
             end
             return future
         end

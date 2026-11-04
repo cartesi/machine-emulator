@@ -53,8 +53,7 @@ do
             end,
         },
     }
-    local ok, err =
-        pcall(transport.answer_event, client, cartesi.tojson({ operation = "move", arguments = {} }), protocol)
+    local ok, err = pcall(transport.answer_event, client, '{"operation":"move","arguments":[]}', protocol)
     assert(not ok and err:find("the event handler produced no value", 1, true))
     ok, err =
         pcall(transport.answer_event, client, cartesi.tojson({ operation = "notice", arguments = { 42 } }), protocol)
@@ -94,6 +93,122 @@ for _, delay in ipairs({ 0, 2, 5, 6 }) do
             server:wait_until(delay + 1)
             assert(future.value == nil, "a reply after expiry was accepted")
         end
+    end)
+end
+
+-- Immediate answers and heterogeneous delayed batches keep container types and apply
+-- binary/index conversions exactly once, including schemas supplied by the binding.
+for _, delay in ipairs({ 0, 3 }) do
+    local schemas = {
+        Arguments = { items = {} },
+        Array = { items = "Default" },
+        Object = {},
+        Hash = "Base64",
+        Record = {
+            array = "Array",
+            object = "Object",
+            hash = "Hash",
+            hex = "Hex",
+            where = "ArrayIndex",
+            proof = "Proof",
+        },
+    }
+    local cases = {
+        { name = "array", schema = "Array", value = {} },
+        { name = "object", schema = "Object", value = {} },
+        {
+            name = "record",
+            schema = "Record",
+            value = {
+                array = {},
+                object = {},
+                hash = hash,
+                hex = '\0"\\',
+                where = 1,
+                label = 'quote " and newline\n',
+                proof = { root_hash = hash, target_hash = hash, sibling_hashes = {} },
+            },
+        },
+    }
+    local events, expected = {}, {}
+    for _, case in ipairs(cases) do
+        events[case.name] = transport.define_event(case.name, "Arguments", case.schema)
+        expected[case.name] = cartesi.tojson(case.value, -1, case.schema, schemas)
+    end
+    local typed_protocol = transport.new_protocol(events, schemas)
+    run_with_server(typed_protocol, function(server, run_client, wait_connections)
+        local client, futures = { event_handler = {} }, {}
+        for _, case in ipairs(cases) do
+            client.event_handler[case.name] = function(self)
+                if delay == 0 then
+                    return case.value
+                end
+                return transport.schedule_response(self, delay, function()
+                    return case.value
+                end)
+            end
+        end
+        run_client(nil, function(wire, line)
+            local encoded, done = transport.answer_event(client, line, typed_protocol)
+            local response = cartesi.fromjson(encoded)
+            if delay == 0 and expected[wire.operation] then
+                assert(
+                    response.id == wire.id and response.value.answer == expected[wire.operation],
+                    "immediate answer changed its encoded payload"
+                )
+            elseif wire.operation == "advance_time" and wire.arguments[1] == delay then
+                assert(#response.value == #cases)
+                for i, case in ipairs(cases) do
+                    assert(
+                        response.value[i].id == futures[i].id and response.value[i].value == expected[case.name],
+                        "batch changed an encoded payload"
+                    )
+                end
+            end
+            return encoded, done
+        end, true)
+        wait_connections(1)
+        for i, case in ipairs(cases) do
+            futures[i] = server:request_from_player(server:get_players()[1], events[case.name], {}, function(value)
+                assert(
+                    cartesi.tojson(value, -1, case.schema, schemas) == expected[case.name],
+                    "response decoded incorrectly"
+                )
+                return value
+            end)
+        end
+        for _, future in ipairs(futures) do
+            assert(future:wait_at_most(5) ~= nil, "typed response was lost")
+        end
+    end)
+end
+
+-- An invalid JSON payload or a payload that is not a string rejects only its own
+-- response, even when another valid response follows it in the same batch.
+for _, malformed in ipairs({ "{", "not JSON", false, 17 }) do
+    local invalid_event = transport.define_event("invalid", "Arguments", "Default")
+    local valid_event = transport.define_event("valid", "Arguments", "Object")
+    local typed_protocol = transport.new_protocol(
+        { invalid = invalid_event, valid = valid_event },
+        { Arguments = { items = {} }, Object = {} }
+    )
+    run_with_server(typed_protocol, function(server, run_client, wait_connections)
+        local invalid, valid
+        run_client(nil, function(wire)
+            if wire.operation == "advance_time" then
+                return { value = { { id = invalid.id, value = malformed }, { id = valid.id, value = "{}" } } }
+            elseif wire.operation == "finish" then
+                return { value = "done" }, true
+            end
+            return { id = wire.id, value = { scheduled_at = 2 } }
+        end, true)
+        wait_connections(1)
+        local owner = server:get_players()[1]
+        invalid = server:request_from_player(owner, invalid_event, {})
+        valid = server:request_from_player(owner, valid_event, {})
+        local value = valid:wait_at_most(3)
+        assert(type(value) == "table" and next(value) == nil, "an invalid response discarded its valid batch peer")
+        assert(invalid:wait_at_most(3) == nil, "a malformed payload was accepted")
     end)
 end
 
@@ -156,7 +271,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         connections[index], index_by_connection[connection] = connection, index
     end
     local collection
-    local encoded_hash = cartesi.fromjson(cartesi.tojson(hash, -1, "Base64"))
+    local encoded_hash = cartesi.tojson(hash, -1, "Base64")
     run_client({ role = "player", label = "same label" }, function(wire)
         if wire.operation == "advance_time" then
             return { value = { { id = collection.id, value = encoded_hash } } }
@@ -275,7 +390,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     run_client({ role = "player", label = "honest" }, function(wire)
         if wire.operation == "advance_time" then
             return {
-                value = { { id = future.id, value = cartesi.tojson(hash, -1, "Base64"):sub(2, -2) } },
+                value = { { id = future.id, value = cartesi.tojson(hash, -1, "Base64") } },
             }
         end
         return { value = true }

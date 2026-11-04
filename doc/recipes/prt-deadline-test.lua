@@ -141,11 +141,7 @@ return function(run_with_server, new_test_player)
                 end,
             },
         }
-        local ok, err = pcall(
-            prtu.answer_event,
-            player,
-            cartesi.tojson({ id = 1, operation = "eliminate_match", arguments = {} }, -1)
-        )
+        local ok, err = pcall(prtu.answer_event, player, '{"id":1,"operation":"eliminate_match","arguments":[]}')
         assert(not ok and err:find("handler failed"), "transport swallowed the handler error")
         assert(not pcall(prtu.schedule_response, player, 3, function() end), "failed handler retained routing")
     end
@@ -431,7 +427,7 @@ return function(run_with_server, new_test_player)
                 local responses = {}
                 local function offer(name, value)
                     responses[#responses + 1] =
-                        { id = ids[name], value = value, eligible = 0, expires = math.maxinteger }
+                        { id = ids[name], value = cartesi.tojson(value), eligible = 0, expires = math.maxinteger }
                 end
                 if block == 1 or block == 4 then
                     offer("timeout", true)
@@ -627,7 +623,7 @@ return function(run_with_server, new_test_player)
                 coroutine.yield()
                 assert(connection.current_event and #connection.events == 2)
             end
-            return { value = event.id and { answer = true } or true, id = event.id }
+            return { value = event.id and { answer = cartesi.tojson(true) } or true, id = event.id }
         end, true)
         wait_connections(1)
         local first <close> = server:request_first_valid(EVERYONE, probe, {}, function(v)
@@ -665,7 +661,7 @@ return function(run_with_server, new_test_player)
         end
         run_client({ role = "player", label = player.label }, function(event, line)
             if event.operation == "probe" then
-                return {}
+                return "[]"
             end
             local encoded, done = prtu.answer_event(player, line)
             if event.operation == "advance_time" then
@@ -673,12 +669,15 @@ return function(run_with_server, new_test_player)
                 if #response.value > 0 then
                     assert(#response.value == 2)
                     local valid = response.value[1]
-                    valid.value.output_data = "!"
+                    local payload = cartesi.fromjson(valid.value)
+                    payload.output_data = "!"
+                    valid.value = cartesi.tojson(payload)
                     local elimination = response.value[2].value
-                    assert(elimination == "nothing", "elimination response has a payload")
+                    assert(elimination == cartesi.tojson("nothing"), "elimination response has a payload")
                     valid.request = "prove_output"
                     local invalid = copy(valid)
-                    invalid.value.computation_hash_left = "!"
+                    payload.computation_hash_left = "!"
+                    invalid.value = cartesi.tojson(payload)
                     table.insert(response.value, 1, invalid)
                     encoded, malformed = cartesi.tojson(response, -1), true
                 end

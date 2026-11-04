@@ -1819,7 +1819,7 @@ run_with_server(function(server, run_client, wait_connections)
     -- An unsolicited player reply cannot advance logical time or invent another claim.
     run_client(nil, function(wire_event)
         if wire_event.operation == "commit_mcycle_claim" then
-            return cartesi.tojson({ id = wire_event.id, value = { answer = "forger" } }, -1)
+            return cartesi.tojson({ id = wire_event.id, value = { answer = cartesi.tojson("forger") } }, -1)
                 .. "\n"
                 .. cartesi.tojson({ value = true }, -1)
         end
@@ -1915,7 +1915,7 @@ for _, stop_during in ipairs({ "root", "output" }) do
             elseif event.operation == "advance_time" then
                 return { value = {} }
             elseif event.operation == "stop_test_root" and stop_during == "output" then
-                return { value = { answer = "valid" }, id = event.id }
+                return { value = { answer = cartesi.tojson("valid") }, id = event.id }
             end
             assert(pending.cortn == referee, "proof wait was not suspended")
             local closer = prtu.new_phase_closer("stop")
@@ -1958,7 +1958,7 @@ do
             local index = offers[next_offer]
             next_offer = next_offer + 1
             if index then
-                return { value = { answer = index }, id = event.id }
+                return { value = { answer = cartesi.tojson(index) }, id = event.id }
             end
             local closer = prtu.new_phase_closer("stop")
             run_client(cartesi.fromjson(closer.hello), function(_, line)

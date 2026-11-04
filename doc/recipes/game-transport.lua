@@ -1,7 +1,7 @@
 -- Coroutine transport shared by the demonstration games. It owns the socket dispatcher, the
 -- logical block barrier, and routing within each request's fixed audience. A reply to an
 -- owner request must come over the owner's connection. Game schemas, reply validity, and
--- narration remain with each game.
+-- narration remain with each game. Response payloads stay as JSON strings until delivery.
 local cartesi = require("cartesi")
 local socket = require("socket")
 local new_clock = require("game-clock")
@@ -22,11 +22,13 @@ local function define_event(name, event_schema, response_schema)
 end
 
 local function new_protocol(events, schemas, trace_env)
+    schemas.EventArguments = { items = "Default" }
     schemas.ClosePhaseEvent = { items = {} }
     schemas.ClosePhaseResponse = "Default"
     schemas.FinishEvent = { items = {} }
     schemas.AdvanceTimeEvent = { items = { "Default" } }
     schemas.Responses = { items = "Default" }
+    schemas.ResponsesEnvelope = { value = "Responses" }
     events.close_phase = define_event("close_phase", "ClosePhaseEvent", "ClosePhaseResponse")
     events.finish = define_event("finish", "FinishEvent")
     events.advance_time = define_event("advance_time", "AdvanceTimeEvent", "Responses")
@@ -141,25 +143,10 @@ end
 
 -- The envelope schema for events under a named argument schema, registered on first use.
 local function ensure_event_envelope_schema(protocol, schema)
-    if not schema then
-        return nil
-    end
+    schema = schema or "EventArguments"
     local name = schema .. "Envelope"
     if not protocol.schemas[name] then
         protocol.schemas[name] = { arguments = schema }
-    end
-    return name
-end
-
--- The envelope schema for responses under a named value schema, registered on first use, so
--- both sides encode {value} with the value's binary fields transformed.
-local function ensure_response_envelope_schema(protocol, schema)
-    if not schema then
-        return nil
-    end
-    local name = schema .. "Envelope"
-    if not protocol.schemas[name] then
-        protocol.schemas[name] = { value = schema }
     end
     return name
 end
@@ -216,12 +203,10 @@ local function schedule_response(client, block, respond)
     assert(type(respond) == "function", "schedule expects a response callback")
     assert(math.type(block) == "integer" and block > request.block, "response must follow its event block")
     client_queues[client]:schedule(request.id, block, function()
-        -- Encode each response with its own event schema before batching. "nothing" has no payload.
+        -- Keep each response encoded under its own event schema until the batch is sent.
         local value = respond()
-        if value == "nothing" then
-            return value
-        end
-        return cartesi.fromjson(cartesi.tojson(value, -1, request.response_schema, request.protocol.schemas))
+        local schema = value == "nothing" and "Default" or request.response_schema
+        return cartesi.tojson(value, -1, schema, request.protocol.schemas)
     end)
     return { scheduled_at = block }
 end
@@ -261,22 +246,22 @@ local function answer_event(client, line, protocol)
         end
     end
     local special = value == "nothing" or value == "done"
-    if not special then
+    if not special and event ~= protocol.events.advance_time then
         if event.response_schema then
             assert(value ~= nil, "the event handler produced no value")
-            if wire_event.id and not (type(value) == "table" and value.scheduled_at) then
-                value =
-                    { answer = cartesi.fromjson(cartesi.tojson(value, -1, event.response_schema, protocol.schemas)) }
+            if not (wire_event.id and type(value) == "table" and value.scheduled_at) then
+                value = cartesi.tojson(value, -1, event.response_schema, protocol.schemas)
+                if wire_event.id then
+                    value = { answer = value }
+                end
             end
         else
             value = true -- Transport acknowledgement, not a handler result.
         end
     end
     local response = { value = value, id = wire_event.id }
-    local response_schema = (wire_event.id or special) and "Default" or event.response_schema
-    local encoded =
-        cartesi.tojson(response, -1, ensure_response_envelope_schema(protocol, response_schema), protocol.schemas)
-    return encoded, value == "done"
+    local schema = event == protocol.events.advance_time and "ResponsesEnvelope" or nil
+    return cartesi.tojson(response, -1, schema, protocol.schemas), value == "done"
 end
 
 -- The player side is a plain blocking loop: announce itself, then read an event, decode its
@@ -478,28 +463,20 @@ local function queue_phase_close(self, phase)
     local entry = {
         kind = "close_phase",
         phase = phase,
-        response_schema = "ClosePhaseResponse",
         pending = { [self.phase_closer] = true },
     }
     send_event(self, self.phase_closer, entry, encode_event(protocol, protocol.events.close_phase, {}))
 end
 
--- Decoding finishes this audience member's request. Protocol acceptance waits
+-- Receiving the envelope finishes this audience member's request. Protocol acceptance waits
 -- for the block barrier, so an early socket reply cannot resume a match.
-local function deliver(self, entry, connection, line)
-    local protocol = self.protocol
+local function deliver(self, entry, connection, response)
     if not entry.pending[connection] then
         return
     end
     entry.pending[connection] = nil
-    local ok, decoded = pcall(
-        cartesi.fromjson,
-        line,
-        ensure_response_envelope_schema(protocol, entry.response_schema),
-        protocol.schemas
-    )
     if entry.kind == "close_phase" or entry.kind == "stop" then
-        assert(ok and decoded.value == "done", "the phase closer did not close the phase asked")
+        assert(response.value == "done", "the phase closer did not close the phase asked")
         entry.resolved = true
         if entry.kind == "stop" then
             self.stopping = true
@@ -508,13 +485,13 @@ local function deliver(self, entry, connection, line)
         end
         return
     end
-    if ok and decoded.value ~= "done" then
+    if response.value ~= "done" then
         entry.replies[#entry.replies + 1] = {
-            value = decoded.value,
+            value = response.value,
             connection = connection,
             order = connection.order,
             received_at = self:get_time(),
-            id = decoded.id,
+            id = response.id,
         }
     end
 end
@@ -527,7 +504,6 @@ local function announce_phase_closer(self, connection, command)
         connection.is_phase_closer = true
         local entry = {
             kind = "stop",
-            response_schema = "ClosePhaseResponse",
             pending = { [connection] = true },
         }
         send_event(self, connection, entry, encode_event(protocol, protocol.events.close_phase, {}))
@@ -608,7 +584,7 @@ function server_meta.__index.adopt(self, sock)
                 if message.id == expected_id then
                     connection.current_event = nil
                     if entry then
-                        deliver(self, entry, connection, line)
+                        deliver(self, entry, connection, message)
                         if message.value == "done" then
                             close_connection(self, connection)
                             return
@@ -712,7 +688,7 @@ function server_meta.__index.get_time(self)
 end
 
 queue_control = function(self, conns, event, arguments, id, future)
-    local entry = { pending = {}, replies = {}, response_schema = id and "Default" or event.response_schema }
+    local entry = { pending = {}, replies = {} }
     self.controls[#self.controls + 1] = entry
     entry.future = future
     local line = encode_event(self.protocol, event, arguments, id, self:get_time())
@@ -958,8 +934,10 @@ local function accept_scheduled_response(self, response)
     then
         return
     end
-    local ok, decoded =
-        pcall(cartesi.fromjson, cartesi.tojson(response.value, -1), future.event.response_schema, protocol.schemas)
+    local ok, decoded
+    if type(response.value) == "string" then
+        ok, decoded = pcall(cartesi.fromjson, response.value, future.event.response_schema, protocol.schemas)
+    end
     if not ok then
         if future.kind == "request_all" and not future.retry_rejected then
             future.pending[response.connection] = nil
@@ -1044,7 +1022,7 @@ function server_meta.__index.step_time(self)
                         future.pending[reply.connection] = nil
                     elseif reply.id == future.id and (type(reply.value) == "table" or reply.value == "nothing") then
                         local block = type(reply.value) == "table" and reply.value.scheduled_at
-                        local answer = reply.value == "nothing" and reply.value or reply.value.answer
+                        local answer = reply.value == "nothing" and cartesi.tojson(reply.value) or reply.value.answer
                         if math.type(block) == "integer" and block > future.block then
                             future.pending[reply.connection] = block
                         elseif answer ~= nil then
@@ -1145,7 +1123,7 @@ function server_meta.__index.step_time(self)
     local block = self.clock:next_block(boundaries)
     if block then
         self.clock:advance(block)
-        local entry = { pending = {}, replies = {}, response_schema = "Responses" }
+        local entry = { pending = {}, replies = {} }
         self.batch = { entry }
         local line = encode_event(protocol, protocol.events.advance_time, { block })
         for _, connection in ipairs(self:get_players()) do

@@ -1591,6 +1591,30 @@ describe("hash-tree.lua", function()
         end)
     end)
 
+    describe("get_data_root_hash", function()
+        it("hashes empty data as a pristine tree", function()
+            local zero_word = string.rep("\0", 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE)
+            for _, log2_root_size in ipairs({ cartesi.HASH_TREE_LOG2_WORD_SIZE, 12, 62 }) do
+                expect.equal(
+                    hash_tree.get_data_root_hash("", log2_root_size),
+                    hash_tree.get_data_root_hash(zero_word, log2_root_size)
+                )
+            end
+        end)
+
+        it("rejects tree sizes outside the supported range", function()
+            for _, log2_root_size in ipairs({ cartesi.HASH_TREE_LOG2_WORD_SIZE - 1, 63, 64 }) do
+                expect.fail(function()
+                    hash_tree.get_data_root_hash("data", log2_root_size)
+                end, "invalid tree size")
+            end
+            expect.fail(function()
+                local log2_root_size = cartesi.HASH_TREE_LOG2_WORD_SIZE
+                hash_tree.get_data_root_hash(string.rep("\0", (1 << log2_root_size) + 1), log2_root_size)
+            end, "data does not fit in the tree")
+        end)
+    end)
+
     describe("verify_slice", function()
         it("verifies proofs at the outputs Merkle tree depth", function()
             local proofs = hash_tree.frontier_next_proofs(hash_tree.frontier(H, "keccak256"), make_leaves(10))

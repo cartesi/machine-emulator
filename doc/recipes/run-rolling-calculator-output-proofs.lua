@@ -78,12 +78,19 @@ local function commit(_)
     backup_machine = nil
 end
 
+-- Another process may take the address once it is released, so the restored server may have to stay where it is
+local try_rebind_server = util.protect(function(m, address)
+    return m:rebind_server(address)
+end)
+
 local function revert(m)
     assert(backup_machine, "no snapshot to revert to")
     local address = m:get_server_address()
     m:shutdown_server()
     m:swap(backup_machine)
-    m:rebind_server(address)
+    if not try_rebind_server(m, address) then
+        stderr("restored server stays at '%s'\n", m:get_server_address())
+    end
     backup_machine = nil
 end
 

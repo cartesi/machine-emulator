@@ -1141,21 +1141,21 @@ The server exposes a JSON-RPC interface through which the `cartesi-machine` comm
 
 To avoid confusion, it is best to run the server and client in separate shells in the playground container.
 Leaving the existing shell for the client, open a separate shell for the server (For example, by running `docker exec -it playground /bin/bash`), then run
-```{.bash key=cmdline_remote outputs=server,client replace=source/server}
+```{.bash key=cmdline_remote vars=port->ports/cmdline_remote outputs=server,client replace=source/server}
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8080
+    --server-address=127.0.0.1:$port
 # docs:end server
 } > server 2>&1 &
 srv_pid=$!
 {
 # docs:begin client
 while ! cartesi-machine \
-    --remote-address=127.0.0.1:8080 \
+    --remote-address=127.0.0.1:$port \
     --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
-    --remote-address=127.0.0.1:8080 \
+    --remote-address=127.0.0.1:$port \
     --remote-shutdown
 # docs:end client
 } > client 2>&1
@@ -1167,7 +1167,7 @@ wait "$srv_pid"
 The `--server-address=<address>` command-line option specifies the address and port the server will listen to.
 
 :::note
-In this case, since we selected `127.0.0.1:8080`, the client must run in the same container in order to communicate with the server.
+In this case, since the server listens on the loopback address `127.0.0.1`, the client must run in the same container in order to communicate with the server.
 To be accessible from outside the container, the `--server-address` option would have to refer to an address and port that were _exposed_ by the container.
 :::
 
@@ -1200,21 +1200,21 @@ The client detects the machine is halted and shuts down the server, as requested
 When it is desirable to leave the server running and preserve the instantiated machine, omit the `--remote-shutdown`
 command-line option and add the `--no-remote-destroy`.
 For example, assuming the remote server has just been run:
-```{.bash key=cmdline_remote_end outputs=begin-end-server,end-client,begin-client replace=source/server}
+```{.bash key=cmdline_remote_end vars=port->ports/cmdline_remote_end outputs=begin-end-server,end-client,begin-client replace=source/server}
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8081
+    --server-address=127.0.0.1:$port
 # docs:end server
 } > begin-end-server 2>&1 &
 srv_pid=$!
 {
 # docs:begin begin-client
 while ! cartesi-machine \
-    --remote-address=127.0.0.1:8081 \
+    --remote-address=127.0.0.1:$port \
     --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
-    --remote-address=127.0.0.1:8081 \
+    --remote-address=127.0.0.1:$port \
     --no-remote-destroy \
     --max-mcycle=1Mi \
     -- echo "Still here!"
@@ -1223,7 +1223,7 @@ cartesi-machine \
 {
 # docs:begin end-client
 cartesi-machine \
-    --remote-address=127.0.0.1:8081 \
+    --remote-address=127.0.0.1:$port \
     --remote-shutdown \
     --no-remote-create
 # docs:end end-client
@@ -1413,25 +1413,25 @@ xgenext2fs \
 Running a Rolling Cartesi Machine in the command line requires using the `cartesi-jsonrpc-machine` server in combination with the `cartesi-machine` client.
 The server provides the fork functionality the client uses to roll the machine state back when an input to an advance-state request is rejected, or after an inspect-state request.
 With the encoded inputs and `calc.ext2` in the working directory, run the remote server with the command
-```{.bash key=rolling_calc_run vars=rolling_calc_encode,calc_ext2->calc_ext2/calc.ext2/path outputs=server,client1,client2,output-0-input-0.bin,output-1-input-2.bin,output-2-input-3.bin,output-3-input-4.bin,output-4-input-5.bin,rejected-output-1-input-1.bin,output-0-input-0-proof.lua,output-1-input-2-proof.lua,output-2-input-3-proof.lua,output-3-input-4-proof.lua,output-4-input-5-proof.lua,input-0-outputs-merkle-root.bin,input-2-outputs-merkle-root.bin,input-3-outputs-merkle-root.bin,input-4-outputs-merkle-root.bin,input-5-outputs-merkle-root.bin,input-0-outputs-merkle-root-proof.lua,input-2-outputs-merkle-root-proof.lua,input-3-outputs-merkle-root-proof.lua,input-4-outputs-merkle-root-proof.lua,input-5-outputs-merkle-root-proof.lua,epoch-0-state-hash.bin,query-report-0.bin replace=source/server}
+```{.bash key=rolling_calc_run vars=rolling_calc_encode,calc_ext2->calc_ext2/calc.ext2/path,port->ports/rolling_calc_run outputs=server,client1,client2,output-0-input-0.bin,output-1-input-2.bin,output-2-input-3.bin,output-3-input-4.bin,output-4-input-5.bin,rejected-output-1-input-1.bin,output-0-input-0-proof.lua,output-1-input-2-proof.lua,output-2-input-3-proof.lua,output-3-input-4-proof.lua,output-4-input-5-proof.lua,input-0-outputs-merkle-root.bin,input-2-outputs-merkle-root.bin,input-3-outputs-merkle-root.bin,input-4-outputs-merkle-root.bin,input-5-outputs-merkle-root.bin,input-0-outputs-merkle-root-proof.lua,input-2-outputs-merkle-root-proof.lua,input-3-outputs-merkle-root-proof.lua,input-4-outputs-merkle-root-proof.lua,input-5-outputs-merkle-root-proof.lua,epoch-0-state-hash.bin,query-report-0.bin replace=source/server}
 ln -sf $rolling_calc_encode/*.bin .
 rm -f calc.ext2 calc-server.address
 ln -sf "$calc_ext2" .
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8082
+    --server-address=127.0.0.1:$port
 # docs:end server
 } > server 2>&1 &
 srv_pid=$!
 {
 # docs:begin client1
 while ! cartesi-machine \
-    --remote-address=127.0.0.1:8082 \
+    --remote-address=127.0.0.1:$port \
     --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8082 \
+    --remote-address=127.0.0.1:$port \
     --remote-address=filename:calc-server.address \
     --no-remote-destroy \
     --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
@@ -1463,7 +1463,7 @@ From a different shell into the same container, run the client to process the fi
 ```
 This run instantiates the machine from the `calc.ext2` flash drive and advances inputs 0 to 2.
 Passing `--no-remote-destroy` and omitting `--remote-shutdown` leaves both the server and the machine it holds alive for the next epoch.
-The client connects to `127.0.0.1:8082`, and when it exits, it records in `calc-server.address` the address of the server it leaves alive.
+The client connects to the address given explicitly, and when it exits, it records in `calc-server.address` the address of the server it leaves alive.
 Rolling back a rejected input replaces the server with a fork taken before that input.
 The client rebinds the fork to the original address.
 If another process took that address in the meantime, the fork keeps its own address and the client warns and continues.
@@ -1618,24 +1618,24 @@ In that case, the `cartesi-machine` command-line utility will detect the excepti
 
 To run the application, load the template into a server and feed it the same inputs.
 With the encoded inputs and the stored template in the working directory, run the remote server with the command
-```{.bash key=rolling_calc_template_run vars=rolling_calc_encode,tmpl->rolling_calc_template/rolling-calculator-template/path outputs=server,client,output-0-input-0.bin,output-1-input-2.bin,output-2-input-3.bin,output-3-input-4.bin,output-4-input-5.bin replace=source/server}
+```{.bash key=rolling_calc_template_run vars=rolling_calc_encode,tmpl->rolling_calc_template/rolling-calculator-template/path,port->ports/rolling_calc_template_run outputs=server,client,output-0-input-0.bin,output-1-input-2.bin,output-2-input-3.bin,output-3-input-4.bin,output-4-input-5.bin replace=source/server}
 ln -sf $rolling_calc_encode/input-?.bin .
 ln -sfn "$tmpl" rolling-calculator-template
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8083
+    --server-address=127.0.0.1:$port
 # docs:end server
 } > server 2>&1 &
 srv_pid=$!
 {
 # docs:begin client
 while ! cartesi-machine \
-    --remote-address=127.0.0.1:8083 \
+    --remote-address=127.0.0.1:$port \
     --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8083 \
+    --remote-address=127.0.0.1:$port \
     --remote-shutdown \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:6,output_proof:,print_input_state_hashes \
     --load="rolling-calculator-template"
@@ -1727,21 +1727,21 @@ An *mcycle computation hash* covers the entire epoch, with one leaf every 2<sup>
 A *uarch cycle computation hash* covers one of these mcycle periods, with one leaf after each uarch cycle.
 
 We compute them for the first epoch of the calculator, inputs 0 to 2 fed to its stored template.
-With the template and the encoded inputs in the working directory, start a `cartesi-jsonrpc-machine` server at `127.0.0.1:8095` as in the previous sections, and run the client
-```{.bash key=prt_mch vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode outputs=mch.bin,mch_line replace=source/client}
+With the template and the encoded inputs in the working directory, start a `cartesi-jsonrpc-machine` server as in the previous sections, and run the client
+```{.bash key=prt_mch vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,port->ports/prt_mch outputs=mch.bin,mch_line replace=source/client}
 rm -f rolling-calculator-template
 ln -sf "$tmpl" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
 {
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8095
+    --server-address=127.0.0.1:$port
 } > /dev/null 2>&1 &
-while ! netstat -ant 2>&1 | grep '\<8095\>' | grep -q LISTEN; do sleep 1; done
+while ! netstat -ant 2>&1 | grep '\<$port\>' | grep -q LISTEN; do sleep 1; done
 {
 # docs:begin client
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8095 \
+    --remote-address=127.0.0.1:$port \
     --remote-shutdown \
     --load=rolling-calculator-template \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
@@ -1760,7 +1760,7 @@ The optional `log2_bundle_mcycle_count` sub-key groups 2<sup>*n*</sup> consecuti
 The epoch need not be fed in one execution.
 With `resumable:true`, `--cmio-advance-state` saves the bookkeeping another execution needs in a set of epoch files, updated after every completed input.
 To run the same epoch in two executions, start a server that stays alive between them
-```{.bash key=rolling_calc_mch_resumable vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,prt_mch outputs=server,first,second,mch.bin,mch_line replace=source/server}
+```{.bash key=rolling_calc_mch_resumable vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,prt_mch,port->ports/rolling_calc_mch_resumable outputs=server,first,second,mch.bin,mch_line replace=source/server}
 rm -f rolling-calculator-template
 ln -sf "$tmpl" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
@@ -1768,16 +1768,16 @@ rm -f epoch-state.bin outputs.json computation.json mch.bin
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8088
+    --server-address=127.0.0.1:$port
 # docs:end server
 } > server 2>&1 &
 srv_pid=$!
-while ! netstat -ant 2>&1 | grep '\<8088\>' | grep -q LISTEN; do sleep 1; done
+while ! netstat -ant 2>&1 | grep '\<$port\>' | grep -q LISTEN; do sleep 1; done
 {
 # docs:begin first
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8088 \
+    --remote-address=127.0.0.1:$port \
     --no-remote-destroy \
     --load=rolling-calculator-template \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:1,resumable:true,end_epoch:false,state_hash:epoch-state.bin,outputs_frontier:outputs.json,output_proof: \
@@ -1789,7 +1789,7 @@ first_status=$?
 # docs:begin second
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8088 \
+    --remote-address=127.0.0.1:$port \
     --no-remote-create \
     --remote-shutdown \
     --cmio-advance-state=input_file_index_begin:1,input_file_index_end:3,resumable:true,begin_epoch:false,state_hash:epoch-state.bin,outputs_frontier:outputs.json,output_proof: \
@@ -1832,20 +1832,20 @@ start=$(grep '^Cycles:' $prt_mch/client | sed -n 1p | cut -d' ' -f2)
 stop=$(grep '^Cycles:' $prt_mch/client | sed -n 3p | cut -d' ' -f2)
 printf '%d' $(( (stop - start) >> 10 ))
 ```
-```{.bash key=rolling_calc_uch vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,period->rolling_calc_uch_period/stdout outputs=uch_line replace=source/client}
+```{.bash key=rolling_calc_uch vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,period->rolling_calc_uch_period/stdout,port->ports/rolling_calc_uch outputs=uch_line replace=source/client}
 rm -f rolling-calculator-template
 ln -sf "$tmpl" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
 {
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8087
+    --server-address=127.0.0.1:$port
 } > /dev/null 2>&1 &
-while ! netstat -ant 2>&1 | grep '\<8087\>' | grep -q LISTEN; do sleep 1; done
+while ! netstat -ant 2>&1 | grep '\<$port\>' | grep -q LISTEN; do sleep 1; done
 {
 # docs:begin client
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8087 \
+    --remote-address=127.0.0.1:$port \
     --remote-shutdown \
     --load=rolling-calculator-template \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:1 \
@@ -2874,21 +2874,21 @@ It then instantiates a remote machine by calling `cartesi_jsonrpc_machine` with 
 The `<close>` annotation combined with `set_cleanup_call(cartesi.jsonrpc.SHUTDOWN)` retires the server automatically when the script exits.
 
 Recall that, to run a server inside the playground, we opened a separate shell into the same playground container (for example, by running `docker exec -it playground /bin/bash`), and then ran the `cartesi-jsonrpc-machine` server in it
-```{.bash key=lua_remote outputs=server,client vars=config->nothing_to_do/config-nothing-to-do.lua/path depends=run_remote_config replace=source/server}
+```{.bash key=lua_remote outputs=server,client vars=config->nothing_to_do/config-nothing-to-do.lua/path,port->ports/lua_remote depends=run_remote_config replace=source/server}
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8084
+    --server-address=127.0.0.1:$port
 # docs:end server
 } > server 2>&1 &
 srv_pid=$!
-while ! cartesi-machine --remote-address=127.0.0.1:8084 --remote-health-check > /dev/null 2>&1; do sleep 1; done
+while ! cartesi-machine --remote-address=127.0.0.1:$port --remote-health-check > /dev/null 2>&1; do sleep 1; done
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/run-remote-config.lua" .
 {
 # docs:begin client
 lua5.4 run-remote-config.lua \
-    127.0.0.1:8084 \
+    127.0.0.1:$port \
     config-nothing-to-do
 # docs:end client
 } > client 2>&1
@@ -2972,23 +2972,23 @@ If the reason was `cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT`, the script de
 
 Here is what a session looks like.
 First, open a separate shell into the same docker container (for example, by running `docker exec -it playground /bin/bash`) and run the `cartesi-jsonrpc-machine` server in it
-```{.bash key=lua_rolling_calculator outputs=client,server depends=run_rolling_calculator vars=template->rolling_calc_template/rolling-calculator-template/path replace=source/server}
+```{.bash key=lua_rolling_calculator outputs=client,server depends=run_rolling_calculator vars=template->rolling_calc_template/rolling-calculator-template/path,port->ports/lua_rolling_calculator replace=source/server}
 rm -f rolling-calculator-template run-rolling-calculator.lua expression-*.txt
 ln -sfn "$template" rolling-calculator-template
 ln -sf "$RECIPES_DIR/run-rolling-calculator.lua" .
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8085
+    --server-address=127.0.0.1:$port
 # docs:end server
 } > server 2>&1 &
 srv_pid=$!
-while ! cartesi-machine --remote-address=127.0.0.1:8085 --remote-health-check 2>/dev/null; do sleep 1; done
+while ! cartesi-machine --remote-address=127.0.0.1:$port --remote-health-check 2>/dev/null; do sleep 1; done
 {
 # docs:begin client
 printf '6*2^1024 + 3*2^512' > expression-0.txt
 printf '1+(' > expression-1.txt
-lua5.4 run-rolling-calculator.lua 127.0.0.1:8085
+lua5.4 run-rolling-calculator.lua 127.0.0.1:$port
 # docs:end client
 } > client 2>&1
 client_status=$?
@@ -3055,22 +3055,22 @@ same `verify_slice` used above.
 Here is what a session looks like.
 As before, open a separate shell into the same docker container and run the `cartesi-jsonrpc-machine` server
 in it
-```{.bash key=lua_rolling_calculator_output_proofs outputs=client,server depends=run_rolling_calculator_output_proofs vars=template->rolling_calc_template/rolling-calculator-template/path replace=source/server}
+```{.bash key=lua_rolling_calculator_output_proofs outputs=client,server depends=run_rolling_calculator_output_proofs vars=template->rolling_calc_template/rolling-calculator-template/path,port->ports/lua_rolling_calculator_output_proofs replace=source/server}
 rm -f rolling-calculator-template run-rolling-calculator-output-proofs.lua expression-*.txt
 ln -sfn "$template" rolling-calculator-template
 ln -sf "$RECIPES_DIR/run-rolling-calculator-output-proofs.lua" .
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8089
+    --server-address=127.0.0.1:$port
 # docs:end server
 } > server 2>&1 &
 srv_pid=$!
-while ! cartesi-machine --remote-address=127.0.0.1:8089 --remote-health-check 2>/dev/null; do sleep 1; done
+while ! cartesi-machine --remote-address=127.0.0.1:$port --remote-health-check 2>/dev/null; do sleep 1; done
 {
 # docs:begin client
 printf '6*2^1024 + 3*2^512' > expression-0.txt
-lua5.4 run-rolling-calculator-output-proofs.lua 127.0.0.1:8089
+lua5.4 run-rolling-calculator-output-proofs.lua 127.0.0.1:$port
 # docs:end client
 } > client 2>&1
 client_status=$?
@@ -3745,23 +3745,23 @@ ls *.bin > ls_bin
 ```
 
 Then run the server and client, instantiating the machine directly from `/home/dapp/puppet`:
-```{.bash key=rolling_puppet vars=rolling_puppet_encode outputs=server,client,output-0-input-0.bin,input-0-outputs-merkle-root.bin,output-0-input-0-proof.lua,query-report-0.bin replace=source/server}
+```{.bash key=rolling_puppet vars=rolling_puppet_encode,port->ports/rolling_puppet outputs=server,client,output-0-input-0.bin,input-0-outputs-merkle-root.bin,output-0-input-0-proof.lua,query-report-0.bin replace=source/server}
 ln -sf $rolling_puppet_encode/*.bin .
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8086
+    --server-address=127.0.0.1:$port
 # docs:end server
 } > server 2>&1 &
 srv_pid=$!
 {
 # docs:begin client
 while ! cartesi-machine \
-    --remote-address=127.0.0.1:8086 \
+    --remote-address=127.0.0.1:$port \
     --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8086 \
+    --remote-address=127.0.0.1:$port \
     --remote-shutdown \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:2,print_input_state_hashes \
     --cmio-inspect-state=print_query_state_hashes \
@@ -5303,7 +5303,7 @@ io.write(cartesi.tohex(machine:get_root_hash()))
 
 To run the game, start the referee with the initial state hash and the epoch's input files.
 These files represent the inputs posted to the blockchain:
-```{.bash key=vg_run vars=initial_state_hash->vg_initial_state_hash/stdout,template->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,rolling_calc_run depends=vg_source,vg_util,vg_dishonest,game_transport_src,game_output_src,game_clock_src,game_response_queue_src outputs=referee,claims.txt,verdict.txt,outputs.txt,round_1_inputs.txt,round_1_mcycles.txt,round_1_uarch_cycles.txt,round_1_proofs.txt,round_2_inputs.txt,round_2_mcycles.txt,round_2_uarch_cycles.txt,round_2_proofs.txt,round_3_inputs.txt,round_3_mcycles.txt,round_3_uarch_cycles.txt,round_3_proofs.txt,round_1_elided.txt,round_2_elided.txt,round_3_elided.txt replace=source/server}
+```{.bash key=vg_run vars=initial_state_hash->vg_initial_state_hash/stdout,template->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,rolling_calc_run,port->ports/vg_run depends=vg_source,vg_util,vg_dishonest,game_transport_src,game_output_src,game_clock_src,game_response_queue_src outputs=referee,claims.txt,verdict.txt,outputs.txt,round_1_inputs.txt,round_1_mcycles.txt,round_1_uarch_cycles.txt,round_1_proofs.txt,round_2_inputs.txt,round_2_mcycles.txt,round_2_uarch_cycles.txt,round_2_proofs.txt,round_3_inputs.txt,round_3_mcycles.txt,round_3_uarch_cycles.txt,round_3_proofs.txt,round_1_elided.txt,round_2_elided.txt,round_3_elided.txt replace=source/server}
 ln -sf $rolling_calc_encode/input-[012].bin .
 ln -sf "$RECIPES_DIR/vg.lua" "$RECIPES_DIR/vg-dishonest.lua" "$RECIPES_DIR/vgu.lua" .
 ln -sfn "$template" "$initial_state_hash"
@@ -5320,41 +5320,41 @@ cartesi-rollup-data.lua --utf8-payload encode advance > fake-input-2.bin <<EOF
 }
 EOF
 : > outputs.txt
-trap 'lua5.4 vg.lua phase_closer 127.0.0.1:8090 stop > /dev/null 2>&1 || true; wait' EXIT
+trap 'lua5.4 vg.lua phase_closer 127.0.0.1:$port stop > /dev/null 2>&1 || true; wait' EXIT
 {
 # The calculator emits output 1 for input 2. This label is only narration context.
 export LUA_INIT_5_4='require("vgu").story.output_inputs = { [1] = "input-2.bin" }'
 # docs:begin server
-lua5.4 vg.lua referee 127.0.0.1:8090 "$initial_state_hash" \
+lua5.4 vg.lua referee 127.0.0.1:$port "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 # docs:end server
 } > /dev/null &
-while ! netstat -ant 2>&1 | grep '\<8090\>' | grep -q LISTEN; do sleep 1; done
+while ! netstat -ant 2>&1 | grep '\<$port\>' | grep -q LISTEN; do sleep 1; done
 {
 # docs:begin honest
-lua5.4 vg.lua honest 127.0.0.1:8090 "$initial_state_hash"
+lua5.4 vg.lua honest 127.0.0.1:$port "$initial_state_hash"
 # docs:end honest
 } > /dev/null &
-while [ "$(($(netstat -nt 2>&1 | grep '\<8090\>' | grep -c ESTABLISHED) / 2))" -lt 1 ]; do sleep 1; done
+while [ "$(($(netstat -nt 2>&1 | grep '\<$port\>' | grep -c ESTABLISHED) / 2))" -lt 1 ]; do sleep 1; done
 {
 # docs:begin dishonest
-lua5.4 vg-dishonest.lua forger 127.0.0.1:8090 "$initial_state_hash" 2 fake-input-2.bin
+lua5.4 vg-dishonest.lua forger 127.0.0.1:$port "$initial_state_hash" 2 fake-input-2.bin
 # docs:end dishonest
 } > /dev/null &
-while [ "$(($(netstat -nt 2>&1 | grep '\<8090\>' | grep -c ESTABLISHED) / 2))" -lt 2 ]; do sleep 1; done
+while [ "$(($(netstat -nt 2>&1 | grep '\<$port\>' | grep -c ESTABLISHED) / 2))" -lt 2 ]; do sleep 1; done
 {
 # docs:begin tamperer
-lua5.4 vg-dishonest.lua tamperer 127.0.0.1:8090 "$initial_state_hash" 2 100
+lua5.4 vg-dishonest.lua tamperer 127.0.0.1:$port "$initial_state_hash" 2 100
 # docs:end tamperer
 } > /dev/null &
-while [ "$(($(netstat -nt 2>&1 | grep '\<8090\>' | grep -c ESTABLISHED) / 2))" -lt 3 ]; do sleep 1; done
+while [ "$(($(netstat -nt 2>&1 | grep '\<$port\>' | grep -c ESTABLISHED) / 2))" -lt 3 ]; do sleep 1; done
 {
 # docs:begin no_rollback
-lua5.4 vg-dishonest.lua no-rollback 127.0.0.1:8090 "$initial_state_hash"
+lua5.4 vg-dishonest.lua no-rollback 127.0.0.1:$port "$initial_state_hash"
 # docs:end no_rollback
 } > /dev/null &
-while [ "$(($(netstat -nt 2>&1 | grep '\<8090\>' | grep -c ESTABLISHED) / 2))" -lt 4 ]; do sleep 1; done
-lua5.4 vg.lua phase_closer 127.0.0.1:8090
+while [ "$(($(netstat -nt 2>&1 | grep '\<$port\>' | grep -c ESTABLISHED) / 2))" -lt 4 ]; do sleep 1; done
+lua5.4 vg.lua phase_closer 127.0.0.1:$port
 while [ ! -s outputs.txt ]; do sleep 1; done
 # Abbreviate each bisection level, then show the round's proofs in full.
 for round in 1 2 3; do
@@ -5366,18 +5366,18 @@ done
 cat claims.txt round_1_elided.txt round_2_elided.txt round_3_elided.txt verdict.txt outputs.txt > referee
 ```
 Then connect the honest player, which processes the inputs announced by the referee:
-```{.bash replace=vg_run/source/honest vars=initial_state_hash->vg_initial_state_hash/stdout}
+```{.bash replace=vg_run/source/honest}
 ```
 The first dishonest player is the forger, which substitutes `fake-input-2.bin` for input 2.
 The fabricated input asks for `2^1024`, whereas the posted input asks for `2^2048`.
 All other fields remain the same:
-```{.bash replace=vg_run/source/dishonest vars=initial_state_hash->vg_initial_state_hash/stdout}
+```{.bash replace=vg_run/source/dishonest}
 ```
 The second is the tamperer, which processes the posted inputs but corrupts memory at mcycle offset 100 within input 2:
-```{.bash replace=vg_run/source/tamperer vars=initial_state_hash->vg_initial_state_hash/stdout}
+```{.bash replace=vg_run/source/tamperer}
 ```
 The third is the no-rollback player, which keeps the rejecting machine when input 1 finishes instead of restoring the pre-input snapshot:
-```{.bash replace=vg_run/source/no_rollback vars=initial_state_hash->vg_initial_state_hash/stdout}
+```{.bash replace=vg_run/source/no_rollback}
 ```
 All four players start from the same machine state, but reach different final state hashes.
 The referee first collects their claims:
@@ -5439,49 +5439,49 @@ io.write(cartesi.tohex(fs.read_file("$rolling_calc_run/epoch-0-state-hash.bin"))
 ```
 
 Start the referee as before:
-```{.bash key=vg_sybil_run vars=initial_state_hash->vg_initial_state_hash/stdout,final_state_hash->vg_final_state_hash/stdout,template->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,vg_run depends=vg_source,vg_util,vg_dishonest,game_transport_src,game_output_src,game_clock_src,game_response_queue_src outputs=claims.txt,round_1_timeouts.txt,round_1_proofs.txt,verdict.txt replace=source/server}
+```{.bash key=vg_sybil_run vars=initial_state_hash->vg_initial_state_hash/stdout,final_state_hash->vg_final_state_hash/stdout,template->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,vg_run,port->ports/vg_sybil_run depends=vg_source,vg_util,vg_dishonest,game_transport_src,game_output_src,game_clock_src,game_response_queue_src outputs=claims.txt,round_1_timeouts.txt,round_1_proofs.txt,verdict.txt replace=source/server}
 ln -sf $rolling_calc_encode/input-[012].bin .
 ln -sf $vg_run/fake-input-2.bin .
 ln -sf "$RECIPES_DIR/vg.lua" "$RECIPES_DIR/vg-dishonest.lua" "$RECIPES_DIR/vgu.lua" .
 ln -sfn "$template" "$initial_state_hash"
 : > outputs.txt
-trap 'lua5.4 vg.lua phase_closer 127.0.0.1:8090 stop > /dev/null 2>&1 || true; wait' EXIT
+trap 'lua5.4 vg.lua phase_closer 127.0.0.1:$port stop > /dev/null 2>&1 || true; wait' EXIT
 {
 # docs:begin server
-lua5.4 vg.lua referee 127.0.0.1:8090 "$initial_state_hash" \
+lua5.4 vg.lua referee 127.0.0.1:$port "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 # docs:end server
 } > /dev/null &
-while ! netstat -ant 2>&1 | grep '\<8090\>' | grep -q LISTEN; do sleep 1; done
+while ! netstat -ant 2>&1 | grep '\<$port\>' | grep -q LISTEN; do sleep 1; done
 {
 # docs:begin idle
-lua5.4 vg-dishonest.lua idle 127.0.0.1:8090 "$initial_state_hash"
+lua5.4 vg-dishonest.lua idle 127.0.0.1:$port "$initial_state_hash"
 # docs:end idle
 } > /dev/null &
-while [ "$(($(netstat -nt 2>&1 | grep '\<8090\>' | grep -c ESTABLISHED) / 2))" -lt 1 ]; do sleep 1; done
+while [ "$(($(netstat -nt 2>&1 | grep '\<$port\>' | grep -c ESTABLISHED) / 2))" -lt 1 ]; do sleep 1; done
 {
 # docs:begin forger
-lua5.4 vg-dishonest.lua forger 127.0.0.1:8090 "$initial_state_hash" 2 fake-input-2.bin
+lua5.4 vg-dishonest.lua forger 127.0.0.1:$port "$initial_state_hash" 2 fake-input-2.bin
 # docs:end forger
 } > /dev/null &
-while [ "$(($(netstat -nt 2>&1 | grep '\<8090\>' | grep -c ESTABLISHED) / 2))" -lt 2 ]; do sleep 1; done
+while [ "$(($(netstat -nt 2>&1 | grep '\<$port\>' | grep -c ESTABLISHED) / 2))" -lt 2 ]; do sleep 1; done
 {
 # docs:begin fabulist
-lua5.4 vg-dishonest.lua fabulist 127.0.0.1:8090 "$initial_state_hash" \
+lua5.4 vg-dishonest.lua fabulist 127.0.0.1:$port "$initial_state_hash" \
     2 fake-input-2.bin "$final_state_hash"
 # docs:end fabulist
 } > /dev/null &
-while [ "$(($(netstat -nt 2>&1 | grep '\<8090\>' | grep -c ESTABLISHED) / 2))" -lt 3 ]; do sleep 1; done
-lua5.4 vg.lua phase_closer 127.0.0.1:8090
+while [ "$(($(netstat -nt 2>&1 | grep '\<$port\>' | grep -c ESTABLISHED) / 2))" -lt 3 ]; do sleep 1; done
+lua5.4 vg.lua phase_closer 127.0.0.1:$port
 while [ ! -s outputs.txt ]; do sleep 1; done
 ```
 The `idle` role computes honestly and submits the correct final hash, but lets its first bisection request time out, relying on the other player claiming the same hash:
-```{.bash replace=vg_sybil_run/source/idle vars=initial_state_hash->vg_initial_state_hash/stdout}
+```{.bash replace=vg_sybil_run/source/idle}
 ```
 Connect the adversary's two players:
-```{.bash replace=vg_sybil_run/source/forger vars=initial_state_hash->vg_initial_state_hash/stdout}
+```{.bash replace=vg_sybil_run/source/forger}
 ```
-```{.bash replace=vg_sybil_run/source/fabulist vars=initial_state_hash->vg_initial_state_hash/stdout,final_state_hash->vg_final_state_hash/stdout}
+```{.bash replace=vg_sybil_run/source/fabulist}
 ```
 
 The idle player and the fabulist submit the same correct final hash:
@@ -5504,25 +5504,25 @@ The Sybils agreed on a false history, and the referee checked a valid transition
 This is what can happen if an honest player relies on someone else to defend the correct final hash: the hash is present, but no honest player defends it.
 
 Now repeat the game, replacing the idle player with the ordinary honest player:
-```{.bash key=vg_sybil_defended_run vars=initial_state_hash->vg_initial_state_hash/stdout,final_state_hash->vg_final_state_hash/stdout,vg_sybil_run outputs=claims.txt,round_1_proofs.txt,verdict.txt replace=source/honest}
+```{.bash key=vg_sybil_defended_run vars=initial_state_hash->vg_initial_state_hash/stdout,final_state_hash->vg_final_state_hash/stdout,vg_sybil_run,port->ports/vg_sybil_defended_run outputs=claims.txt,round_1_proofs.txt,verdict.txt replace=source/honest}
 ln -sf "$vg_sybil_run"/{input-[012].bin,fake-input-2.bin,vg.lua,vg-dishonest.lua,vgu.lua,"$initial_state_hash"} .
 : > outputs.txt
-trap 'lua5.4 vg.lua phase_closer 127.0.0.1:8090 stop > /dev/null 2>&1 || true; wait' EXIT
-lua5.4 vg.lua referee 127.0.0.1:8090 "$initial_state_hash" \
+trap 'lua5.4 vg.lua phase_closer 127.0.0.1:$port stop > /dev/null 2>&1 || true; wait' EXIT
+lua5.4 vg.lua referee 127.0.0.1:$port "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin > /dev/null &
-while ! netstat -ant 2>&1 | grep '\<8090\>' | grep -q LISTEN; do sleep 1; done
+while ! netstat -ant 2>&1 | grep '\<$port\>' | grep -q LISTEN; do sleep 1; done
 {
 # docs:begin honest
-lua5.4 vg.lua honest 127.0.0.1:8090 "$initial_state_hash"
+lua5.4 vg.lua honest 127.0.0.1:$port "$initial_state_hash"
 # docs:end honest
 } > /dev/null &
-while [ "$(($(netstat -nt 2>&1 | grep '\<8090\>' | grep -c ESTABLISHED) / 2))" -lt 1 ]; do sleep 1; done
-lua5.4 vg-dishonest.lua forger 127.0.0.1:8090 "$initial_state_hash" 2 fake-input-2.bin > /dev/null &
-while [ "$(($(netstat -nt 2>&1 | grep '\<8090\>' | grep -c ESTABLISHED) / 2))" -lt 2 ]; do sleep 1; done
-lua5.4 vg-dishonest.lua fabulist 127.0.0.1:8090 "$initial_state_hash" \
+while [ "$(($(netstat -nt 2>&1 | grep '\<$port\>' | grep -c ESTABLISHED) / 2))" -lt 1 ]; do sleep 1; done
+lua5.4 vg-dishonest.lua forger 127.0.0.1:$port "$initial_state_hash" 2 fake-input-2.bin > /dev/null &
+while [ "$(($(netstat -nt 2>&1 | grep '\<$port\>' | grep -c ESTABLISHED) / 2))" -lt 2 ]; do sleep 1; done
+lua5.4 vg-dishonest.lua fabulist 127.0.0.1:$port "$initial_state_hash" \
     2 fake-input-2.bin "$final_state_hash" > /dev/null &
-while [ "$(($(netstat -nt 2>&1 | grep '\<8090\>' | grep -c ESTABLISHED) / 2))" -lt 3 ]; do sleep 1; done
-lua5.4 vg.lua phase_closer 127.0.0.1:8090
+while [ "$(($(netstat -nt 2>&1 | grep '\<$port\>' | grep -c ESTABLISHED) / 2))" -lt 3 ]; do sleep 1; done
+lua5.4 vg.lua phase_closer 127.0.0.1:$port
 while [ ! -s outputs.txt ]; do sleep 1; done
 ```
 It submits that same correct final hash and answers the referee for itself:
@@ -5796,7 +5796,7 @@ assert(require("prt-time-test"))
 ```{.bash key=prt_protocol_test depends=game_transport_src,game_output_src,prt_test_src,prt_deadline_test_src,prt_time_test_src,game_response_queue_src,game_clock_src,prt_runs_node,prt_build_mcycle_claim,prt_dishonest_src replace=null}
 lua5.4 "$RECIPES_DIR/prt-test.lua"
 ```
-```{.bash key=prt_run vars=initial_state_hash->vg_initial_state_hash/stdout,tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_dishonest_src,prt_runs_node,prt_story,prt_build_mcycle_claim,prt_run_match,game_transport_src,game_output_src,game_clock_src,game_response_queue_src outputs=forged-input-2.bin,claims,match_4,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_5_elided,match_5_1_elided,match_6_elided,match_6_1_elided replace=source/referee}
+```{.bash key=prt_run vars=initial_state_hash->vg_initial_state_hash/stdout,tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path,port->ports/prt_run depends=prt_dishonest_src,prt_runs_node,prt_story,prt_build_mcycle_claim,prt_run_match,game_transport_src,game_output_src,game_clock_src,game_response_queue_src outputs=forged-input-2.bin,claims,match_4,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_5_elided,match_5_1_elided,match_6_elided,match_6_1_elided replace=source/referee}
 # The chain publishes the initial state hash; a player finds its machine snapshot stored
 # under that name
 rm -f "$initial_state_hash"
@@ -5821,63 +5821,63 @@ EOF
 # initial subscriptions once all are in. The quitter stays connected until it has committed its
 # claim, then leaves at the next event.
 rm -f verdict
-players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8096\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
+players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<$port\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
 {
 # docs:begin referee
-lua5.4 prt.lua referee 127.0.0.1:8096 "$initial_state_hash" \
+lua5.4 prt.lua referee 127.0.0.1:$port "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 # docs:end referee
 } > /dev/null 2> referee.stderr &
-while ! netstat -ant 2>&1 | grep '\<8096\>' | grep -q LISTEN; do sleep 1; done
+while ! netstat -ant 2>&1 | grep '\<$port\>' | grep -q LISTEN; do sleep 1; done
 # Claims pair in join order, so the launch order fixes the bracket: the quitter meets the
 # tamperer, the two fabulists meet, the forger meets honest, and the two extra quitters meet.
 {
 # docs:begin quitter
-lua5.4 prt-dishonest.lua quitter 127.0.0.1:8096 "$initial_state_hash"
+lua5.4 prt-dishonest.lua quitter 127.0.0.1:$port "$initial_state_hash"
 # docs:end quitter
 } > /dev/null 2> quitter.stderr &
 while ! players_in 1; do sleep 1; done
 {
 # docs:begin tamperer
-lua5.4 prt-dishonest.lua tamperer 127.0.0.1:8096 "$initial_state_hash" 0 100
+lua5.4 prt-dishonest.lua tamperer 127.0.0.1:$port "$initial_state_hash" 0 100
 # docs:end tamperer
 } > /dev/null 2> tamperer.stderr &
 while ! players_in 2; do sleep 1; done
 {
 # docs:begin fabulist
-lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8096 "$initial_state_hash" 2 2000
+lua5.4 prt-dishonest.lua fabulist 127.0.0.1:$port "$initial_state_hash" 2 2000
 # docs:end fabulist
 } > /dev/null 2> fabulist.stderr &
 while ! players_in 3; do sleep 1; done
 {
 # A second fabulist lies about a sample after input 2 has reached its fixed point. Its
 # uarch claim therefore exercises fixed-point padding for the entire disputed span.
-lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8096 "$initial_state_hash" 2 60000 fixed_fabulist
+lua5.4 prt-dishonest.lua fabulist 127.0.0.1:$port "$initial_state_hash" 2 60000 fixed_fabulist
 } > /dev/null 2> fixed_fabulist.stderr &
 while ! players_in 4; do sleep 1; done
 {
 # docs:begin forger
-lua5.4 prt-dishonest.lua forger 127.0.0.1:8096 "$initial_state_hash" 2 forged-input-2.bin
+lua5.4 prt-dishonest.lua forger 127.0.0.1:$port "$initial_state_hash" 2 forged-input-2.bin
 # docs:end forger
 } > /dev/null 2> forger.stderr &
 while ! players_in 5; do sleep 1; done
 {
 # docs:begin honest
-lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash"
+lua5.4 prt.lua honest 127.0.0.1:$port "$initial_state_hash"
 # docs:end honest
 } > /dev/null 2> honest.stderr &
 while ! players_in 6; do sleep 1; done
-lua5.4 prt-dishonest.lua quitter 127.0.0.1:8096 "$initial_state_hash" "quitter 1" > /dev/null 2> quitter_1.stderr &
+lua5.4 prt-dishonest.lua quitter 127.0.0.1:$port "$initial_state_hash" "quitter 1" > /dev/null 2> quitter_1.stderr &
 while ! players_in 7; do sleep 1; done
-lua5.4 prt-dishonest.lua quitter 127.0.0.1:8096 "$initial_state_hash" "quitter 2" > /dev/null 2> quitter_2.stderr &
+lua5.4 prt-dishonest.lua quitter 127.0.0.1:$port "$initial_state_hash" "quitter 2" > /dev/null 2> quitter_2.stderr &
 while ! players_in 8; do sleep 1; done
 # Every player is in. Close initial subscriptions. Claim collection uses logical blocks.
 {
-lua5.4 prt.lua phase_closer 127.0.0.1:8096
+lua5.4 prt.lua phase_closer 127.0.0.1:$port
 } > /dev/null 2> phase_closer.stderr &
 # The player chose output 1. Once it is proved, stop the example's server.
 while ! grep -q 'Result proved against the final state:' verdict 2>/dev/null; do sleep 1; done
-lua5.4 prt.lua phase_closer 127.0.0.1:8096 stop > /dev/null 2>> phase_closer.stderr
+lua5.4 prt.lua phase_closer 127.0.0.1:$port stop > /dev/null 2>> phase_closer.stderr
 wait
 cat referee.stderr honest.stderr quitter.stderr forger.stderr tamperer.stderr fabulist.stderr fixed_fabulist.stderr quitter_1.stderr quitter_2.stderr phase_closer.stderr >&2
 # The winner's claim must be the mcycle computation hash the direct run produced, and the
@@ -5902,15 +5902,15 @@ done
 ```
 The players take the referee address, the initial state hash, and their role arguments.
 Input filenames arrive from the referee, and no argument names the number of players or their order:
-```{.bash replace=prt_run/source/honest vars=initial_state_hash->vg_initial_state_hash/stdout}
+```{.bash replace=prt_run/source/honest}
 ```
-```{.bash replace=prt_run/source/quitter vars=initial_state_hash->vg_initial_state_hash/stdout}
+```{.bash replace=prt_run/source/quitter}
 ```
-```{.bash replace=prt_run/source/forger vars=initial_state_hash->vg_initial_state_hash/stdout}
+```{.bash replace=prt_run/source/forger}
 ```
-```{.bash replace=prt_run/source/tamperer vars=initial_state_hash->vg_initial_state_hash/stdout}
+```{.bash replace=prt_run/source/tamperer}
 ```
-```{.bash replace=prt_run/source/fabulist vars=initial_state_hash->vg_initial_state_hash/stdout}
+```{.bash replace=prt_run/source/fabulist}
 ```
 The eight players commit claims, each narrated with the label of the player that posted it:
 ```{replace=prt_run/claims}

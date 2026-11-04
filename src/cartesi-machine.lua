@@ -149,7 +149,8 @@ where options are:
 
   --no-remote-create
     use existing cartesi machine in the remote server instead of creating
-    a new one.
+    a new one. the runtime options given are applied to it, and the others
+    keep their current values. --no-reserve cannot be applied.
 
   --no-remote-destroy
     do not destroy the cartesi machine in the remote server after the execution.
@@ -1211,7 +1212,7 @@ local cmdline = {
         hash_tree = {},
     },
     console = {},
-    concurrency_update_hash_tree = 0,
+    concurrency_update_hash_tree = nil,
     skip_version_check = false,
     no_reserve = false,
     clear_hash_tree = false,
@@ -3206,6 +3207,19 @@ echo "
     end
 
     main_machine = main_machine:create(config, runtime_config, cmdline.create_dir, cmdline.create_sharing)
+end
+
+-- An existing remote machine keeps its runtime configuration, except for the options given to this run
+if cmdline.remote_address and not cmdline.remote_create and not cmdline.load_dir then
+    assert(not cmdline.no_reserve, "cannot use --no-reserve and --no-remote-create at the same time")
+    local runtime = main_machine:get_runtime_config()
+    if next(cmdline.console) then runtime.console = cmdline.console end
+    if cmdline.concurrency_update_hash_tree then
+        runtime.concurrency.update_hash_tree = cmdline.concurrency_update_hash_tree
+    end
+    if cmdline.skip_version_check then runtime.skip_version_check = true end
+    main_machine:set_runtime_config(runtime)
+    if cmdline.clear_hash_tree then main_machine:clear_hash_tree() end
 end
 
 -- Subsequent stored snapshot/revert loads clear caches only when explicitly requested.

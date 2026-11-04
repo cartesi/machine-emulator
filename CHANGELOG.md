@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`
 
 ### Fixed
+- Fixed Lua bindings leaking C++ exceptions when handling conversion and allocation errors
 - Fixed address ranges being accepted inside the uarch state hash tree node
 - Fixed proofs and uarch cycle root hashes using stale page hash-tree cache entries
 - Fixed interrupted stores and clones leaving directories that load with a torn page hash-tree cache

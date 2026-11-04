@@ -1248,6 +1248,17 @@ dofile(%q)
                 assert(not f, "--dump-memory-ranges: file created for device range: " .. filename)
             end
         end
+
+        -- A directory name with spaces and shell metacharacters is used as is
+        local _ <close>, odd_dir = tests_util.scope_temp_pathname(" odd;name")
+        run_ok({ "--dump-memory-ranges=" .. odd_dir, "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        for _, v in ipairs(m:get_address_ranges()) do
+            if v.is_memory then
+                local filename = odd_dir .. "/" .. string.format("%016x--%016x.bin", v.start, v.length)
+                assert(filesystem.exists(filename), "--dump-memory-ranges: expected file not created: " .. filename)
+                assert(os.remove(filename))
+            end
+        end
     end)
 
     -- -------------------------------------------------------------------------

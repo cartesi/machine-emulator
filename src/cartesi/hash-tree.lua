@@ -98,11 +98,11 @@ end
 local pristine_leaf = string.rep("\0", cartesi.HASH_SIZE)
 
 -- Returns the value at index in values, whose first value has index base, or left before the
--- values and right after them.
+-- values and right after them. Indices compare unsigned, since they reach 2^63 in a tree of height 64.
 -- docs:begin get_or_outside
 local function get_or_outside(values, base, index, left, right)
-    if index < base then return left end
-    if index > base + #values - 1 then return right end
+    if math.ult(index, base) then return left end
+    if math.ult(base + #values - 1, index) then return right end
     return values[index - base + 1]
 end
 -- docs:end get_or_outside
@@ -318,6 +318,8 @@ end
 local function frontier_next_proofs(frontier, next_output_hashes)
     local hash_function = assert(frontier.hash_function)
     local log2_max_leaves = #frontier - 1
+    -- A proof's target address has 64 bits
+    assert(log2_max_leaves <= 64, "tree too tall for proofs")
     local next_output_count = #next_output_hashes
     if next_output_count == 0 then return {} end
     for i = 1, next_output_count do

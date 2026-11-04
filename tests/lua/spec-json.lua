@@ -10,6 +10,57 @@ lester.parse_args()
 local cartesi = require("cartesi")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
+describe("JSON table keys", function()
+    it("should accept dense arrays regardless of insertion order", function()
+        local value = { [3] = "c", [1] = "a", [2] = false }
+        expect.equal(cartesi.tojson(value), '["a",false,"c"]')
+    end)
+
+    it("should preserve string keys that look like array indices", function()
+        expect.equal(cartesi.tojson({ ["1"] = "a", ["2"] = "b" }), '{"1":"a","2":"b"}')
+    end)
+
+    it("should reject mixed keys without modifying the table", function()
+        local value = { [1] = "a", ["1"] = "b", name = "c" }
+        expect.fail(function()
+            cartesi.tojson(value)
+        end, "table maps cannot contain keys of type number")
+        expect.equal(value, { [1] = "a", ["1"] = "b", name = "c" })
+        expect.equal(cartesi.tojson({ 42 }), "[42]")
+    end)
+
+    it("should reject invalid key types", function()
+        for _, key in ipairs({ 0, -1, 1.5, true, {} }) do
+            expect.fail(function()
+                cartesi.tojson({ [key] = "value" })
+            end, "table maps cannot contain keys of type")
+        end
+    end)
+
+    it("should reject gaps without a schema", function()
+        for _, value in ipairs({ { [2] = "b" }, { [1] = "a", [3] = "c" } }) do
+            expect.fail(function()
+                cartesi.tojson(value)
+            end, "array keys must be consecutive integers starting at 1")
+            expect.fail(function()
+                cartesi.tojson({ values = value }, nil, "Record", { Record = { values = "Default" } })
+            end, "array keys must be consecutive integers starting at 1")
+        end
+    end)
+
+    it("should reject a huge sparse index before expanding the array", function()
+        expect.fail(function()
+            cartesi.tojson({ [math.maxinteger] = true })
+        end, "array keys must be consecutive integers starting at 1")
+    end)
+
+    it("should preserve explicitly schematized empty arrays and gaps", function()
+        local schemas = { Empty = { items = {} }, Array = { items = "Default" } }
+        expect.equal(cartesi.tojson({}, nil, "Empty", schemas), "[]")
+        expect.equal(cartesi.tojson({ [2] = "b" }, nil, "Array", schemas), '[null,"b"]')
+    end)
+end)
+
 describe("JSON NUL bytes", function()
     it("should preserve distinct object keys containing NUL bytes", function()
         local value = { a = 1, ["a\0b"] = 2, ["\0"] = 3, ["a\0"] = 4 }

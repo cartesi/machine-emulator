@@ -257,11 +257,12 @@ void clua_push_cm_hash(lua_State *L, const cm_hash *hash) {
     lua_pushlstring(L, reinterpret_cast<const char *>(hash), CM_HASH_SIZE);
 }
 
-static int64_t clua_get_array_table_len(lua_State *L, int tabidx) {
+static int64_t clua_get_array_table_len(lua_State *L, int tabidx, bool require_dense) {
     if (lua_istable(L, tabidx) == 0) {
         return -1;
     }
     int64_t len = 0;
+    int64_t count = 0;
     lua_pushvalue(L, tabidx);            // push table
     lua_pushnil(L);                      // push key
     while (lua_next(L, -2) != 0) {       // replace key, push value
@@ -275,9 +276,13 @@ static int64_t clua_get_array_table_len(lua_State *L, int tabidx) {
             return -1;
         }
         len = std::max(i, len);
+        ++count;
         lua_pop(L, 1); // pop value
     }
     lua_pop(L, 1); // pop key
+    if (require_dense && count != len) {
+        throw std::invalid_argument{"array keys must be consecutive integers starting at 1"};
+    }
     return len;
 }
 
@@ -385,7 +390,7 @@ static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx,
     idx -= idx < 0 ? 1 : 0; // adjust offset after pushing j reference
     switch (lua_type(L, idx)) {
         case LUA_TTABLE: {
-            const int64_t len = clua_get_array_table_len(L, idx);
+            const int64_t len = clua_get_array_table_len(L, idx, schema.is_null());
             if (len >= 0) { // array
                 j = nlohmann::json::array();
                 clua_check_array_schema_size(static_cast<std::size_t>(len), schema);
@@ -402,7 +407,7 @@ static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx,
                 lua_pushvalue(L, idx);         // push table
                 lua_pushnil(L);                // push key
                 while (lua_next(L, -2) != 0) { // update key, push value
-                    if (lua_isstring(L, -2) == 0) {
+                    if (lua_type(L, -2) != LUA_TSTRING) {
                         luaL_error(L, "table maps cannot contain keys of type %s", lua_typename(L, lua_type(L, -2)));
                     }
                     size_t len = 0;

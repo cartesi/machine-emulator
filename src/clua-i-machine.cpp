@@ -19,11 +19,13 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <exception>
 #include <new>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 
@@ -58,178 +60,181 @@ void clua_delete(nlohmann::json *ptr) {
     delete ptr;
 }
 
-cm_reg clua_check_cm_proc_reg(lua_State *L, int idx) try {
-    /// \brief Mapping between register names and C API constants
-    const static std::unordered_map<std::string, cm_reg> g_cm_proc_reg_name = {
-        // clang-format off
-        {"x0", CM_REG_X0},
-        {"x1", CM_REG_X1},
-        {"x2", CM_REG_X2},
-        {"x3", CM_REG_X3},
-        {"x4", CM_REG_X4},
-        {"x5", CM_REG_X5},
-        {"x6", CM_REG_X6},
-        {"x7", CM_REG_X7},
-        {"x8", CM_REG_X8},
-        {"x9", CM_REG_X9},
-        {"x10", CM_REG_X10},
-        {"x11", CM_REG_X11},
-        {"x12", CM_REG_X12},
-        {"x13", CM_REG_X13},
-        {"x14", CM_REG_X14},
-        {"x15", CM_REG_X15},
-        {"x16", CM_REG_X16},
-        {"x17", CM_REG_X17},
-        {"x18", CM_REG_X18},
-        {"x19", CM_REG_X19},
-        {"x20", CM_REG_X20},
-        {"x21", CM_REG_X21},
-        {"x22", CM_REG_X22},
-        {"x23", CM_REG_X23},
-        {"x24", CM_REG_X24},
-        {"x25", CM_REG_X25},
-        {"x26", CM_REG_X26},
-        {"x27", CM_REG_X27},
-        {"x28", CM_REG_X28},
-        {"x29", CM_REG_X29},
-        {"x30", CM_REG_X30},
-        {"x31", CM_REG_X31},
-        {"f0", CM_REG_F0},
-        {"f1", CM_REG_F1},
-        {"f2", CM_REG_F2},
-        {"f3", CM_REG_F3},
-        {"f4", CM_REG_F4},
-        {"f5", CM_REG_F5},
-        {"f6", CM_REG_F6},
-        {"f7", CM_REG_F7},
-        {"f8", CM_REG_F8},
-        {"f9", CM_REG_F9},
-        {"f10", CM_REG_F10},
-        {"f11", CM_REG_F11},
-        {"f12", CM_REG_F12},
-        {"f13", CM_REG_F13},
-        {"f14", CM_REG_F14},
-        {"f15", CM_REG_F15},
-        {"f16", CM_REG_F16},
-        {"f17", CM_REG_F17},
-        {"f18", CM_REG_F18},
-        {"f19", CM_REG_F19},
-        {"f20", CM_REG_F20},
-        {"f21", CM_REG_F21},
-        {"f22", CM_REG_F22},
-        {"f23", CM_REG_F23},
-        {"f24", CM_REG_F24},
-        {"f25", CM_REG_F25},
-        {"f26", CM_REG_F26},
-        {"f27", CM_REG_F27},
-        {"f28", CM_REG_F28},
-        {"f29", CM_REG_F29},
-        {"f30", CM_REG_F30},
-        {"f31", CM_REG_F31},
-        {"pc", CM_REG_PC},
-        {"fcsr", CM_REG_FCSR},
-        {"mvendorid", CM_REG_MVENDORID},
-        {"marchid", CM_REG_MARCHID},
-        {"mimpid", CM_REG_MIMPID},
-        {"mcycle", CM_REG_MCYCLE},
-        {"icycleinstret", CM_REG_ICYCLEINSTRET},
-        {"mstatus", CM_REG_MSTATUS},
-        {"mtvec", CM_REG_MTVEC},
-        {"mscratch", CM_REG_MSCRATCH},
-        {"mepc", CM_REG_MEPC},
-        {"mcause", CM_REG_MCAUSE},
-        {"mtval", CM_REG_MTVAL},
-        {"misa", CM_REG_MISA},
-        {"mie", CM_REG_MIE},
-        {"mip", CM_REG_MIP},
-        {"medeleg", CM_REG_MEDELEG},
-        {"mideleg", CM_REG_MIDELEG},
-        {"mcounteren", CM_REG_MCOUNTEREN},
-        {"menvcfg", CM_REG_MENVCFG},
-        {"stvec", CM_REG_STVEC},
-        {"sscratch", CM_REG_SSCRATCH},
-        {"sepc", CM_REG_SEPC},
-        {"scause", CM_REG_SCAUSE},
-        {"stval", CM_REG_STVAL},
-        {"satp", CM_REG_SATP},
-        {"scounteren", CM_REG_SCOUNTEREN},
-        {"senvcfg", CM_REG_SENVCFG},
-        {"ilrsc", CM_REG_ILRSC},
-        {"iprv", CM_REG_IPRV},
-        {"iflags_X", CM_REG_IFLAGS_X},
-        {"iflags_Y", CM_REG_IFLAGS_Y},
-        {"iflags_H", CM_REG_IFLAGS_H},
-        {"iunrep", CM_REG_IUNREP},
-        {"imcyclemax", CM_REG_IMCYCLEMAX},
-        {"clint_mtimecmp", CM_REG_CLINT_MTIMECMP},
-        {"plic_girqpend", CM_REG_PLIC_GIRQPEND},
-        {"plic_girqsrvd", CM_REG_PLIC_GIRQSRVD},
-        {"htif_tohost", CM_REG_HTIF_TOHOST},
-        {"htif_tohost_dev", CM_REG_HTIF_TOHOST_DEV},
-        {"htif_tohost_cmd", CM_REG_HTIF_TOHOST_CMD},
-        {"htif_tohost_reason", CM_REG_HTIF_TOHOST_REASON},
-        {"htif_tohost_data", CM_REG_HTIF_TOHOST_DATA},
-        {"htif_fromhost", CM_REG_HTIF_FROMHOST},
-        {"htif_fromhost_dev", CM_REG_HTIF_FROMHOST_DEV},
-        {"htif_fromhost_cmd", CM_REG_HTIF_FROMHOST_CMD},
-        {"htif_fromhost_reason", CM_REG_HTIF_FROMHOST_REASON},
-        {"htif_fromhost_data", CM_REG_HTIF_FROMHOST_DATA},
-        {"htif_ihalt", CM_REG_HTIF_IHALT},
-        {"htif_iconsole", CM_REG_HTIF_ICONSOLE},
-        {"htif_iyield", CM_REG_HTIF_IYIELD},
-        {"uarch_x0", CM_REG_UARCH_X0},
-        {"uarch_x1", CM_REG_UARCH_X1},
-        {"uarch_x2", CM_REG_UARCH_X2},
-        {"uarch_x3", CM_REG_UARCH_X3},
-        {"uarch_x4", CM_REG_UARCH_X4},
-        {"uarch_x5", CM_REG_UARCH_X5},
-        {"uarch_x6", CM_REG_UARCH_X6},
-        {"uarch_x7", CM_REG_UARCH_X7},
-        {"uarch_x8", CM_REG_UARCH_X8},
-        {"uarch_x9", CM_REG_UARCH_X9},
-        {"uarch_x10", CM_REG_UARCH_X10},
-        {"uarch_x11", CM_REG_UARCH_X11},
-        {"uarch_x12", CM_REG_UARCH_X12},
-        {"uarch_x13", CM_REG_UARCH_X13},
-        {"uarch_x14", CM_REG_UARCH_X14},
-        {"uarch_x15", CM_REG_UARCH_X15},
-        {"uarch_x16", CM_REG_UARCH_X16},
-        {"uarch_x17", CM_REG_UARCH_X17},
-        {"uarch_x18", CM_REG_UARCH_X18},
-        {"uarch_x19", CM_REG_UARCH_X19},
-        {"uarch_x20", CM_REG_UARCH_X20},
-        {"uarch_x21", CM_REG_UARCH_X21},
-        {"uarch_x22", CM_REG_UARCH_X22},
-        {"uarch_x23", CM_REG_UARCH_X23},
-        {"uarch_x24", CM_REG_UARCH_X24},
-        {"uarch_x25", CM_REG_UARCH_X25},
-        {"uarch_x26", CM_REG_UARCH_X26},
-        {"uarch_x27", CM_REG_UARCH_X27},
-        {"uarch_x28", CM_REG_UARCH_X28},
-        {"uarch_x29", CM_REG_UARCH_X29},
-        {"uarch_x30", CM_REG_UARCH_X30},
-        {"uarch_x31", CM_REG_UARCH_X31},
-        {"uarch_pc", CM_REG_UARCH_PC},
-        {"uarch_cycle", CM_REG_UARCH_CYCLE},
-        {"uarch_halt", CM_REG_UARCH_HALT},
-        {"unknown_", CM_REG_UNKNOWN_},
-        {"first_", CM_REG_FIRST_},
-        {"last_", CM_REG_LAST_},
-        {"uarch_first_", CM_REG_UARCH_FIRST_},
-        {"uarch_last_", CM_REG_UARCH_LAST_},
-        // clang-format on
-    };
+cm_reg clua_check_cm_proc_reg(lua_State *L, int idx) {
     const char *name = luaL_checkstring(L, idx);
-    auto got = g_cm_proc_reg_name.find(name);
-    if (got == g_cm_proc_reg_name.end()) {
-        luaL_argerror(L, idx, "unknown register");
+    char message[1024]{};
+    try {
+        /// \brief Mapping between register names and C API constants
+        const static std::unordered_map<std::string, cm_reg> g_cm_proc_reg_name = {
+            // clang-format off
+            {"x0", CM_REG_X0},
+            {"x1", CM_REG_X1},
+            {"x2", CM_REG_X2},
+            {"x3", CM_REG_X3},
+            {"x4", CM_REG_X4},
+            {"x5", CM_REG_X5},
+            {"x6", CM_REG_X6},
+            {"x7", CM_REG_X7},
+            {"x8", CM_REG_X8},
+            {"x9", CM_REG_X9},
+            {"x10", CM_REG_X10},
+            {"x11", CM_REG_X11},
+            {"x12", CM_REG_X12},
+            {"x13", CM_REG_X13},
+            {"x14", CM_REG_X14},
+            {"x15", CM_REG_X15},
+            {"x16", CM_REG_X16},
+            {"x17", CM_REG_X17},
+            {"x18", CM_REG_X18},
+            {"x19", CM_REG_X19},
+            {"x20", CM_REG_X20},
+            {"x21", CM_REG_X21},
+            {"x22", CM_REG_X22},
+            {"x23", CM_REG_X23},
+            {"x24", CM_REG_X24},
+            {"x25", CM_REG_X25},
+            {"x26", CM_REG_X26},
+            {"x27", CM_REG_X27},
+            {"x28", CM_REG_X28},
+            {"x29", CM_REG_X29},
+            {"x30", CM_REG_X30},
+            {"x31", CM_REG_X31},
+            {"f0", CM_REG_F0},
+            {"f1", CM_REG_F1},
+            {"f2", CM_REG_F2},
+            {"f3", CM_REG_F3},
+            {"f4", CM_REG_F4},
+            {"f5", CM_REG_F5},
+            {"f6", CM_REG_F6},
+            {"f7", CM_REG_F7},
+            {"f8", CM_REG_F8},
+            {"f9", CM_REG_F9},
+            {"f10", CM_REG_F10},
+            {"f11", CM_REG_F11},
+            {"f12", CM_REG_F12},
+            {"f13", CM_REG_F13},
+            {"f14", CM_REG_F14},
+            {"f15", CM_REG_F15},
+            {"f16", CM_REG_F16},
+            {"f17", CM_REG_F17},
+            {"f18", CM_REG_F18},
+            {"f19", CM_REG_F19},
+            {"f20", CM_REG_F20},
+            {"f21", CM_REG_F21},
+            {"f22", CM_REG_F22},
+            {"f23", CM_REG_F23},
+            {"f24", CM_REG_F24},
+            {"f25", CM_REG_F25},
+            {"f26", CM_REG_F26},
+            {"f27", CM_REG_F27},
+            {"f28", CM_REG_F28},
+            {"f29", CM_REG_F29},
+            {"f30", CM_REG_F30},
+            {"f31", CM_REG_F31},
+            {"pc", CM_REG_PC},
+            {"fcsr", CM_REG_FCSR},
+            {"mvendorid", CM_REG_MVENDORID},
+            {"marchid", CM_REG_MARCHID},
+            {"mimpid", CM_REG_MIMPID},
+            {"mcycle", CM_REG_MCYCLE},
+            {"icycleinstret", CM_REG_ICYCLEINSTRET},
+            {"mstatus", CM_REG_MSTATUS},
+            {"mtvec", CM_REG_MTVEC},
+            {"mscratch", CM_REG_MSCRATCH},
+            {"mepc", CM_REG_MEPC},
+            {"mcause", CM_REG_MCAUSE},
+            {"mtval", CM_REG_MTVAL},
+            {"misa", CM_REG_MISA},
+            {"mie", CM_REG_MIE},
+            {"mip", CM_REG_MIP},
+            {"medeleg", CM_REG_MEDELEG},
+            {"mideleg", CM_REG_MIDELEG},
+            {"mcounteren", CM_REG_MCOUNTEREN},
+            {"menvcfg", CM_REG_MENVCFG},
+            {"stvec", CM_REG_STVEC},
+            {"sscratch", CM_REG_SSCRATCH},
+            {"sepc", CM_REG_SEPC},
+            {"scause", CM_REG_SCAUSE},
+            {"stval", CM_REG_STVAL},
+            {"satp", CM_REG_SATP},
+            {"scounteren", CM_REG_SCOUNTEREN},
+            {"senvcfg", CM_REG_SENVCFG},
+            {"ilrsc", CM_REG_ILRSC},
+            {"iprv", CM_REG_IPRV},
+            {"iflags_X", CM_REG_IFLAGS_X},
+            {"iflags_Y", CM_REG_IFLAGS_Y},
+            {"iflags_H", CM_REG_IFLAGS_H},
+            {"iunrep", CM_REG_IUNREP},
+            {"imcyclemax", CM_REG_IMCYCLEMAX},
+            {"clint_mtimecmp", CM_REG_CLINT_MTIMECMP},
+            {"plic_girqpend", CM_REG_PLIC_GIRQPEND},
+            {"plic_girqsrvd", CM_REG_PLIC_GIRQSRVD},
+            {"htif_tohost", CM_REG_HTIF_TOHOST},
+            {"htif_tohost_dev", CM_REG_HTIF_TOHOST_DEV},
+            {"htif_tohost_cmd", CM_REG_HTIF_TOHOST_CMD},
+            {"htif_tohost_reason", CM_REG_HTIF_TOHOST_REASON},
+            {"htif_tohost_data", CM_REG_HTIF_TOHOST_DATA},
+            {"htif_fromhost", CM_REG_HTIF_FROMHOST},
+            {"htif_fromhost_dev", CM_REG_HTIF_FROMHOST_DEV},
+            {"htif_fromhost_cmd", CM_REG_HTIF_FROMHOST_CMD},
+            {"htif_fromhost_reason", CM_REG_HTIF_FROMHOST_REASON},
+            {"htif_fromhost_data", CM_REG_HTIF_FROMHOST_DATA},
+            {"htif_ihalt", CM_REG_HTIF_IHALT},
+            {"htif_iconsole", CM_REG_HTIF_ICONSOLE},
+            {"htif_iyield", CM_REG_HTIF_IYIELD},
+            {"uarch_x0", CM_REG_UARCH_X0},
+            {"uarch_x1", CM_REG_UARCH_X1},
+            {"uarch_x2", CM_REG_UARCH_X2},
+            {"uarch_x3", CM_REG_UARCH_X3},
+            {"uarch_x4", CM_REG_UARCH_X4},
+            {"uarch_x5", CM_REG_UARCH_X5},
+            {"uarch_x6", CM_REG_UARCH_X6},
+            {"uarch_x7", CM_REG_UARCH_X7},
+            {"uarch_x8", CM_REG_UARCH_X8},
+            {"uarch_x9", CM_REG_UARCH_X9},
+            {"uarch_x10", CM_REG_UARCH_X10},
+            {"uarch_x11", CM_REG_UARCH_X11},
+            {"uarch_x12", CM_REG_UARCH_X12},
+            {"uarch_x13", CM_REG_UARCH_X13},
+            {"uarch_x14", CM_REG_UARCH_X14},
+            {"uarch_x15", CM_REG_UARCH_X15},
+            {"uarch_x16", CM_REG_UARCH_X16},
+            {"uarch_x17", CM_REG_UARCH_X17},
+            {"uarch_x18", CM_REG_UARCH_X18},
+            {"uarch_x19", CM_REG_UARCH_X19},
+            {"uarch_x20", CM_REG_UARCH_X20},
+            {"uarch_x21", CM_REG_UARCH_X21},
+            {"uarch_x22", CM_REG_UARCH_X22},
+            {"uarch_x23", CM_REG_UARCH_X23},
+            {"uarch_x24", CM_REG_UARCH_X24},
+            {"uarch_x25", CM_REG_UARCH_X25},
+            {"uarch_x26", CM_REG_UARCH_X26},
+            {"uarch_x27", CM_REG_UARCH_X27},
+            {"uarch_x28", CM_REG_UARCH_X28},
+            {"uarch_x29", CM_REG_UARCH_X29},
+            {"uarch_x30", CM_REG_UARCH_X30},
+            {"uarch_x31", CM_REG_UARCH_X31},
+            {"uarch_pc", CM_REG_UARCH_PC},
+            {"uarch_cycle", CM_REG_UARCH_CYCLE},
+            {"uarch_halt", CM_REG_UARCH_HALT},
+            {"unknown_", CM_REG_UNKNOWN_},
+            {"first_", CM_REG_FIRST_},
+            {"last_", CM_REG_LAST_},
+            {"uarch_first_", CM_REG_UARCH_FIRST_},
+            {"uarch_last_", CM_REG_UARCH_LAST_},
+            // clang-format on
+        };
+        auto got = g_cm_proc_reg_name.find(name);
+        if (got == g_cm_proc_reg_name.end()) {
+            luaL_argerror(L, idx, "unknown register");
+        }
+        return got->second;
+    } catch (const std::exception &e) {
+        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
+    } catch (...) {
+        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error with register type conversion");
     }
-    return got->second;
-} catch (const std::exception &e) {
-    luaL_error(L, "%s", e.what());
-    return CM_REG_UNKNOWN_; // will not be reached
-} catch (...) {
-    luaL_error(L, "unknown error with register type conversion");
+    luaL_error(L, "%s", message);
     return CM_REG_UNKNOWN_; // will not be reached
 }
 
@@ -480,13 +485,15 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nl
             const std::string_view &data = j.template get<std::string_view>();
             if (schema.is_string() && schema.template get<std::string_view>() == "Base64") {
                 lua_pushnil(L); // reserve a slot in the stack (needed because of lua_toclose semantics)
-                std::string &binary_data = *clua_push_new_managed_toclose_ptr(L, decode_base64(data), ctxidx);
+                std::string &binary_data = *clua_push_new_managed_toclose_ptr(L, std::string(), ctxidx);
+                binary_data = decode_base64(data);
                 lua_pushlstring(L, binary_data.data(), binary_data.length());
                 lua_replace(L, -3); // move into the placeholder slot
                 lua_pop(L, 1);      // pop binary_data reference
             } else if (schema.is_string() && schema.template get<std::string_view>() == "Hex") {
                 lua_pushnil(L); // reserve a slot in the stack (needed because of lua_toclose semantics)
-                std::string &binary_data = *clua_push_new_managed_toclose_ptr(L, decode_hex(data), ctxidx);
+                std::string &binary_data = *clua_push_new_managed_toclose_ptr(L, std::string(), ctxidx);
+                binary_data = decode_hex(data);
                 lua_pushlstring(L, binary_data.data(), binary_data.length());
                 lua_replace(L, -3); // move into the placeholder slot
                 lua_pop(L, 1);      // pop binary_data reference
@@ -529,83 +536,90 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nl
     }
 }
 
-static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
-    // In order to convert Lua tables <-> JSON objects we have to define a schema
-    // to transform some special fields, we only care about:
-    // - Binary strings (translate Base64 or Hex strings in JSON to binary strings in Lua)
-    // - Enumeration strings (convert to integers of an enumeration)
-    // - Array indexes (translate 0 based index in JSON to 1 based index in Lua)
-    static const nlohmann::json machine_schema_dict = {
-        {"Base64", "Base64"},
-        {"Hex", "Hex"},
-        {"Schema", "Schema"},
-        {"InterpreterBreakReason",
-            {{"failed", CM_BREAK_REASON_FAILED}, {"halted", CM_BREAK_REASON_HALTED},
-                {"yielded_manually", CM_BREAK_REASON_YIELDED_MANUALLY},
-                {"yielded_automatically", CM_BREAK_REASON_YIELDED_AUTOMATICALLY},
-                {"yielded_softly", CM_BREAK_REASON_YIELDED_SOFTLY},
-                {"reached_target_mcycle", CM_BREAK_REASON_REACHED_TARGET_MCYCLE},
-                {"console_output", CM_BREAK_REASON_CONSOLE_OUTPUT}, {"console_input", CM_BREAK_REASON_CONSOLE_INPUT},
-                {"mcycle_overflow", CM_BREAK_REASON_MCYCLE_OVERFLOW}}},
-        {"ArrayIndex", "ArrayIndex"},
-        {"Base64Array",
-            {
-                {"items", "Base64"},
-            }},
-        {"ArrayArrayIndex",
-            {
-                {"items", "ArrayIndex"},
-            }},
-        {"Proof",
-            {
-                {"target_hash", "Base64"},
-                {"root_hash", "Base64"},
-                {"sibling_hashes", "Base64Array"},
-            }},
-        {"Access",
-            {
-                {"read", "Base64"},
-                {"read_hash", "Base64"},
-                {"written", "Base64"},
-                {"written_hash", "Base64"},
-                {"sibling_hashes", "Base64Array"},
-            }},
-        {"AccessArray",
-            {
-                {"items", "Access"},
-            }},
-        {"Bracket",
-            {
-                {"where", "ArrayIndex"},
-            }},
-        {"BracketArray",
-            {
-                {"items", "Bracket"},
-            }},
-        {"AccessLog",
-            {
-                {"accesses", "AccessArray"},
-                {"brackets", "BracketArray"},
-            }},
-        {"McycleRootHashes",
-            {
-                {"hashes", "Base64Array"},
-                {"break_reason", "InterpreterBreakReason"},
-                {"partial_bundle", "PartialBundle"},
-            }},
-        {"UarchCycleRootHashes",
-            {{"hashes", "Base64Array"}, {"mcycle_hash_offsets", "ArrayArrayIndex"},
-                {"break_reason", "InterpreterBreakReason"}}},
-        {"PartialBundle",
-            {
-                {"context", "Base64Array"},
-            }},
-    };
-    return machine_schema_dict;
-} catch (const std::exception &e) {
-    luaL_error(L, "failed to create machine schema dictionary: %s", e.what());
+static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) {
+    char message[1024]{};
+    try {
+        // In order to convert Lua tables <-> JSON objects we have to define a schema
+        // to transform some special fields, we only care about:
+        // - Binary strings (translate Base64 or Hex strings in JSON to binary strings in Lua)
+        // - Enumeration strings (convert to integers of an enumeration)
+        // - Array indexes (translate 0 based index in JSON to 1 based index in Lua)
+        static const nlohmann::json machine_schema_dict = {
+            {"Base64", "Base64"},
+            {"Hex", "Hex"},
+            {"Schema", "Schema"},
+            {"InterpreterBreakReason",
+                {{"failed", CM_BREAK_REASON_FAILED}, {"halted", CM_BREAK_REASON_HALTED},
+                    {"yielded_manually", CM_BREAK_REASON_YIELDED_MANUALLY},
+                    {"yielded_automatically", CM_BREAK_REASON_YIELDED_AUTOMATICALLY},
+                    {"yielded_softly", CM_BREAK_REASON_YIELDED_SOFTLY},
+                    {"reached_target_mcycle", CM_BREAK_REASON_REACHED_TARGET_MCYCLE},
+                    {"console_output", CM_BREAK_REASON_CONSOLE_OUTPUT},
+                    {"console_input", CM_BREAK_REASON_CONSOLE_INPUT},
+                    {"mcycle_overflow", CM_BREAK_REASON_MCYCLE_OVERFLOW}}},
+            {"ArrayIndex", "ArrayIndex"},
+            {"Base64Array",
+                {
+                    {"items", "Base64"},
+                }},
+            {"ArrayArrayIndex",
+                {
+                    {"items", "ArrayIndex"},
+                }},
+            {"Proof",
+                {
+                    {"target_hash", "Base64"},
+                    {"root_hash", "Base64"},
+                    {"sibling_hashes", "Base64Array"},
+                }},
+            {"Access",
+                {
+                    {"read", "Base64"},
+                    {"read_hash", "Base64"},
+                    {"written", "Base64"},
+                    {"written_hash", "Base64"},
+                    {"sibling_hashes", "Base64Array"},
+                }},
+            {"AccessArray",
+                {
+                    {"items", "Access"},
+                }},
+            {"Bracket",
+                {
+                    {"where", "ArrayIndex"},
+                }},
+            {"BracketArray",
+                {
+                    {"items", "Bracket"},
+                }},
+            {"AccessLog",
+                {
+                    {"accesses", "AccessArray"},
+                    {"brackets", "BracketArray"},
+                }},
+            {"McycleRootHashes",
+                {
+                    {"hashes", "Base64Array"},
+                    {"break_reason", "InterpreterBreakReason"},
+                    {"partial_bundle", "PartialBundle"},
+                }},
+            {"UarchCycleRootHashes",
+                {{"hashes", "Base64Array"}, {"mcycle_hash_offsets", "ArrayArrayIndex"},
+                    {"break_reason", "InterpreterBreakReason"}}},
+            {"PartialBundle",
+                {
+                    {"context", "Base64Array"},
+                }},
+        };
+        return machine_schema_dict;
+    } catch (const std::exception &e) {
+        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
+    } catch (...) {
+        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
+    }
+    luaL_error(L, "failed to create machine schema dictionary: %s", message);
     static const nlohmann::json dummy;
-    return dummy;
+    return dummy; // will not be reached
 }
 
 const nlohmann::json &clua_tojsonschemadict(lua_State *L, int idx, int ctxidx) {
@@ -623,33 +637,45 @@ const nlohmann::json &clua_tojsonschemadict(lua_State *L, int idx, int ctxidx) {
 const char *clua_tojson(lua_State *L, int idx, int indent, const char *schema_name,
     const nlohmann::json &user_schema_dict, int ctxidx) {
     idx = lua_absindex(L, idx);
+    ctxidx = lua_absindex(L, ctxidx);
+    char message[1024]{};
     try {
         const nlohmann::json &schema = clua_get_type_schema(L, schema_name, user_schema_dict);
         const nlohmann::json &j = clua_push_managed_toclose_json_ref(L, idx, schema, user_schema_dict, ctxidx);
-        std::string &s = *clua_push_new_managed_toclose_ptr(L, j.dump(indent), ctxidx);
+        std::string &s = *clua_push_new_managed_toclose_ptr(L, std::string(), ctxidx);
+        s = j.dump(indent);
         lua_pushlstring(L, s.data(), s.size());
-        lua_replace(L, idx);             // replace the Lua value with its JSON string representation
-        lua_pop(L, 2);                   // pop s, j references
-        return luaL_checkstring(L, idx); // return the string
+        lua_replace(L, idx); // replace the Lua value with its JSON string representation
+        lua_pop(L, 2);       // pop s, j references
+        return luaL_checkstring(L, idx);
     } catch (const std::exception &e) {
-        luaL_error(L, "failed to convert a Lua value to JSON: %s", e.what());
-        return nullptr;
+        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
+    } catch (...) {
+        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
     }
+    luaL_error(L, "failed to convert a Lua value to JSON: %s", message);
+    return nullptr; // will not be reached
 }
 
 void clua_fromjson(lua_State *L, const char *s, const char *schema_name, const nlohmann::json &user_schema_dict,
     int ctxidx) {
+    ctxidx = lua_absindex(L, ctxidx);
+    char message[1024]{};
     try {
         const nlohmann::json &schema = clua_get_type_schema(L, schema_name, user_schema_dict);
-        lua_pushnil(L); // reserve a slot in the stack (needed because of lua_toclose semantics)
-        const nlohmann::json &j =
-            *clua_push_new_managed_toclose_ptr(L, nlohmann::json::parse(s, clua_json_parse_callback), ctxidx);
+        lua_pushnil(L); // reserve the result slot below the to-be-closed JSON object
+        nlohmann::json &j = *clua_push_new_managed_toclose_ptr(L, nlohmann::json(), ctxidx);
+        j = nlohmann::json::parse(s, clua_json_parse_callback);
         clua_push_json_value(L, j, schema, user_schema_dict, ctxidx);
-        lua_replace(L, -3); // move into the placeholder slot
+        lua_replace(L, -3); // move into the result slot
         lua_pop(L, 1);      // pop j reference
+        return;
     } catch (const std::exception &e) {
-        luaL_error(L, "failed to parse JSON from a string: %s", e.what());
+        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
+    } catch (...) {
+        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
     }
+    luaL_error(L, "failed to parse JSON from a string: %s", message);
 }
 
 /// \brief This is the machine:get_proof() method implementation.
@@ -784,13 +810,16 @@ static int machine_obj_index_read_memory(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
     const uint64_t length = luaL_checkinteger(L, 3);
-    unsigned char *data{};
+    auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(nullptr));
     try {
-        data = new unsigned char[length];
-    } catch (const std::bad_alloc &e) {
-        luaL_error(L, "failed to allocate memory for buffer");
+        managed_data.get() = new unsigned char[length];
+    } catch (const std::bad_alloc &) {
+        // Report allocation failure after the exception has been destroyed.
+        managed_data.get() = nullptr;
     }
-    auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
+    if (managed_data.get() == nullptr) {
+        return luaL_error(L, "failed to allocate memory for buffer");
+    }
     if (cm_read_memory(m.get(), address, managed_data.get(), length) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -807,13 +836,16 @@ static int machine_obj_index_read_virtual_memory(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
     const uint64_t length = luaL_checkinteger(L, 3);
-    unsigned char *data{};
+    auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(nullptr));
     try {
-        data = new unsigned char[length];
-    } catch (const std::bad_alloc &e) {
-        luaL_error(L, "failed to allocate memory for buffer");
+        managed_data.get() = new unsigned char[length];
+    } catch (const std::bad_alloc &) {
+        // Report allocation failure after the exception has been destroyed.
+        managed_data.get() = nullptr;
     }
-    auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
+    if (managed_data.get() == nullptr) {
+        return luaL_error(L, "failed to allocate memory for buffer");
+    }
     if (cm_read_virtual_memory(m.get(), address, managed_data.get(), length) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -1085,14 +1117,16 @@ static int machine_obj_index_read_console_output(lua_State *L) {
 
     // Read the console output data
     if (max_length > 0) {
-        unsigned char *buffer{};
+        auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(nullptr));
         try {
-            buffer = new unsigned char[max_length];
-        } catch (const std::bad_alloc &e) {
-            luaL_error(L, "failed to allocate memory for buffer");
+            managed_data.get() = new unsigned char[max_length];
+        } catch (const std::bad_alloc &) {
+            // Report allocation failure after the exception has been destroyed.
+            managed_data.get() = nullptr;
         }
-
-        auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(buffer));
+        if (managed_data.get() == nullptr) {
+            return luaL_error(L, "failed to allocate memory for buffer");
+        }
         uint64_t read_len{0};
 
         if (cm_read_console_output(m.get(), managed_data.get(), max_length, &read_len) != 0) {
@@ -1157,38 +1191,47 @@ static int machine_obj_index_destroy(lua_State *L) {
 
 /// \brief This is the machine:receive_cmio_request() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_receive_cmio_request(lua_State *L) try {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    bool remote{};
-    if (cm_is_jsonrpc_machine(m.get(), &remote) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
+static int machine_obj_index_receive_cmio_request(lua_State *L) {
+    char message[1024]{};
+    try {
+        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+        bool remote{};
+        auto error = cm_is_jsonrpc_machine(m.get(), &remote);
+        if (error != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
+        // For remote machines, a worst-case buffer avoids the extra roundtrip of a length query
+        uint64_t length{CM_AR_CMIO_TX_BUFFER_LENGTH};
+        if (!remote) {
+            error = cm_receive_cmio_request(m.get(), nullptr, nullptr, nullptr, &length);
+            if (error != 0) {
+                return luaL_error(L, "%s", cm_get_last_error_message());
+            }
+        }
+        std::string &data = *clua_push_new_managed_toclose_ptr(L, std::string());
+        uint8_t cmd{};
+        uint16_t reason{};
+        data.resize_and_overwrite(length, [&](char *buf, size_t n) -> size_t {
+            uint64_t data_length = n;
+            error =
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                cm_receive_cmio_request(m.get(), &cmd, &reason, reinterpret_cast<unsigned char *>(buf), &data_length);
+            return error != 0 ? 0 : data_length;
+        });
+        if (error != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
+        lua_pushinteger(L, cmd);
+        lua_pushinteger(L, reason);
+        lua_pushlstring(L, data.data(), data.size());
+        data.clear();
+        return 3;
+    } catch (const std::exception &e) {
+        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
+    } catch (...) {
+        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
     }
-    // For remote machines, a worst-case buffer avoids the extra roundtrip of a length query
-    uint64_t length{CM_AR_CMIO_TX_BUFFER_LENGTH};
-    if (!remote && cm_receive_cmio_request(m.get(), nullptr, nullptr, nullptr, &length) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    std::string &data = *clua_push_new_managed_toclose_ptr(L, std::string());
-    uint8_t cmd{};
-    uint16_t reason{};
-    cm_error error{};
-    data.resize_and_overwrite(length, [&](char *buf, size_t n) -> size_t {
-        uint64_t data_length = n;
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        error = cm_receive_cmio_request(m.get(), &cmd, &reason, reinterpret_cast<unsigned char *>(buf), &data_length);
-        return error != 0 ? 0 : data_length;
-    });
-    if (error != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushinteger(L, cmd);
-    lua_pushinteger(L, reason);
-    lua_pushlstring(L, data.data(), data.size());
-    data.clear();
-    return 3;
-} catch (const std::exception &e) {
-    luaL_error(L, "%s", e.what());
-    return 3;
+    return luaL_error(L, "%s", message);
 }
 
 /// \brief This is the machine:send_cmio_response() method implementation.

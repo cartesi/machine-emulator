@@ -3698,7 +3698,7 @@ end
 
 local function dump_memory_ranges(machine, dir)
     local prefix = type(dir) == "string" and dir .. "/" or ""
-    if prefix ~= "" then assertf(os.execute("mkdir " .. dir), "could not create directory %s", dir) end
+    if prefix ~= "" then fs.create_directory(dir) end
     for _, v in ipairs(machine:get_address_ranges()) do
         -- Only memory ranges hold state. Device ranges are always pristine, so skip them.
         if v.is_memory then

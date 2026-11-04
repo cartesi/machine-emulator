@@ -390,7 +390,10 @@ static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx,
     idx -= idx < 0 ? 1 : 0; // adjust offset after pushing j reference
     switch (lua_type(L, idx)) {
         case LUA_TTABLE: {
-            const int64_t len = clua_get_array_table_len(L, idx, schema.is_null());
+            int64_t len = clua_get_array_table_len(L, idx, schema.is_null());
+            if (len == 0 && schema.is_object() && !schema.contains("items")) {
+                len = -1; // an empty table under an object schema is an object
+            }
             if (len >= 0) { // array
                 j = nlohmann::json::array();
                 clua_check_array_schema_size(static_cast<std::size_t>(len), schema);
@@ -613,9 +616,13 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) {
                 }},
             {"AccessLog",
                 {
+                    {"log_type", "AccessLogType"},
                     {"accesses", "AccessArray"},
+                    {"notes", "NoteArray"},
                     {"brackets", "BracketArray"},
                 }},
+            {"AccessLogType", nlohmann::json::object()},
+            {"NoteArray", {{"items", "Default"}}},
             {"McycleRootHashes",
                 {
                     {"hashes", "Base64Array"},
@@ -646,11 +653,45 @@ const nlohmann::json &clua_tojsonschemadict(lua_State *L, int idx, int ctxidx) {
         static const nlohmann::json empty_object = nlohmann::json::object();
         return empty_object;
     }
-    // A schema dictionary is plain JSON with only string/int leaves and no translated fields,
-    // so the "Schema" primitive makes converting one a pure passthrough. The returned reference stays
-    // valid while, and only while, the slot it pushes onto the stack remains there.
-    const auto &schema = clua_get_type_schema(L, "Schema");
-    return clua_push_managed_toclose_json_ref(L, idx, schema, nlohmann::json(), ctxidx);
+    luaL_checktype(L, idx, LUA_TTABLE);
+    idx = lua_absindex(L, idx);
+    // Dictionary entries are schema definitions: empty tables are objects, and items tables are tuples.
+    // The returned reference stays valid while its managed slot remains on the stack.
+    static const nlohmann::json empty_schema;
+    static const nlohmann::json items_schema = {{"items", "Default"}};
+    auto &schema_dict = *clua_push_new_managed_toclose_ptr(L, nlohmann::json(), ctxidx);
+    schema_dict = nlohmann::json::object();
+    lua_pushnil(L);
+    while (lua_next(L, idx) != 0) {
+        if (lua_type(L, -2) != LUA_TSTRING) {
+            luaL_error(L, "schema dictionary keys must be strings");
+        }
+        size_t len = 0;
+        const char *ptr = lua_tolstring(L, -2, &len);
+        const std::string_view type_name(ptr, len);
+        if (lua_istable(L, -1)) {
+            const int definition_idx = lua_gettop(L);
+            auto &definition = *clua_push_new_managed_toclose_ptr(L, nlohmann::json(), ctxidx);
+            definition = nlohmann::json::object();
+            lua_pushnil(L);
+            while (lua_next(L, definition_idx) != 0) {
+                if (lua_type(L, -2) != LUA_TSTRING) {
+                    luaL_error(L, "schema field names must be strings");
+                }
+                ptr = lua_tolstring(L, -2, &len);
+                const std::string_view field_name(ptr, len);
+                const auto &field_schema = field_name == "items" ? items_schema : empty_schema;
+                definition[field_name] =
+                    clua_push_managed_toclose_json_ref(L, -1, field_schema, empty_schema, ctxidx, 2);
+                lua_pop(L, 2); // pop field, child j reference
+            }
+            schema_dict[type_name] = std::move(definition);
+        } else {
+            schema_dict[type_name] = clua_push_managed_toclose_json_ref(L, -1, empty_schema, empty_schema, ctxidx, 1);
+        }
+        lua_pop(L, 2); // pop definition, child j reference
+    }
+    return schema_dict;
 }
 
 const char *clua_tojson(lua_State *L, int idx, int indent, const char *schema_name,

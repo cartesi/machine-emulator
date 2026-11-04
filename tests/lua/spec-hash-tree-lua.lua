@@ -204,6 +204,27 @@ describe("hash-tree.lua", function()
             end, "too many leaves")
         end)
 
+        it("proves leaves across 2^63 in a tree of height 64", function()
+            local frontier = hash_tree.frontier(64, "keccak256")
+            hash_tree.frontier_pad_back(frontier, leaf(1), (1 << 63) - 1)
+            local leaves = { leaf(2), leaf(3), leaf(4) }
+            local proofs = hash_tree.frontier_next_proofs(frontier, leaves)
+            local full = hash_tree.frontier_copy(frontier)
+            hash_tree.frontier_append(full, leaves)
+            local root_hash = hash_tree.frontier_get_root_hash(full)
+            for i, proof in ipairs(proofs) do
+                expect.equal(proof.target_address, (1 << 63) + i - 2)
+                expect.equal(proof.root_hash, root_hash)
+                hash_tree.verify_slice(proof)
+            end
+        end)
+
+        it("refuses proofs in trees taller than 64", function()
+            expect.fail(function()
+                hash_tree.frontier_next_proofs(hash_tree.frontier(65, "keccak256"), { leaf(1) })
+            end, "tree too tall for proofs")
+        end)
+
         it("rejects a frontier leaf count that exceeds 64 bits", function()
             local frontier = hash_tree.frontier(64, "keccak256")
             frontier[65] = leaf(1)

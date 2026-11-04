@@ -126,8 +126,16 @@ where options are:
     otherwise it listens on "127.0.0.1:0".
 
   --remote-address=<ip>:<port>
+  --remote-address=filename:<filename>
     use a remote cartesi machine listening to <ip>:<port> instead of
     running a local cartesi machine.
+
+    with filename:, the address the remote cartesi machine is left at is written
+    to <filename> after the execution, or <filename> is removed by
+    --remote-shutdown. --remote-fork, or a revert that cannot rebind the remote
+    cartesi machine, can leave it at a new address. alone, filename: also reads
+    the address from <filename>, which must exist unless --remote-spawn is
+    specified. together with <ip>:<port>, <filename> must not exist yet.
 
   --remote-health-check
     checks health of remote server and exit
@@ -1124,6 +1132,7 @@ local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
 local cmdline = {
     remote_spawn = nil,
     remote_address = nil,
+    remote_address_filename = nil,
     remote_health_check = false,
     remote_fork = false,
     remote_shutdown = false,
@@ -1498,6 +1507,22 @@ local function handle_bash_completion()
     if self and self ~= progs[1] and self ~= progs[2] then progs[#progs + 1] = self end
     bash.dump_bash_completion(options, progs)
     os.exit()
+end
+
+-- Reads the remote address a previous run left in a file, or nothing if there is no such file
+local function read_remote_address_file(filename)
+    local f <close> = io.open(filename, "r")
+    if not f then return nil end
+    return (assertf(f:read("l"), "no remote address in '%s'", filename))
+end
+
+-- Writes the address of the server left alive, through a temporary file so readers never see a partial address
+local function write_remote_address_file(filename, address)
+    local temporary = filename .. ".tmp"
+    local f <close> = assert(io.open(temporary, "w"))
+    assert(f:write(address, "\n"))
+    assert(f:close())
+    return assert(os.rename(temporary, filename))
 end
 
 -- List of supported options
@@ -2375,7 +2400,13 @@ options = {
         "--remote-address=",
         function(_, _, opts)
             if not opts or #opts < 1 then return false end
-            cmdline.remote_address = opts
+            -- An address starts with a digit or a bracket, so it cannot be mistaken for filename:
+            local filename = opts:match("^filename:(.+)")
+            if filename then
+                cmdline.remote_address_filename = filename
+            else
+                cmdline.remote_address = opts
+            end
             return true
         end,
     },
@@ -2798,6 +2829,8 @@ local function dump_value_proofs(machine, desired_proofs, config)
     end
 end
 
+local try_write_remote_address_file = util.protect(write_remote_address_file)
+
 local function new_machine()
     assert(not cmdline.remote_health_check or cmdline.remote_address, "missing remote address")
     if cmdline.remote_address then
@@ -2818,15 +2851,21 @@ local function new_machine()
         setmetatable(remote_closer, {
             __gc = function()
                 local address = new_m:get_server_address()
+                local filename = cmdline.remote_address_filename
                 if cmdline.remote_shutdown then
                     local ok, err = pcall(shutdown)
                     if ok then
                         stderr("Shutdown JSONRPC remote cartesi machine at '%s'\n", address)
+                        if filename then os.remove(filename) end
                     else
                         stderr("Failed to shutdown JSONRPC remote cartesi machine: %s\n", err)
                     end
                 else
                     stderr("Left alive JSONRPC remote cartesi machine at '%s'\n", address)
+                    if filename then
+                        local written, err = try_write_remote_address_file(filename, address)
+                        if not written then stderr("Failed to write remote address to '%s': %s\n", filename, err) end
+                    end
                 end
                 if cmdline.remote_fork then
                     stderr("Left alive original JSONRPC remote cartesi machine at '%s'\n", cmdline.remote_address)
@@ -2855,6 +2894,25 @@ local function spawn_server()
     stderr("Spawned JSONRPC remote cartesi machine at '%s' with pid %d\n", address, pid)
     cmdline.remote_address = address
     return server
+end
+
+-- The address file records where the server ends up. Without an explicit address, it also says where to connect.
+local remote_address_filename = cmdline.remote_address_filename
+if remote_address_filename then
+    if cmdline.remote_address then
+        assertf(
+            not fs.exists(remote_address_filename),
+            "remote address file '%s' already exists, but --remote-address also gives the address",
+            remote_address_filename
+        )
+    else
+        cmdline.remote_address = read_remote_address_file(remote_address_filename)
+        assertf(
+            cmdline.remote_address or cmdline.remote_spawn,
+            "missing remote address file '%s'",
+            remote_address_filename
+        )
+    end
 end
 
 -- The spawned server shuts down with this handle until the remote machine takes over its shutdown.
@@ -3742,6 +3800,8 @@ function revert_fork.__index:commit()
     end
 end
 
+local try_rebind_server = util.protect(function(m, address) return m:rebind_server(address) end)
+
 function revert_fork.__index:revert()
     assert(self.backup_machine, "no snapshot to revert to")
     local m = self.machine
@@ -3749,7 +3809,16 @@ function revert_fork.__index:revert()
     m:shutdown_server()
     m:swap(self.backup_machine)
     self.backup_machine = nil
-    m:rebind_server(address)
+    -- Another process may take the address once it is released, so the restored server may have to stay where it is
+    local rebound_address, err = try_rebind_server(m, address)
+    if not rebound_address then
+        stderr(
+            "Warning: restored JSONRPC remote cartesi machine stays at '%s', since rebinding it to '%s' failed: %s\n",
+            m:get_server_address(),
+            address,
+            err
+        )
+    end
 end
 
 function revert_fork.__index:has_snapshot() return self.backup_machine ~= nil end

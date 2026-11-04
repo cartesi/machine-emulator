@@ -5126,6 +5126,102 @@ dofile(%q)
         end
     end)
 
+    -- What: --remote-address=filename: carries the server address from one run to the next.
+    -- How:  expect a missing file to be refused without --remote-spawn. Spawn a server into the file, expect the
+    --       existing file to be refused alongside an explicit address, run again through the file, and shut the
+    --       server down, which removes the file.
+    it("remote address file", function()
+        local jsonrpc = require("cartesi.jsonrpc")
+        local _ <close>, filename = scope_temp_pathname()
+        -- Shut down whichever server the file names if the test ends early
+        local _ <close> = tests_util.scope_exit(function()
+            pcall(function()
+                local connection <close> = jsonrpc.connect_server(filesystem.read_file(filename):match("^(%S+)"))
+                connection:shutdown_server()
+            end)
+        end)
+        run_fail({ "--remote-address=filename:" .. filename, "--max-mcycle=0" }, "missing remote address file")
+        run_ok({
+            "--remote-spawn",
+            "--remote-address=filename:" .. filename,
+            "--no-remote-destroy",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        })
+        local address = assert(filesystem.read_file(filename):match("^(%S+)\n$"), "no address in file")
+        run_fail({
+            "--remote-address=" .. address,
+            "--remote-address=filename:" .. filename,
+            "--max-mcycle=0",
+        }, "already exists")
+        local _, log = run_ok({
+            "--remote-address=filename:" .. filename,
+            "--no-remote-create",
+            "--remote-shutdown",
+            "--max-mcycle=0",
+            "--no-init-splash",
+        })
+        expect.truthy(log:find("Shutdown JSONRPC remote cartesi machine at '" .. address .. "'", 1, true))
+        expect.falsy(filesystem.exists(filename))
+    end)
+
+    -- What: a revert that cannot rebind the restored server to its address leaves it at the fork's address, and the
+    --       address file records it.
+    -- How:  start a server on a listening socket this test keeps open, so the port stays taken after the CLI shuts
+    --       the server down to revert a rejected input. Expect a warning, the fork's address in the file, and a
+    --       working server there.
+    it("remote address file follows a server a revert cannot rebind", function()
+        local jsonrpc = require("cartesi.jsonrpc")
+        local fcntl = require("posix.fcntl")
+        local listener = assert(require("socket").bind("127.0.0.1", 0))
+        local _ <close> = tests_util.scope_exit(function()
+            listener:close()
+        end)
+        local host, port = listener:getsockname()
+        local original_address = host .. ":" .. port
+        local fd = math.tointeger(listener:getfd())
+        assert(fcntl.fcntl(fd, fcntl.F_SETFD, 0))
+        local server_bin = os.getenv("CARTESI_JSONRPC_MACHINE") or "cartesi-jsonrpc-machine"
+        assert(os.execute(string.format("%s --server-fd=%d >/dev/null 2>&1 &", server_bin, fd)))
+        local _ <close>, filename = scope_temp_pathname()
+        -- Shut down whichever server the file names when the test ends, or the original one if there is no file
+        local _ <close> = tests_util.scope_exit(function()
+            pcall(function()
+                local recorded = filesystem.exists(filename) and filesystem.read_file(filename):match("^(%S+)")
+                local connection <close> = jsonrpc.connect_server(recorded or original_address)
+                connection:shutdown_server()
+            end)
+        end)
+        local _ <close>, prefix = tests_util.scope_temp_pathname()
+        local _ <close> = tests_util.scope_exit(function()
+            for i = 0, 2 do
+                os.remove(string.format("%s-rebind-%d.bin", prefix, i))
+            end
+        end)
+        filesystem.write_file(encode_advance(0, "ok"), prefix .. "-rebind-0.bin")
+        filesystem.write_file(encode_advance(1, "reject-me"), prefix .. "-rebind-1.bin")
+        filesystem.write_file(encode_advance(2, "also-ok"), prefix .. "-rebind-2.bin")
+        local _, log = run_ok({
+            "--remote-address=" .. original_address,
+            "--remote-address=filename:" .. filename,
+            "--console-io=output_destination:to_null",
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-rebind-%i.bin,input_file_index_begin:0,input_file_index_end:3,output:,rejected_output:,"
+                .. "output_proof:,report:,outputs_merkle_root:,outputs_merkle_root_proof:",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--",
+            "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1",
+        })
+        expect.truthy(log:find("Warning: restored JSONRPC remote cartesi machine stays at", 1, true))
+        local address = assert(filesystem.read_file(filename):match("^(%S+)\n$"), "no address in file")
+        expect.not_equal(address, original_address)
+        local connection <close> = jsonrpc.connect_server(address)
+        expect.truthy(connection:get_server_version())
+    end)
+
     local socket = require("socket")
 
     -- Sends one GDB packet and returns the payload of the stub's reply.

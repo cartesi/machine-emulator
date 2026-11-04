@@ -43,6 +43,7 @@
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
 local fs = require("cartesi.filesystem")
+local util = require("cartesi.util")
 local prtu = require("prtu")
 local cartesi_jsonrpc = require("cartesi.jsonrpc")
 
@@ -1041,13 +1042,18 @@ function machine_pair_methods:commit()
 end
 
 -- docs:begin revert
+-- Another process may take the address once it is released, so the restored server may have to stay where it is
+local try_rebind_server = util.protect(function(machine, address)
+    return machine:rebind_server(address)
+end)
+
 function machine_pair_methods:revert()
     local backup_machine = assert(self.backup_machine, "no snapshot to revert to")
     local address = self.machine:get_server_address()
     self.machine:shutdown_server()
     self.machine:swap(backup_machine)
     self.backup_machine = nil
-    self.machine:rebind_server(address)
+    try_rebind_server(self.machine, address)
     assert(self.machine:get_root_hash() == self.revert_root_hash, "rollback did not restore the input boundary")
 end
 -- docs:end revert

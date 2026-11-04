@@ -71,17 +71,18 @@ static int cartesi_mod_hasher(lua_State *L) {
         luaL_argerror(L, 1, "too few arguments");
     }
     size_t len1 = 0;
-    size_t len2 = 0;
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data1 = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 1, &len1));
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const auto *data2 = reinterpret_cast<const unsigned char *>(luaL_optlstring(L, 2, "", &len2));
 
     cm_hash hash{};
 
-    if (len2 > 0) { // Concat hash of two inputs
+    if (nargs == 2) { // Concat hash of two inputs
+        size_t len2 = 0;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        const auto *data2 = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &len2));
         if (len1 != CM_HASH_SIZE || len2 != CM_HASH_SIZE) {
-            luaL_argerror(L, 1, "concatenate hash is only supported for inputs with size of hash");
+            luaL_argerror(L, len1 != CM_HASH_SIZE ? 1 : 2,
+                "concatenate hash is only supported for inputs with size of hash");
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         const auto *left = reinterpret_cast<const cm_hash *>(data1);

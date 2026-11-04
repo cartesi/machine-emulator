@@ -2320,7 +2320,8 @@ end
 
 -- state.json keeps the sealed epoch's outputs Merkle root proof inline.
 local EPOCH_STATE_SCHEMAS = {
-    EpochState = { outputs_merkle_root_proof = "OutputsMerkleRootProof" },
+    EpochState = { outputs_merkle_root_proof = "OutputsMerkleRootProof", uarch_claims = "UarchClaims" },
+    UarchClaims = { items = "Default" },
     OutputsMerkleRootProof = {
         iflags_y_data = "Base64",
         iflags_y_proof = "Proof",

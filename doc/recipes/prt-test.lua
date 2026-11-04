@@ -2362,6 +2362,10 @@ if arg[1] then
                 "a repeated input event changed the epoch"
             )
             reopened.event_handler.epoch_sealed(reopened, #input_files)
+            assert(
+                fs.read_file(epoch_directory .. "/state.json"):find('"uarch_claims": []', 1, true),
+                "a seal with no uarch claims must store an empty array"
+            )
             local stored_tree = reopened:new_mcycle_tree()
             assert(
                 stored_tree:get_root_hash() == honest_tree:get_root_hash(),
@@ -2402,6 +2406,7 @@ if arg[1] then
             local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
             assert(reopened.input_count == #input_files, "reopening lost inputs")
             assert(reopened.mcycle_forest and not reopened.epoch_pair, "reopening did not restore the seal")
+            assert(#reopened.uarch_claims == 0, "reopening invented a uarch claim")
             reopened.collect_mcycle_bundle = function()
                 error("reopening lost an opened bundle")
             end

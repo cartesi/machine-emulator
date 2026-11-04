@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`
 
 ### Fixed
+- Fixed Lua JSON conversion serializing empty tables as arrays despite object schemas
 - Fixed Lua JSON conversion accepting mixed table keys and expanding sparse arrays without a schema
 - Fixed overflow in Lua JSON `ArrayIndex` conversions
 - Fixed ABI decoding accepting out-of-bounds offsets and lengths after integer overflow

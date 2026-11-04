@@ -169,6 +169,48 @@ describe("tojson / fromjson schema dictionary", function()
         expect.equal(cartesi.fromjson(cartesi.tojson("str")), "str")
     end)
 
+    it("should use object schemas for empty tables", function()
+        local schemas = { Record = { label = "Default" }, EmptyRecord = {}, Alias = "EmptyRecord" }
+        for _, name in ipairs({ "Record", "EmptyRecord", "Alias", "Proof" }) do
+            expect.equal(cartesi.tojson({}, nil, name, schemas), "{}")
+            expect.equal(cartesi.tojson(cartesi.fromjson("{}", name, schemas), nil, name, schemas), "{}")
+        end
+    end)
+
+    it("should distinguish empty arrays, tuples, and objects in nested schemas", function()
+        local schemas = {
+            Envelope = { array = "Array", tuple = "Tuple", record = "Record" },
+            Array = { items = "Record" },
+            Tuple = { items = {} },
+            Record = {},
+        }
+        local value = { array = {}, tuple = {}, record = {} }
+        local encoded = '{"array":[],"record":{},"tuple":[]}'
+        expect.equal(cartesi.tojson(value, nil, "Envelope", schemas), encoded)
+        expect.equal(cartesi.fromjson(encoded, "Envelope", schemas), value)
+        expect.equal(cartesi.tojson({ {}, {} }, nil, "Array", schemas), "[{},{}]")
+        expect.equal(schemas.Record, {})
+        expect.equal(schemas.Tuple, { items = {} })
+    end)
+
+    it("should accept empty schema dictionaries in both directions", function()
+        expect.equal(cartesi.tojson({ 42 }, nil, "Default", {}), "[42]")
+        expect.equal(cartesi.fromjson("[42]", "Default", {}), { 42 })
+    end)
+
+    it("should reject non-string keys in schema dictionaries and definitions", function()
+        for _, key in ipairs({ 1, true, {} }) do
+            for _, schemas in ipairs({ { [key] = {} }, { Record = { [key] = "Default" } } }) do
+                expect.fail(function()
+                    cartesi.tojson(42, nil, "Default", schemas)
+                end, "must be strings")
+                expect.fail(function()
+                    cartesi.fromjson("42", "Default", schemas)
+                end, "must be strings")
+            end
+        end
+    end)
+
     it("should honor the indent argument", function()
         expect.truthy(cartesi.tojson({ a = 1 }, 2):find("\n", 1, true))
     end)

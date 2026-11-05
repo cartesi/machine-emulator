@@ -67,6 +67,8 @@ BOOST_AUTO_TEST_CASE(lua_errors_destroy_cpp_exceptions) {
         {"return pcall(cartesi.frombase64, '!!!!')", "base64"},
         {"return pcall(cartesi.fromjson, '{bad')", "failed to parse JSON from a string"},
         {"return pcall(cartesi.tojson, string.char(255))", "failed to convert a Lua value to JSON"},
+        {"return pcall(cartesi.tojson, {})", "empty table requires an array or object schema"},
+        {"return pcall(cartesi.tojson, 42, -1, 'Default', {[1] = {}})", "schema dictionary keys must be strings"},
         {"return pcall(cartesi.fromjson, '{}', 'MissingSchema')", "is not defined in schema dictionary"},
         {"return pcall(cartesi.tojson, {}, -1, 'MissingSchema')", "is not defined in schema dictionary"},
         {"return pcall(cartesi.fromjson, '\"0xzz\"', 'Hex')", "invalid hex"},

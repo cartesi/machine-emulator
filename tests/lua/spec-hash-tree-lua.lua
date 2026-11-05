@@ -524,6 +524,32 @@ describe("hash-tree.lua", function()
             end
         end)
 
+        it("pads tall frontiers with unsigned 64-bit counts", function()
+            for _, hash_type in ipairs({ "keccak256", "sha256" }) do
+                for _, pad_height in ipairs({ 0, 3 }) do
+                    for _, count in ipairs({ 1 << 63, -1 }) do
+                        local frontier = hash_tree.frontier(66 + pad_height, hash_type)
+                        local split = hash_tree.frontier(66 + pad_height, hash_type)
+                        -- Leave the lower slots empty beneath an occupied slot beyond the count's bits.
+                        hash_tree.frontier_push_back(frontier, leaf(1), 65 + pad_height)
+                        hash_tree.frontier_push_back(split, leaf(1), 65 + pad_height)
+                        -- Split the unsigned count into parts that each fit a positive Lua integer.
+                        hash_tree.frontier_pad_back(split, pad, count >> 1, pad_height)
+                        hash_tree.frontier_pad_back(split, pad, count >> 1, pad_height)
+                        hash_tree.frontier_pad_back(split, pad, count & 1, pad_height)
+                        hash_tree.frontier_pad_back(frontier, pad, count, pad_height)
+                        for level = 1, #frontier do
+                            expect.equal(frontier[level], split[level])
+                        end
+                        expect.equal(
+                            hash_tree.frontier_get_root_hash(frontier),
+                            hash_tree.frontier_get_root_hash(split)
+                        )
+                    end
+                end
+            end
+        end)
+
         it("keeps the root of an exactly-full tree in the top entry", function()
             -- filled by padding
             local padded = hash_tree.frontier(SMALL_H, "keccak256")

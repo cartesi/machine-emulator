@@ -187,6 +187,78 @@ describe("hash-tree.lua", function()
             end
         end)
 
+        it("rejects invalid last proofs before constructing a frontier", function()
+            -- Repeated leaves keep the root valid when address bits change, isolating the range check.
+            local frontier = hash_tree.frontier(4, "keccak256")
+            hash_tree.frontier_pad_back(frontier, leaf(1), 15)
+            local proof = hash_tree.frontier_next_proofs(frontier, { leaf(1) })[1]
+            local cases = {
+                { "target_address", 16, "proof target address is out of range" },
+                { "target_address", -1, "proof target address is out of range" },
+                { "target_address", 1.5, "invalid proof target address" },
+                { "target_address", "2", "invalid proof target address" },
+                { "log2_target_size", 1, "proof target is not a leaf" },
+                { "log2_root_size", -1, "invalid proof sizes" },
+                { "log2_root_size", 65, "invalid proof sizes" },
+                { "log2_root_size", 4.5, "invalid proof sizes" },
+                { "root_hash", leaf(99), "target node not in tree" },
+                { "target_hash", leaf(99), "target node not in tree" },
+                { "target_hash", "", "invalid target hash" },
+                { "sibling_hashes", { leaf(1) }, "wrong number of siblings" },
+                { "sibling_hashes", { leaf(1), leaf(2), leaf(3), leaf(4), leaf(5) }, "wrong number of siblings" },
+            }
+            for _, case in ipairs(cases) do
+                local corrupted = tabular.deep_copy(proof)
+                corrupted[case[1]] = case[2]
+                expect.fail(function()
+                    hash_tree.frontier(corrupted, "keccak256")
+                end, case[3])
+            end
+        end)
+
+        it("reconstructs full frontiers from last proofs through height 64", function()
+            -- Bound the regression test so the former infinite loop fails instead of hanging the suite.
+            local _ <close> = tests_util.scope_exit(function()
+                debug.sethook()
+            end)
+            debug.sethook(function()
+                error("frontier construction did not terminate")
+            end, "", 1000000)
+            for _, hash_type in ipairs({ "keccak256", "sha256" }) do
+                for _, height in ipairs({ 0, 1, 4, 63, 64 }) do
+                    local hash, siblings = leaf(1), {}
+                    for level = 1, height do
+                        siblings[level] = hash
+                        hash = cartesi[hash_type](hash, hash)
+                    end
+                    local proof = {
+                        log2_root_size = height,
+                        log2_target_size = 0,
+                        target_address = (1 << height) - 1,
+                        target_hash = leaf(1),
+                        root_hash = hash,
+                        sibling_hashes = siblings,
+                    }
+                    local frontier = hash_tree.frontier(proof, hash_type)
+                    expect.equal(#frontier, height + 1)
+                    expect.equal(frontier[height + 1], hash)
+                    expect.equal(hash_tree.frontier_get_root_hash(frontier), hash)
+                    for level = 1, height do
+                        expect.equal(frontier[level], false)
+                    end
+                    expect.fail(function()
+                        hash_tree.frontier_push_back(frontier, leaf(2))
+                    end, "too many leaves")
+                    if height == 63 then
+                        proof.target_address = -1
+                        expect.fail(function()
+                            hash_tree.frontier(proof, hash_type)
+                        end, "proof target address is out of range")
+                    end
+                end
+            end
+        end)
+
         it("has nothing to prove for an empty epoch", function()
             expect.equal(#hash_tree.frontier_next_proofs(hash_tree.frontier(H, "keccak256"), {}), 0)
         end)

@@ -450,6 +450,39 @@ describe("tojson / fromjson schema dictionary", function()
         end, "tuple schema")
     end)
 
+    it("should preserve strings matching object, array, and tuple schema keys", function()
+        local schemas = {
+            Tuple = { items = { "Base64", "ArrayIndex" } },
+            Envelope = { proof = "Proof", array = "Base64Array", tuple = "Tuple" },
+        }
+        for _, case in ipairs({ { "Proof", "target_hash" }, { "Base64Array", "items" }, { "Tuple", "items" } }) do
+            local encoded = cartesi.tojson(case[2], nil, case[1], schemas)
+            expect.equal(cartesi.fromjson(encoded, case[1], schemas), case[2])
+        end
+        local value = { proof = "target_hash", array = "items", tuple = "items" }
+        local encoded = cartesi.tojson(value, nil, "Envelope", schemas)
+        expect.equal(cartesi.fromjson(encoded, "Envelope", schemas), value)
+    end)
+
+    it("should still decode built-in integer enums", function()
+        expect.equal(cartesi.fromjson('"halted"', "InterpreterBreakReason"), cartesi.BREAK_REASON_HALTED)
+        expect.equal(cartesi.fromjson('"failed"', "InterpreterBreakReason"), cartesi.BREAK_REASON_FAILED)
+        expect.equal(cartesi.fromjson('"unknown"', "InterpreterBreakReason"), "unknown")
+    end)
+
+    it("should still decode user-defined integer enums and aliases", function()
+        local schemas = {
+            Status = { failed = -1, pending = 0, done = 1 },
+            Alias = "Status",
+            Envelope = { status = "Alias" },
+        }
+        for name, value in pairs(schemas.Status) do
+            expect.equal(cartesi.fromjson(cartesi.tojson(name), "Status", schemas), value)
+            local encoded = cartesi.tojson({ status = name })
+            expect.equal(cartesi.fromjson(encoded, "Envelope", schemas), { status = value })
+        end
+    end)
+
     it("should roundtrip a Proof through the machine schema dictionary", function()
         local proof = machine:get_proof(0, 12)
         expect.equal(#proof.root_hash, 32)

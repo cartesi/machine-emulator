@@ -1027,6 +1027,52 @@ describe("selectorless ABI", function()
             end
         end
     end)
+    it("rejects nonzero upper bits in ABI addresses", function()
+        local types = "(address)"
+        local signature = "f" .. types
+        local _, selector = evmu.parse_func_sig(signature)
+        for _, byte in ipairs({ "\0", "\xff" }) do
+            local address = string.rep(byte, 20)
+            local data = string.rep("\0", 12) .. address
+            for _, prefer in ipairs({ "raw", "hex" }) do
+                local expected = prefer == "raw" and address or evmu.encode_hex(address)
+                assert(evmu.decode_abi(types, data, prefer)[1] == expected)
+                assert(evmu.decode_calldata(signature, selector .. data, prefer)[1] == expected)
+                for position = 1, 12 do
+                    local dirty = data:sub(1, position - 1) .. "\1" .. data:sub(position + 1)
+                    local ok, err = pcall(evmu.decode_abi, types, dirty, prefer)
+                    assert(not ok and err:find("dirty upper bits in address value", 1, true))
+                    ok, err = pcall(evmu.decode_calldata, signature, selector .. dirty, prefer)
+                    assert(not ok and err:find("dirty upper bits in address value", 1, true))
+                end
+            end
+        end
+    end)
+    it("rejects nonzero padding in fixed-size ABI bytes", function()
+        for _, size in ipairs({ 1, 4, 31, 32 }) do
+            local types = string.format("(bytes%d,bytes32)", size)
+            local signature = "f" .. types
+            local _, selector = evmu.parse_func_sig(signature)
+            local bytes = string.rep("\xff", size)
+            local following = string.rep("\xff", 32)
+            local data = bytes .. string.rep("\0", 32 - size) .. following
+            for _, prefer in ipairs({ "raw", "hex" }) do
+                local expected = prefer == "raw" and bytes or evmu.encode_hex(bytes)
+                local decoded = evmu.decode_abi(types, data, prefer)
+                assert(decoded[1] == expected)
+                assert(decoded[2] == (prefer == "raw" and following or evmu.encode_hex(following)))
+                assert(evmu.decode_calldata(signature, selector .. data, prefer)[1] == expected)
+                for position = size + 1, 32 do
+                    local dirty = data:sub(1, position - 1) .. "\1" .. data:sub(position + 1)
+                    local message = string.format("dirty padding in bytes%d value", size)
+                    local ok, err = pcall(evmu.decode_abi, types, dirty, prefer)
+                    assert(not ok and err:find(message, 1, true))
+                    ok, err = pcall(evmu.decode_calldata, signature, selector .. dirty, prefer)
+                    assert(not ok and err:find(message, 1, true))
+                end
+            end
+        end
+    end)
     it("decodes dynamic components whose data is out of order", function()
         local function word(n)
             return string.rep("\0", 24) .. string.pack(">I8", n)

@@ -918,6 +918,39 @@ describe("selectorless ABI", function()
             assert(evmu.encode_calldata(signature, evmu.decode_calldata(signature, calldata)) == calldata, signature)
         end
     end)
+    it("rejects ABI arrays with holes", function()
+        local hash = "0x" .. string.rep("ab", 32)
+        local cases = {
+            { "(uint8[])", { { 1, nil, 3 } } },
+            { "(uint8[])", { { [1] = 1, [3] = 3 } } },
+            { "(uint8[])", { { [2] = 2 } } },
+            { "(uint8[])", { { [1] = 1, [math.maxinteger] = 3 } } },
+            { "(uint8[3],uint256)", { { 1, nil, 3 }, 42 } },
+            { "(string[])", { { "a", nil, "c" } } },
+            { "(bytes32[])", { { hash, nil, hash } } },
+            { "(uint8[][])", { { { 1 }, { 2, nil, 4 } } } },
+        }
+        for _, case in ipairs(cases) do
+            local types, values = case[1], case[2]
+            local ok, err = pcall(evmu.encode_abi, types, values)
+            assert(not ok and err:find("missing array element at index", 1, true), types)
+            ok, err = pcall(evmu.encode_calldata, "f" .. types, values)
+            assert(not ok and err:find("missing array element at index", 1, true), types)
+        end
+    end)
+    it("rejects ABI array keys outside the sequence", function()
+        for _, key in ipairs({ 0, -1, 1.5, "extra", false }) do
+            local values = { 1, 2 }
+            values[key] = 3
+            local ok, err = pcall(evmu.encode_abi, "(uint8[])", { values })
+            assert(not ok and err:find("invalid array index", 1, true), tostring(key))
+        end
+    end)
+    it("encodes false array elements", function()
+        local data = evmu.encode_abi("(bool[])", { { false, true, false } })
+        local decoded = evmu.decode_abi("(bool[])", data)[1]
+        assert(#decoded == 3 and decoded[1] == false and decoded[2] == true and decoded[3] == false)
+    end)
     it("rejects overflowing ABI offsets and lengths", function()
         local function word(n)
             return string.rep("\0", 24) .. string.pack(">I8", n)

@@ -467,15 +467,29 @@ local function append_encoded_bytes(output, value, size)
     append_padding(output, len)
 end
 
+-- checks that array values form a sequence of the expected size and returns its length
+local function check_array_values(values, parsed_type_spec)
+    local count = 0
+    for i in pairs(values) do
+        if math.type(i) ~= "integer" or i < 1 then errorf("invalid array index %s", tostring(i)) end
+        count = count + 1
+    end
+    for i = 1, count do
+        if values[i] == nil then errorf("missing array element at index %u", i) end
+    end
+    if parsed_type_spec.size and parsed_type_spec.size ~= count then
+        errorf("invalid value count (expected %u, got %u)", parsed_type_spec.size, count)
+    end
+    return count
+end
+
 -- appends the calldata parts of an array 'value' into the 'output' table, tiven its type name 'tn'
 local function append_encoded_array(output, values, tn)
     assert(type(values) == "table" and not bint.isbint(values), "array values not in table")
+    local count = check_array_values(values, tn)
     local dynamic_size = not tn.size
-    if not dynamic_size and tn.size ~= #values then
-        errorf("invalid value count (expected %u, got %u)", tn.size, #values)
-    end
     -- For dynamic arrays, encode length first
-    if dynamic_size then append_encoded_uint(output, #values) end
+    if dynamic_size then append_encoded_uint(output, count) end
     -- Static elements: encode directly
     if not is_dynamic_type(tn.element_type) then
         for _, value in ipairs(values) do
@@ -484,7 +498,7 @@ local function append_encoded_array(output, values, tn)
         return
     end
     -- Dynamic elements: encode offsets first, then data
-    local offset = #values * 32 -- Each offset is 32 bytes
+    local offset = count * 32 -- Each offset is 32 bytes
     local value_parts = {}
     for _, value in ipairs(values) do
         append_encoded_uint(output, offset)

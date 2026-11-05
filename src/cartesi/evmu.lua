@@ -682,6 +682,7 @@ end
 -- reads an address value from 'calldata' at 'offset'
 local function decode_address(calldata, offset, prefer)
     local word = read_word(calldata, offset)
+    assert(bint.eq(word >> 160, 0), "dirty upper bits in address value")
     -- Address is stored in the last 20 bytes of the 32-byte word
     local addr_data = tobe(word):sub(-20)
     if prefer ~= "raw" then addr_data = tohex(addr_data) end
@@ -717,6 +718,9 @@ local function decode_bytes_sized(calldata, offset, size, prefer)
     -- Fixed-size bytes
     local padded_len = ceil32(size)
     if offset < 0 or padded_len > #calldata - offset then errorf("insufficient calldata for bytes%d", size) end
+    if calldata:sub(offset + size + 1, offset + padded_len):find("[^\0]") then
+        errorf("dirty padding in bytes%d value", size)
+    end
     local bytes_data = calldata:sub(offset + 1, offset + size)
     if prefer ~= "raw" then bytes_data = tohex(bytes_data) end
     return bytes_data, offset + padded_len

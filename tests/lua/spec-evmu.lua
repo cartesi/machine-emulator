@@ -439,6 +439,36 @@ describe("cartesi evmu", function()
         check_parse_func_sig_error("_() returns (int, ", 'expected type spec at line 1, column 19 (got "")')
     end)
 
+    it("preserves parameter names beginning with data-location keywords", function()
+        for _, location in ipairs({ "memory", "calldata", "storage" }) do
+            for _, suffix in ipairs({ "Root", "_x", "1" }) do
+                local name = location .. suffix
+                local parsed = evmu.parse_type_spec("uint256 " .. name)
+                assert(parsed.name == name and parsed.data_location == nil)
+                parsed = evmu.parse_type_spec("bytes " .. location .. " " .. name)
+                assert(parsed.name == name and parsed.data_location == location)
+                parsed = evmu.parse_func_sig("f(uint256 " .. name .. ") returns (uint256 " .. name .. ")")
+                assert(parsed.params.components[1].name == name)
+                assert(parsed.params.components[1].data_location == nil)
+                assert(parsed.returns.components[1].name == name)
+                assert(parsed.returns.components[1].data_location == nil)
+            end
+        end
+    end)
+
+    it("encodes and decodes names beginning with data-location keywords", function()
+        for _, name in ipairs({ "memoryIndex", "calldataHash", "storageRoot" }) do
+            local types = "(uint256 " .. name .. ")"
+            local values = { [name] = 7 }
+            local data = evmu.encode_abi(types, values)
+            assert(data == evmu.encode_abi("(uint256)", { 7 }))
+            assert(evmu.decode_abi(types, data)[name] == evmu.bint(7))
+            local calldata = evmu.encode_calldata("f" .. types, values)
+            assert(calldata == evmu.encode_calldata("f(uint256)", { 7 }))
+            assert(evmu.decode_calldata("f" .. types, calldata)[name] == evmu.bint(7))
+        end
+    end)
+
     it("keeps cached function signatures while callers retain the parsed table", function()
         local signature = "cache_keep(uint amount)"
         local parsed, selector, canonical = evmu.parse_func_sig(signature)

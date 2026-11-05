@@ -515,7 +515,7 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nl
                 lua_pushlstring(L, binary_data.data(), binary_data.length());
                 lua_replace(L, -3); // move into the placeholder slot
                 lua_pop(L, 1);      // pop binary_data reference
-            } else if (schema.is_object() && schema.contains(data)) {
+            } else if (schema.is_object() && schema.contains(data) && schema.at(data).is_number_integer()) {
                 static const nlohmann::json empty_schema;
                 clua_push_json_value(L, schema.at(data), empty_schema, user_schema_dict, ctxidx, depth + 1);
             } else {

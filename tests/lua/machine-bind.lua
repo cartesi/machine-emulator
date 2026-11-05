@@ -1359,7 +1359,6 @@ do_test("uarch ecall putchar should print char to console", function()
                                  local cartesi = require 'cartesi'
                                  local tests_util = require 'cartesi.tests.util'
                                  local cartesi_util = require 'cartesi.util'
-                                 local initial_reg_values = {}
                                  local program = {
                                     (cartesi.UARCH_ECALL_FN_PUTCHAR << 20) | 0x00893, -- li	a7,putchar
                                     0x05800513, -- li a0,'X'
@@ -1367,7 +1366,6 @@ do_test("uarch ecall putchar should print char to console", function()
                                  }
                                  local uarch_ram_path = tests_util.create_test_uarch_program(program)
                                  local machine = cartesi.machine {
-                                     registers = initial_reg_values,
                                      ram = {length = 1 << 20},
                                      uarch = {
                                         ram = { backing_store = { data_filename = uarch_ram_path } }

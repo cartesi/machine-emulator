@@ -193,6 +193,33 @@ describe("tojson / fromjson schema dictionary", function()
         expect.equal(schemas.Tuple, { items = {} })
     end)
 
+    it("should reject empty tables without a container schema", function()
+        expect.fail(function()
+            cartesi.tojson({})
+        end, "empty table requires an array or object schema")
+        for _, name in ipairs({ "Default", "Base64", "Hex", "ArrayIndex", "Alias" }) do
+            expect.fail(function()
+                cartesi.tojson({}, nil, name, { Alias = "Default" })
+            end, "empty table requires an array or object schema")
+        end
+        expect.equal(cartesi.tojson({ 42 }), "[42]")
+    end)
+
+    it("should reject nested empty tables without their own container schema", function()
+        local schemas = { Record = { value = "Default" }, Array = { items = "Default" } }
+        for _, name in ipairs({ "Default", "Record" }) do
+            expect.fail(function()
+                cartesi.tojson({ value = {} }, nil, name, schemas)
+            end, "empty table requires an array or object schema")
+            expect.fail(function()
+                cartesi.tojson({ other = {} }, nil, name, schemas)
+            end, "empty table requires an array or object schema")
+        end
+        expect.fail(function()
+            cartesi.tojson({ {} }, nil, "Array", schemas)
+        end, "empty table requires an array or object schema")
+    end)
+
     it("should accept empty schema dictionaries in both directions", function()
         expect.equal(cartesi.tojson({ 42 }, nil, "Default", {}), "[42]")
         expect.equal(cartesi.fromjson("[42]", "Default", {}), { 42 })
@@ -209,6 +236,13 @@ describe("tojson / fromjson schema dictionary", function()
                 end, "must be strings")
             end
         end
+    end)
+
+    it("should preserve empty containers in access logs", function()
+        local encoded = '{"accesses":[],"brackets":[],"log_type":{},"notes":[]}'
+        local log = { accesses = {}, brackets = {}, log_type = {}, notes = {} }
+        expect.equal(cartesi.tojson(log, nil, "AccessLog"), encoded)
+        expect.equal(cartesi.fromjson(encoded, "AccessLog"), log)
     end)
 
     it("should preserve empty containers in machine configurations", function()

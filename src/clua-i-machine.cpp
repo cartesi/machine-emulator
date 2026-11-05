@@ -391,6 +391,9 @@ static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx,
     switch (lua_type(L, idx)) {
         case LUA_TTABLE: {
             int64_t len = clua_get_array_table_len(L, idx, schema.is_null());
+            if (len == 0 && !schema.is_object()) {
+                throw std::invalid_argument{"empty table requires an array or object schema"};
+            }
             if (len == 0 && schema.is_object() && !schema.contains("items")) {
                 len = -1; // an empty table under an object schema is an object
             }

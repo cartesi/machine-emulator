@@ -450,7 +450,10 @@ if recording then
             case.expected.computation_hash = nil
         end
     end
-    filesystem.write_file(cartesi.tojson(manifest, 2) .. "\n", artifact_dir .. "/manifest.json")
+    filesystem.write_file(
+        cartesi.tojson(manifest, 2, "Manifest", tests_util.computation_hash_manifest_schemas) .. "\n",
+        artifact_dir .. "/manifest.json"
+    )
 end
 
 io.stdout:write(string.format("\nPASSED all %d tests\n\n", count))

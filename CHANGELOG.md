@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the `.ram`, `.dtb`, `.cmio-rx-buffer`, `.cmio-tx-buffer`, and `.uarch-ram` labels to `replace_memory_range`
 
 ### Changed
+- Changed Lua JSON conversion to reject empty tables without an array or object schema
 - Changed recipe game responses to carry JSON payload strings, decoded only when delivered
 - Changed the stored page hash-tree cache layout, making stored machines much faster to load
 - Changed `dependencies.lock` to define the kernel and rootfs download URLs

@@ -61,7 +61,7 @@ local function fromhex(hex)
     if #hex % 2 ~= 0 then return nil, "hex string length must be even" end
     local invalid
     local data = string.gsub(hex:sub(3), "(..)", function(c)
-        local n = tonumber(c, 16)
+        local n = c:match("^%x%x$") and tonumber(c, 16)
         if not n then
             invalid = c
             n = 0

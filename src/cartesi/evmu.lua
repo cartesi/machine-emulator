@@ -398,10 +398,26 @@ local function get_raw_expect_raw(s)
     return s
 end
 
+-- Converts an ABI integer without allowing oversized strings to wrap during bint conversion.
+local function check_integer(value)
+    if type(value) == "string" then
+        local digits = value:gsub("^[+-]", "")
+        local max_digits = 78
+        local prefix = digits:sub(1, 2):lower()
+        if prefix == "0x" or prefix == "0b" then
+            max_digits = prefix == "0x" and 64 or 256
+            digits = digits:sub(3)
+        end
+        digits = digits:gsub("^0+", "")
+        assert(#digits <= max_digits, "integer value does not fit in target type")
+    end
+    return assert(bint.new(value), "value not an integer")
+end
+
 -- returns the calldata encoding of an uint 'value'
 local function encoded_uint(value, size)
     size = size or 256
-    value = assert(bint.new(value), "value not an integer")
+    value = check_integer(value)
     assert(bint.eq(value >> size, 0), "integer value does not fit in target type")
     return tobe(value)
 end
@@ -412,7 +428,7 @@ local function append_encoded_uint(output, value, size) tinsert(output, encoded_
 -- appends the calldata parts of an int 'value' into the 'output' table
 local function append_encoded_int(output, value, size)
     size = size or 256
-    value = assert(bint.new(value), "value not an integer")
+    value = check_integer(value)
     local intmax = bint.one() << (size - 1)
     local intmin = (-bint.one()) << (size - 1)
     assert(value >= intmin and value < intmax, "integer value does not fit in target type")

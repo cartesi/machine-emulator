@@ -124,7 +124,7 @@ local bytes_size_idnot = expect(
 local type_spec = P({
     "type_spec",
 
-    data_location = P("memory") + P("calldata") + P("storage"),
+    data_location = (P("memory") + P("calldata") + P("storage")) * idnot,
 
     type_spec = V("elementary_type_spec") * opsp * V("array_brackets") * opsp * C(V("data_location") ^ -1) * opsp * C(
         identifier ^ -1

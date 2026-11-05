@@ -314,4 +314,23 @@ describe("filesystem", function()
             filesystem.create_directory(missing .. "/child")
         end, "unable to create directory")
     end)
+
+    it("removes private temporary test paths on return and error", function()
+        local tests_util = require("cartesi.tests.util")
+        for _, fail in ipairs({ false, true }) do
+            local directory
+            local ok = pcall(function()
+                local _ <close>, path = tests_util.scope_temp_pathname(".json")
+                directory = filesystem.get_parent_directory(path)
+                expect.truthy(filesystem.exists(directory))
+                expect.falsy(filesystem.exists(path))
+                filesystem.write_file("contents", path)
+                if fail then
+                    error("injected failure")
+                end
+            end)
+            expect.equal(ok, not fail)
+            expect.falsy(filesystem.exists(directory))
+        end
+    end)
 end)

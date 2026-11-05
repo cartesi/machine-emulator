@@ -2279,6 +2279,8 @@ end
 -- and a sealed epoch has the seal's fields instead. Inputs and outputs live in files of
 -- their own, and outputs.log holds the output keccaks. state.json reaches them through its input
 -- and output counts.
+-- The forests directory contains one tree directory per claim: mcycle/ for the epoch builder
+-- and sealed mcycle forest, and uarch-<input>-<period>/ for each uarch claim.
 --------------------------------------------------------------------------------
 
 local EPOCH_SUBDIRECTORIES = { "entries", "forests", "inputs", "outputs" }
@@ -2295,8 +2297,26 @@ end
 
 local MCYCLE_FOREST_FILE = "mcycle-forest.json"
 
-local function get_uarch_claim_file(epoch_input_offset, input_period_offset)
-    return "uarch-" .. epoch_input_offset .. "-" .. input_period_offset .. ".json"
+local function get_uarch_claim_name(epoch_input_offset, input_period_offset)
+    return "uarch-" .. epoch_input_offset .. "-" .. input_period_offset
+end
+
+-- Each claim forest owns its tree directory. The builder and sealed mcycle forest are the same forest.
+local function store_forest(forest, directory, name, frontier_file)
+    local forests_directory = directory .. "/forests"
+    local forest_directory = forests_directory .. "/" .. name
+    if not fs.exists(forest_directory) then
+        fs.create_directory(forest_directory)
+    end
+    hash_tree.frontier_forest_store(forest, forest_directory, directory .. "/" .. frontier_file)
+    fs.sync_directory(forests_directory)
+end
+
+local function remove_forest_directory(directory)
+    for _, name in ipairs(fs.list_directory(directory)) do
+        fs.remove_file(directory .. "/" .. name)
+    end
+    fs.remove_directory(directory)
 end
 
 -- The files the layout creates next to state.json, which reopening removes when state.json does not
@@ -2400,7 +2420,7 @@ end
 local function store_epoch_state(self, root_hash, files, pad_bundle)
     local directory = self.epoch_directory
     local state = {
-        version = 2,
+        version = 3,
         input_count = self.input_count,
         output_count = self.output_count,
         root_hash = cartesi.tohex(root_hash),
@@ -2418,7 +2438,7 @@ local function store_epoch_state(self, root_hash, files, pad_bundle)
             return {
                 epoch_input_offset = claim.epoch_input_offset,
                 input_period_offset = claim.input_period_offset,
-                forest = get_uarch_claim_file(claim.epoch_input_offset, claim.input_period_offset),
+                forest = get_uarch_claim_name(claim.epoch_input_offset, claim.input_period_offset) .. ".json",
             }
         end)
     end
@@ -2446,7 +2466,7 @@ end
 function stored_player_methods:commit_epoch_state(pair, builder, outputs)
     local directory = self.epoch_directory
     local files = get_boundary_files(self.input_count)
-    hash_tree.frontier_forest_store(builder.frontier, directory .. "/forests", directory .. "/" .. files.epoch_builder)
+    store_forest(builder.frontier, directory, "mcycle", files.epoch_builder)
     hash_tree.frontier_store(self.outputs_frontier, directory .. "/" .. files.outputs_frontier)
     self.machine_cache:store(directory .. "/" .. files.machine_cache)
     if #outputs > 0 then
@@ -2460,8 +2480,8 @@ end
 -- Commits a uarch claim the player built. Its bundles, once opened, are stored with its forest.
 function stored_player_methods:store_uarch_claim(claim)
     local directory = self.epoch_directory
-    local file = get_uarch_claim_file(claim.epoch_input_offset, claim.input_period_offset)
-    hash_tree.frontier_forest_store(claim.tree.forest, directory .. "/forests", directory .. "/" .. file)
+    local name = get_uarch_claim_name(claim.epoch_input_offset, claim.input_period_offset)
+    store_forest(claim.tree.forest, directory, name, name .. ".json")
     store_epoch_state(self, self.final_state_hash, self.state_files)
 end
 
@@ -2512,7 +2532,7 @@ function stored_player_methods:seal_epoch_state(pair)
     local directory = self.epoch_directory
     -- Sealing called the machine after the last boundary commit, so its directory is synced again.
     pair.machine:sync_stored(pair.directory)
-    hash_tree.frontier_forest_store(self.mcycle_forest, directory .. "/forests", directory .. "/" .. MCYCLE_FOREST_FILE)
+    store_forest(self.mcycle_forest, directory, "mcycle", MCYCLE_FOREST_FILE)
     store_epoch_state(self, self.final_state_hash, {
         outputs_frontier = self.state_files.outputs_frontier,
         machine_cache = self.state_files.machine_cache,
@@ -2569,7 +2589,12 @@ local function clear_epoch_directory(directory)
                 remove_leftover_stored_machine(path .. "/" .. entry)
             end
             fs.remove_directory(path)
-        elseif name == "forests" or name == "inputs" or name == "outputs" then
+        elseif name == "forests" then
+            for _, forest in ipairs(fs.list_directory(path)) do
+                remove_forest_directory(path .. "/" .. forest)
+            end
+            fs.remove_directory(path)
+        elseif name == "inputs" or name == "outputs" then
             for _, file in ipairs(fs.list_directory(path)) do
                 fs.remove_file(path .. "/" .. file)
             end
@@ -2668,7 +2693,18 @@ local function remove_epoch_leftovers(directory, state, machine_cache)
             fs.remove_file(directory .. "/" .. name)
         end
     end
-    remove_files(directory .. "/forests")
+    local forests = { mcycle = true }
+    for _, claim in ipairs(state.uarch_claims or {}) do
+        forests[get_uarch_claim_name(claim.epoch_input_offset, claim.input_period_offset)] = true
+    end
+    for _, name in ipairs(fs.list_directory(directory .. "/forests")) do
+        local path = directory .. "/forests/" .. name
+        if forests[name] then
+            remove_files(path)
+        else
+            remove_forest_directory(path)
+        end
+    end
     remove_files(directory .. "/inputs", state.input_count)
     remove_files(directory .. "/outputs", state.output_count)
     local outputs_log_path = get_outputs_log_path(directory)
@@ -2693,7 +2729,7 @@ end
 local function reopen_epoch_directory(self)
     local directory = self.epoch_directory
     local state = cartesi.fromjson(fs.read_file(directory .. "/state.json"), "EpochState", EPOCH_STATE_SCHEMAS)
-    assert(state.version == 2, "unsupported epoch state version")
+    assert(state.version == 3, "unsupported epoch state version")
     assert(
         cartesi.fromhex(state.initial_outputs_merkle_root)
             == hash_tree.frontier_get_root_hash(self.previous_outputs_frontier),
@@ -2724,8 +2760,10 @@ local function reopen_epoch_directory(self)
             "output history does not match the epoch machine"
         )
         local builder = self:new_mcycle_computation_hash_builder()
-        builder.frontier =
-            hash_tree.frontier_forest_load(forests_directory, directory .. "/" .. state.epoch_builder.frontier)
+        builder.frontier = hash_tree.frontier_forest_load(
+            forests_directory .. "/mcycle",
+            directory .. "/" .. state.epoch_builder.frontier
+        )
         builder.pad_bundle = cartesi.fromhex(state.epoch_builder.pad_bundle)
         builder.input_bundle_count = 0
         self.epoch_builder = builder
@@ -2738,12 +2776,16 @@ local function reopen_epoch_directory(self)
             == hash_tree.frontier_get_root_hash(self.outputs_frontier),
         "the outputs Merkle root proof does not match the output history"
     )
-    self.mcycle_forest = hash_tree.frontier_forest_load(forests_directory, directory .. "/" .. state.mcycle_forest)
+    self.mcycle_forest =
+        hash_tree.frontier_forest_load(forests_directory .. "/mcycle", directory .. "/" .. state.mcycle_forest)
     for _, stored in ipairs(state.uarch_claims) do
         self.uarch_claims[#self.uarch_claims + 1] = {
             epoch_input_offset = stored.epoch_input_offset,
             input_period_offset = stored.input_period_offset,
-            forest = hash_tree.frontier_forest_load(forests_directory, directory .. "/" .. stored.forest),
+            forest = hash_tree.frontier_forest_load(
+                forests_directory .. "/" .. get_uarch_claim_name(stored.epoch_input_offset, stored.input_period_offset),
+                directory .. "/" .. stored.forest
+            ),
         }
     end
 end

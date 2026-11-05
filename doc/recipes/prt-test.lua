@@ -2451,6 +2451,56 @@ if arg[1] then
         local layout, entries = list_epoch_directory(epoch_directory)
         assert(layout == sealed_layout(3), "reopening left unexpected files: " .. layout)
         assert(entries == "0,1,2,3", "stored machines kept unexpected entries: " .. entries)
+        -- Equal hashes in separate claim forests must not share expansions through their files.
+        local bundle = hash_tree.frontier_forest(LOG2_BUNDLE_UARCH_CYCLE_COUNT, "keccak256")
+        local isolated_leaf = keccak("isolated claim forest")
+        hash_tree.frontier_forest_pad_back(bundle, isolated_leaf)
+        local bundle_root = hash_tree.frontier_forest_get_root_hash(bundle)
+        do
+            local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
+            assert(reopened.mcycle_forest.directory == epoch_directory .. "/forests/mcycle")
+            for period = 0, 1 do
+                local forest = hash_tree.frontier_forest(dapp_contract.geometry.uarch_height, "keccak256")
+                hash_tree.frontier_forest_pad_back(forest, bundle_root, nil, bundle.height)
+                local claim = {
+                    epoch_input_offset = 0,
+                    input_period_offset = period,
+                    tree = reopened:new_uarch_tree(0, period, forest),
+                }
+                reopened.uarch_claims[#reopened.uarch_claims + 1] = claim
+                reopened:store_uarch_claim(claim)
+                assert(forest.directory == epoch_directory .. "/forests/uarch-0-" .. period)
+            end
+            hash_tree.frontier_forest_expand_leaf(reopened.uarch_claims[1].tree.forest, 0, bundle)
+            assert(
+                hash_tree.frontier_forest_get_node_hash(reopened.uarch_claims[2].tree.forest, 0, 0) == nil,
+                "opening one claim's bundle expanded another claim"
+            )
+        end
+        -- A claim that failed before state.json named it and temporary files are removed on reopen.
+        fs.create_directory(epoch_directory .. "/forests/uarch-9-9")
+        fs.write_file("leftover", epoch_directory .. "/forests/uarch-9-9/leftover.json")
+        fs.write_file("leftover", epoch_directory .. "/uarch-9-9.json")
+        fs.write_file("leftover", epoch_directory .. "/forests/uarch-0-0/leftover.tmp.file")
+        do
+            local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
+            assert(table.concat(fs.list_directory(epoch_directory .. "/forests"), ",") == "mcycle,uarch-0-0,uarch-0-1")
+            assert(not fs.exists(epoch_directory .. "/uarch-9-9.json"))
+            assert(not fs.exists(epoch_directory .. "/forests/uarch-0-0/leftover.tmp.file"))
+            assert(hash_tree.frontier_forest_get_node_hash(reopened.uarch_claims[1].tree.forest, 0, 0) == isolated_leaf)
+            assert(
+                hash_tree.frontier_forest_get_node_hash(reopened.uarch_claims[2].tree.forest, 0, 0) == nil,
+                "reopening shared an expansion between claims"
+            )
+        end
+        local state_path = epoch_directory .. "/state.json"
+        local state = fs.read_file(state_path)
+        local old_state, replacements = state:gsub('"version": 3', '"version": 2', 1)
+        assert(replacements == 1, "epoch state did not record its new layout version")
+        fs.write_file(old_state, state_path)
+        local loaded_old, failure = pcall(prt.new_stored_player, dapp_contract, "old layout", nil, epoch_directory)
+        fs.write_file(state, state_path)
+        assert(not loaded_old and tostring(failure):find("unsupported epoch state version", 1, true))
     end
     -- A crash can stop the player between any two steps of an input. Each step clones the epoch
     -- directory as a crash there would leave it. Reopening every clone must recover the state of the
@@ -2544,13 +2594,14 @@ if arg[1] then
                 return copy
             end
             local saved = {}
-            -- Steps inside forests/ are cut only while a uarch bundle is opened, since its store holds few trees.
-            -- The hash-tree spec covers a forest store, and the player orders it before the frontier
-            -- file and state.json that name it.
-            for _, name in ipairs({ "clone_file", "rename_file", "remove_file", "sync_directory" }) do
+            -- Cut the creation and store of a uarch claim's directory, and the opening of a bundle.
+            -- Large epoch forest stores are covered by the hash-tree spec.
+            local filesystem_steps =
+                { "create_directory", "clone_file", "rename_file", "remove_file", "sync_directory" }
+            for _, name in ipairs(filesystem_steps) do
                 saved[name] = fs[name]
                 fs[name] = function(path, ...)
-                    if cut_forests or not path:find("/forests", 1, true) then
+                    if cut_forests or processing == "uarch" or not path:find("/forests", 1, true) then
                         cut(name)
                     end
                     return saved[name](path, ...)

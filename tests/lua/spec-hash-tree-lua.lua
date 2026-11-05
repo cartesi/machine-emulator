@@ -82,6 +82,78 @@ describe("hash-tree.lua", function()
             end, "hash type is required")
         end)
 
+        it("rejects invalid subtree heights without changing the frontier", function()
+            local hash = leaf(1)
+            local operations = {
+                function(f, height)
+                    hash_tree.frontier_push_back(f, hash, height)
+                end,
+                function(f, height)
+                    hash_tree.frontier_append(f, { hash }, nil, nil, height)
+                end,
+                function(f, height)
+                    hash_tree.frontier_append(f, {}, nil, nil, height)
+                end,
+                function(f, height)
+                    hash_tree.frontier_pad_back(f, hash, 1, height)
+                end,
+                function(f, height)
+                    hash_tree.frontier_pad_back(f, hash, 0, height)
+                end,
+                function(f, height)
+                    hash_tree.frontier_pad_back(f, hash, nil, height)
+                end,
+                function(f, height)
+                    hash_tree.frontier_get_root_hash(f, hash, height)
+                end,
+                hash_tree.frontier_get_leaf_count,
+            }
+            for _, count in ipairs({ 0, 1, 8 }) do
+                local frontier = hash_tree.frontier(3, "keccak256")
+                hash_tree.frontier_pad_back(frontier, hash, count)
+                local before = hash_tree.frontier_copy(frontier)
+                for _, height in ipairs({ -1, 1.5, 4, "2" }) do
+                    for _, operation in ipairs(operations) do
+                        expect.fail(function()
+                            operation(frontier, height)
+                        end, "invalid subtree height")
+                        expect.equal(frontier, before)
+                    end
+                end
+            end
+        end)
+
+        it("accepts subtrees as tall as the frontier", function()
+            local hash = leaf(1)
+            for _, height in ipairs({ 0, 3, 72 }) do
+                local frontier = hash_tree.frontier(height, "keccak256")
+                expect.equal(hash_tree.frontier_get_root_hash(frontier, hash, height), hash)
+                hash_tree.frontier_push_back(frontier, hash, height)
+                expect.equal(hash_tree.frontier_get_root_hash(frontier), hash)
+                expect.equal(hash_tree.frontier_get_leaf_count(frontier, height), 1)
+                frontier = hash_tree.frontier(height, "keccak256")
+                hash_tree.frontier_append(frontier, { hash }, nil, nil, height)
+                expect.equal(hash_tree.frontier_get_root_hash(frontier), hash)
+                frontier = hash_tree.frontier(height, "keccak256")
+                hash_tree.frontier_pad_back(frontier, hash, 1, height)
+                expect.equal(hash_tree.frontier_get_root_hash(frontier), hash)
+                frontier = hash_tree.frontier(height, "keccak256")
+                hash_tree.frontier_pad_back(frontier, hash, nil, height)
+                expect.equal(hash_tree.frontier_get_root_hash(frontier), hash)
+            end
+        end)
+
+        it("rejects unsupported frontier and forest hash functions", function()
+            for _, hash_type in ipairs({ "tohex", "HASH_SIZE", "unknown" }) do
+                expect.fail(function()
+                    hash_tree.frontier(3, hash_type)
+                end, "unsupported hash function")
+                expect.fail(function()
+                    hash_tree.frontier_forest(3, hash_type)
+                end, "unsupported hash function")
+            end
+        end)
+
         it("rejects hashes that are not hash-sized strings", function()
             for _, bad in ipairs({ "", string.rep("a", cartesi.HASH_SIZE - 1), 1 }) do
                 local frontier = hash_tree.frontier(H, "keccak256")
@@ -332,9 +404,11 @@ describe("hash-tree.lua", function()
             expect.fail(function()
                 hash_tree.frontier_load(path, 3, "keccak256")
             end, "frontier height does not match")
-            expect.fail(function()
-                hash_tree.frontier_load(path, 4, "unknown")
-            end, "unsupported hash function")
+            for _, hash_type in ipairs({ "tohex", "HASH_SIZE", "unknown" }) do
+                expect.fail(function()
+                    hash_tree.frontier_load(path, 4, hash_type)
+                end, "unsupported hash function")
+            end
             fs.write_file(cartesi.tojson({ false, "short", false }, 2, "Base64Array"), path)
             expect.fail(function()
                 hash_tree.frontier_load(path, 2, "keccak256")

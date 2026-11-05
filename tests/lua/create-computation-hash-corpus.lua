@@ -5,6 +5,7 @@
 
 local cartesi = require("cartesi")
 local filesystem = require("cartesi.filesystem")
+local tests_util = require("cartesi.tests.util")
 
 local artifact_dir = assert(os.getenv("CARTESI_COMPUTATION_HASH_CORPUS_PATH"), "corpus path is not set")
 local machine_tests_dir = assert(os.getenv("CARTESI_TESTS_PATH"), "machine tests path is not set")
@@ -768,5 +769,8 @@ add_uarch_case({
     equivalent_to = "uarch-after-window",
 })
 
-filesystem.write_file(cartesi.tojson(manifest, 2) .. "\n", artifact_dir .. "/manifest.json")
+filesystem.write_file(
+    cartesi.tojson(manifest, 2, "Manifest", tests_util.computation_hash_manifest_schemas) .. "\n",
+    artifact_dir .. "/manifest.json"
+)
 io.stderr:write("Created " .. artifact_dir .. "/manifest.json\n")

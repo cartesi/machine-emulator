@@ -10,6 +10,26 @@ lester.parse_args()
 local cartesi = require("cartesi")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
+describe("JSON floating-point numbers", function()
+    it("should reject non-finite numbers as scalars and inside tables", function()
+        for _, number in ipairs({ 0 / 0, math.huge, -math.huge }) do
+            for _, value in ipairs({ number, { value = number }, { 1, number, 3 } }) do
+                expect.fail(function()
+                    cartesi.tojson(value)
+                end, "cannot serialize a non-finite number to JSON")
+            end
+        end
+    end)
+
+    it("should preserve finite floating-point numbers", function()
+        for _, number in ipairs({ 0.0, -0.0, 1.5, -1.5, 1e308, -1e308, 1e-308, -1e-308 }) do
+            for _, value in ipairs({ number, { value = number }, { 1, number, 3 } }) do
+                expect.equal(cartesi.fromjson(cartesi.tojson(value)), value)
+            end
+        end
+    end)
+end)
+
 describe("JSON table keys", function()
     it("should accept dense arrays regardless of insertion order", function()
         local value = { [3] = "c", [1] = "a", [2] = false }

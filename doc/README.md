@@ -8355,6 +8355,7 @@ its root.
 ``` lua
 local function get_data_root_hash(data, log2_root_size, hash_type)
     local hash_function = cartesi[hash_type or "keccak256"]
+    assert(WORD_LOG2_SIZE <= log2_root_size and log2_root_size < 63, "invalid tree size")
     assert(#data <= (1 << log2_root_size), "data does not fit in the tree")
     -- Level zero is one hash per word, a trailing partial word zero-padded after the loop.
     local level = {}
@@ -8375,7 +8376,8 @@ local function get_data_root_hash(data, log2_root_size, hash_type)
         end
         level, pristine = parents, hash_function(pristine, pristine)
     end
-    return level[1]
+    -- Empty data pads to all zeros.
+    return level[1] or pristine
 end
 ```
 
@@ -8523,20 +8525,16 @@ are present. The module stores it as a fixed-length array with one slot
 per level, holding that level’s subtree root hash, or `false` where its
 bit is clear.
 
-The accessor `frontier_node` reads the hash of a node at one level from
-three regions that sit left to right in the tree, the frontier, an
-active region of nodes being worked on, and pristine padding:
+The helper `get_or_outside` reads the hash of a node at one level by its
+index. Nodes being worked on at that level form an active region. To its
+left the hash comes from the frontier, and to its right it is pristine
+padding, the two values the caller passes in:
 
 ``` lua
-local function frontier_node(frontier_entry, base, active, pristine_entry, index)
-    local lo, hi = base, base + #active - 1
-    if index < lo then
-        return frontier_entry -- fell left: a complete left subtree from the frontier
-    elseif index > hi then
-        return pristine_entry -- fell right: an all-pristine subtree
-    else
-        return active[index - lo + 1] -- inside the active region
-    end
+local function get_or_outside(values, base, index, left, right)
+    if math.ult(index, base) then return left end
+    if math.ult(base + #values - 1, index) then return right end
+    return values[index - base + 1]
 end
 ```
 
@@ -8575,7 +8573,10 @@ frontier:
 ``` lua
 local function frontier_push_back(frontier, hash, height)
     local hash_function = assert(frontier.hash_function)
-    local level = (height or 0) + 1
+    assert(is_raw_hash(hash), "invalid hash")
+    height = height or 0
+    assert_valid_subtree_height(frontier, height)
+    local level = height + 1
     assert_aligned_below(frontier, level, "frontier is not aligned to the subtree size")
     assert(not frontier[#frontier], "too many leaves")
     local right = hash
@@ -8606,9 +8607,14 @@ bounds select an empty range:
 local function frontier_append(frontier, hashes, begin_index, end_index, height)
     local hash_function = assert(frontier.hash_function)
     begin_index, end_index = normalize_range(hashes, begin_index, end_index)
-    local first_level = (height or 0) + 1
+    height = height or 0
+    assert_valid_subtree_height(frontier, height)
+    local first_level = height + 1
     assert_aligned_below(frontier, first_level, "frontier is not aligned to the subtree size")
     assert(frontier_padding_fits(frontier, end_index - begin_index, first_level), "too many leaves")
+    for i = begin_index, end_index - 1 do
+        assert(is_raw_hash(hashes[i]), "invalid hash")
+    end
     while begin_index < end_index do
         local added_height = 0
         local subtree_count = 1
@@ -8636,13 +8642,16 @@ padded with zero leaves to completion:
 ``` lua
 local function frontier_get_root_hash(frontier, pad, pad_height)
     local hash_function = assert(frontier.hash_function)
+    assert(pad == nil or is_raw_hash(pad), "invalid pad hash")
     local height = #frontier - 1
+    pad_height = pad_height or 0
+    assert_valid_subtree_height(frontier, pad_height)
     if frontier[height + 1] then return frontier[height + 1] end
     pad = pad or pristine_leaf
     local root = pad
-    assert_aligned_below(frontier, (pad_height or 0) + 1, "frontier is not aligned to the pad size")
+    assert_aligned_below(frontier, pad_height + 1, "frontier is not aligned to the pad size")
     -- pad doubles into the all-pad subtree of each level, the right sibling of every empty one
-    for level = (pad_height or 0) + 1, height do
+    for level = pad_height + 1, height do
         if frontier[level] then
             root = hash_function(frontier[level], root)
         else
@@ -8675,12 +8684,14 @@ local function frontier(log2_max_leaves_or_last_proof, hash_type)
     assert(hash_type ~= nil, "hash type is required")
     if is_proof(log2_max_leaves_or_last_proof) then
         local proof = log2_max_leaves_or_last_proof
+        assert_valid_frontier_proof(proof, hash_type)
         local log2_max_leaves = proof.log2_root_size
         local f = frontier_genesis(log2_max_leaves, hash_type)
         local hash_function = f.hash_function
+        -- A full height-64 tree has leaf count 2^64, which wraps to zero; its complete level is 65.
         local leaf_count = proof.target_address + 1
         local lowest_complete_level = 1
-        while (leaf_count & (1 << (lowest_complete_level - 1))) == 0 do
+        while lowest_complete_level <= log2_max_leaves and (leaf_count & (1 << (lowest_complete_level - 1))) == 0 do
             lowest_complete_level = lowest_complete_level + 1
         end
         -- Above the lowest complete level, where the leaf count's bit at that level is set, the last leaf
@@ -8722,9 +8733,15 @@ Finally, `frontier_next_proofs` produces an epoch’s output proofs:
 local function frontier_next_proofs(frontier, next_output_hashes)
     local hash_function = assert(frontier.hash_function)
     local log2_max_leaves = #frontier - 1
+    -- A proof's target address has 64 bits
+    assert(log2_max_leaves <= 64, "tree too tall for proofs")
     local next_output_count = #next_output_hashes
     if next_output_count == 0 then return {} end
+    for i = 1, next_output_count do
+        assert(is_raw_hash(next_output_hashes[i]), "invalid hash")
+    end
     local leaf_count = frontier_get_leaf_count(frontier)
+    assert(frontier_padding_fits(frontier, next_output_count, 1), "too many leaves")
     -- Allocate each proof's sibling array.
     local siblings = {}
     for i = 1, next_output_count do
@@ -8741,14 +8758,14 @@ local function frontier_next_proofs(frontier, next_output_hashes)
         -- Add each output's sibling at this level.
         for i = 1, next_output_count do
             local node = (leaf_count + i - 1) >> bit
-            siblings[i][level] = frontier_node(frontier_entry, base, active, pristine, node ~ 1)
+            siblings[i][level] = get_or_outside(active, base, node ~ 1, frontier_entry, pristine)
         end
         -- Hash the active nodes into their parents.
         local parents = {}
         local parents_base = base >> 1
         for p = parents_base, (base + #active - 1) >> 1 do
-            local left = frontier_node(frontier_entry, base, active, pristine, 2 * p)
-            local right = frontier_node(frontier_entry, base, active, pristine, 2 * p + 1)
+            local left = get_or_outside(active, base, 2 * p, frontier_entry, pristine)
+            local right = get_or_outside(active, base, 2 * p + 1, frontier_entry, pristine)
             parents[p - parents_base + 1] = hash_function(left, right)
         end
         active, base = parents, parents_base
@@ -8779,7 +8796,7 @@ a new leaf’s path to the root always ends at an aligned boundary at or
 before *c*, so it is a complete subtree whose root hash the frontier
 already holds, never an individual old leaf. The function sweeps the new
 leaves up one level at a time, reading each proof sibling through
-`frontier_node`, which supplies a frontier entry or pristine padding at
+`get_or_outside`, which supplies a frontier entry or pristine padding at
 the boundaries. The proofs are built together, in one batch at the end
 of the epoch, because an early output’s low siblings are later outputs
 of the same epoch. Note that proofs issued for outputs in previous
@@ -9181,8 +9198,8 @@ local function frontier_forest_expand_leaf(forest, position, subtree)
         if not is_tree(tree) then
             assert(container_height == height, "leaf height mismatch")
             assert(tree == replacement.hash, "leaf hash mismatch")
-            container[key] = replacement
             if forest.directory then store_expansion(forest, replacement) end
+            container[key] = replacement
             return
         end
         if tree.kind == "mixed" then

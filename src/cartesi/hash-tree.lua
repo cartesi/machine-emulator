@@ -392,6 +392,18 @@ end
 -- Whether a frontier constructor argument is a last-output proof rather than a tree height.
 local function is_proof(log2_max_leaves_or_last_proof) return type(log2_max_leaves_or_last_proof) == "table" end
 
+-- Checks that a proof authenticates a leaf within the frontier's tree.
+local function assert_valid_frontier_proof(proof, hash_type)
+    assert(math.type(proof.target_address) == "integer", "invalid proof target address")
+    assert(proof.log2_target_size == 0, "proof target is not a leaf")
+    assert(is_raw_hash(proof.target_hash), "invalid target hash")
+    verify_slice(proof, hash_type)
+    assert(
+        proof.log2_root_size == 64 or math.ult(proof.target_address, 1 << proof.log2_root_size),
+        "proof target address is out of range"
+    )
+end
+
 -- The single frontier constructor resolves the required hash_type once and stores the function
 -- in the frontier. A number is the tree height log2_max_leaves and yields an empty frontier (leaf
 -- count 0) used for genesis. Otherwise the argument is the previous epoch's
@@ -404,12 +416,14 @@ local function frontier(log2_max_leaves_or_last_proof, hash_type)
     assert(hash_type ~= nil, "hash type is required")
     if is_proof(log2_max_leaves_or_last_proof) then
         local proof = log2_max_leaves_or_last_proof
+        assert_valid_frontier_proof(proof, hash_type)
         local log2_max_leaves = proof.log2_root_size
         local f = frontier_genesis(log2_max_leaves, hash_type)
         local hash_function = f.hash_function
+        -- A full height-64 tree has leaf count 2^64, which wraps to zero; its complete level is 65.
         local leaf_count = proof.target_address + 1
         local lowest_complete_level = 1
-        while (leaf_count & (1 << (lowest_complete_level - 1))) == 0 do
+        while lowest_complete_level <= log2_max_leaves and (leaf_count & (1 << (lowest_complete_level - 1))) == 0 do
             lowest_complete_level = lowest_complete_level + 1
         end
         -- Above the lowest complete level, where the leaf count's bit at that level is set, the last leaf

@@ -293,6 +293,8 @@ local function frontier_pad_back(frontier, hash, count, pad_height)
     local level = first_level
     while level <= top do
         if count == 0 then break end
+        -- The remaining count has no bits at offsets 64 or above.
+        if level - first_level >= 64 then break end
         local size = 1 << (level - first_level)
         if math.ult(count, size) then break end
         if frontier[level] then

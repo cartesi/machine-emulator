@@ -681,11 +681,6 @@ static std::pair<FILE *, std::string> open_temporary_file(int fd, std::string pa
         std::ignore = retry_on_eintr([&] { return close(fd); });
         std::ignore = unlink(path.c_str());
     });
-#ifndef _WIN32
-    if (fcntl(fd, F_SETFD, FD_CLOEXEC) != 0) {
-        throw make_path_system_error(errno, "unable to create temporary file"s, path, "fcntl() failed"s);
-    }
-#endif
     auto *file = fdopen(fd, "w+b");
     if (file == nullptr) {
         throw make_path_system_error(errno, "unable to create temporary file"s, path, "fdopen() failed"s);
@@ -716,9 +711,9 @@ std::pair<FILE *, std::string> create_temporary_file(const std::string &dirname,
     throw make_path_system_error(EEXIST, "unable to create temporary file"s, template_path);
 #else
     auto path = template_path;
-    const auto fd = mkstemp(path.data());
+    const auto fd = mkostemp(path.data(), O_CLOEXEC);
     if (fd < 0) {
-        throw make_path_system_error(errno, "unable to create temporary file"s, template_path, "mkstemp() failed"s);
+        throw make_path_system_error(errno, "unable to create temporary file"s, template_path, "mkostemp() failed"s);
     }
     return open_temporary_file(fd, std::move(path));
 #endif

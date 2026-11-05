@@ -439,6 +439,34 @@ describe("cartesi evmu", function()
         check_parse_func_sig_error("_() returns (int, ", 'expected type spec at line 1, column 19 (got "")')
     end)
 
+    it("keeps cached function signatures while callers retain the parsed table", function()
+        local signature = "cache_keep(uint amount)"
+        local parsed, selector, canonical = evmu.parse_func_sig(signature)
+        collectgarbage("collect")
+        collectgarbage("collect")
+        local cached, cached_selector, cached_canonical = evmu.parse_func_sig(signature)
+        assert(cached == parsed, "retained parsed signature was evicted")
+        assert(cached_selector == selector and cached_canonical == canonical)
+        assert(canonical == "cache_keep(uint256)")
+    end)
+
+    it("collects cached function signatures after callers release the parsed table", function()
+        local signature = "cache_release(uint amount)"
+        local observed = setmetatable({}, { __mode = "v" })
+        local selector, canonical
+        do
+            local parsed
+            parsed, selector, canonical = evmu.parse_func_sig(signature)
+            observed[1] = parsed
+        end
+        collectgarbage("collect")
+        collectgarbage("collect")
+        assert(observed[1] == nil, "cache retained an unused parsed signature")
+        local parsed, new_selector, new_canonical = evmu.parse_func_sig(signature)
+        assert(parsed.name == "cache_release")
+        assert(new_selector == selector and new_canonical == canonical)
+    end)
+
     it("calldata encoding and decoding", function()
         -- check calldata encoding
         check_encode_decode_calldata_hex("_()", {}, "0xb7ba4583")

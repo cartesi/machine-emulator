@@ -272,24 +272,21 @@ end
 
 -- parsed function signature cache
 -- this avoids repeated parsing of the same function signature
--- a parsed function signature will remain in cache at least as long as a string with that signature exists in Lua
--- once the string is collected, the corresponding parsed signature may be collected too
-local parsed_func_sig_cache = setmetatable({}, { __mode = "k" })
+-- entries may be collected once callers release the parsed signature
+local parsed_func_sig_cache = setmetatable({}, { __mode = "v" })
 
--- returns a parsed function signature and the corresponding canonic signature
+-- returns a parsed function signature, selector, and canonic signature
 function _M.parse_func_sig(sig)
     assert(type(sig) == "string", "expected string")
     local cached = parsed_func_sig_cache[sig]
-    if cached then return cached.parsed_func_sig, cached.func_sel, cached.canonic_func_sig end
+    if cached then return cached, cached.func_sel, cached.canonic_func_sig end
     local err = { pos = 0, what = "unknown error" }
     local parsed_sig = check_match_error(sig, func_sig:match(sig, 1, err), err)
     local canonic_sig = canonic_func_sig(parsed_sig)
     local func_sel = keccak256(canonic_sig):sub(1, 4)
-    parsed_func_sig_cache[sig] = {
-        parsed_func_sig = parsed_sig,
-        func_sel = func_sel,
-        canonic_func_sig = canonic_sig,
-    }
+    parsed_sig.func_sel = func_sel
+    parsed_sig.canonic_func_sig = canonic_sig
+    parsed_func_sig_cache[sig] = parsed_sig
     return parsed_sig, func_sel, canonic_sig
 end
 

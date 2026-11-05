@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`
 
 ### Fixed
+- Fixed the Lua ABI function-signature cache retaining unused parsed signatures indefinitely
 - Fixed Lua JSON conversion silently replacing NaN and infinities with null instead of rejecting them
 - Fixed Lua JSON decoding treating object, array, and tuple schema fields as enum entries
 - Fixed Lua JSON conversion serializing empty tables as arrays despite object schemas

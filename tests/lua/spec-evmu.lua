@@ -236,6 +236,7 @@ describe("cartesi evmu", function()
         check_decode_hex("0X000102", "\x00\x01\x02")
         check_decode_hex("0x00010203", "\x00\x01\x02\x03")
         check_decode_hex(all_hex, all)
+        check_decode_hex("0XaBcDeF", "\xab\xcd\xef")
         check_decode_hex_error("", 'hex string must start with "0x"')
         check_decode_hex_error("0", 'hex string must start with "0x"')
         check_decode_hex_error("0x0", "hex string length must be even")
@@ -243,6 +244,26 @@ describe("cartesi evmu", function()
         check_decode_hex_error("0x000102 ", "hex string cannot contain whitespace")
         check_decode_hex_error("0x0001 02", "hex string cannot contain whitespace")
         check_decode_hex_error("0x00\t01", "hex string cannot contain whitespace")
+    end)
+
+    it("rejects signed hex pairs without throwing", function()
+        for _, pair in ipairs({ "+f", "+F", "-0", "-1", "-f", "-F" }) do
+            local message = string.format("hex string cannot contain %q", pair)
+            check_decode_hex_error("0x" .. pair, message)
+            check_decode_hex_error("0x" .. pair .. "00", message)
+            check_decode_hex_error("0x00" .. pair .. "ff", message)
+            check_decode_hex_error("0x00" .. pair, message)
+        end
+    end)
+
+    it("rejects signed hex pairs in ABI address inputs", function()
+        for _, pair in ipairs({ "+f", "-0", "-1" }) do
+            local address = "0x" .. string.rep(pair, 20)
+            local message = string.format("hex string cannot contain %q", pair)
+            check_encode_calldata_hex_error("f(address)", { address }, message)
+            local ok, err = pcall(evmu.encode_abi, "(address)", { address })
+            assert(not ok and is_suffix(message, err))
+        end
     end)
 
     it("type spec parsing", function()

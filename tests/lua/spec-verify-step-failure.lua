@@ -320,6 +320,51 @@ local function register_verify_step_tests(machine)
         end)
     end)
 
+    describe("rejected input", function()
+        for _, hash_function in ipairs({ "keccak256", "sha256" }) do
+            it("should authenticate the revert root with " .. hash_function, function()
+                local source <close> = cartesi.machine({
+                    ram = { length = 0x1000 },
+                    hash_tree = { hash_function = hash_function },
+                })
+                local revert_root_hash = source:get_root_hash()
+                source:write_revert_root_hash(revert_root_hash)
+                source:write_reg("iflags_Y", 1)
+                source:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+                source:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+                source:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+                local initial_hash = source:get_root_hash()
+                local filename = os.tmpname()
+                os.remove(filename)
+                source:log_step(1, filename)
+                local file <close> = assert(io.open(filename, "rb"))
+                local data = file:read("a")
+                file:close()
+                os.remove(filename)
+                expect.truthy(verify_step_with_data(machine, initial_hash, 1, revert_root_hash, data))
+                expect.not_equal(source:get_root_hash(), revert_root_hash)
+
+                local forged_root = string.rep("\xba", HASH_SIZE)
+                local forged = replace_at(data, OFFSET_ROOT_HASH_AFTER, forged_root)
+                expect.falsy(verify_step_with_data(machine, initial_hash, 1, forged_root, forged))
+                -- Changing both the claimed result and its recorded state must still fail
+                -- authentication against the original root supplied by the caller.
+                local revert_address = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START
+                local found = false
+                for i, page in ipairs(parse_pages(data)) do
+                    if page.index == revert_address >> LOG2_PAGE_SIZE then
+                        local offset = OFFSET_FIRST_PAGE + (i - 1) * PAGE_ENTRY_SIZE + 8 + revert_address % PAGE_SIZE
+                        forged = replace_at(forged, offset, forged_root)
+                        found = true
+                        break
+                    end
+                end
+                assert(found, "step log did not include the revert root page")
+                expect.falsy(verify_step_with_data(machine, initial_hash, 1, forged_root, forged))
+            end)
+        end
+    end)
+
     describe("verify_step wrapper: argument validation", function()
         it("should reject root hash before mismatch with log header", function()
             local bad_hash = string.rep("\xba", HASH_SIZE)

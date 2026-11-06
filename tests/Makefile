@@ -77,23 +77,22 @@ LUA_CLI ?= $(LUA)
 SPEC_FILTER ?=
 
 LUACOV_DIR := $(BUILDDIR)/luacov
+CM_CLI_SHARDS := 1 2 3 4
 
 ifeq ($(coverage),yes)
 # The lua test runners fork workers whose duplicate counter dumps would race the
 # shared .gcda files. Parallelism comes from make -j across test targets instead.
 override NUM_JOBS = 1
 export LUA_CLI = $(LUA) -lluacov
-LUACOV_STATS := $(LUACOV_DIR)/luacov.stats.out
+# Each independently running suite owns its statistics. CLI children within a
+# shard run sequentially and accumulate into that shard's file.
+LUACOV_STATS = $(LUACOV_DIR)/$@.stats.out
 LUACOV_CONFIG := $(abspath ./scripts/luacov.lua)
 export LUACOV_STATS
 export LUACOV_CONFIG
 $(LUACOV_DIR):
 	mkdir -p $@
-# spec-cm-cli's CLI children and test-evmu write luacov.stats.out under this dir,
-# so it must exist before them. They are also ordered so their writes do not race.
 LUACOV_DIR_ORDER := $(LUACOV_DIR)
-TEST_EVMU_ORDER := $(LUACOV_DIR) run-lua-spec-cm-cli
-TEST_COMPUTATION_HASH_ORDER := $(LUACOV_DIR) run-lua-spec-cm-cli test-evmu
 endif
 
 ifeq ($(TARGET_OS),Darwin)
@@ -293,7 +292,7 @@ test-computation-hash: verify-existing-computation-hash-corpus
 
 # Downloaded corpora are immutable test inputs: deliberately do not make this target depend on
 # the generator or fixture timestamps.
-verify-existing-computation-hash-corpus: | $(TEST_COMPUTATION_HASH_ORDER)
+verify-existing-computation-hash-corpus: | $(LUACOV_DIR_ORDER)
 	$(LUA_CLI) ./lua/test-computation-hash.lua
 
 
@@ -343,10 +342,19 @@ run-lua-program-%: | $(CARTESI_IMAGES)
 run-lua-spec-%: | $(CARTESI_IMAGES)
 	$(LUA) lua/spec-$*.lua --filter='$(SPEC_FILTER)'
 
-# spec-cm-cli runs the CLI as child processes under LUA_CLI (lua -lluacov under
-# coverage), which write luacov.stats.out, so its directory must exist first.
+# Under coverage, split the CLI suite across independent processes scheduled by
+# make -j. Keep the ordinary serial entry point for local runs and filtering.
+ifeq ($(coverage),yes)
+run-lua-spec-cm-cli: test-cm-cli-parallel
+else
 run-lua-spec-cm-cli: | $(CARTESI_IMAGES) $(LUACOV_DIR_ORDER)
 	$(LUA) lua/spec-cm-cli.lua --filter='$(SPEC_FILTER)'
+endif
+
+test-cm-cli-parallel: $(addprefix run-lua-spec-cm-cli-shard-,$(CM_CLI_SHARDS))
+
+$(addprefix run-lua-spec-cm-cli-shard-,$(CM_CLI_SHARDS)): run-lua-spec-cm-cli-shard-%: | $(CARTESI_IMAGES) $(LUACOV_DIR_ORDER)
+	CM_CLI_SHARD=$*/$(words $(CM_CLI_SHARDS)) $(LUA) lua/spec-cm-cli.lua --filter='$(SPEC_FILTER)'
 
 test-lua: $(addprefix run-lua-program-,$(LUA_PROGRAMS)) \
 	$(addprefix run-lua-spec-,$(LUA_SPECS)) run-lua-spec-cm-cli test-evmu
@@ -355,9 +363,8 @@ test-lua: $(addprefix run-lua-program-,$(LUA_PROGRAMS)) \
 test-cm-cli: run-lua-spec-cm-cli
 
 # The evmu spec exercises Lua-only code, so it runs under LUA_CLI to measure its
-# coverage with luacov. Ordered after spec-cm-cli so their luacov.stats.out
-# writes do not race (only relevant under coverage).
-test-evmu: | $(TEST_EVMU_ORDER)
+# coverage with luacov in its own statistics file.
+test-evmu: | $(LUACOV_DIR_ORDER)
 	$(LUA_CLI) lua/spec-evmu.lua --filter='$(SPEC_FILTER)'
 
 test-c-api: | $(CARTESI_IMAGES)
@@ -454,8 +461,8 @@ GCOVR_FLAGS=--gcov-ignore-parse-errors --use-gcov-files \
 coverage-report: $(COVERAGE_OUTPUT_DIR)
 	$(LUA) ./scripts/run-gcov.lua $(MACHINE_EMULATOR_SRC_DIR) '$(GCOV)'
 	$(UARCH_PCS_TO_GCOV_CMD)
-	$(LUA) ./scripts/luacov-to-gcov.lua $(LUACOV_STATS) ../src/cartesi-machine.lua ../src
-	$(LUA) ./scripts/luacov-to-gcov.lua $(LUACOV_STATS) ../src/cartesi/evmu.lua ../src
+	$(LUA) ./scripts/luacov-to-gcov.lua ../src/cartesi-machine.lua ../src $(wildcard $(LUACOV_DIR)/*.stats.out)
+	$(LUA) ./scripts/luacov-to-gcov.lua ../src/cartesi/evmu.lua ../src $(wildcard $(LUACOV_DIR)/*.stats.out)
 	mkdir -p $(COVERAGE_OUTPUT_DIR)/gcc
 	cd ../src && gcovr $(GCOVR_FLAGS) --root . --filter '$(abspath ../src)' --filter '$(abspath ../uarch)' --html-details $(COVERAGE_OUTPUT_DIR)/gcc/index.html --txt $(COVERAGE_OUTPUT_DIR)/coverage.txt --print-summary
 
@@ -490,6 +497,7 @@ check-lua:
 	luacheck lua/
 
 .PHONY: machine uarch misc riscv-tests riscv-arch-test build-tests-fuzz build-tests-fuzz-seed-corpus test-fuzz
+.PHONY: test-cm-cli-parallel $(addprefix run-lua-spec-cm-cli-shard-,$(CM_CLI_SHARDS))
 .PHONY: $(PARALLEL_TESTS) test-parallel test test-misc test-lua test-lua-filesystem test-lua-exceptions test-cm-cli test-evmu run-lua-spec-cm-cli \
 	test-coverage-uarch-pcs coverage-report coverage-all clean-coverage
 .PHONY: build-tests-computation-hash-fixtures build-computation-hash-corpus \

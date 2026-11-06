@@ -403,6 +403,106 @@ local function check_near_limit_uarch_tail(case)
     )
 end
 
+-- Reconstruct an input boundary with plain execution and an explicit rollback, independently
+-- of the CLI's computation builders. The first input always reaches the saturated budget seam.
+local function new_budget_seam_machine(case, input_offset)
+    local machine <close> = cartesi.machine(artifact_dir .. "/" .. case.template)
+    assert(machine:read_reg("mcycle") == cartesi.MCYCLE_MAX - 255)
+    if input_offset == 1 then
+        machine:send_cmio_response(
+            cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+            filesystem.read_file(artifact_dir .. "/" .. case.inputs[1]),
+            machine:get_root_hash()
+        )
+        assert(machine:run(cartesi.MCYCLE_MAX) == cartesi.BREAK_REASON_YIELDED_MANUALLY)
+        assert(machine:read_reg("mcycle") == machine:read_reg("imcyclemax"))
+        if machine:read_reg("htif_tohost_reason") == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
+            machine:destroy()
+            machine:load(artifact_dir .. "/" .. case.template)
+        end
+    end
+    return machine:move()
+end
+
+local function check_budget_seam(case)
+    local first <close> = new_budget_seam_machine(case, 0)
+    local revert_root = first:get_root_hash()
+    first:send_cmio_response(
+        cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+        filesystem.read_file(artifact_dir .. "/" .. case.inputs[1]),
+        revert_root
+    )
+    assert(first:run(cartesi.MCYCLE_MAX - 1) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+    assert(first:run_uarch(cartesi.UARCH_CYCLE_MAX) == cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
+    assert(first:read_reg("mcycle") == cartesi.MCYCLE_MAX)
+    assert(first:read_reg("mcycle") == first:read_reg("imcyclemax"))
+    assert(first:read_reg("iflags_Y") ~= 0)
+    local rejected = first:read_reg("htif_tohost_reason") == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED
+    local before_reset = first:get_root_hash()
+    local reset_log = first:log_reset_uarch()
+    local first_root = rejected and revert_root or first:get_root_hash()
+    assert(
+        cartesi.machine:verify_reset_uarch(before_reset, reset_log) == first_root,
+        case.id .. ": closing reset at the budget seam has the wrong canonical root"
+    )
+
+    local following <close> = new_budget_seam_machine(case, 1)
+    assert(following:get_root_hash() == first_root, case.id .. ": wrong following-input boundary")
+    following:send_cmio_response(
+        cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+        filesystem.read_file(artifact_dir .. "/" .. case.inputs[2]),
+        first_root
+    )
+    assert(following:read_reg("iflags_Y") == 0, case.id .. ": following input was not delivered")
+    local reason = following:run(cartesi.MCYCLE_MAX)
+    assert(reason == (rejected and cartesi.BREAK_REASON_YIELDED_MANUALLY or cartesi.BREAK_REASON_MCYCLE_OVERFLOW))
+    assert(following:read_reg("mcycle") == (rejected and cartesi.MCYCLE_MAX - 1 or cartesi.MCYCLE_MAX))
+    local final_root = following:get_root_hash()
+    assert(final_root ~= first_root, case.id .. ": following input did not change the state")
+
+    local expected
+    if case.level == "mcycle" then
+        local input_height = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - case.geometry.log2_mcycle_period
+        local frontier =
+            hash_tree.frontier(input_height + cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH, "keccak256")
+        -- Neither input reaches its first sampling point; each input's entire span is padding.
+        hash_tree.frontier_push_back(frontier, double_hash(first_root, input_height), input_height)
+        hash_tree.frontier_pad_back(
+            frontier,
+            double_hash(final_root, input_height),
+            (1 << cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH) - 1,
+            input_height
+        )
+        expected = hash_tree.frontier_get_root_hash(frontier)
+    else
+        local input_offset = case.geometry.mcycle_period_index
+            >> (cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - case.geometry.log2_mcycle_period)
+        local machine <close> = new_budget_seam_machine(case, input_offset)
+        local boundary_root = machine:get_root_hash()
+        local revert_tail = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0).hashes
+        assert(machine:get_root_hash() == boundary_root, case.id .. ": tail collection changed the boundary")
+        machine:send_cmio_response(
+            cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+            filesystem.read_file(artifact_dir .. "/" .. case.inputs[input_offset + 1]),
+            boundary_root
+        )
+        local collected = machine:collect_uarch_cycle_root_hashes(
+            cartesi.MCYCLE_MAX,
+            case.geometry.log2_bundle_uarch_cycle_count,
+            revert_tail
+        )
+        expected = uarch_period_root(
+            collected,
+            case.geometry.log2_mcycle_period,
+            cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - case.geometry.log2_bundle_uarch_cycle_count
+        )
+    end
+    assert(
+        filesystem.read_file(artifact_dir .. "/" .. case.result) == expected,
+        case.id .. ": independently assembled budget-seam tree differs"
+    )
+end
+
 local results = {}
 local count = 0
 for _, case in ipairs(manifest) do
@@ -434,6 +534,9 @@ for _, case in ipairs(manifest) do
     end
     if results[case.id] and case.oracle == "near-limit-uarch-tail" then
         check_near_limit_uarch_tail(case)
+    end
+    if results[case.id] and (case.oracle == "budget-seam-mcycle" or case.oracle == "budget-seam-uarch") then
+        check_budget_seam(case)
     end
     if results[case.id] then
         io.stderr:write(string.format("%s: passed\n", case.id))

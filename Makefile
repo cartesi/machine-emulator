@@ -312,7 +312,7 @@ uarch: $(SRCDIR)/cm-version.h $(SRCDIR)/interpret-jump-table.hpp
 risc0: $(SRCDIR)/cm-version.h
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C risc0
 
-$(SRCDIR)/cm-version.h:
+$(SRCDIR)/cm-version.h: $(SRCDIR)/Makefile tools/template/cm-version.h.template
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) cm-version.h
 
 $(SRCDIR)/interpret-jump-table.hpp:

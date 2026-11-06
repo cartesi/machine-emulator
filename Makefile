@@ -42,13 +42,17 @@ TESTS_DATA_DOC_RUNTIME_PATH= $(PREFIX)/doc/cartesi-machine-tests-data
 ifeq ($(TARGET_OS),Darwin)
 LIBCARTESI=libcartesi.dylib
 LIBCARTESI_JSONRPC=libcartesi_jsonrpc.dylib
+LIBCARTESI_FILESYSTEM=libcartesi_filesystem.dylib
 LIBCARTESI_SO=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).dylib
 LIBCARTESI_SO_JSONRPC=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).dylib
+LIBCARTESI_SO_FILESYSTEM=libcartesi_filesystem-$(MACHINE_EMULATOR_SO_VERSION).dylib
 else
 LIBCARTESI=libcartesi.so
 LIBCARTESI_JSONRPC=libcartesi_jsonrpc.so
+LIBCARTESI_FILESYSTEM=libcartesi_filesystem.so
 LIBCARTESI_SO=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).so
 LIBCARTESI_SO_JSONRPC=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).so
+LIBCARTESI_SO_FILESYSTEM=libcartesi_filesystem-$(MACHINE_EMULATOR_SO_VERSION).so
 endif
 
 BIN_INSTALL_PATH=    $(abspath $(DESTDIR)$(BIN_RUNTIME_PATH))
@@ -74,14 +78,14 @@ SYMLINK= ln -sf
 CHMOD_EXEC= chmod 0755
 
 EMU_TO_BIN= src/cartesi-jsonrpc-machine src/cartesi-hash-tree-hash
-EMU_TO_LIB= src/$(LIBCARTESI_SO) src/$(LIBCARTESI_SO_JSONRPC)
-EMU_TO_LIB_A= src/libcartesi.a src/libcartesi_jsonrpc.a src/libluacartesi.a src/libluacartesi_jsonrpc.a
+EMU_TO_LIB= src/$(LIBCARTESI_SO) src/$(LIBCARTESI_SO_JSONRPC) src/$(LIBCARTESI_SO_FILESYSTEM)
+EMU_TO_LIB_A= src/libcartesi.a src/libcartesi_jsonrpc.a src/libcartesi_filesystem.a src/libluacartesi.a src/libluacartesi_jsonrpc.a src/libluacartesi_filesystem.a
 EMU_LUA_TO_BIN= src/cartesi-machine.lua src/cartesi-machine-stored-hash.lua
 EMU_TO_LUA_PATH= src/cartesi/util.lua src/cartesi/gdbstub.lua src/cartesi/evmu.lua src/cartesi/bash.lua src/cartesi/hash-tree.lua
 EMU_TO_LUA_THIRD_PARTY_PATH= src/cartesi/third-party/bint.lua
 EMU_TO_LUA_CPATH= src/cartesi.so
-EMU_TO_LUA_CARTESI_CPATH= src/cartesi/jsonrpc.so
-EMU_TO_INC= $(addprefix src/,cm-jsonrpc.h cm.h cm-version.h)
+EMU_TO_LUA_CARTESI_CPATH= src/cartesi/jsonrpc.so src/cartesi/filesystem.so
+EMU_TO_INC= $(addprefix src/,cm-jsonrpc.h cm-filesystem.h cm.h cm-version.h)
 UARCH_TO_SHARE= uarch-ram.bin
 
 TESTS_TO_BIN= tests/build/misc/test-machine-c-api
@@ -125,6 +129,7 @@ release?=no
 sanitize?=no
 fuzz?=no
 coverage?=no
+threads?=yes
 git_commit?=
 
 # If not build type is chosen, set the default to release with debug information,
@@ -247,7 +252,7 @@ submodules:
 hash luacartesi:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 
-libcartesi libcartesi_jsonrpc libcartesi.a libcartesi_jsonrpc.a libcartesi.so libcartesi_jsonrpc.so:
+libcartesi libcartesi_jsonrpc libcartesi_filesystem libcartesi.a libcartesi_jsonrpc.a libcartesi_filesystem.a libcartesi.so libcartesi_jsonrpc.so libcartesi_filesystem.so:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 
 version:
@@ -307,7 +312,7 @@ uarch: $(SRCDIR)/cm-version.h $(SRCDIR)/interpret-jump-table.hpp
 risc0: $(SRCDIR)/cm-version.h
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C risc0
 
-$(SRCDIR)/cm-version.h:
+$(SRCDIR)/cm-version.h: $(SRCDIR)/Makefile tools/template/cm-version.h.template
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) cm-version.h
 
 $(SRCDIR)/interpret-jump-table.hpp:
@@ -397,6 +402,7 @@ install-shared-libs: $(LIB_INSTALL_PATH)
 	$(INSTALL_EXEC) $(EMU_TO_LIB) $(LIB_INSTALL_PATH)
 	$(SYMLINK) $(LIBCARTESI_SO) $(LIB_INSTALL_PATH)/$(LIBCARTESI)
 	$(SYMLINK) $(LIBCARTESI_SO_JSONRPC) $(LIB_INSTALL_PATH)/$(LIBCARTESI_JSONRPC)
+	$(SYMLINK) $(LIBCARTESI_SO_FILESYSTEM) $(LIB_INSTALL_PATH)/$(LIBCARTESI_FILESYSTEM)
 
 install-lua-libs: $(LUA_INSTALL_PATH)/cartesi $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi/third-party
 	$(INSTALL_FILE) $(EMU_LUA_TO_BIN) $(LUA_INSTALL_PATH)

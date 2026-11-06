@@ -53,8 +53,7 @@ do
             end,
         },
     }
-    local ok, err =
-        pcall(transport.answer_event, client, cartesi.tojson({ operation = "move", arguments = {} }), protocol)
+    local ok, err = pcall(transport.answer_event, client, '{"operation":"move","arguments":[]}', protocol)
     assert(not ok and err:find("the event handler produced no value", 1, true))
     ok, err =
         pcall(transport.answer_event, client, cartesi.tojson({ operation = "notice", arguments = { 42 } }), protocol)
@@ -88,12 +87,128 @@ for _, delay in ipairs({ 0, 2, 5, 6 }) do
         if delay < 5 then
             assert(future.accepted_at == math.max(delay, 1), "clock did not stop at the chosen reply block")
         else
-            assert(server:get_time() == 5, "acknowledgement extended the deadline")
+            assert(server:get_time() == 4, "acknowledgement extended the deadline")
         end
         if delay > 5 then
-            server:wait_until(delay)
+            server:wait_until(delay + 1)
             assert(future.value == nil, "a reply after expiry was accepted")
         end
+    end)
+end
+
+-- Immediate answers and heterogeneous delayed batches keep container types and apply
+-- binary/index conversions exactly once, including schemas supplied by the binding.
+for _, delay in ipairs({ 0, 3 }) do
+    local schemas = {
+        Arguments = { items = {} },
+        Array = { items = "Default" },
+        Object = {},
+        Hash = "Base64",
+        Record = {
+            array = "Array",
+            object = "Object",
+            hash = "Hash",
+            hex = "Hex",
+            where = "ArrayIndex",
+            proof = "Proof",
+        },
+    }
+    local cases = {
+        { name = "array", schema = "Array", value = {} },
+        { name = "object", schema = "Object", value = {} },
+        {
+            name = "record",
+            schema = "Record",
+            value = {
+                array = {},
+                object = {},
+                hash = hash,
+                hex = '\0"\\',
+                where = 1,
+                label = 'quote " and newline\n',
+                proof = { root_hash = hash, target_hash = hash, sibling_hashes = {} },
+            },
+        },
+    }
+    local events, expected = {}, {}
+    for _, case in ipairs(cases) do
+        events[case.name] = transport.define_event(case.name, "Arguments", case.schema)
+        expected[case.name] = cartesi.tojson(case.value, -1, case.schema, schemas)
+    end
+    local typed_protocol = transport.new_protocol(events, schemas)
+    run_with_server(typed_protocol, function(server, run_client, wait_connections)
+        local client, futures = { event_handler = {} }, {}
+        for _, case in ipairs(cases) do
+            client.event_handler[case.name] = function(self)
+                if delay == 0 then
+                    return case.value
+                end
+                return transport.schedule_response(self, delay, function()
+                    return case.value
+                end)
+            end
+        end
+        run_client(nil, function(wire, line)
+            local encoded, done = transport.answer_event(client, line, typed_protocol)
+            local response = cartesi.fromjson(encoded)
+            if delay == 0 and expected[wire.operation] then
+                assert(
+                    response.id == wire.id and response.value.answer == expected[wire.operation],
+                    "immediate answer changed its encoded payload"
+                )
+            elseif wire.operation == "advance_time" and wire.arguments[1] == delay then
+                assert(#response.value == #cases)
+                for i, case in ipairs(cases) do
+                    assert(
+                        response.value[i].id == futures[i].id and response.value[i].value == expected[case.name],
+                        "batch changed an encoded payload"
+                    )
+                end
+            end
+            return encoded, done
+        end, true)
+        wait_connections(1)
+        for i, case in ipairs(cases) do
+            futures[i] = server:request_from_player(server:get_players()[1], events[case.name], {}, function(value)
+                assert(
+                    cartesi.tojson(value, -1, case.schema, schemas) == expected[case.name],
+                    "response decoded incorrectly"
+                )
+                return value
+            end)
+        end
+        for _, future in ipairs(futures) do
+            assert(future:wait_at_most(5) ~= nil, "typed response was lost")
+        end
+    end)
+end
+
+-- An invalid JSON payload or a payload that is not a string rejects only its own
+-- response, even when another valid response follows it in the same batch.
+for _, malformed in ipairs({ "{", "not JSON", false, 17 }) do
+    local invalid_event = transport.define_event("invalid", "Arguments", "Default")
+    local valid_event = transport.define_event("valid", "Arguments", "Object")
+    local typed_protocol = transport.new_protocol(
+        { invalid = invalid_event, valid = valid_event },
+        { Arguments = { items = {} }, Object = {} }
+    )
+    run_with_server(typed_protocol, function(server, run_client, wait_connections)
+        local invalid, valid
+        run_client(nil, function(wire)
+            if wire.operation == "advance_time" then
+                return { value = { { id = invalid.id, value = malformed }, { id = valid.id, value = "{}" } } }
+            elseif wire.operation == "finish" then
+                return { value = "done" }, true
+            end
+            return { id = wire.id, value = { scheduled_at = 2 } }
+        end, true)
+        wait_connections(1)
+        local owner = server:get_players()[1]
+        invalid = server:request_from_player(owner, invalid_event, {})
+        valid = server:request_from_player(owner, valid_event, {})
+        local value = valid:wait_at_most(3)
+        assert(type(value) == "table" and next(value) == nil, "an invalid response discarded its valid batch peer")
+        assert(invalid:wait_at_most(3) == nil, "a malformed payload was accepted")
     end)
 end
 
@@ -156,7 +271,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         connections[index], index_by_connection[connection] = connection, index
     end
     local collection
-    local encoded_hash = cartesi.fromjson(cartesi.tojson(hash, -1, "Base64"))
+    local encoded_hash = cartesi.tojson(hash, -1, "Base64")
     run_client({ role = "player", label = "same label" }, function(wire)
         if wire.operation == "advance_time" then
             return { value = { { id = collection.id, value = encoded_hash } } }
@@ -180,7 +295,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         value = { answer = encoded_hash },
         order = 5,
     }
-    local replies, order = future:wait_at_most(5)
+    local replies, order = future:wait_at_most(6)
     assert(#order == 2 and order[1] == connections[1] and order[2] == connections[3])
     assert(replies[connections[1]] == 1 and replies[connections[3]] == 3)
     assert(not replies[connections[2]] and not replies[connections[4]] and not replies[server:get_players()[5]])
@@ -213,7 +328,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     assert(#order == 1 and order[1] == connections[1] and replies[connections[1]] == hash)
     assert(not replies[connections[2]] and not replies[connections[3]], "a rejected reply entered the collection")
     assert(future.closed and not server.active[future] and not server.scheduled_responses[future.id])
-    server:wait_until(4)
+    server:wait_until(5)
     assert(not validated[connections[3]], "a reply after expiry reached the validator")
     assert(#order == 1 and not replies[connections[3]], "a late reply changed the returned collection")
 end)
@@ -246,7 +361,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     local replies, order = future:wait_at_most(5)
     assert(#order == 1 and order[1] == server:get_players()[1] and replies[order[1]] == hash)
     assert(future.closed and not pcall(future.wait_at_most, future), "a consumed future accepted another wait")
-    server:wait_until(3)
+    server:wait_until(4)
     assert(calls == 2, "duplicate reply reached the validator")
 end)
 
@@ -275,7 +390,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     run_client({ role = "player", label = "honest" }, function(wire)
         if wire.operation == "advance_time" then
             return {
-                value = { { id = future.id, value = cartesi.tojson(hash, -1, "Base64"):sub(2, -2) } },
+                value = { { id = future.id, value = cartesi.tojson(hash, -1, "Base64") } },
             }
         end
         return { value = true }
@@ -290,7 +405,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         value = { answer = "forged" },
         order = 2,
     }
-    server:wait_until(1)
+    server:wait_until(2)
     assert(future.value == nil, "outsider answered the owner's move")
     assert(future:wait_at_most(5) == hash and future.accepted_at == 3)
     assert(future.closed, "waiting did not close the owner's request")
@@ -311,7 +426,7 @@ for _, count in ipairs({ 0, 1, 3 }) do
                 end)
             end
             wait_connections(count + 1)
-            return { value = true }
+            return { value = "done" }
         end)
         local admitted = server:accept_subscribers(hash)
         assert(#admitted == count and #server.open_phases == 0)
@@ -390,76 +505,6 @@ for _, owned in ipairs({ false, true }) do
     assert(not ok and err:find("unexpected connection loss", 1, true))
     assert(future.closed and not next(server.active) and not server.listener:getsockname())
 end
--- A lower-bound wait owns both its result and its clock boundary. Early results
--- remain valid, a result at the boundary is accepted, and later results keep it waiting.
-for _, response_block in ipairs({ 1, 3, 5 }) do
-    for _, already_received in ipairs({ false, true }) do
-        run_with_server(protocol, function(server, run_client, wait_connections)
-            local client = { event_handler = {} }
-            function client.event_handler.move(self)
-                assert(server:get_time() == 0, "event delivery advanced the clock")
-                if response_block == 1 then
-                    return hash
-                end
-                return transport.schedule_response(self, response_block, function()
-                    return hash
-                end)
-            end
-            run_client(nil, function(_, line)
-                return transport.answer_event(client, line, protocol)
-            end, true)
-            wait_connections(1)
-            local future <close> = server:request_first_valid(nil, event, {}, accept)
-            if already_received then
-                server:wait_until(response_block)
-                assert(future.resolved and future.accepted_at == response_block)
-            end
-            assert(future:wait_at_least(3) == hash)
-            assert(server:get_time() == math.max(3, response_block))
-            assert(future.accepted_at == response_block, "lower bound changed the receipt block")
-            assert(future.closed and not pcall(future.wait_at_most, future, FOREVER))
-            assert(not pcall(future.wait_at_least, future, 3))
-        end)
-    end
-end
-
--- Different lower bounds share the clock, including results collected before any
--- bound is reached. Collections retain both return values; groups retain true.
-run_with_server(protocol, function(server, run_client, wait_connections)
-    local client = { event_handler = {
-        move = function()
-            return hash
-        end,
-    } }
-    run_client(nil, function(_, line)
-        return transport.answer_event(client, line, protocol)
-    end, true)
-    wait_connections(1)
-    local order = {}
-    local function wait_for(block)
-        local future <close> = server:request_first_valid(nil, event, {}, accept)
-        assert(future:wait_at_least(block) == hash)
-        order[#order + 1] = server:get_time()
-    end
-    local group <close> = server:run_all({
-        function()
-            wait_for(8)
-        end,
-        function()
-            wait_for(3)
-        end,
-        function()
-            wait_for(5)
-        end,
-    })
-    assert(group:wait_at_least(9))
-    assert(table.concat(order, ",") == "3,5,8" and server:get_time() == 9)
-    local collection <close> = server:request_all(nil, event, {}, accept)
-    local values, senders = collection:wait_at_least(12)
-    assert(#senders == 1 and values[senders[1]] == hash and server:get_time() == 12)
-    assert(collection.accepted_at == 10, "lower bound changed collection completion time")
-end)
-
 -- The proof deadline may precede elimination, as with unequal uarch clocks.
 -- No unrelated coroutine is needed to reach the later elimination block.
 run_with_server(protocol, function(server, run_client, wait_connections)
@@ -478,37 +523,34 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         return accept(value)
     end)
     local proof <close> = server:request_first_valid({}, event, {}, accept)
-    assert(proof:wait_at_most(2) == nil and server:get_time() == 2)
-    assert(elimination:wait_at_least(5) == hash and server:get_time() == 5)
+    assert(proof:wait_at_most(2) == nil and server:get_time() == 1)
+    assert(elimination:wait_at_most(FOREVER) == hash and server:get_time() == 5)
 end)
 
--- Closing a lower-bound wait releases its coroutine and removes its clock boundary.
+-- Closing a waited future releases its coroutine.
 run_with_server(protocol, function(server)
     local future, resumed
     local group <close> = server:run_all({
         function()
             future = server:request_first_valid({}, event, {}, accept)
-            assert(future:wait_at_least(10) == nil)
+            assert(future:wait_at_most(FOREVER) == nil)
             resumed = server:get_time()
         end,
     })
-    server:wait_until(2)
+    server:wait_until(3)
     assert(not pcall(future.wait_at_most, future, FOREVER), "a second waiter was accepted")
-    assert(not pcall(future.wait_at_least, future, 3), "a second lower-bound waiter was accepted")
     future:close()
     assert(group:wait_at_most(FOREVER) and resumed == 2)
     assert(not next(server.active) and not next(server.scheduled_responses))
 end)
 
--- Bounds are block numbers; FOREVER is valid only as an upper bound.
+-- Deadlines are block numbers or FOREVER.
 run_with_server(protocol, function(server)
     local future <close> = server:run_all({})
     for _, invalid in ipairs({ false, -1, 1.5, "3" }) do
         assert(not pcall(future.wait_at_most, future, invalid))
-        assert(not pcall(future.wait_at_least, future, invalid))
     end
-    assert(not pcall(future.wait_at_least, future, FOREVER))
-    assert(future:wait_at_least(0))
+    assert(future:wait_at_most(0))
 end)
 
 print("game-transport-test: ok")

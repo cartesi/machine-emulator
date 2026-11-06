@@ -47,6 +47,7 @@
 #include "pmas.hpp"
 #include "processor-state.hpp"
 #include "scope-remove.hpp"
+#include "uarch-constants.hpp"
 #include "uarch-pristine.hpp"
 #include "uarch-processor-state.hpp"
 #include "virtio-address-range.hpp"
@@ -390,6 +391,22 @@ void machine_address_ranges::check(const address_range &new_ar, register_where w
         throw std::invalid_argument{
             "address range of "s + new_ar.get_description() + " must use at most 56 bits to be addressable"s};
     }
+    // The uarch reset proof replaces the entire uarch state hash tree node with the pristine uarch state hash,
+    // so nothing but the shadow uarch state and the uarch RAM may live inside it. Ranges that hit those two
+    // are rejected by the overlap check below, so only the gaps around them need checking here.
+    constexpr uint64_t uarch_shadow_end = UARCH_SHADOW_START_ADDRESS + UARCH_SHADOW_LENGTH;
+    constexpr uint64_t uarch_ram_end = UARCH_RAM_START_ADDRESS + UARCH_RAM_LENGTH;
+    constexpr uint64_t uarch_state_end = UARCH_STATE_START_ADDRESS + UARCH_STATE_LENGTH;
+    // Gap between the shadow uarch state and the uarch RAM
+    if (uarch_shadow_end < UARCH_RAM_START_ADDRESS && start < UARCH_RAM_START_ADDRESS && end > uarch_shadow_end) {
+        throw std::invalid_argument{
+            "address range of "s + new_ar.get_description() + " overlaps with reserved uarch state address range"s};
+    }
+    // Gap between the uarch RAM and the end of the uarch state
+    if (uarch_ram_end < uarch_state_end && start < uarch_state_end && end > uarch_ram_end) {
+        throw std::invalid_argument{
+            "address range of "s + new_ar.get_description() + " overlaps with reserved uarch state address range"s};
+    }
     // Range A overlaps with B if A starts before B ends and A ends after B starts
     for (const auto &ar : m_all) {
         if (start < ar->get_end() && end > ar->get_start()) {
@@ -643,7 +660,7 @@ void machine_address_ranges::replace(const memory_range_config &config) {
                 throw std::invalid_argument{
                     std::string{"attempted replace of protected memory range "}.append(ar->get_description())};
             }
-            if (ar->is_host_read_only() || !ar->is_writeable()) {
+            if (ar->is_host_read_only()) {
                 throw std::invalid_argument{
                     std::string{"attempted replace of read-only memory range "}.append(ar->get_description())};
             }

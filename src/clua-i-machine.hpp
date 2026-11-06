@@ -18,6 +18,7 @@
 #define CLUA_I_MACHINE_HPP
 
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <json.hpp>
@@ -125,7 +126,8 @@ private:
 /// therefore the stack index can only be removed via lua_pop (e.g. don't use lua_remove).
 template <typename T>
 T *clua_push_new_managed_toclose_ptr(lua_State *L, T &&value, int ctxidx = lua_upvalueindex(1)) {
-    auto &managed_value = clua_push_to(L, clua_managed_cm_ptr<T>(new T(std::forward<T>(value))), ctxidx);
+    auto &managed_value = clua_push_to(L, clua_managed_cm_ptr<T>(nullptr), ctxidx);
+    managed_value.get() = new T(std::forward<T>(value));
     // ??(edubart): Unfortunately Lua 5.4.4 (default on Ubuntu 22.04) has a bug that causes a crash
     // when using lua_settop with lua_toclose, it was fixed only in Lua 5.4.5 in
     // https://github.com/lua/lua/commit/196bb94d66e727e0aec053a0276c3ad701500762 .
@@ -173,6 +175,7 @@ const nlohmann::json &clua_tojsonschemadict(lua_State *L, int idx, int ctxidx = 
 /// \returns It traverses the Lua value while converting to a JSON object
 /// \details The value may be a table, string, number, boolean or nil, allowing a bare hash or scalar to
 /// be serialized (e.g. a binary string under the "Base64" or "Hex" schema), not only a table
+/// Empty tables require a schema that specifies an array or object, including nested tables.
 /// Nesting depth is limited to 256, with the root at depth zero.
 const char *clua_tojson(lua_State *L, int idx, int indent = -1, const char *schema_name = nullptr,
     const nlohmann::json &user_schema_dict = nlohmann::json(), int ctxidx = lua_upvalueindex(1));
@@ -186,7 +189,7 @@ const char *clua_tojson(lua_State *L, int idx, int indent = -1, const char *sche
 /// \param user_schema_dict User-supplied schema dictionary (empty object means none)
 /// \param ctxidx Index (or pseudo-index) of clua context
 /// \returns It traverses the JSON object while converting to a Lua object
-void clua_fromjson(lua_State *L, const char *s, const char *schema_name = nullptr,
+void clua_fromjson(lua_State *L, std::string_view s, const char *schema_name = nullptr,
     const nlohmann::json &user_schema_dict = nlohmann::json(), int ctxidx = lua_upvalueindex(1));
 
 } // namespace cartesi

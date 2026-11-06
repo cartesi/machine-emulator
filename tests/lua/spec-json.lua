@@ -10,6 +10,104 @@ lester.parse_args()
 local cartesi = require("cartesi")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
+describe("JSON floating-point numbers", function()
+    it("should reject non-finite numbers as scalars and inside tables", function()
+        for _, number in ipairs({ 0 / 0, math.huge, -math.huge }) do
+            for _, value in ipairs({ number, { value = number }, { 1, number, 3 } }) do
+                expect.fail(function()
+                    cartesi.tojson(value)
+                end, "cannot serialize a non-finite number to JSON")
+            end
+        end
+    end)
+
+    it("should preserve finite floating-point numbers", function()
+        for _, number in ipairs({ 0.0, -0.0, 1.5, -1.5, 1e308, -1e308, 1e-308, -1e-308 }) do
+            for _, value in ipairs({ number, { value = number }, { 1, number, 3 } }) do
+                expect.equal(cartesi.fromjson(cartesi.tojson(value)), value)
+            end
+        end
+    end)
+end)
+
+describe("JSON table keys", function()
+    it("should accept dense arrays regardless of insertion order", function()
+        local value = { [3] = "c", [1] = "a", [2] = false }
+        expect.equal(cartesi.tojson(value), '["a",false,"c"]')
+    end)
+
+    it("should preserve string keys that look like array indices", function()
+        expect.equal(cartesi.tojson({ ["1"] = "a", ["2"] = "b" }), '{"1":"a","2":"b"}')
+    end)
+
+    it("should reject mixed keys without modifying the table", function()
+        local value = { [1] = "a", ["1"] = "b", name = "c" }
+        expect.fail(function()
+            cartesi.tojson(value)
+        end, "table maps cannot contain keys of type number")
+        expect.equal(value, { [1] = "a", ["1"] = "b", name = "c" })
+        expect.equal(cartesi.tojson({ 42 }), "[42]")
+    end)
+
+    it("should reject invalid key types", function()
+        for _, key in ipairs({ 0, -1, 1.5, true, {} }) do
+            expect.fail(function()
+                cartesi.tojson({ [key] = "value" })
+            end, "table maps cannot contain keys of type")
+        end
+    end)
+
+    it("should reject gaps without a schema", function()
+        for _, value in ipairs({ { [2] = "b" }, { [1] = "a", [3] = "c" } }) do
+            expect.fail(function()
+                cartesi.tojson(value)
+            end, "array keys must be consecutive integers starting at 1")
+            expect.fail(function()
+                cartesi.tojson({ values = value }, nil, "Record", { Record = { values = "Default" } })
+            end, "array keys must be consecutive integers starting at 1")
+        end
+    end)
+
+    it("should reject a huge sparse index before expanding the array", function()
+        expect.fail(function()
+            cartesi.tojson({ [math.maxinteger] = true })
+        end, "array keys must be consecutive integers starting at 1")
+    end)
+
+    it("should preserve explicitly schematized empty arrays and gaps", function()
+        local schemas = { Empty = { items = {} }, Array = { items = "Default" } }
+        expect.equal(cartesi.tojson({}, nil, "Empty", schemas), "[]")
+        expect.equal(cartesi.tojson({ [2] = "b" }, nil, "Array", schemas), '[null,"b"]')
+    end)
+end)
+
+describe("JSON NUL bytes", function()
+    it("should preserve distinct object keys containing NUL bytes", function()
+        local value = { a = 1, ["a\0b"] = 2, ["\0"] = 3, ["a\0"] = 4 }
+        local encoded = '{"\\u0000":3,"a":1,"a\\u0000":4,"a\\u0000b":2}'
+        expect.equal(cartesi.tojson(value), encoded)
+        expect.equal(cartesi.fromjson(encoded), value)
+    end)
+
+    it("should use complete object keys for schema lookup", function()
+        local schema = { Record = { a = "Hex", ["a\0b"] = "Base64" } }
+        local value = { a = "foo", ["a\0b"] = "bar", ["a\0c"] = "plain" }
+        local encoded = '{"a":"0x666f6f","a\\u0000b":"YmFy","a\\u0000c":"plain"}'
+        expect.equal(cartesi.tojson(value, nil, "Record", schema), encoded)
+        expect.equal(cartesi.fromjson(encoded, "Record", schema), value)
+    end)
+
+    it("should reject raw NUL bytes anywhere in JSON input", function()
+        for _, input in ipairs({ "{}\0", "{}\0garbage", "\0{}", '{"a":"x\0y"}', "[1,\0 2]" }) do
+            expect.fail(function()
+                cartesi.fromjson(input)
+            end, "unexpected NUL byte")
+        end
+        expect.equal(cartesi.fromjson('"a\\u0000b"'), "a\0b")
+        expect.equal(cartesi.tojson("a\0b"), '"a\\u0000b"')
+    end)
+end)
+
 describe("JSON nesting", function()
     for _, kind in ipairs({ "arrays", "objects" }) do
         local opening = kind == "arrays" and "[" or '{"child":'
@@ -89,6 +187,130 @@ describe("tojson / fromjson schema dictionary", function()
         expect.equal(cartesi.tojson("str"), '"str"')
         expect.equal(cartesi.fromjson(cartesi.tojson(42)), 42)
         expect.equal(cartesi.fromjson(cartesi.tojson("str")), "str")
+    end)
+
+    it("should use object schemas for empty tables", function()
+        local schemas = { Record = { label = "Default" }, EmptyRecord = {}, Alias = "EmptyRecord" }
+        for _, name in ipairs({ "Record", "EmptyRecord", "Alias", "Proof" }) do
+            expect.equal(cartesi.tojson({}, nil, name, schemas), "{}")
+            expect.equal(cartesi.tojson(cartesi.fromjson("{}", name, schemas), nil, name, schemas), "{}")
+        end
+    end)
+
+    it("should distinguish empty arrays, tuples, and objects in nested schemas", function()
+        local schemas = {
+            Envelope = { array = "Array", tuple = "Tuple", record = "Record" },
+            Array = { items = "Record" },
+            Tuple = { items = {} },
+            Record = {},
+        }
+        local value = { array = {}, tuple = {}, record = {} }
+        local encoded = '{"array":[],"record":{},"tuple":[]}'
+        expect.equal(cartesi.tojson(value, nil, "Envelope", schemas), encoded)
+        expect.equal(cartesi.fromjson(encoded, "Envelope", schemas), value)
+        expect.equal(cartesi.tojson({ {}, {} }, nil, "Array", schemas), "[{},{}]")
+        expect.equal(schemas.Record, {})
+        expect.equal(schemas.Tuple, { items = {} })
+    end)
+
+    it("should reject empty tables without a container schema", function()
+        expect.fail(function()
+            cartesi.tojson({})
+        end, "empty table requires an array or object schema")
+        for _, name in ipairs({ "Default", "Base64", "Hex", "ArrayIndex", "Alias" }) do
+            expect.fail(function()
+                cartesi.tojson({}, nil, name, { Alias = "Default" })
+            end, "empty table requires an array or object schema")
+        end
+        expect.equal(cartesi.tojson({ 42 }), "[42]")
+    end)
+
+    it("should reject nested empty tables without their own container schema", function()
+        local schemas = { Record = { value = "Default" }, Array = { items = "Default" } }
+        for _, name in ipairs({ "Default", "Record" }) do
+            expect.fail(function()
+                cartesi.tojson({ value = {} }, nil, name, schemas)
+            end, "empty table requires an array or object schema")
+            expect.fail(function()
+                cartesi.tojson({ other = {} }, nil, name, schemas)
+            end, "empty table requires an array or object schema")
+        end
+        expect.fail(function()
+            cartesi.tojson({ {} }, nil, "Array", schemas)
+        end, "empty table requires an array or object schema")
+    end)
+
+    it("should accept empty schema dictionaries in both directions", function()
+        expect.equal(cartesi.tojson({ 42 }, nil, "Default", {}), "[42]")
+        expect.equal(cartesi.fromjson("[42]", "Default", {}), { 42 })
+    end)
+
+    it("should reject non-string keys in schema dictionaries and definitions", function()
+        for _, key in ipairs({ 1, true, {} }) do
+            for _, schemas in ipairs({ { [key] = {} }, { Record = { [key] = "Default" } } }) do
+                expect.fail(function()
+                    cartesi.tojson(42, nil, "Default", schemas)
+                end, "must be strings")
+                expect.fail(function()
+                    cartesi.fromjson("42", "Default", schemas)
+                end, "must be strings")
+            end
+        end
+    end)
+
+    it("should preserve empty containers in access logs", function()
+        local encoded = '{"accesses":[],"brackets":[],"log_type":{},"notes":[]}'
+        local log = { accesses = {}, brackets = {}, log_type = {}, notes = {} }
+        expect.equal(cartesi.tojson(log, nil, "AccessLog"), encoded)
+        expect.equal(cartesi.fromjson(encoded, "AccessLog"), log)
+    end)
+
+    it("should preserve empty containers in machine configurations", function()
+        local configurations = {
+            '{"cmio":{},"dtb":{},"flash_drive":[],"hash_tree":{},"nvram":[],"pmas":{},'
+                .. '"processor":{},"ram":{},"uarch":{},"virtio":[]}',
+            '{"cmio":{"rx_buffer":{"backing_store":{}},"tx_buffer":{"backing_store":{}}},'
+                .. '"dtb":{"backing_store":{}},"flash_drive":[{"backing_store":{}}],'
+                .. '"nvram":[{"backing_store":{}}],"pmas":{"backing_store":{}},'
+                .. '"processor":{"backing_store":{},"registers":{"clint":{},"htif":{},"iflags":{},"plic":{}}},'
+                .. '"ram":{"backing_store":{}},"uarch":{"processor":{"backing_store":{},"registers":{}},'
+                .. '"ram":{"backing_store":{}}},"virtio":[{"hostfwd":[],"type":"net-user"}]}',
+            '{"cmio":{"rx_buffer":{},"tx_buffer":{}},"flash_drive":[{}],"nvram":[{}],'
+                .. '"processor":{"registers":{}},"uarch":{"processor":{},"ram":{}},'
+                .. '"virtio":[{"hostfwd":[{}],"type":"net-user"}]}',
+        }
+        for _, encoded in ipairs(configurations) do
+            expect.equal(cartesi.tojson(cartesi.fromjson(encoded), nil, "MachineConfig"), encoded)
+        end
+        expect.equal(cartesi.tojson({}, nil, "MachineConfig"), "{}")
+    end)
+
+    it("should preserve empty containers in runtime and memory range configurations", function()
+        expect.equal(cartesi.tojson({}, nil, "MachineRuntimeConfig"), "{}")
+        expect.equal(
+            cartesi.tojson({ console = {}, concurrency = {} }, nil, "MachineRuntimeConfig"),
+            '{"concurrency":{},"console":{}}'
+        )
+        expect.equal(
+            cartesi.tojson({ label = "data", backing_store = {} }, nil, "MemoryRangeConfig"),
+            '{"backing_store":{},"label":"data"}'
+        )
+    end)
+
+    it("should roundtrip machine configurations without changing state or runtime settings", function()
+        local config = machine:get_initial_config()
+        local encoded = cartesi.tojson(config, nil, "MachineConfig")
+        local decoded = cartesi.fromjson(encoded, "MachineConfig")
+        expect.equal(decoded, config)
+        local copy <close> = cartesi.machine(decoded, { console = {}, concurrency = {} })
+        expect.equal(copy:get_root_hash(), machine:get_root_hash())
+        local runtime = copy:get_runtime_config()
+        copy:set_runtime_config(
+            cartesi.fromjson(cartesi.tojson(runtime, nil, "MachineRuntimeConfig"), "MachineRuntimeConfig")
+        )
+        expect.equal(copy:get_runtime_config(), runtime)
+        copy:set_runtime_config({})
+        expect.equal(copy:get_runtime_config(), runtime)
     end)
 
     it("should honor the indent argument", function()
@@ -209,6 +431,27 @@ describe("tojson / fromjson schema dictionary", function()
         expect.equal(back, { hash = HASH, n = 5, label = "hi" })
     end)
 
+    it("should convert ArrayIndex values at the integer boundaries", function()
+        for _, value in ipairs({ math.mininteger + 1, 0, 1, math.maxinteger }) do
+            local encoded = tostring(value - 1)
+            expect.equal(cartesi.tojson(value, nil, "ArrayIndex"), encoded)
+            expect.equal(cartesi.fromjson(encoded, "ArrayIndex"), value)
+        end
+    end)
+
+    it("should reject ArrayIndex conversion overflow", function()
+        for _, encoded in ipairs({ "9223372036854775807", "9223372036854775808", "18446744073709551615" }) do
+            expect.fail(function()
+                cartesi.fromjson(encoded, "ArrayIndex")
+            end, "ArrayIndex out of range")
+        end
+        expect.fail(function()
+            cartesi.tojson(math.mininteger, nil, "ArrayIndex")
+        end, "ArrayIndex out of range")
+        expect.equal(cartesi.fromjson("9223372036854775807"), math.maxinteger)
+        expect.equal(cartesi.tojson(math.mininteger), "-9223372036854775808")
+    end)
+
     it("should apply a different schema to each tuple item", function()
         local SCHEMA = { Tuple = { items = { "Base64", "ArrayIndex", "Default", "Hex" } } }
         local tuple = { HASH, 5, true, BINARY }
@@ -225,6 +468,39 @@ describe("tojson / fromjson schema dictionary", function()
         expect.fail(function()
             cartesi.fromjson('["a", 1, 2]', "Pair", SCHEMA)
         end, "tuple schema")
+    end)
+
+    it("should preserve strings matching object, array, and tuple schema keys", function()
+        local schemas = {
+            Tuple = { items = { "Base64", "ArrayIndex" } },
+            Envelope = { proof = "Proof", array = "Base64Array", tuple = "Tuple" },
+        }
+        for _, case in ipairs({ { "Proof", "target_hash" }, { "Base64Array", "items" }, { "Tuple", "items" } }) do
+            local encoded = cartesi.tojson(case[2], nil, case[1], schemas)
+            expect.equal(cartesi.fromjson(encoded, case[1], schemas), case[2])
+        end
+        local value = { proof = "target_hash", array = "items", tuple = "items" }
+        local encoded = cartesi.tojson(value, nil, "Envelope", schemas)
+        expect.equal(cartesi.fromjson(encoded, "Envelope", schemas), value)
+    end)
+
+    it("should still decode built-in integer enums", function()
+        expect.equal(cartesi.fromjson('"halted"', "InterpreterBreakReason"), cartesi.BREAK_REASON_HALTED)
+        expect.equal(cartesi.fromjson('"failed"', "InterpreterBreakReason"), cartesi.BREAK_REASON_FAILED)
+        expect.equal(cartesi.fromjson('"unknown"', "InterpreterBreakReason"), "unknown")
+    end)
+
+    it("should still decode user-defined integer enums and aliases", function()
+        local schemas = {
+            Status = { failed = -1, pending = 0, done = 1 },
+            Alias = "Status",
+            Envelope = { status = "Alias" },
+        }
+        for name, value in pairs(schemas.Status) do
+            expect.equal(cartesi.fromjson(cartesi.tojson(name), "Status", schemas), value)
+            local encoded = cartesi.tojson({ status = name })
+            expect.equal(cartesi.fromjson(encoded, "Envelope", schemas), { status = value })
+        end
     end)
 
     it("should roundtrip a Proof through the machine schema dictionary", function()

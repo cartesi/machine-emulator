@@ -212,6 +212,13 @@ describe("verify_step_uarch", function()
             end)
         end)
 
+        it("should reject a log2_size that does not fit an int on read access", function()
+            -- Truncated to an int, it would be 3, the right size for this access
+            step_should_fail(build_default_machine, 'log2_size" is out of bounds', function(log)
+                log.accesses[1].log2_size = (1 << 32) + 3
+            end)
+        end)
+
         it("should reject corrupt sibling hash on read access", function()
             step_should_fail(
                 build_default_machine,
@@ -723,6 +730,145 @@ describe("access proof sibling count", function()
             change_sibling_count(log, adjustment)
             expect.fail(function()
                 machine:verify_reset_uarch(initial_hash, log)
+            end, expected_error)
+        end)
+    end
+end)
+
+describe("uarch TLB writes with an invalid set index", function()
+    -- A uarch program that issues the WRITE_TLB ecall for slot 0 of a set the TLB does not have
+    local programs = {
+        ["3"] = { 0x00300513 }, -- li a0,3
+        ["0x40000"] = { 0x00040537 }, -- lui a0,0x40
+    }
+    for name, set_index_program in pairs(programs) do
+        local program = { table.unpack(set_index_program) }
+        program[#program + 1] = 0x00000593 -- li a1,0
+        program[#program + 1] = 0x00001637 -- lui a2,0x1
+        program[#program + 1] = (cartesi.UARCH_ECALL_FN_WRITE_TLB << 20) | 0x00893 -- li a7,write_tlb
+        program[#program + 1] = 0x00000073 -- ecall
+        local function build_machine()
+            local data_filename = create_test_uarch_program(program)
+            local machine = cartesi.machine({
+                ram = { length = 0x20000 },
+                uarch = { ram = { length = 0x1000, backing_store = { data_filename = data_filename } } },
+            }, {})
+            os.remove(data_filename)
+            return machine
+        end
+        it("should fail cleanly when running, logging and collecting set index " .. name, function()
+            for _, step in ipairs({
+                function(machine)
+                    machine:run_uarch(16)
+                end,
+                function(machine)
+                    for _ = 1, 16 do
+                        machine:log_step_uarch()
+                    end
+                end,
+                function(machine)
+                    local revert_tail = { string.rep("\0", cartesi.HASH_SIZE), string.rep("\0", cartesi.HASH_SIZE) }
+                    machine:collect_uarch_cycle_root_hashes(1, 0, revert_tail)
+                end,
+            }) do
+                local machine <close> = build_machine()
+                expect.fail(function()
+                    step(machine)
+                end, "TLB set index out of bounds")
+            end
+        end)
+    end
+end)
+
+describe("verify_reset_uarch at a rejected input", function()
+    for _, corruption in ipairs({ "revert root data", "revert root siblings", "missing revert root access" }) do
+        it("should reject " .. corruption, function()
+            local machine <close> = build_cmio_machine()
+            local revert_root_hash = machine:get_root_hash()
+            machine:write_revert_root_hash(revert_root_hash)
+            machine:write_reg("iflags_Y", 1)
+            machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+            machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+            machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+            machine:write_reg("uarch_halt", 1)
+            local initial_hash = machine:get_root_hash()
+            local log = machine:log_reset_uarch()
+            expect.equal(machine:verify_reset_uarch(initial_hash, log), revert_root_hash)
+            expect.not_equal(machine:get_root_hash(), revert_root_hash)
+
+            local revert_index
+            for i, access in ipairs(log.accesses) do
+                if access.address == cartesi.AR_SHADOW_REVERT_ROOT_HASH_START then
+                    revert_index = i
+                    break
+                end
+            end
+            assert(revert_index, "reset log did not authenticate the revert root")
+            local access = log.accesses[revert_index]
+            if corruption == "revert root data" then
+                access.read = bad_hash
+            elseif corruption == "revert root siblings" then
+                access.sibling_hashes[1] = bad_hash
+            else
+                table.remove(log.accesses, revert_index)
+            end
+            expect.fail(function()
+                machine:verify_reset_uarch(initial_hash, log)
+            end)
+        end)
+    end
+end)
+
+describe("verification through a JSON-RPC machine object", function()
+    local jsonrpc = require("cartesi.jsonrpc")
+    local sibling_count_error = "access sibling hash count is inconsistent with proof size"
+    local corruptions = {
+        {
+            "empty siblings",
+            sibling_count_error,
+            function(log)
+                log.accesses[1].sibling_hashes = {}
+            end,
+        },
+        {
+            "missing siblings",
+            sibling_count_error,
+            function(log)
+                change_sibling_count(log, -1)
+            end,
+        },
+        {
+            "extra siblings",
+            sibling_count_error,
+            function(log)
+                change_sibling_count(log, 1)
+            end,
+        },
+        {
+            "written data on a read access",
+            "unexpected written data in 1st access read access",
+            function(log)
+                log.accesses[1].written = log.accesses[1].read
+            end,
+        },
+        {
+            "written hash on a read access",
+            "unexpected written hash in 1st access read access",
+            function(log)
+                log.accesses[1].written_hash = log.accesses[1].read_hash
+            end,
+        },
+    }
+    for _, corruption in ipairs(corruptions) do
+        local name, expected_error, corrupt = table.unpack(corruption)
+        it("should reject " .. name .. " in uarch step logs as the local verifier does", function()
+            local remote <close> = jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN)
+            local machine <close> = build_default_machine()
+            local initial_hash = machine:get_root_hash()
+            local log = machine:log_step_uarch()
+            corrupt(log)
+            expect.fail(function()
+                remote:verify_step_uarch(initial_hash, log)
             end, expected_error)
         end)
     end

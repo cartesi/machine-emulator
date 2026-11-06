@@ -34,15 +34,20 @@ end)
 local variants = {
     {
         name = "local",
-        create = function(config)
-            return cartesi.machine(config)
+        new = cartesi.new,
+        create = function(config, runtime)
+            return cartesi.machine(config, runtime)
         end,
     },
     {
         name = "remote",
-        create = function(config)
+        new = function()
             local jsonrpc = require("cartesi.jsonrpc")
-            return jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN):create(config)
+            return jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN)
+        end,
+        create = function(config, runtime)
+            local jsonrpc = require("cartesi.jsonrpc")
+            return jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN):create(config, runtime)
         end,
     },
 }
@@ -50,6 +55,270 @@ local variants = {
 for _, variant in ipairs(variants) do
     describe("machine API (" .. variant.name .. ")", function()
         local machine <close> = variant.create({ ram = { length = 0x1000 } })
+
+        describe("clear_hash_tree", function()
+            for _, hash_function in ipairs({ "keccak256", "sha256" }) do
+                local function create_source(phtc_size)
+                    return variant.create({
+                        ram = { length = 0x3000 },
+                        flash_drive = { { start = 0x90000000, length = 0x3000 } },
+                        hash_tree = { hash_function = hash_function, phtc_size = phtc_size or 32 },
+                    })
+                end
+
+                it("should rebuild all cached hashes lazily (" .. hash_function .. ")", function()
+                    -- Keep every page cached so stale cache entries cannot hide behind eviction.
+                    local source <close> = create_source(2048)
+                    source:write_reg("x1", 42)
+                    source:write_memory(cartesi.AR_RAM_START, string.rep("A", 0x1000))
+                    source:write_memory(0x90002000, string.rep("B", 0x1000))
+                    local root = source:get_root_hash()
+                    local cold_stats = source:get_hash_tree_stats(true)
+                    expect.truthy(cold_stats.phtc.page_misses <= 2048)
+                    local proof = source:get_proof(cartesi.AR_RAM_START, 5)
+                    local state = source:read_memory(cartesi.AR_SHADOW_STATE_START, cartesi.AR_SHADOW_STATE_LENGTH)
+                    local stats = source:get_hash_tree_stats()
+                    source:clear_hash_tree()
+                    source:clear_hash_tree()
+                    expect.equal(source:get_hash_tree_stats(), stats)
+                    expect.equal(
+                        source:read_memory(cartesi.AR_SHADOW_STATE_START, cartesi.AR_SHADOW_STATE_LENGTH),
+                        state
+                    )
+                    expect.equal(source:read_memory(cartesi.AR_RAM_START, 0x1000), string.rep("A", 0x1000))
+                    source:get_hash_tree_stats(true)
+                    expect.equal(source:get_root_hash(), root)
+                    local rebuilt_stats = source:get_hash_tree_stats()
+                    expect.equal(rebuilt_stats.phtc.page_hits, 0)
+                    expect.equal(rebuilt_stats.phtc.page_misses, cold_stats.phtc.page_misses)
+                    expect.equal(rebuilt_stats.phtc.page_changes, cold_stats.phtc.page_changes)
+                    expect.equal(rebuilt_stats.dense_node_hashes, cold_stats.dense_node_hashes)
+                    expect.equal(rebuilt_stats.sparse_node_hashes, cold_stats.sparse_node_hashes)
+                    expect.equal(source:get_proof(cartesi.AR_RAM_START, 5), proof)
+                    expect.truthy(source:verify_hash_tree())
+                    source:clear_hash_tree()
+                    expect.equal(source:get_proof(cartesi.AR_RAM_START, 5), proof)
+
+                    -- Clearing must also preserve writes that have not yet been hashed.
+                    source:write_memory(0x90000000, string.rep("C", 0x1000))
+                    source:write_reg("x1", 43)
+                    source:clear_hash_tree()
+                    expect.equal(source:get_root_hash(), tests_util.calculate_emulator_hash(source))
+                    expect.not_equal(source:get_root_hash(), root)
+                end)
+
+                for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_ALL }) do
+                    for _, runtime_clear in ipairs({ false, true }) do
+                        it(
+                            "should clear stored caches ("
+                                .. hash_function
+                                .. ", sharing="
+                                .. sharing
+                                .. ", runtime="
+                                .. tostring(runtime_clear)
+                                .. ")",
+                            function()
+                                local source <close> = create_source()
+                                local _ <close>, fresh_dirname = tests_util.scope_temp_pathname()
+                                local _ <close> = tests_util.scope_exit(function()
+                                    cartesi.machine:remove_stored(fresh_dirname)
+                                end)
+                                source:store(fresh_dirname)
+                                local tree_filenames = { "hash_tree.sht", "hash_tree.phtc" }
+                                for _, ar in ipairs(source:get_address_ranges()) do
+                                    if ar.is_memory then
+                                        local prefix = string.format("%016x-%x", ar.start, ar.length)
+                                        tree_filenames[#tree_filenames + 1] = prefix .. ".dht"
+                                        tree_filenames[#tree_filenames + 1] = prefix .. ".dpt"
+                                    end
+                                end
+                                source:write_memory(cartesi.AR_RAM_START, string.rep("A", 0x1000))
+                                source:write_memory(0x90002000, string.rep("B", 0x1000))
+                                local root = source:get_root_hash()
+                                local proof = source:get_proof(0x90002000, 5)
+                                local _ <close>, dirname = tests_util.scope_temp_pathname()
+                                local _ <close> = tests_util.scope_exit(function()
+                                    cartesi.machine:remove_stored(dirname)
+                                end)
+                                source:store(dirname)
+                                local warm_files = {}
+                                for _, filename in ipairs(tree_filenames) do
+                                    warm_files[filename] = filesystem.read_file(dirname .. "/" .. filename)
+                                end
+                                local loaded <close> = variant.new()
+                                loaded:load(dirname, { clear_hash_tree = runtime_clear }, sharing)
+                                expect.equal(loaded:get_runtime_config().clear_hash_tree, runtime_clear)
+                                if not runtime_clear then
+                                    expect.equal(loaded:get_root_hash(), root)
+                                    loaded:clear_hash_tree()
+                                end
+                                -- Persist the cleared trees before any hash request rebuilds them.
+                                local _ <close>, cleared_dirname = tests_util.scope_temp_pathname()
+                                local _ <close> = tests_util.scope_exit(function()
+                                    cartesi.machine:remove_stored(cleared_dirname)
+                                end)
+                                loaded:store(cleared_dirname)
+                                for _, filename in ipairs(tree_filenames) do
+                                    local fresh_data = filesystem.read_file(fresh_dirname .. "/" .. filename)
+                                    local cleared_data = filesystem.read_file(cleared_dirname .. "/" .. filename)
+                                    assert(cleared_data == fresh_data, filename .. " differs from fresh tree storage")
+                                    local backing_data = filesystem.read_file(dirname .. "/" .. filename)
+                                    local expected = sharing == cartesi.SHARING_ALL and fresh_data
+                                        or warm_files[filename]
+                                    assert(backing_data == expected, filename .. " has incorrect backing storage")
+                                end
+                                local restored <close> = variant.new():load(cleared_dirname)
+                                expect.equal(restored:get_root_hash(), root)
+                                expect.truthy(restored:verify_hash_tree())
+                                if sharing == cartesi.SHARING_ALL then
+                                    loaded:destroy()
+                                    loaded:load(dirname)
+                                end
+                                local before = loaded:get_hash_tree_stats(true)
+                                expect.equal(loaded:get_root_hash(), root)
+                                local after = loaded:get_hash_tree_stats()
+                                expect.truthy(after.phtc.page_misses > 0)
+                                expect.equal(after.phtc.page_hits, 0)
+                                expect.truthy(after.sparse_node_hashes > 0)
+                                if runtime_clear then
+                                    expect.equal(before.phtc.page_misses, 0)
+                                end
+                                expect.equal(loaded:get_proof(0x90002000, 5), proof)
+                                expect.truthy(loaded:verify_hash_tree())
+                            end
+                        )
+                    end
+                end
+            end
+
+            it("should default to false and validate the runtime flag", function()
+                expect.equal(machine:get_runtime_config().clear_hash_tree, false)
+                expect.fail(function()
+                    local _ <close> = variant.create({ ram = { length = 0x1000 } }, { clear_hash_tree = "true" })
+                end, "clear_hash_tree")
+                local source <close> = variant.create({ ram = { length = 0x1000 } }, { clear_hash_tree = true })
+                expect.equal(source:get_runtime_config().clear_hash_tree, true)
+                expect.equal(source:get_hash_tree_stats().phtc.page_misses, 0)
+                expect.equal(source:get_root_hash(), tests_util.calculate_emulator_hash(source))
+            end)
+
+            it("should reject an empty machine", function()
+                local source <close> = variant.new()
+                expect.fail(function()
+                    source:clear_hash_tree()
+                end, "no machine")
+            end)
+        end)
+
+        describe("hash-tree concurrency", function()
+            it("should clamp values above the thread count at create and at run time", function()
+                local source <close> = variant.create(
+                    { ram = { length = 0x1000 } },
+                    { concurrency = { update_hash_tree = 0xffffffff } }
+                )
+                expect.equal(source:get_root_hash(), tests_util.calculate_emulator_hash(source))
+                for i, update_hash_tree in ipairs({ -1, 1, 0 }) do
+                    source:set_runtime_config({ concurrency = { update_hash_tree = update_hash_tree } })
+                    expect.equal(source:get_runtime_config().concurrency.update_hash_tree, update_hash_tree)
+                    source:write_word(0x80000000, i)
+                    expect.equal(source:get_root_hash(), tests_util.calculate_emulator_hash(source))
+                end
+            end)
+
+            it("should hash the same serially and in parallel", function()
+                local config = { ram = { length = 16 << 20 } }
+                local serial <close> = variant.create(config, { concurrency = { update_hash_tree = 1 } })
+                local parallel <close> = variant.create(config, { concurrency = { update_hash_tree = 0 } })
+                local page = string.rep("\x5a", 4096)
+                -- Rounds of fully changed pages, of one changed word per page, and of unchanged rewritten pages
+                local writes = {
+                    function(target, address)
+                        target:write_memory(address, page)
+                    end,
+                    function(target, address, i)
+                        target:write_memory(address, string.pack("<I8", i))
+                    end,
+                    function(target, address, i)
+                        target:write_memory(address, "\1")
+                        target:write_memory(address, string.pack("<I8", i))
+                    end,
+                }
+                for _, write in ipairs(writes) do
+                    for i = 0, 2047 do
+                        local address = cartesi.AR_RAM_START + ((i * 7919) % 4096) * 4096
+                        write(serial, address, i)
+                        write(parallel, address, i)
+                    end
+                    expect.equal(parallel:get_root_hash(), serial:get_root_hash())
+                    expect.equal(parallel:get_hash_tree_stats(true), serial:get_hash_tree_stats(true))
+                end
+                expect.truthy(parallel:verify_hash_tree())
+            end)
+        end)
+
+        describe("virtual memory", function()
+            it("should access ranges up to the end of the address space and reject ranges past it", function()
+                local source <close> = variant.create({ ram = { length = 0x4000 } })
+                -- Without paging, the last page is unmapped physical memory, so it reads as zeros and refuses writes
+                for _, range in ipairs({ { -4096, 4096 }, { -1, 1 } }) do
+                    local vaddr, length = table.unpack(range)
+                    expect.equal(source:read_virtual_memory(vaddr, length), string.rep("\0", length))
+                    expect.fail(function()
+                        source:write_virtual_memory(vaddr, string.rep("x", length))
+                    end, "not entirely within single memory range")
+                end
+                expect.fail(function()
+                    source:read_virtual_memory(-4096, 8192)
+                end, "wraps around the address space")
+                expect.fail(function()
+                    source:write_virtual_memory(-4096, string.rep("x", 8192))
+                end, "wraps around the address space")
+                -- A range that crosses a page boundary is copied page by page
+                local vaddr = cartesi.AR_RAM_START + 0x1000 - 3
+                source:write_virtual_memory(vaddr, "abcdefgh")
+                expect.equal(source:read_virtual_memory(vaddr, 8), "abcdefgh")
+                expect.equal(source:read_memory(vaddr, 8), "abcdefgh")
+            end)
+        end)
+
+        describe("create and load", function()
+            it("should reject a machine object that already holds a machine", function()
+                local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+                do
+                    local stored <close> = variant.create({ ram = { length = 0x1000 } })
+                    stored:store(stored_dirname)
+                end
+                local _ <close> = tests_util.scope_exit(function()
+                    cartesi.machine:remove_stored(stored_dirname)
+                end)
+                local source <close> = variant.create({ ram = { length = 0x2000 } })
+                local root_hash = source:get_root_hash()
+                expect.fail(function()
+                    source:create({ ram = { length = 0x1000 } })
+                end, "machine exists")
+                expect.fail(function()
+                    source:load(stored_dirname)
+                end, "machine exists")
+                expect.equal(source:get_root_hash(), root_hash)
+                expect.equal(source:get_initial_config().ram.length, 0x2000)
+            end)
+        end)
+
+        describe("log_step", function()
+            it("should reject an empty or destroyed machine", function()
+                local _ <close>, log_filename = tests_util.scope_temp_pathname()
+                local empty <close> = variant.new()
+                expect.fail(function()
+                    empty:log_step(1, log_filename)
+                end, "no machine")
+                local destroyed <close> = variant.create({ ram = { length = 0x1000 } })
+                destroyed:destroy()
+                expect.fail(function()
+                    destroyed:log_step(1, log_filename)
+                end, "no machine")
+                expect.falsy(filesystem.exists(log_filename))
+            end)
+        end)
 
         describe("mark_pages_dirty backing-store config", function()
             it("should default to false and preserve an explicit true", function()
@@ -161,6 +430,44 @@ for _, variant in ipairs(variants) do
                 expect.truthy(source:is_empty())
                 expect.equal(source:get_uarch_pristine_hash(), cartesi.machine:get_uarch_pristine_hash())
                 expect.truthy(source:is_empty())
+            end)
+        end)
+
+        describe("remove_stored", function()
+            it("should pass the removal mode", function()
+                local _ <close>, dirname = tests_util.scope_temp_pathname()
+                local _ <close> = tests_util.scope_exit(function()
+                    pcall(cartesi.machine.remove_stored, cartesi.machine, dirname, cartesi.REMOVE_FORCED)
+                end)
+                machine:store(dirname)
+                filesystem.remove_file(dirname .. "/config.json")
+                local handle <close> = variant.new()
+                expect.fail(function()
+                    handle:remove_stored(dirname)
+                end, "config.json")
+                expect.truthy(filesystem.exists(dirname))
+                handle:remove_stored(dirname, cartesi.REMOVE_FORCED)
+                expect.falsy(filesystem.exists(dirname))
+            end)
+        end)
+
+        describe("sync_stored", function()
+            it("should mark the stored page hash-tree cache initialized", function()
+                local _ <close>, dirname = tests_util.scope_temp_pathname()
+                local _ <close> = tests_util.scope_exit(function()
+                    pcall(cartesi.machine.remove_stored, cartesi.machine, dirname)
+                end)
+                machine:store(dirname)
+                local function read_tag()
+                    return (string.unpack("<I8", filesystem.read_file(dirname .. "/hash_tree.phtc")))
+                end
+                local handle <close> = variant.new()
+                handle:load(dirname, {}, cartesi.SHARING_ALL)
+                handle:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+                expect.equal(read_tag(), 0)
+                handle:sync_stored(dirname)
+                expect.equal(read_tag(), 0x0250485443)
+                handle:destroy()
             end)
         end)
 
@@ -276,6 +583,33 @@ for _, variant in ipairs(variants) do
                     local paddr = machine:get_reg_address(reg_name)
                     expect.equal(machine:get_address_name(paddr), expected)
                 end
+            end)
+
+            it("should reject restoring a processor shadow that would not load", function()
+                local start, length = cartesi.AR_SHADOW_STATE_START, cartesi.AR_SHADOW_STATE_LENGTH
+                local shadow = machine:read_memory(start, length)
+                local root_hash = machine:get_root_hash()
+                local function patch(offset, bytes)
+                    return shadow:sub(1, offset) .. bytes .. shadow:sub(offset + #bytes + 1)
+                end
+                local padding_offset = cartesi.AR_SHADOW_TLB_START + cartesi.AR_SHADOW_TLB_LENGTH - start
+                for _, case in ipairs({
+                    { machine:get_reg_address("x0") - start, string.pack("<I8", 1), "x0 register is corrupt" },
+                    {
+                        machine:get_reg_address("iunrep") - start,
+                        string.pack("<I8", 1 ~ machine:read_reg("iunrep")),
+                        "iunrep mismatch",
+                    },
+                    { padding_offset, "X", "shadow padding bytes are corrupt" },
+                }) do
+                    local offset, bytes, expected_error = table.unpack(case)
+                    expect.fail(function()
+                        machine:write_memory(start, patch(offset, bytes))
+                    end, expected_error)
+                    expect.equal(machine:get_root_hash(), root_hash)
+                end
+                machine:write_memory(start, shadow)
+                expect.equal(machine:get_root_hash(), root_hash)
             end)
 
             it("should return correct names for TLB slot fields", function()
@@ -549,6 +883,31 @@ describe("JSON-RPC fork", function()
         expect.not_equal(address, server:get_server_address())
     end)
 
+    it("should hash in both servers after a fork", function()
+        local config = { ram = { length = 1 << 20 } }
+        local runtime = { concurrency = { update_hash_tree = 2 } }
+        local serial <close> = cartesi.machine(config, { concurrency = { update_hash_tree = 1 } })
+        local server <close> = jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN):set_timeout(5000)
+        server:create(config, runtime)
+        local data = string.rep("A", config.ram.length)
+        serial:write_memory(cartesi.AR_RAM_START, data)
+        server:write_memory(cartesi.AR_RAM_START, data)
+        local root = serial:get_root_hash()
+        -- Exercise the parallel reduction before fork hard-pauses the OpenMP runtime.
+        expect.equal(server:get_root_hash(), root)
+        local child <close> = server:fork_server()
+        child:set_cleanup_call(jsonrpc.SHUTDOWN)
+        for _, target in ipairs({ server, child }) do
+            expect.equal(target:get_root_hash(), root)
+            -- Recreate and hash a machine in each process, as successive CLI invocations do.
+            target:destroy()
+            target:create(config, runtime)
+            target:write_memory(cartesi.AR_RAM_START, data)
+            expect.equal(target:get_root_hash(), root)
+            expect.truthy(target:verify_hash_tree())
+        end
+    end)
+
     it("should reject a shared memory range", function()
         local _ <close>, filename = filesystem.write_scope_temp_file(string.rep("\0", 0x1000))
         local server <close> = jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN):create({
@@ -567,7 +926,7 @@ describe("JSON-RPC fork", function()
             it(
                 "should handle a disk-backed hash tree (" .. hash_function .. ", shared=" .. tostring(shared) .. ")",
                 function()
-                    local prefix = filesystem.temp_pathname()
+                    local _ <close>, prefix = tests_util.scope_temp_pathname()
                     local config = {
                         ram = { length = 0x1000 },
                         hash_tree = {
@@ -634,7 +993,7 @@ describe("remote clone cleanup", function()
                 server:write_reg("x1", 42)
                 local source <close> =
                     jsonrpc.connect_server(server:get_server_address()):set_cleanup_call(policy):set_timeout(1234)
-                local dirname = filesystem.temp_pathname()
+                local _ <close>, dirname = tests_util.scope_temp_pathname()
                 local _ <close> = tests_util.scope_exit(function()
                     if operation == "load" then
                         cartesi.machine:remove_stored(dirname)

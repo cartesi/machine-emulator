@@ -1,7 +1,7 @@
 -- Coroutine transport shared by the demonstration games. It owns the socket dispatcher, the
 -- logical block barrier, and routing within each request's fixed audience. A reply to an
 -- owner request must come over the owner's connection. Game schemas, reply validity, and
--- narration remain with each game.
+-- narration remain with each game. Response payloads stay as JSON strings until delivery.
 local cartesi = require("cartesi")
 local socket = require("socket")
 local new_clock = require("game-clock")
@@ -22,11 +22,13 @@ local function define_event(name, event_schema, response_schema)
 end
 
 local function new_protocol(events, schemas, trace_env)
+    schemas.EventArguments = { items = "Default" }
     schemas.ClosePhaseEvent = { items = {} }
     schemas.ClosePhaseResponse = "Default"
     schemas.FinishEvent = { items = {} }
     schemas.AdvanceTimeEvent = { items = { "Default" } }
     schemas.Responses = { items = "Default" }
+    schemas.ResponsesEnvelope = { value = "Responses" }
     events.close_phase = define_event("close_phase", "ClosePhaseEvent", "ClosePhaseResponse")
     events.finish = define_event("finish", "FinishEvent")
     events.advance_time = define_event("advance_time", "AdvanceTimeEvent", "Responses")
@@ -141,25 +143,10 @@ end
 
 -- The envelope schema for events under a named argument schema, registered on first use.
 local function ensure_event_envelope_schema(protocol, schema)
-    if not schema then
-        return nil
-    end
+    schema = schema or "EventArguments"
     local name = schema .. "Envelope"
     if not protocol.schemas[name] then
         protocol.schemas[name] = { arguments = schema }
-    end
-    return name
-end
-
--- The envelope schema for responses under a named value schema, registered on first use, so
--- both sides encode {value} with the value's binary fields transformed.
-local function ensure_response_envelope_schema(protocol, schema)
-    if not schema then
-        return nil
-    end
-    local name = schema .. "Envelope"
-    if not protocol.schemas[name] then
-        protocol.schemas[name] = { value = schema }
     end
     return name
 end
@@ -216,14 +203,18 @@ local function schedule_response(client, block, respond)
     assert(type(respond) == "function", "schedule expects a response callback")
     assert(math.type(block) == "integer" and block > request.block, "response must follow its event block")
     client_queues[client]:schedule(request.id, block, function()
-        -- Encode each response with its own event schema before batching.
-        return cartesi.fromjson(cartesi.tojson(respond(), -1, request.response_schema, request.protocol.schemas))
+        -- Keep each response encoded under its own event schema until the batch is sent.
+        local value = respond()
+        local schema = value == "nothing" and "Default" or request.response_schema
+        return cartesi.tojson(value, -1, schema, request.protocol.schemas)
     end)
     return { scheduled_at = block }
 end
 
 -- Dispatches one wire event. Finish is transport cleanup rather than a client handler, so it
--- is handled here and kept out of the client-loop snippet.
+-- is handled here and kept out of the client-loop snippet. Besides a payload, a handler returns
+-- "nothing" to answer without a payload and "done" to leave the game. Both are sent as the
+-- reply's value, and "done" ends the client loop.
 local function answer_event(client, line, protocol)
     local envelope = cartesi.fromjson(line)
     local event = assert(protocol.events[envelope.operation], "unknown event")
@@ -236,7 +227,7 @@ local function answer_event(client, line, protocol)
     end
     local value
     if event == protocol.events.finish then
-        value = true
+        value = "done"
     elseif event == protocol.events.advance_time then
         value = queue:advance(wire_event.arguments[1])
     else
@@ -254,20 +245,23 @@ local function answer_event(client, line, protocol)
             error(value, 0)
         end
     end
-    if event.response_schema then
-        assert(value ~= nil, "the event handler produced no value")
-    else
-        value = true -- Transport acknowledgement, not a handler result.
+    local special = value == "nothing" or value == "done"
+    if not special and event ~= protocol.events.advance_time then
+        if event.response_schema then
+            assert(value ~= nil, "the event handler produced no value")
+            if not (wire_event.id and type(value) == "table" and value.scheduled_at) then
+                value = cartesi.tojson(value, -1, event.response_schema, protocol.schemas)
+                if wire_event.id then
+                    value = { answer = value }
+                end
+            end
+        else
+            value = true -- Transport acknowledgement, not a handler result.
+        end
     end
-    if wire_event.id and not (type(value) == "table" and value.scheduled_at) then
-        value = { answer = cartesi.fromjson(cartesi.tojson(value, -1, event.response_schema, protocol.schemas)) }
-    end
-    local done = event == protocol.events.finish or client.done
-    local response = { value = value, id = wire_event.id, done = done or nil }
-    local response_schema = wire_event.id and "Default" or event.response_schema
-    local encoded =
-        cartesi.tojson(response, -1, ensure_response_envelope_schema(protocol, response_schema), protocol.schemas)
-    return encoded, done
+    local response = { value = value, id = wire_event.id }
+    local schema = event == protocol.events.advance_time and "ResponsesEnvelope" or nil
+    return cartesi.tojson(response, -1, schema, protocol.schemas), value == "done"
 end
 
 -- The player side is a plain blocking loop: announce itself, then read an event, decode its
@@ -309,9 +303,8 @@ local function new_phase_closer(command)
         label = "phase_closer",
         hello = cartesi.tojson({ role = "phase_closer", command = command }, -1),
         event_handler = {
-            close_phase = function(self)
-                self.done = true
-                return true
+            close_phase = function()
+                return "done"
             end,
         },
     }
@@ -322,9 +315,11 @@ end
 -- Referee server
 --
 -- Players receive requests immediately and answer in a later logical block.
+-- Deadlines are exclusive. A wait for block D settles block D - 1 and returns, so a
+-- request made then is answered at D.
 -- Request acknowledgements drain before the next time notification.
 -- The referee owns every window and validator. Only an accepted response
--- resolves a first-valid future, even when all its holders skip or announce departure.
+-- resolves a first-valid future, even when all its holders answer "nothing" or leave.
 -- Collections return all replies received before their wait's deadline.
 -- Initial admission still needs an external close because connections arrive
 -- over wall-clock time. Tournament claim collection closes at a supplied logical block.
@@ -379,9 +374,6 @@ local queue_control
 
 -- Releases a completed request or block wait.
 local function complete_event(self, entry)
-    if entry.not_before and self:get_time() < entry.not_before then
-        return
-    end
     entry.resolved = true
     self.active[entry] = nil
     if entry.cortn then
@@ -471,28 +463,20 @@ local function queue_phase_close(self, phase)
     local entry = {
         kind = "close_phase",
         phase = phase,
-        response_schema = "ClosePhaseResponse",
         pending = { [self.phase_closer] = true },
     }
     send_event(self, self.phase_closer, entry, encode_event(protocol, protocol.events.close_phase, {}))
 end
 
--- Decoding finishes this audience member's request. Protocol acceptance waits
+-- Receiving the envelope finishes this audience member's request. Protocol acceptance waits
 -- for the block barrier, so an early socket reply cannot resume a match.
-local function deliver(self, entry, connection, line)
-    local protocol = self.protocol
+local function deliver(self, entry, connection, response)
     if not entry.pending[connection] then
         return
     end
     entry.pending[connection] = nil
-    local ok, decoded = pcall(
-        cartesi.fromjson,
-        line,
-        ensure_response_envelope_schema(protocol, entry.response_schema),
-        protocol.schemas
-    )
     if entry.kind == "close_phase" or entry.kind == "stop" then
-        assert(ok and decoded.value == true, "the phase closer did not close the phase asked")
+        assert(response.value == "done", "the phase closer did not close the phase asked")
         entry.resolved = true
         if entry.kind == "stop" then
             self.stopping = true
@@ -501,13 +485,13 @@ local function deliver(self, entry, connection, line)
         end
         return
     end
-    if ok and not decoded.skip then
+    if response.value ~= "done" then
         entry.replies[#entry.replies + 1] = {
-            value = decoded.value,
+            value = response.value,
             connection = connection,
             order = connection.order,
             received_at = self:get_time(),
-            id = decoded.id,
+            id = response.id,
         }
     end
 end
@@ -520,7 +504,6 @@ local function announce_phase_closer(self, connection, command)
         connection.is_phase_closer = true
         local entry = {
             kind = "stop",
-            response_schema = "ClosePhaseResponse",
             pending = { [connection] = true },
         }
         send_event(self, connection, entry, encode_event(protocol, protocol.events.close_phase, {}))
@@ -590,7 +573,7 @@ function server_meta.__index.adopt(self, sock)
                 announce(self, connection, message)
             else
                 local entry = connection.current_event
-                -- Every reply to a response-bearing request names it, a skip included. A reply
+                -- Every reply to a response-bearing request names it, a departure included. A reply
                 -- that does not is malformed and forfeits the connection.
                 if entry and entry.future and entry.future.id and math.type(message.id) ~= "integer" then
                     close_connection(self, connection)
@@ -601,8 +584,8 @@ function server_meta.__index.adopt(self, sock)
                 if message.id == expected_id then
                     connection.current_event = nil
                     if entry then
-                        deliver(self, entry, connection, line)
-                        if message.done == true then
+                        deliver(self, entry, connection, message)
+                        if message.value == "done" then
                             close_connection(self, connection)
                             return
                         end
@@ -705,7 +688,7 @@ function server_meta.__index.get_time(self)
 end
 
 queue_control = function(self, conns, event, arguments, id, future)
-    local entry = { pending = {}, replies = {}, response_schema = id and "Default" or event.response_schema }
+    local entry = { pending = {}, replies = {} }
     self.controls[#self.controls + 1] = entry
     entry.future = future
     local line = encode_event(self.protocol, event, arguments, id, self:get_time())
@@ -772,6 +755,7 @@ future_meta.__close = future_meta.__index.close
 
 -- Waiting consumes the future, closing it on completion or expiry. Validators alone
 -- decide acceptance, and the deadline only limits how long the waiter stays suspended.
+-- The wait expires once the last block before the deadline is settled.
 -- All-response requests return a sender-keyed map and ordered senders for accepted
 -- replies. First-valid requests return nil if no result was accepted.
 local function wait_for_result(self, deadline)
@@ -804,21 +788,7 @@ function future_meta.__index:wait_at_most(deadline)
     )
     begin_wait(self)
     local cleanup <close> = self -- luacheck: ignore 211
-    return wait_for_result(self, deadline)
-end
-
--- A lower bound delays consumption, not validation. The request remains live
--- until a result is available and the shared clock has reached the given block.
-function future_meta.__index:wait_at_least(block)
-    assert(math.type(block) == "integer" and block >= 0, "block must be a nonnegative block number")
-    begin_wait(self)
-    local cleanup <close> = self -- luacheck: ignore 211
-    self.not_before = block
-    if self.resolved and self.server:get_time() < block then
-        self.resolved = false
-        self.server.active[self] = true
-    end
-    return wait_for_result(self, FOREVER)
+    return wait_for_result(self, deadline and deadline - 1)
 end
 
 -- Starts the closures concurrently, in list order. The future resolves to true when all
@@ -911,13 +881,13 @@ function server_meta.__index.notify_all(self, subscriptions, event, event_argume
     notification:wait_at_most(FOREVER)
 end
 
--- Waits for a logical block's time barrier, or returns immediately if it has already been reached.
+-- Waits until a request made now is answered at the given block, or returns immediately if it already would be.
 function server_meta.__index.wait_until(self, block)
     assert(math.type(block) == "integer" and block >= 0, "block must be a nonnegative block number")
-    if self:get_time() >= block then
+    if self:get_time() >= block - 1 then
         return
     end
-    local future <close> = setmetatable({ kind = "block", server = self, target_block = block }, future_meta)
+    local future <close> = setmetatable({ kind = "block", server = self, target_block = block - 1 }, future_meta)
     register_event(self, future, {})
     future:wait_at_most(FOREVER)
 end
@@ -964,8 +934,10 @@ local function accept_scheduled_response(self, response)
     then
         return
     end
-    local ok, decoded =
-        pcall(cartesi.fromjson, cartesi.tojson(response.value, -1), future.event.response_schema, protocol.schemas)
+    local ok, decoded
+    if type(response.value) == "string" then
+        ok, decoded = pcall(cartesi.fromjson, response.value, future.event.response_schema, protocol.schemas)
+    end
     if not ok then
         if future.kind == "request_all" and not future.retry_rejected then
             future.pending[response.connection] = nil
@@ -1048,16 +1020,17 @@ function server_meta.__index.step_time(self)
                     if not future.id then
                         future.accepted_replies[#future.accepted_replies + 1] = reply
                         future.pending[reply.connection] = nil
-                    elseif reply.id == future.id and type(reply.value) == "table" then
-                        local block = reply.value.scheduled_at
+                    elseif reply.id == future.id and (type(reply.value) == "table" or reply.value == "nothing") then
+                        local block = type(reply.value) == "table" and reply.value.scheduled_at
+                        local answer = reply.value == "nothing" and cartesi.tojson(reply.value) or reply.value.answer
                         if math.type(block) == "integer" and block > future.block then
                             future.pending[reply.connection] = block
-                        elseif reply.value.answer ~= nil then
+                        elseif answer ~= nil then
                             local included_at = future.block + 1
                             future.pending[reply.connection] = included_at
                             self.queued_responses[#self.queued_responses + 1] = {
                                 id = future.id,
-                                value = reply.value.answer,
+                                value = answer,
                                 connection = reply.connection,
                                 order = reply.order,
                                 block = included_at,
@@ -1134,9 +1107,6 @@ function server_meta.__index.step_time(self)
         if entry.target_block then
             boundaries[#boundaries + 1] = entry.target_block
         end
-        if entry.not_before then
-            boundaries[#boundaries + 1] = entry.not_before
-        end
         if entry.deadline then
             boundaries[#boundaries + 1] = entry.deadline
         end
@@ -1153,7 +1123,7 @@ function server_meta.__index.step_time(self)
     local block = self.clock:next_block(boundaries)
     if block then
         self.clock:advance(block)
-        local entry = { pending = {}, replies = {}, response_schema = "Responses" }
+        local entry = { pending = {}, replies = {} }
         self.batch = { entry }
         local line = encode_event(protocol, protocol.events.advance_time, { block })
         for _, connection in ipairs(self:get_players()) do

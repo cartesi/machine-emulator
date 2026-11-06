@@ -18,7 +18,7 @@
 
 local bash = require("cartesi.bash")
 -- forward compiled package declarations so handle_bash_completion can run clean
-local cartesi, util, hash_tree
+local cartesi, util, hash_tree, fs
 local MCYCLE_MAX
 
 local function stderr_unsilenceable(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
@@ -126,8 +126,16 @@ where options are:
     otherwise it listens on "127.0.0.1:0".
 
   --remote-address=<ip>:<port>
+  --remote-address=filename:<filename>
     use a remote cartesi machine listening to <ip>:<port> instead of
     running a local cartesi machine.
+
+    with filename:, the address the remote cartesi machine is left at is written
+    to <filename> after the execution, or <filename> is removed by
+    --remote-shutdown. --remote-fork, or a revert that cannot rebind the remote
+    cartesi machine, can leave it at a new address. alone, filename: also reads
+    the address from <filename>, which must exist unless --remote-spawn is
+    specified. together with <ip>:<port>, <filename> must not exist yet.
 
   --remote-health-check
     checks health of remote server and exit
@@ -141,24 +149,25 @@ where options are:
 
   --no-remote-create
     use existing cartesi machine in the remote server instead of creating
-    a new one.
+    a new one. the runtime options given are applied to it, and the others
+    keep their current values. --no-reserve cannot be applied.
 
   --no-remote-destroy
     do not destroy the cartesi machine in the remote server after the execution.
 
-  --revert-mode=<fork|stored|none>
-    select how advance and inspect states are reverted (default: fork).
+  --revert-mode=<mode>
+    select how advance and inspect states are reverted.
 
-    fork snapshots by forking a remote machine server.
-
-    stored snapshots a machine loaded from <directory> with sharing:all or
-    created with --create=<directory> by cloning it to <directory>.revert.
-    this mode cannot be combined with --replace-memory-range.
-    accepted state is synced before the snapshot is removed, and rejected or
-    inspected state is replaced by the synced snapshot.
-
-    none disables snapshots. inspect states are not reverted. a rejected
-    advance cannot be reverted and aborts the run.
+    <mode> is one of
+        fork: snapshot by forking a remote machine server.
+        stored: snapshot a machine loaded from <directory> with sharing:all or
+            created with --create=<directory> by cloning it to <directory>.revert.
+            this mode cannot be combined with --replace-memory-range.
+            accepted state is synced before the snapshot is removed, and rejected or
+            inspected state is replaced by the synced snapshot.
+        none: disable snapshots. inspect states are not reverted. a rejected
+            advance cannot be reverted and aborts the run.
+    the default mode is "fork".
 
     DON'T USE revert-mode=none IN PRODUCTION
 
@@ -361,7 +370,10 @@ where options are:
     the memory range can be identified by label, by start and length, or both.
     when both label and start/length are given, they must be consistent with
     the existing memory range. when only label is given, start and length are
-    resolved from the machine's initial configuration.
+    taken from the memory range the label names. flash drives and nvrams
+    also match their automatic labels (flashdriveN and nvramN). the other
+    memory ranges match the labels .ram, .dtb, .cmio-rx-buffer,
+    .cmio-tx-buffer, and .uarch-ram.
 
   --ram=<key>:<value>[,<key>:<value>[,...]...]
   --dtb=<key>:<value>[,<key>:<value>[,...]...]
@@ -644,6 +656,11 @@ where options are:
         when omitted or defined as 0, the number of hardware threads is used if
         it can be identified or else a single thread is used.
 
+    on Linux, idle threads spin unless OMP_WAIT_POLICY=passive is set before the
+    process starts. spinning threads slow the hash tree down when the cores are busy.
+    the installed cartesi-machine and the servers spawned by --remote-spawn default
+    to passive.
+
     --console-io=<key>:<value>[,<key>:<value>[,...]...]
         console input/output runtime options,
         allowing console redirection to pipes or files.
@@ -711,6 +728,15 @@ where options are:
     don't reserve swap memory for flash drives.
 
     DON'T USE THIS OPTION IN PRODUCTION
+
+  --clear-hash-tree[=<mode>]
+    clear all cached hash-tree data.
+    hashes are rebuilt lazily on the next hash or proof request.
+
+    <mode> is one of
+        once: clear only after initially creating or loading the machine.
+        always: also clear when reloading during stored snapshots and reverts.
+    the default mode is "once".
 
   --max-mcycle=<number>
     stop at a given mcycle (default: 2^64-1).
@@ -868,13 +894,19 @@ where options are:
   --no-htif-yield-automatic
     do not honor yield requests with automatic reset by target.
 
-  --create=<directory>
-    initializes a machine using fully on-disk state stored to <directory>,
-    the effect is similar as creating a machine and using --store=<directory>,
-    however this is the only safe way to create machines with large address spaces
-    or to propagate "shared" backing stores to configuration files.
+  --create=<directory>[,<key>:<value>[,...]...]
+    creates a machine, stores it to <directory>, and loads it back from <directory>.
+    with sharing:all, this is the only safe way to create machines with large
+    address spaces or to propagate "shared" backing stores to configuration files.
 
-    MUST BE USED WITH --revert-mode=stored or none
+    <key>:<value> is one of
+        sharing:<mode>
+
+        sharing (optional)
+        affects how address ranges modifications reflect the backing stores in
+        <directory>, as in --load. the default mode is "all".
+        mode "config" MUST BE USED WITH --revert-mode=none.
+        mode "all" MUST BE USED WITH --revert-mode=stored or none.
 
   --load=<directory>[,<key>:<value>[,...]...]
     load machine stored in <directory>.
@@ -903,8 +935,9 @@ where options are:
         flush the machine state held in the backing stores of <directory> to
         permanent storage before exiting. with a sharing mode other than "none"
         there is no final store, and process exit does not guarantee the
-        modifications are durable on disk; sync fsyncs every backing store file,
-        the directory, and its parent before exit.
+        modifications are durable on disk. even queries such as computing the
+        root hash modify the backing stores. sync fsyncs every backing store
+        file, the directory, and its parent before exit.
         requires a sharing mode other than "none".
 
   --store=<directory>[,<key>:<value>[,...]...]
@@ -1008,6 +1041,8 @@ where options are:
     exit with failure in case the generated machine is not compatible with
     Rolling Cartesi Machine templates. Requires a manual rx-accepted yield
     with the expected outputs Merkle root in the tx buffer.
+    A machine using the Keccak-256 hash function must also have a pristine
+    microarchitecture state.
     By default, expects the empty outputs tree padded with zero leaves.
     For a non-genesis template, outputs_merkle_root names a file containing
     the expected root as exactly 32 raw bytes.
@@ -1098,6 +1133,7 @@ local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
 local cmdline = {
     remote_spawn = nil,
     remote_address = nil,
+    remote_address_filename = nil,
     remote_health_check = false,
     remote_fork = false,
     remote_shutdown = false,
@@ -1149,7 +1185,6 @@ local cmdline = {
         },
         flash_drive = {},
         nvram = {},
-        tlb = {},
         virtio = {},
         cmio = {
             rx_buffer = {},
@@ -1176,9 +1211,10 @@ local cmdline = {
         hash_tree = {},
     },
     console = {},
-    concurrency_update_hash_tree = 0,
+    concurrency_update_hash_tree = nil,
     skip_version_check = false,
     no_reserve = false,
+    clear_hash_tree = false,
     initial_hash = false,
     final_hash = false,
     initial_proof = {},
@@ -1198,6 +1234,7 @@ local cmdline = {
     store_dir = nil,
     load_dir = nil,
     create_dir = nil,
+    create_sharing = nil,
     clone_dir = nil,
     load_sharing = nil,
     load_sync = nil,
@@ -1470,6 +1507,22 @@ local function handle_bash_completion()
     if self and self ~= progs[1] and self ~= progs[2] then progs[#progs + 1] = self end
     bash.dump_bash_completion(options, progs)
     os.exit()
+end
+
+-- Reads the remote address a previous run left in a file, or nothing if there is no such file
+local function read_remote_address_file(filename)
+    local f <close> = io.open(filename, "r")
+    if not f then return nil end
+    return (assertf(f:read("l"), "no remote address in '%s'", filename))
+end
+
+-- Writes the address of the server left alive, through a temporary file so readers never see a partial address
+local function write_remote_address_file(filename, address)
+    local temporary = filename .. ".tmp"
+    local f <close> = assert(io.open(temporary, "w"))
+    assert(f:write(address, "\n"))
+    assert(f:close())
+    return assert(os.rename(temporary, filename))
 end
 
 -- List of supported options
@@ -2119,6 +2172,24 @@ options = {
         end,
     },
     {
+        "--clear-hash-tree",
+        function()
+            cmdline.clear_hash_tree = "once"
+            return true
+        end,
+    },
+    {
+        "--clear-hash-tree=",
+        function(keys, all, opts)
+            cmdline.clear_hash_tree = util.parse_options(keys, all, opts).mode
+            return true
+        end,
+        {
+            "mode",
+            mode = { once = "once", always = "always" },
+        },
+    },
+    {
         "--no-reserve",
         function()
             cmdline.no_reserve = true
@@ -2263,12 +2334,18 @@ options = {
     },
     {
         "--create=",
-        function(_, _, opts)
-            if not opts or #opts < 1 then return false end
-            cmdline.create_dir = opts
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            assertf(o.directory, "need directory in %s", all)
+            cmdline.create_dir = o.directory
+            cmdline.create_sharing = to_sharing(o.sharing) or cartesi.SHARING_ALL
             return true
         end,
-        "dir",
+        {
+            "directory",
+            directory = "dir",
+            sharing = { none = "none", config = "config", all = "all" },
+        },
     },
     {
         "--load=",
@@ -2323,7 +2400,13 @@ options = {
         "--remote-address=",
         function(_, _, opts)
             if not opts or #opts < 1 then return false end
-            cmdline.remote_address = opts
+            -- An address starts with a digit or a bracket, so it cannot be mistaken for filename:
+            local filename = opts:match("^filename:(.+)")
+            if filename then
+                cmdline.remote_address_filename = filename
+            else
+                cmdline.remote_address = opts
+            end
             return true
         end,
     },
@@ -2565,7 +2648,7 @@ options = {
     {
         "--append-init-file=",
         function(_, _, opts)
-            local contents = util.read_file(opts)
+            local contents = fs.read_file(opts)
             if not contents:find("\n$") then contents = contents .. "\n" end
             cmdline.append_init = cmdline.append_init .. contents
             return true
@@ -2582,7 +2665,7 @@ options = {
     {
         "--append-entrypoint-file=",
         function(_, _, opts)
-            local contents = util.read_file(opts)
+            local contents = fs.read_file(opts)
             if not contents:find("\n$") then contents = contents .. "\n" end
             cmdline.append_entrypoint = cmdline.append_entrypoint .. contents
             return true
@@ -2662,6 +2745,7 @@ if #arg == 1 and arg[1] == "--bash-completion" then handle_bash_completion() end
 cartesi = require("cartesi")
 util = require("cartesi.util")
 hash_tree = require("cartesi.hash-tree")
+fs = require("cartesi.filesystem")
 
 -- And perform the dependent initializations
 MCYCLE_MAX = cartesi.MCYCLE_MAX
@@ -2745,6 +2829,8 @@ local function dump_value_proofs(machine, desired_proofs, config)
     end
 end
 
+local try_write_remote_address_file = util.protect(write_remote_address_file)
+
 local function new_machine()
     assert(not cmdline.remote_health_check or cmdline.remote_address, "missing remote address")
     if cmdline.remote_address then
@@ -2765,15 +2851,21 @@ local function new_machine()
         setmetatable(remote_closer, {
             __gc = function()
                 local address = new_m:get_server_address()
+                local filename = cmdline.remote_address_filename
                 if cmdline.remote_shutdown then
                     local ok, err = pcall(shutdown)
                     if ok then
                         stderr("Shutdown JSONRPC remote cartesi machine at '%s'\n", address)
+                        if filename then os.remove(filename) end
                     else
                         stderr("Failed to shutdown JSONRPC remote cartesi machine: %s\n", err)
                     end
                 else
                     stderr("Left alive JSONRPC remote cartesi machine at '%s'\n", address)
+                    if filename then
+                        local written, err = try_write_remote_address_file(filename, address)
+                        if not written then stderr("Failed to write remote address to '%s': %s\n", filename, err) end
+                    end
                 end
                 if cmdline.remote_fork then
                     stderr("Left alive original JSONRPC remote cartesi machine at '%s'\n", cmdline.remote_address)
@@ -2793,15 +2885,38 @@ local runtime_config = {
     console = cmdline.console,
     skip_version_check = cmdline.skip_version_check,
     no_reserve = cmdline.no_reserve,
+    clear_hash_tree = not not cmdline.clear_hash_tree,
 }
 
-if cmdline.remote_spawn then
+local function spawn_server()
     local jsonrpc = require("cartesi.jsonrpc")
-    local server <close>, address, pid = jsonrpc.spawn_server(cmdline.remote_address)
-    server:set_cleanup_call(jsonrpc.NOTHING) -- we will perform shutdown manually
+    local server, address, pid = jsonrpc.spawn_server(cmdline.remote_address)
     stderr("Spawned JSONRPC remote cartesi machine at '%s' with pid %d\n", address, pid)
     cmdline.remote_address = address
+    return server
 end
+
+-- The address file records where the server ends up. Without an explicit address, it also says where to connect.
+local remote_address_filename = cmdline.remote_address_filename
+if remote_address_filename then
+    if cmdline.remote_address then
+        assertf(
+            not fs.exists(remote_address_filename),
+            "remote address file '%s' already exists, but --remote-address also gives the address",
+            remote_address_filename
+        )
+    else
+        cmdline.remote_address = read_remote_address_file(remote_address_filename)
+        assertf(
+            cmdline.remote_address or cmdline.remote_spawn,
+            "missing remote address file '%s'",
+            remote_address_filename
+        )
+    end
+end
+
+-- The spawned server shuts down with this handle until the remote machine takes over its shutdown.
+local spawned_server <close> = cmdline.remote_spawn and spawn_server() or nil
 
 if cmdline.create_dir then
     assert(
@@ -2809,13 +2924,10 @@ if cmdline.create_dir then
         "cannot use --create and --no-remote-create at the same time"
     )
     assert(not cmdline.load_dir, "cannot use --create and --load at the same time")
-    assert(
-        cmdline.revert_mode == "stored" or cmdline.revert_mode == "none",
-        "--create requires --revert-mode=stored or none"
-    )
 end
 
-if cmdline.load_sharing and cmdline.load_sharing ~= cartesi.SHARING_NONE then
+local stored_sharing = cmdline.load_sharing or cmdline.create_sharing
+if stored_sharing and stored_sharing ~= cartesi.SHARING_NONE then
     assert(
         cmdline.revert_mode == "stored" or cmdline.revert_mode == "none",
         "shared stored machines require --revert-mode=stored or none"
@@ -2823,9 +2935,7 @@ if cmdline.load_sharing and cmdline.load_sharing ~= cartesi.SHARING_NONE then
 end
 if cmdline.revert_mode == "stored" then
     assertf(cmdline.load_dir or cmdline.create_dir, "--revert-mode=stored requires --load or --create")
-    if cmdline.load_dir then
-        assert(cmdline.load_sharing == cartesi.SHARING_ALL, "--revert-mode=stored requires --load sharing:all")
-    end
+    assert(stored_sharing == cartesi.SHARING_ALL, "--revert-mode=stored requires sharing:all")
     assert(#cmdline.memory_range_replace == 0, "--revert-mode=stored cannot be combined with --replace-memory-range")
 end
 
@@ -2961,6 +3071,7 @@ check_computation_hash_selection()
 if cmdline.cmio_advance then check_epoch_options(cmdline.cmio_advance) end
 
 local main_machine = new_machine()
+if spawned_server then spawned_server:set_cleanup_call(require("cartesi.jsonrpc").NOTHING) end
 if cmdline.load_dir then
     stderr("Loading machine: please wait\n")
     if cmdline.clone_dir then main_machine:clone_stored(cmdline.clone_dir, cmdline.load_dir) end
@@ -3072,7 +3183,7 @@ echo "
 
     local loaded_config
     if cmdline.load_config and cmdline.load_config_format == "json" then
-        loaded_config = cartesi.fromjson(util.read_file(cmdline.load_config))
+        loaded_config = cartesi.fromjson(fs.read_file(cmdline.load_config), "MachineConfig")
     elseif cmdline.load_config then
         local env = {}
         local chunk, err = loadfile(cmdline.load_config, "t", env)
@@ -3094,12 +3205,28 @@ echo "
         config = loaded_config
     end
 
-    main_machine = main_machine:create(config, runtime_config, cmdline.create_dir)
+    main_machine = main_machine:create(config, runtime_config, cmdline.create_dir, cmdline.create_sharing)
 end
+
+-- An existing remote machine keeps its runtime configuration, except for the options given to this run
+if cmdline.remote_address and not cmdline.remote_create and not cmdline.load_dir then
+    assert(not cmdline.no_reserve, "cannot use --no-reserve and --no-remote-create at the same time")
+    local runtime = main_machine:get_runtime_config()
+    if next(cmdline.console) then runtime.console = cmdline.console end
+    if cmdline.concurrency_update_hash_tree then
+        runtime.concurrency.update_hash_tree = cmdline.concurrency_update_hash_tree
+    end
+    if cmdline.skip_version_check then runtime.skip_version_check = true end
+    main_machine:set_runtime_config(runtime)
+    if cmdline.clear_hash_tree then main_machine:clear_hash_tree() end
+end
+
+-- Subsequent stored snapshot/revert loads clear caches only when explicitly requested.
+runtime_config.clear_hash_tree = cmdline.clear_hash_tree == "always"
 
 local function serialize_config(out, config, format)
     if format == "json" then
-        out:write(cartesi.tojson(config, 2), "\n")
+        out:write(cartesi.tojson(config, 2, "MachineConfig"), "\n")
     elseif format == "lua" then
         out:write("return ")
         util.dump_table(config, out, default_config)
@@ -3197,7 +3324,7 @@ local function save_cmio_data(advance, data, filename_pattern, index)
     local values = { i = advance.input_file_index, o = index }
     local name = instantiate_filename(filename_pattern, values)
     stderr("Storing %s\n", name)
-    util.write_file(data, name)
+    fs.write_file(data, name)
 end
 
 local function save_cmio_report(advance, data)
@@ -3252,23 +3379,14 @@ end
 
 local function load_frontier(filename, height, hash_type)
     if filename == "" then return nil end
-    local frontier = cartesi.fromjson(read_epoch_file(filename), "Base64Array")
-    assert(#frontier == height + 1, "frontier height does not match computation settings")
-    for _, hash in ipairs(frontier) do
-        assert(hash == false or (type(hash) == "string" and #hash == cartesi.HASH_SIZE), "invalid frontier entry")
-    end
-    if frontier[#frontier] then
-        for level = 1, #frontier - 1 do
-            assert(not frontier[level], "invalid complete frontier")
-        end
-    end
-    frontier.hash_function = cartesi[hash_type]
-    return frontier
+    -- A missing or empty file fails as an epoch that cannot resume.
+    read_epoch_file(filename)
+    return hash_tree.frontier_load(filename, height, hash_type)
 end
 
 local function store_frontier(filename, frontier)
     if filename == "" then return end
-    util.write_file(cartesi.tojson(table.move(frontier, 1, #frontier, 1, {}), 2, "Base64Array") .. "\n", filename)
+    hash_tree.frontier_store(frontier, filename)
 end
 
 -- State files are written independently. Validation can detect inconsistent files
@@ -3279,7 +3397,7 @@ local function persist_cmio_epoch_state(builder, runner)
     if advance.state_hash_filename ~= "" and runner:read_reg("iflags_Y") ~= 0 and runner:read_reg("iflags_H") == 0 then
         local cmd, reason = runner:receive_cmio_request()
         if cmd == cartesi.HTIF_YIELD_CMD_MANUAL and is_rx_accepted(reason) then
-            util.write_file(runner:get_root_hash(), advance.state_hash_filename)
+            fs.write_file(runner:get_root_hash(), advance.state_hash_filename)
         end
     end
     advance.saved_machine_hash = runner:get_root_hash()
@@ -3298,7 +3416,7 @@ end
 -- Reads back a Proof written by serialize_proof, in the resolved format (explicit format wins,
 -- else the filename extension).
 local function read_proof(filename, format)
-    local contents = util.read_file(filename)
+    local contents = fs.read_file(filename)
     if resolve_format(format, filename) == "json" then return cartesi.fromjson(contents, "Proof") end
     return assert(load(contents, filename, "t", {}))()
 end
@@ -3478,7 +3596,7 @@ local function save_cmio_output_proofs(advance)
         local values = { i = input_indices[i], o = proof.target_address }
         local name = instantiate_filename(advance.output_proof, values)
         stderr("Storing %s\n", name)
-        util.write_file(serialize_proof(proof, format), name)
+        fs.write_file(serialize_proof(proof, format), name)
     end
 end
 
@@ -3492,7 +3610,7 @@ local function save_cmio_outputs_merkle_root_proof(advance, proof)
     local name = instantiate_filename(advance.outputs_merkle_root_proof, values)
     local format = resolve_format(advance.format, advance.outputs_merkle_root_proof)
     stderr("Storing %s\n", name)
-    util.write_file(serialize_proof(proof, format), name)
+    fs.write_file(serialize_proof(proof, format), name)
 end
 
 local function save_cmio_hashes_and_indices(advance, hashes)
@@ -3558,7 +3676,7 @@ end
 local function load_cmio_input(machine, advance, input_file_index, revert_root_hash)
     local values = { i = input_file_index }
     local filename = instantiate_filename(advance.input, values)
-    local data = util.read_file(filename)
+    local data = fs.read_file(filename)
     -- Delivering data that does not fit the rx buffer is a no-op transition, as in the EVM
     -- verifier. It is still delivered so the run follows the same transition.
     if #data > 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE then
@@ -3570,7 +3688,7 @@ local function load_cmio_input(machine, advance, input_file_index, revert_root_h
 end
 
 local function load_cmio_query(machine, inspect)
-    local data = util.read_file(inspect.query)
+    local data = fs.read_file(inspect.query)
     machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_INSPECT_STATE, data)
 end
 
@@ -3579,7 +3697,7 @@ local function save_cmio_inspect_state_report(inspect, data)
     local values = { o = inspect.report_index }
     local name = instantiate_filename(inspect.report, values)
     stderr("Storing %s\n", name)
-    util.write_file(data, name)
+    fs.write_file(data, name)
 end
 
 local function store_machine(machine, config, dir, sharing)
@@ -3593,12 +3711,12 @@ end
 
 local function dump_memory_ranges(machine, dir)
     local prefix = type(dir) == "string" and dir .. "/" or ""
-    if prefix ~= "" then assertf(os.execute("mkdir " .. dir), "could not create directory %s", dir) end
+    if prefix ~= "" then fs.create_directory(dir) end
     for _, v in ipairs(machine:get_address_ranges()) do
         -- Only memory ranges hold state. Device ranges are always pristine, so skip them.
         if v.is_memory then
             local filename = prefix .. string.format("%016x--%016x.bin", v.start, v.length)
-            util.write_file(machine:read_memory(v.start, v.length), filename)
+            fs.write_file(machine:read_memory(v.start, v.length), filename)
         end
     end
 end
@@ -3661,7 +3779,7 @@ end
 if cmdline.initial_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     if type(cmdline.initial_hash) == "string" then
-        util.write_file(machine:get_root_hash(), cmdline.initial_hash)
+        fs.write_file(machine:get_root_hash(), cmdline.initial_hash)
     else
         print_root_hash(machine, stderr_unsilenceable)
     end
@@ -3679,7 +3797,7 @@ local revert_none = {
     __close = function() end,
 }
 
-local function make_revert_none() return setmetatable({}, revert_none) end
+local function new_revert_none() return setmetatable({}, revert_none) end
 
 local revert_fork = { __index = {} }
 
@@ -3695,6 +3813,8 @@ function revert_fork.__index:commit()
     end
 end
 
+local try_rebind_server = util.protect(function(m, address) return m:rebind_server(address) end)
+
 function revert_fork.__index:revert()
     assert(self.backup_machine, "no snapshot to revert to")
     local m = self.machine
@@ -3702,7 +3822,16 @@ function revert_fork.__index:revert()
     m:shutdown_server()
     m:swap(self.backup_machine)
     self.backup_machine = nil
-    m:rebind_server(address)
+    -- Another process may take the address once it is released, so the restored server may have to stay where it is
+    local rebound_address, err = try_rebind_server(m, address)
+    if not rebound_address then
+        stderr(
+            "Warning: restored JSONRPC remote cartesi machine stays at '%s', since rebinding it to '%s' failed: %s\n",
+            m:get_server_address(),
+            address,
+            err
+        )
+    end
 end
 
 function revert_fork.__index:has_snapshot() return self.backup_machine ~= nil end
@@ -3711,7 +3840,7 @@ function revert_fork:__close(err)
     if err ~= nil and self:has_snapshot() then self:revert() end
 end
 
-local function make_revert_fork(m) return setmetatable({ machine = m }, revert_fork) end
+local function new_revert_fork(m) return setmetatable({ machine = m }, revert_fork) end
 
 local revert_stored = { __index = {} }
 
@@ -3754,7 +3883,7 @@ end
 
 function revert_stored.__index:move() return setmetatable(shallow_move(self), revert_stored) end
 
-local function make_revert_stored(m, machine_directory, runtime)
+local function new_revert_stored(m, machine_directory, runtime)
     local backup <close> = setmetatable({
         machine = m,
         machine_directory = machine_directory,
@@ -3769,11 +3898,11 @@ end
 -- Select the snapshot implementation once. The object also reverts an outstanding snapshot on errors.
 local backup
 if cmdline.revert_mode == "fork" then
-    backup = make_revert_fork(machine)
+    backup = new_revert_fork(machine)
 elseif cmdline.revert_mode == "stored" then
-    backup = make_revert_stored(machine, cmdline.load_dir or cmdline.create_dir, runtime_config)
+    backup = new_revert_stored(machine, cmdline.load_dir or cmdline.create_dir, runtime_config)
 else
-    backup = make_revert_none()
+    backup = new_revert_none()
 end
 local _ <close> = backup
 
@@ -3881,7 +4010,7 @@ local function uarch_cycle_root_hashes_runner_run(self, mcycle_end)
     -- Past the window, run plainly.
     return self.runner:run(mcycle_end)
 end
-local function make_uarch_cycle_root_hashes_runner(runner, start, count, log2_bundle)
+local function new_uarch_cycle_root_hashes_runner(runner, start, count, log2_bundle)
     return setmetatable({
         runner = runner,
         start = start,
@@ -3976,7 +4105,7 @@ local function mcycle_root_hashes_runner_run(self, mcycle_end)
     self.partial_bundle = partial_bundle
     return collected.break_reason
 end
-local function make_mcycle_root_hashes_runner(runner, log2_period, start, log2_bundle)
+local function new_mcycle_root_hashes_runner(runner, log2_period, start, log2_bundle)
     return setmetatable({
         runner = runner,
         period = 1 << log2_period,
@@ -4105,7 +4234,7 @@ local function mcycle_computation_hash_persist_epoch_state(builder, runner)
     persist_cmio_epoch_state(builder, runner)
 end
 
-local function make_mcycle_computation_hash_builder(advance, computation, on_full)
+local function new_mcycle_computation_hash_builder(advance, computation, on_full)
     local log2_period = computation.log2_mcycle_period
     return {
         advance = advance,
@@ -4294,7 +4423,7 @@ local function uarch_cycle_computation_hash_end_epoch(builder, runner)
     end
 end
 
-local function make_uarch_cycle_computation_hash_builder(advance, computation, on_full)
+local function new_uarch_cycle_computation_hash_builder(advance, computation, on_full)
     local log2_period = computation.log2_mcycle_period
     local log2_periods_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_period
     local target_input = computation.mcycle_period_index >> log2_periods_per_input
@@ -4323,7 +4452,7 @@ end
 
 -- An epoch that does not compute a hash delegates execution to the runner and skips builder
 -- bookkeeping. It still checks that a rejection restored the input boundary.
-local function make_null_computation_hash_builder()
+local function new_null_computation_hash_builder()
     return {
         run = null_computation_hash_run,
         persist_epoch_state = null_computation_hash_noop,
@@ -4336,7 +4465,7 @@ local function make_null_computation_hash_builder()
 end
 
 -- Output-only persistence has no computation frontier, but saves completed epoch boundaries.
-local function make_epoch_outputs_builder(advance)
+local function new_epoch_outputs_builder(advance)
     return {
         advance = advance,
         run = null_computation_hash_run,
@@ -4357,7 +4486,7 @@ local function report_computation_hash(root)
     stderr("\n%s computation hash: %s\n", name, cartesi.tohex(root))
     if filename ~= "" then
         stderr("Storing %s\n", filename)
-        util.write_file(root, filename)
+        fs.write_file(root, filename)
     end
 end
 
@@ -4436,10 +4565,18 @@ local function assert_rolling_template(m, opts)
         return
     end
     local filename = opts.outputs_merkle_root
-    local expected_root = filename and util.read_file(filename)
+    local expected_root = filename and fs.read_file(filename)
         or hash_tree.frontier_get_root_hash(hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256"))
     assert(#expected_root == cartesi.HASH_SIZE, "invalid outputs_merkle_root size: expected 32 bytes")
     if data ~= expected_root then exit_code = 2 end
+    -- Only Keccak-256 machines can run the uarch.
+    if
+        initial_config.hash_tree.hash_function == "keccak256"
+        and m:get_node_hash(cartesi.UARCH_STATE_START_ADDRESS, cartesi.UARCH_STATE_LOG2_SIZE)
+            ~= cartesi.UARCH_PRISTINE_STATE_HASH
+    then
+        exit_code = 2
+    end
 end
 
 -- The inner loop of a run with no cmio requests ignores automatic yields.
@@ -4455,8 +4592,7 @@ local function run_inspect_state_query(m, runner)
     -- Boot always runs the machine plainly, and only the query itself runs with the runner. A query
     -- needs a machine waiting for it on an rx-accepted manual yield. A halt, an overflow, an
     -- exhausted cycle limit, or a reject or exception yield leaves nothing to inspect.
-    local break_reason =
-        run_to_stop(make_null_computation_hash_builder(), m, cmdline.max_mcycle, ignore_yield_automatic)
+    local break_reason = run_to_stop(new_null_computation_hash_builder(), m, cmdline.max_mcycle, ignore_yield_automatic)
     local waiting = is_yielded_manual(break_reason)
     if waiting then
         local cmd, yield_reason = m:receive_cmio_request()
@@ -4479,7 +4615,7 @@ local function run_inspect_state_query(m, runner)
             cmdline.cmio_inspect.report_index = cmdline.cmio_inspect.report_index + 1
         end
     end
-    break_reason = run_to_stop(make_null_computation_hash_builder(), runner, cmdline.max_mcycle, on_yield_automatic)
+    break_reason = run_to_stop(new_null_computation_hash_builder(), runner, cmdline.max_mcycle, on_yield_automatic)
     report_stop(m, break_reason)
     stderr("\nAfter query\n")
     backup:revert()
@@ -4536,7 +4672,7 @@ end
 -- Requires boot to reach a fixed point and returns its revert root hash and stop information.
 local function initialize_advance_state_epoch(builder, runner)
     local break_reason =
-        run_to_stop(make_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
+        run_to_stop(new_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
     assert(is_at_fixed_point(break_reason), "advance-state epoch initialization did not reach a fixed point")
     backup:commit()
     local yield_reason, yield_data
@@ -4617,7 +4753,7 @@ end
 -- computation hash advances through it too).
 local runner = gdb_stub or machine
 if cmdline.uarch_cycle_root_hashes_count then
-    runner = make_uarch_cycle_root_hashes_runner(
+    runner = new_uarch_cycle_root_hashes_runner(
         runner,
         cmdline.uarch_cycle_root_hashes_start,
         cmdline.uarch_cycle_root_hashes_count,
@@ -4625,7 +4761,7 @@ if cmdline.uarch_cycle_root_hashes_count then
     )
 elseif mcycle_root_hashes then
     local start = cmdline.mcycle_root_hashes_start ~= 0 and cmdline.mcycle_root_hashes_start or nil
-    runner = make_mcycle_root_hashes_runner(
+    runner = new_mcycle_root_hashes_runner(
         runner,
         cmdline.mcycle_root_hashes_log2_period,
         start,
@@ -4640,18 +4776,17 @@ if cmdline.cmio_advance then
     local advance = cmdline.cmio_advance
     local builder
     if cmdline.mcycle_computation_hash then
-        builder =
-            make_mcycle_computation_hash_builder(advance, cmdline.mcycle_computation_hash, report_computation_hash)
+        builder = new_mcycle_computation_hash_builder(advance, cmdline.mcycle_computation_hash, report_computation_hash)
     elseif cmdline.uarch_cycle_computation_hash then
-        builder = make_uarch_cycle_computation_hash_builder(
+        builder = new_uarch_cycle_computation_hash_builder(
             advance,
             cmdline.uarch_cycle_computation_hash,
             report_computation_hash
         )
     elseif advance.resumable then
-        builder = make_epoch_outputs_builder(advance)
+        builder = new_epoch_outputs_builder(advance)
     else
-        builder = make_null_computation_hash_builder()
+        builder = new_null_computation_hash_builder()
     end
     run_advance_state_epoch(builder, runner)
     saved_machine_hash = advance.saved_machine_hash
@@ -4662,7 +4797,7 @@ if cmdline.cmio_inspect then
 elseif not cmdline.cmio_advance then
     report_stop(
         machine,
-        run_to_stop(make_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
+        run_to_stop(new_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
     )
 end
 -- log step
@@ -4709,7 +4844,7 @@ if cmdline.dump_memory_ranges_dir then dump_memory_ranges(machine, cmdline.dump_
 if cmdline.final_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     if type(cmdline.final_hash) == "string" then
-        util.write_file(machine:get_root_hash(), cmdline.final_hash)
+        fs.write_file(machine:get_root_hash(), cmdline.final_hash)
     else
         print_root_hash(machine, stderr_unsilenceable)
     end
@@ -4721,12 +4856,12 @@ if saved_machine_hash then
     if backup:has_snapshot() then backup:revert() end
     assert(machine:get_root_hash() == saved_machine_hash, "machine changed after the epoch state boundary")
 end
+if cmdline.assert_rolling_template then assert_rolling_template(machine, cmdline.assert_rolling_template) end
 if cmdline.store_dir then store_machine(machine, initial_config, cmdline.store_dir, cmdline.store_sharing) end
 if cmdline.load_sync then
     stderr("Syncing machine: please wait\n")
     machine:sync_stored(cmdline.load_dir)
 end
-if cmdline.assert_rolling_template then assert_rolling_template(machine, cmdline.assert_rolling_template) end
 if backup:has_snapshot() then backup:revert() end
 if not cmdline.remote_address or cmdline.remote_destroy then machine:destroy() end
 os.exit(exit_code, true)

@@ -513,6 +513,16 @@ static cartesi::sharing_mode convert_from_c(cm_sharing_mode sharing) {
     throw std::domain_error{"unknown sharing mode"};
 }
 
+static cartesi::remove_mode convert_from_c(cm_remove_mode mode) {
+    switch (mode) {
+        case CM_REMOVE_STORED:
+            return cartesi::remove_mode::stored;
+        case CM_REMOVE_FORCED:
+            return cartesi::remove_mode::forced;
+    }
+    throw std::domain_error{"unknown remove mode"};
+}
+
 static cartesi::i_machine *convert_from_c(cm_machine *m) {
     if (m == nullptr) {
         throw std::invalid_argument("invalid machine");
@@ -606,7 +616,8 @@ cm_error cm_is_jsonrpc_machine(const cm_machine *m, bool *yes) try {
     return cm_result_failure();
 }
 
-cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config, const char *dir) try {
+cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config, const char *dir,
+    cm_sharing_mode sharing) try {
     auto *cpp_m = convert_from_c(m);
     if (config == nullptr) {
         throw std::invalid_argument("invalid machine configuration");
@@ -616,7 +627,7 @@ cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config
     if (runtime_config != nullptr) {
         r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config, "runtime_config");
     }
-    cpp_m->create(c, r, dir != nullptr ? std::string(dir) : std::string());
+    cpp_m->create(c, r, dir != nullptr ? std::string(dir) : std::string(), convert_from_c(sharing));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -650,12 +661,13 @@ cm_error cm_load_new(const char *dir, const char *runtime_config, cm_sharing_mod
     return err;
 }
 
-cm_error cm_create_new(const char *config, const char *runtime_config, const char *dir, cm_machine **new_m) {
+cm_error cm_create_new(const char *config, const char *runtime_config, const char *dir, cm_sharing_mode sharing,
+    cm_machine **new_m) {
     auto err = cm_new(new_m);
     if (err != 0) {
         return err;
     }
-    err = cm_create(*new_m, config, runtime_config, dir);
+    err = cm_create(*new_m, config, runtime_config, dir, sharing);
     if (err != 0) {
         cm_delete(*new_m);
         *new_m = nullptr;
@@ -708,14 +720,14 @@ cm_error cm_rename_stored(const cm_machine *m, const char *from_dir, const char 
     return cm_result_failure();
 }
 
-cm_error cm_remove_stored(const cm_machine *m, const char *dir) try {
+cm_error cm_remove_stored(const cm_machine *m, const char *dir, cm_remove_mode mode) try {
     if (dir == nullptr) {
         throw std::invalid_argument("invalid dir");
     }
     if (m == nullptr) {
-        cartesi::machine::remove_stored(dir);
+        cartesi::machine::remove_stored(dir, convert_from_c(mode));
     } else {
-        convert_from_c(m)->remove_stored(dir);
+        convert_from_c(m)->remove_stored(dir, convert_from_c(mode));
     }
     return cm_result_success();
 } catch (...) {
@@ -958,6 +970,14 @@ cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_bef
     return cm_result_failure();
 }
 
+cm_error cm_clear_hash_tree(cm_machine *m) try {
+    auto *cpp_m = convert_from_c(m);
+    cpp_m->clear_hash_tree();
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
 cm_error cm_get_hash_tree_stats(cm_machine *m, bool clear, const char **stats) try {
     if (stats == nullptr) {
         throw std::invalid_argument("invalid stats output");
@@ -1148,6 +1168,9 @@ cm_error cm_write_virtual_memory(cm_machine *m, uint64_t address, const uint8_t 
 }
 
 cm_error cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr) try {
+    if (paddr == nullptr) {
+        throw std::invalid_argument("invalid paddr output");
+    }
     auto *cpp_m = convert_from_c(m);
     *paddr = cpp_m->translate_virtual_address(vaddr);
     return cm_result_success();

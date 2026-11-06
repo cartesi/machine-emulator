@@ -150,6 +150,14 @@
           "schema": {
             "type": "string"
           }
+        },
+        {
+          "name": "sharing",
+          "description": "Backing stores sharing mode with the directory",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/SharingMode"
+          }
         }
       ],
       "result": {
@@ -277,6 +285,14 @@
           "required": true,
           "schema": {
             "type": "string"
+          }
+        },
+        {
+          "name": "mode",
+          "description": "Removal mode (defaults to stored)",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/RemoveMode"
           }
         }
       ],
@@ -749,6 +765,19 @@
       }
     },
     {
+      "name": "machine.clear_hash_tree",
+      "summary": "Clears all cached hash-tree data, preserving machine state and statistics",
+      "description": "Resets tree storage to freshly initialized values, updating shared backing stores in place. Hashes are rebuilt lazily on the next hash or proof request.",
+      "params": [],
+      "result": {
+        "name": "result",
+        "description": "True if successful",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
       "name": "machine.get_hash_tree_stats",
       "summary": "Returns statistics for the hash tree",
       "params": [
@@ -1189,11 +1218,11 @@
     },
     {
       "name": "machine.verify_hash_tree",
-      "summary": "Verifies sanity of hash tree",
+      "summary": "Checks page hashes and dirty page tracking against memory, for tests and debugging (not inner nodes or the root hash)",
       "params": [],
       "result": {
         "name": "valid",
-        "description": "True if hash tree is sane",
+        "description": "True if every page is either marked dirty or has the hash of its contents",
         "schema": {
           "type": "boolean"
         }
@@ -1637,6 +1666,11 @@
           },
           "no_reserve": {
             "type": "boolean"
+          },
+          "clear_hash_tree": {
+            "type": "boolean",
+            "default": false,
+            "description": "Clear all cached hash-tree data after creating or loading the machine. Only applied during construction."
           }
         }
       },
@@ -2585,6 +2619,10 @@
       "SharingMode": {
         "title": "SharingMode",
         "enum": ["none", "config", "all"]
+      },
+      "RemoveMode": {
+        "title": "RemoveMode",
+        "enum": ["stored", "forced"]
       },
       "REG": {
         "title": "REG",

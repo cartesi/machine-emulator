@@ -52,8 +52,8 @@ public:
 private:
     i_machine *do_clone_empty() const override;
     bool do_is_empty() const override;
-    void do_create(const machine_config &config, const machine_runtime_config &runtime,
-        const std::string &dir) override;
+    void do_create(const machine_config &config, const machine_runtime_config &runtime, const std::string &dir,
+        sharing_mode sharing) override;
     void do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) override;
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
     mcycle_root_hashes do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t log2_mcycle_period,
@@ -65,7 +65,7 @@ private:
     void do_store(const std::string &directory, sharing_mode sharing) const override;
     void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const override;
     void do_rename_stored(const std::string &from_dir, const std::string &to_dir) const override;
-    void do_remove_stored(const std::string &dir) const override;
+    void do_remove_stored(const std::string &dir, remove_mode mode) const override;
     void do_sync_stored(const std::string &dir) const override;
     access_log do_log_step_uarch(const access_log::type &log_type) override;
     hash_tree_proof do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const override;
@@ -88,6 +88,7 @@ private:
     void do_write_word(uint64_t address, uint64_t value) override;
     machine_config do_get_initial_config() const override;
     hash_tree_stats do_get_hash_tree_stats(bool clear) override;
+    void do_clear_hash_tree() override;
     machine_runtime_config do_get_runtime_config() const override;
     void do_set_runtime_config(const machine_runtime_config &r) override;
     void do_destroy() override;

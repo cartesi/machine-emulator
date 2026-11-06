@@ -33,19 +33,35 @@
 #define JSON_HAS_FILESYSTEM 0
 #include <json.hpp>
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
+#if defined(__linux__) || defined(__APPLE__)
+#include <sys/stat.h>
+#endif
+
+#include <base64.hpp>
+#include <cm-filesystem.h>
 #include <cm-jsonrpc.h>
 #include <cm.h>
+#include <keccak-256-hasher.hpp>
+#include <os-filesystem.hpp>
+#include <os-mapped-memory.hpp>
+#include <page-hash-tree-cache.hpp>
 #include <riscv-constants.hpp>
 #include <uarch-constants.hpp>
 #include <uarch-pristine.hpp>
@@ -123,9 +139,9 @@ cm_error test_create_new(const char *config, const char *runtime, const char *di
     if (g_server != nullptr && out != nullptr) {
         cm_destroy(g_server); // defensive: evict any leftover machine
         *out = g_server;
-        return cm_create(g_server, config, runtime, dir);
+        return cm_create(g_server, config, runtime, dir, CM_SHARING_ALL);
     }
-    return cm_create_new(config, runtime, dir, out);
+    return cm_create_new(config, runtime, dir, CM_SHARING_ALL, out);
 }
 
 // Loads a machine from disk: remotely on g_server when active, locally otherwise.
@@ -242,7 +258,8 @@ BOOST_AUTO_TEST_CASE_NOLINT(clone_empty_remote_cleanup_test) {
                     machine_ptr parent{raw_parent, &cm_delete};
                     const std::string parent_address = address;
                     if (!source_empty) {
-                        BOOST_REQUIRE_EQUAL(cm_create(parent.get(), config, nullptr, nullptr), CM_ERROR_OK);
+                        BOOST_REQUIRE_EQUAL(cm_create(parent.get(), config, nullptr, nullptr, CM_SHARING_ALL),
+                            CM_ERROR_OK);
                     }
 
                     cm_machine *raw_source = nullptr;
@@ -277,9 +294,11 @@ BOOST_AUTO_TEST_CASE_NOLINT(clone_empty_remote_cleanup_test) {
                     BOOST_REQUIRE_EQUAL(cm_is_empty(clone.get(), &empty), CM_ERROR_OK);
                     BOOST_CHECK(empty);
                     if (operation == "create") {
-                        BOOST_REQUIRE_EQUAL(cm_create(clone.get(), config, nullptr, nullptr), CM_ERROR_OK);
+                        BOOST_REQUIRE_EQUAL(cm_create(clone.get(), config, nullptr, nullptr, CM_SHARING_ALL),
+                            CM_ERROR_OK);
                     } else if (operation == "failed_create") {
-                        BOOST_CHECK_EQUAL(cm_create(clone.get(), R"({"ram":{"length":0}})", nullptr, nullptr),
+                        BOOST_CHECK_EQUAL(
+                            cm_create(clone.get(), R"({"ram":{"length":0}})", nullptr, nullptr, CM_SHARING_ALL),
                             CM_ERROR_INVALID_ARGUMENT);
                     } else {
                         BOOST_CHECK_EQUAL(cm_load(clone.get(), "/unknown_dir", nullptr, CM_SHARING_NONE),
@@ -396,6 +415,42 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, incomp
 
     std::string result = cm_get_last_error_message();
     std::string origin("address range of flash drive 1 overlaps with address range of existing flash drive 0");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_in_uarch_state_gap_test, incomplete_machine_fixture) {
+    _machine_config["flash_drive"] = nlohmann::json{{{"label", "flash0"}, {"start", 0x500000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+
+    std::string result = cm_get_last_error_message();
+    std::string origin("address range of flash drive 0 overlaps with reserved uarch state address range");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_in_uarch_state_gap_test, incomplete_machine_fixture) {
+    _machine_config["nvram"] = {{{"start", 0x401000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+
+    std::string result = cm_get_last_error_message();
+    std::string origin("address range of nvram 0 overlaps with reserved uarch state address range");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_overlapping_uarch_ram_test, incomplete_machine_fixture) {
+    _machine_config["flash_drive"] = nlohmann::json{{{"label", "flash0"}, {"start", 0x7ff000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+
+    std::string result = cm_get_last_error_message();
+    std::string origin("address range of flash drive 0 overlaps with address range of existing uarch RAM");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -918,7 +973,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_machine_config_version_test, store_file_fix
     auto j = nlohmann::json::parse(ifs);
     BOOST_REQUIRE(j.contains("archive_version"));
     BOOST_REQUIRE(j["archive_version"].is_number_integer());
-    BOOST_CHECK_EQUAL(j["archive_version"].get<int>(), 8);
+    BOOST_CHECK_EQUAL(j["archive_version"].get<int>(), 9);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_machine_test, ordinary_machine_fixture) {
@@ -984,7 +1039,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(rename_stored_test, ordinary_machine_fixture) {
     BOOST_CHECK(!std::filesystem::exists(_machine_dir_path));
     BOOST_CHECK(std::filesystem::exists(renamed_dir_path));
 
-    error_code = cm_remove_stored(_machine, renamed_dir_path.c_str());
+    error_code = cm_remove_stored(_machine, renamed_dir_path.c_str(), CM_REMOVE_STORED);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 }
 
@@ -997,7 +1052,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(remove_stored_null_machine_test, ordinary_machine
     cm_error error_code = cm_store(_machine, _machine_dir_path.c_str(), CM_SHARING_ALL);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
-    error_code = cm_remove_stored(nullptr, _machine_dir_path.c_str());
+    error_code = cm_remove_stored(nullptr, _machine_dir_path.c_str(), CM_REMOVE_STORED);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK(!std::filesystem::exists(_machine_dir_path));
@@ -1053,6 +1108,11 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_root_hash_null_machine_test) {
     cm_hash restored_hash;
     cm_error error_code = cm_get_root_hash(nullptr, &restored_hash);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(translate_virtual_address_null_output_test, ordinary_machine_fixture) {
+    BOOST_CHECK_EQUAL(cm_translate_virtual_address(_machine, 0, nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), std::string("invalid paddr output"));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(get_uarch_pristine_hash_null_machine_test) {
@@ -2130,6 +2190,31 @@ BOOST_AUTO_TEST_CASE_NOLINT(write_reg_null_machine_test) {
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
+BOOST_AUTO_TEST_CASE_NOLINT(page_hash_tree_cache_payload_alignment_test) {
+    constexpr std::array<std::pair<size_t, size_t>, 5> layouts{
+        {{1, 4096}, {101, 4096}, {102, 8192}, {204, 8192}, {205, 12288}}};
+    for (const auto &[capacity, payloads_offset] : layouts) {
+        cartesi::page_hash_tree_cache cache{cartesi::keccak_256_hasher{}, capacity, "", false};
+        const auto storage = cache.get_storage_data();
+        const auto storage_address = reinterpret_cast<uintptr_t>(storage.data());
+        BOOST_CHECK_EQUAL(storage.size(), payloads_offset + (capacity * 12288));
+        for (size_t i = 0; i < capacity; ++i) {
+            bool hit = false;
+            auto borrowed = cache.borrow_entry(i * cartesi::HASH_TREE_PAGE_SIZE, hit);
+            BOOST_REQUIRE(borrowed.has_value());
+            BOOST_CHECK(!hit);
+            auto &metadata = borrowed->get();
+            const auto &payload = cache.get_payload(metadata);
+            const auto page_address = reinterpret_cast<uintptr_t>(payload.get_page().data());
+            const auto tree_address = reinterpret_cast<uintptr_t>(payload.get_page_hash_tree().data());
+            BOOST_CHECK_EQUAL(page_address % cartesi::HASH_TREE_PAGE_SIZE, 0);
+            BOOST_CHECK_EQUAL(tree_address % cartesi::HASH_TREE_PAGE_SIZE, 0);
+            BOOST_CHECK_EQUAL(page_address - storage_address, payloads_offset + (i * 12288));
+            BOOST_CHECK(cache.return_entry(metadata));
+        }
+    }
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_reg_basic_test, ordinary_machine_fixture) {
     uint64_t reg_origin = 42;
     uint64_t reg_read{};
@@ -2146,6 +2231,61 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_reg_basic_test, ordinary_machine_fixtu
     uint64_t pc_addr{};
     BOOST_CHECK_EQUAL(cm_get_reg_address(_machine, CM_REG_PC, &pc_addr), CM_ERROR_OK);
     BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x108), pc_addr);
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(clear_mapped_memory_test) {
+    for (const auto length : {64U, 65536U}) {
+        for (const bool shared : {false, true}) {
+            const auto filename =
+                unique_temp_path("clear-mapped-" + std::to_string(length) + (shared ? "-shared" : "-private"));
+            const std::vector<uint8_t> original(length, 0x5a);
+            cartesi::os::create_file(filename, original);
+            {
+                // Also exercise an anonymous tail beyond the backing file and dirty resident pages.
+                cartesi::os::mapped_memory memory{length + 4096, {.shared = shared}, filename, length};
+                auto *const ptr = memory.get_ptr();
+                std::ranges::fill(memory.get_storage_data(), 0x7b);
+                memory.clear();
+                BOOST_CHECK_EQUAL(memory.get_ptr(), ptr);
+                BOOST_CHECK(std::ranges::all_of(memory.get_storage_data(), [](auto b) { return b == 0; }));
+                memory.clear();
+                BOOST_CHECK(std::ranges::all_of(memory.get_storage_data(), [](auto b) { return b == 0; }));
+            }
+            const auto [owner, data] = cartesi::os::read_file(filename);
+            BOOST_CHECK_EQUAL(data.size(), length);
+            const auto expected = shared ? 0 : 0x5a;
+            BOOST_CHECK(std::ranges::all_of(data, [expected](auto b) { return b == expected; }));
+#if defined(__linux__) || defined(__APPLE__)
+            if (shared && length == 65536) {
+                struct stat status{};
+                BOOST_REQUIRE_EQUAL(stat(filename.c_str(), &status), 0);
+                BOOST_TEST_MESSAGE("Cleared shared mapping: " << status.st_blocks << " allocated 512-byte blocks");
+            }
+#endif
+            cartesi::os::remove_file(filename);
+        }
+    }
+    cartesi::os::mapped_memory anonymous{65536};
+    std::ranges::fill(anonymous.get_storage_data(), 0x7b);
+    anonymous.clear();
+    BOOST_CHECK(std::ranges::all_of(anonymous.get_storage_data(), [](auto b) { return b == 0; }));
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(clear_hash_tree_null_machine_test) {
+    BOOST_CHECK_EQUAL(cm_clear_hash_tree(nullptr), CM_ERROR_INVALID_ARGUMENT);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(clear_hash_tree_basic_test, ordinary_machine_fixture) {
+    cm_hash before{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &before), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_clear_hash_tree(_machine), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_clear_hash_tree(_machine), CM_ERROR_OK);
+    cm_hash after{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &after), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL_COLLECTIONS(std::begin(before), std::end(before), std::begin(after), std::end(after));
+    bool valid = false;
+    BOOST_REQUIRE_EQUAL(cm_verify_hash_tree(_machine, &valid), CM_ERROR_OK);
+    BOOST_CHECK(valid);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(verify_hash_tree_null_machine_test) {
@@ -2796,4 +2936,126 @@ BOOST_AUTO_TEST_CASE_NOLINT(uarch_solidity_compatibility_layer) {
     BOOST_CHECK_EQUAL(int8ToUint64(int8(127)), 127);
     BOOST_CHECK_EQUAL(int8ToUint64(int8(-128)), 0xffffffffffffff80ULL);
 }
+
+BOOST_AUTO_TEST_CASE_NOLINT(cm_filesystem_validates_arguments_and_clears_outputs) {
+    bool exists = true;
+    const char *names = "unchanged";
+    const char *path = "unchanged";
+    FILE *file = stdout;
+    BOOST_CHECK_EQUAL(cm_filesystem_exists(nullptr, &exists), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK(!exists);
+    BOOST_CHECK_EQUAL(cm_filesystem_exists(".", nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_create_directory(nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_list_directory(nullptr, &names), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK(names == nullptr);
+    BOOST_CHECK_EQUAL(cm_filesystem_list_directory(".", nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_clone_file(nullptr, "unused"), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_clone_file("unused", nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_truncate_file(nullptr, 0), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_create_temporary_directory(nullptr, "unused", &path), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK(path == nullptr);
+    path = "unchanged";
+    BOOST_CHECK_EQUAL(cm_filesystem_create_temporary_directory(".", nullptr, &path), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK(path == nullptr);
+    BOOST_CHECK_EQUAL(cm_filesystem_create_temporary_directory(".", "unused", nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_create_temporary_file(nullptr, "unused", &file, &path), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK(file == nullptr);
+    BOOST_CHECK(path == nullptr);
+    BOOST_CHECK_EQUAL(cm_filesystem_create_temporary_file(".", nullptr, &file, &path), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_create_temporary_file(".", "unused", nullptr, &path), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_create_temporary_file(".", "unused", &file, nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_sync_file(nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_sync_file_descriptor(-1, "unused"), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_sync_file_descriptor(0, nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_filesystem_sync_directory(nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_get_last_error_message(), "invalid path");
+    BOOST_REQUIRE_EQUAL(cm_filesystem_exists(".", &exists), CM_ERROR_OK);
+    BOOST_CHECK(exists);
+    BOOST_CHECK_EQUAL(cm_get_last_error_message(), "");
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(cm_filesystem_reports_os_errors_and_resets_outputs) {
+    const auto missing = unique_temp_path("fs-missing");
+    const auto child = missing + "/child";
+    const char *names = "unchanged";
+    const char *path = "unchanged";
+    FILE *file = stdout;
+    bool exists = true;
+    BOOST_REQUIRE_EQUAL(cm_filesystem_exists(missing.c_str(), &exists), CM_ERROR_OK);
+    BOOST_CHECK(!exists);
+    BOOST_CHECK_NE(cm_filesystem_create_directory(child.c_str()), CM_ERROR_OK);
+    BOOST_CHECK_NE(cm_filesystem_list_directory(missing.c_str(), &names), CM_ERROR_OK);
+    BOOST_CHECK(names == nullptr);
+    BOOST_CHECK_NE(cm_filesystem_clone_file(missing.c_str(), child.c_str()), CM_ERROR_OK);
+    BOOST_CHECK_NE(cm_filesystem_truncate_file(missing.c_str(), 0), CM_ERROR_OK);
+    BOOST_CHECK_NE(cm_filesystem_create_temporary_directory(missing.c_str(), "test", &path), CM_ERROR_OK);
+    BOOST_CHECK(path == nullptr);
+    BOOST_CHECK_NE(cm_filesystem_create_temporary_file(missing.c_str(), "test", &file, &path), CM_ERROR_OK);
+    BOOST_CHECK(file == nullptr);
+    BOOST_CHECK(path == nullptr);
+    BOOST_CHECK_NE(cm_filesystem_sync_file(missing.c_str()), CM_ERROR_OK);
+#ifndef _WIN32
+    BOOST_CHECK_NE(cm_filesystem_sync_directory(missing.c_str()), CM_ERROR_OK);
+#endif
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(cm_filesystem_temporary_directory_ownership_and_permissions) {
+    const auto parent = std::filesystem::temp_directory_path().string();
+    const char *path = nullptr;
+    BOOST_REQUIRE_EQUAL(cm_filesystem_create_temporary_directory(parent.c_str(), "fs-api-", &path), CM_ERROR_OK);
+    BOOST_REQUIRE(path != nullptr);
+    const std::string first(path);
+    BOOST_REQUIRE_EQUAL(cm_filesystem_create_temporary_directory(parent.c_str(), "fs-api-", &path), CM_ERROR_OK);
+    BOOST_REQUIRE(path != nullptr);
+    const std::string second(path);
+    BOOST_CHECK_NE(first, second);
+    BOOST_CHECK(std::filesystem::is_directory(first));
+    BOOST_CHECK(std::filesystem::is_empty(first));
+    BOOST_CHECK(std::filesystem::is_directory(second));
+#ifndef _WIN32
+    const auto permissions = std::filesystem::status(first).permissions();
+    BOOST_CHECK(((permissions & (std::filesystem::perms::group_all | std::filesystem::perms::others_all)) ==
+        std::filesystem::perms::none));
+#endif
+    BOOST_CHECK_NE(cm_filesystem_create_directory(first.c_str()), CM_ERROR_OK);
+    BOOST_CHECK(std::filesystem::remove(first));
+    BOOST_CHECK(std::filesystem::remove(second));
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(cm_filesystem_file_ownership_and_directory_results) {
+    const auto dirname = unique_temp_path("fs-api");
+    BOOST_REQUIRE_EQUAL(cm_filesystem_create_directory(dirname.c_str()), CM_ERROR_OK);
+    const char *names = nullptr;
+    BOOST_REQUIRE_EQUAL(cm_filesystem_list_directory(dirname.c_str(), &names), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(names, "[]");
+
+    FILE *file = nullptr;
+    const char *path = nullptr;
+    BOOST_REQUIRE_EQUAL(cm_filesystem_create_temporary_file(dirname.c_str(), "state-", &file, &path), CM_ERROR_OK);
+    std::unique_ptr<FILE, decltype(&fclose)> stream(file, &fclose);
+    BOOST_REQUIRE(stream != nullptr);
+    BOOST_REQUIRE(path != nullptr);
+    // C API strings are borrowed, so keep the path before making another API call.
+    const std::string filename(path);
+    BOOST_REQUIRE_NE(fputs("contents", stream.get()), EOF);
+    BOOST_REQUIRE_EQUAL(fflush(stream.get()), 0);
+    BOOST_REQUIRE_EQUAL(cm_filesystem_sync_file_descriptor(fileno(stream.get()), filename.c_str()), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_filesystem_truncate_file(filename.c_str(), 3), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_filesystem_sync_file(filename.c_str()), CM_ERROR_OK);
+    const auto clone = dirname + "/clone";
+    BOOST_REQUIRE_EQUAL(cm_filesystem_clone_file(filename.c_str(), clone.c_str()), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::filesystem::file_size(clone), 3);
+    BOOST_REQUIRE_EQUAL(cm_filesystem_sync_directory(dirname.c_str()), CM_ERROR_OK);
+
+    BOOST_REQUIRE_EQUAL(cm_filesystem_list_directory(dirname.c_str(), &names), CM_ERROR_OK);
+    const auto entries = nlohmann::json::parse(names).get<std::vector<std::string>>();
+    BOOST_REQUIRE_EQUAL(entries.size(), 2);
+    BOOST_CHECK_EQUAL(cartesi::decode_base64(entries[0]), "clone");
+    BOOST_CHECK_EQUAL(cartesi::decode_base64(entries[1]), std::filesystem::path(filename).filename().string());
+    BOOST_REQUIRE_EQUAL(fseek(stream.get(), 0, SEEK_SET), 0);
+    BOOST_CHECK_EQUAL(fgetc(stream.get()), 'c');
+    stream.reset();
+    std::filesystem::remove_all(dirname);
+}
+
 // NOLINTEND(cppcoreguidelines-avoid-do-while,cppcoreguidelines-non-private-member-variables-in-classes)

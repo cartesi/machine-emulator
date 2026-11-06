@@ -30,6 +30,18 @@ struct page_hash_tree_cache_stats {
     uint64_t inner_page_hashes{0};  ///< Number of inner page hashing operations performed
     uint64_t pristine_pages{0};     ///< Number of pages found to be pristine during updates
     uint64_t non_pristine_pages{0}; ///< Number of pages found not to be pristine during updates
+
+    page_hash_tree_cache_stats &operator+=(const page_hash_tree_cache_stats &other) noexcept {
+        page_hits += other.page_hits;
+        page_misses += other.page_misses;
+        word_hits += other.word_hits;
+        word_misses += other.word_misses;
+        page_changes += other.page_changes;
+        inner_page_hashes += other.inner_page_hashes;
+        pristine_pages += other.pristine_pages;
+        non_pristine_pages += other.non_pristine_pages;
+        return *this;
+    }
 };
 
 } // namespace cartesi

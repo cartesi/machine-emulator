@@ -8,7 +8,10 @@ cp "$RECIPES_DIR/calc.sh" calc/
 chmod +x calc/calc.sh
 tar --sort=name --mtime=2022-01-01 --owner=1000 --group=1000 --numeric-owner -cf calc.tar --directory=calc .
 xgenext2fs -fzB 4096 -i 4096 -a calc.tar calc.ext2
-rm -rf rolling-calculator-template
+# remove_stored removes only a stored machine's own files and refuses anything else.
+if [ -e rolling-calculator-template ]; then
+    lua5.4 -e 'require("cartesi").machine:remove_stored("rolling-calculator-template")'
+fi
 # --final-hash builds the hash tree before --store, so loading the template never rebuilds it.
 cartesi-machine --no-init-splash --assert-rolling-template --final-hash \
     --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \

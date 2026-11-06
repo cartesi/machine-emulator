@@ -46,11 +46,17 @@ bool local_machine::do_is_empty() const {
 }
 
 void local_machine::do_create(const machine_config &config, const machine_runtime_config &runtime,
-    const std::string &dir) {
-    m_machine = new machine(config, runtime, dir);
+    const std::string &dir, sharing_mode sharing) {
+    if (m_machine != nullptr) {
+        throw std::runtime_error{"machine exists"};
+    }
+    m_machine = new machine(config, runtime, dir, sharing);
 }
 
 void local_machine::do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) {
+    if (m_machine != nullptr) {
+        throw std::runtime_error{"machine exists"};
+    }
     m_machine = new machine(directory, runtime, sharing);
 }
 
@@ -85,11 +91,15 @@ void local_machine::do_rename_stored(const std::string &from_dir, const std::str
     machine::rename_stored(from_dir, to_dir);
 }
 
-void local_machine::do_remove_stored(const std::string &dir) const {
-    machine::remove_stored(dir);
+void local_machine::do_remove_stored(const std::string &dir, remove_mode mode) const {
+    machine::remove_stored(dir, mode);
 }
 
 void local_machine::do_sync_stored(const std::string &dir) const {
+    // A machine using the stored files keeps its stored cache uninitialized until marked initialized
+    if (m_machine != nullptr) {
+        m_machine->mark_stored_page_cache_initialized();
+    }
     machine::sync_stored(dir);
 }
 
@@ -110,7 +120,7 @@ machine_hashes local_machine::do_collect_mcycle_bundle(uint64_t bundle_offset, u
 }
 
 interpreter_break_reason local_machine::do_log_step(uint64_t mcycle_count, const std::string &filename) {
-    return m_machine->log_step(mcycle_count, filename);
+    return get_machine()->log_step(mcycle_count, filename);
 }
 
 access_log local_machine::do_log_step_uarch(const access_log::type &log_type) {
@@ -187,6 +197,10 @@ uint64_t local_machine::do_read_word(uint64_t address) const {
 
 void local_machine::do_write_word(uint64_t address, uint64_t value) {
     get_machine()->write_word(address, value);
+}
+
+void local_machine::do_clear_hash_tree() {
+    get_machine()->clear_hash_tree();
 }
 
 hash_tree_stats local_machine::do_get_hash_tree_stats(bool clear) {

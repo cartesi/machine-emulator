@@ -1,12 +1,14 @@
 # External artifacts used by tests and documentation.
-# Values are literal release tags and SHA-256 checksums. Make command-line
-# assignments override these defaults.
+# Values are release tags, SHA-256 checksums, and download URLs composed from
+# the tags. Make command-line assignments override these defaults.
 
 MACHINE_GUEST_TOOLS_TAG?=v0.18.0
+MACHINE_GUEST_TOOLS_ROOTFS_URL?=https://github.com/cartesi/machine-guest-tools/releases/download/$(MACHINE_GUEST_TOOLS_TAG)/rootfs-tools.ext2
 MACHINE_GUEST_TOOLS_ROOTFS_SHA256?=6c159937485c99f695021c4f2ea2a57bdadcf4e4bce8e71af5bee3bb9552802e
 MACHINE_GUEST_TOOLS_DEB_SHA256?=204d4260defd68e11b957ae1f1b511b6c2c74345c918748be06f592733b72dcd
 MACHINE_GUEST_TOOLS_TARBALL_SHA256?=fec7fad82c21e5831f2f6871686f776b0e4981af9131dcb9620f2607a0084405
 
 LINUX_TAG?=v6.18.56-ctsi-1
 LINUX_VERSION?=6.18.56-ctsi-1
+LINUX_URL?=https://github.com/cartesi/linux/releases/download/$(LINUX_TAG)/linux-$(LINUX_VERSION).bin
 LINUX_SHA256?=ad12ad141e639fb7b8ce0477dfbb7aa7a4d178222b06e0ce9b335a1c5230f0e1

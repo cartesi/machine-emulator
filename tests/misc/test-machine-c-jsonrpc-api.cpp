@@ -38,15 +38,28 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
+#ifdef __APPLE__
+#include <libproc.h>
+#include <sys/sysctl.h>
+#endif
+
+#include <algorithm>
 #include <chrono>
+#include <csignal>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iterator>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -226,7 +239,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(spawn_during_store_test) {
     const auto dir = base + "/machine";
 
     cm_machine *machine{};
-    const auto err = cm_create_new(R"({"ram":{"length":134217728}})", nullptr, nullptr, &machine);
+    const auto err = cm_create_new(R"({"ram":{"length":134217728}})", nullptr, nullptr, CM_SHARING_ALL, &machine);
     const machine_ptr owner{machine, cm_delete};
     BOOST_REQUIRE_EQUAL(err, CM_ERROR_OK);
 
@@ -247,6 +260,258 @@ BOOST_AUTO_TEST_CASE_NOLINT(spawn_during_store_test) {
     spawner.join();
     BOOST_CHECK_MESSAGE(spawn_error.empty(), spawn_error);
     BOOST_CHECK(!servers.empty());
+}
+
+// Counts the socket descriptors a process holds, or returns -1 where the platform cannot tell.
+static int count_sockets(uint32_t pid) {
+#if defined(__linux__)
+    int count = 0;
+    for (const auto &entry : std::filesystem::directory_iterator("/proc/" + std::to_string(pid) + "/fd")) {
+        std::error_code ec;
+        if (std::filesystem::read_symlink(entry.path(), ec).string().starts_with("socket:")) {
+            ++count;
+        }
+    }
+    return count;
+#elif defined(__APPLE__)
+    const int size = proc_pidinfo(static_cast<int>(pid), PROC_PIDLISTFDS, 0, nullptr, 0);
+    if (size <= 0) {
+        return -1;
+    }
+    std::vector<proc_fdinfo> fds(static_cast<size_t>(size) / sizeof(proc_fdinfo));
+    const int used = proc_pidinfo(static_cast<int>(pid), PROC_PIDLISTFDS, 0, fds.data(), size);
+    if (used <= 0) {
+        return -1;
+    }
+    fds.resize(static_cast<size_t>(used) / sizeof(proc_fdinfo));
+    return static_cast<int>(
+        std::ranges::count_if(fds, [](const proc_fdinfo &fd) { return fd.proc_fdtype == PROX_FDTYPE_SOCKET; }));
+#else
+    (void) pid;
+    return -1;
+#endif
+}
+
+// What: a spawned server must not inherit the sockets of its client.
+// How:  count the sockets of a server spawned while the client is connected to no other server, then of one spawned
+//       while the client keeps its connection to the first one. The counts must match.
+BOOST_AUTO_TEST_CASE_NOLINT(spawn_inherits_no_client_sockets_test) {
+    const spawned_server_fixture first;
+    const int alone = count_sockets(first.pid);
+    if (alone < 0) {
+        BOOST_TEST_MESSAGE("cannot count the sockets of a process on this platform");
+        return;
+    }
+    // A request keeps the client connected to the first server
+    const char *version{};
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_get_server_version(first.m, &version), CM_ERROR_OK);
+    const spawned_server_fixture second;
+    BOOST_CHECK_EQUAL(count_sockets(second.pid), alone);
+}
+
+// Counts the child processes of a process, zombies included, or returns -1 where the platform cannot tell.
+static int count_children(uint32_t pid) {
+#if defined(__linux__)
+    int count = 0;
+    for (const auto &entry : std::filesystem::directory_iterator("/proc")) {
+        std::ifstream stat(entry.path() / "stat");
+        std::string line;
+        if (!std::getline(stat, line)) {
+            continue;
+        }
+        // The parent pid is the second field after the parenthesized command name
+        std::istringstream fields(line.substr(line.rfind(')') + 1));
+        std::string state;
+        uint32_t ppid = 0;
+        if (fields >> state >> ppid && ppid == pid) {
+            ++count;
+        }
+    }
+    return count;
+#elif defined(__APPLE__)
+    std::vector<pid_t> children(256);
+    // Returns the number of child pids, unlike proc_listpids(), which returns bytes
+    return proc_listchildpids(static_cast<pid_t>(pid), children.data(),
+        static_cast<int>(children.size() * sizeof(pid_t)));
+#else
+    (void) pid;
+    return -1;
+#endif
+}
+
+// Waits up to 5 seconds for a process to have no children, and returns how many it has left.
+static int wait_for_no_children(uint32_t pid) {
+    int children = count_children(pid);
+    for (int i = 0; i < 50 && children != 0; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        children = count_children(pid);
+    }
+    return children;
+}
+
+// What: a forked server that exits is reaped by the server that forked it.
+// How:  fork the spawned server, which is itself a forked process, shut the fork down, and expect the spawned server
+//       to be left with no children, not even a zombie.
+BOOST_FIXTURE_TEST_CASE_NOLINT(forked_server_exit_leaves_no_zombie_test, spawned_server_fixture) {
+    if (count_children(pid) < 0) {
+        BOOST_TEST_MESSAGE("cannot count the children of a process on this platform");
+        return;
+    }
+    cm_machine *forked_m = nullptr;
+    const char *forked_address{};
+    uint32_t forked_pid{};
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_fork_server(m, &forked_m, &forked_address, &forked_pid), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_shutdown_server(forked_m), CM_ERROR_OK);
+    cm_delete(forked_m);
+    BOOST_CHECK_EQUAL(wait_for_no_children(pid), 0);
+}
+
+// What: a server forked by a fork request whose response cannot be sent is stopped.
+// How:  delay the fork request past the client timeout, so the client resets the connection before the server
+//       forks. The server must then stop the child it forked, leaving no child process behind.
+BOOST_FIXTURE_TEST_CASE_NOLINT(fork_timeout_stops_forked_server_test, spawned_server_fixture) {
+    if (count_children(pid) < 0) {
+        BOOST_TEST_MESSAGE("cannot count the children of a process on this platform");
+        return;
+    }
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_set_timeout(m, 100), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_delay_next_request(m, 500), CM_ERROR_OK);
+    cm_machine *forked_m = nullptr;
+    const char *forked_address{};
+    uint32_t forked_pid{};
+    BOOST_REQUIRE_NE(cm_jsonrpc_fork_server(m, &forked_m, &forked_address, &forked_pid), CM_ERROR_OK);
+    BOOST_CHECK(std::string_view{cm_get_last_error_message()}.contains("timeout"));
+    BOOST_CHECK(forked_m == nullptr);
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_set_timeout(m, -1), CM_ERROR_OK);
+    // The server handles requests one at a time, so this returns after it has forked and failed to respond
+    const char *version{};
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_get_server_version(m, &version), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(wait_for_no_children(pid), 0);
+}
+
+// What: a spawn that fails after starting its server returns an error even when the caller blocks SIGTERM.
+// How:  in a child process, block SIGTERM and spawn a server with a 1 ms timeout, so the spawn fails after starting
+//       the server and must stop it. The child must finish within 10 seconds, with the error and no server left.
+BOOST_AUTO_TEST_CASE_NOLINT(spawn_failure_with_sigterm_blocked_test) {
+    const pid_t child = fork();
+    BOOST_REQUIRE(child >= 0);
+    if (child == 0) {
+        sigset_t blocked_signals{};
+        sigemptyset(&blocked_signals);
+        sigaddset(&blocked_signals, SIGTERM);
+        pthread_sigmask(SIG_BLOCK, &blocked_signals, nullptr);
+        cm_machine *server = nullptr;
+        const auto err = cm_jsonrpc_spawn_server("127.0.0.1:0", 1, &server, nullptr, nullptr);
+        const bool failed_cleanly = err != CM_ERROR_OK && count_children(static_cast<uint32_t>(getpid())) <= 0;
+        _exit(failed_cleanly ? 0 : 1);
+    }
+    int status = 0;
+    pid_t waited = 0;
+    for (int i = 0; i < 100 && waited == 0; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        waited = waitpid(child, &status, WNOHANG);
+    }
+    if (waited == 0) {
+        kill(child, SIGKILL);
+        waitpid(child, nullptr, 0);
+    }
+    BOOST_CHECK_EQUAL(waited, child);
+    const bool child_succeeded = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    BOOST_CHECK(child_succeeded);
+}
+
+// What: server addresses are an IPv4 address or a bracketed IPv6 address followed by a port.
+// How:  spawn servers at malformed addresses and expect errors naming the address. Then, where the host has an IPv6
+//       loopback, spawn a server at [::1]:0, use it, fork it, and use the fork, expecting bracketed addresses.
+BOOST_AUTO_TEST_CASE_NOLINT(spawn_server_address_test) {
+    for (const char *address : {"127.0.0.1", "127.0.0.1:65536", "127.0.0.1:12ab", "::1:0", "[::1]", "localhost:0"}) {
+        cm_machine *server = nullptr;
+        BOOST_CHECK_NE(cm_jsonrpc_spawn_server(address, 5000, &server, nullptr, nullptr), CM_ERROR_OK);
+        BOOST_CHECK(std::string_view{cm_get_last_error_message()}.contains("invalid endpoint address"));
+    }
+    boost::asio::io_context ioc;
+    boost::asio::ip::tcp::acceptor probe{ioc};
+    boost::system::error_code ec;
+    std::ignore = probe.open(boost::asio::ip::tcp::v6(), ec);
+    if (!ec) {
+        std::ignore = probe.bind({boost::asio::ip::address_v6::loopback(), 0}, ec);
+    }
+    if (ec) {
+        BOOST_TEST_MESSAGE("IPv6 loopback is unavailable on this host");
+        return;
+    }
+    std::ignore = probe.close(ec);
+    cm_machine *server = nullptr;
+    const char *address{};
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_spawn_server("[::1]:0", 5000, &server, &address, nullptr), CM_ERROR_OK);
+    auto server_shutdown = cartesi::make_scope_exit([&] {
+        std::ignore = cm_jsonrpc_shutdown_server(server);
+        cm_delete(server);
+    });
+    BOOST_CHECK(std::string_view{address}.starts_with("[::1]:"));
+    const char *version{};
+    BOOST_CHECK_EQUAL(cm_jsonrpc_get_server_version(server, &version), CM_ERROR_OK);
+    cm_machine *forked = nullptr;
+    const char *forked_address{};
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_fork_server(server, &forked, &forked_address, nullptr), CM_ERROR_OK);
+    BOOST_CHECK(std::string_view{forked_address}.starts_with("[::1]:"));
+    BOOST_CHECK_EQUAL(cm_jsonrpc_get_server_version(forked, &version), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(cm_jsonrpc_shutdown_server(forked), CM_ERROR_OK);
+    cm_delete(forked);
+}
+
+// Tells whether the environment of a process holds an entry, or returns nothing where the platform cannot tell.
+// Entries are NUL-terminated strings. On macOS, the arguments precede them.
+static std::optional<bool> has_environment_entry(uint32_t pid, const std::string &entry) {
+    std::string block(1, '\0'); // Every entry is preceded by a NUL, including the first
+#if defined(__linux__)
+    std::ifstream file("/proc/" + std::to_string(pid) + "/environ", std::ios::binary);
+    if (!file) {
+        return std::nullopt;
+    }
+    block.append(std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{});
+#elif defined(__APPLE__)
+    int mib[] = {CTL_KERN, KERN_PROCARGS2, static_cast<int>(pid)};
+    size_t size = 0;
+    if (sysctl(mib, std::size(mib), nullptr, &size, nullptr, 0) != 0) {
+        return std::nullopt;
+    }
+    block.resize(1 + size);
+    if (sysctl(mib, std::size(mib), block.data() + 1, &size, nullptr, 0) != 0) {
+        return std::nullopt;
+    }
+    block.resize(1 + size);
+#else
+    (void) pid;
+    return std::nullopt;
+#endif
+    return block.contains('\0' + entry + '\0');
+}
+
+// What: a spawned server waits passively in OpenMP unless its client chose a wait policy.
+// How:  spawn a server with OMP_WAIT_POLICY unset and expect it to receive passive, then spawn one with
+//       OMP_WAIT_POLICY=active and expect it to keep active.
+BOOST_AUTO_TEST_CASE_NOLINT(spawn_defaults_passive_wait_policy_test) {
+    const char *original = getenv("OMP_WAIT_POLICY");
+    const std::optional<std::string> saved = original != nullptr ? std::optional<std::string>{original} : std::nullopt;
+    const auto restore = cartesi::scope_exit([&saved] {
+        if (saved) {
+            setenv("OMP_WAIT_POLICY", saved->c_str(), 1);
+        } else {
+            unsetenv("OMP_WAIT_POLICY");
+        }
+    });
+    BOOST_REQUIRE_EQUAL(unsetenv("OMP_WAIT_POLICY"), 0);
+    const spawned_server_fixture unset;
+    const auto passive = has_environment_entry(unset.pid, "OMP_WAIT_POLICY=passive");
+    if (!passive) {
+        BOOST_TEST_MESSAGE("cannot read the environment of a process on this platform");
+        return;
+    }
+    BOOST_CHECK(*passive);
+    BOOST_REQUIRE_EQUAL(setenv("OMP_WAIT_POLICY", "active", 1), 0);
+    const spawned_server_fixture active;
+    BOOST_CHECK(has_environment_entry(active.pid, "OMP_WAIT_POLICY=active").value_or(false));
 }
 
 // ---------------------------------------------------------------------------
@@ -426,7 +691,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_server_address_null_output_test) {
 BOOST_AUTO_TEST_CASE_NOLINT(local_handle_rejected_test) {
     cm_machine *local{};
     std::string cfg = minimal_machine_config();
-    cm_create_new(cfg.c_str(), nullptr, nullptr, &local);
+    cm_create_new(cfg.c_str(), nullptr, nullptr, CM_SHARING_ALL, &local);
     BOOST_REQUIRE(local != nullptr);
 
     // Every cm_jsonrpc_* function that accepts cm_machine* should reject a local handle.
@@ -543,6 +808,65 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(rebind_server_test, spawned_server_fixture) {
     BOOST_CHECK_EQUAL(cm_jsonrpc_get_server_version(m, &ver), CM_ERROR_OK);
 }
 
+// What: the client handles NULL data buffers as a local machine does.
+// How:  memory accesses and cmio responses that fit in the rx buffer fail on NULL data. An oversized cmio response
+//       with NULL data must log the same no-op a local machine logs from real data, and verify against that log.
+BOOST_FIXTURE_TEST_CASE_NOLINT(null_data_buffer_test, spawned_server_fixture) {
+    const auto config = minimal_machine_config();
+    BOOST_REQUIRE_EQUAL(cm_create(m, config.c_str(), nullptr, nullptr, CM_SHARING_ALL), CM_ERROR_OK);
+    const auto check_invalid_data_buffer = [](cm_error error) {
+        BOOST_CHECK_EQUAL(error, CM_ERROR_INVALID_ARGUMENT);
+        BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), std::string("invalid data buffer"));
+    };
+    check_invalid_data_buffer(cm_read_memory(m, CM_AR_RAM_START, nullptr, 8));
+    check_invalid_data_buffer(cm_write_memory(m, CM_AR_RAM_START, nullptr, 8));
+    check_invalid_data_buffer(cm_read_virtual_memory(m, CM_AR_RAM_START, nullptr, 8));
+    check_invalid_data_buffer(cm_write_virtual_memory(m, CM_AR_RAM_START, nullptr, 8));
+
+    cm_machine *local = nullptr;
+    BOOST_REQUIRE_EQUAL(cm_create_new(config.c_str(), nullptr, nullptr, CM_SHARING_ALL, &local), CM_ERROR_OK);
+    const auto local_deleter = cartesi::scope_exit([local] { cm_delete(local); });
+    const uint64_t tohost = (uint64_t{CM_HTIF_DEV_YIELD} << CM_HTIF_DEV_SHIFT) |
+        (uint64_t{CM_HTIF_YIELD_CMD_MANUAL} << CM_HTIF_CMD_SHIFT) |
+        (uint64_t{CM_HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED} << CM_HTIF_REASON_SHIFT);
+    for (auto *machine : {m, local}) {
+        BOOST_REQUIRE_EQUAL(cm_write_reg(machine, CM_REG_IFLAGS_Y, 1), CM_ERROR_OK);
+        BOOST_REQUIRE_EQUAL(cm_write_reg(machine, CM_REG_HTIF_TOHOST, tohost), CM_ERROR_OK);
+    }
+    cm_hash root_hash{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(m, &root_hash), CM_ERROR_OK);
+    const uint16_t reason = CM_HTIF_YIELD_REASON_ADVANCE_STATE;
+    const char *log = nullptr;
+    check_invalid_data_buffer(cm_send_cmio_response(m, reason, nullptr, 5, &root_hash));
+    check_invalid_data_buffer(cm_log_send_cmio_response(m, reason, nullptr, 5, &root_hash, 0, &log));
+
+    const uint32_t oversized_length = CM_AR_CMIO_RX_BUFFER_LENGTH + 100;
+    const std::vector<uint8_t> oversized_data(oversized_length, 0xab);
+    BOOST_REQUIRE_EQUAL(
+        cm_log_send_cmio_response(local, reason, oversized_data.data(), oversized_length, &root_hash, 0, &log),
+        CM_ERROR_OK);
+    const std::string local_log{log};
+    BOOST_REQUIRE_EQUAL(cm_log_send_cmio_response(m, reason, nullptr, oversized_length, &root_hash, 0, &log),
+        CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string{log}, local_log);
+    cm_hash obtained_root_hash{};
+    BOOST_CHECK_EQUAL(cm_verify_send_cmio_response(m, reason, nullptr, oversized_length, &root_hash, local_log.c_str(),
+                          &root_hash, &obtained_root_hash),
+        CM_ERROR_OK);
+    BOOST_CHECK(std::ranges::equal(obtained_root_hash, root_hash));
+    BOOST_CHECK_EQUAL(cm_send_cmio_response(m, reason, nullptr, oversized_length, &root_hash), CM_ERROR_OK);
+    cm_hash root_hash_after{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(m, &root_hash_after), CM_ERROR_OK);
+    BOOST_CHECK(std::ranges::equal(root_hash_after, root_hash));
+}
+
+// What: cm_jsonrpc_rebind_server rejects a NULL address.
+// How:  call it with a NULL address and expect an invalid argument error.
+BOOST_FIXTURE_TEST_CASE_NOLINT(rebind_server_null_address_test, spawned_server_fixture) {
+    BOOST_CHECK_EQUAL(cm_jsonrpc_rebind_server(m, nullptr, nullptr), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), std::string("invalid address"));
+}
+
 // What: cm_jsonrpc_emancipate_server returns OK on a freshly spawned server.
 // How:  call the wrapper once against the fixture server and expect success.
 BOOST_FIXTURE_TEST_CASE_NOLINT(emancipate_server_test, spawned_server_fixture) {
@@ -622,7 +946,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(cleanup_destroy_test) {
 
     // Create a machine so that destroy has something to do.
     std::string cfg = minimal_machine_config();
-    cm_create(m, cfg.c_str(), nullptr, nullptr);
+    cm_create(m, cfg.c_str(), nullptr, nullptr, CM_SHARING_ALL);
 
     cm_jsonrpc_set_cleanup_call(m, CM_JSONRPC_DESTROY);
     cm_delete(m); // implicitly destroys the machine but leaves server alive
@@ -741,8 +1065,66 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_parse_error_test, spawned_server_fixture)
     BOOST_CHECK(j["id"].is_null());
 }
 
+// What: raw NUL bytes invalidate the entire request, including an otherwise valid prefix.
+// How: send writes with NUL bytes in different positions, check parse errors and unchanged state,
+//      then check that an escaped NUL in a JSON string is still accepted.
+BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_nul_request_test, spawned_server_fixture) {
+    BOOST_REQUIRE_EQUAL(cm_create(m, minimal_machine_config().c_str(), nullptr, nullptr, CM_SHARING_ALL), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_write_reg(m, CM_REG_X1, 42), CM_ERROR_OK);
+    const std::string request = R"({"jsonrpc":"2.0","id":1,"method":"machine.write_reg","params":["x1",99]})";
+    for (const auto &body :
+        {request + '\0', request + '\0' + "garbage", '\0' + request, request.substr(0, 1) + '\0' + request.substr(1),
+            request.substr(0, request.size() - 1) + R"(,"ignored":"a)" + '\0' + "b\"}"}) {
+        const auto response = jsonrpc_post(bound_address, body);
+        BOOST_REQUIRE(response.contains("error"));
+        BOOST_CHECK_EQUAL(response["error"]["code"].get<int>(), -32700);
+        BOOST_CHECK(response["id"].is_null());
+        uint64_t value{};
+        BOOST_REQUIRE_EQUAL(cm_read_reg(m, CM_REG_X1, &value), CM_ERROR_OK);
+        BOOST_CHECK_EQUAL(value, 42);
+    }
+    const auto response = jsonrpc_post(bound_address, R"({"jsonrpc":"2.0","id":"a\u0000b","method":"get_version"})");
+    BOOST_REQUIRE(response.contains("result"));
+    BOOST_CHECK_EQUAL(response["id"].get<std::string>(), std::string("a\0b", 3));
+}
+
+// What: errors quoting bytes that are not valid UTF-8 reach the client, and the server keeps running.
+// How:  POST a body made of such bytes and expect a parse error, then load a directory whose config.json holds one
+//       and expect an error with U+FFFD in its place. The server must answer get_version after each. Finally, send
+//       that load in a batch with get_version and expect both responses.
+BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_invalid_utf8_error_test, spawned_server_fixture) {
+    const std::string get_version = R"({"jsonrpc":"2.0","id":1,"method":"get_version"})";
+    const auto parse_error = jsonrpc_post(bound_address, "\xff\xfe");
+    BOOST_REQUIRE(parse_error.contains("error"));
+    BOOST_CHECK_EQUAL(parse_error["error"]["code"].get<int>(), -32700);
+    BOOST_CHECK(jsonrpc_post(bound_address, get_version).contains("result"));
+
+    const auto dir = std::filesystem::temp_directory_path() / ("invalid-utf8-config-" + std::to_string(::getpid()));
+    const auto config = dir / "config.json";
+    BOOST_REQUIRE(std::filesystem::create_directory(dir));
+    const auto cleanup = cartesi::scope_exit([&dir, &config] {
+        std::filesystem::remove(config);
+        std::filesystem::remove(dir);
+    });
+    std::ofstream(config, std::ios::binary) << "{\"a\":\xff}";
+    BOOST_CHECK_NE(cm_load(m, dir.c_str(), nullptr, CM_SHARING_NONE), CM_ERROR_OK);
+    BOOST_CHECK(std::string_view{cm_get_last_error_message()}.contains("\xef\xbf\xbd"));
+    BOOST_CHECK(jsonrpc_post(bound_address, get_version).contains("result"));
+
+    // In a batch, such an error must not take the other responses with it
+    const nlohmann::json batch = nlohmann::json::array({
+        {{"jsonrpc", "2.0"}, {"id", 1}, {"method", "machine.load"}, {"params", {dir.string()}}},
+        {{"jsonrpc", "2.0"}, {"id", 2}, {"method", "get_version"}},
+    });
+    const auto responses = jsonrpc_post(bound_address, batch.dump());
+    BOOST_REQUIRE(responses.is_array());
+    BOOST_REQUIRE_EQUAL(responses.size(), 2);
+    BOOST_CHECK(responses[0]["error"]["message"].get<std::string>().contains("\xef\xbf\xbd"));
+    BOOST_CHECK(responses[1].contains("result"));
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_nesting_request_test, spawned_server_fixture) {
-    BOOST_REQUIRE_EQUAL(cm_create(m, minimal_machine_config().c_str(), nullptr, nullptr), CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(cm_create(m, minimal_machine_config().c_str(), nullptr, nullptr, CM_SHARING_ALL), CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(cm_write_reg(m, CM_REG_X1, 42), CM_ERROR_OK);
     for (bool objects : {false, true}) {
         for (bool batch : {false, true}) {
@@ -850,6 +1232,25 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_empty_method_test, spawned_server_fixture
     auto j = jsonrpc_post(bound_address, R"({"jsonrpc":"2.0","method":"","id":1})");
     BOOST_REQUIRE(j.contains("error"));
     BOOST_CHECK_EQUAL(j["error"]["code"].get<int>(), -32600);
+}
+
+// What: a request with an "id" that is not a string, number, or null yields
+//       invalid_request (-32600) and is not executed.
+// How:  POST machine.create with "id":true, assert the single reply is the error
+//       and that the server still holds no machine. Then POST a batch with one
+//       such request and assert it gets exactly one reply.
+BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_invalid_id_not_executed_test, spawned_server_fixture) {
+    auto j = jsonrpc_post(bound_address,
+        R"({"jsonrpc":"2.0","method":"machine.create","id":true,"params":[{"ram":{"length":4096}}]})");
+    BOOST_REQUIRE(j.contains("error"));
+    BOOST_CHECK_EQUAL(j["error"]["code"].get<int>(), -32600);
+    auto is_empty = jsonrpc_post(bound_address, R"({"jsonrpc":"2.0","method":"machine.is_empty","id":1})");
+    BOOST_REQUIRE(is_empty.contains("result"));
+    BOOST_CHECK(is_empty["result"].get<bool>());
+    auto batch = jsonrpc_post(bound_address, R"([{"jsonrpc":"2.0","method":"get_version","id":{}}])");
+    BOOST_REQUIRE(batch.is_array());
+    BOOST_REQUIRE_EQUAL(batch.size(), 1U);
+    BOOST_CHECK_EQUAL(batch[0]["error"]["code"].get<int>(), -32600);
 }
 
 // What: an unrecognized method name yields method_not_found (-32601).

@@ -780,6 +780,45 @@ describe("uarch TLB writes with an invalid set index", function()
     end
 end)
 
+describe("verify_reset_uarch at a rejected input", function()
+    for _, corruption in ipairs({ "revert root data", "revert root siblings", "missing revert root access" }) do
+        it("should reject " .. corruption, function()
+            local machine <close> = build_cmio_machine()
+            local revert_root_hash = machine:get_root_hash()
+            machine:write_revert_root_hash(revert_root_hash)
+            machine:write_reg("iflags_Y", 1)
+            machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+            machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+            machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+            machine:write_reg("uarch_halt", 1)
+            local initial_hash = machine:get_root_hash()
+            local log = machine:log_reset_uarch()
+            expect.equal(machine:verify_reset_uarch(initial_hash, log), revert_root_hash)
+            expect.not_equal(machine:get_root_hash(), revert_root_hash)
+
+            local revert_index
+            for i, access in ipairs(log.accesses) do
+                if access.address == cartesi.AR_SHADOW_REVERT_ROOT_HASH_START then
+                    revert_index = i
+                    break
+                end
+            end
+            assert(revert_index, "reset log did not authenticate the revert root")
+            local access = log.accesses[revert_index]
+            if corruption == "revert root data" then
+                access.read = bad_hash
+            elseif corruption == "revert root siblings" then
+                access.sibling_hashes[1] = bad_hash
+            else
+                table.remove(log.accesses, revert_index)
+            end
+            expect.fail(function()
+                machine:verify_reset_uarch(initial_hash, log)
+            end)
+        end)
+    end
+end)
+
 describe("verification through a JSON-RPC machine object", function()
     local jsonrpc = require("cartesi.jsonrpc")
     local sibling_count_error = "access sibling hash count is inconsistent with proof size"

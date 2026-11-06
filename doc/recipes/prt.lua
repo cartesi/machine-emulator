@@ -969,12 +969,6 @@ local function mcycle_hashes_collection_chunk_size(log2_period, log2_bundle_mcyc
     return 1 << log2_collection_chunk_size
 end
 
-local function move_machine(machine)
-    local moved = cartesi.new()
-    machine:swap(moved)
-    return moved
-end
-
 -- The fork shuts down when the object holding it is closed or collected, even on an error.
 local function fork_server(machine)
     local fork = assert(machine:fork_server())
@@ -988,7 +982,7 @@ local function new_machine(initial_state_hash, directory, sharing)
     local machine <close> = assert(cartesi_jsonrpc.spawn_server("127.0.0.1:0"))
     machine:load(directory or cartesi.tohex(initial_state_hash), nil, sharing)
     assert(machine:get_root_hash() == initial_state_hash, "initial machine snapshot hash mismatch")
-    return move_machine(machine)
+    return machine:move()
 end
 
 -- Loads a stored machine into this process, sharing every change with its directory, and checks its
@@ -997,7 +991,7 @@ local function new_stored_machine(state_hash, directory)
     local machine <close> = cartesi.new()
     machine:load(directory, nil, cartesi.SHARING_ALL)
     assert(machine:get_root_hash() == state_hash, "stored machine hash mismatch")
-    return move_machine(machine)
+    return machine:move()
 end
 
 -- A machine pair owns its working machine and optional rollback snapshot.

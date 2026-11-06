@@ -155,12 +155,6 @@ local function is_past_fixed_point(position, input_mcycle_length)
         and position.input_mcycle_offset >= input_mcycle_length
 end
 
-local function move_machine(machine)
-    local moved = cartesi.new()
-    machine:swap(moved)
-    return moved
-end
-
 local function fork_machine(machine)
     local clone = assert(machine:fork_server())
     clone:set_cleanup_call(jsonrpc.SHUTDOWN)
@@ -372,7 +366,7 @@ function player_methods:new_machine(initial_state_hash) -- luacheck: ignore 212 
     local machine <close> = assert(jsonrpc.spawn_server("127.0.0.1:0"))
     machine:load(cartesi.tohex(initial_state_hash))
     assert(machine:get_root_hash() == initial_state_hash, "initial machine snapshot hash mismatch")
-    return move_machine(machine)
+    return machine:move()
 end
 
 -- Obtain an exact input boundary without exposing entry selection to callers.

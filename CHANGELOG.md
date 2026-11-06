@@ -5,7 +5,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.23.0-test2] - 2026-11-06
+
+This prerelease changes the C signatures of `cm_create`, `cm_create_new`, and
+`cm_remove_stored`; applications must rebuild against the 0.23 headers and libraries.
+Stored machines use archive version 9 and cannot load version 8 archives directly.
+JSON-RPC clients and servers must both use protocol 0.9.0. Shared-machine recovery
+hardening does not guarantee recovery from power loss during work after the last sync.
+
 ### Added
+- Added computation-hash corpus cases for accepted and rejected inputs at the saturated input budget,
+  followed by another input, including uarch periods on both sides of the input boundary
 - Added Lua JSON schemas for machine, runtime, and memory range configurations
 - Added `clear_hash_tree` to the C, Lua, and JSON-RPC APIs
 - Added the `clear_hash_tree` runtime option
@@ -44,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`
 
 ### Fixed
+- Fixed PRT template validation accepting halted machines with a manual yield also set
 - Fixed the Lua ABI function-signature cache retaining unused parsed signatures indefinitely
 - Fixed Lua JSON conversion silently replacing NaN and infinities with null instead of rejecting them
 - Fixed Lua JSON decoding treating object, array, and tuple schema fields as enum entries

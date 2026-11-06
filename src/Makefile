@@ -613,7 +613,7 @@ cartesi-jsonrpc-machine: $(CARTESI_JSONRPC_MACHINE_OBJS) libcartesi_jsonrpc.a li
 
 clua-%.o clua.o: CXXFLAGS += $(LUA_INC)
 
-cm-version.h: ../tools/template/cm-version.h.template
+cm-version.h: ../tools/template/cm-version.h.template Makefile
 	sed "s|EMULATOR_MARCHID|$(EMULATOR_MARCHID)|g;s|EMULATOR_VERSION_MAJOR|$(EMULATOR_VERSION_MAJOR)|g;s|EMULATOR_VERSION_MINOR|$(EMULATOR_VERSION_MINOR)|g;s|EMULATOR_VERSION_PATCH|$(EMULATOR_VERSION_PATCH)|g;s|EMULATOR_VERSION_LABEL|$(EMULATOR_VERSION_LABEL)|g" $< > $@
 
 jsonrpc-discover.cpp: jsonrpc-discover.json

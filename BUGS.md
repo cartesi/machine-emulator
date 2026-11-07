@@ -27,6 +27,7 @@ Flags required by `AUDIT.md`:
 | [R2-PLAYER-1](#r2-player-1) | A settled epoch's bridge cancels the next epoch's pending honest transactions through the shared journal | PRT player and bridge (transaction scheduling across epochs) | R4, R12, A7, section 1 completeness, section 2 honest operator's path | Critical |
 | [R2-REFEREE-1](#r2-referee-1) | At a sealed uarch leaf, the honest claim gets only the opponent's clock to prove, with no timeout win | PRT referee model (uarch leaf settlement) | A7, A1, R4, section 1 completeness, section 5, section 7 | Critical |
 | [R3-PLAYER-1](#r3-player-1) | Honest player cannot sign a `winLeafMatch` proof for inputs of about 37 KB or more, because calldata goes to `cast` as one shell argument | PRT player and bridge (transaction signing) | R4, R12, A7, section 1 completeness, section 4, section 8 Critical | Critical |
+| [R4-VARABORT-1](#r4-varabort-1) | `cartesi-machine` CLI cannot compute claims when a rejected input leaves DATA above the transmit-buffer size | emulator (`cartesi-machine` CLI, cmio computation-hash modes) | R4, R2, section 1 completeness, section 2, section 4, section 8 Critical | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -1026,6 +1027,75 @@ limits rather than OS limits.
   independent `verify_signed` check must be kept without going through `argv`. Digest-only signing must apply only to
   digests the operator computed itself. Catching errors per job must still report persistent failures and keep the
   journal's nonce invariants.
+
+---
+
+## R4-VARABORT-1
+
+**`cartesi-machine` CLI cannot compute claims when a rejected input leaves DATA above the transmit-buffer size**
+
+- **Severity:** Critical (R4 violated at a reachable state on the honest operator's path; a crash caused by
+  relayed data the honest operator must process).
+- **Component and area:** emulator; the `cartesi-machine` CLI in cmio mode, including its mcycle and uarch
+  computation-hash builders, which the manual presents as the tool that computes the claims the dispute bisects
+  (`doc/README.md:2555-2590`, `10310-10316`).
+- **Cited rules:** R4; R2 (the CLI builders must agree with the machine API, which hashes this state); section 1
+  completeness failure; section 2 (reachable state, correctly designed application, honest operator's path); section 4
+  (input payloads cannot be declined); section 8 Critical.
+- **Location:**
+  - `src/cartesi-machine.lua:3293-3295`: `get_and_print_yield` calls `machine:receive_cmio_request()` with no guard.
+  - `src/cartesi-machine.lua:4653-4656` (`run_advance_state_input`, at every manual-yield fixed point, before it checks
+    for a rejection) and `src/cartesi-machine.lua:4504-4505` (`run_to_stop`, at every automatic yield).
+  - `src/machine.cpp:1992-1995`: `receive_cmio_request` throws "CMIO request data is too large" when DATA exceeds the
+    2 MiB transmit buffer on any yield that is not a progress report.
+- **Related:** R1-GUESTTOOLS-1 is the same failure in the PRT player. Both come from the throwing
+  `receive_cmio_request`. The fix proposed there lives in `prt.lua` and leaves the CLI broken, so this is a separate
+  defect, unless a single change in the C++ API fixes both.
+
+### Problem
+
+The CLI reads the transmit buffer at every yield. On an rx-rejected manual yield with DATA above 2 MiB, which the
+manual allows ("On reject, DATA is ignored", `doc/README.md:7591`), `receive_cmio_request` throws. Nothing catches the
+error, so the run exits 1 before the computation hash is completed or stored. The machine API handles the state
+normally: it hashes it, and the rejection reverts. Automatic tx-output and tx-report yields with oversized DATA fail
+the same way.
+
+### Evidence and test
+
+- Test: `bugs/R4-VARABORT-1/test.lua`, with `yield.S`, `link.ld` and `build.sh` (the guest of R1-GUESTTOOLS-1, built
+  at test time). Run `bugs/run.sh R4-VARABORT-1`; it takes about 0.7 s.
+- It builds two valid templates that differ only in the rejected yield's DATA (`0x10` and `0x200001`), and runs
+  `src/cartesi-machine.lua --remote-spawn ... --load=<template> --cmio-advance-state=...` in four modes:
+  - `--mcycle-computation-hash`;
+  - `--uarch-cycle-computation-hash` for period 0;
+  - the same for period 1;
+  - plain cmio advance.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - control (DATA `0x10`): all four modes exit 0, and the hashing modes write 32-byte hash files;
+  - oversized (DATA `0x200001`): the machine API reaches the rejected yield and hashes it, but all four modes exit 1
+    with `cartesi-machine.lua:3294: CMIO request data is too large`, and no mcycle computation hash is written.
+
+### Scenario and reachability
+
+An attacker sends an advance-state input that a correctly designed application rejects with a large DATA. That is
+allowed by the manual, and possible with `machine-guest-tools`' own `yield` utility, which passes any data argument.
+An operator computing its claim with the documented CLI can produce neither the mcycle claim nor the uarch claim for
+any period after the rejection. Restarts replay the same input and fail again, so the operator misses its clocks and a
+dishonest claim can settle.
+
+### Possible solution
+
+In the CLI, read `htif_tohost_cmd`, `htif_tohost_reason` and `htif_tohost_data` as registers. Read the transmit buffer
+only where its payload is used: the first 32 bytes for the outputs root on rx-accepted, and payloads on tx-output and
+tx-report. Skip rejections and unknown reasons, and apply a deterministic, non-raising policy to oversized output and
+report yields. Alternatively, make `machine::receive_cmio_request` report oversized DATA without throwing, which fixes
+R1-GUESTTOOLS-1 too.
+
+### Risks
+
+- Of the issue: one on-chain input stops the documented claim-computing tool for the whole epoch.
+- Of the fix: the stored outputs root must match the on-chain extraction (A5). Changing `receive_cmio_request` is a
+  host API change other callers may rely on; it does not change the transition function, but it should be versioned.
 
 ---
 

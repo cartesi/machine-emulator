@@ -42,6 +42,8 @@ Flags required by `AUDIT.md`:
 | [R1-ARCH-4](#r1-arch-4) | S-mode `sip` writes can set and clear the read-only STIP and SEIP bits | emulator (supervisor interrupt CSRs) | R7, section 8 Medium | Medium |
 | [R2-VERIFIER-2](#r2-verifier-2) | Send-cmio-response verifier accepts read accesses carrying unchecked `written`/`written_hash` fields | emulator (input-delivery log verifier) | R3, R11, section 4, section 8 Medium | Medium |
 | [R3-REFEREE-1](#r3-referee-1) | Referee narration raises on adversary-chosen data inside the referee coroutine, killing the referee | PRT referee model (narration on the referee's fatal path) | A5, section 4, section 5, section 7, section 8 Medium | Medium |
+| [R4-VARSPEC-1](#r4-varspec-1) | Page walk accepts non-leaf PTEs with the reserved A, D or U bits set instead of raising a page fault | emulator (address translation) | R7, section 8 Medium | Medium |
+| [R4-VARSPEC-2](#r4-varspec-2) | Each interrupt taken decrements `instret`/`minstret` | emulator (counters, traps) | R7, the manual's definition of `icycleinstret`, section 8 Medium | Medium |
 
 ---
 
@@ -2046,3 +2048,102 @@ As defense in depth, wrap every `story.*` call in a `pcall` that logs and contin
   same applies to any production code that reuses this narration inline.
 - Of the fix: a `pcall` applied beyond the `story.*` calls could hide real referee bugs. Rejecting non-string labels
   may break harnesses that rely on missing labels, which should keep defaulting to the role.
+
+---
+
+## R4-VARSPEC-1
+
+**Page walk accepts non-leaf PTEs with the reserved A, D or U bits set instead of raising a page fault**
+
+- **Severity:** Medium (an undocumented deterministic deviation, consistent across all paths, in behavior that no
+  correct guest relies on for isolation or data integrity).
+- **Component and area:** emulator; the Sv39/48/57 page walk.
+- **Cited rules:** R7 (address translation); section 8 Medium. R2 holds: native and uarch agree.
+- **Location:** `src/translate-virtual-address.hpp:181-187` rejects reserved bits 60-54, PBMT and N for every PTE;
+  the non-leaf branch (`xwr == 0`, around line 259, `pte_addr = ppn;`) follows the pointer without checking A
+  (bit 6), D (bit 7) and U (bit 4).
+
+### Problem
+
+Since privileged spec 1.12, A, D and U are reserved in non-leaf PTEs, and step 3 of the translation algorithm
+requires a page fault for the original access type when a reserved bit is set. Spike and QEMU implement that check.
+The emulator already applies the 1.12 reserved-bit rules to bits 63-54, and implements the 1.12 `menvcfg`/`senvcfg`
+CSRs, but translates through a non-leaf PTE with A, D or U set. The manual documents no deviation.
+
+### Evidence and test
+
+- Test: `bugs/R4-VARSPEC-1/test.lua`, with the bare-metal guest `pte.S`, `link.ld` and `build.sh`. Run
+  `bugs/run.sh R4-VARSPEC-1`.
+- The guest builds a correct Sv39 identity map and sets A, D or U in the root (non-leaf) PTE. It then fetches in
+  S-mode, and loads and stores in M-mode with MPRV and MPP=S.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - all 9 cases complete (mcause 9, 11, 11) where page faults 12, 13 and 15 are required;
+  - controls without the extra bit behave as expected;
+  - setting bit 54, which the emulator already rejects, faults correctly, so the harness detects faults;
+  - a uarch replay of the fetch case matches native at every mcycle.
+
+### Scenario and reachability
+
+Any guest that builds page tables can reach it. The spec requires software to clear these bits, and Linux and
+OpenSBI do, so no correct guest relies on the fault. All paths agree, so claims are unaffected.
+
+### Possible solution
+
+In the non-leaf branch, before following the pointer, return a page fault when
+`pte & (PTE_A_MASK | PTE_D_MASK | PTE_U_MASK)` is nonzero. Alternatively, document which privileged spec version the
+walk follows.
+
+### Risks
+
+- Of the issue: low.
+- Of the fix: it changes the state transition function. It needs a new uarch, pristine hash and verifiers, as a
+  coordinated protocol version (R13, A6). Software that wrongly leaves these bits set would start faulting; the
+  shipped stack does not.
+
+---
+
+## R4-VARSPEC-2
+
+**Each interrupt taken decrements `instret`/`minstret`**
+
+- **Severity:** Medium (an undocumented deterministic deviation, consistent across all paths, contradicting the
+  manual, in a performance counter that no correct guest relies on for isolation or data integrity).
+- **Component and area:** emulator; the retired-instruction counter and trap entry.
+- **Cited rules:** R7; the manual's definition of `icycleinstret` (`doc/README.md:7312`: "the difference between
+  `mcycle` and the architectural instruction count"); section 8 Medium. R2 holds.
+- **Location:** `src/interpret.cpp:451-453`: `raise_exception` increments `icycleinstret` for every cause, interrupts
+  included. `src/interpret.cpp:5736-5746`: interrupts are raised in the outer loop without advancing `mcycle`.
+  `src/interpret.cpp:1759-1766` and `1914-1919`: `instret = mcycle - icycleinstret`.
+
+### Problem
+
+For a synchronous exception, the increment cancels the mcycle the faulting instruction consumed without retiring. An
+interrupt, however, is taken before the next fetch and consumes no mcycle. The increment then lowers `instret` by one,
+although nothing failed to retire. Zicntr defines `instret` as instructions retired.
+
+### Evidence and test
+
+- Test: `bugs/R4-VARSPEC-2/test.lua`, with the bare-metal guest `instret.S`, `link.ld` and `build.sh`. Run
+  `bugs/run.sh R4-VARSPEC-2`.
+- The guest measures `minstret` across the same three retired instructions, with and without a machine software
+  interrupt raised by a store to the CLINT `msip`.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - without the interrupt: `dinstret = 3`, `dmcycle = 3`;
+  - with it: `dinstret = 2`, `dmcycle = 3`, `mcause = 0x8000000000000003`;
+  - uarch matches native in both cases.
+
+### Scenario and reachability
+
+Any guest that takes interrupts and reads `instret` sees it drift. Linux takes timer interrupts constantly, so user
+`rdinstret` and perf measurements drift. All paths agree, so claims are unaffected.
+
+### Possible solution
+
+Increment `icycleinstret` only for synchronous exceptions: skip it when `cause & MCAUSE_INTERRUPT_FLAG` is set.
+Alternatively, document the behavior and redefine `icycleinstret` in the manual.
+
+### Risks
+
+- Of the issue: only guest `instret` measurements are affected.
+- Of the fix: it changes the state transition function and needs a coordinated protocol version (R13, A6). Native,
+  uarch and Solidity diverging on every interrupt would be Critical (R2).

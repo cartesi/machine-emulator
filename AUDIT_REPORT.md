@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **extra rounds in progress** (round 11 confirmed seven more issues, so the clean-round count restarted again; round 12 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
+Status: **extra rounds in progress** (round 12 confirmed two more issues, so the clean-round count restarted again; round 13 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
 
 **Running extra-rounds total:** round 4 (variant analysis) confirmed 6 new issues, bringing the confirmed total to **30 (14 Critical, 8 High, 8 Medium)**. See the round 4 candidate table and the Extra rounds section.
 
@@ -121,7 +121,8 @@ refutations.
 | 9 | Attack-goal driven: start from each way to break a section 1 goal or a rule and search backwards, across components, for any path that reaches it | GOALACCEPT, GOALNODE, GOALWRONGCLAIM, GOALNOPROOF, GOALTIMEOUT, GOALOUTPUT, GOALDIVERGE, GOALNONDET, GOALESCAPE, GOALRESTORE |
 | 10 | Manual and promise checking: each normative statement of the manual and each documented invariant in the code is checked against the implementation | MANCLI1, MANCLI2, MANLUA1, MANLUA2, MANGUEST, MANARCH, MANSTATE, MANCOMP, MANPRT, PROMISES |
 | 11 | Family expansion of the late findings: each hunter enumerates every site of one bug shape found in rounds 7-10 | FAMPERSISTA, FAMPERSISTB, FAMCACHE, FAMMASK, FAMWEDGE, FAMFEES, FAMSPEC, FAMOPERATORIO, FAMUARCH |
-| 12 | Independent re-derivation: hunters who see no earlier candidate rebuild the verdict on a slice from scratch | planned |
+| 12 | Second-order family expansion: the new shapes of round 11 (a register read from a constant on one path and from the shadow on another, decisions made at one chain state and executed at another) and the neighbors round 11 opened | SECSHADOW, SECPENDING, SECGAS, SECPERUNIT, SECCACHE2, SECLOCALREMOTE, SECEVMSEAM, SECCONFIG |
+| 13 | Independent re-derivation: hunters who see no earlier candidate rebuild the verdict on a slice from scratch | planned |
 
 ## Candidates
 
@@ -420,6 +421,43 @@ Round 11 coverage (hunts with no candidate are not evidence of absence):
   the CLI's `--load clone:`/`sync` handling, the JSON-RPC server's shutdown with shared stores, `game-transport.lua`
   framing and `prt-websocket.lua` frame parsing, and behavior on file systems with reflink error codes.
 
+### Round 12 (extra: second-order family expansion)
+
+Eight hunters ran, each enumerating the sites of one of the shapes that round 11 exposed or opened: two readers of the
+same state (hashed shadow against a constant or cached copy), host operations that discard pending in-process state,
+decisions made at one chain state and executed at another, per-unit costs of guest-chosen counts, the remaining persisted
+structures, the local machine against the JSON-RPC machine, the Lua encoders against the Solidity decoders, and
+configuration validation. They reported 4 raw candidates; dedup merged one into R1-ROBUST-3 (SECPERUNIT-2), leaving 3.
+Of those, 2 were confirmed (both Critical) and 1 was refuted, so **round 12 was not clean**. The hunter that found the
+two confirmed issues was a **fallback run**: the Opus 5.5 hunt for SECCACHE2 was stopped by a safeguard and the
+workflow re-ran it on `sonnet`. Every prover and reviewer ran on Opus 5.5 at High effort.
+
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R12-SECCACHE2-1 | emulator | Critical | Loading a stored machine trusts the inner-node hashes of its sparse hash tree (`hash_tree.sht`): a valid template with one wrong dormant inner node loads with the right root and then yields wrong proofs, roots and claims | **Confirmed, Critical** | Reproduced by prover, reviewer and orchestrator; resolves the open lead of round 11; same template-trust judgment as R10-MANCLI1-1; **fallback-sourced discovery**; see `BUGS.md` |
+| R12-SECCACHE2-2 | emulator | Critical | Loading a stored machine trusts its dirty-page trees (`.dpt`): a valid template with one dirty interior node under clean ancestors makes every later write under that node invisible to the hash tree | **Confirmed, Critical** | Reproduced by prover, reviewer and orchestrator; same template-trust judgment; **fallback-sourced discovery**; see `BUGS.md` |
+| R12-SECPERUNIT-1 | emulator | High | The CLI claim computation fetches every automatic yield's DATA (up to 2 MiB) over JSON-RPC before checking the reason, so a guest makes each mcycle cost about 26 ms | Refuted by reviewer | Reproduced, but a tx-output yield already costs the same fetch, which the CLI needs; the worst case per mcycle does not rise (section 8: average-case only). Covered by R5-DFGUESTOUT-2 and R1-ROBUST-3; folding a length-only query into the R5-DFGUESTOUT-2 fix lowers it |
+
+Round 12 coverage (hunts with no candidate are not evidence of absence):
+
+- **SECSHADOW**: every native reader against its uarch and replay counterpart, register by register, with an executed
+  consistency harness over all registers and a comparison of the emulator's constants with `EmulatorConstants.sol`. It
+  noted that `is_unreproducible()` reads the configuration copy, not the shadow `iunrep` (a deliberate host
+  `write_reg` can make them differ, which section 8 puts out of scope). No differential fuzzing.
+- **SECPENDING**: every host operation that runs with pending in-process state, by reading and with differential
+  harnesses; no crash variants, no JSON-RPC paths, no CLI stored-revert run.
+- **SECGAS**: read every site of the bridge that acts on an earlier observation, against the pinned Dave sources; no new
+  EVM measurement. Estimated, not measured: the gas delta of the refund call.
+- **SECLOCALREMOTE**: ran both implementations on the same machine; only bare-metal guests, no console redirection, and
+  the spawned-server version check compares only the major and minor version.
+- **SECEVMSEAM**: ran the Lua encoders against the pinned Solidity decoders on synthetic states. Not covered: whole
+  transactions of the Dave consumers, the compiler flags of a real deployment, and `MetaStep` at counter 0.
+- **SECCONFIG**: configuration validation at creation, by reading and small experiments. Not covered: odd register
+  values (`misa`, `mstatus` SXL/UXL, reserved `satp` modes) through native, uarch and Solidity, and the Solidity PMA lookup
+  for non-power-of-two lengths.
+- **SECPERUNIT**: tabulated per-unit costs; no reflink file system was available, so the stored player's per-input clone
+  cost under the documented reflink requirement was not measured.
+
 ## Blocked agents
 
 - `hunt:HASH`, round 1: the hunter on the session model set `blocked_by_safeguards` but still returned one candidate:
@@ -451,6 +489,11 @@ Round 11 coverage (hunts with no candidate are not evidence of absence):
   re-ran it on `sonnet` (`prove:R11-FAMFEES-1@sonnet`), which proved it. The disproving reviewer ran on Opus 5.5, reran the
   test and confirmed Critical, and the orchestrator reproduced it, so the confirmation does not rest on the fallback
   model's judgment, but the proof of concept was written by it. `BUGS.md` flags this.
+
+- `hunt:SECCACHE2`, round 12: the hunter on Opus 5.5 set `blocked_by_safeguards`; it said a safety classifier stopped its
+  response partway and that it would not continue or reconstruct that line of work. The workflow re-ran it on `sonnet`,
+  which found R12-SECCACHE2-1 and R12-SECCACHE2-2: **fallback-only discoveries**. Their provers and reviewers ran on
+  Opus 5.5. `BUGS.md` flags both.
 
 No prover or reviewer was blocked in any other round, so no issue needed a fallback reviewer or was reported without a
 proof of concept. The only fallbacks were the hunters above.

@@ -15,7 +15,8 @@ Flags required by `AUDIT.md`:
   was *found* only by a fallback-model hunter (`sonnet`), after the primary hunt for that angle was stopped by a
   safeguard; its proof of concept and its review ran on the primary model. Likewise the proof of concept of
   R11-FAMFEES-1 was written by the fallback model (the primary prover was blocked); its hunter and its reviewer, who
-  reproduced it, ran on the primary model.
+  reproduced it, ran on the primary model. R12-SECCACHE2-1 and R12-SECCACHE2-2 were also *found* only by the fallback
+  hunter (the primary hunt was stopped by a safeguard); their provers and reviewers ran on the primary model.
 - **Proofs of concept.** Every issue has one; none is reported without a test.
 
 | ID | Title | Component | Cited rules | Severity |
@@ -42,6 +43,8 @@ Flags required by `AUDIT.md`:
 | [R10-MANCLI1-1](#r10-mancli1-1) | Loading a stored machine trusts its page hash-tree cache (`hash_tree.phtc`, outside the hashed state), so a valid template with a poisoned cache reports the right root and then computes wrong hashes and proofs | emulator (`page_hash_tree_cache`, stored machines, CLI and PRT player load) | R1, R9, R2, R4, section 2 valid template, section 8 | Critical |
 | [R11-FAMCACHE-1](#r11-famcache-1) | Loading a stored machine trusts its dense hash-tree files (`<range>.dht`): a valid template with one wrong interior node keeps the right root and passes `verify_hash_tree`, then gives proofs and hashes that are wrong | emulator; dense hash-tree files of stored machines (CLI `--load`, JSON-RPC load, PRT player) | R1, R9, R2, R4, R10, section 2 valid template, section 8 | Critical |
 | [R11-FAMFEES-1](#r11-famfees-1) | The bridge signs `1.2 x eth_estimateGas at latest` with no worst-case floor, so an honest `joinTournament` or `winMatchByTimeout` runs out of gas when a front-running Sybil join triggers the pairing branch | `prt-player-bridge`; `doc/recipes/prt-transactions.lua` | R4, A7, section 1 completeness, section 2 honest operator's path | Critical |
+| [R12-SECCACHE2-1](#r12-seccache2-1) | Loading a stored machine trusts the inner-node hashes of its sparse hash tree (`hash_tree.sht`): a valid template with one wrong dormant inner node loads with the right root, then yields wrong proofs, roots and claims | emulator; sparse hash tree file of stored machines (CLI `--load`, JSON-RPC load, PRT player) | R1, R9, R2, R4, R10, section 2 valid template, section 8 | Critical |
+| [R12-SECCACHE2-2](#r12-seccache2-2) | Loading a stored machine trusts its dirty-page trees (`.dpt`): a valid template with one dirty interior node under clean ancestors loads and verifies cleanly, then every later write under that node is invisible to the hash tree | emulator; dirty-page tree files of stored machines (CLI `--load`, JSON-RPC load, PRT player) | R1, R9, R2, R4, R10, section 2 valid template, section 8 | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -1666,6 +1669,159 @@ node keeps the right root and passes `verify_hash_tree`, then gives proofs and h
   the pinned artifacts or derived with a state override. - Retrying immediately on status 0 must not fight the
   nonce/replacement logic, and must keep the reorg safety the observation wait currently gives. - The other pairing
   actions (winInnerTournament, winLeafMatch) need the same treatment, or the bug remains there.
+
+---
+
+## R12-SECCACHE2-1
+
+**Loading a stored machine trusts the inner-node hashes of its sparse hash tree (`hash_tree.sht`): a valid template
+with one wrong dormant inner node loads with the right root, then yields wrong proofs, roots and claims**
+
+- **Severity:** Critical (`AUDIT.md` section 8). Confirmed by an independent disproving reviewer, who reran the test,
+  and reproduced by the orchestrator. Found in round 12 (second-order family expansion). Same family and the same
+  judgment about template trust as R10-MANCLI1-1 and R11-FAMCACHE-1: `THREAT_MODEL.md` section 8 says that once a
+  snapshot meets the valid-template conditions, nothing it carries outside the hashed state may affect any transition.
+  If template distribution is treated as wholly trusted the residue is Medium. **Fallback-sourced discovery:** the
+  hunt for this angle on Opus 5.5 was stopped by a safeguard, and the fallback model (`sonnet`) found it; its proof
+  and its review ran on Opus 5.5.
+- **Component and area:** emulator; sparse hash tree file of stored machines (CLI `--load`, JSON-RPC load, PRT
+  player).
+- **Cited rules:** R1, R9, R2, R4, R10, section 2 valid template, section 8. Reviewer: R1; R9; R2; R4; R10; section 1
+  completeness failure; section 2 valid template; section 2 honest operator's path (obtaining template, storing and
+  reloading, computing claims, producing proofs); section 8 snapshot out-of-scope clause does not apply (template
+  meets valid-template conditions by content hash).
+- **Location:** src/hash-tree.cpp:994-1003 (load validates only left/right/parent/log2_size, never hashes),
+  src/hash-tree.cpp:537-601 (update_sparse_tree recomputes only ancestors of changed address ranges from the stored
+  hashes of their siblings), src/hash-tree.cpp:70-75 and 203-253 (get_sparse_node_hash_view/get_proof use stored
+  sibling hashes), src/hash-tree.cpp:603-605 (get_root_hash returns stored node 1), src/hash-tree.cpp:677-742 (verify
+  never inspects inner sparse nodes), src/machine.cpp:307 and 320 (load keeps the file unless clear_hash_tree)
+- **Defect:** hash_tree.sht holds an array of sparse nodes (left,right,parent,log2_size,hash; 64 bytes each, hash at
+  offset 28). On load the topology fields are compared with the freshly computed ones, but the 32-byte hash of every
+  inner node is adopted as is. update_sparse_tree later recomputes a node only when one of its descendant address
+  ranges changed, and it recomputes it from the STORED hash of the sibling subtree. Nodes on the path of the
+  always-dirty ranges (shadow state, shadow uarch state) and of ranges whose page is in the write TLB are recomputed
+  at every update, so poisoning them has no lasting effect (that is why a first attempt showed nothing). A
+  sibling-of-path node whose parent is not recomputed at load is dormant: the loaded root, cartesi-machine-stored-hash
+  and verify_hash_tree are unchanged. With a 1 MiB RAM machine the topology is: node 73 = H(node 74 [cmio rx and tx
+  buffers], node 83 [0x70000000..0x7fffffff, holds the DTB]). Overwriting the 32-byte hash of node 83 (file offset
+  83*64+28) with 0x42 bytes changes nothing at load. When the first advance-state delivery writes the rx buffer, node
+  73 is recomputed as H(74, poisoned 83) and the root becomes wrong; get_proof of cmio and DTB words uses node 83's
+  hash as a level-28 sibling and does not fold to the root. verify_hash_tree has no check on inner nodes, and
+  --clear-hash-tree (off by default) restores the right behavior.
+- **Evidence and test:** `bugs/R12-SECCACHE2-1/` (`test.lua`, `guest.S`, `link.ld`, `build.sh`). Run `bugs/run.sh
+  R12-SECCACHE2-1`. It fails while the bug is present. Observed: I ran the test 3 times on feature/prt-audit. All 3
+  runs printed identical output and exited 1 ("FAIL R12-SECCACHE2-1 (bug present, status 1)"). Template A root:
+  0x2b026214...9e9a. B differs from A in exactly 32 bytes: the hash of sparse node 83 in hash_tree.sht, at offset
+  83*64+28. All the template checks pass on B: - cartesi-machine-stored-hash of B gives 0x2b026214...9e9a. - The
+  loaded root equals A's. - verify_hash_tree returns true. What follows on B: - A freshly loaded B gives a get_proof
+  of an rx word (0x60000000) that does not fold to the root. A's proof folds. - After one advance-state input, both
+  machines reach mcycle 24 with counter 0x1112, so the contents are identical. Root A = 0x533c806c...d61c, root B =
+  0x1e784426...e692. - verify_hash_tree on B still returns true with the wrong root. - On B after the input, get_proof
+  of a DTB word (0x7ff00000) does not fold. - B loaded with clear_hash_tree reproduces A exactly. - CLI `--load
+  --cmio-advance-state --mcycle-computation-hash`: A = 0x485040c55f8f..., B = 0xcea5a8d58cfc..., B with
+  --clear-hash-tree = 0x485040c55f8f... (equal to A). The test separates harness errors (exit 2) from the bug (exit
+  1). Exit 2 covers these cases: - control A fails its own checks; - the guest misbehaves; - the clear-cache run of B
+  disagrees with A; - B differs from A anywhere other than those 32 bytes; - the topology is not what the test expects
+  (it requires node 83 to be the right child of node 73 at log2 28 and log2 29, with stored hashes ...
+- **Scenario and reachability:** The trigger is a stored template directory whose hashed contents (.bin files) and
+  content hash exactly equal the valid template and the on-chain commitment. Only 32 bytes of hash_tree.sht are
+  changed, and that file is a cache outside the hashed state. Obtaining and reloading a template is on the honest
+  operator's path (section 2). Every documented check passes: cartesi-machine-stored-hash, the loaded get_root_hash
+  (which is what prt.lua new_stored_machine compares) and verify_hash_tree. No guest or chain action is needed beyond
+  an ordinary first advance-state input, which writes the rx buffer and recomputes the poisoned node's parent. Proofs
+  through the poisoned sibling are already wrong on the fresh load. Dormancy requires that no range under the poisoned
+  node's parent is recomputed at load (here, no write-TLB entry for the cmio range in the template). That is
+  realistic, because an ordinary sfence.vma ensures it, and other dormant sibling nodes exist (flash-drive branches,
+  for example).
+- **Possible solution:** When loading a stored directory that this process did not write itself and is not reopening
+  in place, recompute the hash tree instead of trusting the .sht file: - Rebuild every inner sparse node bottom-up
+  from the dense-tree roots and pristine hashes. This costs about as many hashes as there are sparse nodes, which is
+  small. - Alternatively, recompute and reject the load on any mismatch with the stored hashes. Also make
+  verify_hash_tree check every inner sparse node against H(left, right), and every sparse leaf against its dense root,
+  and make it set ret=false on a mismatch instead of only printing it. Apply this together with the R11 (dense
+  .dht/.dpt) and R10 (phtc) fixes, for example a full rehash on load or a verify-on-load option. The CLI --load, the
+  JSON-RPC load and the PRT player's new_stored_machine should use it for third-party templates. A narrower mitigation
+  is for the player to load the template it defends with clear_hash_tree.
+- **Risks:** Risks of the issue: whoever controls the template distribution channel (developer, release mirror) can
+  make every honest operator commit wrong claims and proofs that do not fold, while every documented check passes.
+  That eliminates the honest claim with no adversarial guest or chain action. Risks of the fix: - Recomputing only the
+  sparse tree is cheap, but a full rehash covering dense trees costs time linear in the machine size on every load. -
+  The fast path that lets a process reopen its own shared directory after a crash must keep working and stay correct.
+  - A partial fix, for example only the phtc or only the dense trees, leaves this hole open. - A stricter
+  verify_hash_tree may expose benign transient inconsistencies, such as ranges dirtied through the write TLB before an
+  update, which must then be handled explicitly.
+
+---
+
+## R12-SECCACHE2-2
+
+**Loading a stored machine trusts its dirty-page trees (`.dpt`): a valid template with one dirty interior node under
+clean ancestors loads and verifies cleanly, then every later write under that node is invisible to the hash tree**
+
+- **Severity:** Critical (`AUDIT.md` section 8). Confirmed by an independent disproving reviewer, who reran the test,
+  and reproduced by the orchestrator. Found in round 12 (second-order family expansion). Same family and judgment as
+  R10-MANCLI1-1 and R11-FAMCACHE-1, and the load-time counterpart of the in-process ordering defects R7-FPUARCH-1 and
+  R8-DYNPERSIST-1. **Fallback-sourced discovery:** found by the `sonnet` re-run of a blocked hunt; its proof and its
+  review ran on Opus 5.5.
+- **Component and area:** emulator; dirty-page tree files of stored machines (CLI `--load`, JSON-RPC load, PRT
+  player).
+- **Cited rules:** R1, R9, R2, R4, R10, section 2 valid template, section 8. Reviewer: R1; R9; R2; R4; section 1
+  completeness; section 2 valid template; section 2 honest operator's path (obtaining and reloading the template);
+  section 8 snapshot out-of-scope clause (does not apply: once a snapshot meets the valid-template conditions, nothing
+  it carries outside the hashed state may affect any transition).
+- **Location:** src/memory-address-range.cpp:62-81 (adopts the stored .dpt, no consistency check),
+  src/dirty-page-tree.hpp:82-84 and 109-126 (only byte 0, the init flag, is examined), src/dirty-page-tree.hpp:327-336
+  (do_mark_dirty_leaf_position_and_up stops at the first already-dirty node and assumes its ancestors are dirty),
+  src/dirty-page-tree.hpp:178-205 (down/up_then_down traverse only through dirty children from the root),
+  src/hash-tree.cpp:677-742 (verify compares only leaf and range-root flags, not the interior invariant),
+  src/hash-tree.cpp:416-435 (update_dirty_pages iterates dirty_offsets_view from the root)
+- **Defect:** The dirty-page tree is a heap array (byte 0 = initialized flag, node 1 = root, page leaves from
+  2^(L-1)). Load accepts any file whose byte 0 is non-zero. The code relies on the invariant 'dirty node implies dirty
+  ancestors': do_mark_dirty_leaf_position_and_up returns as soon as it meets a node already dirty, and
+  dirty_offsets_view/up_then_down only descend from a dirty root through dirty children. If an interior node N is
+  stored dirty while the root and the path above N are clean, nothing is detected at load (clean root means no work;
+  verify sees every leaf and the range root consistent with the clean contents). Later, any write to a page under N
+  (guest store through the write TLB, write_memory, collect paths that call mark_dirty_page_and_up) marks the leaf,
+  then stops at N; the root stays clean, so update() never visits the page, dht/sht keep the old page hash and
+  get_root_hash returns the stale root. For the 1 MiB RAM range, setting byte 65 of 0000000080000000-100000.dpt to 1
+  covers the guest's data page 0x80005000 (leaf 261, parents 130, 65). Evidence disappears quickly: verify_hash_tree()
+  is false on the unflushed state ('RAM is not marked dirty but is dirty'), but a following get_root_hash() cleans the
+  dpt and verify_hash_tree() then reports true on the stale tree.
+- **Evidence and test:** `bugs/R12-SECCACHE2-2/` (`test.lua`, `build.sh`, `guest.S`, `link.ld`). Run `bugs/run.sh
+  R12-SECCACHE2-2`. It fails while the bug is present. Observed: I ran it 3 times. All 3 runs printed the same output
+  and exited with status 1 ("FAIL R12-SECCACHE2-2 (bug present, status 1)"). - Template A: 0x6d1d6580450a107e... Copy
+  B differs from A only in byte 65 of 0000000080000000-100000.dpt (0 changed to 1). - B passes every template check:
+  cartesi-machine-stored-hash of B is 0x6d1d6580..., which equals A. B's load root equals A's, and verify_hash_tree
+  returns true. - After one advance-state input, the guest counter is 4370 in A, in B and in B loaded with
+  clear_hash_tree. - Root after the input: A = 0x27797cbeebc51844..., B = 0xa30164bdb448897e..., B with
+  clear_hash_tree = 0x27797cbeebc51844... - B's own post-input state, stored and then rehashed with clear_hash_tree,
+  gives 0x27797cbe... B therefore reports a root that is not the content hash of its own contents. - verify_hash_tree
+  on B after the input returns true, even though B's root is stale. - get_proof(0x80005000, 12) on B does not fold to
+  B's reported root. - CLI mcycle computation hash (log2_mcycle_period 4, one input): A = 0x12609d8e337ba429..., B =
+  0xf39d17ce9aacc1ca..., B with --clear-hash-tree = 0x12609d8e... The one-line failure message lists every failed
+  check and cites R1, R9, R2 and R4.
+- **Scenario and reachability:** Nothing from the guest or the chain is needed. The trigger is a stored template whose
+  .bin files and content hash are exactly those of the valid template (the on-chain commitment). Only one byte of a
+  RAM <range>.dpt differs, and that file is a cache outside the hashed state. Every documented check passes on it:
+  cartesi-machine-stored-hash, the loaded root, verify_hash_tree, and the player's get_root_hash comparison. Obtaining
+  and reloading the template is on the honest operator's path. The defect then fires on the first ordinary input whose
+  guest writes any page under the poisoned node. No dormancy condition and no TLB precondition apply.
+- **Possible solution:** Never adopt a persisted .dpt from a directory the process is not reopening in place. Either:
+  - force mark_pages_dirty on load, so every leaf and interior node is dirty and the next update rehashes the whole
+  range. Combine this with rebuilding the .dht, .sht and .phtc, as in R10 and R11. - or validate the dpt on load:
+  every non-pad leaf must be clean, no interior node may be dirty, and the init byte must hold exactly the dirty
+  value. Any other file is rejected or rebuilt. Defense in depth: - make do_mark_dirty_leaf_position_and_up mark up to
+  the root, at the cost of more work per write; - have hash_tree::verify check the dpt invariant (a dirty node implies
+  a dirty parent); - have the CLI --load, the JSON-RPC load and the PRT player load third-party templates with
+  clear_hash_tree and compare the recomputed root with the commitment.
+- **Risks:** Risk of the issue: whoever controls the template channel (developer, release artifact, mirror) can change
+  one byte of a cache file and make every honest operator compute wrong mcycle and uarch claims, and proofs that do
+  not fold. That eliminates the honest claim while every documented check passes. A narrow fix to the .dht values
+  (R11's validate-and-compare option) leaves this open. Risks of the fix: - A full rehash on load costs time linear in
+  the machine size, which is noticeable for multi-GiB ranges. - Marking up to the root on every write lengthens the
+  hot path. - The fast path that reopens the process's own shared directory after a crash must stay correct and keep
+  the R7-FPUARCH-1, R8-DYNPERSIST-1 and R9-GOALRESTORE-1 fixes coherent. - A stricter verify_hash_tree may expose
+  existing benign inconsistencies, such as the write-TLB dirty case, which must then be handled explicitly.
 
 ---
 

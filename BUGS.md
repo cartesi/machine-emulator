@@ -15,6 +15,7 @@ present.
 | [R1-REFEREE-2](#r1-referee-2) | Output proofs are not range-checked: every output is accepted again at index i - 2^63 | PRT referee model (output verification), `cartesi.hash-tree` | A5, section 1 soundness, section 4, R11, R9 | Critical |
 | [R1-ROBUST-1](#r1-robust-1) | Honest player keeps every tx-output payload of an input in memory, so a guest drives its memory up without bound | PRT player and bridge (output collection) | R8, R12, R4, A7, section 1 completeness, section 4 | Critical |
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
+| [R2-PLAYER-1](#r2-player-1) | A settled epoch's bridge cancels the next epoch's pending honest transactions through the shared journal | PRT player and bridge (transaction scheduling across epochs) | R4, R12, A7, section 1 completeness, section 2 honest operator's path | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -746,6 +747,87 @@ verify proofs in a separate process.
   - It touches the interpreter shared with the generated Solidity. Its semantics must stay "revert", and the code
     generator of `machine-solidity-step` must not change.
   - The uarch program and its pristine hash are unaffected, since only the host build of the interpreter changes.
+
+---
+
+## R2-PLAYER-1
+
+**A settled epoch's bridge cancels the next epoch's pending honest transactions through the shared journal**
+
+- **Severity:** Critical (on the honest operator's path, with no adversarial input beyond a dishonest claim, the
+  honest operator cancels its own join and moves and misses its deadlines).
+- **Component and area:** PRT player and bridge (honest operator); scheduling of transactions when several epochs'
+  bridges share one signer and one transaction journal.
+- **Cited rules:** R4 (the honest operator can always respond in time); R12 and A7 (sizing assumes the operator does
+  not fight itself); section 1 completeness failure; section 2 (honest claim, honest operator's path).
+- **Location:**
+  - `doc/recipes/prt-player.lua:119-126`: one `transactions` journal for the whole player;
+  - `doc/recipes/prt-player.lua:176-219`: every epoch listener gets that journal and the same signer, and listeners
+    are never removed;
+  - `doc/recipes/prt-player.lua:225-243`: `pass()` ticks every sealed bridge in epoch order, and repeats at once
+    while a pass published;
+  - `doc/recipes/prt-epoch.lua:19-23`: `poll()` returns the bridge for good once the epoch is sealed;
+  - `doc/recipes/prt-bridge.lua:660-681`: `tick()` takes `transactions:pending(signer)`, the newest candidate at the
+    account's next nonce whichever epoch signed it, compares it only with its own epoch's due jobs, and otherwise
+    calls `cancel()`;
+  - `doc/recipes/prt-transactions.lua:91-98` (`pending`), `:128-142` (`fees`, +15%) and `:170-194` (`submit`): the
+    `bump_blocks` wait applies only to the same action, and rebroadcast at the fee ceiling only to the same action.
+
+### Problem
+
+Once epoch N has settled, its bridge has no due job, or only bond recovery and cleanup, but it is still ticked first
+on every pass. When epoch N+1's bridge publishes the honest `joinTournament`, epoch N's bridge sees a pending
+candidate at the shared nonce that matches none of its own jobs, and replaces it with a self-transfer cancel at
++15% fees. Epoch N+1's bridge then sees its job obsolete and replaces the cancel, and so on, because each change of
+action is published at once. They alternate until the fee ceiling, and the bridge that hits the ceiling can no longer
+replace the other's transaction. Whichever was published last owns the nonce. Which one that is depends on the parity
+of the number of bumps to the ceiling, set by the base fee and the limits, so it repeats at every nonce.
+
+### Evidence and test
+
+- Test: `bugs/R2-PLAYER-1/test.lua`, with `vendor/dkjson.lua` (dkjson 2.11, MIT). Run `bugs/run.sh R2-PLAYER-1`;
+  it takes under 1 s.
+- It runs the real `prt-transactions` journal and the real bridge `tick`, `attempt` and `cancel` paths, overriding
+  only each bridge's `observe`, `jobs` and `prepare`, as `prt-bridge-test.lua` does. The fake node holds one
+  transaction per nonce, applies geth's 10% replacement rule, and mines once per block. The pass loop matches
+  `prt-player.lua`.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator, at a 10 gwei base fee with default
+  limits:
+  - control, epoch 1's bridge alone: the join is mined at block 101, with its window closing at 111;
+  - with epoch 0 settled and epoch 1: each of blocks 101-110 sees 12 publications alternating join and cancel; the
+    cancel wins at a 97.7 gwei max fee, and the join is blocked at "fee ceiling";
+  - 10 of 10 mined transactions are cancels, and the join is never mined in its window;
+  - a base-fee sweep from 1 to 40 gwei loses the join at 19 of 40 values.
+
+### Scenario and reachability
+
+The documented `prt-player.lua` loop reaches this from epoch 1 on, with the honest strategy, on any chain that does
+not mine each transaction the instant it arrives. `prt-demo.sh` runs Anvil with automine, which hides it. The honest
+claim never joins epoch N+1's tournament, so a dishonest claim wins unopposed. The same race hits every
+deadline-bound move (`advanceMatch`, seals, `winLeafMatch`, `winInnerTournament`), so the honest claim can also be
+eliminated by timeout. Where a block arrives mid-race, the outcome depends on timing rather than parity, but every
+move still races its own older-epoch bridge, with fees driven to the ceiling.
+
+### Possible solution
+
+Decide nonce ownership per signer, not per bridge:
+
+- either one arbiter gathers every bridge's due jobs, picks one by the existing earliest-expiry order, and is the
+  only one that cancels;
+- or, minimally, `tick()` treats a candidate whose `context.epoch` or `context.root` belongs to another bridge as
+  foreign, and neither cancels nor replaces it.
+
+Stop ticking listeners whose epoch is settled and have no remaining jobs, and optionally apply the `bump_blocks` wait
+to every replacement.
+
+### Risks
+
+- Of the issue: the honest claim misses joins and moves, a wrong state settles, and every nonce is pushed to the fee
+  ceiling, draining the signer.
+- Of the fix: treating foreign candidates as untouchable can strand an obsolete one, or starve a more urgent
+  older-epoch job behind a newer pending transaction. An arbiter must rank deadlines across epochs and survive
+  restarts; the journal already persists `context.epoch` and `context.root`. Dropping settled listeners must not lose
+  pending bond recovery or cleanup. The journal's reorg-safety and nonce invariants must be kept.
 
 ---
 

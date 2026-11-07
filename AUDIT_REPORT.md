@@ -226,6 +226,17 @@ effort.
 | R5-DFGUESTOUT-1 | prt-player-bridge, emulator | Critical | Player and CLI use the guest's `tohost` DATA as the length when reading the outputs root | **Confirmed, Critical** | Reachable for valid templates that yield accepted with DATA other than 32 (the manual contradicts itself on this); see `BUGS.md` |
 | R5-DFGUESTOUT-2 | emulator | Critical | CLI keeps every tx-output payload in memory and writes each report or rejected output to its own file | **Confirmed, Critical** | CLI counterpart of R1-ROBUST-1 with its own location and fix; see `BUGS.md` |
 
+### Round 6 (extra: lifecycle phase)
+
+Eight hunters ran, one per phase: setup, open epoch, sealing, mcycle dispute, uarch dispute, settlement, restart and
+epoch hand-off. Only LCSETUP found candidates (2). The other seven found none. No agent was blocked. Agents ran on
+Claude Opus 5.5 (exact ID) at High effort.
+
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R6-LCSETUP-1 | prt-player-bridge | High | A reopened epoch directory is not bound to the checkpoint or template it continues | Refuted by reviewer | Reproduced, but the `--state` directory is the operator's own trusted state, and feeding it another deployment's epoch directory is an operator configuration error outside the section 7 adversary. R13's version mismatch concerns the build against the deployment, which agree here. The reopened machine is not the valid template of the deployment being defended. At most an informational hardening note |
+| R6-LCSETUP-2 | prt-player-bridge | High | Player computes with the checkpoint manifest's sampling period and never compares it with the factory geometry | Proving | |
+
 ## Blocked agents
 
 - `hunt:HASH`, round 1: the hunter on the session model set `blocked_by_safeguards` but still returned one candidate:

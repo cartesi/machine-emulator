@@ -11,6 +11,7 @@ present.
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
 | [R1-ARCH-2](#r1-arch-2) | Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping | emulator (atomics, LR/SC) | R7, section 8 Medium | Medium |
 | [R1-ARCH-3](#r1-arch-3) | Page walk ignores PMA failures on PTE accesses | emulator (address translation) | R7, section 8 Medium | Medium |
+| [R1-ARCH-4](#r1-arch-4) | S-mode `sip` writes can set and clear the read-only STIP and SEIP bits | emulator (supervisor interrupt CSRs) | R7, section 8 Medium | Medium |
 
 ---
 
@@ -355,3 +356,54 @@ address, in every caller: fetch, load, store/AMO, MPRV accesses and TLB fills.
   hash and regenerated verifiers (R13, A6). It touches every translation path, and an error there would cause a
   far worse divergence (R2). The logged access sequence, a PTE read followed by a failed write that must not be
   logged as a write, must stay identical across the record, replay and Solidity verifiers.
+
+---
+
+## R1-ARCH-4
+
+**S-mode `sip` writes can set and clear the read-only STIP and SEIP bits**
+
+- **Severity:** Medium (an undocumented deterministic deviation, consistent across all paths, in behavior that no
+  correct guest relies on for isolation or data integrity).
+- **Component and area:** emulator; the supervisor interrupt-pending CSR (traps and interrupts).
+- **Cited rules:** R7 (traps and interrupts); section 8 Medium. R2 holds: native, uarch and the uarch log verifiers
+  agree.
+- **Location:** `src/interpret.cpp:2189-2195` (`write_csr_sip`), which writes
+  `mip = (mip & ~mideleg) | (val & mideleg)`.
+
+### Problem
+
+`write_csr_sip` uses `mideleg` as its write mask. `WARL_mideleg` limits `mideleg` to SSIP, STIP and SEIP, so once
+the firmware delegates the supervisor timer and external interrupts, as OpenSBI does, S-mode can write STIP and
+SEIP through `sip`. The privileged spec makes those bits read-only in `sip`, set and cleared only by the execution
+environment. Only SSIP is writable. Spike and QEMU restrict `sip` writes to SSIP, and the manual documents no
+deviation. `read_csr_sip` and M-mode's `write_csr_mip` are correct.
+
+### Evidence and test
+
+- Test: `bugs/R1-ARCH-4/test.lua`, with the bare-metal guest `sipw.S`, `link.ld` and `build.sh` (built at test
+  time). Run `bugs/run.sh R1-ARCH-4`.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - S-mode `csrs sip, STIP|SEIP` sets them (`mip = 0x220`);
+  - after M-mode raises STIP and SEIP, S-mode `csrc sip, STIP|SEIP` clears them (`mip = 0`);
+  - the control `csrs sip, SSIP` works as specified;
+  - a `run_uarch` plus `reset_uarch` replay matches the native root hash at every mcycle, and all 617 uarch steps
+    and the reset of the mcycle with the `sip` write were logged and accepted by `verify_step_uarch` and
+    `verify_reset_uarch`.
+
+### Scenario and reachability
+
+Any S-mode code reaches it with `csrs`, `csrc` or `csrw` on `sip`. The affected interrupts target S itself.
+Undelegated M-level bits fall outside the mask, and U-mode cannot access `sip`, so no privilege boundary is crossed.
+Linux's `csrw sip, zero` at entry also clears STIP and SEIP on this emulator, harmlessly, at boot before any template.
+Every path agrees, so claims are unaffected.
+
+### Possible solution
+
+Restrict the `sip` write mask to `mideleg & MIP_SSIP_MASK`, adding LCOFIP if Sscofpmf is ever implemented.
+
+### Risks
+
+- Of the issue: low; it affects only S-mode's own delegated interrupts.
+- Of the fix: it changes the uarch program, its pristine hash and the state transition function. It needs a new
+  protocol version and regenerated verifiers (R13, A6), and templates built with it hash differently.

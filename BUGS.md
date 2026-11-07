@@ -12,6 +12,7 @@ present.
 | [R1-PLAYER-3](#r1-player-3) | Player reads the previous epoch's seal with one unpaged `eth_getLogs` and crash-loops once the chain outgrows the node's range limit | PRT player and bridge (epoch discovery) | R4, A7, section 4, section 1 completeness | Critical |
 | [R1-PLAYER-5](#r1-player-5) | Next-epoch inputs run between two ticks of the current dispute, so an input flood delays honest responses past the clocks | PRT player and bridge (scheduling, deadlines) | R4, A7, R12, section 1 completeness, section 7 | Critical |
 | [R1-REFEREE-1](#r1-referee-1) | A late Sybil re-post of the honest claim cuts the honest claim's clock to one block | PRT referee model (tournament joining, clocks) | A7, section 1, section 2 honest claim, section 7, the manual's clock rule | Critical |
+| [R1-REFEREE-2](#r1-referee-2) | Output proofs are not range-checked: every output is accepted again at index i - 2^63 | PRT referee model (output verification), `cartesi.hash-tree` | A5, section 1 soundness, section 4, R11, R9 | Critical |
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -498,6 +499,85 @@ Apply the fix to both levels.
 - Of the fix: reordering the bracket changes the narration and transcripts that the recipe compares across runs. Ties
   stay deterministic. A later post must never lengthen a clock beyond what the earliest post gives, which taking the
   maximum allowance guarantees.
+
+---
+
+## R1-REFEREE-2
+
+**Output proofs are not range-checked: every output is accepted again at index i - 2^63**
+
+- **Severity:** Critical (rated as a deployed referee: a proof verifier accepts a node at an index the committed tree
+  does not hold, and a settled output can be executed twice).
+- **Component and area:** PRT referee model; output verification (`game-output.lua`, loaded by `prt.lua`), which
+  relies on the emulator's Lua `cartesi.hash-tree` proof checker.
+- **Cited rules:**
+  - Section 1 soundness failure: "a proof verifier accepts a node that the committed tree does not hold at the
+    stated index and height".
+  - A5: an output is accepted only as a leaf at height zero and at the output's index of the full-height outputs
+    tree.
+  - Section 4 (indices in proofs are adversarial), R11 (the referee, not the proof, fixes the index range), and R9
+    (two indices must not authenticate the same leaf).
+- **Location:**
+  - `doc/recipes/game-output.lua:52-61` (`validate_output_response`);
+  - `src/cartesi/hash-tree.lua:11-38` (`verify_slice` and `roll_hash_up_tree`);
+  - `doc/recipes/prt.lua:771-785` (`wait_for_outputs` deduplicates on the raw `output_index`).
+
+### Problem
+
+`validate_output_response` checks only these things:
+
+- that `output_index == target_address`;
+- that the target size is 0 and the root size is 63;
+- the settled root and the leaf hash.
+
+It then calls `hash_tree.verify_slice`, which checks sizes, the sibling count and alignment. Its loop reads only bits
+0 to 62 of `target_address`. Nothing requires `target_address < 2^63`, so a genuine proof for index `i` also
+verifies with bit 63 set, at the Lua integer `i - 2^63`. That value travels intact through the PRT JSON schema
+(`ProveOutputResponse.output_index` is "Default"). `wait_for_outputs` deduplicates by
+`accepted_output_indices[output_index]`, so the aliased index counts as a new, unexecuted output. A height-63 tree
+has no such index. The range check exists in `assert_valid_frontier_proof`, but this path does not use it.
+
+### Evidence and test
+
+- Test: `bugs/R1-REFEREE-2/test.lua`, with `scenario.lua`. Run `bugs/run.sh R1-REFEREE-2`.
+- The scenario runs the real referee end to end (`prt.new_referee`, `run_referee`, `run_tournament`,
+  `wait_for_outputs`), with `game-output` as verifier, over `game-test-server` and the real `prtu.protocol` JSON
+  encoding.
+- The settled state is a small synthetic machine that meets A5's extraction preconditions:
+  - `iflags_Y = 1`, and `htif_tohost` is a manual yield with the accepted reason;
+  - its transmit buffer holds the root of a height-63 frontier with two outputs; output 0 is "withdraw 100 to
+    0xa77acc".
+
+  The honest claim is the only claim, and it wins.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator: the honest proof of output 0 is
+  accepted, then the same data and siblings with `output_index = target_address = -2^63` are accepted too. Output 0
+  is reported as accepted twice.
+- Control: re-sending the genuine index-0 response is rejected as a duplicate. A patched `game-output.lua` with the
+  range check makes the test pass.
+
+### Scenario and reachability
+
+After any settlement whose outputs tree holds an output (any correctly designed application that emits outputs),
+anyone can answer `prove_output` (sent to `EVERYONE`) with the public honest proof of output `i` and the index
+`i | 1 << 63`. Every output can be accepted under a second index, so an executed-output bitmap keyed by index would
+let a withdrawal be paid twice. No guest or emulator misbehavior is needed. The honest player never serves such an
+alias; its `prove_output` returns nothing for negative offsets. The verification game's `vg.lua:962-966` has the
+same deduplication pattern, outside the PRT scope.
+
+### Possible solution
+
+- In `validate_output_response`, require an integer `output_index` with
+  `math.ult(output_index, 1 << cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT)`, a bound taken from the referee's constant.
+- Better, fix it centrally in `hash_tree.verify_slice`: when `log2_root_size < 64`, require
+  `(target_address >> log2_root_size) == 0`, a logical shift that also rejects negative integers.
+
+### Risks
+
+- Of the issue: any accepted output can be accepted again, by anyone, from public data, for example a voucher or
+  withdrawal executed twice.
+- Of the fix: a central check in `verify_slice` also applies to other callers, and it must be skipped for
+  `log2_root_size == 64` (whole-machine proofs). Honest proofs never carry high bits. The change should be re-tested
+  with `prt-test.lua` and the hash-tree tests.
 
 ---
 

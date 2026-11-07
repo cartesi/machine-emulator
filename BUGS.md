@@ -35,6 +35,7 @@ Flags required by `AUDIT.md`:
 | [R2-SOLIDITY-1](#r2-solidity-1) | Uarch verifiers accept a `WRITE_TLB` ECALL with out-of-range indices, writing a TLB slot image to any leaf where native throws | emulator (uarch step verifier), `machine-solidity-step` (`EmulatorCompat.writeTlbECALL`) | R2, R3, R13, A6, section 8 High | High |
 | [R2-SOLIDITY-2](#r2-solidity-2) | On-chain `Memory.validateStrideLength` off-by-one rejects every access to the last leaf | `machine-solidity-step` (`Memory.sol`) | R2, R3, R10, section 8 High | High |
 | [R4-VARGROWTH-1](#r4-vargrowth-1) | Honest stored player never removes settled epochs' directories or checkpoints, so disk use grows with the application's age | PRT player and bridge (stored player retention) | Section 1 resources, R12, A7, R4, section 2, section 8 High | High |
+| [R4-VARSTATE-1](#r4-varstate-1) | After a deep reorg aborts the honest player, the relaunched player silently keeps its stored epoch and claims over replaced inputs | PRT player and bridge (stored epoch reopen) | R4, R2, A3, section 1 completeness, section 2 honest operator's path, section 8 High | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
 | [R1-ARCH-2](#r1-arch-2) | Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping | emulator (atomics, LR/SC) | R7, section 8 Medium | Medium |
 | [R1-ARCH-3](#r1-arch-3) | Page walk ignores PMA failures on PTE accesses | emulator (address translation) | R7, section 8 Medium | Medium |
@@ -1605,6 +1606,80 @@ its dispute no longer needs them.
 - Of the fix: pruning before final settlement (an early terminal flag, a reorg, an open inner tournament) would delete
   what the honest claim needs, so retirement must key on finalized settlement. The marker must be written durably
   before deletion. Directories held open by a live listener's forked servers must be deleted only after it retires.
+
+---
+
+## R4-VARSTATE-1
+
+**After a deep reorg aborts the honest player, the relaunched player silently keeps its stored epoch and claims over
+replaced inputs**
+
+- **Severity:** High. It removes the fail-closed margin the design relies on. The trigger, a reorganization of input
+  history already confirmed under the operator's policy, is not an adversary capability in section 7, and the chain is
+  trusted. That makes it analogous to section 8's "a node that cannot detect a version mismatch" case.
+- **Component and area:** PRT player (honest operator); reopening a stored epoch after a relaunch.
+- **Cited rules:** R4; R2 (persisting and restoring must leave the state an uninterrupted run would); A3 (inputs come
+  from the on-chain record); section 1 completeness failure; section 2 (storing and reloading, computing claims, the
+  honest claim).
+- **Location:**
+  - `doc/recipes/prt.lua:2047-2052`: `input_added` returns for offsets below `input_count` without comparing the
+    delivered bytes with the stored `inputs/<n>.bin`.
+  - `doc/recipes/prt.lua:2084-2090`: `epoch_sealed` returns when `mcycle_forest` exists, before the "sealed input
+    count mismatch" check.
+  - `doc/recipes/prt.lua:2723-2787` (`reopen_epoch_directory`): no input identity is recorded or checked.
+  - `doc/recipes/prt.lua:2505-2509`: `store_next_epoch_checkpoint` reuses any existing checkpoint.
+  - `doc/recipes/prt-epoch.lua:52-60` and `:22`: history changes are detected only against the in-memory
+    `self.applied`, which is empty after a relaunch.
+
+### Problem
+
+When confirmed `InputAdded` or `EpochSealed` logs change, the running listener fails closed: "epoch history changed;
+restart from a matching checkpoint", or "stable epoch seal was reorganized". This is what `prt-lua-bridge.md`
+promises. `prt-supervise.sh` then relaunches the player. The relaunched listener has no memory of the old history,
+so it accepts the new branch and redelivers every input. The reopened stored player ignores redelivered inputs below
+its count and, for a sealed epoch, returns before checking the input count. It therefore keeps the machine state,
+forests, claims and final state it computed from the replaced inputs. Meanwhile the bridge's `inputs`, used for
+`winLeafMatch` proofs, hold the new chain bytes.
+
+### Evidence and test
+
+- Test: `bugs/R4-VARSTATE-1/test.lua`, with `vendor/dkjson.lua` (dkjson 2.11, MIT). Run `bugs/run.sh R4-VARSTATE-1`;
+  it takes about 4 s.
+- It runs the real `prt.new_stored_player` (`reopen_epoch_directory`), the real `prt-epoch.lua` listener and the
+  bridge constructor over a mock chain, as `prt-bridge-test.lua` does, with an input policy of 4 blocks and a reorg
+  about 7 blocks deep. The template is a bare-metal valid template. A fresh player over the replacement chain gives
+  the canonical claim.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator, in three scenarios:
+  1. Open epoch, input 3's bytes replaced: the running process fails closed (`prt-epoch.lua:59`). The relaunched one
+     polls without error and keeps `original-input` while the bridge holds `replacement-input`. Its claim is
+     `0x90300a57…c8a2` against the canonical `0x370a1e22…c197`.
+  2. Reorg across the seal, input bytes replaced: the running process fails closed (`prt-epoch.lua:22`). The
+     relaunched one keeps the old claim.
+  3. Reorg across the seal, sealed count changed from 2 to 1: the relaunched player keeps 2 inputs while the chain's
+     epoch holds 1, and the claims differ.
+
+### Scenario and reachability
+
+The recipe's demo observes inputs at a numeric depth (`PRT_INPUT_CONFIRMATIONS=8`), and its harness deliberately
+creates reorgs deeper than that. Standalone `prt-player.lua` defaults to `finalized`, which needs a finality
+reversal. After such a reorg, the relaunched honest player joins with a claim over inputs the chain no longer has and
+loses that bond. Its leaf proofs encode chain bytes that disagree with its own claim. The operator believes it is
+running, so the correct claim may never enter before the joining window closes.
+
+### Possible solution
+
+- Compare each redelivered input with the stored one (bytes or keccak) in `input_added`.
+- Persist the sealed input count and the seal's block in `state.json`, and run the count check before the early
+  return in `epoch_sealed`.
+- On a mismatch, roll back to the last matching boundary and recompute, or refuse to start with a persistent marker so
+  the supervisor does not loop into a silent wrong claim.
+- Verify an existing next-epoch checkpoint before reusing it.
+
+### Risks
+
+- Of the issue: after a deep reorg, the honest player silently posts a wrong claim instead of failing closed.
+- Of the fix: rebuilding must handle partially written state and must not miss deadlines. Compare input contents and
+  order, not block hashes, so benign reorgs within the policy do not cause false aborts.
 
 ---
 

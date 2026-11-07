@@ -16,6 +16,7 @@ present.
 | [R1-ROBUST-1](#r1-robust-1) | Honest player keeps every tx-output payload of an input in memory, so a guest drives its memory up without bound | PRT player and bridge (output collection) | R8, R12, R4, A7, section 1 completeness, section 4 | Critical |
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
+| [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
 | [R1-ARCH-2](#r1-arch-2) | Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping | emulator (atomics, LR/SC) | R7, section 8 Medium | Medium |
@@ -814,6 +815,81 @@ the shared tournament factory the same way (`prt-bridge.lua:52-72`); that part w
 - Of the fix: a wrongly encoded topic (32-byte padding, letter case) would filter out the application's own inputs;
   the gap check would catch that, but only as a halt. A later start block must still include an input logged in the
   seal block. Incremental polling must keep the detection of removed logs and changed block hashes.
+
+---
+
+## R1-ROBUST-3
+
+**Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown**
+
+- **Severity:** High (a guest-triggered constant-factor increase in the worst-case cost of a unit of work that stays
+  within what the deployment was sized for).
+- **Component and area:** PRT player (honest operator); the run loop and the mcycle computation-hash collection,
+  which return to Lua at every automatic yield.
+- **Cited rules:** R12 (worst-case cost of an mcycle and of a part of a claim); A7 (clocks sized for those costs);
+  section 8 High.
+- **Location:**
+  - `doc/recipes/prt.lua:1369-1379`: the `run_to_stop` loop;
+  - `doc/recipes/prt.lua:1481-1500`: `mcycle_computation_hash_run` calls `collect_mcycle_root_hashes` again after
+    every automatic yield;
+  - `doc/recipes/prt.lua:981-988`: the forked player's machines are JSON-RPC servers;
+  - `src/machine.cpp:2415-2445`: each collect call redoes the hash-tree update precondition and serializes the
+    partial bundle.
+
+### Problem
+
+Every automatic yield, of any reason, including a zero-length progress report, breaks interpretation and returns to
+Lua. The player then makes another host-API call, a JSON-RPC round trip for the forked player: one
+`collect_mcycle_root_hashes` on the input's main run, carrying the partial bundle back and forth, or one `run` on a
+replay. A guest can yield every few mcycles with a store to `tohost` in a loop, so the per-call fixed cost replaces
+interpretation as the dominant cost of an mcycle. It is paid on the main run of the input and on every replay that a
+dispute forces.
+
+### Evidence and test
+
+- Test: `bugs/R1-ROBUST-3/test.lua`, with the bare-metal guest `guest.S`, `link.ld` and `build.sh`. Run
+  `bugs/run.sh R1-ROBUST-3`.
+- Both variants run 12012 guest mcycles; one makes 3000 automatic progress yields of length 0, and the control stores
+  to RAM instead. The test drives the real forked player's `input_added` and a replay, and asserts the yield counts
+  and that the input is processed.
+- Observed by the prover, the reviewer and the orchestrator in every run, forked player:
+  - `input_added`: about 112-127 µs extra per mcycle (about 1.44 s against 0.01 s), about 0.5 ms per yield;
+  - replay: about 15-19 µs per mcycle;
+  - the stored player adds about 13-24 µs per mcycle on `input_added` and almost nothing on replay;
+  - locally, resuming with `machine:run` costs about 0.9 µs per yield, against about 45 µs for
+    `collect_mcycle_root_hashes`.
+- This test measures time. It is not bit-exact, but it fails by a wide margin over its 10 µs-per-mcycle threshold, by
+  a factor of about 2 to 12, on a shared 4-CPU host.
+
+### Scenario and reachability
+
+An input that takes over the guest yields automatically in a tight loop. Each forced replay and the main run of the
+input slow down accordingly. The reviewer corrected the hunter's magnitude: against the existing guest-reachable
+worst case, a guest that dirties a new page every few mcycles costs about 11 µs per mcycle. The yield path is
+therefore a constant factor of about 5 to 10, not 10^4. The cost stays bounded and linear, so R12 holds literally,
+and a deployment sized per A7 for the true worst case survives. It erodes the margin of the dispute clocks, which is
+High. It would be Critical only for a deployment sized below the true worst case, which A7 makes the deployment's
+responsibility.
+
+### Possible solution
+
+Amortize automatic yields:
+
+- let `collect_mcycle_root_hashes`, and a replay variant of `run`, continue past automatic yields inside C++ up to the
+  chunk end, returning a batch of the yields that matter (tx-output and tx-report data), in order;
+- skip per-yield callbacks on replays that do not need outputs;
+- drop the redundant precondition work when resuming a chunk.
+
+Size A7 for the measured worst case per mcycle, including dense yields and dirty pages.
+
+### Risks
+
+- Of the issue: one adversarial input slows the epoch and every forced replay by a constant factor, eroding the
+  clocks' margin.
+- Of the fix: batching must capture the transmit buffer at each yield before the guest overwrites it, and return the
+  yields in order, or outputs and their proofs break (A5). The batch must be bounded per call (R8, R12). The hashed
+  state must stay identical to an uninterrupted run (R2), including `iflags` X and Y and the fixed-point and target
+  results.
 
 ---
 

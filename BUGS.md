@@ -28,6 +28,7 @@ present.
 | [R1-ARCH-3](#r1-arch-3) | Page walk ignores PMA failures on PTE accesses | emulator (address translation) | R7, section 8 Medium | Medium |
 | [R1-ARCH-4](#r1-arch-4) | S-mode `sip` writes can set and clear the read-only STIP and SEIP bits | emulator (supervisor interrupt CSRs) | R7, section 8 Medium | Medium |
 | [R2-VERIFIER-2](#r2-verifier-2) | Send-cmio-response verifier accepts read accesses carrying unchecked `written`/`written_hash` fields | emulator (input-delivery log verifier) | R3, R11, section 4, section 8 Medium | Medium |
+| [R3-REFEREE-1](#r3-referee-1) | Referee narration raises on adversary-chosen data inside the referee coroutine, killing the referee | PRT referee model (narration on the referee's fatal path) | A5, section 4, section 5, section 7, section 8 Medium | Medium |
 
 ---
 
@@ -1647,3 +1648,80 @@ share one helper among all replay state-access classes so the verifier families 
 - Of the issue: low; the result is unaffected.
 - Of the fix: minimal. Honest producers never emit these fields on reads, so only tooling that does starts failing,
   which is intended.
+
+---
+
+## R3-REFEREE-1
+
+**Referee narration raises on adversary-chosen data inside the referee coroutine, killing the referee**
+
+- **Severity:** Medium (violates the manual and stops the referee without affecting the goal: no wrong state
+  settles and no uncommitted output is accepted).
+- **Component and area:** PRT referee model; the narration (`prtu.story`) that runs inline on the referee's
+  coroutines, and the admission of players by the transport.
+- **Cited rules:** A5 (the referee must keep accepting validly proven outputs of the settled state); section 4 (data
+  relayed from others must not terminate the process); section 5 (the model disagrees with the normative manual);
+  section 7 (Sybils); section 8 Medium.
+- **Location:**
+  - `doc/recipes/prt.lua:758-790`: `wait_for_outputs` calls `story.report_output` at line 786, after accepting an
+    output, outside any `pcall`.
+  - `doc/recipes/prtu.lua:260-263`: `report_output` decodes every output as `Notice(bytes)`.
+  - `doc/recipes/prtu.lua:76-91`: `report_claims` concatenates the posters' labels, called from `prt.lua:748` and
+    `prt.lua:494`.
+  - `doc/recipes/game-transport.lua:530-541`: `announce` stores `message.label` of any JSON type.
+  - `doc/recipes/game-transport.lua:121-140`: `dispatcher.step` rethrows every coroutine error as fatal.
+
+### Problem
+
+Narration code runs inline on the referee's fatal path, and it assumes well-formed data:
+
+- **Voucher outputs.** `validate_output_response` correctly treats output payloads as opaque. But after accepting
+  one, `report_output` decodes it as a `Notice` and raises "function selector mismatch" for a `Voucher`, a
+  `DelegateCallVoucher`, or any other output. The referee process exits, and no other output of the settled state can
+  ever be accepted. The manual says the referee "waits for output proofs indefinitely" (around
+  `doc/README.md:11150-11158`).
+- **Player labels.** A player that announces a non-string label, for example `true`, makes `report_claims` raise in
+  `table.concat` when the claims are narrated, before any match, so the epoch never settles. `prt.lua:157` says labels
+  "never influence protocol state or ordering".
+
+### Evidence and test
+
+- Test: `bugs/R3-REFEREE-1/test.lua`, with `scenario.lua` (adapted from the R1-REFEREE-2 harness). Run
+  `bugs/run.sh R3-REFEREE-1`; it takes about 0.4 s.
+- It runs the real referee end to end (`prt.new_referee`, `run_referee`, `open_mcycle_tournament`,
+  `wait_for_outputs`) over `game-test-server` and the real `prtu.protocol` JSON. The settled state is synthetic but
+  well formed: an accepted manual yield, with the transmit buffer holding the root of a full-height tree of two
+  outputs. The narration hooks are only wrapped to print markers.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - `voucher`: the referee accepts the valid proof of output 0, a `Voucher(address,uint256,bytes)` with selector
+    `0x237a816f` (the encoding libcmt emits), then dies with "evmu.lua:39: function selector mismatch". Output 1 can
+    never be accepted.
+  - `label_true`: a Sybil announcing `{"role":"player","label":true}` with a valid claim kills the referee in
+    `prtu.lua:89` before any match.
+  - controls (`notice`, two notice outputs; `label_string`, a string label): the honest claim wins and both outputs
+    are accepted.
+
+### Scenario and reachability
+
+Vouchers are standard outputs of correctly designed applications. Once the winner settles, a voucher's proof is
+public, `prove_output` goes to `EVERYONE`, and the honest player itself offers its last output (`prt.lua:1899-1900`).
+So any party can stop output acceptance after the first non-Notice output. The label case needs only the section 7
+power to post claims as a Sybil. Neither case affects claim computation, proofs, or which state settles.
+
+### Possible solution
+
+Make narration total on adversary data:
+
+- in `report_output`, `pcall` the decode, and narrate the selector and raw bytes, or the decoded voucher fields, on
+  failure;
+- in `report_claims`, apply `tostring` to labels;
+- in `announce`, accept only bounded string labels, defaulting to the role.
+
+As defense in depth, wrap every `story.*` call in a `pcall` that logs and continues.
+
+### Risks
+
+- Of the issue: on demand, any party halts output acceptance, and a single Sybil prevents an epoch from settling; the
+  same applies to any production code that reuses this narration inline.
+- Of the fix: a `pcall` applied beyond the `story.*` calls could hide real referee bugs. Rejecting non-string labels
+  may break harnesses that rely on missing labels, which should keep defaulting to the role.

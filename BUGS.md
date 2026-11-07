@@ -55,6 +55,7 @@ Flags required by `AUDIT.md`:
 | [R4-VARSPEC-2](#r4-varspec-2) | Each interrupt taken decrements `instret`/`minstret` | emulator (counters, traps) | R7, the manual's definition of `icycleinstret`, section 8 Medium | Medium |
 | [R7-FPMEM-1](#r7-fpmem-1) | A PLIC claim/complete write clears the M-mode software-written `mip.SEIP` bit, because the PLIC signal and the software bit share one stored bit | emulator (PLIC, supervisor external interrupt) | R7, section 8 Medium | Medium |
 | [R8-DYNPERSIST-1](#r8-dynpersist-1) | `write_memory`, `write_word` and `fill_memory` store the data into shared RAM before marking the page dirty, so a process stop in between leaves a stored machine whose hash tree does not commit to its contents | emulator (`src/machine.cpp`, shared stored machines) | R9, R2, section 8 Medium | Medium |
+| [R9-GOALRESTORE-1](#r9-goalrestore-1) | Mcycle hash collection defers the dirty marks of page-walk A/D writes to the end of each sampling period, so a process stop during collection leaves a shared stored machine whose hash tree does not commit to its contents | emulator (`collect_mcycle_root_hashes`, shared stored machines) | R9, R2, section 8 Medium | Medium |
 
 ---
 
@@ -2608,3 +2609,58 @@ process stop in between leaves a stored machine whose hash tree does not commit 
   contents, and a later run on it yields roots that differ from an uninterrupted run. Marking first can only produce
   spurious dirty pages, which cost a rehash and are hash-neutral, provided all validation stays ahead of the mark. None
   of these gives power-loss consistency without `msync` or `fsync` barriers.
+
+---
+
+## R9-GOALRESTORE-1
+
+**Mcycle hash collection defers the dirty marks of page-walk A/D writes to the end of each sampling period, so a
+process stop during `collect_mcycle_root_hashes` leaves a shared stored machine whose hash tree does not commit to its
+contents**
+
+- **Severity:** Medium (`AUDIT.md` section 8: a persistence defect off the honest operator's path; R9). Confirmed by an
+  independent disproving reviewer and reproduced by the orchestrator. Found in round 9 (attack-goal driven).
+- **Component and area:** emulator; the mcycle collection accessor and the dirty-page tree. A different root cause from
+  R7-FPUARCH-1 (order inside the dirty-page tree) and R8-DYNPERSIST-1 (host API writers): this one is the deferred mark
+  of a guest-driven write.
+- **Cited rules:** R9 (a persisted hash equals the root of the actual contents, including after interrupted updates);
+  R2 (persist and restore agree with an uninterrupted run); section 8 Medium. `i-accept-dirty-pages.hpp:29-40` states
+  that every other context marks each page at the moment of the write.
+- **Location:** `src/collect-mcycle-hashes-state-access.hpp:51-53,77-83,459-463` (the class is not an
+  `i_accept_dirty_pages`; `do_write_memory_word` only inserts the page into the in-process `context.dirty_pages`),
+  `src/translate-virtual-address.hpp:61-77` (`write_ram_uint64` writes the PTE and marks the page only for
+  `i_accept_dirty_pages` accessors), `src/machine.cpp:2484-2504` (the set reaches the shared `.dpt` only after
+  `interpret_with_console` returns at the period target).
+- **Defect:** while collecting hashes, a page-walk write of an accessed or dirty bit changes the PTE in the
+  `MAP_SHARED` RAM file, and the only record of the change is an in-process set that is flushed at the end of the
+  period. Ordinary stores are safe because their page sits in a write-TLB slot, which persists in the shadow TLB file
+  and is re-marked on load. A walk installs only a read or code TLB entry for the target page, so nothing persistent
+  records the changed page-table page. After a stop, the `.dpt` leaf is clean and the `.dht` hash is old; the A bit is
+  already set, so re-running never writes that PTE again and the page is never re-hashed.
+- **Evidence and test:** `bugs/R9-GOALRESTORE-1/` (`test.lua`, `common.lua`, `child.lua`, `kill-after-pte.sh`,
+  `guest.S`, `guest.bin`, `build.sh`). Run `bugs/run.sh R9-GOALRESTORE-1`. A bare-metal guest enables Sv39 with one
+  gigapage PTE whose A bit is clear and performs one load. A child process loads the stored machine with `SHARING_ALL`
+  and calls `collect_mcycle_root_hashes` with a period that keeps it inside one call; the script waits until the PTE
+  write is visible in the shared RAM file, then sends SIGKILL. After the reload the PTE holds `0x2000004f`, but the
+  `.dpt` does not mark the page, `verify_hash_tree()` fails ("page 0x80010000 (in RAM) is not marked dirty but is
+  dirty"), the reloaded root differs from the root recomputed from the contents, and 200 mcycles later the reloaded
+  machine and the recomputed copy still differ. The control, in which the child calls plain `run()` and is killed the
+  same way, reloads consistently and agrees with the recomputation, so the cause is the collection accessor and not the
+  kill method. The harness exits 2 if the control fails.
+- **Scenario and reachability:** every state is ordinary and guest-reachable: a guest with PTEs whose A or D bit is
+  clear triggers the write on its first access. The trigger is any process stop (kill, OOM, restart) during a
+  collection on a machine loaded with `SHARING_ALL`; the window is a whole sampling period. The stored PRT player is
+  not exposed: it clones `machine.revert` before it delivers an input (`doc/recipes/prt.lua:1405-1412`, `:1083-1090`),
+  `revert_interrupted_input` (`:2636-2650`) restores that snapshot when its root matches `state.json`, and its pair
+  directories are removed on reopen (`:2653-2676`). The only other collect call on the shared machine runs at a fixed
+  point and executes no instruction. No path reuses a directory that was interrupted during collection, hence Medium; it
+  would be Critical if one did and checked only the persisted root.
+- **Possible solution:** make the collect accessor an `i_accept_dirty_pages` that marks the shared `.dpt` at the moment
+  of a page-walk A/D write (the cost is a few byte writes per PTE update, which are rare), or mark the page before the
+  store in `write_ram_uint64` for every accessor not covered by a write-TLB slot. As defense in depth, an "open" flag in
+  the shared directory, set on a `SHARING_ALL` load and cleared on clean shutdown, can force `mark_pages_dirty` and a
+  rebuild after an unclean stop, which also covers R7-FPUARCH-1 and R8-DYNPERSIST-1.
+- **Risks:** a tool or a future player change that reopens a shared directory interrupted during collection and checks
+  only its root would compute every later hash and proof from a tree that does not commit to the contents. Marking
+  eagerly can only cause spurious rehashes, which are hash-neutral. No fix gives power-loss consistency without `msync`
+  or `fsync` ordering.

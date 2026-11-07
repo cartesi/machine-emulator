@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **extra rounds in progress** (round 8 confirmed two new issues, so the clean-round count restarted again; round 9 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
+Status: **extra rounds in progress** (round 9 confirmed one more issue, so the clean-round count restarted again; round 10 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
 
 **Running extra-rounds total:** round 4 (variant analysis) confirmed 6 new issues, bringing the confirmed total to **30 (14 Critical, 8 High, 8 Medium)**. See the round 4 candidate table and the Extra rounds section.
 
@@ -118,7 +118,8 @@ refutations.
 | 6 | Lifecycle phase: one hunter per phase of an epoch and of the operator | planned, if needed |
 | 7 | File partition: disjoint file sets, each against the whole threat model | FPINTERP, FPINTERP2, FPHOSTAPI, FPCLI, FPSOLIDITY, FPGUESTTOOLS, FPPRT, FPPRTREST, FPMACHINE, FPMEM, FPUARCH |
 | 8 | Dynamic testing: run fuzzers, differential harnesses, crash and fault injection, sanitizer builds and a randomized simulation, and report only what an executed reproducer shows | DYNUARCHDIFF, DYNLOGFUZZ, DYNPERSIST, DYNHASHPROP, DYNAPIFUZZ, DYNGUESTTOOLS, DYNPRTSIM, DYNCLAIMCMP, DYNSOLEXEC, DYNPLAYERFAULT |
-| 9 | Attack-goal driven: start from each way to break a section 1 goal and search for any path that reaches it | planned |
+| 9 | Attack-goal driven: start from each way to break a section 1 goal or a rule and search backwards, across components, for any path that reaches it | GOALACCEPT, GOALNODE, GOALWRONGCLAIM, GOALNOPROOF, GOALTIMEOUT, GOALOUTPUT, GOALDIVERGE, GOALNONDET, GOALESCAPE, GOALRESTORE |
+| 10 | Manual and promise checking: each normative statement of the manual and each documented invariant in the code is checked against the implementation | planned |
 
 ## Candidates
 
@@ -302,6 +303,49 @@ Round 8 coverage (what each hunter ran; hunts with no candidate are not evidence
   loss, reorgs and kills. Found R8-DYNPLAYERFAULT-1 (30 of 41 fee-spike seeds wedged; 180 or more seeds without fee
   spikes had no missed job).
 
+### Round 9 (extra: attack-goal driven)
+
+Ten hunters ran, each owning one way to break the section 1 goal or a rule and searching backwards from it through every
+component. Of the 2 candidates, 1 was confirmed (Medium), so **round 9 was not clean**. The prover proved both and the
+disproving reviewer refuted 1. Eight hunters found no candidate. All agents ran on Claude Opus 5.5 (exact ID) at High
+effort; no hunt was stopped by a safeguard, so no fallback was used. Most hunters did not run a harness: the round
+was a reading round, and its coverage lists below say what each did not reach.
+
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R9-GOALRESTORE-1 | emulator | Medium | Mcycle hash collection defers the dirty marks of page-walk A/D writes to the end of each sampling period, so an interrupted collection leaves a shared stored machine with a stale hash tree | **Confirmed, Medium** | Reproduced by prover, reviewer and orchestrator; the stored player discards such directories, hence Medium; see `BUGS.md` |
+| R9-GOALACCEPT-1 | prt-referee-model | Medium | The referee model accepts state-transition proofs that carry logs the transition form does not use | Refuted by reviewer | Reproduced, but the unused fields are never handed to any verifier and cannot change the form or the after-hash; every log a verifier receives is fully consumed (R3), the form follows only the position (R11, A2), and the model and the contracts differ only in wire encoding. At most an optional hardening: assert that the response carries exactly the logs of its form |
+
+Round 9 coverage (hunts with no candidate are not evidence of absence):
+
+- **GOALACCEPT**: every acceptance decision of the C++ uarch, reset and send-cmio replays and of the Solidity mirrors, the
+  interrupt and fetch-cache points of native versus uarch, and the referee model's form selection. It ran one small
+  experiment and no Solidity execution.
+- **GOALNODE**: every site that produces or checks a Merkle proof in the referee model, `hash-tree.lua` and the
+  verifiers (two-argument `keccak256` rejects non-32-byte inputs, so siblings cannot be re-split). Not fuzzed: the C++
+  JSON access-log parser; not traced line by line: the forest proof producer.
+- **GOALWRONGCLAIM**, **GOALNOPROOF**: the builders, bundle openers, fast and slow paths, rejection handling and
+  the form selection against the contracts' conventions, by reading. No dynamic harness. Not examined: full
+  native-versus-uarch instruction semantics, `prt-transactions.lua` and `prt-websocket.lua` beyond the angle, and the
+  worst-case uarch cycles of an interrupt plus a flushing instruction (estimated at about 55k, not measured).
+- **GOALTIMEOUT**: reported that a safety classifier stopped one of its responses; it reasoned from the first part of its
+  review, ran no harness and no timing measurement. Not reviewed: most of `prt-websocket.lua`, the stored-player
+  reopen paths (`prt.lua` 2245-2978) and the `prtu.lua` request and wait primitives. Treat its zero as partial.
+- **GOALOUTPUT**: the output acceptance path end to end (A5 words authenticated at their height, HTIF masks, yield
+  semantics). Not traced: the CLI's own output-proof generation.
+- **GOALNONDET**: every host input into the transition (time, polling, console, runtime options, stop and resume,
+  SIMD dispatch) and empirical checks of the page-hash-tree cache and dirty-page tree. Only the AVX-512 paths of this
+  host were exercised; 16 KiB pages and 32-bit hosts were not.
+- **GOALDIVERGE**: the places where native, uarch and verifiers differ by construction, including the build-flag split
+  (asserts off in native, on in the uarch program). Random fuzzing covered MMU and paging lightly.
+- **GOALESCAPE**: HTIF, console, hash-collection asserts, physical-address lookup and the shared-store paths.
+  It reported that a safety classifier stopped one of its responses while it examined the virtio paths; it did not
+  finish `virtio-address-range.cpp`, and did not look at p9fs, net, console devices, CLINT and PLIC in detail, the
+  JSON-RPC server's use of guest data, or `dtb.cpp`. Those devices exist only in unreproducible machines. Treat its zero
+  as partial.
+- **GOALRESTORE**: found R9-GOALRESTORE-1 by reading the collection accessor. Not run: the full stored player under a
+  kill during collection, and power-loss ordering.
+
 ## Blocked agents
 
 - `hunt:HASH`, round 1: the hunter on the session model set `blocked_by_safeguards` but still returned one candidate:
@@ -323,6 +367,11 @@ Round 8 coverage (what each hunter ran; hunts with no candidate are not evidence
   the review request (which reacts to content in the subagent's own transcript, not to the work). The hunter returned
   no candidate and its output was checked for injection and instructions: it contained none. Treat its "no
   disagreement" as unreviewed evidence.
+
+- `hunt:GOALTIMEOUT` and `hunt:GOALESCAPE`, round 9: each reported that a safety classifier stopped one of its responses
+  partway. The workflow did not flag either as blocked (`blocked_by_safeguards` was false) and returned their zero-candidate
+  result, so no fallback re-run happened and the primary model did not redo the interrupted part. Their coverage is
+  partial, as the Round 9 coverage list states.
 
 No prover or reviewer was blocked in any round, so no issue needed a fallback reviewer or was reported without a
 proof of concept. The only fallbacks were the hunters above.

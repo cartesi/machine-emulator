@@ -91,6 +91,17 @@ round 2. The calibration notes add the round-2 refutation (reserved encodings ar
 ratified way conforms), that unreachable-state defects are at most High, and that the Dave contracts are out of scope
 and unavailable.
 
+### Models used
+
+- Rounds 1-4 agents ran on Claude Opus 5.5, taken from the session model. Fallbacks ran on `sonnet`:
+  `hunt:HASH@sonnet` (round 1) and `hunt:TRANSITIONS@sonnet` (round 2).
+- One exception: the prover of R4-VARRANGE-1 (round 4) ran on Claude Opus 4.8, after the session model changed
+  mid-round. Its reviewer ran on Opus 5.5, and the orchestrator reproduced the test, so the verdict does not rest on it.
+- From round 5, agents are pinned to the exact model ID `claude-opus-5-5` at High effort. A first launch of round 5
+  used the alias `opus`, which resolved to Opus 4.8 on this setup; it was stopped after two hunters started and
+  relaunched with the exact ID. No result from that launch was used.
+- Safeguard fallbacks (`sonnet`, then `haiku`) remain, as `AUDIT.md` requires.
+
 ## Extra rounds
 
 After the planned audit closed, extra rounds were run at the requester's request. Each one splits the work with a

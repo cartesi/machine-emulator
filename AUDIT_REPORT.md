@@ -1,6 +1,8 @@
 # PRT Audit Report
 
-Status: **extra rounds in progress** (round 4). The results below cover rounds 1-3 and are updated as extra rounds confirm issues.
+Status: **extra rounds in progress** (round 5 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
+
+**Running extra-rounds total:** round 4 (variant analysis) confirmed 6 new issues, bringing the confirmed total to **30 (14 Critical, 8 High, 8 Medium)**. See the round 4 candidate table and the Extra rounds section.
 
 **Result: 24 confirmed issues (12 Critical, 6 High, 6 Medium), listed in `BUGS.md`; 5 candidates rejected and 3
 merged as duplicates.** All 24 tests under `bugs/` fail deterministically on `feature/prt-audit`. A final pass ran every
@@ -189,7 +191,7 @@ R2-SOLIDITY-2, are proven against a model of the pinned Solidity source rather t
 ### Round 4 (extra: variant analysis)
 
 Six hunters ran, one per family of confirmed bugs. VARCLOCK found no new candidate. The other five reported 6
-candidates, and dedup kept all of them.
+candidates, and dedup kept all of them. All 6 were proven and confirmed by one reviewer each (2 Critical, 2 High, 2 Medium). A safety classifier repeatedly stopped the orchestrator's detailed write-up of R4-VARRANGE-1 (a libcmt missing-bounds-check finding the reviewer confirmed Critical and the orchestrator reproduced); `BUGS.md` carries a factual summary and the committed test instead.
 
 | ID | Component | Claimed | Title | Outcome | Reason |
 |---|---|---|---|---|---|

@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **extra rounds in progress** (round 7 next; round 6 was clean). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
+Status: **extra rounds in progress** (round 7 confirmed a new issue, so the clean-round count restarted; round 8 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
 
 **Running extra-rounds total:** round 4 (variant analysis) confirmed 6 new issues, bringing the confirmed total to **30 (14 Critical, 8 High, 8 Medium)**. See the round 4 candidate table and the Extra rounds section.
 
@@ -250,7 +250,7 @@ FPPRTREST reported 4 candidates, and dedup kept all of them. No agent was blocke
 | R7-FPUARCH-1 | emulator | Critical | An interrupted mark-dirty leaves a dirty page under clean ancestors in a shared stored machine, so the root hash goes stale after a reload | **Confirmed, Critical** | Reviewer kept Critical; narrow crash window simulated with gdb and SIGKILL; see `BUGS.md` |
 | R7-FPMACHINE-1 | prt-player-bridge | High | The honest player runs every machine with the default line-flushed stdout console | Disproved by prover | The mechanism is real, but it raises the average cost only: a guest's `sfence.vma` already costs more per mcycle (about 0.9 µs against 0.17 to 0.7 µs), so the worst-case cost of no unit of work changes (R12). A lead the prover did not pursue is recorded under "Left uncovered" |
 | R7-FPMEM-1 | emulator | Medium | A PLIC claim/complete write clears the software-written `mip.SEIP` bit | Proven, in review | |
-| R7-FPPRTREST-1 | (to be read from the journal) | | | Proven, in review | |
+| R7-FPPRTREST-1 | prt-player-bridge | Critical | The honest bridge inflates gas by 20% with no per-transaction cap, so a proof that fits the 2^24 gas cap can be signed above it | Proven, in review | |
 
 ## Blocked agents
 

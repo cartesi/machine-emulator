@@ -7,6 +7,7 @@ present.
 | ID | Title | Component | Cited rules | Severity |
 |---|---|---|---|---|
 | [R1-GUESTTOOLS-1](#r1-guesttools-1) | Honest PRT player aborts for good when a guest yield's DATA exceeds the transmit buffer | PRT player and bridge (yield handling) | R4, section 1 completeness, section 2 reachable state, section 4, A7 | Critical |
+| [R1-PLAYER-1](#r1-player-1) | Relaunched honest bridge abandons its own claim when an adversary joined that commitment first | PRT player and bridge (claim binding after restart) | R4, A7, section 1 completeness, section 7 | Critical |
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
@@ -101,6 +102,87 @@ Claim computation depends only on state hashes and must not depend on output boo
 - Of the fix: the root the player reads must match the on-chain extraction exactly. Any policy for oversized outputs
   must stay consistent with A5, since such an output can never be proven. Changing the C++ `receive_cmio_request`
   instead would be a host API change other callers rely on, though not a change of the transition function.
+
+---
+
+## R1-PLAYER-1
+
+**Relaunched honest bridge abandons its own claim when an adversary joined that commitment first**
+
+- **Severity:** Critical (on the honest operator's path, an adversary with section 7 capabilities eliminates the
+  honest claim).
+- **Component and area:** PRT player and bridge (honest operator); the binding of claims to tournaments and its
+  derivation from the chain after a restart.
+- **Cited rules:** R4 (the honest operator can always respond); A7 (the honest claim must not miss its clocks);
+  section 1 completeness failure; section 2 (honest claim, honest operator's path); section 7 (the adversary can
+  hold any claim, including the honest one, and race transactions).
+- **Location:** `doc/recipes/prt-bridge.lua`:
+  - lines 264-273: `joined_by` is true only when some `CommitmentJoined` has `submitter == self.signer.address`;
+  - lines 277-299: `update_claims` rebinds a claim only through `bound_child`, `can_join` or `joined_by`;
+  - line 335: no honest join is scheduled once `context.joined[claim.root]` exists;
+  - lines 188-191 and 360-370: every response job is gated on `holds()`.
+
+### Problem
+
+The honest claim is deterministic, so an adversary can compute it, or copy the honest join's calldata, which is not
+bound to the sender, and join the honest commitment from its own account first. The bridge then correctly skips its
+own join and defends the claim from memory. After a relaunch, `self.claims` is empty. Once the joining window has
+closed, `can_join` is false, there is no `bound_child`, and `joined_by` is false because the adversary submitted the
+join. The honest claim is therefore never bound again. `holds()` returns nil, and the bridge schedules none of
+`advanceMatch`, `seal*Match`, `winLeafMatch`, `winMatchByTimeout` or `winInnerTournament` for it.
+
+This contradicts the bridge's own specification: `prt-lua-bridge.md` defines `own(x)` as "the player holds
+commitment x" with no condition on the submitter, keeps the submitter (`claimer(x)`) for bond recovery only, and
+requires ordinary and restarted ticks to derive identical actions. The existing fixture in `prt-bridge-test.lua`
+(around lines 976-1084) asserts the defective behavior.
+
+### Evidence and test
+
+- Test: `bugs/R1-PLAYER-1/test.lua`. Run `bugs/run.sh R1-PLAYER-1`.
+- It drives the real `refresh` → `observe` → `update_claims` → `jobs` path of `prt-bridge.lua` over a mock chain,
+  serving already-decoded logs as `prt-bridge-test.lua` does, and keeps the jobs due at the tip, exactly as `tick()`
+  does. It covers two timelines:
+  - root tournament: window `[10, 30)`, relaunch at tip 60, honest versus Sybil;
+  - uarch child tournament: window `[40, 60)`, relaunch at tip 100, honest versus dishonest.
+
+  Each is checked with the honest signer and with the adversary as submitter of the honest commitment's join.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - the running process answers with `advanceMatch` in every case;
+  - the relaunched process answers when the honest signer joined, and schedules nothing when the adversary joined,
+    at both levels.
+- The prover also checked a fix: a patched copy that binds whenever `context.joined[claim.root]` exists makes the test
+  pass.
+
+### Scenario and reachability
+
+1. The adversary joins the honest commitment before the honest player does, at root or child level, paying one bond.
+2. The honest process relaunches after the joining window, while the dispute is still running. Disputes last many
+   blocks, and the recipe treats relaunch as normal operation:
+   - `prt-supervise.sh` restarts on every exit;
+   - RPC errors and 60 s timeouts are asserts;
+   - `PRT_TEST_RESTART` exercises restarts;
+   - the documentation promises restarts need no recovery.
+3. The relaunched bridge never answers for its claim. The adversary, which holds the same commitment, lets it time
+   out.
+4. Its Sybil wins the root, or its dishonest uarch claim wins the child and eliminates the honest mcycle claim in the
+   parent match. A wrong epoch state can settle.
+
+No unreachable state and no violation of A1-A7 is needed.
+
+### Possible solution
+
+In `update_claims`, bind the player's claim whenever `holds_parent` holds, the player has not left, and the honest
+commitment was joined by anyone: replace `joined_by` with "the tournament has joins", and bind after `build_claim`
+only if `context.joined[claim.root]` exists. Keep the submitter check only for bond recovery. Add a fixture that
+relaunches after the window with a foreign submitter, at both levels.
+
+### Risks
+
+- Of the issue: after any routine or crash-induced restart, an adversary can make the honest claim time out and
+  settle a wrong state. It also collects the bond refund of the honest commitment.
+- Of the fix: a relaunched bridge must rebuild claims after windows close (one uarch period for a child). The
+  `context.joined[claim.root]` check keeps it from binding in tournaments the honest commitment never entered.
+  Bond recovery must stay limited to the bridge's own submissions.
 
 ---
 

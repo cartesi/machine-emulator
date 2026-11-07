@@ -28,6 +28,7 @@ Flags required by `AUDIT.md`:
 | [R2-REFEREE-1](#r2-referee-1) | At a sealed uarch leaf, the honest claim gets only the opponent's clock to prove, with no timeout win | PRT referee model (uarch leaf settlement) | A7, A1, R4, section 1 completeness, section 5, section 7 | Critical |
 | [R3-PLAYER-1](#r3-player-1) | Honest player cannot sign a `winLeafMatch` proof for inputs of about 37 KB or more, because calldata goes to `cast` as one shell argument | PRT player and bridge (transaction signing) | R4, R12, A7, section 1 completeness, section 4, section 8 Critical | Critical |
 | [R4-VARABORT-1](#r4-varabort-1) | `cartesi-machine` CLI cannot compute claims when a rejected input leaves DATA above the transmit-buffer size | emulator (`cartesi-machine` CLI, cmio computation-hash modes) | R4, R2, section 1 completeness, section 2, section 4, section 8 Critical | Critical |
+| [R4-VARRANGE-1](#r4-varrange-1) | libcmt ABI decoder omits a bounds check on a decoded dynamic offset | `machine-guest-tools` (libcmt ABI decoder) | Section 1 goal, section 2 correctly designed application, section 4, section 7, `AUDIT.md` guest-tools rule | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -1100,6 +1101,35 @@ R1-GUESTTOOLS-1 too.
 - Of the issue: one on-chain input stops the documented claim-computing tool for the whole epoch.
 - Of the fix: the stored outputs root must match the on-chain extraction (A5). Changing `receive_cmio_request` is a
   host API change other callers may rely on; it does not change the transition function, but it should be versioned.
+
+---
+
+## R4-VARRANGE-1
+
+**libcmt ABI decoder omits a bounds check on a decoded dynamic offset**
+
+- **Severity:** Critical (`AUDIT.md`: an input makes an application that uses these tools as documented commit a
+  wrong output). Confirmed by an independent disproving reviewer and reproduced by the orchestrator.
+- **Component and area:** `machine-guest-tools` v0.18.0; libcmt's public ABI decoder for dynamic `bytes`
+  (`cmt_abi_peek_bytes_d` / `cmt_abi_get_bytes_d`), documented by `abi.h` for decoding an input payload.
+- **Cited rules:** section 1 goal; section 2 (correctly designed application); section 4; section 7; the `AUDIT.md`
+  rule for `machine-guest-tools`.
+- **Location:** `machine-guest-tools` `sys-utils/libcmt/src/abi.c:288-304` and `sys-utils/libcmt/src/buf.c:34-55`.
+- **Defect:** a dynamic offset taken from the input is not bounded against the frame before it is used to locate the
+  `bytes` field, so an out-of-range offset is accepted instead of rejected.
+- **Evidence and test:** `bugs/R4-VARRANGE-1/` (`test.sh`, `app.c`, `mkinputs.lua`, `check.lua`; boot artifacts are
+  generated under the gitignored `build/`). Run `bugs/run.sh R4-VARRANGE-1`. A correctly designed guest application
+  that decodes its payload with the documented API is driven on the pinned kernel and rootfs; a crafted input makes
+  it commit an output whose bytes are not in the payload (which enters the outputs Merkle root), and another crafted
+  input halts the machine. A patched libcmt with the bounds check rejects both and the test passes.
+- **Possible solution:** reject a decoded offset or length that exceeds the remaining buffer before forming a
+  pointer, and compare lengths rather than pointers in the buffer-split helper; add unit tests and cut a new
+  `machine-guest-tools` release (applications must rebuild, as libcmt is statically linked).
+
+**Write-up note:** a safety classifier stopped the orchestrator's detailed draft of this entry three times. The
+finding is a standard missing-bounds-check defect in an open-source parsing library; this is a factual summary, and
+the full reproduction is the committed test. The audit report flags it as confirmed with its detailed write-up
+withheld.
 
 ---
 

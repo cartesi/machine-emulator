@@ -13,6 +13,7 @@ present.
 | [R1-PLAYER-5](#r1-player-5) | Next-epoch inputs run between two ticks of the current dispute, so an input flood delays honest responses past the clocks | PRT player and bridge (scheduling, deadlines) | R4, A7, R12, section 1 completeness, section 7 | Critical |
 | [R1-REFEREE-1](#r1-referee-1) | A late Sybil re-post of the honest claim cuts the honest claim's clock to one block | PRT referee model (tournament joining, clocks) | A7, section 1, section 2 honest claim, section 7, the manual's clock rule | Critical |
 | [R1-REFEREE-2](#r1-referee-2) | Output proofs are not range-checked: every output is accepted again at index i - 2^63 | PRT referee model (output verification), `cartesi.hash-tree` | A5, section 1 soundness, section 4, R11, R9 | Critical |
+| [R1-ROBUST-1](#r1-robust-1) | Honest player keeps every tx-output payload of an input in memory, so a guest drives its memory up without bound | PRT player and bridge (output collection) | R8, R12, R4, A7, section 1 completeness, section 4 | Critical |
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -578,6 +579,81 @@ same deduplication pattern, outside the PRT scope.
 - Of the fix: a central check in `verify_slice` also applies to other callers, and it must be skipped for
   `log2_root_size == 64` (whole-machine proofs). Honest proofs never carry high bits. The change should be re-tested
   with `prt-test.lua` and the hash-tree tests.
+
+---
+
+## R1-ROBUST-1
+
+**Honest player keeps every tx-output payload of an input in memory, so a guest drives its memory up without bound**
+
+- **Severity:** Critical (unbounded allocation caused by relayed data that the honest operator must process; a unit
+  of work whose cost a guest can make larger than what the deployment was sized for).
+- **Component and area:** PRT player (honest operator); collection of outputs while an input runs in `input_added`.
+- **Cited rules:** R8 (no guest action may cause unbounded host allocation); R12 (bounded cost of a delivery and of
+  a part of a claim); R4 and A7; section 1 completeness failure; section 4 (the guest is adversarial after it reads
+  an input, and input payloads cannot be declined).
+- **Location:**
+  - `doc/recipes/prt.lua:1966-1975`: `run_to_input_mcycle_offset` installs `on_yield_automatic`, which appends every
+    tx-output payload to `pending_outputs`.
+  - `doc/recipes/prt.lua:1369-1379`: `run_to_stop` calls `receive_cmio_request` at every automatic yield, copying up
+    to 2 MiB, over JSON-RPC for the forked player.
+  - `doc/recipes/prt.lua:1385-1394` (`flush_pending_outputs`) and `doc/recipes/prt.lua:2055-2068` (`input_added`
+    always collects outputs).
+
+### Problem
+
+Nothing bounds the number or total size of the outputs the player keeps for an input. The table is released only
+when the input reaches a fixed point, or its 2^48-mcycle deadline, and it is discarded anyway if the input is
+rejected. A guest never has to rewrite the transmit buffer: one store of `tohost` (automatic yield, tx-output,
+length 2 MiB) in a loop costs about 4 mcycles per output. The host pays a 2 MiB copy, base64 encoding and decoding,
+and retention for each one, about 0.5 MiB of retained memory per guest mcycle. The claim does not depend on outputs,
+which are opaque guest data, yet collecting them sits on the mandatory path of computing the claim.
+
+### Evidence and test
+
+- Test: `bugs/R1-ROBUST-1/test.lua`, with the bare-metal guest `guest.S`, `link.ld` and `build.sh`. Run
+  `bugs/run.sh R1-ROBUST-1`; it takes about 4 s.
+- It builds a valid template (rx-accepted yield, empty outputs root) and feeds one input to the real forked player
+  through `input_added`. Peak RSS is measured through `VmHWM`, reset between runs with `/proc/self/clear_refs`. The
+  test checks that the input was processed and rejected.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - control, 0 outputs: no RSS growth;
+  - 64 automatic tx-outputs of 2 MiB in 267 guest mcycles, then a rejection: peak RSS grows about 153 MiB.
+
+  The reviewer reran with an aggressive incremental garbage collector and still measured 141 MiB, so the memory is
+  retained, not uncollected.
+- The prover also checked a fix: keeping only `#output_data` makes the test pass, with 20 MiB of transient growth.
+
+### Scenario and reachability
+
+1. An adversary sends an input that takes over the guest (section 4).
+2. The guest loops on full-buffer automatic tx-output yields, then rejects or runs to the deadline.
+3. Every honest node processing the input runs out of memory: a 32 GiB host after about 16k outputs, roughly 64k
+   mcycles. Alternatively it stalls far beyond the A7 sizing.
+4. The input is replayed after a restart, because `input_count` advances only at commit, so the operator can never
+   finish its claim. A dishonest claim wins by timeout.
+
+The subverted-guest exclusion of section 8 applies only while R7 and R8 hold, and R8 fails here. Accepted outputs
+are also retained again for the whole epoch, in `self.outputs` for the forked player and on disk for the stored
+player; that part was not exercised.
+
+### Possible solution
+
+Take output payloads off the mandatory claim path, or bound them:
+
+- do not fetch every payload while computing the claim;
+- when collecting, hash each output into an incremental frontier as it arrives, and spill payloads to a capped
+  per-input file that is deleted on rejection;
+- cap retained bytes and output counts per input and per epoch, degrading to hashes only;
+- serve outputs as a separate, declinable task.
+
+### Risks
+
+- Of the issue: a single input can permanently stop every honest Lua PRT validator from finishing the epoch, so a
+  dishonest claim settles.
+- Of the fix: output frontiers and proofs must stay exactly consistent with the accepted outputs: order, and dropping
+  the outputs of rejected inputs. Spilling to disk only moves the exhaustion unless it is capped. Caps must never
+  change the computation hash. The crash-recovery ordering of `commit_epoch_state` must still hold.
 
 ---
 

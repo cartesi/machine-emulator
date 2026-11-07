@@ -18,6 +18,7 @@ present.
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
+| [R2-SOLIDITY-1](#r2-solidity-1) | Uarch verifiers accept a `WRITE_TLB` ECALL with out-of-range indices, writing a TLB slot image to any leaf where native throws | emulator (uarch step verifier), `machine-solidity-step` (`EmulatorCompat.writeTlbECALL`) | R2, R3, R13, A6, section 8 High | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
 | [R1-ARCH-2](#r1-arch-2) | Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping | emulator (atomics, LR/SC) | R7, section 8 Medium | Medium |
 | [R1-ARCH-3](#r1-arch-3) | Page walk ignores PMA failures on PTE accesses | emulator (address translation) | R7, section 8 Medium | Medium |
@@ -961,6 +962,80 @@ mcycle with a full `reset_uarch()`.
 - Of the fix: the check rejects machines with custom uarch RAM images that the CLI accepts today, which are not
   valid templates anyway. A full reset adds a bounded, constant per-mcycle cost (R12) to building uarch claims. The
   rejected-yield path, whose reset leaf is the revert root hash, must stay bit-identical.
+
+---
+
+## R2-SOLIDITY-1
+
+**Uarch verifiers accept a `WRITE_TLB` ECALL with out-of-range indices, writing a TLB slot image to any leaf where
+native throws**
+
+- **Severity:** High (a verifier that accepts a second after-hash only on demonstrably unreachable before-states,
+  and a divergence between paths only at such states).
+- **Component and area:** emulator, the C++ uarch step verifier (`uarch_replay_state_access::do_write_tlb`); and
+  `machine-solidity-step`, the on-chain step (`EmulatorCompat.writeTlbECALL`, `AccessLogs.write4Words`).
+- **Cited rules:** R2 (native, producer and verifiers must agree); R3 (every accepted log yields the after-hash the
+  transition function defines); R13 and A6 (one transition function across the on-chain and off-chain verifiers);
+  section 8 High.
+- **Location:**
+  - `src/uarch-step.cpp:883-892`: `executeECALL` handles `WRITE_TLB` with `set_index = a0`, `slot_index = a1`.
+  - `src/uarch-replay-state-access.hpp:373-378`: `do_write_tlb` has no range check.
+  - `src/shadow-tlb.hpp:106-108`: `shadow_tlb_get_abs_addr` wraps modulo 2^64.
+  - `src/machine.hpp:746-752`: native `write_unverified_tlb` throws for `set_index > TLB_LAST_` or
+    `slot_index >= 256`; native `run_uarch` and `log_step_uarch` use it.
+  - `machine-solidity-step` `src/EmulatorCompat.sol` (`writeTlbECALL`): it computes
+    `AR_SHADOW_TLB_START + setIndex * TLB_SET_LENGTH + slotIndex * TLB_SLOT_LENGTH` in checked `uint64`, with no
+    range check, then calls `AccessLogs.write4Words`.
+
+### Problem
+
+The indices of the `WRITE_TLB` ECALL come from uarch registers. Native interpretation and the log producer reject
+out-of-range indices, so such a before-state has no successor. Neither verifier checks them:
+
+- the C++ replay computes the slot address modulo 2^64 and accepts a log that writes the 32-byte slot image
+  `[vaddr_page, vp_offset, pma_index, 0]` at that leaf, which can be anywhere, including guest RAM;
+- Solidity accepts the same write when the arithmetic does not overflow, and reverts with `Panic(0x11)` when it does,
+  where the C++ replay accepts the wrapped address.
+
+One before-state therefore has three outcomes: no successor (native), an arbitrary write (C++ verifier), and an
+arbitrary write or a revert (Solidity).
+
+### Evidence and test
+
+- Test: `bugs/R2-SOLIDITY-1/test.lua`. Run `bugs/run.sh R2-SOLIDITY-1`; it takes about 0.2 s.
+- It builds, through the Lua API, a before-state with an ECALL at `uarch_pc`, `a7 = 4` and `a1 = 0x3FFFF80`, with
+  `a0 = 0` (case A) or `a0 = 2^51` (case B). It hand-builds a 14-access log with genuine proofs whose TLB-slot write
+  lands on guest RAM at `0x80000000`.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - native `run_uarch` and `log_step_uarch` throw ("TLB slot/set index out of bounds") in both cases;
+  - `cartesi.machine:verify_step_uarch` accepts both logs and returns the forged after-hash.
+- Solidity part (not executed on-chain, since no EVM is available): the test checks that `writeTlbECALL` in the pinned
+  source has no index check, and models its checked `uint64` arithmetic. Case A yields `0x80000000`, leaf-aligned, and
+  `write4Words` hashes the same image as the C++ replay, so Solidity accepts the same write. Case B overflows, giving
+  `Panic(0x11)`. The reviewer confirmed this trace by hand.
+
+### Scenario and reachability
+
+Unreachable from any valid template. The only issuer of the ECALL is the pristine uarch program
+(`uarch-bridge-state-access.hpp`, `ua_write_tlb_ECALL`). There the set is a constant in {CODE, READ, WRITE}, and the
+slot is masked to 0..255 or comes from the flush loop over the set size. The uarch is pristine at every mcycle
+boundary, and R8 keeps the guest out of uarch state. Such before-states exist only in dishonest-versus-dishonest uarch
+matches, and A1 makes every match against the honest claim start from a canonical hash. The defect removes a margin:
+any future break of A1, of the uarch program, or of R8 into uarch state would become an arbitrary-memory-write
+primitive that both verifiers accept, and the Lua referee model can predict outcomes the chain does not reach.
+
+### Possible solution
+
+Range-check the indices in the shared `uarch-step.cpp` `executeECALL`, before any multiplication:
+`if (set_index > TLB_LAST_ || slot_index >= TLB_SET_SIZE) throwRuntimeError(...)`. Then regenerate `UArchStep.sol`,
+so that every implementation agrees the state has no successor. Optionally guard `shadow_tlb_get_abs_addr` against
+wrapping.
+
+### Risks
+
+- Of the issue: no direct path to the goal; a loss of defense in depth.
+- Of the fix: changing the step verifier changes a pinned artifact, so it needs a coordinated protocol version
+  (R13, A6). Honest transitions are unaffected, and gas rises by a few units per `WRITE_TLB` step.
 
 ---
 

@@ -238,6 +238,20 @@ Claude Opus 5.5 (exact ID) at High effort.
 | R6-LCSETUP-1 | prt-player-bridge | High | A reopened epoch directory is not bound to the checkpoint or template it continues | Refuted by reviewer | Reproduced, but the `--state` directory is the operator's own trusted state, and feeding it another deployment's epoch directory is an operator configuration error outside the section 7 adversary. R13's version mismatch concerns the build against the deployment, which agree here. The reopened machine is not the valid template of the deployment being defended. At most an informational hardening note |
 | R6-LCSETUP-2 | prt-player-bridge | High | Player computes with the checkpoint manifest's sampling period and never compares it with the factory geometry | Refuted by reviewer | Reproduced, but it requires the trusted operator to misconfigure its own node: the documented path takes the geometry from the factory. The node never posts a claim built with the wrong period, so it does detect the mismatch, only late and with a bare assert. R13 concerns the build against the deployment, which agree. At most a hardening note: assert the manifest's period against the factory's geometry at startup |
 
+### Round 7 (extra: file partition)
+
+Eleven hunters ran, each on a disjoint set of files, reading every function against the whole threat model. FPINTERP1,
+FPINTERP2, FPHOSTAPI, FPCLI, FPSOLIDITY, FPGUESTTOOLS and FPPRT found no new candidate. FPMACHINE, FPMEM, FPUARCH and
+FPPRTREST reported 4 candidates, and dedup kept all of them. No agent was blocked. Agents ran on Claude Opus 5.5
+(exact ID) at High effort.
+
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R7-FPUARCH-1 | emulator | Critical | An interrupted mark-dirty leaves a dirty page under clean ancestors in a shared stored machine, so the root hash goes stale after a reload | **Confirmed, Critical** | Reviewer kept Critical; narrow crash window simulated with gdb and SIGKILL; see `BUGS.md` |
+| R7-FPMACHINE-1 | prt-player-bridge | High | The honest player runs every machine with the default line-flushed stdout console | Disproved by prover | The mechanism is real, but it raises the average cost only: a guest's `sfence.vma` already costs more per mcycle (about 0.9 µs against 0.17 to 0.7 µs), so the worst-case cost of no unit of work changes (R12). A lead the prover did not pursue is recorded under "Left uncovered" |
+| R7-FPMEM-1 | emulator | Medium | A PLIC claim/complete write clears the software-written `mip.SEIP` bit | Proven, in review | |
+| R7-FPPRTREST-1 | (to be read from the journal) | | | Proven, in review | |
+
 ## Blocked agents
 
 - `hunt:HASH`, round 1: the hunter on the session model set `blocked_by_safeguards` but still returned one candidate:

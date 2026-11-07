@@ -32,6 +32,7 @@ Flags required by `AUDIT.md`:
 | [R5-DFGUESTOUT-1](#r5-dfguestout-1) | Player and CLI read the outputs root using the guest's `tohost` DATA as its length, so a valid template with DATA other than 32 crashes both on an oversized no-op input | PRT player and bridge, emulator (`cartesi-machine` CLI) | R4, R2, A5, section 2 valid template, section 4, section 1 completeness, section 8 Critical | Critical |
 | [R5-DFGUESTOUT-2](#r5-dfguestout-2) | `cartesi-machine` CLI keeps every tx-output payload in memory and writes every report or rejected output to its own file by default | emulator (`cartesi-machine` CLI, cmio computation-hash modes) | R8, R12, R4, A7, section 1 completeness, section 4, section 8 Critical | Critical |
 | [R5-DFINPUT-1](#r5-dfinput-1) | libcmt `cmt_abi_get_bool` returns success for ABI words that are not a valid bool | `machine-guest-tools` (libcmt ABI decoder) | Section 2 correctly designed application, section 4, section 7, `AUDIT.md` guest-tools rule | Critical |
+| [R7-FPUARCH-1](#r7-fpuarch-1) | An interrupted mark-dirty leaves a dirty page under clean ancestors in a shared stored machine, so after a reload the page is never re-hashed and the root hash goes stale | emulator (dirty-page tree, stored machines) | R9, R2, R4, section 1 completeness, section 2 honest operator's path | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -1300,6 +1301,86 @@ opt-in in the computation-hash modes.
 - **Risks:** a deployed application that decodes a bool from its input can be made to commit an output its logic
   would never produce, and every honest validator computes the same result. The fix is local and rejects only input
   that was never a valid ABI bool.
+
+---
+
+## R7-FPUARCH-1
+
+**An interrupted mark-dirty leaves a dirty page under clean ancestors in a shared stored machine, so after a reload
+the page is never re-hashed and the root hash goes stale**
+
+- **Severity:** Critical, as rated by the reviewer (R9 violated on the honest operator's path). The trigger is a
+  process death inside a window of a few instructions, not an adversary action. The hunter and the prover noted that
+  a downgrade to High is arguable. The reviewer kept Critical because section 8 has no probability-based downgrade and
+  R9 names "interrupted or failed updates, and every snapshot the emulator itself writes" explicitly.
+- **Component and area:** emulator; the dirty-page tree and the persisted hash tree of a stored machine
+  (`SHARING_ALL`), as used by the stored PRT player.
+- **Cited rules:** R9 (a persisted hash must equal the root of the actual contents, after interrupted updates and for
+  every snapshot the emulator writes); R2 (persisting and restoring must agree with an uninterrupted run); R4; section
+  1 completeness failure; section 2 (storing and reloading the machine is on the honest operator's path).
+- **Location:**
+  - `src/dirty-page-tree.hpp:327-335` (`do_mark_dirty_leaf_position_and_up`): it stores the leaf first and then walks
+    up, returning early at an already-dirty node.
+  - `src/dirty-page-tree.hpp:254-289` (`up_then_down`, `down`): they descend only through dirty ancestors.
+  - `src/i-dirty-page-tree.hpp:99-107` (`dirty_iterator`).
+  - `src/memory-address-range.cpp:73-79`: a shared `.dpt` file is trusted on load unless pages are marked dirty.
+  - `src/machine.cpp:1631-1640`: every hash-tree update marks the write-TLB pages and the always-dirty pages.
+
+### Problem
+
+Under `SHARING_ALL`, the dirty-page tree is a `MAP_SHARED` mapping of `<dir>/<range>.dpt`, and the next load trusts it.
+If the process dies after the leaf byte is stored and before its parents are, the file holds a dirty leaf under clean
+ancestors. Two things then go wrong. `update_dirty_pages` iterates only subtrees whose roots are dirty, so the page is
+skipped. And every later mark of that page returns at the already-dirty leaf and never repairs the ancestors. The
+page's node and all its ancestors stay frozen at their old hashes while its contents change. At reload the root still
+matches, because the contents had not changed when the process died, so nothing flags the inconsistency. The code
+elsewhere is written to be interruption-safe (clean is leaf-first, clear marks pages dirty, a bubble-up pass runs after
+a load); mark-dirty is the one path that uses the unsafe order.
+
+### Evidence and test
+
+- Test: `bugs/R7-FPUARCH-1/test.lua`, with `common.lua`, `crash.lua`, `kill-after-leaf-store.py` and the bare-metal
+  guest `guest.S`. Run `bugs/run.sh R7-FPUARCH-1`. It needs `gdb` and `ptrace`. It exits 2 with a separate message for
+  harness failures.
+- The guest keeps writing RAM page 5 through its write-TLB entry. The test stores the machine at mcycle 1000. Under
+  gdb it reopens the machine with `SHARING_ALL`, calls `get_root_hash` (which cleans page 5), then calls it again. A
+  watchpoint on page 5's leaf byte in the shared `.dpt` fires inside the mark, and the process is killed with SIGKILL
+  there. A SIGKILL can land on any instruction, and the shared mapping keeps whatever was stored.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - the dirty-page tree after the crash (leaf to root) is `261:1 130:0 65:0 32:0 16:0 8:0 4:0 2:0 1:0`;
+  - the reopened root equals the stored root, so the player's recovery check passes;
+  - after running to mcycle 2000, `verify_hash_tree()` fails ("RAM is not marked dirty but is dirty"), and the root
+    `0x2893…731f` differs from the uninterrupted run's `0xa17a…1977`.
+- Control (`CONTROL=1`, same steps with no kill): the recovered root equals the uninterrupted root and the test
+  passes.
+- Note from the prover: a normal close leaves the write-TLB pages consistently dirty, so the first update after a
+  reopen opens no window. The window opens on a later update in the same process.
+
+### Scenario and reachability
+
+No adversary is needed and every machine state involved is ordinary. The stored PRT player runs its epoch machine with
+`SHARING_ALL` and is designed to recover from crashes: `reopen_epoch_directory` and `revert_interrupted_input` reuse
+the stored machine when `state.json` records the boundary, and recovery compares only the root. An OOM kill, a restart
+or an operator signal inside a hash-tree update leaves the torn file behind. From then on, every state hash,
+computation-hash leaf and proof the player builds comes from a stale tree, so it commits a wrong claim or produces
+proofs that fail their own verification. Snapshots cloned afterwards (`.revert`, machine-cache entries) copy the
+corrupted file forward. The test simulates the crash with `gdb` and SIGKILL, and I did not run the full `prt.lua`
+player through it.
+
+### Possible solution
+
+- Make mark-dirty interruption-safe: mark the ancestors before the leaf with a compiler barrier between the stores
+  (an interrupted mark then leaves only a dirty ancestor over a clean leaf, which is harmless), and drop the early
+  return so each mark walks to the root. That also repairs states left by a power loss.
+- As defense in depth, when a shared `.dpt` is reused at load, rebuild its inner nodes from the leaves or cross-check
+  them, falling back to marking pages dirty. That also repairs files that `clone_stored` already copied.
+
+### Risks
+
+- Of the issue: a crash in a window of a few instructions, open on every hash-tree update and at load, silently
+  corrupts the stored player's machine while its recovery checks pass, and the honest claim is eliminated.
+- Of the fix: walking to the root adds O(log pages) byte writes per mark, a small constant factor on hot paths. The
+  top-down order needs a compiler fence, or the compiler may reorder the stores.
 
 ---
 

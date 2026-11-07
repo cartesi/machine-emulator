@@ -7,6 +7,7 @@ present.
 | ID | Title | Component | Cited rules | Severity |
 |---|---|---|---|---|
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
+| [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
 
 ---
 
@@ -95,3 +96,73 @@ verify proofs in a separate process.
   - It touches the interpreter shared with the generated Solidity. Its semantics must stay "revert", and the code
     generator of `machine-solidity-step` must not change.
   - The uarch program and its pristine hash are unaffected, since only the host build of the interpreter changes.
+
+---
+
+## R1-TRANSITIONS-1
+
+**Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words**
+
+- **Severity:** High (a divergence between paths only at demonstrably unreachable states, section 8).
+- **Component and area:** emulator; the uarch cycle computation-hash builder `collect_uarch_cycle_root_hashes`, used
+  by the PRT player (`collect_uarch_cycle_bundle`, uarch claim builder) and by the CLI's
+  `--uarch-cycle-computation-hash`. The affected leaf is the uarch reset at the last uarch position of an mcycle.
+- **Cited rules:** R2 (the computation-hash builders must agree with every log verifier and the on-chain verifier at
+  the last uarch cycle of an mcycle), R13 (the uarch reset and its pristine state are part of the protocol), R5,
+  section 2 (transition form "a uarch step followed by the uarch reset"; valid template with a pristine uarch).
+- **Location:**
+  - `src/machine.cpp:2887-2914`: the builder's fast reset sets the uarch registers to their defaults and restores
+    only the uarch-RAM words in `reset_dirty_words`, which the uarch wrote during the current mcycle. Its only uarch
+    precondition (around `src/machine.cpp:2764`) is `uarch_cycle == 0` and `uarch_halt == 0`.
+  - The canonical reset writes the whole pristine uarch state: `machine::reset_uarch` (`src/machine.cpp:2133-2149`),
+    `do_reset_uarch` in `src/uarch-replay-state-access.hpp:368` (the verifier), and `resetState` in
+    `machine-solidity-step` `src/EmulatorCompat.sol`.
+
+### Problem
+
+The builder never checks that uarch RAM is pristine before relying on "restore the words the uarch wrote" to
+produce the pristine state. If a uarch-RAM word differs from the pristine image and the uarch does not write it
+during the mcycle, the fast reset leaves it unchanged. The reset leaf the builder reports, and the state it leaves
+behind, then differ from what `verify_reset_uarch` and `UArchReset.sol` produce. The state transition function is
+defined on every state, so this is a path divergence.
+
+### Evidence and test
+
+- Test: `bugs/R1-TRANSITIONS-1/test.lua`. Run `bugs/run.sh R1-TRANSITIONS-1`.
+- The test generates, at run time, a uarch RAM image equal to `uarch/uarch-ram.bin` zero-extended to `0x180000`
+  bytes, with 8 nonzero bytes at offset `0x170000`. It runs the bare-metal guest `j .` at `0x80000000` on two
+  identical machines (equal root hashes checked). One machine closes the mcycle with
+  `collect_uarch_cycle_root_hashes`. The other runs the uarch to `UARCH_CYCLE_MAX`, then `log_reset_uarch` and
+  `verify_reset_uarch`. A control run with the pristine, zero-extended image agrees on both paths.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - control: reset leaf `38fe2bab…2f90` on both paths;
+  - non-pristine uarch RAM: the builder gives `37cf4bfd…3df8`, the verified reset gives `38fe2bab…2f90`.
+
+### Scenario and reachability
+
+If a machine at an mcycle boundary held non-pristine uarch RAM while its uarch registers were in the reset state,
+the honest uarch claim would commit, at every reset leaf, a hash that the on-chain verifier does not produce, and
+would be eliminated. Today that state is not reachable from a valid template:
+
+- the template's uarch is pristine (section 2), and `prt.lua`'s `assert_rolling_template` checks it;
+- the guest cannot write uarch RAM (R8);
+- every reset that starts from pristine RAM returns pristine RAM;
+- every failure inside the builder leaves `uarch_halt = 1`, or happens after the restore.
+
+Only a custom `uarch.ram` backing store or a deliberate host write produces it, so it is High, not Critical. It
+removes the margin that the builder agrees with the verifiers if a future persistence, recovery or cloning change
+ever left such a machine on the honest path.
+
+### Possible solution
+
+Keep the optimization but make it fail loudly. Either check, before collecting, that the uarch state node equals the
+pristine uarch hash, or check that node after the fast reset, and throw on a mismatch. Alternatively, close each
+mcycle with a full `reset_uarch()`.
+
+### Risks
+
+- Of the issue: any change that leaves a machine with reset uarch registers and dirty uarch RAM on the honest path
+  turns this into a completeness failure (Critical).
+- Of the fix: the check rejects machines with custom uarch RAM images that the CLI accepts today, which are not
+  valid templates anyway. A full reset adds a bounded, constant per-mcycle cost (R12) to building uarch claims. The
+  rejected-yield path, whose reset leaf is the revert root hash, must stay bit-identical.

@@ -6,12 +6,101 @@ present.
 
 | ID | Title | Component | Cited rules | Severity |
 |---|---|---|---|---|
+| [R1-GUESTTOOLS-1](#r1-guesttools-1) | Honest PRT player aborts for good when a guest yield's DATA exceeds the transmit buffer | PRT player and bridge (yield handling) | R4, section 1 completeness, section 2 reachable state, section 4, A7 | Critical |
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
 | [R1-ARCH-2](#r1-arch-2) | Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping | emulator (atomics, LR/SC) | R7, section 8 Medium | Medium |
 | [R1-ARCH-3](#r1-arch-3) | Page walk ignores PMA failures on PTE accesses | emulator (address translation) | R7, section 8 Medium | Medium |
 | [R1-ARCH-4](#r1-arch-4) | S-mode `sip` writes can set and clear the read-only STIP and SEIP bits | emulator (supervisor interrupt CSRs) | R7, section 8 Medium | Medium |
+
+---
+
+## R1-GUESTTOOLS-1
+
+**Honest PRT player aborts for good when a guest yield's DATA exceeds the transmit buffer**
+
+- **Severity:** Critical (R4 violated at a reachable state on the honest operator's path; a crash caused by data
+  the honest operator must process).
+- **Component and area:** PRT player and bridge (honest operator); yield handling in the input driver. The hunter
+  that found it worked the `machine-guest-tools` angle, but the defect is in the player.
+- **Cited rules:** R4 (from any reachable state the honest operator can compute the claim and produce every proof);
+  section 1 completeness failure; section 2 (reachable state, correctly designed application, honest operator's
+  path); section 4 (yield data is opaque guest data); A7 (the operator then misses its deadlines).
+- **Location:**
+  - `doc/recipes/prt.lua:955-959`: the `receive_cmio_request` wrapper calls `machine:receive_cmio_request()` with
+    no guard.
+  - Its callers: `doc/recipes/prt.lua:1375` (`run_to_stop`, at every automatic yield while outputs are collected) and
+    `doc/recipes/prt.lua:1985` (`run_to_input_mcycle_offset`, at every manual-yield fixed point). The latter is used
+    by `input_added`, replays, proof production and bundle opening.
+  - `src/machine.cpp:1993-1995`: `receive_cmio_request` throws `CMIO request data is too large` when DATA exceeds
+    the 2 MiB transmit buffer and the yield is not a progress report.
+  - `doc/recipes/prt.lua:2047-2075` (`event_handler.input_added`) clears `epoch_pair` and counts the input before
+    running it.
+
+### Problem
+
+The guest writes the whole `tohost` word, so a yield's DATA can be any 32-bit value. The emulator handles such a
+state normally: it hashes it, reverts on rejection, and resumes after automatic yields. The player, however, reads
+every yield through `receive_cmio_request`, and that call throws on large DATA, including for:
+
+- a rejected input, whose DATA the manual says is ignored ("On reject, `DATA` is ignored", `doc/README.md:7591`);
+- a report, which the player ignores anyway.
+
+Once `input_added` has thrown, retrying on the same player does nothing, `epoch_sealed` fails with "epoch is not
+open", and a restarted player replays the input and throws again. The honest operator can never seal the epoch,
+compute its claim, or produce proofs for that input.
+
+### Evidence and test
+
+- Test: `bugs/R1-GUESTTOOLS-1/test.lua`, with the bare-metal guest `yield.S`, `link.ld` and `build.sh`. Run
+  `bugs/run.sh R1-GUESTTOOLS-1`.
+- `yield.S` builds a valid template, an rx-accepted yield with the empty outputs root, which the player's own
+  `assert_rolling_template` accepts. The test drives the real forked player (`prt.new_forked_player`) through one
+  input in three variants:
+  - A: a manual rx-rejected yield with DATA `0x200001`;
+  - B: an automatic tx-report with DATA `0x200001`, then an rx-accepted yield;
+  - C: an automatic tx-output with DATA `0xffffffff`, then an rx-rejected yield.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - in every variant, `input_added` raises `prt.lua:957: CMIO request data is too large`;
+  - a retry is skipped, and `epoch_sealed` fails with `epoch is not open`;
+  - a restarted player raises again;
+  - the bare machine runs through the same yields and computes its hash without error.
+- The prover also checked a fix: skipping the call when DATA exceeds the buffer makes the test pass, and every
+  variant seals at the hash the bare machine reaches.
+
+### Scenario and reachability
+
+1. An attacker sends an advance-state input to an application that, on rejecting it, leaves a large value in DATA,
+   which the manual allows.
+2. The honest operator cannot decline the input, because it is on-chain, so its player stops computing the epoch.
+3. The operator misses its deadlines, its claim is eliminated, and a dishonest claim can settle: a completeness
+   failure.
+
+Variants B and C need a guest that breaks the length convention, which section 2 presumes reachable ("any assignment
+of guest-writable memory and registers") and which section 4 grants to an input that subverts the guest. None of the
+variants is a stall: the machine reaches a normal fixed point or resumes.
+
+### Possible solution
+
+Do not read the transmit buffer blindly at every yield:
+
+- read `htif_tohost_cmd`, `htif_tohost_reason` and `htif_tohost_data` as registers;
+- skip the buffer for rejections, unknown reasons and reports;
+- for rx-accepted, read the outputs root from the first 32 bytes of the transmit buffer, matching what the
+  extraction proof authenticates (A5);
+- for an oversized tx-output, apply a deterministic policy, for example treat the output as unprovable, and never
+  raise.
+
+Claim computation depends only on state hashes and must not depend on output bookkeeping.
+
+### Risks
+
+- Of the issue: one input to such an application disables every honest player for the epoch, so a wrong state and
+  wrong outputs can settle.
+- Of the fix: the root the player reads must match the on-chain extraction exactly. Any policy for oversized outputs
+  must stay consistent with A5, since such an output can never be proven. Changing the C++ `receive_cmio_request`
+  instead would be a host API change other callers rely on, though not a change of the transition function.
 
 ---
 

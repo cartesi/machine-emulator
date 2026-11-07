@@ -8,6 +8,7 @@ present.
 |---|---|---|---|---|
 | [R1-GUESTTOOLS-1](#r1-guesttools-1) | Honest PRT player aborts for good when a guest yield's DATA exceeds the transmit buffer | PRT player and bridge (yield handling) | R4, section 1 completeness, section 2 reachable state, section 4, A7 | Critical |
 | [R1-PLAYER-1](#r1-player-1) | Relaunched honest bridge abandons its own claim when an adversary joined that commitment first | PRT player and bridge (claim binding after restart) | R4, A7, section 1 completeness, section 7 | Critical |
+| [R1-PLAYER-3](#r1-player-3) | Player reads the previous epoch's seal with one unpaged `eth_getLogs` and crash-loops once the chain outgrows the node's range limit | PRT player and bridge (epoch discovery) | R4, A7, section 4, section 1 completeness | Critical |
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
@@ -183,6 +184,75 @@ relaunches after the window with a foreign submitter, at both levels.
 - Of the fix: a relaunched bridge must rebuild claims after windows close (one uarch period for a child). The
   `context.joined[claim.root]` check keeps it from binding in tournaments the honest commitment never entered.
   Bond recovery must stay limited to the bridge's own submissions.
+
+---
+
+## R1-PLAYER-3
+
+**Player reads the previous epoch's seal with one unpaged `eth_getLogs` and crash-loops once the chain outgrows the
+node's range limit**
+
+- **Severity:** Critical (R4 violated on the honest operator's path; no A1-A7 violation or adversary action is
+  needed to trigger it).
+- **Component and area:** PRT player (honest operator); epoch discovery in the main loop of `prt-player.lua`.
+- **Cited rules:** R4 (the honest operator can always respond); A7 (it then loses on time); section 4 (paths that
+  carry node data must report errors without terminating the process); section 1 completeness failure.
+- **Location:**
+  - `doc/recipes/prt-player.lua:165-172` (`get_seal`): `chain:logs(consensus, chain:head(), first_block)`, one
+    request over `[deployment block, tip]`;
+  - `doc/recipes/prt-player.lua:175-185` (`open_epochs` calls `get_seal(next_epoch - 1)`) and lines 225-229 and
+    260-273 (`pass()` runs it first, with no `pcall`);
+  - `doc/recipes/prt-cast.lua:152-160` (`methods:logs` asserts on the result).
+
+### Problem
+
+Every `pass()` starts with `open_epochs()`. Once checkpoint N+1 exists, which the listener stores at the seal of
+epoch N, `open_epochs` calls `get_seal(N)`. That sends one `eth_getLogs` from the deployment block to the tip and
+asserts on the result. Nodes and providers routinely cap the block range of a log filter: Reth defaults to 100000
+blocks, about 14 days on mainnet, and hosted providers to 2k-10k. `prt-log-history.lua` exists to page around exactly
+that limit, and `prt-epoch.lua` and `prt-bridge.lua` use it; `get_seal` is the only log read that skips it.
+
+Once the deployment is older than the limit, the request is refused. `pass()` raises, the process exits, and
+`prt-supervise.sh` relaunches it. The relaunch replays `open_epochs` from `--first-epoch` and dies on the same call,
+so no listener polls and no dispute ticks. Raising `--first-epoch` does not help, because it still calls
+`get_seal(first_epoch - 1)`. The 60 s socket timeout of `prt-cast` is a second trigger for the same crash.
+
+### Evidence and test
+
+- Test: `bugs/R1-PLAYER-3/test.lua`, with `server.lua` and `vendor/dkjson.lua`. Run `bugs/run.sh R1-PLAYER-3`.
+- `server.lua` is a stub JSON-RPC node built on luasocket that refuses filters wider than 1000 blocks with `-32005`.
+  `vendor/dkjson.lua` is dkjson 2.11 (MIT), which `prt-ethereum.lua` requires and the test environment lacks.
+- The test runs the text of `prt-player.lua` from `get_seal` through `pass` unmodified, against a real `prt-cast`
+  client talking HTTP to the stub. It simulates a first launch and two relaunches. As a control, `prt-log-history`
+  pages the same range from the same node and finds the `EpochSealed(0)` log.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator: all three launches raise
+  `query exceeds max block range 1000` in `get_seal` before any listener polls, and the node log shows three refused
+  `[0, 5000]` requests.
+- Harness checks: with `R1_PLAYER_3_MAX_RANGE=1000000` the same code polls epochs 0 and 1 and passes, and a patched
+  copy that routes `get_seal` through `prt-log-history` passes against the limited node.
+
+### Scenario and reachability
+
+No adversary action is needed. As the chain ages past the node's limit, the next seal leaves the honest player
+crash-looping exactly when that epoch's dispute begins. It gets at most one tick, right after the seal, and never
+answers a bisection. Its claim times out, and an adversary that merely posted a Sybil claim settles that epoch and
+every later one. The node is trusted (section 4), but a range limit is its ordinary behavior, which the recipe itself
+accommodates elsewhere, so this is a defect in the operator's code, not a misconfiguration.
+
+### Possible solution
+
+Read the previous seal without a full-range query: take it from the previous epoch's listener, which already observes
+`EpochSealed` through `prt-log-history`, or keep one `prt-log-history` for the consensus across passes and call its
+`get_logs`. Also make `pass()` fail soft on node errors: report them in the status and retry at the next tip instead
+of exiting.
+
+### Risks
+
+- Of the issue: any operator whose node or provider caps `eth_getLogs` ranges, which is common, loses every dispute
+  from that epoch on, and wrong states and outputs settle.
+- Of the fix: the seal source must follow the same finality and reorg policy as the listener (`prt-log-history`
+  rewinds), or the player could open an epoch from a seal that is later reorged out. A blanket `pcall` around
+  `pass()` must not hide assertions that should stop the player, such as a template mismatch.
 
 ---
 

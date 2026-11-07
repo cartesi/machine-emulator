@@ -8,6 +8,7 @@ present.
 |---|---|---|---|---|
 | [R1-GUESTTOOLS-1](#r1-guesttools-1) | Honest PRT player aborts for good when a guest yield's DATA exceeds the transmit buffer | PRT player and bridge (yield handling) | R4, section 1 completeness, section 2 reachable state, section 4, A7 | Critical |
 | [R1-PLAYER-1](#r1-player-1) | Relaunched honest bridge abandons its own claim when an adversary joined that commitment first | PRT player and bridge (claim binding after restart) | R4, A7, section 1 completeness, section 7 | Critical |
+| [R1-PLAYER-2](#r1-player-2) | Eight-entry input-boundary cache makes reaching a disputed position cost about n/5 whole inputs | PRT player and bridge (machine cache, replay cost) | R12, A7, R4, section 1 completeness, section 7 | Critical |
 | [R1-PLAYER-3](#r1-player-3) | Player reads the previous epoch's seal with one unpaged `eth_getLogs` and crash-loops once the chain outgrows the node's range limit | PRT player and bridge (epoch discovery) | R4, A7, section 4, section 1 completeness | Critical |
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -184,6 +185,91 @@ relaunches after the window with a foreign submitter, at both levels.
 - Of the fix: a relaunched bridge must rebuild claims after windows close (one uarch period for a child). The
   `context.joined[claim.root]` check keeps it from binding in tournaments the honest commitment never entered.
   Bond recovery must stay limited to the bridge's own submissions.
+
+---
+
+## R1-PLAYER-2
+
+**Eight-entry input-boundary cache makes reaching a disputed position cost about n/5 whole inputs**
+
+- **Severity:** Critical (a unit of work on the honest operator's path whose worst-case cost exceeds what the
+  deployment was sized for, by a factor that the adversary controls).
+- **Component and area:** PRT player (honest operator); the machine cache of input boundaries, and every unit of
+  work that replays from it.
+- **Cited rules:**
+  - R12: "Reaching that position costs at most the mcycles from the nearest retained input boundary, which the
+    application's per-input usage bounds."
+  - A7: clocks are sized for that cost a bounded number of times per match.
+  - R4, section 1 completeness failure, and section 7 (send any number of inputs, steer the dispute to any position).
+- **Location:**
+  - `doc/recipes/prt.lua:884-885`: `DEFAULT_MACHINE_CACHE_CAPACITY = 8`, shared by the forked and the stored cache
+    (`prt.lua:1306-1319`).
+  - `doc/recipes/prt.lua:1189-1217`: `machine_cache_methods:consider` evicts entries or doubles `input_gap` when full.
+  - `doc/recipes/prt.lua:1944-1949` and `doc/recipes/prt.lua:2021-2043`: `new_machine_pair_at_epoch_input_offset`
+    forks the nearest retained entry, and `run_to_epoch_input_offset` replays every intervening whole input.
+  - Units that take this path: `collect_mcycle_bundle` (`prt.lua:2101`), `build_uarch_cycle_computation_hash`
+    (`prt.lua:2120`), `collect_uarch_cycle_bundle` (`prt.lua:2139`) and `prove_state_transition` (`prt.lua:1845`).
+    Each creates a fresh pair, so no replay is shared between them.
+
+### Problem
+
+The player retains at most 8 input boundaries per epoch, spaced about n/5 to n/8 inputs apart for an epoch of n
+inputs. Every unit of work starts by forking the nearest retained boundary and replaying every input between it and
+the disputed one. The cost of reaching a position is therefore about n/5 times the per-input usage, not the
+per-input usage that R12 requires. The adversary chooses n, up to the input limit per epoch (2^24 in this geometry),
+and chooses the disputed input.
+
+### Evidence and test
+
+- Test: `bugs/R1-PLAYER-2/test.lua`, with the bare-metal rolling application `guest.S`, `link.ld` and `build.sh`.
+  Run `bugs/run.sh R1-PLAYER-2`.
+- The guest is correctly designed: it accepts every input after about 1003 mcycles and leaves the empty outputs root
+  in the transmit buffer. The test drives the real forked player through `input_added` and `epoch_sealed`, then
+  measures the replay each unit performs to reach a chosen input.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - 64 inputs: retained boundaries `{0,9,19,27,39,47,55,63}`; a unit at input 38 replays 11 whole inputs, 11033
+    mcycles;
+  - 512 inputs: retained boundaries `{0,79,159,223,319,383,447,511}`; a unit at input 318 replays 95 whole inputs,
+    95285 mcycles;
+  - each of `collect_mcycle_bundle`, `collect_uarch_cycle_bundle` and `prove_state_transition` pays this separately.
+
+  The bound the test asserts is twice the per-input usage, 2006 mcycles.
+- A control that swaps in a cache keeping every boundary passes, with no replay. The prover's cache-policy model
+  extrapolates the distance to 767 inputs at n = 4096 and 12287 at n = 65536.
+
+### Scenario and reachability
+
+1. The adversary posts many valid inputs into an epoch, each driving a correctly designed application to its
+   per-input bound.
+2. It posts Sybil claims that agree with the honest claim up to an input just before a retained boundary, and
+   diverge there.
+3. In each of the logarithmically many matches, the honest player replays about a fifth of the epoch several
+   times: once per bottom-level bundle opening, uarch claim build, uarch bundle opening and proof.
+4. Clocks sized per A7 for per-input replays are exceeded, the honest player misses a responder deadline or the uarch
+   joining window, and its claim is eliminated.
+
+The honest operator cannot decline the inputs or the disputed position. The manual describes this cache as a
+bounded-memory design (around `doc/README.md:9679`), but R12 sets the normative bound.
+
+### Possible solution
+
+Make the reach cost independent of the number of inputs:
+
+- retain a boundary at every input, or every constant number of inputs; for example, stored copy-on-write snapshots
+  per input, pruned once the epoch settles;
+- or let the capacity scale with the input count.
+
+As a constant-factor improvement, reuse one replayed pair across the units requested at the same disputed input. If
+the sparse cache is kept, A7 and R12 would have to be restated for (input limit / capacity) times the per-input
+usage, which yields impractical clocks.
+
+### Risks
+
+- Of the issue: cheap inputs and Sybil claims force long replays in every match, and the honest claim can be
+  eliminated, letting a wrong state and outputs root settle.
+- Of the fix: per-input retention costs O(n) storage, which needs copy-on-write or deduplication to be feasible.
+  Restored boundaries must hash identically to replayed ones (R2, R9), and must survive crash recovery of the
+  stored cache. Sharing a pair between units must not leak one unit's leftover state into another's start.
 
 ---
 

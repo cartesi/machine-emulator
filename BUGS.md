@@ -16,9 +16,11 @@ present.
 | [R1-ROBUST-1](#r1-robust-1) | Honest player keeps every tx-output payload of an input in memory, so a guest drives its memory up without bound | PRT player and bridge (output collection) | R8, R12, R4, A7, section 1 completeness, section 4 | Critical |
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
 | [R2-PLAYER-1](#r2-player-1) | A settled epoch's bridge cancels the next epoch's pending honest transactions through the shared journal | PRT player and bridge (transaction scheduling across epochs) | R4, R12, A7, section 1 completeness, section 2 honest operator's path | Critical |
+| [R2-REFEREE-1](#r2-referee-1) | At a sealed uarch leaf, the honest claim gets only the opponent's clock to prove, with no timeout win | PRT referee model (uarch leaf settlement) | A7, A1, R4, section 1 completeness, section 5, section 7 | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
+| [R2-ROBUST-1](#r2-robust-1) | Every past epoch's bridge re-observes and retains the full shared log history on every pass | PRT player and bridge (dispute bridge observation) | R12, A7, R4, section 4, section 8 High | High |
 | [R2-SOLIDITY-1](#r2-solidity-1) | Uarch verifiers accept a `WRITE_TLB` ECALL with out-of-range indices, writing a TLB slot image to any leaf where native throws | emulator (uarch step verifier), `machine-solidity-step` (`EmulatorCompat.writeTlbECALL`) | R2, R3, R13, A6, section 8 High | High |
 | [R2-SOLIDITY-2](#r2-solidity-2) | On-chain `Memory.validateStrideLength` off-by-one rejects every access to the last leaf | `machine-solidity-step` (`Memory.sol`) | R2, R3, R10, section 8 High | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
@@ -831,6 +833,102 @@ to every replacement.
 
 ---
 
+## R2-REFEREE-1
+
+**At a sealed uarch leaf, the honest claim gets only the opponent's clock to prove, with no timeout win**
+
+- **Severity:** Critical (rated as a deployed referee: a Sybil with a short clock eliminates the honest uarch claim,
+  and a second Sybil then decides the enclosing mcycle match for the dishonest claim).
+- **Component and area:** PRT referee model; settlement of a sealed uarch leaf (the leaf race).
+- **Cited rules:**
+  - A7: the honest claim's window must be its own A7-sized clock, not one the adversary chooses.
+  - A1: the uarch winner's last leaf decides the enclosing match.
+  - R4, and section 1 completeness failure.
+  - Section 5: this disagrees with deployed Dave and is outside the manual's listed simplifications, so it is a
+    defect.
+  - Section 7: Sybils, and the timing of joins and responses.
+- **Location:**
+  - `doc/recipes/prt.lua:395-438` (`settle_uarch_state_hash`): `proof_deadline = min(deadline_one, deadline_two)`
+    at lines 402-405, `"late state transition proof"` at line 410, and elimination of both claims without a timeout
+    win at lines 422-433;
+  - `doc/recipes/prt.lua:567-583` (`settle_divergence` returns 0 when both are eliminated);
+  - `doc/recipes/prt.lua:229-244` (late joiners get `allowance - delay`) and `doc/recipes/prt.lua:344-349`
+    (`charge_turn_time` lets a claim drain its own clock).
+  - Contrast `doc/recipes/prt-bridge.lua:342-373` and `doc/recipes/prt-lua-bridge.md:352`, which follow Dave: "Holder
+    of the longer clock may win by timeout ... Timeout in [min, max)".
+
+### Problem
+
+At a sealed uarch leaf, the model starts both clocks at the seal and accepts a transition proof only before
+`min(deadline_one, deadline_two)`. If none arrives, it waits until the later deadline and eliminates both claims; no
+timeout win is ever offered, and the manual repeats this ("Nobody may claim a timeout win at a sealed leaf",
+`doc/README.md:10910`). The honest claim's window to produce the leaf proof is therefore bounded by the opponent's
+remaining clock, which the adversary controls in two ways:
+
+- by joining the uarch tournament late, because `partition_claims` gives a late joiner the allowance minus its delay;
+- by answering its own turns late, because `charge_turn_time` drains its clock, down to the response budget plus one.
+
+In deployed Dave (`MatchClocks.classifyTimeoutAt`), the claim with time left wins by timeout after the earlier
+deadline, so the honest claim always has its own clock. The manual's list of simplifications (around
+`doc/README.md:11179`) does not cover the leaf race.
+
+### Evidence and test
+
+- Test: `bugs/R2-REFEREE-1/test.lua`, with `scenario.lua`. Run `bugs/run.sh R2-REFEREE-1`; it takes about 0.4 s.
+- It runs the real `prt.new_referee` over `game-test-server` and `prtu.protocol`, with mcycle and uarch heights of 3,
+  a maximum allowance of 8, and the real first uarch step of a 4 KiB machine as the disputed transition. Players
+  connect in the order honest, S1, S2, so the uarch bracket is H versus S1, with S2 unmatched. S2 ends at the same
+  dishonest final state under a different computation hash. The harness only observes; it does not change referee
+  logic.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - attack, late join: S1 joins 5 blocks late with a 2-block clock, and the leaf is sealed with H at 6 and S1 at 2.
+    The honest proof arrives 2 blocks after the seal, within its own clock, and is rejected as late. H and S1 are
+    eliminated, S2 wins the uarch tournament, and the dishonest mcycle claim wins the epoch.
+  - drain, with response budget 0: the honest player answers at the earliest legal block, and S1 drains its clock to
+    1 on its seal. The honest proof at seal + 1 is rejected, with the same outcome.
+  - a Lua reimplementation of Dave's `classifyTimeoutAt` on the same clocks gives the honest side the win in both
+    modes;
+  - control: an honest proof one block after the seal under stock clocks is accepted, and the honest claim wins.
+- The prover also checked a fix: adding Dave's timeout-win window to a copy of `prt.lua` makes the test pass.
+
+### Scenario and reachability
+
+1. An mcycle match between the honest and a dishonest claim reaches a uarch tournament. The honest player posts its
+   uarch claim early.
+2. The adversary posts two uarch claims ending at the dishonest state: S1 late, with just enough clock to bisect,
+   and S2 at any time.
+3. S1 bisects to the leaf, and the leaf race starts with S1's short clock.
+4. The honest operator must run its machine to the disputed uarch position and log the step within that short clock,
+   whatever its own A7-sized clock is.
+5. If it needs more, both H and S1 are eliminated, S2 wins the uarch tournament, and the honest mcycle claim loses.
+
+Every step uses section 7 capabilities only. The demo's toy constants (allowance 4, budget equal to allowance) and
+logical time, in which the honest player always answers at the next block, keep the stock run from tripping. But
+clock values are not normative (section 5), and the drain mode needs no honest latency at all. A smarter player could
+precompute the leaf proof during its last bisection turn, but its transaction would still have to land within the
+adversary's leftover clock, which is the dependence Dave's rule removes.
+
+### Possible solution
+
+Adopt Dave's leaf-race rule in `settle_uarch_state_hash`:
+
+- accept a valid proof before the earlier deadline, as now;
+- in `[min, max)` with distinct deadlines, let the holders of the longer-clock claim win by timeout;
+- allow elimination only from the later deadline, or right away when the deadlines are equal.
+
+An equivalent alternative accepts a proof from claim i's holders while `received_at < deadline_i`. Update the
+manual's leaf-race paragraph to match.
+
+### Risks
+
+- Of the issue: in any deployment that uses the model's rule, short-clock Sybils eliminate the honest uarch claim,
+  and a wrong epoch state can settle. The model also mispredicts the bridge's and Dave's behavior.
+- Of the fix: transcripts and narration change, so `prt-test.lua` and the manual's story need updating. The
+  equal-deadline case must still eliminate both claims. The timeout window must use the same deadline convention as
+  `settle_timeout`, and the winner's returned clock must mirror Dave's.
+
+---
+
 ## R1-PLAYER-4
 
 **Epoch listeners fetch, keep and re-sort every InputBox log of every application**
@@ -1045,6 +1143,83 @@ mcycle with a full `reset_uarch()`.
 - Of the fix: the check rejects machines with custom uarch RAM images that the CLI accepts today, which are not
   valid templates anyway. A full reset adds a bounded, constant per-mcycle cost (R12) to building uarch claims. The
   rejected-yield path, whose reset leaf is the revert root hash, must stay bit-identical.
+
+---
+
+## R2-ROBUST-1
+
+**Every past epoch's bridge re-observes and retains the full shared log history on every pass**
+
+- **Severity:** High (unbounded allocation and time caused by relayed data that the honest operator may decline;
+  growth that erodes the A7 sizing).
+- **Component and area:** PRT player and bridge (honest operator); observation by the dispute bridges of settled
+  epochs. This is distinct from R1-PLAYER-4, which concerns the epoch listeners' InputBox logs.
+- **Cited rules:** R12 and A7 (bounded per-unit cost and sized clocks); R4 and section 1 completeness (the live
+  dispute is answered late); section 4 (relayed chain data); section 8 High.
+- **Location:**
+  - `doc/recipes/prt-player.lua:225-245`: `pass()` ticks every listener ever opened, and none is ever retired.
+  - `doc/recipes/prt-epoch.lua:21-23` and `99-119`: a sealed listener keeps returning its bridge, built from the
+    consensus deployment block.
+  - `doc/recipes/prt-bridge.lua:43-82`: `observe` fetches the factory, the consensus, the root and every child from
+    `first_block` with no topic filter, appends every log, and sorts them all.
+  - `doc/recipes/prt-bridge.lua:634-642`: `tick()` always calls `refresh()` → `observe()`, even for a done, settled
+    bridge (`jobs()` returns nothing when done, line 316).
+  - `doc/recipes/prt-log-history.lua:70-96` and `231-255`: each bridge's own history keeps every log forever.
+
+### Problem
+
+Each new block, the player re-observes every historical epoch before it ticks the live dispute, which is ticked
+last. Every bridge keeps its own full copy of the shared factory and consensus history and re-sorts it each pass.
+Per-pass work therefore grows with the number of epochs times the log volume, quadratically in the application's age
+even without an adversary. Memory holds one copy of the shared history per epoch. Foreign `TournamentCreated` logs,
+from other instantiations of the shared, permissionless factory, are fetched, copied and sorted by every bridge,
+although a bridge needs only its own root's creation log, which is in the seal block it already knows.
+
+### Evidence and test
+
+- Test: `bugs/R2-ROBUST-1/test.lua`. Run `bugs/run.sh R2-ROBUST-1`; it takes about 1.8 s.
+- It drives the real `prt-epoch`, `prt-bridge`, `prt-log-history` and `prt-cast` code, replaying
+  `prt-player.lua`'s `open_epochs`/`pass` loop over E settled epochs and one live epoch. Only the JSON-RPC node
+  (in memory, filtering by address) and the ABI decoder are stubbed. Work is counted in Lua instructions through
+  `debug.sethook`, and memory after a full GC.
+- Observed, deterministically (instruction counts vary by under 0.1%), by the prover, the reviewer and the
+  orchestrator:
+
+  | Setup | Work before the live tick | Retained by bridges |
+  |---|---|---|
+  | 2 settled epochs | 82k instructions | 270.6 KiB, 84 logs |
+  | 8 settled epochs | 534k instructions | 1165.4 KiB, 414 logs |
+  | 8 settled epochs, 200 foreign tournaments per epoch | about 17.5M instructions (about 0.2 s) | about 51 MB, 14814 logs |
+
+  A done, settled bridge still issues 9 chain reads per pass.
+- With `R2_ROBUST_1_SIMULATE_FIX=yes`, which retires settled bridges with no jobs and keeps only the seal-block
+  factory logs, there is no work before the live tick, about 79 KiB is retained, and the test passes.
+
+### Scenario and reachability
+
+This is reached in normal operation as an application ages, for example with hourly epochs, and an adversary can
+amplify it cheaply with permissionless tournament clones on an L2. Pass latency and memory then grow without bound
+until the live match is answered after its clock expires, or the process runs out of memory. A default restart
+reopens every epoch from 0 and hits the same growth; only a manual `--first-epoch` avoids it. The live epoch's own
+data stays bounded, and the extra data is data the operator may decline, so section 8 rates this High.
+
+### Possible solution
+
+- Retire a listener once its bridge has observed the next seal and has no remaining jobs, keeping bond recovery and
+  result acceptance alive until done.
+- Fetch only what is needed: the root's creation log at the seal block, consensus events by topic from the seal block
+  on, and root and child logs from their creation.
+- Share one consensus and factory history across listeners.
+- Tick the live epochs first, or by earliest deadline.
+- Default `--first-epoch`, on restart, to the oldest epoch that still has work.
+
+### Risks
+
+- Of the issue: latency and memory grow without bound with age, and an attacker can amplify it, until the honest
+  claim misses a clock or the process crash-loops on every restart.
+- Of the fix: retiring too early drops pending bond recovery or result acceptance. A reorg that un-settles an epoch
+  must reopen its bridge. Topic filters must match the exact event signatures, or the bridge misses its root's
+  creation. A shared history must keep each listener's reorg handling correct.
 
 ---
 

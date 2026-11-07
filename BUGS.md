@@ -10,6 +10,7 @@ present.
 | [R1-PLAYER-1](#r1-player-1) | Relaunched honest bridge abandons its own claim when an adversary joined that commitment first | PRT player and bridge (claim binding after restart) | R4, A7, section 1 completeness, section 7 | Critical |
 | [R1-PLAYER-2](#r1-player-2) | Eight-entry input-boundary cache makes reaching a disputed position cost about n/5 whole inputs | PRT player and bridge (machine cache, replay cost) | R12, A7, R4, section 1 completeness, section 7 | Critical |
 | [R1-PLAYER-3](#r1-player-3) | Player reads the previous epoch's seal with one unpaged `eth_getLogs` and crash-loops once the chain outgrows the node's range limit | PRT player and bridge (epoch discovery) | R4, A7, section 4, section 1 completeness | Critical |
+| [R1-REFEREE-1](#r1-referee-1) | A late Sybil re-post of the honest claim cuts the honest claim's clock to one block | PRT referee model (tournament joining, clocks) | A7, section 1, section 2 honest claim, section 7, the manual's clock rule | Critical |
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -340,6 +341,84 @@ of exiting.
 - Of the fix: the seal source must follow the same finality and reorg policy as the listener (`prt-log-history`
   rewinds), or the player could open an epoch from a seal that is later reorged out. A blanket `pcall` around
   `pass()` must not hide assertions that should stop the player, such as a template mismatch.
+
+---
+
+## R1-REFEREE-1
+
+**A late Sybil re-post of the honest claim cuts the honest claim's clock to one block**
+
+- **Severity:** Critical (rated as a deployed referee: the honest claim is eliminated without any fault of the honest
+  operator, and a fabricated final state settles).
+- **Component and area:** PRT referee model; joining of mcycle and uarch tournaments, and the clock each claim
+  starts with.
+- **Cited rules:**
+  - A7: sized clocks; the honest claim gets no room to play its match.
+  - Section 1 completeness and soundness of the settled state; section 2 (honest claim).
+  - Section 7: Sybils, holding any claim including the honest one, racing transactions.
+  - The manual's clock rule (around `doc/README.md:10866`): each claim's clock starts with the tournament's
+    allowance, less the blocks to "the claim's joining", as in Dave, where a commitment's clock starts at its first
+    join. Section 5 makes the manual's tournament normative.
+- **Location:**
+  - `doc/recipes/prt.lua:229-244` (`partition_claims`);
+  - `doc/recipes/game-transport.lua:705-722` (`reply_less` orders responses by connection admission order;
+    admission is assigned at `game-transport.lua:548`);
+  - `doc/recipes/prt.lua:687-690` (`open_uarch_tournament` uses the same function).
+
+### Problem
+
+`partition_claims` walks the posters in connection admission order, not in posting order. The first poster of a
+computation hash in that order creates the merged claim and fixes
+`claim.allowance = allowance - (received_at - start_instant)`. Later posters of the same hash, including the honest
+player that posted earlier in logical time, are only subscribed. An adversary connection admitted before the honest
+player can therefore post the public, deterministic honest computation hash at the last joinable block, and the
+honest claim's clock becomes one block. A response is accepted no earlier than one block after its request, and each
+turn must arrive before `start + allowance`, so a claim with a one-block clock can never answer `reveal_bisection` or
+`seal_divergence`.
+
+### Evidence and test
+
+- Test: `bugs/R1-REFEREE-1/test.lua`, with `scenario.lua`. Run `bugs/run.sh R1-REFEREE-1`.
+- `scenario.lua` runs the real referee (`prt.new_referee(prt.new_dapp_contract(...))`) over `game-test-server` and
+  `prtu.protocol`, with three in-process players answering through `prtu.answer_event` over synthetic, consistent
+  height-62 claims. It records each bracket claim's allowance and the earliest block at which any holder posted it.
+  The honest mock answers at the earliest legal block, so no honest implementation could do better. Story files go
+  to a temporary directory.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - attack run: the bracket shows the dishonest claim with allowance 3, and the honest claim with allowance 1 although
+    first posted at block 1 (posters `sybil-H`, `honest-H`);
+  - the honest reveal at block 4 is rejected as late, the dishonest claim wins by timeout, and the run prints
+    `SETTLED DISHONEST`;
+  - control run, with the second connection re-posting the dishonest claim instead: `SETTLED HONEST`.
+- The prover also checked a fix: taking each merged claim's largest allowance over its posters makes the test pass.
+
+### Scenario and reachability
+
+1. Attacker connection A posts dishonest claim D at block 1.
+2. Sybil S, admitted before the honest player, schedules the honest claim for block start + allowance - 1. The
+   honest player posts the honest claim at block 1.
+3. The bracket is `[D, honest]`, and the honest claim's clock is one block.
+4. D opens the match. The honest claim cannot answer in time and loses by timeout.
+5. D wins, and `wait_for_outputs` extracts outputs from D's fabricated final state.
+
+Only section 7 capabilities are needed: connect early, then post the honest hash late in the joining window. The
+honest operator cannot prevent it, and the same attack hits uarch tournaments, where any subscriber of either mcycle
+claim may post.
+
+### Possible solution
+
+In `partition_claims`, take a merged claim's clock from its earliest post over all of its posters. For an existing
+claim, `claim.allowance = math.max(claim.allowance, allowance - (response.received_at - start_instant))`. To pair in
+join order as Dave does, order the bracket by each claim's earliest `received_at`, breaking ties by admission order.
+Apply the fix to both levels.
+
+### Risks
+
+- Of the issue: any Sybil can time out the honest claim in every mcycle or uarch tournament, settling a fabricated
+  state and its outputs.
+- Of the fix: reordering the bracket changes the narration and transcripts that the recipe compares across runs. Ties
+  stay deterministic. A later post must never lengthen a clock beyond what the earliest post gives, which taking the
+  maximum allowance guarantees.
 
 ---
 

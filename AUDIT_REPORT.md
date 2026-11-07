@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **extra rounds in progress** (round 9 confirmed one more issue, so the clean-round count restarted again; round 10 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
+Status: **extra rounds in progress** (round 10 confirmed two more issues, so the clean-round count restarted again; round 11 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
 
 **Running extra-rounds total:** round 4 (variant analysis) confirmed 6 new issues, bringing the confirmed total to **30 (14 Critical, 8 High, 8 Medium)**. See the round 4 candidate table and the Extra rounds section.
 
@@ -119,7 +119,8 @@ refutations.
 | 7 | File partition: disjoint file sets, each against the whole threat model | FPINTERP, FPINTERP2, FPHOSTAPI, FPCLI, FPSOLIDITY, FPGUESTTOOLS, FPPRT, FPPRTREST, FPMACHINE, FPMEM, FPUARCH |
 | 8 | Dynamic testing: run fuzzers, differential harnesses, crash and fault injection, sanitizer builds and a randomized simulation, and report only what an executed reproducer shows | DYNUARCHDIFF, DYNLOGFUZZ, DYNPERSIST, DYNHASHPROP, DYNAPIFUZZ, DYNGUESTTOOLS, DYNPRTSIM, DYNCLAIMCMP, DYNSOLEXEC, DYNPLAYERFAULT |
 | 9 | Attack-goal driven: start from each way to break a section 1 goal or a rule and search backwards, across components, for any path that reaches it | GOALACCEPT, GOALNODE, GOALWRONGCLAIM, GOALNOPROOF, GOALTIMEOUT, GOALOUTPUT, GOALDIVERGE, GOALNONDET, GOALESCAPE, GOALRESTORE |
-| 10 | Manual and promise checking: each normative statement of the manual and each documented invariant in the code is checked against the implementation | planned |
+| 10 | Manual and promise checking: each normative statement of the manual and each documented invariant in the code is checked against the implementation | MANCLI1, MANCLI2, MANLUA1, MANLUA2, MANGUEST, MANARCH, MANSTATE, MANCOMP, MANPRT, PROMISES |
+| 11 | Fix-adjacent review: for every confirmed issue, review the sibling sites, the interplay of the proposed fix with the other fixes, and the paths the fix would leave open | planned |
 
 ## Candidates
 
@@ -345,6 +346,39 @@ Round 9 coverage (hunts with no candidate are not evidence of absence):
   as partial.
 - **GOALRESTORE**: found R9-GOALRESTORE-1 by reading the collection accessor. Not run: the full stored player under a
   kill during collection, and power-loss ordering.
+
+### Round 10 (extra: manual and promise checking)
+
+Ten hunters ran, each taking a disjoint slice of the manual (the command-line interface, the Lua interface, the guest
+perspective, the system architecture, the hash views of state and outputs, the hash view of computation and the
+verification game, the tournament) or the code's own comments, asserts and TODOs, and checking each normative
+statement against the implementation. Five raw candidates were reported and dedup merged them into 4. Of those, 2 were
+confirmed (1 Critical, 1 Medium), so **round 10 was not clean**. The prover disproved 2 and the disproving reviewer
+confirmed the other 2. All agents ran on Claude Opus 5.5 (exact ID) at High effort; no hunt was blocked.
+
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R10-MANCLI1-1 | emulator | Critical | Loading a stored machine trusts its page hash-tree cache (`hash_tree.phtc`, outside the hashed state), so a valid template with a poisoned cache reports the right root and then computes wrong hashes and proofs | **Confirmed, Critical** | Reproduced by prover, reviewer and orchestrator; rated by the explicit `THREAT_MODEL.md` section 8 clause on valid templates (if template distribution is wholly trusted, the residue is Medium); see `BUGS.md` |
+| R10-MANLUA1-1 | emulator | Medium | The HTIF halt command ignores the `ihalt` availability mask | **Confirmed, Medium** | Reproduced by prover, reviewer and orchestrator; consistent across native, uarch and verifiers, contradicts the manual; see `BUGS.md`. Reported twice (R10-MANARCH-3 merged by dedup) |
+| R10-MANARCH-1 | emulator | Medium | The LR/SC reservation is held on the virtual address, so an SC succeeds after the address is remapped | Disproved by prover | The RISC-V A extension allows an arbitrarily large reservation set, so an SC to a different physical location than the LR may succeed; not an R7 deviation |
+| R10-MANARCH-2 | emulator | Medium | The AMO read phase sets `PTE.A` even when the AMO faults on a read-only page | Disproved by prover | The privileged specification allows the A bit to be set by speculation and requires exactness only for D; the replay agrees with native |
+
+Round 10 coverage (hunts with no candidate are not evidence of absence):
+
+- **MANCLI1**: the first half of the CLI section of the manual against `src/cartesi-machine.lua` and the C++ it calls,
+  with small harnesses (about 1 s each). Not built: the full valid-template reproducer with an accept-yield guest and the
+  PRT player on a poisoned template.
+- **MANCLI2**, **MANLUA2**, **MANSTATE**, **MANCOMP**, **MANPRT**: read every checkable statement of their slices;
+  MANSTATE built its own Lua builder of the full 2^64 tree and compared it with the machine. MANCOMP, MANPRT and MANLUA2
+  ran no end-to-end machine experiment. MANPRT confirmed that every printed code excerpt matches its file. Not
+  covered: the computation-hash half of `hash-tree.lua`, the bridge's transaction and journal paths, the
+  stored-player reopen paths, and the clock arithmetic of the Dave contracts (out of scope).
+- **MANLUA1**, **MANGUEST**, **MANARCH**: read their slices; the guest-tools functions selectors and Merkle tree
+  were recomputed. Not examined: `rollup-http-server` under a booted guest, the DTB against the printed devicetree,
+  flash and NVRAM placement checks, PLIC registers beyond claim and complete.
+- **PROMISES**: read comments, asserts and error messages against the code paths an adversary can reach, with no
+  harness. Its main lead, the assert mismatch between the native build (asserts off in `interpret.cpp`) and the uarch
+  build (asserts on), yielded no reachable assert beyond R1-VERIFIER-1.
 
 ## Blocked agents
 

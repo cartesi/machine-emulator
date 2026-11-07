@@ -37,6 +37,7 @@ Flags required by `AUDIT.md`:
 | [R5-DFINPUT-1](#r5-dfinput-1) | libcmt `cmt_abi_get_bool` returns success for ABI words that are not a valid bool | `machine-guest-tools` (libcmt ABI decoder) | Section 2 correctly designed application, section 4, section 7, `AUDIT.md` guest-tools rule | Critical |
 | [R7-FPUARCH-1](#r7-fpuarch-1) | An interrupted mark-dirty leaves a dirty page under clean ancestors in a shared stored machine, so after a reload the page is never re-hashed and the root hash goes stale | emulator (dirty-page tree, stored machines) | R9, R2, R4, section 1 completeness, section 2 honest operator's path | Critical |
 | [R8-DYNPLAYERFAULT-1](#r8-dynplayerfault-1) | The honest bridge's signer wedges for good when its journal holds a candidate the node does not have, signed near the fee or tip ceiling, and that candidate's job is no longer due | `prt-player-bridge` (`prt-transactions.lua`, `prt-bridge.lua`) | R4, section 1 completeness, section 2 honest operator's path, A7 | Critical |
+| [R10-MANCLI1-1](#r10-mancli1-1) | Loading a stored machine trusts its page hash-tree cache (`hash_tree.phtc`, outside the hashed state), so a valid template with a poisoned cache reports the right root and then computes wrong hashes and proofs | emulator (`page_hash_tree_cache`, stored machines, CLI and PRT player load) | R1, R9, R2, R4, section 2 valid template, section 8 | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -56,6 +57,7 @@ Flags required by `AUDIT.md`:
 | [R7-FPMEM-1](#r7-fpmem-1) | A PLIC claim/complete write clears the M-mode software-written `mip.SEIP` bit, because the PLIC signal and the software bit share one stored bit | emulator (PLIC, supervisor external interrupt) | R7, section 8 Medium | Medium |
 | [R8-DYNPERSIST-1](#r8-dynpersist-1) | `write_memory`, `write_word` and `fill_memory` store the data into shared RAM before marking the page dirty, so a process stop in between leaves a stored machine whose hash tree does not commit to its contents | emulator (`src/machine.cpp`, shared stored machines) | R9, R2, section 8 Medium | Medium |
 | [R9-GOALRESTORE-1](#r9-goalrestore-1) | Mcycle hash collection defers the dirty marks of page-walk A/D writes to the end of each sampling period, so a process stop during collection leaves a shared stored machine whose hash tree does not commit to its contents | emulator (`collect_mcycle_root_hashes`, shared stored machines) | R9, R2, section 8 Medium | Medium |
+| [R10-MANLUA1-1](#r10-manlua1-1) | The HTIF halt command ignores the `ihalt` availability mask, so a machine configured with `ihalt = 0` still halts | emulator (HTIF device) | R7, section 8 Medium | Medium |
 
 ---
 
@@ -1452,6 +1454,71 @@ even after fees return to 1 gwei**
 
 ---
 
+## R10-MANCLI1-1
+
+**Loading a stored machine trusts its page hash-tree cache (`hash_tree.phtc`, outside the hashed state): a valid
+template with a poisoned cache reports the right root and passes every documented check, then computes wrong hashes and
+proofs**
+
+- **Severity:** Critical (`AUDIT.md` section 8: a rule violation on the honest operator's path that breaks the goal).
+  Confirmed by an independent disproving reviewer and reproduced by the orchestrator. **The rating depends on one
+  judgment:** the template supplier is trusted (section 4) only for the contents the valid-template conditions cover;
+  `THREAT_MODEL.md` section 8 says that once a snapshot meets those conditions, "nothing it carries outside the hashed
+  state may affect any transition (R1)", and R1 repeats it for files outside the hashed state. If template distribution
+  is treated as entirely trusted, the residue is a Medium (a manual promise that the code does not keep, and a
+  `verify_hash_tree` that does not detect it). Found in round 10 (manual and promise checking).
+- **Component and area:** emulator; `page_hash_tree_cache` loading of a stored directory, used by the CLI `--load`, the
+  JSON-RPC `load` and the PRT player's machine loading.
+- **Cited rules:** R1 (no file outside the hashed state may change any transition); R9; R2; R4; section 1
+  completeness; section 2 (valid template; the honest operator's path includes obtaining the template and reloading
+  it); section 8 (out-of-scope clause for untrusted snapshots, which does not apply to a snapshot that meets the
+  conditions).
+- **Location:** `src/page-hash-tree-cache.hpp:433-455` (the constructor adopts a stored cache tagged initialized after
+  checking metadata only), `:563-575` (`borrow_entry` validates a hit only by the page root), `:352-372`
+  (`enqueue_hash_entry` rehashes only the words that differ from the cached page copy and reuses the cached word-level
+  siblings); `src/hash-tree.cpp:102-130` (`get_page_proof` takes word-level siblings from the cache entry) and
+  `:676-700` with `src/machine.cpp:1708-1711` (`verify_hash_tree` treats a write-TLB-dirty mismatch as consistent);
+  `src/cartesi-machine.lua:2884-2889,3132-3135` (`clear_hash_tree` is off by default and the manual never mentions it);
+  `doc/recipes/prt.lua:981-986` (the player loads the template with the default runtime and compares only
+  `get_root_hash`).
+- **Defect:** each cache entry holds a copy of a page and its 256-node word-level tree. On load, the stored cache is
+  adopted as is. The only check against the machine is that an entry's page root equals the dense-tree leaf, so an entry
+  with the correct page copy and page root but a wrong interior node passes unnoticed. The interior nodes do not feed
+  the root reported at load (that comes from the dense and sparse trees), so every load-time check passes. Later, a
+  write to a word of that page reuses the poisoned sibling, so the page hash, the dense tree and the root are wrong, and
+  `get_proof` for any word of the page returns siblings that do not fold to the root.
+- **Evidence and test:** `bugs/R10-MANCLI1-1/` (`test.lua`, `guest.S`, `link.ld`, `build.sh`). Run
+  `bugs/run.sh R10-MANCLI1-1`. A bare-metal guest is stored as directory A. Directory B is identical to A except for
+  32 bytes of `hash_tree.phtc` (the harness asserts this byte for byte). Results of the run: A and B load with the same
+  root, `verify_hash_tree()` is true for both and `cartesi-machine-stored-hash` agrees; but on B `get_proof` of the data
+  word does not fold to its root, after one ordinary advance-state input the root is `0xb9f6...` instead of `0x15b2...`,
+  and the CLI computes a different mcycle computation hash (`0xb17c...` against `0x58b7...`). Loading B with
+  `clear_hash_tree` reproduces A exactly, which rules out any change to hashed state. A harness error exits 2.
+- **Scenario and reachability:** the manual presents transferring a stored directory to other hosts and restoring it
+  with `--load` as the normal workflow ("the pre-store and post-load state hashes are equal because the same machine
+  state is restored"). Whoever controls the channel that delivers the template (developer, release artifact, mirror)
+  ships the exact valid contents, whose content hash equals the on-chain commitment, and alters only the cache entries of
+  pages that the application touches (its heap or data pages, and the transmit-buffer page that holds the outputs
+  root). Every documented check passes: `--initial-hash`, `cartesi-machine-stored-hash`, the player's root comparison and
+  `verify_hash_tree`. From the first input that writes a poisoned page, or the first proof of a word in it, the honest
+  operator computes wrong mcycle and uarch claims and proofs that the referee's verifiers reject. A dishonest claim with
+  the canonical hashes then eliminates the honest claim. No chain data and no adversarial guest behavior are needed.
+- **Possible solution:** never trust the persisted cache of a loaded directory without validation. Simplest: on load,
+  unless the process is reopening its own directory in place, reset the cache to uninitialized or clear every entry
+  (equivalent to `clear_hash_tree` for the cache only; the dense and sparse trees stay usable because their interior
+  nodes feed the root that is compared with the commitment). Alternatively recompute each adopted entry's 256-node tree
+  from its page copy, check the copy against the live page and `tree[1]` against the dense-tree leaf, and discard failures.
+  Defense in depth: on a hit in `borrow_entry`, compare the cached copy with the live page before the incremental
+  rehash; make `verify_hash_tree` check the cache interiors; have the player load third-party templates with
+  `clear_hash_tree`.
+- **Risks:** anyone who controls the template channel can make every honest operator compute wrong claims and proofs
+  from the first input on while every documented check passes. Dropping or validating the cache costs time on load (up
+  to `phtc_size` pages of 4 KiB plus 255 hashes each) or a slower first root hash on large machines. A partial check
+  leaves the same hole, and the fast path where a process reopens its own shared directory after a crash must stay
+  correct (see R7-FPUARCH-1, R8-DYNPERSIST-1, R9-GOALRESTORE-1).
+
+---
+
 ## R1-PLAYER-4
 
 **Epoch listeners fetch, keep and re-sort every InputBox log of every application**
@@ -2664,3 +2731,37 @@ contents**
   only its root would compute every later hash and proof from a tree that does not commit to the contents. Marking
   eagerly can only cause spurious rehashes, which are hash-neutral. No fix gives power-loss consistency without `msync`
   or `fsync` ordering.
+
+---
+
+## R10-MANLUA1-1
+
+**The HTIF halt command ignores the `ihalt` availability mask, so a machine configured with `ihalt = 0` still halts
+when the guest requests it**
+
+- **Severity:** Medium (`AUDIT.md` section 8: an undocumented deterministic deviation from the manual, consistent
+  across all paths). Confirmed by an independent disproving reviewer and reproduced by the orchestrator. Found in round
+  10 (manual and promise checking); the MANARCH hunter reported the same defect (R10-MANARCH-3, merged by dedup).
+- **Component and area:** emulator; the HTIF device.
+- **Cited rules:** R7 (the manual is the specification of the devices); section 8 Medium. R2 holds: the native run, the
+  uarch program and the log verifiers agree, so there is no soundness or completeness failure.
+- **Location:** `src/htif-address-range.cpp:64-72` (`htif_halt` never reads `htif_ihalt`; the only reader is the MMIO
+  read path at `:49-50`). Compare `htif_yield` (`:74-90`) and `htif_console` (`:93-121`), which gate on
+  `iyield` and `iconsole`. Manual: `doc/README.md:7507-7509` ("Unavailable commands are silently ignored by the
+  machine"); configuration field `processor.registers.htif.ihalt` at `:3212` (default `0x1` at `:3542`).
+- **Defect:** `htif_halt` checks only that the command is halt and that data bit 0 is set, then sets `iflags_H`. With
+  `ihalt = 0` the request must be a silent no-op and execution must continue.
+- **Evidence and test:** `bugs/R10-MANLUA1-1/` (`test.lua`, `halt.S`, `link.ld`, `build.sh`; the guest is built at run
+  time). Run `bugs/run.sh R10-MANLUA1-1`. A guest writes `tohost = 1` and spins. The control with `ihalt = 1` halts at
+  mcycle 3. With `ihalt = 0` the native run still halts at mcycle 3 (`iflags_H = 1`, break reason halted) and so does the
+  uarch path (8 `run_uarch` and `reset_uarch` rounds), with the same root hash as the native run. Expected: no halt.
+- **Scenario and reachability:** a template made with the documented `ihalt = 0` is a valid template, and any guest
+  instruction stream can write `tohost`. The deviation is the same on every path (the uarch program is compiled from the
+  same C++, so the on-chain verifiers follow it too; that part was not run on-chain). Halting is a stall that a
+  correctly designed application does not use, and A5 already excludes outputs from halted states, hence Medium.
+- **Possible solution:** gate the halt like the other sub-devices:
+  `cmd < 64 && ((read_htif_ihalt() >> cmd) & 1) != 0 && cmd == HTIF_HALT_CMD_HALT && (data & 1) != 0`, and ignore the
+  request otherwise. Alternatively document `ihalt` as informational only or remove the field.
+- **Risks:** the fix changes the state transition function (R13): the uarch program, its pinned pristine hash and the
+  on-chain verifiers change together and must not be mixed with old deployments (A6). The default `ihalt = 0x1` is
+  unaffected; a template created with `ihalt = 0` would stop halting and change its canonical trajectory.

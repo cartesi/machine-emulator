@@ -6,11 +6,14 @@ present.
 
 Flags required by `AUDIT.md`:
 
-- **Not executed on-chain.** No EVM was available, so the Solidity halves of R2-SOLIDITY-1 and R2-SOLIDITY-2 are proven
-  against a model of the pinned `machine-solidity-step` source, not by running it. Their C++ halves and every other
-  test run real code.
-- **Fallback models.** No issue was confirmed only by a fallback model: every prover and reviewer ran on the session
-  model.
+- **Solidity execution.** The tests `bugs/R2-SOLIDITY-1` and `bugs/R2-SOLIDITY-2` model the pinned
+  `machine-solidity-step` source; they do not run it. In round 8 a hunter did run the pinned contracts (solc-js plus
+  `revm`) and executed the R2-SOLIDITY-2 revert on the last leaf, and saw out-of-range TLB indices revert in
+  checked arithmetic, which is the R2-SOLIDITY-1 family; the orchestrator could not re-run that harness (its install
+  of the EVM was refused). The C++ halves and every other test run real code.
+- **Fallback models.** Every prover and reviewer ran on the primary model (Opus 5.5). One issue, R8-DYNPERSIST-1,
+  was *found* only by a fallback-model hunter (`sonnet`), after the primary hunt for that angle was stopped by a
+  safeguard; its proof of concept and its review ran on the primary model.
 - **Proofs of concept.** Every issue has one; none is reported without a test.
 
 | ID | Title | Component | Cited rules | Severity |
@@ -33,6 +36,7 @@ Flags required by `AUDIT.md`:
 | [R5-DFGUESTOUT-2](#r5-dfguestout-2) | `cartesi-machine` CLI keeps every tx-output payload in memory and writes every report or rejected output to its own file by default | emulator (`cartesi-machine` CLI, cmio computation-hash modes) | R8, R12, R4, A7, section 1 completeness, section 4, section 8 Critical | Critical |
 | [R5-DFINPUT-1](#r5-dfinput-1) | libcmt `cmt_abi_get_bool` returns success for ABI words that are not a valid bool | `machine-guest-tools` (libcmt ABI decoder) | Section 2 correctly designed application, section 4, section 7, `AUDIT.md` guest-tools rule | Critical |
 | [R7-FPUARCH-1](#r7-fpuarch-1) | An interrupted mark-dirty leaves a dirty page under clean ancestors in a shared stored machine, so after a reload the page is never re-hashed and the root hash goes stale | emulator (dirty-page tree, stored machines) | R9, R2, R4, section 1 completeness, section 2 honest operator's path | Critical |
+| [R8-DYNPLAYERFAULT-1](#r8-dynplayerfault-1) | The honest bridge's signer wedges for good when its journal holds a candidate the node does not have, signed near the fee or tip ceiling, and that candidate's job is no longer due | `prt-player-bridge` (`prt-transactions.lua`, `prt-bridge.lua`) | R4, section 1 completeness, section 2 honest operator's path, A7 | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -50,6 +54,7 @@ Flags required by `AUDIT.md`:
 | [R4-VARSPEC-1](#r4-varspec-1) | Page walk accepts non-leaf PTEs with the reserved A, D or U bits set instead of raising a page fault | emulator (address translation) | R7, section 8 Medium | Medium |
 | [R4-VARSPEC-2](#r4-varspec-2) | Each interrupt taken decrements `instret`/`minstret` | emulator (counters, traps) | R7, the manual's definition of `icycleinstret`, section 8 Medium | Medium |
 | [R7-FPMEM-1](#r7-fpmem-1) | A PLIC claim/complete write clears the M-mode software-written `mip.SEIP` bit, because the PLIC signal and the software bit share one stored bit | emulator (PLIC, supervisor external interrupt) | R7, section 8 Medium | Medium |
+| [R8-DYNPERSIST-1](#r8-dynpersist-1) | `write_memory`, `write_word` and `fill_memory` store the data into shared RAM before marking the page dirty, so a process stop in between leaves a stored machine whose hash tree does not commit to its contents | emulator (`src/machine.cpp`, shared stored machines) | R9, R2, section 8 Medium | Medium |
 
 ---
 
@@ -1385,6 +1390,67 @@ player through it.
 
 ---
 
+## R8-DYNPLAYERFAULT-1
+
+**The honest bridge's signer wedges for good when its journal holds a candidate that the node does not have, signed
+within 15% of the fee or tip ceiling, and that candidate's job is no longer due: no later move or cancel is ever sent,
+even after fees return to 1 gwei**
+
+- **Severity:** Critical (`AUDIT.md` section 8: a defect in the honest operator that makes the honest claim miss its
+  deadlines and lose). Confirmed by an independent disproving reviewer and reproduced by the orchestrator. Found by
+  executing a fault-injection harness (round 8, dynamic testing).
+- **Component and area:** `prt-player-bridge`; the transaction journal and fee replacement (`prt-transactions.lua`)
+  driven by the bridge tick (`prt-bridge.lua`).
+- **Cited rules:** R4 (honest completeness); section 1 completeness; section 2 (honest operator's path); A7 (clocks
+  are sized for honest moves that are then never sent).
+- **Location:** `doc/recipes/prt-transactions.lua:130-144` (`fees`: replacement floor from the previous candidate),
+  `:176-192` (`submit`: rebroadcast only for the same job, otherwise `blocked = "fee ceiling"`), `:85-92`
+  (`nonce_record` pins new work to the journal's nonce), `:247-265` (the candidate is stored before it is published);
+  `doc/recipes/prt-bridge.lua:684-711,744-748` (`tick` picks the due job or the cancel, both blocked);
+  `doc/recipes/prt-cast.lua:93-104,229-231` (a publication HTTP failure raises after the store).
+- **Defect:** `submit()` always derives a replacement's fees from the last journaled candidate of the chain nonce:
+  priority is at least `ceil(prev.priority * 1.15)` and max fee at least `ceil(prev.max_fee * 1.15)`, and `fees()`
+  returns nil above the ceilings (defaults 100 gwei and 10 gwei). On nil, `submit()` rebroadcasts the stored bytes
+  only when `previous.job == intent.key`. For any other due job, and for the cancel, it returns
+  `{ blocked = "fee ceiling" }`. `nonce_record()` keeps every new job on that same nonce, and only a mined candidate
+  releases it. If nobody holds the stuck candidate, nothing can ever mine the nonce, and the floor is computed against
+  a transaction that does not exist. Job keys include the event's block hash, so the job changes when its window
+  closes, when the opponent moves, or after a reorg.
+- **Evidence and test:** `bugs/R8-DYNPLAYERFAULT-1/` (`test.lua`, `mockchain.lua`, `vendor/dkjson.lua`). Run
+  `bugs/run.sh R8-DYNPLAYERFAULT-1`. The real bridge tick and transaction journal run on an in-memory EIP-1559 node
+  (nonces, blocks, finalized tag, receipts, `eth_getTransactionByHash`, the geth 10% replacement rule). Only the
+  bridge's observation is stubbed, to present two jobs. Three fault variants (process killed after the journal store,
+  candidate dropped from the node's mempool, and a 9 gwei tip with a drop) end with "job B NEVER mined ... chain
+  nonce=0; blocked=fee ceiling" 150 or more healthy blocks later, at a 1 gwei base fee. Two controls (a 20 gwei spike
+  with the same drop, and the tip case without a drop) recover, so the harness is sound. The reviewer also made
+  `eth_sendRawTransaction` return a JSON-RPC error (`txpool is full`) during the spike, with no crash, and got the same
+  wedge. In a randomized run with fee spikes and random RPC faults, reorgs and mempool drops, 30 of 41 seeds (200-240)
+  ended wedged. A patched copy that drops the replacement floor when no node holds a candidate of the nonce lets every
+  variant mine B (test exits 0).
+- **Scenario and reachability:** on the honest operator's path with the default limits, no misconfiguration and no
+  guest behavior needed. (1) During a fee spike (base fee about 45 gwei or more, or a suggested tip of about 8.7 gwei
+  or more) the honest player signs a candidate for job A at the ceiling. (2) The candidate never reaches the node: the
+  process dies between store and publish, `eth_sendRawTransaction` fails (the player exits and is relaunched), or the
+  node restarts and loses its mempool. (3) Before A is mined, A's window closes, the adversary moves so that A is
+  superseded, or a reorg changes the event's block hash. (4) Fees fall back to 1 gwei. Every tick still reports "fee
+  ceiling" for the next due job and for the cancel, the nonce never advances, the honest claim sends no move for the
+  rest of the epoch and loses its matches by timeout. The adversary can force step 3 and can help with step 1 or 2 by
+  spamming fees or the mempool. The bridge prints "transaction waiting at fee ceiling; observing continues", which
+  blames high fees. A human operator could recover by restarting with a higher ceiling or hand-crafting a transaction
+  for the nonce; the automated honest operator never does.
+- **Possible solution:** in `submit()`, when `fees()` returns nil, check whether every candidate of the nonce is
+  unknown to the node and has no receipt. If so, either rebroadcast the stored bytes of the highest-fee candidate that
+  is still affordable at the current base fee, regardless of job (this frees the nonce), or sign the new action or the
+  cancel from the current fees without the replacement floor. Compute the floor only against candidates that some node
+  may still hold, and report "stuck candidate not held by the node" separately from a real fee ceiling.
+- **Risks:** an honest operator that survives a benign transient fault at high fees is frozen for the rest of the
+  epoch, and a dishonest claim can then win. The fix must keep the exclusive-nonce and journal invariants and must
+  never exceed the fee ceilings. "Unknown to the node" is local knowledge: another node or relay may still hold the old
+  candidate, in which case only one of the two consumes the nonce and the journal already tracks both. Rebroadcasting
+  an obsolete action can revert on chain and waste its fee, which is acceptable.
+
+---
+
 ## R1-PLAYER-4
 
 **Epoch listeners fetch, keep and re-sort every InputBox log of every application**
@@ -1789,6 +1855,13 @@ it. The defect only rejects; it never accepts a wrong after-hash.
   - `x6 = 0xFFFFFFFFFFFFFFF8`: native `log_step_uarch` produces a 9-access log and `verify_step_uarch` accepts it,
     while the model reverts at the load with `Panic(0x01)`.
 - A patched copy with the bound `stride * s <= MAX_SIZE - s` makes the test pass.
+- **Executed in round 8.** A round 8 hunter (`DYNSOLEXEC`) compiled the pinned `machine-solidity-step` sources
+  unchanged with solc-js 0.8.30 and ran the bytecode in a Rust EVM (`revm`, Cancun). For a uarch `ld` from
+  `0xfffffffffffffff8` and from `0xffffffffffffffe0`, the C++ producer logs the step and the C++ verifier accepts it,
+  while `UArchStep.step` reverts with `Panic(0x01)` in `Memory.validateStrideLength`. That agrees with the model above.
+  The supporting harness is in `bugs/R2-SOLIDITY-2/exec/` (see its `README.md`). The orchestrator could not re-run it:
+  its own attempt to install `pyrevm` was refused by the sandbox. The same hunter ran about 100k Solidity checks
+  against the C++ verifiers and about 30k mutated proofs, and found no other mismatch.
 
 ### Scenario and reachability
 
@@ -2486,3 +2559,52 @@ complete write whose id was not claimed.
 - Of the fix: it changes the interpreter and possibly the state layout, so it needs a coordinated protocol version, a
   rebuilt uarch and a new pristine hash (R13, A6). It also changes what `csrr mip` and `sip` return on existing
   unreproducible machines.
+
+---
+
+## R8-DYNPERSIST-1
+
+**`write_memory`, `write_word` and `fill_memory` store the data into shared RAM before marking the page dirty, so a
+process stop in between leaves a stored machine whose hash tree does not commit to its contents**
+
+- **Severity:** Medium (`AUDIT.md` section 8: a persistence defect off the honest operator's path; R9). Confirmed by an
+  independent disproving reviewer and reproduced by the orchestrator. Found by executing a crash-injection harness
+  (round 8, dynamic testing). **Found only by the fallback-model hunter** (`sonnet`): the Opus 5.5 hunt for this angle
+  was stopped by a safeguard, so this confirmation is fallback-sourced. The prover and the reviewer ran on the primary
+  model.
+- **Component and area:** emulator; persistence ordering of shared backing stores (R9). A different root cause from
+  R7-FPUARCH-1, which is about the order inside the dirty-page tree.
+- **Cited rules:** R9 (a persisted hash equals the root of the actual contents, including after interrupted updates);
+  R2 (persist and restore agree with an uninterrupted run); section 8 Medium.
+- **Location:** `src/machine.cpp:1862-1869` (`write_memory`: copy, then `mark_dirty_page_and_up`), `:1890-1899`
+  (`fill_memory`: same order), `:2063-2065` (`write_word`: same order). Reached also through
+  `state_access::do_write_memory` (`send_cmio_response`, `src/state-access.hpp:459`) and
+  `uarch_state_access::do_write_word` (uarch ECALL writes, `src/uarch-state-access.hpp:94`).
+- **Defect:** with `SHARING_ALL` the RAM `.bin`, `.dpt` and `.dht` files are `MAP_SHARED`, and a load trusts the
+  `.dpt` and `.dht` (`src/memory-address-range.cpp:76-79`). The three writers store the data first and mark the page
+  dirty afterward, and nothing else records the pending change (host API writes bypass the write TLB that protects
+  interpreter writes). A stop between the two leaves the new bytes in RAM, the page clean in the `.dpt` and the old
+  page hash in the `.dht`. The reloaded root is the exact pre-write root, so a check of the form "root equals the
+  expected boundary root" passes on different contents.
+- **Evidence and test:** `bugs/R8-DYNPERSIST-1/` (`test.lua`, `common.lua`, `crash.lua`,
+  `kill-after-data-store.py`). Run `bugs/run.sh R8-DYNPERSIST-1`. Under gdb, a hardware watchpoint on the shared RAM
+  mapping kills the process the instant the written byte changes, for `write_memory` and for `write_word`. After the
+  reload, the word is `0xabab...` but `get_root_hash` equals the pre-write root, the oracle root of an uninterrupted
+  machine given the same write differs, and `verify_hash_tree()` fails with "page ... is not marked dirty but is
+  dirty". The control (no kill) matches the oracle. The harness checks that the watchpoint fired and the kill landed,
+  otherwise it exits 2. `fill_memory` has the same shape but no Lua binding, so it is not exercised.
+- **Scenario and reachability:** any crash, kill or OOM in that window of a process that holds a machine loaded with
+  shared backing stores, reached from the public C or Lua API, from `send_cmio_response`, or from uarch ECALL writes
+  (the CLI with `--load=...,sharing:all` is one such user). The stored PRT player is protected: it writes to its shared
+  epoch machine only after cloning `machine.revert`, which `revert_interrupted_input` (`doc/recipes/prt.lua:2636`)
+  restores when its root matches `state.json`, and its replay and proof machines are temporary clones deleted on
+  reopen. No honest-operator path that reloads such a store after an interrupted API write without a snapshot was
+  found, hence Medium; it would be Critical if a player change wrote to a shared machine outside a snapshot window.
+- **Possible solution:** mark the page dirty before storing the data in `write_memory`, `fill_memory` and
+  `write_word` (keep the `memcmp` check first so unchanged pages stay clean), and make the marking itself crash-safe
+  in the order R7-FPUARCH-1 requires. A sturdier alternative is an "open" flag in the shared directory, set on load
+  and cleared on clean shutdown, that forces `mark_pages_dirty` and a rebuild after an unclean stop.
+- **Risks:** a tool that relies on reloading a shared store after a crash gets a root hash that does not commit to the
+  contents, and a later run on it yields roots that differ from an uninterrupted run. Marking first can only produce
+  spurious dirty pages, which cost a rehash and are hash-neutral, provided all validation stays ahead of the mark. None
+  of these gives power-loss consistency without `msync` or `fsync` barriers.

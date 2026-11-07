@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **extra rounds in progress** (round 7 confirmed a new issue, so the clean-round count restarted; round 8 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
+Status: **extra rounds in progress** (round 8 confirmed two new issues, so the clean-round count restarted again; round 9 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
 
 **Running extra-rounds total:** round 4 (variant analysis) confirmed 6 new issues, bringing the confirmed total to **30 (14 Critical, 8 High, 8 Medium)**. See the round 4 candidate table and the Extra rounds section.
 
@@ -107,7 +107,7 @@ and unavailable.
 After the planned audit closed, extra rounds were run at the requester's request. Each one splits the work with a
 different strategy, so that no single way of dividing the code decides what gets examined. They stop once two
 consecutive rounds, each with a different strategy, confirm no new issue. Each round keeps the limits of `AUDIT.md`:
-at most 6 hunters, at most 5 candidates each, one disproving reviewer per candidate, and a commit and push for every
+at most 6 hunters (10 from round 5 on, at the requester's request), at most 5 candidates each, one disproving reviewer per candidate, and a commit and push for every
 confirmed issue. Hunters receive every earlier candidate with its outcome, and calibration notes from the
 refutations.
 
@@ -116,7 +116,9 @@ refutations.
 | 4 | Variant analysis: one hunter per family of confirmed bugs, searching the whole scope for other sites with the same root-cause pattern | VARABORT (process-terminating errors on data that must be handled), VARCLOCK (clock and deadline arithmetic), VARRANGE (missing range and index checks), VARGROWTH (unbounded growth with volume or age), VARSTATE (derived, cached or restored state diverging), VARSPEC (architectural deviations in traps, CSRs, permissions) |
 | 5 | Data flow: one hunter per untrusted source, followed end to end across components | planned |
 | 6 | Lifecycle phase: one hunter per phase of an epoch and of the operator | planned, if needed |
-| 7 | File partition: disjoint file sets, each against the whole threat model | planned, if needed |
+| 7 | File partition: disjoint file sets, each against the whole threat model | FPINTERP, FPINTERP2, FPHOSTAPI, FPCLI, FPSOLIDITY, FPGUESTTOOLS, FPPRT, FPPRTREST, FPMACHINE, FPMEM, FPUARCH |
+| 8 | Dynamic testing: run fuzzers, differential harnesses, crash and fault injection, sanitizer builds and a randomized simulation, and report only what an executed reproducer shows | DYNUARCHDIFF, DYNLOGFUZZ, DYNPERSIST, DYNHASHPROP, DYNAPIFUZZ, DYNGUESTTOOLS, DYNPRTSIM, DYNCLAIMCMP, DYNSOLEXEC, DYNPLAYERFAULT |
+| 9 | Attack-goal driven: start from each way to break a section 1 goal and search for any path that reaches it | planned |
 
 ## Candidates
 
@@ -252,6 +254,54 @@ FPPRTREST reported 4 candidates, and dedup kept all of them. No agent was blocke
 | R7-FPMEM-1 | emulator | Medium | A PLIC claim/complete write clears the software-written `mip.SEIP` bit | **Confirmed, Medium** | Deterministic, consistent across paths, no correct guest relies on it; see `BUGS.md` |
 | R7-FPPRTREST-1 | prt-player-bridge | Critical | The honest bridge inflates gas by 20% with no per-transaction cap, so a proof that fits the 2^24 gas cap can be signed above it | Not confirmed (orchestrator override of the reviewer's Critical) | The reviewer confirmed it and reproduced it, but only with 350 KB and 660 KB input payloads. The `InputBox` this branch deploys against (rollups-contracts v3.0.0-alpha.10, also v2.1.1) reverts above `INPUT_MAX_SIZE = 1 << 16`, which I verified directly. The largest honest delivery witness is then about 94 KB, with an estimate near 3.8M gas and 1.2 times that near 4.6M, far below 2^24 = 16.8M. The inflation cannot push a real proof over the cap. This is the same reasoning as for R1-SOLIDITY-1. It becomes real only if `INPUT_MAX_SIZE` is raised above roughly 300 KB or another input source is used. Hardening note: clamp the signed gas at the per-transaction cap, and give the bridge's assertions messages. R3-PLAYER-1, whose trigger is 36 KB, is unaffected. The test directory is left untracked |
 
+### Round 8 (extra: dynamic testing)
+
+Ten hunters ran, each building and running its own harness (differential and mutation fuzzers, crash injection with
+`gdb` and an `LD_PRELOAD` store-fault injector, ASan and UBSan builds, a randomized referee simulation, fault injection
+into the bridge, and the Solidity verifiers on a real EVM). Of the 4 candidates, 2 were confirmed (1 Critical,
+1 Medium), so **round 8 was not clean**. The provers proved all 4; the disproving reviewers refuted 2. Eight hunters
+found no candidate; each of them reports what it ran in the "Round 8 coverage" list below. Agents ran on Claude Opus 5.5
+(exact ID) at High effort, except the two re-runs of blocked hunts (see Blocked agents).
+
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R8-DYNPLAYERFAULT-1 | prt-player-bridge | Critical | The honest bridge's signer wedges for good when its journal holds a candidate the node does not have, signed near the fee or tip ceiling, and that candidate's job is no longer due | **Confirmed, Critical** | Reproduced by prover, reviewer and orchestrator; the honest claim sends no move for the rest of the epoch; see `BUGS.md` |
+| R8-DYNPERSIST-1 | emulator | Medium | `write_memory`, `write_word` and `fill_memory` store the data before marking the page dirty, so an interrupted call leaves a stale hash tree in a shared stored machine | **Confirmed, Medium** | Reproduced by prover, reviewer and orchestrator; found only by the fallback-model hunter; the stored player is protected by its revert snapshot, hence Medium; see `BUGS.md` |
+| R8-DYNPRTSIM-1 | prt-referee-model | High | Any connection can take the unauthenticated phase-closer role, close admission before the honest player connects, or stop the referee | Refuted by reviewer | Reproduced, but the phase closer and its stop command are documented orchestration of one trusted referee process (`THREAT_MODEL.md` section 4 and 5, manual simplification), not a chain-facing role; a deployed referee has no admission phase |
+| R8-DYNPRTSIM-2 | prt-referee-model | Medium | An abrupt disconnect by any connection raises in the transport reader and kills the referee process | Refuted by reviewer | Reproduced (16 of 150 random seeds), but the model's fail-fast transport is deliberate and pinned by its own tests, and the manual already concedes that a connected player can stall the demonstration |
+
+Round 8 coverage (what each hunter ran; hunts with no candidate are not evidence of absence):
+
+- **DYNUARCHDIFF** (re-run on `sonnet`): about 55k random-stream mcycles over about 300 seeds compared across native,
+  1-mcycle chunks, `run_uarch` with reset, the step and reset log verifiers and `collect_*`; about 25k mcycles of cmio
+  harness with 1.7k input deliveries; about 35k log and parameter mutations. No disagreement. No sanitizer build.
+- **DYNLOGFUZZ**: 1574 honest logs mutated with 28 operators, about 131k iterations without sanitizers and about 1100 s
+  under an out-of-tree ASan and UBSan build of `libcartesi`, plus 30k Lua-table mutations differentially against the
+  JSON-RPC server, edge-state round trips and 4.3k forked step differentials. No crash, no wrong acceptance; the only
+  aborts are R1-VERIFIER-1, and the only accepted mutants are R2-VERIFIER-2.
+- **DYNPERSIST** (re-run on `sonnet` found R8-DYNPERSIST-1): several thousand kill points injected with an `LD_PRELOAD`
+  store-fault injector across reopen, run, write, cmio and proof paths, a random-SIGKILL differential harness, a
+  stored-player kill campaign and an ENOSPC store test. Every other mismatch was the R7-FPUARCH-1 family.
+- **DYNHASHPROP**: five seeded differential harnesses for about 40 minutes (frontier forest against a naive reference,
+  hash-tree and proof properties). No disagreement.
+- **DYNAPIFUZZ**: ASan and UBSan build of the library, the Lua module and the JSON-RPC server; verifier-API and
+  JSON-RPC body fuzzing. No memory error.
+- **DYNGUESTTOOLS**: ASan and UBSan build of libcmt, the rollup CLI and a mock of the HTTP server, with a strict
+  reference decoder for every width. Every deviation was R4-VARRANGE-1 or R5-DFINPUT-1.
+- **DYNPRTSIM**: randomized adversarial referee simulation (1000 seeds clean with disconnects disabled; 150 seeds with
+  them). Found the two refuted candidates above.
+- **DYNCLAIMCMP**: the honest claim computed by a hand-rolled reference, the CLI and the forked, stored and reopened
+  player on randomized bare-metal guests and one Linux guest. No disagreement. Its work was not safety-reviewed (see
+  Blocked agents).
+- **DYNSOLEXEC**: the pinned Solidity contracts compiled unchanged with solc-js 0.8.30 and executed on `revm`
+  (Cancun): about 100k Solidity-versus-C++ checks and about 30k mutated proofs, including honest Linux states, 522
+  TLB-write steps, send-cmio-response across lengths and reasons, and 16 transition proofs encoded by
+  `prt-ethereum.transition_proof`. No new mismatch; the largest honest proof used 1.64M gas. It also executed
+  R2-SOLIDITY-2 (the last-leaf revert). `MetaStep.sol` and the Dave consumers were not executed.
+- **DYNPLAYERFAULT**: the real bridge tick and journal on an in-memory EIP-1559 node with injected RPC errors, mempool
+  loss, reorgs and kills. Found R8-DYNPLAYERFAULT-1 (30 of 41 fee-spike seeds wedged; 180 or more seeds without fee
+  spikes had no missed job).
+
 ## Blocked agents
 
 - `hunt:HASH`, round 1: the hunter on the session model set `blocked_by_safeguards` but still returned one candidate:
@@ -262,18 +312,33 @@ FPPRTREST reported 4 candidates, and dedup kept all of them. No agent was blocke
 - `hunt:TRANSITIONS`, round 2: the hunter on the session model set `blocked_by_safeguards` and returned no
   candidate. Its retry on `sonnet` completed and found no new candidate.
 
+- `hunt:DYNUARCHDIFF` and `hunt:DYNPERSIST`, round 8: the hunters on Opus 5.5 set `blocked_by_safeguards` (DYNPERSIST
+  reported that a safety classifier stopped it while it was analyzing one anomalous crash image, seed 1031, which it
+  asked to have examined independently). The workflow re-ran each on `sonnet`. The DYNUARCHDIFF re-run found no
+  candidate. The DYNPERSIST re-run found R8-DYNPERSIST-1, a **fallback-only discovery**; its prover and reviewer ran on
+  Opus 5.5. The seed-1031 image was not re-examined by the primary model; the sonnet campaign found only
+  R7-FPUARCH-1-family mismatches.
+
+- `hunt:DYNCLAIMCMP`, round 8: the workflow reported its work as unreviewed because an upstream safety filter refused
+  the review request (which reacts to content in the subagent's own transcript, not to the work). The hunter returned
+  no candidate and its output was checked for injection and instructions: it contained none. Treat its "no
+  disagreement" as unreviewed evidence.
+
 No prover or reviewer was blocked in any round, so no issue needed a fallback reviewer or was reported without a
-proof of concept. The only fallbacks were the two hunters above.
+proof of concept. The only fallbacks were the hunters above.
 
 ## Left uncovered
 
 The hunt was bounded to 3 rounds (`AUDIT.md`). These areas were not examined, or were examined only partly. The
 hunters reported them as uncovered and later rounds did not close them.
 
-- **Solidity execution.** No EVM, `solc` or Foundry could be installed (refused by the sandbox's permission policy),
-  so `machine-solidity-step` was never run. Its findings rest on regeneration from the C++ (the generated
-  `UArchStep.sol`, `UArchReset.sol` and `SendCmioResponse.sol` match token for token), line-by-line traces, and Lua
-  models of the pinned source. On-chain gas was computed from calldata formulas, not measured.
+- **Solidity execution.** Foundry could not be installed in rounds 1 to 7 (refused by the sandbox's permission
+  policy), so those findings rest on regeneration from the C++ (the generated `UArchStep.sol`, `UArchReset.sol` and
+  `SendCmioResponse.sol` match token for token), line-by-line traces, and Lua models of the pinned source. In round 8
+  a hunter obtained solc-js and `revm` from the package mirrors and executed the pinned contracts (see the Round 8
+  coverage list), which executed R2-SOLIDITY-2; the orchestrator could not re-run that harness because its own install
+  of the EVM was refused. R2-SOLIDITY-1's acceptance claim is still only modeled, `MetaStep.sol` was not executed, and
+  the compiler flags of an actual deployment were not compared.
 - **The Dave contracts.** They are out of scope and not in the tree. The parts of the encoding seam that they own were
   not checked: how they compute `dataHash` from input bytes, how they parse the input-length prefix that
   `transition_proof` emits, the `MetaStep` counter they pass, how they map a position to its form, and whole-transaction
@@ -283,13 +348,16 @@ hunters reported them as uncovered and later rounds did not close them.
   measured only for representative heavy mcycles: TLB flushes, traps, page walks, soft-float. It was estimated, not
   bounded analytically, and an interrupt taken together with a flushing instruction in the same mcycle was not
   measured.
-- **Differential fuzzing.** There was no executed differential fuzz of `uarch_step` (C++ replay against the pinned
-  uarch program) on fabricated uarch states, no exhaustive soft-float check against a reference implementation, and no
-  full line-by-line review of every RV64C, F and D handler. Sv48 and Sv57 walks were exercised only on faulting walks.
+- **Differential fuzzing.** Round 8 ran differential fuzzing of the native, uarch and verifier paths (see its coverage
+  list). Still not covered: exhaustive soft-float checking against a reference implementation, a sanitizer build under
+  the differential harness, most S and U-mode and paging code in random streams (they settle in trap loops), PLIC,
+  virtio, flash drives and the DTB, and a full line-by-line review of every RV64C, F and D handler.
 - **Long runs.** Native and uarch were not compared over a full Linux boot, and forking through the JSON-RPC server was
   not compared with an uninterrupted run (store and load were).
-- **Persistence.** Crash consistency of shared backing stores (`dht`, `dpt`, `sht`, `phtc`) under SIGKILL, and the
-  stored player's crash recovery at every interleaving, were not exercised.
+- **Persistence.** Rounds 7 and 8 exercised crash consistency of shared backing stores (R7-FPUARCH-1, R8-DYNPERSIST-1).
+  Still not covered: kills inside the `.phtc` and shadow-state files, power-loss durability (`fsync` ordering),
+  `ENOSPC` and `SIGBUS` on sparse shared stores, read-only directories, the uarch-claim and `prove_state_transition`
+  paths under kill, the JSON-RPC server under kill, and the player's own Lua file writes.
 - **Claim correctness on output-emitting guests.** The honest player's mcycle and uarch claims were compared with the
   CLI's computation hashes only for bare-metal guests that emit no outputs. An input deadline reached after 2^48 real
   mcycles was checked only through a saturated template near 2^64.
@@ -299,6 +367,14 @@ hunters reported them as uncovered and later rounds did not close them.
 - **Operator plumbing.** `prt-websocket.lua` frame parsing, fee and nonce corner cases of `prt-transactions.lua` under
   reorgs, JSON-RPC per-request allocation for large relayed logs, and the CLI's rollup paths under adversarial inputs
   were read but not stress-tested.
+- **Collect-path cost of TLB-flush-heavy guests.** The prover of R7-FPMACHINE-1 measured, on the honest forked player,
+  `input_added` taking about 2.7 to 3.2 s on a flood of 800000 `sfence.vma` instructions against about 0.8 s for the
+  replay of the same input. The extra cost in the collect path was not investigated. A worst-case-cost (R12) hunt of
+  the collect and hash-collection paths, with such guests, remains open.
+- **Gas ceiling in the bridge (hardening note from R7-FPPRTREST-1).** `prt-transactions.lua` inflates the estimated gas
+  by 20% with no per-transaction cap, so a proof that fits the 2^24 gas cap could be signed above it. It is
+  unreachable under the `InputBox` 64 KiB input cap, so it was not confirmed. Clamping the inflated gas to the cap
+  would remove the dependency on that external limit.
 - **A3 in the referee model.** Enforcing the input limit per epoch (more than 2^24 inputs) was not exercised. In the
   model, inputs come from the referee's own command line.
 - **Out of scope by `AUDIT.md`.** ZK proving (`risc0/`), the Linux kernel (including the `/dev/cmio` driver), OpenSBI,

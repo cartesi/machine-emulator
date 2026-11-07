@@ -19,6 +19,7 @@ present.
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
 | [R2-SOLIDITY-1](#r2-solidity-1) | Uarch verifiers accept a `WRITE_TLB` ECALL with out-of-range indices, writing a TLB slot image to any leaf where native throws | emulator (uarch step verifier), `machine-solidity-step` (`EmulatorCompat.writeTlbECALL`) | R2, R3, R13, A6, section 8 High | High |
+| [R2-SOLIDITY-2](#r2-solidity-2) | On-chain `Memory.validateStrideLength` off-by-one rejects every access to the last leaf | `machine-solidity-step` (`Memory.sol`) | R2, R3, R10, section 8 High | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
 | [R1-ARCH-2](#r1-arch-2) | Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping | emulator (atomics, LR/SC) | R7, section 8 Medium | Medium |
 | [R1-ARCH-3](#r1-arch-3) | Page walk ignores PMA failures on PTE accesses | emulator (address translation) | R7, section 8 Medium | Medium |
@@ -1036,6 +1037,70 @@ wrapping.
 - Of the issue: no direct path to the goal; a loss of defense in depth.
 - Of the fix: changing the step verifier changes a pinned artifact, so it needs a coordinated protocol version
   (R13, A6). Honest transitions are unaffected, and gas rises by a few units per `WRITE_TLB` step.
+
+---
+
+## R2-SOLIDITY-2
+
+**On-chain `Memory.validateStrideLength` off-by-one rejects every access to the last leaf**
+
+- **Severity:** High (a divergence between paths only at demonstrably unreachable states).
+- **Component and area:** `machine-solidity-step`; `Memory.validateStrideLength`, reached by
+  `AccessLogs.readWord`, `writeWord`, `readLeaf`, `writeLeaf` and `write4Words` through `regionFromStride`.
+- **Cited rules:** R2 (the on-chain verifier must agree with the log producer and the C++ verifier); R3 (a semantic
+  transition must not become a rejection); R10; section 8 High. If the state were reachable, it would be a section 1
+  completeness failure.
+- **Location:** `machine-solidity-step` `src/Memory.sol:66` (`MAX_STRIDE = MAX_SIZE - 1`) and `src/Memory.sol:98-103`
+  (`assert(Stride.unwrap(stride) * s < MAX_STRIDE)`); compared with `src/uarch-replay-state-access.hpp:255-268`,
+  which accepts any leaf.
+
+### Problem
+
+For a one-leaf region (`s = 1`), the check requires `stride < 2^59 - 1`, but leaf strides run over `0..2^59 - 1`. The
+last leaf, at addresses `0xFFFFFFFFFFFFFFE0`-`0xFFFFFFFFFFFFFFFF` with stride `0x7FFFFFFFFFFFFFF`, fails the assert,
+so any read or write of it reverts with `Panic(0x01)` before anything is authenticated. Larger regions are not
+affected, because `stride * s <= 2^59 - s` passes for `s >= 2`. The C++ hash tree covers the whole 2^64 space: the
+native producer logs such a read, an unmapped word reading as zero with a valid proof, and `verify_step_uarch` accepts
+it. The defect only rejects; it never accepts a wrong after-hash.
+
+### Evidence and test
+
+- Test: `bugs/R2-SOLIDITY-2/test.lua`. Run `bugs/run.sh R2-SOLIDITY-2`.
+- Not executed on-chain, since no EVM is available. The test reads the constants and the assert directly from the
+  pinned `Memory.sol` and evaluates them. It models the Solidity memory path (`truncateToLeaf`, the alignment asserts
+  of `strideFromPhysicalAddress`, `Buffer.peekRoot`/`getRoot` with 59 siblings) over the chain encoding that
+  `prt-ethereum.lua` `append_log` produces, and replays the native log in `UArchStep.step`'s access order.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - control, `ld x5, 0(x6)` with `x6 = 0xFFFFFFFFFFFFFFD8` (second-to-last leaf): the native log, the C++ verifier and
+    the model agree on the after-hash, which validates the encoding, the sibling order and the root computation;
+  - `x6 = 0xFFFFFFFFFFFFFFF8`: native `log_step_uarch` produces a 9-access log and `verify_step_uarch` accepts it,
+    while the model reverts at the load with `Panic(0x01)`.
+- A patched copy with the bound `stride * s <= MAX_SIZE - s` makes the test pass.
+
+### Scenario and reachability
+
+Unreachable from any valid template:
+
+- the `address_range` constructor (`src/address-range.hpp:105-117`) requires `start < UINT64_MAX - length` and page
+  alignment, so no range covers the last page;
+- the pristine uarch reaches guest memory only through PMA lookups and TLB entries filled from page-aligned ranges;
+- every other uarch, reset and delivery access is at a fixed low address.
+
+Only a fabricated uarch state touches the last leaf, and A1 keeps it out of matches against the honest claim. If a
+future layout ever mapped or touched the top page, an honest leaf proof there would always revert on-chain, which
+would be Critical.
+
+### Possible solution
+
+Replace the bound with one that admits every aligned region inside the tree: `stride < (MAX_SIZE >> log2s)`, which
+also avoids the multiplication, or `stride * s <= MAX_SIZE - s`. Fix the template if `Memory.sol` is generated, and add
+a test that reads and writes the last leaf.
+
+### Risks
+
+- Of the issue: none today; it becomes Critical if the top page is ever touched.
+- Of the fix: low. It is more permissive by exactly the last leaf, and proofs are still authenticated at full height,
+  so no forged node is admitted. Redeploying the verifier needs a coordinated protocol version (A6, R13).
 
 ---
 

@@ -8,6 +8,7 @@ present.
 |---|---|---|---|---|
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
+| [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
 
 ---
 
@@ -166,3 +167,67 @@ mcycle with a full `reset_uarch()`.
 - Of the fix: the check rejects machines with custom uarch RAM images that the CLI accepts today, which are not
   valid templates anyway. A full reset adds a bounded, constant per-mcycle cost (R12) to building uarch claims. The
   rejected-yield path, whose reset leaf is the revert root hash, must stay bit-identical.
+
+---
+
+## R1-ARCH-1
+
+**CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`)**
+
+- **Severity:** Medium (an undocumented deterministic deviation, consistent across all paths, in behavior that no
+  correct guest relies on for isolation or data integrity).
+- **Component and area:** emulator; CLINT machine timer interrupts (traps and interrupts).
+- **Cited rules:** R7 (traps and interrupts); section 8 Medium; the manual's CLINT description. R2 holds: native and
+  uarch agree.
+- **Location:** `src/rtc.hpp:46` (`rtc_time_to_cycle` returns `time * RTC_FREQ_DIV` in `uint64` without saturation),
+  `src/interpret.cpp:594-600` (`set_rtc_interrupt`), `src/interpret.cpp:2848` (`WFI` wait bound, which matters only in
+  unreproducible interactive mode).
+
+### Problem
+
+`set_rtc_interrupt` raises MTIP when `mtimecmp * 8192 <= mcycle && mtimecmp * 8192 != 0`, computed in `uint64`.
+
+- For `mtimecmp` in `[2^51, 2^64)` the product wraps. With `mtimecmp = 2^51 + 1` it is 8192, so a timer interrupt is
+  taken at the first RTC tick, although `mtime = mcycle / 8192 < 2^51` can never reach `mtimecmp`.
+- With `mtimecmp == 0`, or any multiple of `2^51`, the `!= 0` guard means MTIP is never raised, although
+  `mtime >= mtimecmp` always holds (RISC-V privileged spec), and the manual says the CLINT interrupts "whenever mtime
+  equals mtimecmp".
+
+The manual documents neither the wrap nor the zero exclusion. The exclusion is probably meant to keep a fresh
+machine, whose default `mtimecmp` is 0, from having MTIP pending at boot.
+
+### Evidence and test
+
+- Test: `bugs/R1-ARCH-1/test.lua` with the bare-metal guest `timer.S`, `link.ld` and `build.sh` (compiled at test
+  time with `riscv64-unknown-elf-gcc` into a temporary directory). Run `bugs/run.sh R1-ARCH-1`.
+- The guest reads a deadline that the host writes at `0x80001000` and stores it to `mtimecmp` with a 64-bit store. It
+  then enables MTIE and MIE, busy-loops for about 24000 mcycles and halts with exit 0. Its trap handler records
+  `mcause` and `mcycle` and halts with exit 1. Unexpected outcomes are reported as harness errors.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - case A, `mtimecmp = 0x8000000000001`: exit 1, `mcause = 0x8000000000000007` at mcycle 8198;
+  - case B, `mtimecmp = 0`: no interrupt is ever taken;
+  - a `run_uarch` plus `reset_uarch` replay of mcycles 8190-8200 matches the native root hashes and raises the same
+    MTIP, so the deviation is consistent across paths.
+
+### Scenario and reachability
+
+Any M-mode guest code can write `mtimecmp`, and so can an S-mode SBI caller when the firmware forwards the deadline.
+The pinned guest stack never writes these values: Linux programs `now + delta` with a bounded delta and stops the
+timer with `U64_MAX`, and OpenSBI clears it with `-1`. `U64_MAX` wraps to `2^64 - 8192`, which `mcycle` does not reach
+in practice. Only a subverted or bespoke guest can trigger the deviation, and it affects only that guest's own
+deterministic computation. The interpreter compiled into the uarch and the on-chain verifier share the logic, so it
+cannot split honest from dishonest claims, and the section 1 goal is not threatened.
+
+### Possible solution
+
+Compare in the time domain, which cannot overflow: raise MTIP when `rtc_cycle_to_time(mcycle) >= mtimecmp`. Make
+`rtc_time_to_cycle` saturate, which also fixes the WFI bound. For `mtimecmp == 0`, either drop the exclusion and make
+the default reset value of `mtimecmp` `UINT64_MAX` (timer disabled), or document the exclusion in the manual.
+
+### Risks
+
+- Of the issue: low. A bespoke correct guest that programs a deadline at or above `2^51`, or that expects an
+  immediate interrupt from `mtimecmp = 0`, would see a spurious or a missing timer interrupt.
+- Of the fix: any semantic change alters the state transition function. It needs a new protocol version, a rebuilt
+  uarch with a new pristine hash, and regenerated verifiers (R13, A6). Dropping the zero exclusion without changing
+  the default `mtimecmp` would make MTIP pending in every new machine, changing every template's root hash.

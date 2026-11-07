@@ -10,6 +10,7 @@ present.
 | [R1-PLAYER-1](#r1-player-1) | Relaunched honest bridge abandons its own claim when an adversary joined that commitment first | PRT player and bridge (claim binding after restart) | R4, A7, section 1 completeness, section 7 | Critical |
 | [R1-PLAYER-2](#r1-player-2) | Eight-entry input-boundary cache makes reaching a disputed position cost about n/5 whole inputs | PRT player and bridge (machine cache, replay cost) | R12, A7, R4, section 1 completeness, section 7 | Critical |
 | [R1-PLAYER-3](#r1-player-3) | Player reads the previous epoch's seal with one unpaged `eth_getLogs` and crash-loops once the chain outgrows the node's range limit | PRT player and bridge (epoch discovery) | R4, A7, section 4, section 1 completeness | Critical |
+| [R1-PLAYER-5](#r1-player-5) | Next-epoch inputs run between two ticks of the current dispute, so an input flood delays honest responses past the clocks | PRT player and bridge (scheduling, deadlines) | R4, A7, R12, section 1 completeness, section 7 | Critical |
 | [R1-REFEREE-1](#r1-referee-1) | A late Sybil re-post of the honest claim cuts the honest claim's clock to one block | PRT referee model (tournament joining, clocks) | A7, section 1, section 2 honest claim, section 7, the manual's clock rule | Critical |
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
@@ -341,6 +342,84 @@ of exiting.
 - Of the fix: the seal source must follow the same finality and reorg policy as the listener (`prt-log-history`
   rewinds), or the player could open an epoch from a seal that is later reorged out. A blanket `pcall` around
   `pass()` must not hide assertions that should stop the player, such as a template mismatch.
+
+---
+
+## R1-PLAYER-5
+
+**Next-epoch inputs run between two ticks of the current dispute, so an input flood delays honest responses past
+the clocks**
+
+- **Severity:** Critical, as rated by the reviewer. The hunter and the prover proposed High, on the grounds that
+  whether a deadline is missed depends on clock sizes. The reviewer noted that clocks sized only per A7 cover the
+  dispute's own costs, not a batch of next-epoch work that the adversary sizes. It is High only in a deployment whose
+  allowances deliberately absorb a full next-epoch accumulation per response, which A7 does not require.
+- **Component and area:** PRT player (honest operator); scheduling between accumulating the open epoch and
+  defending the sealed one.
+- **Cited rules:** R4 (the honest operator can always respond in time); A7 and R12 (clocks budget a bounded number of
+  per-input costs per match); section 1 completeness failure; section 7 (any number of inputs chosen to maximize cost,
+  racing transactions).
+- **Location:**
+  - `doc/recipes/prt-player.lua:225-245` (`pass()`): polls listeners and ticks bridges in order, on one thread;
+  - `doc/recipes/prt-epoch.lua:58-77` (`poll()` runs `input_added` for every newly confirmed input);
+  - `doc/recipes/prt.lua:2047-2080` (`input_added` runs the input to its deadline, then stores the epoch state).
+
+### Problem
+
+While epoch N is in dispute, the listener of epoch N+1 is open, because N's seal writes the N+1 checkpoint. Each
+`pass()` ticks epoch N's bridge and then lets epoch N+1's listener run every newly confirmed input synchronously,
+each to the application's per-input bound, followed by a store and sync. Nothing bounds the work per poll, and
+nothing gives the sealed dispute priority. The gap between two consecutive ticks of epoch N's bridge therefore
+includes the full cost of the next epoch's newly confirmed inputs, whose count the adversary chooses. Under the
+default `finalized` input policy, confirmations arrive in 32-block jumps, so a whole batch lands in one poll; a
+`latest` policy still processes a block's worth at once. This contradicts the stated intent in `prt.lua` that "the
+next player can accumulate inputs while this player disputes the sealed epoch".
+
+### Evidence and test
+
+- Test: `bugs/R1-PLAYER-5/test.lua`, with the bare-metal application `guest.S`, `link.ld`, `build.sh` and
+  `vendor/dkjson.lua` (dkjson 2.11, MIT). Run `bugs/run.sh R1-PLAYER-5`; it takes about 17 s.
+- Setup:
+  - `pass()` is extracted verbatim from `prt-player.lua` and run over two real `prt-epoch` listeners;
+  - epoch 7 is sealed, with a real `prt-bridge` whose honest claim is the responder of a match;
+  - epoch 8 is open, with a real stored player and a correctly designed application that accepts each input after
+    about 100k mcycles;
+  - only the chain is fake: its tip advances one block per 100k mcycles executed, and 32 adversarial inputs finalize
+    together at tip 96;
+  - the opponent's move is mined at block 97, with the responder deadline at 117.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator: epoch 7's bridge ticks at tips 95,
+  96 and then 128, after all 32 epoch-8 inputs. Its due `advanceMatch` is never attempted, and the honest claim loses
+  by timeout.
+- Control (`R1_PLAYER_5_CONTROL=interleave`, a scheduler that ticks epoch 7 after every input): the same bridge
+  submits at block 102 and the test passes. The time scale of one block per 100k mcycles is a modelling choice. Real
+  applications use about 1e9 mcycles or more per input, far below the 2^48 deadline, and each input also cost about
+  0.5 s of wall time in store and sync here.
+
+### Scenario and reachability
+
+1. During epoch N's dispute, the adversary posts many valid inputs to epoch N+1, each driving a correctly designed
+   application to its per-input bound.
+2. It times its match move right after the batch becomes visible, or just before a uarch joining window closes.
+3. The honest process executes the whole batch before its next tick of epoch N, and misses the deadline.
+4. The dishonest claim wins epoch N. The attack repeats at every finality jump, at the cost of input gas only.
+
+### Possible solution
+
+Give dispute responses priority and bound accumulation per pass:
+
+- tick every sealed bridge first, then let open listeners process at most one input, or a small time budget, per
+  pass, retrying immediately while a backlog remains;
+- or run accumulation in a separate process that owns the next epoch's store;
+- or check due deadlines between inputs.
+
+A single input then remains the only atomic unit, which R12 budgets.
+
+### Risks
+
+- Of the issue: valid inputs alone let an adversary eliminate the honest claim in any match or uarch joining window.
+- Of the fix: deferring accumulation must not starve epoch N+1 before its own joining window. A retry loop must not
+  busy-spin or starve chain observation. A multi-process design must keep store and checkpoint writes isolated and
+  preserve the crash and restart idempotence of `input_added` and `epoch_sealed`.
 
 ---
 

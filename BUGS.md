@@ -49,6 +49,7 @@ Flags required by `AUDIT.md`:
 | [R3-REFEREE-1](#r3-referee-1) | Referee narration raises on adversary-chosen data inside the referee coroutine, killing the referee | PRT referee model (narration on the referee's fatal path) | A5, section 4, section 5, section 7, section 8 Medium | Medium |
 | [R4-VARSPEC-1](#r4-varspec-1) | Page walk accepts non-leaf PTEs with the reserved A, D or U bits set instead of raising a page fault | emulator (address translation) | R7, section 8 Medium | Medium |
 | [R4-VARSPEC-2](#r4-varspec-2) | Each interrupt taken decrements `instret`/`minstret` | emulator (counters, traps) | R7, the manual's definition of `icycleinstret`, section 8 Medium | Medium |
+| [R7-FPMEM-1](#r7-fpmem-1) | A PLIC claim/complete write clears the M-mode software-written `mip.SEIP` bit, because the PLIC signal and the software bit share one stored bit | emulator (PLIC, supervisor external interrupt) | R7, section 8 Medium | Medium |
 
 ---
 
@@ -2428,3 +2429,60 @@ Alternatively, document the behavior and redefine `icycleinstret` in the manual.
 - Of the issue: only guest `instret` measurements are affected.
 - Of the fix: it changes the state transition function and needs a coordinated protocol version (R13, A6). Native,
   uarch and Solidity diverging on every interrupt would be Critical (R2).
+
+---
+
+## R7-FPMEM-1
+
+**A PLIC claim/complete write clears the M-mode software-written `mip.SEIP` bit, because the PLIC signal and the
+software bit share one stored bit**
+
+- **Severity:** Medium (an undocumented deterministic deviation, consistent across all paths, in behavior that no
+  correct guest relies on for isolation or data integrity).
+- **Component and area:** emulator; the PLIC model and the supervisor external interrupt (traps and interrupts).
+- **Cited rules:** R7 (traps and interrupts); section 8 Medium. R2 holds: native, uarch and the step and reset log
+  verifiers agree.
+- **Location:** `src/plic-address-range.cpp:83-103` (`plic_write_claim_complete` runs
+  `reset_mip(MIP_MEIP_MASK | MIP_SEIP_MASK)` when no PLIC source is pending), `:57-62` and `:198-219`;
+  `src/interpret.cpp:2406-2410` (`write_csr_mip` writes M-mode's SEIP into the same stored bit).
+
+### Problem
+
+By the privileged spec, `mip.SEIP` is writable by M-mode, and the value seen by CSR reads and by the interrupt logic
+is the logical OR of that software bit and the external interrupt controller's signal. The emulator stores one bit
+and lets both the CSR write and the PLIC model drive it. In a reproducible machine no PLIC source is ever pending, so
+any store of a value from 1 to 31 to the claim/complete register (`0x40300004`) takes the "nothing pending" branch and
+clears SEIP. That destroys a supervisor external interrupt that M-mode injected in software, and S-mode can trigger it
+although it has no architectural way to clear that bit. The PLIC specification also says completing an id that was
+never claimed should be ignored; it is not. The manual does not document either behavior.
+
+### Evidence and test
+
+- Test: `bugs/R7-FPMEM-1/test.lua`, with the bare-metal guest `seip.S`, `link.ld` and `build.sh`. Run
+  `bugs/run.sh R7-FPMEM-1`; it takes about 15 s.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - control, with no store to the register: the injected supervisor external interrupt is taken
+    (`scause = 0x8000000000000009`);
+  - M-mode case: `mip` goes from `0x200` to `0x0` after the claim/complete write;
+  - S-mode case: after S-mode stores `1` to the register and sets `sstatus.SIE`, no supervisor external interrupt is
+    taken;
+  - a uarch replay agrees with native at all 54 mcycles, with 6,324 uarch steps logged and verified.
+
+### Scenario and reachability
+
+Any guest reaches it with one 32-bit store, after M-mode sets `mip.SEIP`. The only actor that loses anything is S-mode,
+which loses an interrupt aimed at itself. A correct kernel does not complete an unclaimed id, and M-mode never relies
+on S-mode taking a software-injected interrupt. All paths agree, so claims are unaffected.
+
+### Possible solution
+
+Separate the two sources: let the PLIC drive only its own signal, compute the effective SEIP as the OR of the software
+bit and that signal, and make `csrrs`/`csrrc` read-modify-write use only the software bit. As a smaller step, ignore a
+complete write whose id was not claimed.
+
+### Risks
+
+- Of the issue: low; hashes, proofs and the honest operator are unaffected.
+- Of the fix: it changes the interpreter and possibly the state layout, so it needs a coordinated protocol version, a
+  rebuilt uarch and a new pristine hash (R13, A6). It also changes what `csrr mip` and `sip` return on existing
+  unreproducible machines.

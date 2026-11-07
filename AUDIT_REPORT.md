@@ -216,14 +216,15 @@ candidates, and dedup kept all of them. All 6 were proven and confirmed by one r
 ### Round 5 (extra: data flow)
 
 Six hunters ran, one per untrusted source. DFCHAIN, DFCLAIMPROOF, DFPEER and DFLOADED found no new candidate. DFINPUT
-and DFGUESTOUT reported 3 candidates, and dedup kept all of them. Agents ran on Claude Opus 5.5 (exact ID) at High
+and DFGUESTOUT reported 3 candidates, and dedup kept all of them. All 3 were proven and confirmed by one reviewer each
+(3 Critical). The round ran 13 agents. Agents ran on Claude Opus 5.5 (exact ID) at High
 effort.
 
 | ID | Component | Claimed | Title | Outcome | Reason |
 |---|---|---|---|---|---|
-| R5-DFINPUT-1 | machine-guest-tools | Critical | libcmt `cmt_abi_get_bool` returns success for words that are not a valid bool | **Confirmed, Critical** | Reviewer-confirmed and orchestrator-reproduced; factual summary and committed test; see `BUGS.md` |
+| R5-DFINPUT-1 | machine-guest-tools | Critical | libcmt `cmt_abi_get_bool` returns success for words that are not a valid bool | **Confirmed, Critical** | Reviewer-confirmed and orchestrator-reproduced; see `BUGS.md` |
 | R5-DFGUESTOUT-1 | prt-player-bridge, emulator | Critical | Player and CLI use the guest's `tohost` DATA as the length when reading the outputs root | **Confirmed, Critical** | Reachable for valid templates that yield accepted with DATA other than 32 (the manual contradicts itself on this); see `BUGS.md` |
-| R5-DFGUESTOUT-2 | emulator | Critical | CLI keeps every tx-output payload in memory and writes each report or rejected output to its own file | Proving | |
+| R5-DFGUESTOUT-2 | emulator | Critical | CLI keeps every tx-output payload in memory and writes each report or rejected output to its own file | **Confirmed, Critical** | CLI counterpart of R1-ROBUST-1 with its own location and fix; see `BUGS.md` |
 
 ## Blocked agents
 

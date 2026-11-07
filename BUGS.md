@@ -30,6 +30,7 @@ Flags required by `AUDIT.md`:
 | [R4-VARABORT-1](#r4-varabort-1) | `cartesi-machine` CLI cannot compute claims when a rejected input leaves DATA above the transmit-buffer size | emulator (`cartesi-machine` CLI, cmio computation-hash modes) | R4, R2, section 1 completeness, section 2, section 4, section 8 Critical | Critical |
 | [R4-VARRANGE-1](#r4-varrange-1) | libcmt ABI decoder omits a bounds check on a decoded dynamic offset | `machine-guest-tools` (libcmt ABI decoder) | Section 1 goal, section 2 correctly designed application, section 4, section 7, `AUDIT.md` guest-tools rule | Critical |
 | [R5-DFGUESTOUT-1](#r5-dfguestout-1) | Player and CLI read the outputs root using the guest's `tohost` DATA as its length, so a valid template with DATA other than 32 crashes both on an oversized no-op input | PRT player and bridge, emulator (`cartesi-machine` CLI) | R4, R2, A5, section 2 valid template, section 4, section 1 completeness, section 8 Critical | Critical |
+| [R5-DFGUESTOUT-2](#r5-dfguestout-2) | `cartesi-machine` CLI keeps every tx-output payload in memory and writes every report or rejected output to its own file by default | emulator (`cartesi-machine` CLI, cmio computation-hash modes) | R8, R12, R4, A7, section 1 completeness, section 4, section 8 Critical | Critical |
 | [R5-DFINPUT-1](#r5-dfinput-1) | libcmt `cmt_abi_get_bool` returns success for ABI words that are not a valid bool | `machine-guest-tools` (libcmt ABI decoder) | Section 2 correctly designed application, section 4, section 7, `AUDIT.md` guest-tools rule | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
@@ -1207,6 +1208,68 @@ make the manual's two passages agree.
   libcmt's DATA = 32 convention.
 - Of the fix: the root the CLI saves would change for guests that yield accepted with DATA other than 32, which now
   matches the referee, so scripts that compare CLI artifacts may need updating.
+
+---
+
+## R5-DFGUESTOUT-2
+
+**`cartesi-machine` CLI keeps every tx-output payload in memory and writes every report or rejected output to its own
+file by default**
+
+- **Severity:** Critical (unbounded allocation caused by a guest the honest operator must run to compute its claim;
+  the same basis on which the player-side twin R1-ROBUST-1 was confirmed).
+- **Component and area:** emulator; the `cartesi-machine` CLI in cmio mode, including the mcycle and uarch
+  computation-hash modes that the manual presents as the tool that computes claims.
+- **Cited rules:** R8 (no guest action may cause unbounded host allocation); R12; R4; A7; section 1 completeness
+  failure; section 2 (honest operator's path); section 4; section 8 Critical.
+- **Location:** `src/cartesi-machine.lua:4626-4633` and `4498-4509` (`on_yield_automatic` appends every tx-output
+  payload to `advance.pending_outputs`), `3626-3667` (`flush_pending_outputs`), `3318-3330` (saving reports and
+  rejected outputs), `2056-2063` (the default file patterns).
+- **Related:** R1-ROBUST-1 is the same behavior in the PRT player (`prt.lua`). The location and the fix differ, as
+  with R1-GUESTTOOLS-1 and R4-VARABORT-1.
+
+### Problem
+
+For every automatic tx-output yield the CLI copies the whole payload (up to the 2 MiB transmit buffer) into
+`pending_outputs`, which is cleared only when the input reaches its fixed point or is rejected. A guest can re-yield
+the full buffer every few mcycles without rewriting it, so retained host memory grows by about 0.5 MiB per guest
+mcycle. In addition, by default each report or rejected output is written to its own file. No option disables the
+in-memory retention. The computation hash does not depend on any of it.
+
+### Evidence and test
+
+- Test: `bugs/R5-DFGUESTOUT-2/test.lua`, with the bare-metal guest `guest.S`, `link.ld` and `build.sh` (built at test
+  time). Run `bugs/run.sh R5-DFGUESTOUT-2`; it takes about 13 s.
+- It builds a valid template and runs the real CLI (`--remote-spawn`, `--mcycle-computation-hash`) on a rejected
+  input, measuring the CLI's own peak RSS. It checks that a 32-byte hash is written and that the hash is the same with
+  and without report files.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - memory, with every output file disabled: peak RSS 17 MiB with no outputs, and 176-179 MiB for 64 tx-outputs of
+    2 MiB, a growth of about 160 MiB;
+  - disk, with the default patterns: 0 MiB with no reports, and 128 MiB for 64 reports.
+- A patched copy that keeps only `keccak256(data)` per output and does not save reports makes the test pass, with
+  20 MiB of growth and 0 MiB of disk.
+
+### Scenario and reachability
+
+An input that takes over the guest (section 4) loops on full-buffer automatic yields. The operator running the
+documented CLI to compute its claim runs out of memory or disk before writing the computation hash, and a restart
+replays the same input. A 32 GiB host is exhausted after about 64k mcycles, far below any per-input limit, so no
+deployment can be sized for it. The disk half can be avoided by disabling the file patterns; the memory half cannot.
+
+### Possible solution
+
+Process each tx-output as it arrives: compute its keccak256 once and keep only the hash and position. Write payloads
+to a temporary per-input file only when an output pattern is set, and rename it on acceptance; drop it on rejection.
+Add a length-only query so the payload need not be copied when no pattern is set, and make per-file report output
+opt-in in the computation-hash modes.
+
+### Risks
+
+- Of the issue: one input can stop the documented claim computer before it writes the hash.
+- Of the fix: keeping hashes still grows linearly, at about 8 bytes per guest mcycle, which is far below today's
+  growth. Early writes followed by renames can leave stray temporary files if the run is interrupted. The root check
+  against the frontier must be preserved.
 
 ---
 

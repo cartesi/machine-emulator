@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **in progress** (round 2 hunting).
+Status: **in progress** (round 3 hunting).
 
 This report follows the plan in `AUDIT.md` and the definitions of `THREAT_MODEL.md`. Confirmed issues are in
 `BUGS.md`, and their tests are under `bugs/`.
@@ -63,6 +63,14 @@ reported as uncovered (as priorities), and calibration notes from the round-1 re
 - triggers that need an application that is not correctly designed are out of scope;
 - average-case performance is out of scope, but worst-case cost is not.
 
+### Round 3 angles
+
+The final round. VERIFIER, SOLIDITY, ARCH, PLAYER, REFEREE and ROBUST continue, with the areas their round-2 hunters
+reported as uncovered as priorities. TRANSITIONS, HASH and GUESTTOOLS were dropped after producing no new candidate in
+round 2. The calibration notes add the round-2 refutation (reserved encodings are unspecified, so executing them in a
+ratified way conforms), that unreachable-state defects are at most High, and that the Dave contracts are out of scope
+and unavailable.
+
 ## Candidates
 
 ### Round 1
@@ -103,8 +111,10 @@ two in-flight provers ran again.
 
 Nine hunters ran. The TRANSITIONS hunter on the session model reported a safeguard block with no candidates and was
 retried on `sonnet`, which found none. TRANSITIONS, HASH and GUESTTOOLS produced no new candidate and are dropped from
-round 3. The other six hunters reported 8 candidates, and dedup kept 7. A second container restart interrupted the
-round during hunting; it resumed from its journal, and only the two in-flight hunters ran again.
+round 3. The other six hunters reported 8 candidates, and dedup kept 7. All 7 were proven, and one disproving
+reviewer per candidate reached a verdict: 6 confirmed (2 Critical, 3 High, 1 Medium) and 1 refuted. The round ran 25
+agents, all on the session model except `hunt:TRANSITIONS@sonnet`. A second container restart interrupted the round
+during hunting; it resumed from its journal, and only the two in-flight hunters ran again.
 
 | ID | Component | Claimed | Title | Outcome | Reason |
 |---|---|---|---|---|---|

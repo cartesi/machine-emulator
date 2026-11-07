@@ -9,6 +9,7 @@ present.
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
+| [R1-ARCH-2](#r1-arch-2) | Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping | emulator (atomics, LR/SC) | R7, section 8 Medium | Medium |
 
 ---
 
@@ -231,3 +232,60 @@ the default reset value of `mtimecmp` `UINT64_MAX` (timer disabled), or document
 - Of the fix: any semantic change alters the state transition function. It needs a new protocol version, a rebuilt
   uarch with a new pristine hash, and regenerated verifiers (R13, A6). Dropping the zero exclusion without changing
   the default `mtimecmp` would make MTIP pending in every new machine, changing every template's root hash.
+
+---
+
+## R1-ARCH-2
+
+**Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping**
+
+- **Severity:** Medium (an undocumented deterministic deviation, consistent across all paths, in behavior that no
+  correct guest relies on for isolation or data integrity).
+- **Component and area:** emulator; the A extension's store-conditional.
+- **Cited rules:** R7 (atomics and traps); section 8 Medium. R2 holds: native and uarch agree.
+- **Location:** `src/interpret.cpp:1284-1305` (`execute_SC`).
+
+### Problem
+
+`execute_SC` compares the reservation `ilrsc` with the address before anything else. Only the matching branch calls
+`write_virtual_memory`, which holds the alignment check. The other branch sets `rd = 1` and clears the reservation
+without any check. A successful LR never leaves a misaligned `ilrsc`, because a misaligned LR traps, so every
+misaligned SC takes the silent path. The A extension requires an address-misaligned (or access-fault) exception for a
+misaligned LR/SC, and the Sail model checks alignment before matching the reservation. The manual documents no
+deviation.
+
+Skipping translation on the no-reservation path, so that an unmapped or unwritable address does not fault, is allowed
+by the specification ("a failed SC may be treated like a store"). Only the missing misaligned exception is a defect.
+
+### Evidence and test
+
+- Test: `bugs/R1-ARCH-2/test.lua`, with the bare-metal guest `scmis.S`, `link.ld` and `build.sh`. Run
+  `bugs/run.sh R1-ARCH-2`.
+- The M-mode guest runs four cases. Its trap handler records `mcause` and `mtval` and skips the trapping instruction.
+  The test runs it natively and with `run_uarch`.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - `sc.w` at `0x80002001` and `sc.d` at `0x80002004`, with no reservation: no trap, and `rd = 1` on both paths;
+  - controls behave correctly: an aligned `sc.w` without a reservation gives `rd = 1` with no trap, and a misaligned
+    `sw` traps with `mcause = 6`;
+  - native and uarch end at the same mcycle (65) with equal root hashes.
+
+### Scenario and reachability
+
+Any guest instruction stream reaches it with one misaligned SC. A failed SC performs no memory access, and `rd` is
+the constant 1, so nothing leaks and no correct guest depends on the trap. Linux atomics, libcmt and compiler-made
+LR/SC loops issue an aligned LR first. Only software that relies on the trap to detect misuse, such as a debugger or
+a misaligned-access handler, sees a silent failure. The interpreter compiled into the uarch and the on-chain verifier
+share the logic, so the deviation cannot split claims.
+
+### Possible solution
+
+In `execute_SC`, check natural alignment before comparing with `ilrsc`, and raise the store/AMO address-misaligned
+exception with `mtval = vaddr` through the same path `write_virtual_memory` uses. Keep the no-reservation fast path
+for aligned addresses.
+
+### Risks
+
+- Of the issue: low; buggy guest code sees a silent SC failure instead of a trap.
+- Of the fix: it changes the interpreter and so the state transition function. It needs a new protocol version, a
+  rebuilt uarch with a new pristine hash, and regenerated verifiers (R13, A6). The trap ordering must follow Sail
+  (alignment first, translation only on a reservation match).

@@ -10,6 +10,7 @@ present.
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
 | [R1-ARCH-2](#r1-arch-2) | Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping | emulator (atomics, LR/SC) | R7, section 8 Medium | Medium |
+| [R1-ARCH-3](#r1-arch-3) | Page walk ignores PMA failures on PTE accesses | emulator (address translation) | R7, section 8 Medium | Medium |
 
 ---
 
@@ -289,3 +290,68 @@ for aligned addresses.
 - Of the fix: it changes the interpreter and so the state transition function. It needs a new protocol version, a
   rebuilt uarch with a new pristine hash, and regenerated verifiers (R13, A6). The trap ordering must follow Sail
   (alignment first, translation only on a reservation match).
+
+---
+
+## R1-ARCH-3
+
+**Page walk ignores PMA failures on PTE accesses**
+
+- **Severity:** Medium (an undocumented deterministic deviation, consistent across all paths, in behavior that no
+  correct guest relies on for isolation or data integrity).
+- **Component and area:** emulator; Sv39/48/57 page walk (address translation and memory permissions).
+- **Cited rules:** R7 (address translation and memory permissions); section 8 Medium. R2 holds: native and uarch
+  agree.
+- **Location:** `src/translate-virtual-address.hpp`, in `translate_virtual_address`: the A/D update at line 240,
+  `write_ram_uint64(a, pte_addr, update_pte); // Can't fail since read succeeded earlier`, and the PTE read failure,
+  which returns `false` like a permission failure. Callers such as `fetch_translate_pc_slow` and
+  `read/write_virtual_memory` then raise a page fault.
+
+### Problem
+
+The walk reads each PTE with `read_ram_uint64`, which needs a readable memory range, and updates A/D with
+`write_ram_uint64`, which also needs a writable one, ignoring its result. Two deviations from the privileged spec
+(section 4.3.2) follow:
+
+1. The write can fail, for example when the page table lives in a read-only flash drive or NVRAM. The update is then
+   dropped, and the access goes through with A or D still clear. The spec allows only setting A/D or faulting, and
+   requires an access fault for the original access type when the PTE store violates a PMA (step 7).
+2. When the PTE read fails, because the table pointer is in a device range or an unmapped hole, the guest gets a page
+   fault (12/13/15) instead of the access fault (1/5/7) that step 2 requires.
+
+The manual claims Sv39 support and documents neither deviation.
+
+### Evidence and test
+
+- Test: `bugs/R1-ARCH-3/test.lua`, with the bare-metal guest `ptro.S`, `link.ld` and `build.sh`. The read-only page
+  table image is generated at run time. Run `bugs/run.sh R1-ARCH-3`.
+- An M-mode guest enters S-mode through page tables placed in read-only memory, in the CLINT, or in a hole. It runs
+  natively and with `run_uarch`, and a RAM-resident page table is the control.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - fetch, load and store through read-only PTEs with A=0 or D=0 all succeed (the S-mode `ecall` runs, `mcause = 9`)
+    instead of raising access faults 1, 5 and 7, and the PTEs keep A/D clear;
+  - a root table in the CLINT or in a hole gives `mcause = 12` instead of 1;
+  - the control RAM PTE gets A set correctly;
+  - native and uarch end at mcycle 222 with equal root hashes.
+
+### Scenario and reachability
+
+Read-only flash drives are a documented configuration, and a subverted guest can point `satp` or a non-leaf PTE
+anywhere. But a correct guest such as Linux allocates page tables in RAM; its read-only DAX mappings put only leaf
+data pages in flash, never page tables, and it never points `satp` at a device. A missing access fault, or a page
+fault instead of an access fault, grants no write to protected memory and leaks nothing. Every path behaves the same,
+so claims and verification are unaffected.
+
+### Possible solution
+
+Make the walk report three outcomes: success, page fault and access fault. Map a failed PTE read, and a failed A/D
+write (leaving the PTE unchanged), to the access-fault cause of the access type, with `mtval` set to the virtual
+address, in every caller: fetch, load, store/AMO, MPRV accesses and TLB fills.
+
+### Risks
+
+- Of the issue: low; only guests that place page tables outside writable RAM observe it.
+- Of the fix: it changes the transition function. It needs a new protocol version, a rebuilt uarch, a new pristine
+  hash and regenerated verifiers (R13, A6). It touches every translation path, and an error there would cause a
+  far worse divergence (R2). The logged access sequence, a PTE read followed by a failed write that must not be
+  logged as a write, must stay identical across the record, replay and Solidity verifiers.

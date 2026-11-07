@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **in progress** (round 1 review).
+Status: **in progress** (round 2 hunting).
 
 This report follows the plan in `AUDIT.md` and the definitions of `THREAT_MODEL.md`. Confirmed issues are in
 `BUGS.md`, and their tests are under `bugs/`.
@@ -53,13 +53,26 @@ Models: every agent runs on the session model (Opus 5.5) unless a fallback is re
 | REFEREE | PRT referee model, as if deployed | A1-A7, R3, R11 |
 | ROBUST | Relayed-data robustness and bounded cost across host APIs | Section 4, section 8, R12, R8 |
 
+### Round 2 angles
+
+The same nine angles. Each hunter received every earlier candidate with its outcome, the areas its round-1 hunter
+reported as uncovered (as priorities), and calibration notes from the round-1 refutations:
+
+- the mcycle-level `verify_step` and sha256 step logs serve ZK proving, which is out of scope;
+- subverted guest software is excluded while R7 and R8 hold, but not when a guest action breaks R8;
+- triggers that need an application that is not correctly designed are out of scope;
+- average-case performance is out of scope, but worst-case cost is not.
+
 ## Candidates
 
 ### Round 1
 
 Nine hunters ran; they reported 23 raw candidates, one from a blocked run that was discarded (see below). Dedup
-kept 20 of the 22 others. All 20 were proven, except R1-SOLIDITY-1, whose prover disproved it. Disproving review is
-in progress.
+kept 20 of the 22 others. The provers proved 19 and disproved R1-SOLIDITY-1. One disproving reviewer per proven
+candidate reached a verdict, so no second reviewer was needed: 16 confirmed (9 Critical, 3 High, 4 Medium) and 3
+refuted. The round ran 50 agents, all on the session model except `hunt:HASH@sonnet`. Every angle produced a new
+candidate, so none was dropped. A container restart interrupted the run once, and it resumed from its journal: only
+two in-flight provers ran again.
 
 | ID | Component | Claimed | Title | Outcome | Reason |
 |---|---|---|---|---|---|

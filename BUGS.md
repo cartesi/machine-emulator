@@ -17,6 +17,7 @@ present.
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
 | [R2-PLAYER-1](#r2-player-1) | A settled epoch's bridge cancels the next epoch's pending honest transactions through the shared journal | PRT player and bridge (transaction scheduling across epochs) | R4, R12, A7, section 1 completeness, section 2 honest operator's path | Critical |
 | [R2-REFEREE-1](#r2-referee-1) | At a sealed uarch leaf, the honest claim gets only the opponent's clock to prove, with no timeout win | PRT referee model (uarch leaf settlement) | A7, A1, R4, section 1 completeness, section 5, section 7 | Critical |
+| [R3-PLAYER-1](#r3-player-1) | Honest player cannot sign a `winLeafMatch` proof for inputs of about 37 KB or more, because calldata goes to `cast` as one shell argument | PRT player and bridge (transaction signing) | R4, R12, A7, section 1 completeness, section 4, section 8 Critical | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -927,6 +928,95 @@ manual's leaf-race paragraph to match.
 - Of the fix: transcripts and narration change, so `prt-test.lua` and the manual's story need updating. The
   equal-deadline case must still eliminate both claims. The timeout window must use the same deadline convention as
   `settle_timeout`, and the winner's returned clock must mirror Dave's.
+
+---
+
+## R3-PLAYER-1
+
+**Honest player cannot sign a `winLeafMatch` proof for inputs of about 37 KB or more, because calldata goes to `cast`
+as one shell argument**
+
+- **Severity:** Critical (a crash caused by relayed data the honest operator must process, which eliminates the
+  honest claim).
+- **Component and area:** PRT player and bridge (honest operator); signing transactions through the `cast`
+  command-line tool.
+- **Cited rules:** R4 (the honest operator must produce, and therefore submit, every requested proof); R12 (every
+  honest proof fits the chain's per-transaction limits and must be submittable); A7; section 1 completeness failure;
+  section 4 (paths carrying relayed data must report errors without terminating the process).
+- **Location:**
+  - `doc/recipes/prt-cast.lua:13-25`: `M.run` joins the quoted arguments into one string and asserts on
+    `io.popen`, which runs `/bin/sh -c <string>`.
+  - `doc/recipes/prt-cast.lua:174-202`: `methods:sign` passes `transaction.data` to `cast mktx`, and `verify_signed`
+    passes the raw transaction to `cast decode-transaction`.
+  - `doc/recipes/prt-bridge.lua:472-482`: the `winLeafMatch` arguments include `eth.transition_proof`.
+  - `doc/recipes/prt-ethereum.lua:152-172`: at mcycle 0 and uarch cycle 0, the proof embeds the 8-byte length and
+    the whole input.
+  - `doc/recipes/prt-transactions.lua:262` (`submit` calls `chain:sign`) and `doc/recipes/prt-player.lua:253-273`
+    (`pass` runs with no `pcall`).
+
+### Problem
+
+Linux caps a single argument at `MAX_ARG_STRLEN` = 131072 bytes, and the whole quoted command is one argument of
+`sh -c`. The proof of the transition at the start of an input slot embeds the entire input, plus about 28.5 KB of
+delivery and step logs, and the calldata is passed as hex. From an input of about 36.9 KB on, the command exceeds the
+cap. `execve` fails with `E2BIG`, `io.popen` returns nil, and the assert raises "Argument list too long". Nothing on
+`tick` → `attempt` → `submit` → `sign`, or in `pass()`, catches it, so the player exits. `prt-supervise.sh` relaunches
+it into the same failure on every pass while the job is due. The transaction itself is fine for the chain: the 40 KB
+case is about 68.7 KB of calldata, under geth's 128 KiB pool limit, and about 1.1M calldata gas.
+
+### Evidence and test
+
+- Test: `bugs/R3-PLAYER-1/test.lua`, with the bare-metal rolling guest under `guest/` (built at test time),
+  `fakebin/cast` (a Lua stand-in for the `cast` binary that logs each run), and `vendor/dkjson.lua` (dkjson 2.11, MIT).
+  Run `bugs/run.sh R3-PLAYER-1`; it takes about 1.4 s.
+- It stores a valid template and runs the honest `prt.new_forked_player` on a 1,024-byte and a 40,000-byte input. For
+  each, it builds exactly what `prt-bridge` prepares for the delivery leaf (`prove_state_transition`, then
+  `eth.transition_proof`), and checks that `eth.verify_transition` from the agreed leaf yields the honest uarch leaf 0.
+  It then encodes `winLeafMatch` calldata and submits it through the real `prt-transactions` journal and the real
+  `prt-cast` sign path. Only the node's JSON-RPC and the `cast` binary are stubbed, and the test puts `fakebin` first
+  on `PATH`.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+  - 1,024-byte input: a 29,672-byte proof, 59,786 hex characters of calldata, signed and published;
+  - 40,000-byte input: a 68,456-byte proof, 137,354 hex characters, natively valid, and `prt-cast.lua:19: ... Argument
+    list too long`; the stub `cast` never ran.
+- The reviewer independently confirmed the OS limit: `io.popen` of a command of 131,072 bytes or more fails, and one of
+  131,000 bytes succeeds.
+- Harness note: the forked player's `cartesi-jsonrpc-machine` children can outlive the test. Piping its output into a
+  pager can therefore appear to hang; redirect to a file instead.
+
+### Scenario and reachability
+
+1. The adversary sends a correctly designed application an input of about 40 KB. That is within the 64 KiB InputBox
+   cap, the 2 MiB receive buffer and Ethereum's limits.
+2. It posts a Sybil mcycle claim that diverges in that input's first period, then a uarch claim that diverges at uarch
+   leaf 0, and steers the bisection there (section 7). That leaf's form is delivery followed by a uarch step.
+3. At the sealed leaf, the honest bridge prepares a valid `winLeafMatch` and crashes while signing it, on every
+   relaunch.
+4. The honest claim never proves its leaf and is eliminated. The crash loop also blocks every other job of every
+   epoch, so a dishonest claim can settle a state the transition function does not define.
+
+The defect does not depend on the Dave contracts: the calldata holds at least the proof bytes, whatever the ABI.
+
+### Possible solution
+
+Never pass calldata or raw transactions through `argv` or a shell:
+
+- build and RLP-encode the EIP-1559 transaction in Lua, and sign only its 32-byte digest, for example with
+  `cast wallet sign --no-hash` or an in-process signer;
+- or use a signer reached over JSON-RPC or stdin;
+- or pass data through a file or stdin without `sh -c`.
+
+Also wrap each job's `prepare` and `submit` in a `pcall` that reports and continues, and check sizes against chain
+limits rather than OS limits.
+
+### Risks
+
+- Of the issue: one 40 KB input plus Sybil claims eliminates the honest claim, and the crash loop starves every other
+  job.
+- Of the fix: reimplementing transaction encoding and signing can introduce signature or nonce bugs, so the
+  independent `verify_signed` check must be kept without going through `argv`. Digest-only signing must apply only to
+  digests the operator computed itself. Catching errors per job must still report persistent failures and keep the
+  journal's nonce invariants.
 
 ---
 

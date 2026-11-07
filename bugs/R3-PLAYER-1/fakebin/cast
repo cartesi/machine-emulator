@@ -1,0 +1,45 @@
+#!/usr/bin/env lua5.4
+-- Stand-in for foundry's cast, used only to observe whether prt-cast ever reaches the signer.
+-- It logs each invocation (subcommand and total argument bytes) to $FAKE_CAST_DIR/log, and answers what a real
+-- cast would for the two subcommands prt-cast's sign path uses: `mktx` returns a (fake) raw EIP-1559 transaction,
+-- and `decode-transaction` returns the fields that mktx was given, signed by $FAKE_CAST_SIGNER.
+local dir = assert(os.getenv("FAKE_CAST_DIR"))
+local total = 0
+for i = 1, #arg do total = total + #arg[i] end
+local log = assert(io.open(dir .. "/log", "a"))
+log:write(arg[1], " ", total, "\n")
+log:close()
+local function field(name)
+    for i = 2, #arg - 1 do
+        if arg[i] == name then return arg[i + 1] end
+    end
+end
+local function str(s) return '"' .. s .. '"' end
+if arg[1] == "mktx" then
+    local decoded = table.concat({
+        "{",
+        '"signer":', str(assert(os.getenv("FAKE_CAST_SIGNER"))), ",",
+        '"to":', str(arg[#arg - 1]), ",",
+        '"input":', str(arg[#arg]), ",",
+        '"type":2,',
+        '"chainId":', str(field("--chain")), ",",
+        '"nonce":', str(field("--nonce")), ",",
+        '"gas":', str(field("--gas-limit")), ",",
+        '"value":', str(field("--value")), ",",
+        '"maxFeePerGas":', str(field("--gas-price")), ",",
+        '"maxPriorityFeePerGas":', str(field("--priority-gas-price")), ",",
+        '"accessList":[],',
+        '"hash":', str("0x" .. string.rep("33", 32)),
+        "}",
+    })
+    local f = assert(io.open(dir .. "/decoded.json", "w"))
+    f:write(decoded)
+    f:close()
+    io.write("0x02c0ffee\n")
+elseif arg[1] == "decode-transaction" then
+    local f = assert(io.open(dir .. "/decoded.json", "r"))
+    io.write(f:read("a"))
+    f:close()
+else
+    os.exit(1)
+end

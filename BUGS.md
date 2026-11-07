@@ -22,6 +22,7 @@ present.
 | [R1-ARCH-2](#r1-arch-2) | Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping | emulator (atomics, LR/SC) | R7, section 8 Medium | Medium |
 | [R1-ARCH-3](#r1-arch-3) | Page walk ignores PMA failures on PTE accesses | emulator (address translation) | R7, section 8 Medium | Medium |
 | [R1-ARCH-4](#r1-arch-4) | S-mode `sip` writes can set and clear the read-only STIP and SEIP bits | emulator (supervisor interrupt CSRs) | R7, section 8 Medium | Medium |
+| [R2-VERIFIER-2](#r2-verifier-2) | Send-cmio-response verifier accepts read accesses carrying unchecked `written`/`written_hash` fields | emulator (input-delivery log verifier) | R3, R11, section 4, section 8 Medium | Medium |
 
 ---
 
@@ -1197,3 +1198,55 @@ Restrict the `sip` write mask to `mideleg & MIP_SSIP_MASK`, adding LCOFIP if Ssc
 - Of the issue: low; it affects only S-mode's own delegated interrupts.
 - Of the fix: it changes the uarch program, its pristine hash and the state transition function. It needs a new
   protocol version and regenerated verifiers (R13, A6), and templates built with it hash differently.
+
+---
+
+## R2-VERIFIER-2
+
+**Send-cmio-response verifier accepts read accesses carrying unchecked `written`/`written_hash` fields**
+
+- **Severity:** Medium (a verifier that accepts trailing data that does not affect its result).
+- **Component and area:** emulator; the off-chain input-delivery log verifier (`verify_send_cmio_response`,
+  `replay_send_cmio_state_access`), which the referee model calls at input-delivery positions.
+- **Cited rules:** R3 (trailing data is a log validity condition and must be rejected); R11 (one verifier path per
+  form; here the verifier families disagree on log validity); section 4 (logs are adversarial); section 8 Medium.
+- **Location:** `src/replay-send-cmio-state-access.hpp:123-170` (`check_read`), compared with
+  `src/uarch-replay-state-access.hpp:150-166` (`check_access_type`, which rejects these fields).
+
+### Problem
+
+`check_read` validates a read access's type, address, size, read data, read hash and Merkle proof, but never checks
+that the access carries no `written` data and no `written_hash`. A relayed delivery log can carry arbitrary bytes in
+those fields on any of its read accesses and still verify. The uarch step and reset verifiers reject the same defect
+("unexpected written data in 1st access read access ..."). The fields cannot change the after-hash: written values
+come from the replay, and reads use only the read data.
+
+### Evidence and test
+
+- Test: `bugs/R2-VERIFIER-2/test.lua`, pure Lua with no guest; it takes about 1 s. Run `bugs/run.sh R2-VERIFIER-2`.
+- It takes the honest `log_send_cmio_response` delivery log of a machine waiting at an accepted manual yield. As a
+  control, it checks that `verify_step_uarch` rejects junk written data on a read access. It then sets junk
+  `written`, `written_hash`, or both on each of the delivery log's three read accesses (`0x308` iflags, `0x330`
+  `htif.tohost`, `0x100` mcycle).
+- Observed, deterministically, by the prover, the reviewer and the orchestrator: all 9 mutated logs are accepted, and
+  each returns the honest after-hash.
+
+### Scenario and reachability
+
+Any claimant can send such a log to the referee model at an input-delivery position: `validate_state_transition_response`
+(`doc/recipes/prt.lua:252-273`) and `verify_transition` (`doc/recipes/prt-ethereum.lua:174`) pass it straight to
+`verify_send_cmio_response`. The after-hash is unchanged, so the goal is not threatened. The on-chain encoding has no
+such fields, so the Solidity verifier is unaffected. Off-chain tooling that treats accepted logs as canonical, for
+example by hashing or comparing them, can be confused.
+
+### Possible solution
+
+In `check_read`, reject a read access that carries `written` or `written_hash`, as `check_access_type` does. Better,
+share one helper among all replay state-access classes so the verifier families cannot diverge, and review
+`check_write` and the receive-buffer region write for similar omissions.
+
+### Risks
+
+- Of the issue: low; the result is unaffected.
+- Of the fix: minimal. Honest producers never emit these fields on reads, so only tooling that does starts failing,
+  which is intended.

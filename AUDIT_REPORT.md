@@ -99,12 +99,33 @@ two in-flight provers ran again.
 | R1-ROBUST-2 | prt-player-bridge | Critical | Honest player crashes on a manual yield whose length field exceeds the tx buffer | Duplicate | Same root cause as R1-GUESTTOOLS-1 |
 | R1-ROBUST-3 | prt-player-bridge | High | Each guest automatic yield costs the honest player a JSON-RPC round trip | **Confirmed, High** | Constant factor of about 5-10x over the existing worst case (magnitude corrected by the reviewer); see `BUGS.md` |
 
+### Round 2
+
+Nine hunters ran. The TRANSITIONS hunter on the session model reported a safeguard block with no candidates and was
+retried on `sonnet`, which found none. TRANSITIONS, HASH and GUESTTOOLS produced no new candidate and are dropped from
+round 3. The other six hunters reported 8 candidates, and dedup kept 7. A second container restart interrupted the
+round during hunting; it resumed from its journal, and only the two in-flight hunters ran again.
+
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R2-VERIFIER-1 | emulator | High | Uarch step verifiers accept ECALL `write_tlb` with out-of-range set or slot indices | Duplicate | Same root cause as R2-SOLIDITY-1 |
+| R2-VERIFIER-2 | emulator | Medium | Send-cmio-response verifier accepts read accesses carrying unchecked `written`/`written_hash` fields | **Confirmed, Medium** | Trailing log data accepted without effect on the after-hash; see `BUGS.md` |
+| R2-SOLIDITY-1 | machine-solidity-step | High | TLB-write ECALL indices are unchecked in both uarch verifiers | Proven, in review | |
+| R2-SOLIDITY-2 | machine-solidity-step | High | `Memory.validateStrideLength` off-by-one rejects every access to the last leaf | Proven, in review | |
+| R2-ARCH-1 | emulator | Medium | Reserved RV64C encodings are executed as Zcb instructions | Proven, in review | |
+| R2-PLAYER-1 | prt-player-bridge | Critical | Older epochs' bridges cancel or replace the current epoch's pending transactions | Proven, in review | |
+| R2-REFEREE-1 | prt-referee-model | Critical | Sealed uarch leaf gives the honest claim only the opponent's remaining clock to prove | Proven, in review | |
+| R2-ROBUST-1 | prt-player-bridge | High | Every past epoch's dispute bridge keeps re-observing and retaining the full log history | Proving | |
+
 ## Blocked agents
 
 - `hunt:HASH`, round 1: the hunter on the session model set `blocked_by_safeguards` but still returned one candidate:
   "the referee model accepts an output proof at an index outside the outputs tree". The workflow treated the run as
   blocked and retried it on `sonnet`, which completed and produced R1-HASH-1. The dropped candidate is the same defect
   as R1-REFEREE-2, so it is covered.
+
+- `hunt:TRANSITIONS`, round 2: the hunter on the session model set `blocked_by_safeguards` and returned no
+  candidate. Its retry on `sonnet` completed and found no new candidate.
 
 No reviewer has been blocked so far.
 

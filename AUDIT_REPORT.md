@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **complete**.
+Status: **extra rounds in progress** (round 4). The results below cover rounds 1-3 and are updated as extra rounds confirm issues.
 
 **Result: 24 confirmed issues (12 Critical, 6 High, 6 Medium), listed in `BUGS.md`; 5 candidates rejected and 3
 merged as duplicates.** All 24 tests under `bugs/` fail deterministically on `feature/prt-audit`. A final pass ran every
@@ -88,6 +88,22 @@ reported as uncovered as priorities. TRANSITIONS, HASH and GUESTTOOLS were dropp
 round 2. The calibration notes add the round-2 refutation (reserved encodings are unspecified, so executing them in a
 ratified way conforms), that unreachable-state defects are at most High, and that the Dave contracts are out of scope
 and unavailable.
+
+## Extra rounds
+
+After the planned audit closed, extra rounds were run at the requester's request. Each one splits the work with a
+different strategy, so that no single way of dividing the code decides what gets examined. They stop once two
+consecutive rounds, each with a different strategy, confirm no new issue. Each round keeps the limits of `AUDIT.md`:
+at most 6 hunters, at most 5 candidates each, one disproving reviewer per candidate, and a commit and push for every
+confirmed issue. Hunters receive every earlier candidate with its outcome, and calibration notes from the
+refutations.
+
+| Round | Strategy | Angles |
+|---|---|---|
+| 4 | Variant analysis: one hunter per family of confirmed bugs, searching the whole scope for other sites with the same root-cause pattern | VARABORT (process-terminating errors on data that must be handled), VARCLOCK (clock and deadline arithmetic), VARRANGE (missing range and index checks), VARGROWTH (unbounded growth with volume or age), VARSTATE (derived, cached or restored state diverging), VARSPEC (architectural deviations in traps, CSRs, permissions) |
+| 5 | Data flow: one hunter per untrusted source, followed end to end across components | planned |
+| 6 | Lifecycle phase: one hunter per phase of an epoch and of the operator | planned, if needed |
+| 7 | File partition: disjoint file sets, each against the whole threat model | planned, if needed |
 
 ## Candidates
 

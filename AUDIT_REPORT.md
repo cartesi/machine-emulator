@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **extra rounds in progress** (round 5 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
+Status: **extra rounds in progress** (round 7 next; round 6 was clean). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
 
 **Running extra-rounds total:** round 4 (variant analysis) confirmed 6 new issues, bringing the confirmed total to **30 (14 Critical, 8 High, 8 Medium)**. See the round 4 candidate table and the Extra rounds section.
 
@@ -229,13 +229,14 @@ effort.
 ### Round 6 (extra: lifecycle phase)
 
 Eight hunters ran, one per phase: setup, open epoch, sealing, mcycle dispute, uarch dispute, settlement, restart and
-epoch hand-off. Only LCSETUP found candidates (2). The other seven found none. No agent was blocked. Agents ran on
+epoch hand-off. Only LCSETUP found candidates (2). The other seven found none. No agent was blocked. Both candidates
+were proven and then refuted by their reviewers, so **round 6 confirmed no new issue: the first clean round**. Agents ran on
 Claude Opus 5.5 (exact ID) at High effort.
 
 | ID | Component | Claimed | Title | Outcome | Reason |
 |---|---|---|---|---|---|
 | R6-LCSETUP-1 | prt-player-bridge | High | A reopened epoch directory is not bound to the checkpoint or template it continues | Refuted by reviewer | Reproduced, but the `--state` directory is the operator's own trusted state, and feeding it another deployment's epoch directory is an operator configuration error outside the section 7 adversary. R13's version mismatch concerns the build against the deployment, which agree here. The reopened machine is not the valid template of the deployment being defended. At most an informational hardening note |
-| R6-LCSETUP-2 | prt-player-bridge | High | Player computes with the checkpoint manifest's sampling period and never compares it with the factory geometry | Proving | |
+| R6-LCSETUP-2 | prt-player-bridge | High | Player computes with the checkpoint manifest's sampling period and never compares it with the factory geometry | Refuted by reviewer | Reproduced, but it requires the trusted operator to misconfigure its own node: the documented path takes the geometry from the factory. The node never posts a claim built with the wrong period, so it does detect the mismatch, only late and with a bare assert. R13 concerns the build against the deployment, which agree. At most a hardening note: assert the manifest's period against the factory's geometry at startup |
 
 ## Blocked agents
 

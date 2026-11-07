@@ -29,6 +29,7 @@ Flags required by `AUDIT.md`:
 | [R3-PLAYER-1](#r3-player-1) | Honest player cannot sign a `winLeafMatch` proof for inputs of about 37 KB or more, because calldata goes to `cast` as one shell argument | PRT player and bridge (transaction signing) | R4, R12, A7, section 1 completeness, section 4, section 8 Critical | Critical |
 | [R4-VARABORT-1](#r4-varabort-1) | `cartesi-machine` CLI cannot compute claims when a rejected input leaves DATA above the transmit-buffer size | emulator (`cartesi-machine` CLI, cmio computation-hash modes) | R4, R2, section 1 completeness, section 2, section 4, section 8 Critical | Critical |
 | [R4-VARRANGE-1](#r4-varrange-1) | libcmt ABI decoder omits a bounds check on a decoded dynamic offset | `machine-guest-tools` (libcmt ABI decoder) | Section 1 goal, section 2 correctly designed application, section 4, section 7, `AUDIT.md` guest-tools rule | Critical |
+| [R5-DFGUESTOUT-1](#r5-dfguestout-1) | Player and CLI read the outputs root using the guest's `tohost` DATA as its length, so a valid template with DATA other than 32 crashes both on an oversized no-op input | PRT player and bridge, emulator (`cartesi-machine` CLI) | R4, R2, A5, section 2 valid template, section 4, section 1 completeness, section 8 Critical | Critical |
 | [R5-DFINPUT-1](#r5-dfinput-1) | libcmt `cmt_abi_get_bool` returns success for ABI words that are not a valid bool | `machine-guest-tools` (libcmt ABI decoder) | Section 2 correctly designed application, section 4, section 7, `AUDIT.md` guest-tools rule | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
@@ -1131,6 +1132,81 @@ R1-GUESTTOOLS-1 too.
 finding is a standard missing-bounds-check defect in an open-source parsing library; this is a factual summary, and
 the full reproduction is the committed test. The audit report flags it as confirmed with its detailed write-up
 withheld.
+
+---
+
+## R5-DFGUESTOUT-1
+
+**Player and CLI read the outputs root using the guest's `tohost` DATA as its length, so a valid template with DATA
+other than 32 crashes both on an oversized no-op input**
+
+- **Severity:** Critical, as rated by the reviewer (R4 violated at a reachable state; a crash caused by relayed data
+  the honest operator must process). Reachability depends on a contradiction in the manual, described below, which
+  narrows the set of exposed templates to guests that do not yield with DATA = 32.
+- **Component and area:** PRT player (honest operator) and the emulator's `cartesi-machine` CLI; reading the outputs
+  Merkle root at an accepted yield.
+- **Cited rules:** R4; R2; A5 (the referee takes the root as the fixed first 32-byte word of the transmit buffer and
+  ignores DATA); section 2 (valid template, reachable state, correctly designed application); section 4; section 1
+  completeness failure; section 8 Critical.
+- **Location:**
+  - `doc/recipes/prt.lua:956-959`, `1385-1394` (`flush_pending_outputs` asserts the frontier root equals the string
+    read), `1983-1990` (`run_to_input_mcycle_offset`) and `2055-2068` (`input_added`);
+  - `src/cartesi-machine.lua:3626-3651` (`flush_pending_outputs` asserts `#data == HASH_SIZE`), `4560-4568`,
+    `4655-4662`;
+  - `src/machine.cpp:1992-2002`: `receive_cmio_request` returns as many bytes as the guest wrote in the DATA field.
+
+### Problem
+
+Both claim computers take the outputs root from `receive_cmio_request`, which returns DATA bytes of the transmit
+buffer, with DATA chosen by the guest. The referee model (`game-output.lua`) reads a fixed 32-byte word and ignores
+DATA. When an advance-state input is a provable no-op (it is larger than the receive buffer), the machine stays at
+the template's own accepted yield, and both hosts re-read the root with the template's DATA. If that DATA is not 32,
+the player fails with "outputs Merkle root mismatch" and the CLI with "expected outputs Merkle root in tx buffer",
+although the root in the state is correct.
+
+The manual contradicts itself on DATA at an accepted yield. Its yield section says DATA "carries the length of that
+hash in bytes" (around `doc/README.md:7587`), while its low-level guest loop initializes `length = 0` for the first
+accepted yield and passes it as DATA (around line 7614). `assert_rolling_template` and the section 2 valid-template
+conditions do not constrain DATA. Templates built on libcmt use DATA = 32 and are not affected.
+
+### Evidence and test
+
+- Test: `bugs/R5-DFGUESTOUT-1/test.lua`, with the bare-metal guest `guest.S`, `link.ld` and `build.sh` (built at test
+  time). Run `bugs/run.sh R5-DFGUESTOUT-1`.
+- The guest follows the manual's low-level loop. Its first accepted yield has DATA = 0 (the control uses 32), and
+  later accepts use 32. The test stores two templates and delivers an input of `(1 << 21) + 1` bytes.
+- Harness checks that pass before the subject cases run: on both templates the oversized input leaves the root hash
+  unchanged, its delivery log verifies, and the machine stays at the accepted yield; the DATA = 32 template works in
+  both the player and the CLI; the DATA = 0 template works in the player with a small input.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator, on the DATA = 0 template: the player
+  raises `prt.lua:1393: outputs Merkle root mismatch`, and the CLI aborts at `cartesi-machine.lua:3651` with no
+  computation hash. The CLI case needs `--remote-spawn --remote-address=127.0.0.1:0 --remote-shutdown`.
+- Fix check: with `prt.lua` reading `read_memory(AR_CMIO_TX_BUFFER_START, 32)`, the player part passes.
+
+### Scenario and reachability
+
+1. The operator defends a valid template whose guest follows the manual's low-level loop, so DATA = 0.
+2. An adversary posts, as an early input, one larger than the 2 MiB receive buffer (section 7 allows this). The
+   delivery is a correct, provable no-op.
+3. `input_added` raises before committing, and a relaunch replays the same input and fails again. The documented CLI
+   fails the same way, so neither claim computer can defend the epoch, and a dishonest claim can win by timeout.
+
+Rejected inputs revert to the template, so the exposure persists until some input is accepted.
+
+### Possible solution
+
+Read the root exactly as the referee does: a fixed 32 bytes from the start of the transmit buffer whenever the machine
+waits at an accepted yield, ignoring DATA. Apply it in `prt.lua` (`run_to_input_mcycle_offset`,
+`flush_pending_outputs`) and in the CLI (`flush_pending_outputs`, the saved-root and accept-state-proof paths, and
+`assert_rolling_template`). Keep the frontier-versus-root self-check so a real mismatch is still detected. Optionally
+make the manual's two passages agree.
+
+### Risks
+
+- Of the issue: one permissionless input eliminates the honest claim for any valid template whose guest does not use
+  libcmt's DATA = 32 convention.
+- Of the fix: the root the CLI saves would change for guests that yield accepted with DATA other than 32, which now
+  matches the referee, so scripts that compare CLI artifacts may need updating.
 
 ---
 

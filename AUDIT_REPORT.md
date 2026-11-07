@@ -222,7 +222,7 @@ effort.
 | ID | Component | Claimed | Title | Outcome | Reason |
 |---|---|---|---|---|---|
 | R5-DFINPUT-1 | machine-guest-tools | Critical | libcmt `cmt_abi_get_bool` returns success for words that are not a valid bool | **Confirmed, Critical** | Reviewer-confirmed and orchestrator-reproduced; factual summary and committed test; see `BUGS.md` |
-| R5-DFGUESTOUT-1 | prt-player-bridge, emulator | Critical | Player and CLI use the guest's `tohost` DATA as the length when reading the outputs root | Proven, in review | |
+| R5-DFGUESTOUT-1 | prt-player-bridge, emulator | Critical | Player and CLI use the guest's `tohost` DATA as the length when reading the outputs root | **Confirmed, Critical** | Reachable for valid templates that yield accepted with DATA other than 32 (the manual contradicts itself on this); see `BUGS.md` |
 | R5-DFGUESTOUT-2 | emulator | Critical | CLI keeps every tx-output payload in memory and writes each report or rejected output to its own file | Proving | |
 
 ## Blocked agents

@@ -34,6 +34,7 @@ Flags required by `AUDIT.md`:
 | [R2-ROBUST-1](#r2-robust-1) | Every past epoch's bridge re-observes and retains the full shared log history on every pass | PRT player and bridge (dispute bridge observation) | R12, A7, R4, section 4, section 8 High | High |
 | [R2-SOLIDITY-1](#r2-solidity-1) | Uarch verifiers accept a `WRITE_TLB` ECALL with out-of-range indices, writing a TLB slot image to any leaf where native throws | emulator (uarch step verifier), `machine-solidity-step` (`EmulatorCompat.writeTlbECALL`) | R2, R3, R13, A6, section 8 High | High |
 | [R2-SOLIDITY-2](#r2-solidity-2) | On-chain `Memory.validateStrideLength` off-by-one rejects every access to the last leaf | `machine-solidity-step` (`Memory.sol`) | R2, R3, R10, section 8 High | High |
+| [R4-VARGROWTH-1](#r4-vargrowth-1) | Honest stored player never removes settled epochs' directories or checkpoints, so disk use grows with the application's age | PRT player and bridge (stored player retention) | Section 1 resources, R12, A7, R4, section 2, section 8 High | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
 | [R1-ARCH-2](#r1-arch-2) | Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping | emulator (atomics, LR/SC) | R7, section 8 Medium | Medium |
 | [R1-ARCH-3](#r1-arch-3) | Page walk ignores PMA failures on PTE accesses | emulator (address translation) | R7, section 8 Medium | Medium |
@@ -1528,6 +1529,82 @@ a test that reads and writes the last leaf.
 - Of the issue: none today; it becomes Critical if the top page is ever touched.
 - Of the fix: low. It is more permissive by exactly the last leaf, and proofs are still authenticated at full height,
   so no forged node is admitted. Redeploying the verifier needs a coordinated protocol version (A6, R13).
+
+---
+
+## R4-VARGROWTH-1
+
+**Honest stored player never removes settled epochs' directories or checkpoints, so disk use grows with the
+application's age**
+
+- **Severity:** High, as rated by the reviewer. The hunter proposed Critical, by analogy with R1-PLAYER-3. The
+  reviewer noted three things:
+  - per-epoch disk use is bounded, and growth comes from elapsed epochs, not from guest or relayed data;
+  - a guest only turns shared copies into full ones, a constant factor;
+  - an operator can prune with the shipped `prt.remove_epoch_directory` and restart with `--first-epoch=N`.
+
+  That removes a margin rather than breaking a rule per unit of work, as with R2-ROBUST-1.
+- **Component and area:** PRT player (honest operator); retention of the stored player's per-epoch state.
+- **Cited rules:** section 1 (the honest operator runs on the resources the deployment was sized for); R12 and A7
+  (sizing margin); R4 (if the disk fills); section 2 (storing and reloading on the honest path); section 8 High.
+- **Location:**
+  - `doc/recipes/prt-player.lua:150-220`: each epoch gets `state/epoch-N` and `checkpoints/epoch-N+1`, and nothing
+    removes either.
+  - `doc/recipes/prt.lua:2505-2520` (`store_next_epoch_checkpoint`): a full `machine:store` per epoch.
+  - `doc/recipes/prt.lua:1272-1290`: up to 8 stored cache entries are kept after the seal.
+  - `doc/recipes/prt.lua:2605-2609`: `remove_epoch_directory`, documented for use "after its epoch's dispute",
+    exported at line 2898 and never called by `prt-player.lua`, `prt-epoch.lua` or `prt-bridge.lua`.
+  - `doc/recipes/prt-player.lua:177-183`: a restart walks checkpoints from `--first-epoch`, default 0.
+
+### Problem
+
+Every epoch leaves behind its directory and the next epoch's checkpoint. The directory holds a machine clone, up to
+8 stored cache entries, inputs, outputs and forests. The checkpoint is a full data write, even on a reflink
+filesystem. No operator module ever deletes a settled epoch, and the default restart (`--first-epoch=0`) needs every
+checkpoint from epoch 0. Retained disk is therefore about ten machine images per epoch, summed over the application's
+life. A guest that rewrites all memory makes every retained clone diverge fully on reflink filesystems; on ext4 they
+are full copies anyway.
+
+### Evidence and test
+
+- Test: `bugs/R4-VARGROWTH-1/test.lua`, with a 4 MiB bare-metal guest (`guest.S`, `link.ld`, `build.sh`, built into
+  a temporary directory) that accepts each input and writes to every RAM page. Run `bugs/run.sh R4-VARGROWTH-1`; it
+  takes about 21 s.
+- It replays `prt-player.lua`'s per-epoch honest lifecycle with the real `prt.lua` code, without a chain:
+  `load_epoch_checkpoint`, `new_stored_player(state/epoch-N, checkpoints/epoch-N+1)`, two `input_added`, then
+  `epoch_sealed`, for 4 epochs. It fails when disk after 4 epochs exceeds twice that after 1 epoch and the operator
+  modules contain no removal call. The second condition is a static text search, because the harness cannot settle
+  epochs without a chain.
+- Observed on ext4, deterministically, by the prover, the reviewer and the orchestrator:
+  - retained 240, 449, 658 and 866 MiB after epochs 0-3, about +208 MiB per epoch;
+  - a control that removes epoch N-2's directory and keeps only the latest checkpoint stays flat at 376 MiB.
+
+### Scenario and reachability
+
+No adversary is needed. With hourly epochs and the pinned Linux image, each checkpoint alone writes at least the
+350 MiB root file system, so an unattended node's disk fills within weeks to months. From then on, `input_added`,
+`commit_epoch_state`, `store_uarch_claim` and the seal's checkpoint store fail on every relaunch. The honest claim then
+misses its joining window or deadlines (A7), and a dishonest claim can settle. Manual pruning avoids it, but nothing
+in the reference operator does it, and `prt-supervise.sh` relaunches with unchanged arguments.
+
+### Possible solution
+
+Retire an epoch automatically once its dispute is finally settled:
+
+- call `prt.remove_epoch_directory(state/epoch-N)`;
+- remove `checkpoints/epoch-N`;
+- drop its listener and bridge, which also addresses R2-ROBUST-1.
+
+Make a relaunch start from a durably persisted "first unsettled epoch" marker instead of epoch 0. Optionally, clone
+the final stored machine at the seal instead of a full `machine:store`, and drop a sealed epoch's cache entries once
+its dispute no longer needs them.
+
+### Risks
+
+- Of the issue: an unattended honest node eventually fills its disk and misses deadlines.
+- Of the fix: pruning before final settlement (an early terminal flag, a reorg, an open inner tournament) would delete
+  what the honest claim needs, so retirement must key on finalized settlement. The marker must be written durably
+  before deletion. Directories held open by a live listener's forked servers must be deleted only after it retires.
 
 ---
 

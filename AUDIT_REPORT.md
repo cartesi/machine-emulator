@@ -240,7 +240,7 @@ Claude Opus 5.5 (exact ID) at High effort.
 
 ### Round 7 (extra: file partition)
 
-Eleven hunters ran, each on a disjoint set of files, reading every function against the whole threat model. FPINTERP1,
+Eleven hunters ran, each on a disjoint set of files, reading every function against the whole threat model. Of the 4 candidates, 2 were confirmed (1 Critical, 1 Medium), so **round 7 was not clean**. The prover disproved 1, and the orchestrator did not confirm 1 after the reviewer had. FPINTERP1,
 FPINTERP2, FPHOSTAPI, FPCLI, FPSOLIDITY, FPGUESTTOOLS and FPPRT found no new candidate. FPMACHINE, FPMEM, FPUARCH and
 FPPRTREST reported 4 candidates, and dedup kept all of them. No agent was blocked. Agents ran on Claude Opus 5.5
 (exact ID) at High effort.
@@ -250,7 +250,7 @@ FPPRTREST reported 4 candidates, and dedup kept all of them. No agent was blocke
 | R7-FPUARCH-1 | emulator | Critical | An interrupted mark-dirty leaves a dirty page under clean ancestors in a shared stored machine, so the root hash goes stale after a reload | **Confirmed, Critical** | Reviewer kept Critical; narrow crash window simulated with gdb and SIGKILL; see `BUGS.md` |
 | R7-FPMACHINE-1 | prt-player-bridge | High | The honest player runs every machine with the default line-flushed stdout console | Disproved by prover | The mechanism is real, but it raises the average cost only: a guest's `sfence.vma` already costs more per mcycle (about 0.9 µs against 0.17 to 0.7 µs), so the worst-case cost of no unit of work changes (R12). A lead the prover did not pursue is recorded under "Left uncovered" |
 | R7-FPMEM-1 | emulator | Medium | A PLIC claim/complete write clears the software-written `mip.SEIP` bit | **Confirmed, Medium** | Deterministic, consistent across paths, no correct guest relies on it; see `BUGS.md` |
-| R7-FPPRTREST-1 | prt-player-bridge | Critical | The honest bridge inflates gas by 20% with no per-transaction cap, so a proof that fits the 2^24 gas cap can be signed above it | Proven, in review | |
+| R7-FPPRTREST-1 | prt-player-bridge | Critical | The honest bridge inflates gas by 20% with no per-transaction cap, so a proof that fits the 2^24 gas cap can be signed above it | Not confirmed (orchestrator override of the reviewer's Critical) | The reviewer confirmed it and reproduced it, but only with 350 KB and 660 KB input payloads. The `InputBox` this branch deploys against (rollups-contracts v3.0.0-alpha.10, also v2.1.1) reverts above `INPUT_MAX_SIZE = 1 << 16`, which I verified directly. The largest honest delivery witness is then about 94 KB, with an estimate near 3.8M gas and 1.2 times that near 4.6M, far below 2^24 = 16.8M. The inflation cannot push a real proof over the cap. This is the same reasoning as for R1-SOLIDITY-1. It becomes real only if `INPUT_MAX_SIZE` is raised above roughly 300 KB or another input source is used. Hardening note: clamp the signed gas at the per-transaction cap, and give the bridge's assertions messages. R3-PLAYER-1, whose trigger is 36 KB, is unaffected. The test directory is left untracked |
 
 ## Blocked agents
 

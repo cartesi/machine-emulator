@@ -4,6 +4,15 @@ Confirmed issues of the PRT audit, ordered by severity. Severities and rules fol
 and every rejected candidate are in `AUDIT_REPORT.md`. Run a test with `bugs/run.sh <ID>`; it fails while the bug is
 present.
 
+Flags required by `AUDIT.md`:
+
+- **Not executed on-chain.** No EVM was available, so the Solidity halves of R2-SOLIDITY-1 and R2-SOLIDITY-2 are proven
+  against a model of the pinned `machine-solidity-step` source, not by running it. Their C++ halves and every other
+  test run real code.
+- **Fallback models.** No issue was confirmed only by a fallback model: every prover and reviewer ran on the session
+  model.
+- **Proofs of concept.** Every issue has one; none is reported without a test.
+
 | ID | Title | Component | Cited rules | Severity |
 |---|---|---|---|---|
 | [R1-GUESTTOOLS-1](#r1-guesttools-1) | Honest PRT player aborts for good when a guest yield's DATA exceeds the transmit buffer | PRT player and bridge (yield handling) | R4, section 1 completeness, section 2 reachable state, section 4, A7 | Critical |

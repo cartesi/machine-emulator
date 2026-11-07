@@ -1,6 +1,24 @@
 # PRT Audit Report
 
-Status: **in progress** (round 3 hunting).
+Status: **complete**.
+
+**Result: 24 confirmed issues (12 Critical, 6 High, 6 Medium), listed in `BUGS.md`; 5 candidates rejected and 3
+merged as duplicates.** All 24 tests under `bugs/` fail deterministically on `feature/prt-audit`. A final pass ran every
+one of them and each exited with status 1, the bug present, and none with a harness error.
+
+| Component | Critical | High | Medium |
+|---|---|---|---|
+| PRT player and bridge (honest operator) | 8 | 3 | 0 |
+| PRT referee model | 3 | 0 | 1 |
+| Emulator | 1 | 1 | 5 |
+| `machine-solidity-step` (with the emulator for R2-SOLIDITY-1) | 0 | 2 | 0 |
+| `machine-guest-tools` | 0 | 0 | 0 |
+
+The emulator's Critical, R1-VERIFIER-1, is also what kills the referee model. The honest operator holds most of the
+Criticals, and none of them needs an emulator defect: crashes on guest or relayed data, restarts, scheduling, and
+costs that grow with the adversary's inputs or the application's age. No soundness failure was found in the
+emulator's transition function or its verifiers at reachable states. Every verifier divergence found occurs only at
+unreachable before-states (High), or accepts trailing data without effect on the result (Medium).
 
 This report follows the plan in `AUDIT.md` and the definitions of `THREAT_MODEL.md`. Confirmed issues are in
 `BUGS.md`, and their tests are under `bugs/`.
@@ -130,7 +148,22 @@ during hunting; it resumed from its journal, and only the two in-flight hunters 
 ### Round 3
 
 The final round ran six hunters. SOLIDITY, VERIFIER, ARCH and ROBUST found no new candidate. PLAYER and REFEREE
-reported one each, and dedup kept both.
+reported one each, and dedup kept both. Both were proven and confirmed by one reviewer each (1 Critical, 1 Medium).
+The round ran 11 agents, all on the session model, and no agent was blocked. Hunting then stopped, as `AUDIT.md`
+bounds it to 3 rounds, with no open candidate left.
+
+### Totals
+
+| Round | Agents | Raw candidates | Distinct | Confirmed | Rejected |
+|---|---|---|---|---|---|
+| 1 | 50 | 23 (one discarded with a blocked run) | 20 | 16 | 4 |
+| 2 | 25 | 8 | 7 | 6 | 1 |
+| 3 | 11 | 2 | 2 | 2 | 0 |
+| All | 86 | 33 | 29 | 24 | 5 |
+
+Every prover and reviewer ran on the session model, Opus 5.5. No issue in `BUGS.md` was confirmed only by a fallback
+model, and none is reported without a proof of concept. Two issues, R2-SOLIDITY-1 (its Solidity half) and
+R2-SOLIDITY-2, are proven against a model of the pinned Solidity source rather than on-chain, and `BUGS.md` says so.
 
 | ID | Component | Claimed | Title | Outcome | Reason |
 |---|---|---|---|---|---|
@@ -147,15 +180,49 @@ reported one each, and dedup kept both.
 - `hunt:TRANSITIONS`, round 2: the hunter on the session model set `blocked_by_safeguards` and returned no
   candidate. Its retry on `sonnet` completed and found no new candidate.
 
-No reviewer has been blocked so far.
+No prover or reviewer was blocked in any round, so no issue needed a fallback reviewer or was reported without a
+proof of concept. The only fallbacks were the two hunters above.
 
 ## Left uncovered
 
-Filled in at the end of the audit.
+The hunt was bounded to 3 rounds (`AUDIT.md`). These areas were not examined, or were examined only partly. The
+hunters reported them as uncovered and later rounds did not close them.
+
+- **Solidity execution.** No EVM, `solc` or Foundry could be installed (refused by the sandbox's permission policy),
+  so `machine-solidity-step` was never run. Its findings rest on regeneration from the C++ (the generated
+  `UArchStep.sol`, `UArchReset.sol` and `SendCmioResponse.sol` match token for token), line-by-line traces, and Lua
+  models of the pinned source. On-chain gas was computed from calldata formulas, not measured.
+- **The Dave contracts.** They are out of scope and not in the tree. The parts of the encoding seam that they own were
+  not checked: how they compute `dataHash` from input bytes, how they parse the input-length prefix that
+  `transition_proof` emits, the `MetaStep` counter they pass, how they map a position to its form, and whole-transaction
+  gas. Neither was the reliance of R2-REFEREE-1 and R1-REFEREE-1 on Dave's behavior. Both cite it through the bridge
+  and its specification, which encode Dave's rules, not through the contracts themselves.
+- **Uarch worst case.** The worst-case number of uarch cycles per mcycle against `UARCH_CYCLE_MAX` (R4, R12) was
+  measured only for representative heavy mcycles: TLB flushes, traps, page walks, soft-float. It was estimated, not
+  bounded analytically, and an interrupt taken together with a flushing instruction in the same mcycle was not
+  measured.
+- **Differential fuzzing.** There was no executed differential fuzz of `uarch_step` (C++ replay against the pinned
+  uarch program) on fabricated uarch states, no exhaustive soft-float check against a reference implementation, and no
+  full line-by-line review of every RV64C, F and D handler. Sv48 and Sv57 walks were exercised only on faulting walks.
+- **Long runs.** Native and uarch were not compared over a full Linux boot, and forking through the JSON-RPC server was
+  not compared with an uninterrupted run (store and load were).
+- **Persistence.** Crash consistency of shared backing stores (`dht`, `dpt`, `sht`, `phtc`) under SIGKILL, and the
+  stored player's crash recovery at every interleaving, were not exercised.
+- **Claim correctness on output-emitting guests.** The honest player's mcycle and uarch claims were compared with the
+  CLI's computation hashes only for bare-metal guests that emit no outputs. An input deadline reached after 2^48 real
+  mcycles was checked only through a saturated template near 2^64.
+- **`machine-guest-tools` at run time.** `rollup-http-server` under real concurrency and timeouts, `echo-dapp`, and
+  libcmt's Merkle tree near 2^63 leaves were read but not exercised. Round 2's GUESTTOOLS hunter found nothing new
+  inside the tools themselves.
+- **Operator plumbing.** `prt-websocket.lua` frame parsing, fee and nonce corner cases of `prt-transactions.lua` under
+  reorgs, JSON-RPC per-request allocation for large relayed logs, and the CLI's rollup paths under adversarial inputs
+  were read but not stress-tested.
+- **A3 in the referee model.** Enforcing the input limit per epoch (more than 2^24 inputs) was not exercised. In the
+  model, inputs come from the referee's own command line.
+- **Out of scope by `AUDIT.md`.** ZK proving (`risc0/`), the Linux kernel (including the `/dev/cmio` driver), OpenSBI,
+  and the Dave and Cartesi Rollups Node validators.
 
 ## Gaps in the threat model
-
-Collected as the audit runs; final at the end.
 
 - **Input size versus chain limits.** The proof of an advance-state delivery grows linearly with the input. The
   receive buffer holds 2 MiB, but deliveries above roughly 400 KB yield proofs that cannot fit an Ethereum
@@ -166,3 +233,33 @@ Collected as the audit runs; final at the end.
   terminating the process, and section 8 rates the referee model as a deployed referee. The model does not say
   explicitly that one shared referee process failing on one match's data must not stop the other matches
   (R1-VERIFIER-1).
+- **Liveness of output acceptance.** Section 1 and A5 constrain which outputs may be accepted, but nothing requires
+  the referee to keep accepting every output that the settled state does commit to. R3-REFEREE-1 halts output
+  acceptance on demand without breaking any stated rule except the manual's.
+- **The honest operator's path stops at the emulator.** Section 2 lists obtaining the template, advancing, delivering,
+  storing and reloading, computing claims and producing proofs. It does not list submitting transactions, observing
+  the chain, or restarting the operator process. Five of the twelve Criticals live there:
+  - R1-PLAYER-1: restart recovery;
+  - R1-PLAYER-3: the node's log-range limit;
+  - R1-PLAYER-5 and R2-PLAYER-1: scheduling across epochs and a shared account;
+  - R3-PLAYER-1: OS argument limits when signing.
+
+  These were rated Critical through R4 ("cannot respond in time"), but naming submission, observation and restart as
+  part of the path would remove the ambiguity.
+- **R12 has no unit for the operator's own bookkeeping.** Its units are emulator work: mcycles, uarch cycles,
+  deliveries, resets, logs, claim parts. Costs that grow with the application's age or with other parties' chain
+  activity have no stated bound: R1-PLAYER-4, R2-ROBUST-1, and the replay distance of R1-PLAYER-2. A7 sizes clocks for
+  a bounded number of matches, not for an operator whose per-pass cost grows with every past epoch.
+- **Concurrent epochs.** The model treats each epoch's dispute alone. It does not say that the honest operator must
+  defend overlapping epochs, or that A7 must cover accumulating epoch N+1 while disputing epoch N (R1-PLAYER-5,
+  R2-PLAYER-1).
+- **Which clock rule is normative.** Section 5 makes the manual's tournament normative except for its listed
+  simplifications and its clock values. The manual states, as a rule, that no timeout win exists at a sealed leaf,
+  while Dave and the bridge's own specification grant one (R2-REFEREE-1). The threat model gives no test for which
+  side is defective, beyond rating by effect. Requiring the normative model itself to satisfy A7, so that the honest
+  claim always plays on its own clock, would decide such cases.
+- **Build configuration of off-chain verifiers.** R1 forbids compiler or optimization settings from changing any
+  transition, but it speaks of reproducible machines on their states. The off-chain verifier's behavior on fabricated
+  before-states depends on the build type: `relwithdebinfo` aborts, while `release` silently aligns the address
+  (R1-VERIFIER-1). R10 could state that verifier outcomes, including rejection, must not depend on build
+  configuration.

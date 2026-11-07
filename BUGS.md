@@ -11,9 +11,11 @@ Flags required by `AUDIT.md`:
   `revm`) and executed the R2-SOLIDITY-2 revert on the last leaf, and saw out-of-range TLB indices revert in
   checked arithmetic, which is the R2-SOLIDITY-1 family; the orchestrator could not re-run that harness (its install
   of the EVM was refused). The C++ halves and every other test run real code.
-- **Fallback models.** Every prover and reviewer ran on the primary model (Opus 5.5). One issue, R8-DYNPERSIST-1,
+- **Fallback models.** Every reviewer, and every prover except one, ran on the primary model (Opus 5.5). One issue, R8-DYNPERSIST-1,
   was *found* only by a fallback-model hunter (`sonnet`), after the primary hunt for that angle was stopped by a
-  safeguard; its proof of concept and its review ran on the primary model.
+  safeguard; its proof of concept and its review ran on the primary model. Likewise the proof of concept of
+  R11-FAMFEES-1 was written by the fallback model (the primary prover was blocked); its hunter and its reviewer, who
+  reproduced it, ran on the primary model.
 - **Proofs of concept.** Every issue has one; none is reported without a test.
 
 | ID | Title | Component | Cited rules | Severity |
@@ -38,6 +40,8 @@ Flags required by `AUDIT.md`:
 | [R7-FPUARCH-1](#r7-fpuarch-1) | An interrupted mark-dirty leaves a dirty page under clean ancestors in a shared stored machine, so after a reload the page is never re-hashed and the root hash goes stale | emulator (dirty-page tree, stored machines) | R9, R2, R4, section 1 completeness, section 2 honest operator's path | Critical |
 | [R8-DYNPLAYERFAULT-1](#r8-dynplayerfault-1) | The honest bridge's signer wedges for good when its journal holds a candidate the node does not have, signed near the fee or tip ceiling, and that candidate's job is no longer due | `prt-player-bridge` (`prt-transactions.lua`, `prt-bridge.lua`) | R4, section 1 completeness, section 2 honest operator's path, A7 | Critical |
 | [R10-MANCLI1-1](#r10-mancli1-1) | Loading a stored machine trusts its page hash-tree cache (`hash_tree.phtc`, outside the hashed state), so a valid template with a poisoned cache reports the right root and then computes wrong hashes and proofs | emulator (`page_hash_tree_cache`, stored machines, CLI and PRT player load) | R1, R9, R2, R4, section 2 valid template, section 8 | Critical |
+| [R11-FAMCACHE-1](#r11-famcache-1) | Loading a stored machine trusts its dense hash-tree files (`<range>.dht`): a valid template with one wrong interior node keeps the right root and passes `verify_hash_tree`, then gives proofs and hashes that are wrong | emulator; dense hash-tree files of stored machines (CLI `--load`, JSON-RPC load, PRT player) | R1, R9, R2, R4, R10, section 2 valid template, section 8 | Critical |
+| [R11-FAMFEES-1](#r11-famfees-1) | The bridge signs `1.2 x eth_estimateGas at latest` with no worst-case floor, so an honest `joinTournament` or `winMatchByTimeout` runs out of gas when a front-running Sybil join triggers the pairing branch | `prt-player-bridge`; `doc/recipes/prt-transactions.lua` | R4, A7, section 1 completeness, section 2 honest operator's path | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -46,6 +50,8 @@ Flags required by `AUDIT.md`:
 | [R2-SOLIDITY-2](#r2-solidity-2) | On-chain `Memory.validateStrideLength` off-by-one rejects every access to the last leaf | `machine-solidity-step` (`Memory.sol`) | R2, R3, R10, section 8 High | High |
 | [R4-VARGROWTH-1](#r4-vargrowth-1) | Honest stored player never removes settled epochs' directories or checkpoints, so disk use grows with the application's age | PRT player and bridge (stored player retention) | Section 1 resources, R12, A7, R4, section 2, section 8 High | High |
 | [R4-VARSTATE-1](#r4-varstate-1) | After a deep reorg aborts the honest player, the relaunched player silently keeps its stored epoch and claims over replaced inputs | PRT player and bridge (stored epoch reopen) | R4, R2, A3, section 1 completeness, section 2 honest operator's path, section 8 High | High |
+| [R11-FAMMASK-1](#r11-fammask-1) | The native interpreter returns constant `mvendorid`, `marchid` and `mimpid` while the uarch program and the uarch and Solidity verifiers read the hashed shadow register | emulator; machine-ID CSRs (`interpret.cpp` against `uarch`) | R2, R7, R13, section 8 High | High |
+| [R11-FAMOPERATORIO-1](#r11-famoperatorio-1) | The honest stored player writes and fsyncs one durable file per guest output at every input boundary, so its persistence cost and inode use grow with the number of outputs | `prt-player-bridge`; stored player output persistence (`doc/recipes/prt.lua`) | R12, A7, R4, section 8 High | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
 | [R1-ARCH-2](#r1-arch-2) | Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping | emulator (atomics, LR/SC) | R7, section 8 Medium | Medium |
 | [R1-ARCH-3](#r1-arch-3) | Page walk ignores PMA failures on PTE accesses | emulator (address translation) | R7, section 8 Medium | Medium |
@@ -58,6 +64,9 @@ Flags required by `AUDIT.md`:
 | [R8-DYNPERSIST-1](#r8-dynpersist-1) | `write_memory`, `write_word` and `fill_memory` store the data into shared RAM before marking the page dirty, so a process stop in between leaves a stored machine whose hash tree does not commit to its contents | emulator (`src/machine.cpp`, shared stored machines) | R9, R2, section 8 Medium | Medium |
 | [R9-GOALRESTORE-1](#r9-goalrestore-1) | Mcycle hash collection defers the dirty marks of page-walk A/D writes to the end of each sampling period, so a process stop during collection leaves a shared stored machine whose hash tree does not commit to its contents | emulator (`collect_mcycle_root_hashes`, shared stored machines) | R9, R2, section 8 Medium | Medium |
 | [R10-MANLUA1-1](#r10-manlua1-1) | The HTIF halt command ignores the `ihalt` availability mask, so a machine configured with `ihalt = 0` still halts | emulator (HTIF device) | R7, section 8 Medium | Medium |
+| [R11-FAMMASK-2](#r11-fammask-2) | Configured `mvendorid`, `marchid` and `mimpid` are accepted and never checked for newly created machines, although the manual says they are checked at instantiation | emulator; machine configuration validation | R13, R7, section 8 Medium | Medium |
+| [R11-FAMPERSISTA-1](#r11-fampersista-1) | The native interpreter's page walk stores the PTE accessed/dirty update into shared RAM before marking the page dirty, so a stop in between leaves a stale hash tree in a shared stored machine | emulator; `write_ram_uint64` on the native `state_access` path (plain `run()`) | R9, R2, section 8 Medium | Medium |
+| [R11-FAMPERSISTA-2](#r11-fampersista-2) | `replace_memory_range` discards the write-TLB dirty marks still pending against the replaced shared range, so the stored hash tree no longer commits to its contents (no crash needed) | emulator; `replace_memory_range` on a `SHARING_ALL` machine | R9, R2, section 8 Medium | Medium |
 
 ---
 
@@ -1519,6 +1528,147 @@ proofs**
 
 ---
 
+## R11-FAMCACHE-1
+
+**Loading a stored machine trusts its dense hash-tree files (`<range>.dht`): a valid template with one wrong interior
+node keeps the right root and passes `verify_hash_tree`, then gives proofs and hashes that are wrong**
+
+- **Severity:** Critical (`AUDIT.md` section 8). Confirmed by an independent disproving reviewer, who reran the test,
+  and reproduced by the orchestrator. Found in round 11 (family expansion). Same family and the same judgment about
+  template trust as R10-MANCLI1-1: `THREAT_MODEL.md` section 8 says that once a snapshot meets the valid-template
+  conditions, nothing it carries outside the hashed state may affect any transition. If template distribution is
+  treated as wholly trusted the residue is Medium.
+- **Component and area:** emulator; dense hash-tree files of stored machines (CLI `--load`, JSON-RPC load, PRT
+  player).
+- **Cited rules:** R1, R9, R2, R4, R10, section 2 valid template, section 8. Reviewer: R1; R9; R2; R4; section 2 valid
+  template; section 2 honest operator's path; section 1 completeness; section 8 out-of-scope clause on snapshots (does
+  not apply: hashed contents meet the valid-template conditions).
+- **Location:** src/memory-address-range.cpp:73-79, src/dense-hash-tree.hpp:61-66, src/hash-tree.cpp:503-535,
+  src/hash-tree.cpp:677-735, src/hash-tree.cpp:140-158, doc/recipes/prt.lua:981-994
+- **Defect:** memory_address_range adopts <range>.dht and .dpt whenever both filenames are set and mark_pages_dirty is
+  off (memory-address-range.cpp:73-79). That is always the case for a directory load, because
+  adjust_ar_backing_store_config sets both names. dense_hash_tree maps the file as is and checks nothing. The dense
+  tree is a heap array: index 1 is the root, and the page leaves start at 2^(L-1). If one interior node N is changed
+  while its parent keeps its correct stored value, the dense root, the sparse tree and get_root_hash are unchanged.
+  hash_tree::verify compares only page leaves with their contents and dirty marks, plus the dense root with the sparse
+  leaf, and a root mismatch is only printed (it does not set ret=false). So it reports true. Afterwards: (1) get_proof
+  returns N as a page-level sibling (hash-tree.cpp:140-158), so proofs of any word under sibling(N) do not fold to the
+  root; (2) when a page under sibling(N) is dirtied, update_dense_trees recomputes its ancestors from the stored
+  siblings (hash-tree.cpp:503-535), which includes the wrong N, so the range root and the machine root become wrong.
+  clear_hash_tree is off by default, and the player only compares get_root_hash.
+- **Evidence and test:** `bugs/R11-FAMCACHE-1/` (`test.lua`, `guest.S`, `link.ld`, `build.sh`). Run `bugs/run.sh
+  R11-FAMCACHE-1`. It fails while the bug is present. Observed: Failed with the same output on all 4 runs (about 2 s
+  each), status 1: "FAIL R11-FAMCACHE-1 (bug present, status 1)". - Template A: 0x0ea838aedcb9...a8c5. - B differs
+  from A only in 0000000080000000-100000.dht: 32 bytes, heap node 131. Before it is overwritten, the test asserts that
+  node 131 equals get_node_hash(0x80006000,13) and that index 1 is the RAM range root. - Template checks on B all
+  pass: cartesi-machine-stored-hash B = 0x0ea838ae...; load root = 0x0ea838ae...; verify_hash_tree = true. - On the
+  freshly loaded B, get_proof(0x80005000,5) does not fold (it folds on A and on B with clear_hash_tree). - After one
+  advance-state input, the root is 0x15b229ac109472d6... on A and on B with clear_hash_tree, but 0x4cb319e26bb476b1...
+  on B. verify_hash_tree on B is still true at that wrong root. - CLI --load --cmio-advance-state
+  --mcycle-computation-hash (log2 period 4, one input):   - A = 0x58b779ad6ce14ccb... - B = 0xfeadabeb6d59c321... - B
+  --clear-hash-tree = 0x58b779ad... (equals A, so no hashed byte was changed). - Failure line: "FAILURE: a stored
+  template that differs from the valid one only in one interior node of its RAM .dht (outside the hashed contents)
+  loads with the right root and passes verify_hash_tree, but then: get_proof of the data word on the freshly loaded
+  template does not fold to its root; root hash after one input differs from the uninterrupted/clear-cache run;
+  verify_hash_tree accepts the wrong root; cartesi-machine --load computes a different mcycle ...
+- **Scenario and reachability:** No guest or chain action is needed. The trigger is a stored template whose hashed
+  contents and content hash exactly match the valid template and the on-chain commitment, while 32 bytes of its RAM
+  .dht (a cache outside the hashed state) are changed. Obtaining and reloading the template is on the honest
+  operator's path (section 2). The manual presents shipping and reloading a stored directory as the normal workflow,
+  and says load reuses the .dht/.dpt files. Every documented check passes: cartesi-machine-stored-hash, the load root,
+  --initial-hash, the player's get_root_hash comparison (prt.lua:981-994) and verify_hash_tree. The wrong node is used
+  from the first write under sibling(N) (any ordinary input that touches the application's data or heap pages) or the
+  first proof of a word there.
+- **Possible solution:** When loading a directory that this process did not write and is not reopening in place, do
+  not trust the persisted .dht/.dpt/.sht/.phtc. Either: - force mark_pages_dirty and rebuild every dense tree and the
+  sparse tree from the page contents (a full rehash, with every node recomputed from its children), and reset the
+  phtc; or - recompute the dense tree bottom-up from the actual pages and reject the load on any mismatch with the
+  stored nodes. Make hash_tree::verify check every interior dense node and the sparse nodes against their children,
+  and set ret=false on a root mismatch instead of only printing it. Expose a load option or default (for example
+  clear_hash_tree, or a verify-on-load option) that the CLI --load, the JSON-RPC load and the PRT player's
+  new_machine/new_stored_machine use for third-party templates. A narrower step: have the player always load the
+  template it defends with clear_hash_tree and compare the recomputed root with the commitment.
+- **Risks:** Risks of the issue: whoever controls the template channel (developer, release artifact, mirror) can make
+  every honest operator commit wrong claims and proofs while every documented check passes. That eliminates the honest
+  claim, and no adversarial guest or chain action is needed. Risks of the fix: - A full rehash on load costs time
+  linear in the machine size, which is bounded but noticeable for multi-GiB ranges. - The fast path that lets a
+  process reopen its own shared directory after a crash (R7-FPUARCH-1, R8-DYNPERSIST-1, R9-GOALRESTORE-1) must keep
+  working, and stay correct, if it continues to trust the trees. - A partial fix (only the phtc, as R10's fix
+  proposes, or only the leaves) leaves this hole open. - Making verify_hash_tree stricter may expose existing benign
+  inconsistencies, such as the TLB-dirty case R10 mentions, so those need to be handled explicitly.
+
+---
+
+## R11-FAMFEES-1
+
+**The bridge signs `1.2 x eth_estimateGas at latest` with no worst-case floor, so an honest `joinTournament` or
+`winMatchByTimeout` runs out of gas when a front-running Sybil join triggers the pairing branch**
+
+- **Severity:** Critical (`AUDIT.md` section 8). Confirmed by an independent disproving reviewer, who reran the test,
+  and reproduced by the orchestrator. Found in round 11 (family expansion). **Fallback-sourced proof:** the
+  proof-of-concept prover on Opus 5.5 was stopped by a safeguard and the workflow re-ran it on `sonnet`; the hunter
+  and the disproving reviewer (who reproduced it) ran on Opus 5.5. The test exercises the pinned Dave `Tournament`
+  contract, which is out of scope, only as the referee the bridge targets.
+- **Component and area:** `prt-player-bridge`; `doc/recipes/prt-transactions.lua`.
+- **Cited rules:** R4, A7, section 1 completeness, section 2 honest operator's path. Reviewer: Section 1 completeness
+  failure (honest operator cannot respond in time); Section 2 honest operator's path / honest claim; A7 (clocks sized
+  for a logarithmic number of matches, not one delay per Sybil); R12 (bounded cost of the honest response); Section 7
+  (any number of Sybils; race and reorder transactions within chain rules); Section 8 Critical (breaks the goal at a
+  reachable state on the honest operator's path).
+- **Location:** doc/recipes/prt-transactions.lua:206-215, doc/recipes/prt-transactions.lua:164-169,
+  doc/recipes/prt-bridge.lua:523-530, doc/recipes/prt-bridge.lua:684-698, doc/recipes/prt-bridge.lua:335-337,
+  doc/recipes/prt-bridge.lua:369-371
+- **Defect:** submit() calls eth_estimateGas on the latest block and signs gas = ceil(1.2 * estimate)
+  (prt-transactions.lua:206-214), with no lower bound from the action's worst case. The pinned Tournament's
+  joinTournament and winMatchByTimeout end in pairCommitment. If the tournament has no dangling commitment, it does
+  one SSTORE (it stores the caller as dangling). If one exists, it calls Match.create: three or four zero-to-nonzero
+  Match.State slots, a clock start, matchCount, clearing the dangling slot, and a MatchCreated event, about +100k gas.
+  Whether a dangling commitment exists is state that any participant changes with a joinTournament, or by winning any
+  other match, so the branch at inclusion can differ from the branch at estimation. Measured with the pinned
+  Tournament.sol compiled by solc 0.8.30 (viaIR, runs 200) and run in ethereumjs, estimating as the minimal successful
+  transaction gas: - joinTournament at height 30: estimate 172,808, bridge limit 207,370, needed after a Sybil join
+  274,841, out of gas. - joinTournament at height 62: 195,824, 234,989 and 297,858, out of gas. - winMatchByTimeout:
+  136,108, 163,330 and 224,018, out of gas. The honest transaction reverts and its nonce is consumed. The bridge never
+  reads receipt.status. receipt() and awaiting_observation() treat the reverted receipt like a successful one and
+  suppress the job until the observation head reaches the receipt block (prt-transactions.lua:165-169,
+  prt-bridge.lua:686-698). Only then does submit estimate again, against whatever state the adversary has set by that
+  time. There is no detection of out-of-gas, no immediate resend with more gas, and no use of the contract's own Gas.*
+  allocations (Gas.WIN_MATCH_BY_TIMEOUT = 261,000, for example) as a floor.
+- **Evidence and test:** `bugs/R11-FAMFEES-1/` (`test.lua`, `measured-gas.json`, `evm/measure.mjs`, `evm/build.json`,
+  `evm/Maker.sol`, `evm/compile.js`, `vendor/dkjson.lua`). Run `bugs/run.sh R11-FAMFEES-1`. It fails while the bug is
+  present. Observed: The test fails deterministically: 3 runs with the live EVM measurement and 1 run from the
+  recorded fixture, all exit 1. The failing line is: "FAIL R11-FAMFEES-1: prt-transactions.lua signs ceil(1.2 *
+  estimate at latest) with no worst-case floor ... joinTournament(h=30): signed 207370 < needed 274841;
+  winMatchByTimeout(h=30): signed 163330 < needed 224018; joinTournament(h=62): signed 234989 < needed 297858;
+  winMatchByTimeout(h=62): signed 163330 < needed 224018". Per scenario the output also shows that the honest tx, run
+  with the signed gas after the Sybil front-run, reverts. The same tx succeeds with the needed gas, so the revert is
+  out-of-gas and not a logic revert. After a status-0 receipt at block 17, the unmodified submit() returns waiting
+  until tip 21 (3 blocks of waiting, since observation head = tip-4 must reach the receipt block) and then resends.
+- **Scenario and reachability:** Reachable with section 7 capabilities only. The adversary posts legal Sybil joins:
+  the root accepts any final state, and a child accepts any commitment that ends at the dishonest contested state. It
+  front-runs the honest transaction on a public mempool with a higher tip. The pairing branch is normal pinned-Dave
+  behaviour. Even an unrelated concurrent join in the same block (another validator) triggers the revert. The bridge
+  is the in-scope honest operator (doc/recipes/prt-transactions.lua, prt-bridge.lua), and Dave v3.0.0-alpha.6 is the
+  referee it targets (doc/Dockerfile.prt DAVE_REF; the patch changes only geometry). No A1-A7 violation by the referee
+  is needed.
+- **Possible solution:** Give each contract action a gas floor for its worst-case branch. For every action that can
+  reach pairCommitment (joinTournament, winMatchByTimeout, winInnerTournament, winLeafMatch), compute the limit as
+  max(1.2*estimate, worst_case[kind]). The worst case can come from a fixed per-action table, measured on the pinned
+  build with the dangling-commitment branch plus headroom. It can also come from a second eth_estimateGas with a
+  stateOverride that sets a dangling commitment. Also check receipt.status. On a status-0 receipt for a still-due job,
+  stop suppressing the job until observation depth. Resend at once with a raised gas limit (for example, double it,
+  capped at the block gas limit), and report out-of-gas failures.
+- **Risks:** Risks of the issue: an adversary with enough bonds, or ordinary concurrent joins, can delay or prevent
+  the honest join or timeout win. The honest claim can then be eliminated, and a dishonest state settles. Benign
+  concurrency also causes spurious reverts that waste honest gas and clock time. Risks of the fix: - A larger gas
+  limit raises the balance the signer needs (gas * maxFee) and could hit fee-ceiling or balance checks. Unused gas is
+  not charged. - A hard-coded table can go stale if the contract version or geometry changes, so it should be tied to
+  the pinned artifacts or derived with a state override. - Retrying immediately on status 0 must not fight the
+  nonce/replacement logic, and must keep the reorg safety the observation wait currently gives. - The other pairing
+  actions (winInnerTournament, winLeafMatch) need the same treatment, or the bug remains there.
+
+---
+
 ## R1-PLAYER-4
 
 **Epoch listeners fetch, keep and re-sort every InputBox log of every application**
@@ -2105,6 +2255,131 @@ running, so the correct claim may never enter before the joining window closes.
 - Of the issue: after a deep reorg, the honest player silently posts a wrong claim instead of failing closed.
 - Of the fix: rebuilding must handle partially written state and must not miss deadlines. Compare input contents and
   order, not block hashes, so benign reorgs within the policy do not cause false aborts.
+
+---
+
+## R11-FAMMASK-1
+
+**The native interpreter returns constant `mvendorid`, `marchid` and `mimpid` while the uarch program and the uarch
+and Solidity verifiers read the hashed shadow register**
+
+- **Severity:** High (`AUDIT.md` section 8). Confirmed by an independent disproving reviewer, who reran the test, and
+  reproduced by the orchestrator. Found in round 11 (family expansion). A real R2 disagreement between the native
+  interpreter and the uarch program, but the differing shadow word is not reachable from a valid template or by any
+  input (see below), so the rating is capped at High (section 8: defects only at demonstrably unreachable
+  before-states are at most High).
+- **Component and area:** emulator; machine-ID CSRs (`interpret.cpp` against `uarch`).
+- **Cited rules:** R2, R7, R13, section 8 High. Reviewer: R2; R13; R1; section 2 'State transition function' (defined
+  on every state); section 2 'Reachable state'; A1; section 8 High: divergence between paths only at demonstrably
+  unreachable states.
+- **Location:** src/state-access.hpp:128-138, src/collect-mcycle-hashes-state-access.hpp:135-136,
+  src/machine.cpp:973-978, src/i-state-access.hpp:223-228, uarch/uarch-bridge-state-access.hpp:54,94
+  (i_prefer_shadow_state reads the shadow word), src/interpret.cpp:1926-1927,2049-2050
+- **Defect:** For mvendorid, marchid and mimpid, the native state_access (used by machine::run), the
+  collect_mcycle_root_hashes state access and machine::read_reg ignore the hashed shadow word. They return the
+  compile-time constants MVENDORID_INIT, MARCHID_INIT and MIMPID_INIT (state-access.hpp:128-138: `return
+  MARCHID_INIT;`). uarch_bridge_state_access is an i_prefer_shadow_state, so the uarch program reads these registers
+  from shadow memory (DEFINE_SA_READ(marchid) -> prefer_read_shadow_register). verify_step_uarch and UArchStep.sol
+  replay that uarch program, so they also use the shadow word. A `csrr rd, marchid` therefore yields different values
+  on the two paths whenever the shadow word differs from the constant. The two paths then write different rd values
+  and reach different after-hashes from the same before-state.
+- **Evidence and test:** `bugs/R11-FAMMASK-1/` (`test.lua`). Run `bugs/run.sh R11-FAMMASK-1`. It fails while the bug
+  is present. Observed: Ran 3 times. Exit status was 1 each time and the output was identical. For each of mvendorid,
+  marchid and mimpid, starting from one fabricated before-state, a single `csrr a0,<csr>; j .` gives different results
+  on the two paths. Example: "FAIL marchid: from the same before-state 4988bf3a30cecb5e, `csrr a0,marchid` gives
+  a0=0x16 natively but a0=0x5a4c via the uarch verifiers; mcycle-1 hashes differ (native 834b8e10d1e4a1d6 vs verified
+  b27c4b3b0e012392): R2 violated". mvendorid behaves the same way (0x6361727465736920 vs 0x636172746573337a) and so
+  does mimpid (0x17 vs 0x5a4d). The summary line is "native interpreter and uarch/verifiers disagree on 3 of 3
+  machine-ID CSRs (native returns build constants, uarch reads the hashed shadow word)". Every uarch step passed
+  verify_step_uarch, and the closing reset passed verify_reset_uarch. The verifiers therefore accept an mcycle-1 hash
+  that differs from the one native interpretation computes. The harness itself works: verify_hash_tree passes on the
+  fabricated state, read_word shows the patched shadow word, and both paths end at mcycle 1.
+- **Scenario and reachability:** The state is demonstrably unreachable. The guest cannot write these registers:
+  0xF11-0xF13 are read-only CSRs (csr_is_read_only, interpret.cpp:2460), and the guest cannot address the shadow range
+  (R8). The host write_reg throws 'register is read-only' (machine.cpp:1346-1351). init_processor never writes these
+  words. Config processor.registers.marchid=77 is accepted, but the shadow word stays 22 (I checked this with and
+  without skip_version_check). A normal load rejects a mismatched word (validate_processor_shadow). The only ways to
+  get a differing word are the whole-shadow write_memory special case, or a snapshot load, and both need runtime
+  skip_version_check. The manual does not document either one, and the CLI help for skip_version_check says not to use
+  it in production. So no valid template can hold such a word, and no input sequence can produce one. A1 keeps a
+  fabricated before-state with such a word out of any match against the honest claim.
+- **Possible solution:** Make every implementation read the same value. Preferred fix: have the native state_access,
+  collect_mcycle_hashes_state_access and machine::read_reg return m_s.shadow.registers.{mvendorid,marchid,mimpid}, so
+  that all paths read the hashed word, which is what the uarch and Solidity verifiers already do. The other option is
+  to keep the constants and make the uarch bridge return them too. That changes the uarch program, so it needs a new
+  pristine hash and new on-chain pins, which is a new protocol version (R13). Also consider making write_memory of the
+  whole shadow and snapshot loading refuse non-constant ID words even under skip_version_check, or always re-validate
+  them, so that such states cannot be built at all.
+- **Risks:** If the native fix is done wrong, it could make native depend on a word that some legacy path leaves
+  uninitialized. This is unlikely, because the shadow defaults to the constants. The option that changes the uarch
+  side changes the uarch program hash, so it needs redeployment and must not mix versions (A6). Leaving the bug in
+  place keeps a latent divergence. It would become Critical if any future documented operation, config path or
+  snapshot format let a template carry a non-constant ID word. One example is init_processor starting to honor the
+  processor.registers.marchid value from the config, which is currently accepted but ignored. That would make the
+  honest native claim disagree with the on-chain uarch verifier on any csrr of these CSRs.
+
+---
+
+## R11-FAMOPERATORIO-1
+
+**The honest stored player writes and fsyncs one durable file per guest output at every input boundary, so its
+persistence cost and inode use grow with the number of outputs**
+
+- **Severity:** High (`AUDIT.md` section 8). Confirmed by an independent disproving reviewer, who reran the test, and
+  reproduced by the orchestrator. Found in round 11 (family expansion). A guest-chosen constant factor over emulation
+  cost, and an inode exhaustion path that makes commit raise and the relaunched player fail again.
+- **Component and area:** `prt-player-bridge`; stored player output persistence (`doc/recipes/prt.lua`).
+- **Cited rules:** R12, A7, R4, section 8 High. Reviewer: R12; A7; R4 (only under under-provisioning); Section 1
+  (resources the deployment was sized for); Section 2 honest operator's path (storing the machine, producing proofs);
+  Section 7 (payloads chosen to maximize honest cost); Section 8 High: guest-triggered constant-factor increase within
+  sizing.
+- **Location:** doc/recipes/prt.lua:2398-2410 (store_outputs), doc/recipes/prt.lua:2457-2468 (commit_epoch_state calls
+  store_outputs), doc/recipes/prt.lua:2047-2081 (input_added), src/os-filesystem.cpp:933-940 (write_durable_file:
+  mkostemp + write + fsync + rename)
+- **Defect:** store_outputs runs `for i, output_data in ipairs(outputs) do fs.write_durable_file(output_data,
+  get_output_path(directory, first + i - 1)) end`. For every tx output the guest emitted during the input, this
+  creates a temporary file in outputs/, writes it, fflush+fsyncs it and renames it to
+  outputs/<epoch_output_offset>.bin. One input boundary therefore costs one fsync, one inode and at least one
+  filesystem block (4 KiB) per output. An empty notice payload still uses a full block. All output files of every
+  epoch go into the single directory outputs/ and stay for the epoch directory's lifetime, which R4-VARGROWTH-1
+  already shows is forever. The per-output cost is not a batched write: there is one fsync per output. The keccaks are
+  already logged once per output in outputs.log, so all the data could be persisted in one append plus one sync.
+- **Evidence and test:** `bugs/R11-FAMOPERATORIO-1/` (`test.lua`, `build.sh`, `guest.c`, `start.S`, `link.ld`,
+  `libc/libc.c`, `libc/string.h`, `libc/strings.h`, `libc/stdio.h`, `libc/errno.h`). Run `bugs/run.sh
+  R11-FAMOPERATORIO-1`. It fails while the bug is present. Observed: The test failed (exit 1) in all 3 runs on
+  feature/prt-audit, for the reason claimed. Typical output: input 0:     1 outputs ->    16 sync operations (    1
+  durable output files), +   30 files in the epoch directory input 1:  2000 outputs ->  2016 sync operations ( 2000
+  durable output files), + 2030 files in the epoch directory, 0.60-1.31 s in durable writes of 1.76-2.54 s total
+  outputs/ holds 2001 files, du of outputs/: 7.9M (the notices hold about 200 KB of encoded data) low-inode epoch
+  directory (inodes used/free 12/500, bytes free 222M) before; after: 512/0, bytes free 86M   first player, input 0
+  with 600 outputs: raised: unable to create temporary file '.../epoch-0/outputs/376.bin.tmp.XXXXXX': mkostemp()
+  failed: No space left on device   relaunched player, input 0 with 600 outputs: raised: (same error, same output 376)
+  FAIL: honest stored player persistence is O(outputs) per input boundary: an input with 2000 outputs costs 2000 more
+  sync operations (one write_durable_file+fsync per output under outputs/) and 2000 more files/inodes than one with 1
+  (allowed: 4) ... Control: I ran the same test against a scratch copy of prt.lua in which store_outputs appends all
+  outputs to one file with a single sync_file. It passed (exit 0): input 1 needed 16 sync operations against 15 for
+  input 0, the same number of files, and the low-inode run committed on both attempts. So the test measures the defect
+  and passes once it is fixed. The whole test takes about 7 s.
+- **Scenario and reachability:** Reachable without breaking any assumption. A correctly designed application, such as
+  an echo or airdrop app, emits one notice per payload item, and the input sender picks the item count (section 7).
+  The honest bridge (prt.new_stored_player) runs input_added, then commit_epoch_state, then store_outputs at every
+  input boundary. It cannot decline the input. No subverted guest and no violation of A1-A7 is needed. Checked: an
+  output needs at least about 10k mcycles in a lean guest.
+- **Possible solution:** Persist an input's outputs with a constant number of syncs and files per boundary. Append
+  each payload to one per-epoch outputs data log, next to outputs.log, and record per-output offsets and lengths (for
+  example a 16-byte entry per output, or fold the lengths into outputs.log). Then fsync once and sync the directory
+  once per boundary. read_output then reads by offset. On recovery, truncate the data log to the length state.json
+  records, as is already done for outputs.log through seek to first*HASH_SIZE. Optionally keep only the hashes on the
+  dispute path and stream payloads to a separate, best-effort store, so that a full payload store cannot block
+  commit_epoch_state.
+- **Risks:** Risks of the issue: - The honest operator's disk and inode use grows about 10-30x faster than its payload
+  bytes, and stays for the epoch directory's lifetime. - An under-provisioned host (few inodes, a small volume, a
+  directory size limit) makes commit_epoch_state throw at every relaunch. The honest claim then cannot advance or
+  answer, which is a completeness failure. - The fsync time is a minor constant: the cost of hashing dirty state
+  dominates the worst case. Risks of the fix: - The appended data log needs crash-consistent truncation on recovery,
+  so that a torn append is never read as an output. - Offsets and lengths must be validated against state.json. -
+  Decoupling payload storage from the commit must not let the outputs Merkle root or outputs.log diverge from the
+  payloads served for A5 output proofs. - A format change requires migrating the state.json version.
 
 ---
 
@@ -2765,3 +3040,186 @@ when the guest requests it**
 - **Risks:** the fix changes the state transition function (R13): the uarch program, its pinned pristine hash and the
   on-chain verifiers change together and must not be mixed with old deployments (A6). The default `ihalt = 0x1` is
   unaffected; a template created with `ihalt = 0` would stop halting and change its canonical trajectory.
+
+---
+
+## R11-FAMMASK-2
+
+**Configured `mvendorid`, `marchid` and `mimpid` are accepted and never checked for newly created machines, although
+the manual says they are checked at instantiation**
+
+- **Severity:** Medium (`AUDIT.md` section 8). Confirmed by an independent disproving reviewer, who reran the test,
+  and reproduced by the orchestrator. Found in round 11 (family expansion). Version-mismatch detection is lost for
+  machines created from a configuration.
+- **Component and area:** emulator; machine configuration validation.
+- **Cited rules:** R13, R7, section 8 Medium. Reviewer: R13; A6; THREAT_MODEL section 8 (manual/behavior contradiction
+  on a security-relevant point; Medium: violates the manual without affecting the goal); section 2 'Valid template'
+  (created from a configuration by operations the manual specifies).
+- **Location:** src/machine.cpp:129-195 (init_processor never writes reg::mvendorid/marchid/mimpid),
+  src/machine.cpp:199-211 (validate_processor_shadow compares the shadow, not the config),
+  src/machine-config.cpp:205-215 (adjust_defaults keeps any value other than -1)
+- **Defect:** The manual (doc/README.md:3355-3359) says users set mvendorid, mimpid and marchid in the config, 'which
+  the emulator checks at instantiation to ensure the configuration matches the running emulator version', and that
+  production code should hard-code them. adjust_defaults replaces only -1. init_processor writes every register field
+  of the config into the shadow except these three; the shadow keeps the processor_state{} defaults, which equal the
+  build constants. validate_processor_shadow then compares those defaults with the constants, a check that always
+  passes. The config's values are never compared with anything. They stay in get_initial_config(), and machine::store
+  writes them into config.json, while read_reg and the hashed shadow hold the build's values.
+- **Evidence and test:** `bugs/R11-FAMMASK-2/` (`test.lua`). Run `bugs/run.sh R11-FAMMASK-2`. It fails while the bug
+  is present. Observed: I ran it 3 times and it exited 1 each time with the same output:   marchid=12367 (build 22)
+  accepted at creation: get_initial_config=12367, read_reg=22, config.json=12367, reload succeeded
+  mvendorid=7161130726739634471 (build 7161130726739634464) accepted at creation:
+  get_initial_config=7161130726739634471, read_reg=7161130726739634464, config.json=7161130726739634471, reload
+  succeeded   mimpid=122 (build 23) accepted at creation: get_initial_config=122, read_reg=23, config.json=122, reload
+  succeeded FAIL: cartesi.machine(config) accepts mvendorid/marchid/mimpid that do not match the build; the manual
+  says they are checked at instantiation (R13 version-mismatch detection lost) FAIL R11-FAMMASK-2 (bug present, status
+  1) Sanity checks passed first. Configs with the build's own IDs are accepted, and so are configs with -1. A failure
+  there exits 2 as a harness error, so the exit 1 comes from the defect.
+- **Scenario and reachability:** Reached deterministically on the documented template-creation path
+  (cartesi.machine(config) / cm_create_new) by any host that follows the manual and hard-codes the IDs. No adversary
+  or guest action is involved. It is host configuration data, so input senders and dishonest claimants cannot trigger
+  it.
+- **Possible solution:** In machine::init_processor, for a newly created processor, check the config's version
+  registers unless r.skip_version_check is set: after adjust_defaults has turned -1 into the build constants, throw
+  std::invalid_argument("marchid/mvendorid/mimpid mismatch, emulator version is incompatible") when
+  p.registers.marchid != MARCHID_INIT, and the same for mvendorid and mimpid. Optionally, also normalize the stored
+  config so that get_initial_config()/config.json always report the values in the shadow. The other option is to
+  change the manual to say that the IDs are read-only and that the config values are ignored, but that drops the
+  documented production safeguard.
+- **Risks:** Issue risk: - Operators who hard-code the IDs as instructed get no refusal at creation. - Tooling that
+  reads config.json or get_initial_config() to decide which emulator version a template belongs to is misled. Those
+  files can advertise IDs that differ from the hashed state. - The goal is not broken, because content-hash comparison
+  against the on-chain commitment and the stored-shadow check still catch a real mismatch. Fix risk: - Creation now
+  throws for configs that worked before. Examples are configs copied from another build's config.json, or configs
+  carrying stale IDs. - The check must apply only to newly created processors, so that a stored machine's config.json
+  is not re-validated against values that are ignored anyway. Otherwise it can conflict with the shadow-based check
+  and with skip_version_check. - The JSON-RPC/remote creation paths share the same code and need the same behavior, so
+  that paths do not diverge.
+
+---
+
+## R11-FAMPERSISTA-1
+
+**The native interpreter's page walk stores the PTE accessed/dirty update into shared RAM before marking the page
+dirty, so a stop in between leaves a stale hash tree in a shared stored machine**
+
+- **Severity:** Medium (`AUDIT.md` section 8). Confirmed by an independent disproving reviewer, who reran the test,
+  and reproduced by the orchestrator. Found in round 11 (family expansion). Reported by two hunters (FAMPERSISTB-1
+  merged by dedup). Same root cause class as R8-DYNPERSIST-1 and R9-GOALRESTORE-1, at a different site: the native
+  interpreter's page walk.
+- **Component and area:** emulator; `write_ram_uint64` on the native `state_access` path (plain `run()`).
+- **Cited rules:** R9, R2, section 8 Medium. Reviewer: R9; R2; section 8 Medium: persistence defects off the honest
+  operator's path.
+- **Location:** src/translate-virtual-address.hpp:62-77 (store at :70, mark at :74),
+  src/translate-virtual-address.hpp:233-241 (A/D update call), src/state-access.hpp:479-481 (do_write_memory_word
+  writes through the host pointer, no mark), src/state-access.hpp:567-568, src/i-accept-dirty-pages.hpp:29-40
+- **Defect:** write_ram_uint64 first calls a.write_memory_word(faddr, pma_index, val), which for state_access is a raw
+  aliased_aligned_write into the MAP_SHARED RAM file. Only afterwards does it call a.mark_dirty_page(paddr,
+  pma_index), which sets the leaf and its ancestors in the shared .dpt. Nothing else records the change: the
+  page-table page is not in a write-TLB slot, because a walk installs only a read or code entry for the target page.
+  On reload, the .dpt and .dht (dense hash tree) files are trusted (memory-address-range.cpp:76-79). This is a
+  different accessor and site from R9-GOALRESTORE-1, where the collect accessor defers the mark to the end of the
+  period; R9's own control claimed plain run() was safe. It is also a different site from R8-DYNPERSIST-1, which
+  covers the host API writers.
+- **Evidence and test:** `bugs/R11-FAMPERSISTA-1/` (`test.lua`, `child.lua`, `kill.py`, `common.lua`, `guest.S`,
+  `guest.bin`, `build.sh`). Run `bugs/run.sh R11-FAMPERSISTA-1`. It fails while the bug is present. Observed: I ran
+  the test 4 times on feature/prt-audit. It failed with exit 1 every time, with identical output: "child killed right
+  after the PTE store, at: cartesi::write_ram_uint64<cartesi::state_access> src/translate-virtual-address.hpp:74" -
+  reloaded PTE 0x2000004f (the A bit is set in the shared RAM file) - reloaded root
+  0x8a4273cfd24e555b16a5bea7edff040ebec8f1ff814739ecffed022f80457b00 - root recomputed with clear_hash_tree
+  0x25f3934edecb72d6a91e0b2bc77899d4f2c643afda75167bdd76aecd536e9bf8 - verify_hash_tree false ("page 0x80010000 (in
+  RAM) is not marked dirty but is dirty") - after 200 more mcycles: reloaded 0x04dcf617... vs recomputed 0x47b7f0b7...
+  Final line: "FAIL: SIGKILL right after the page walk's A-bit store in plain run() left a SHARING_ALL stored machine
+  whose persisted root ... differs from the root of its contents ...: write_ram_uint64 stores before mark_dirty_page
+  (violates R9/R2)". The reloaded and recomputed roots agree (0x47b7f0b7... after +200 mcycles) and the test exits 0.
+  So the failure comes from the store-to-mark window and from nothing else, and a fix that marks before storing would
+  make the test pass.
+- **Scenario and reachability:** The guest state is ordinary and reachable. Any PTE with A or D clear works (section 2
+  presumes any guest-writable memory reachable, and Linux creates such PTEs routinely). Any API or CLI user that runs
+  a machine loaded with SHARING_ALL hits the site with plain run(), through state_access. The trigger is a process
+  stop (SIGKILL, OOM, crash) inside a window a few host instructions long. That window sits between
+  aliased_aligned_write of the PTE (translate-virtual-address.hpp:70) and mark_dirty_page (:74). The PoC hits it
+  deterministically with a gdb hardware watchpoint on the PTE byte in the MAP_SHARED RAM mapping. In practice the
+  window is narrow, but each page walk that sets an A or D bit reopens it. The stored PRT player is not exposed: it
+  runs inside an input only after stored_machine_pair:snapshot(), which calls clone_stored. After a crash,
+  revert_interrupted_input restores machine.revert whenever the recorded boundary root matches it (prt.lua:2636-2650).
+  After the input ends, the run has finished, so the mark has already landed before state.json records the boundary.
+  So this is off the honest operator's path.
+- **Possible solution:** In write_ram_uint64, when the accessor is an i_accept_dirty_pages (state_access,
+  record_step_state_access), call a.mark_dirty_page(paddr, pma_index) before a.write_memory_word(faddr, pma_index,
+  val). Marking a page dirty only forces a rehash, so doing it first is hash-neutral. The general invariant is "mark
+  the shared dirty-page tree before any store to shared memory that no write-TLB entry covers". Audit the other
+  untracked writers against it in the same pass, for example the write-TLB slot replacement order (mark the old page
+  before the shadow slot is overwritten) and the host API writers. A more conservative alternative is to record a
+  "possibly unclean" flag in the stored directory while a SHARING_ALL machine runs, and to reload with
+  mark_pages_dirty when the flag is set.
+- **Risks:** Risk of the issue: a CLI or API user who reloads a SHARING_ALL directory after a crash and trusts its
+  root gets a root and proofs that do not commit to the contents. Every later hash from that machine is wrong. A
+  protocol participant who did this outside the player's snapshot discipline could compute a wrong claim, but the
+  stored PRT player is protected. Risk of the fix: almost none. If a crash lands between the new mark and the store,
+  the page is spuriously marked dirty and only rehashed. The extra cost is a dirty-page-tree mark that already happens
+  today, just earlier. Performance is unchanged. record_step_state_access marks the machine's tree, not the log, so
+  the change does not alter any log or proof and touches no verifier.
+
+---
+
+## R11-FAMPERSISTA-2
+
+**`replace_memory_range` discards the write-TLB dirty marks still pending against the replaced shared range, so the
+stored hash tree no longer commits to its contents (no crash needed)**
+
+- **Severity:** Medium (`AUDIT.md` section 8). Confirmed by an independent disproving reviewer, who reran the test,
+  and reproduced by the orchestrator. Found in round 11 (family expansion). Unlike the other persistence findings this
+  one is deterministic and needs no crash.
+- **Component and area:** emulator; `replace_memory_range` on a `SHARING_ALL` machine.
+- **Cited rules:** R9, R2, section 8 Medium. Reviewer: R9; R2; THREAT_MODEL section 8 Medium: persistence defects off
+  the honest operator's path; section 2 Honest operator's path (storing and reloading).
+- **Location:** src/machine.cpp:717-770 (m_ars.replace at :765, then only init_hot_tlb_contents at :769; no
+  mark_write_tlb_dirty_pages before the old range is dropped), src/machine-address-ranges.cpp:656-680 (old range
+  object destroyed at :674), src/machine.hpp:722-727 and src/machine.cpp:1611-1628 (a later eviction or destruction
+  marks the slot's page through read_pma(pma_index), which now names the NEW range)
+- **Defect:** A page stored through a write-TLB slot is recorded only by that slot. Its .dpt mark is deferred until
+  mark_write_tlb_dirty_pages runs, which happens in update_hash_tree, store, ~machine, shadow overwrite, or eviction
+  in write_verified_tlb or write_unverified_tlb. replace_memory_range swaps in the new range without first flushing
+  those pending marks into the old range's dirty-page tree. Afterwards, every flush of the slot (sfence.vma, satp or
+  prv changes, slot replacement, ~machine) resolves pma_index to the replacement range, marks the page there (a
+  spurious mark), and the mark for the old range is lost for good. If the old range was loaded SHARING_ALL, its .bin
+  in the stored directory already holds the guest's bytes, while its .dpt and .dht still show the previous clean hash.
+- **Evidence and test:** `bugs/R11-FAMPERSISTA-2/` (`test.lua`, `guest.S`, `build.sh`, `guest.bin`). Run `bugs/run.sh
+  R11-FAMPERSISTA-2`. It fails while the bug is present. Observed: I ran the test 3 times and got the same result each
+  time: exit 1, with identical hashes on every run. - Defect scenario: the reloaded directory's flash word is
+  0x1122334455667788. Its stored root is 0x450f8cff8a629ede74e9c1043a9b6a50bdf61b52cf154f20f02e3d238af3d19a, but the
+  root recomputed with clear_hash_tree=true is 0x04cec1c810065f2d966aa89ba54b08e17f17ffdca588e4115b50fd0f5f1af2aa.
+  verify_hash_tree reports 'page 0x80000000000000 (in flash drive 0) is not marked dirty but is dirty' and returns
+  false. - Control scenario: identical except that get_root_hash() is called before replace_memory_range, which
+  flushes the pending marks. Stored and recomputed roots both equal 0x04cec1c8... and verify is true. - Printed line:
+  "FAIL: after replace_memory_range on a SHARING_ALL machine, the stored directory's hash tree no longer commits to
+  its flash contents (pending write-TLB dirty mark lost) ...".
+- **Scenario and reachability:** The test is deterministic and needs no crash, only documented API calls: store D,
+  load(D, SHARING_ALL), get_root_hash, run, replace_memory_range on the flash range, run (the guest executes
+  sfence.vma), destroy, then reload D. I ran bash bugs/run.sh R11-FAMPERSISTA-2. The control scenario passes: it
+  flushes the dirty marks with get_root_hash before the replace, and then reloaded == recomputed == 0x04cec1c8... and
+  verify_hash_tree is true. The defect scenario fails. D's flash file holds 0x1122334455667788, but the reloaded root
+  is 0x450f8cff... while the root recomputed from contents is 0x04cec1c8..., and verify_hash_tree reports 'page
+  0x80000000000000 (in flash drive 0) is not marked dirty but is dirty'. The hashes quoted in the candidate text
+  (0x9d5c..., 0xbdd1...) differ from what the shipped test prints, but the mechanism and the verdict are the same. The
+  trigger is off the honest operator's path. The PRT player, bridge and referee model (doc/recipes/prt*.lua,
+  game-*.lua) never call replace_memory_range. The CLI calls it only at startup (src/cartesi-machine.lua:3252-3255),
+  before any run in that process, when no write-TLB marks are pending: the stored snapshot already has them flushed,
+  because store calls mark_write_tlb_dirty_pages.
+- **Possible solution:** In machine::replace_memory_range, call mark_write_tlb_dirty_pages() before
+  m_ars.replace(replacement), after the validation and while the old range is still installed. That flushes every
+  pending write-TLB mark into the dirty-page trees of the ranges the slots actually refer to. Optionally, also mark
+  the hot write-TLB entries clean or re-verify them, so that later flushes do not mark the new range spuriously
+  (harmless, since a new range starts all dirty). Then call init_hot_tlb_contents() as today. Apply the same
+  flush-before-drop rule to any other path that destroys or swaps an address range while write-TLB slots may still
+  point into it. Add a regression test equivalent to bugs/R11-FAMPERSISTA-2.
+- **Risks:** Risk of the issue: a host that runs a SHARING_ALL (or shared-backing-store) machine and then replaces a
+  range mid-run leaves a stored directory whose root does not commit to its contents. Every later hash or proof
+  computed from that directory without clear_hash_tree is wrong, and the stale page is never re-hashed until it is
+  written again. This is silent corruption of a snapshot the emulator wrote, but it is off the PRT honest operator's
+  path, so the goal of section 1 is not affected. Risks of the fix: - mark_write_tlb_dirty_page can throw on a corrupt
+  TLB. It must run before any mutation, so that replace_memory_range keeps strong exception safety and the throw does
+  not leave a half-replaced machine. - The flush adds only O(TLB_SET_SIZE) work per replace. - It must not change any
+  hashed state. It only touches dirty-page bookkeeping, so the canonical hashes are unchanged and no protocol-version
+  (R13) impact is expected.

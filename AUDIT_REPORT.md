@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **extra rounds in progress** (round 10 confirmed two more issues, so the clean-round count restarted again; round 11 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
+Status: **extra rounds in progress** (round 11 confirmed seven more issues, so the clean-round count restarted again; round 12 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
 
 **Running extra-rounds total:** round 4 (variant analysis) confirmed 6 new issues, bringing the confirmed total to **30 (14 Critical, 8 High, 8 Medium)**. See the round 4 candidate table and the Extra rounds section.
 
@@ -120,7 +120,8 @@ refutations.
 | 8 | Dynamic testing: run fuzzers, differential harnesses, crash and fault injection, sanitizer builds and a randomized simulation, and report only what an executed reproducer shows | DYNUARCHDIFF, DYNLOGFUZZ, DYNPERSIST, DYNHASHPROP, DYNAPIFUZZ, DYNGUESTTOOLS, DYNPRTSIM, DYNCLAIMCMP, DYNSOLEXEC, DYNPLAYERFAULT |
 | 9 | Attack-goal driven: start from each way to break a section 1 goal or a rule and search backwards, across components, for any path that reaches it | GOALACCEPT, GOALNODE, GOALWRONGCLAIM, GOALNOPROOF, GOALTIMEOUT, GOALOUTPUT, GOALDIVERGE, GOALNONDET, GOALESCAPE, GOALRESTORE |
 | 10 | Manual and promise checking: each normative statement of the manual and each documented invariant in the code is checked against the implementation | MANCLI1, MANCLI2, MANLUA1, MANLUA2, MANGUEST, MANARCH, MANSTATE, MANCOMP, MANPRT, PROMISES |
-| 11 | Fix-adjacent review: for every confirmed issue, review the sibling sites, the interplay of the proposed fix with the other fixes, and the paths the fix would leave open | planned |
+| 11 | Family expansion of the late findings: each hunter enumerates every site of one bug shape found in rounds 7-10 | FAMPERSISTA, FAMPERSISTB, FAMCACHE, FAMMASK, FAMWEDGE, FAMFEES, FAMSPEC, FAMOPERATORIO, FAMUARCH |
+| 12 | Independent re-derivation: hunters who see no earlier candidate rebuild the verdict on a slice from scratch | planned |
 
 ## Candidates
 
@@ -380,6 +381,45 @@ Round 10 coverage (hunts with no candidate are not evidence of absence):
   harness. Its main lead, the assert mismatch between the native build (asserts off in `interpret.cpp`) and the uarch
   build (asserts on), yielded no reachable assert beyond R1-VERIFIER-1.
 
+### Round 11 (extra: family expansion of the late findings)
+
+Nine hunters ran, each enumerating every site of one bug shape that rounds 7 to 10 had exposed: stores that precede their
+dirty marks, deferred marks and sync ordering, persisted caches trusted on load, configuration masks that are not
+honored, wedged operator state, bridge transactions and fees, shared-state deviations in CSRs and devices, shell-outs
+and files in the operator code, and the uarch program. They reported 8 raw candidates and dedup merged one duplicate
+(FAMPERSISTB-1 into FAMPERSISTA-1), leaving 7. All 7 were proven and all 7 were confirmed by the disproving reviewers (2
+Critical, 2 High, 3 Medium), so **round 11 was not clean**. Agents ran on Claude Opus 5.5 (exact ID) at High effort,
+except one prover (see Blocked agents).
+
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R11-FAMCACHE-1 | emulator | Critical | Loading a stored machine trusts its dense hash-tree files (`.dht`): a valid template with one wrong interior node keeps the right root and passes `verify_hash_tree`, then gives wrong proofs and hashes | **Confirmed, Critical** | Reproduced by prover, reviewer and orchestrator; same family and same template-trust judgment as R10-MANCLI1-1; see `BUGS.md` |
+| R11-FAMFEES-1 | prt-player-bridge | Critical | The bridge signs 1.2 x `eth_estimateGas` with no worst-case floor, so an honest `joinTournament` or `winMatchByTimeout` runs out of gas when a front-running Sybil join triggers the pairing branch | **Confirmed, Critical** | Reproduced by the reviewer and the orchestrator; **the primary prover was blocked and the proof was produced by the fallback model**; see `BUGS.md` |
+| R11-FAMMASK-1 | emulator | High | The native interpreter returns constant `mvendorid`, `marchid` and `mimpid` while the uarch program and the verifiers read the hashed shadow register | **Confirmed, High** | A real R2 disagreement at a before-state that no valid template or input reaches, hence capped at High; see `BUGS.md` |
+| R11-FAMOPERATORIO-1 | prt-player-bridge | High | The honest stored player writes and fsyncs one durable file per guest output at every input boundary | **Confirmed, High** | Guest-chosen constant factor and inode exhaustion that wedges the relaunched player; see `BUGS.md` |
+| R11-FAMPERSISTA-1 | emulator | Medium | The native page walk stores the PTE A/D update before marking the page dirty (reported twice; FAMPERSISTB-1 merged) | **Confirmed, Medium** | Off the honest path (the stored player snapshots first); see `BUGS.md` |
+| R11-FAMPERSISTA-2 | emulator | Medium | `replace_memory_range` discards pending write-TLB dirty marks of the replaced shared range; no crash needed | **Confirmed, Medium** | Deterministic; the player never calls it; see `BUGS.md` |
+| R11-FAMMASK-2 | emulator | Medium | Configured `mvendorid`, `marchid` and `mimpid` are never checked at creation, contrary to the manual | **Confirmed, Medium** | Version-mismatch detection (R13) lost; see `BUGS.md` |
+
+Round 11 coverage (hunts with no candidate are not evidence of absence):
+
+- **FAMWEDGE**: journal, nonce records, `state.json`, entries, checkpoints and the manifest against their invariants,
+  by reading; no new fault-injection run. The `DaveConsensus` source was not available, so a forever-due job whose
+  `eth_call` reverts persistently could not be ruled out.
+- **FAMSPEC**: every stored CSR bit and device register against the specification, by reading; no harness. Not diffed
+  line by line: the Solidity `UArchStep`, `UArchReset` and `SendCmioResponse` for the HTIF and iflags writes.
+- **FAMUARCH**: every abort path compiled into the uarch program, and cycle-budget measurements; clean. Not measured:
+  an interrupt, an Sv57 walk and a fault in one mcycle; a byte-for-byte rebuild with the official toolchain; differential
+  fuzzing of LR/SC, AMO, compressed and page-walk paths.
+- **FAMCACHE** (found R11-FAMCACHE-1): reported an unresolved lead: the `hash_tree.sht` inner nodes are checked on load
+  only structurally, and its one attempt to poison an inner sparse node showed no effect before the line was cut
+  short. It makes no claim either way.
+- **FAMFEES**: gas was measured in an EVM at the Cancun hardfork, not on Prague or Osaka clients; `winInnerTournament`
+  and `winLeafMatch` also reach the pairing branch and were not measured.
+- **FAMPERSISTA**, **FAMPERSISTB**, **FAMMASK**, **FAMOPERATORIO**: see the coverage notes in `BUGS.md`. Not examined:
+  the CLI's `--load clone:`/`sync` handling, the JSON-RPC server's shutdown with shared stores, `game-transport.lua`
+  framing and `prt-websocket.lua` frame parsing, and behavior on file systems with reflink error codes.
+
 ## Blocked agents
 
 - `hunt:HASH`, round 1: the hunter on the session model set `blocked_by_safeguards` but still returned one candidate:
@@ -407,7 +447,12 @@ Round 10 coverage (hunts with no candidate are not evidence of absence):
   result, so no fallback re-run happened and the primary model did not redo the interrupted part. Their coverage is
   partial, as the Round 9 coverage list states.
 
-No prover or reviewer was blocked in any round, so no issue needed a fallback reviewer or was reported without a
+- `prove:R11-FAMFEES-1`, round 11: the prover on Opus 5.5 set `blocked_by_safeguards` and produced no proof. The workflow
+  re-ran it on `sonnet` (`prove:R11-FAMFEES-1@sonnet`), which proved it. The disproving reviewer ran on Opus 5.5, reran the
+  test and confirmed Critical, and the orchestrator reproduced it, so the confirmation does not rest on the fallback
+  model's judgment, but the proof of concept was written by it. `BUGS.md` flags this.
+
+No prover or reviewer was blocked in any other round, so no issue needed a fallback reviewer or was reported without a
 proof of concept. The only fallbacks were the hunters above.
 
 ## Left uncovered

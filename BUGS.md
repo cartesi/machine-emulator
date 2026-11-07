@@ -11,6 +11,7 @@ present.
 | [R1-PLAYER-2](#r1-player-2) | Eight-entry input-boundary cache makes reaching a disputed position cost about n/5 whole inputs | PRT player and bridge (machine cache, replay cost) | R12, A7, R4, section 1 completeness, section 7 | Critical |
 | [R1-PLAYER-3](#r1-player-3) | Player reads the previous epoch's seal with one unpaged `eth_getLogs` and crash-loops once the chain outgrows the node's range limit | PRT player and bridge (epoch discovery) | R4, A7, section 4, section 1 completeness | Critical |
 | [R1-VERIFIER-1](#r1-verifier-1) | Uarch step verifier aborts the process on a relayed log against a fabricated before-state | emulator (uarch step verifier), PRT referee model | Section 4, R10, R3, R2, section 1 completeness, section 7 | Critical |
+| [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
 | [R1-ARCH-2](#r1-arch-2) | Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping | emulator (atomics, LR/SC) | R7, section 8 Medium | Medium |
@@ -427,6 +428,78 @@ verify proofs in a separate process.
   - It touches the interpreter shared with the generated Solidity. Its semantics must stay "revert", and the code
     generator of `machine-solidity-step` must not change.
   - The uarch program and its pristine hash are unaffected, since only the host build of the interpreter changes.
+
+---
+
+## R1-PLAYER-4
+
+**Epoch listeners fetch, keep and re-sort every InputBox log of every application**
+
+- **Severity:** High (unbounded allocation and time caused by relayed data that the honest operator may decline).
+- **Component and area:** PRT player (honest operator); input observation through the epoch listeners and the log
+  history.
+- **Cited rules:** section 4 (data relayed by the node from others must be bounded); section 7 (any number of
+  inputs); R4 and A7 (respond within clocks sized for the operator's own costs); section 8 High.
+- **Location:**
+  - `doc/recipes/prt-cast.lua:152-160`: `methods:logs` sends only `address`, `fromBlock` and `toBlock`, with no
+    topics.
+  - `doc/recipes/prt-log-history.lua:70-96`: `get_logs` appends and keeps every log it fetches.
+  - `doc/recipes/prt-epoch.lua:20-61`: every poll of an open epoch re-validates, re-sorts and re-indexes every
+    retained log.
+  - `doc/recipes/prt-epoch.lua:150-158`: each listener starts its own history at the deployment block.
+  - `doc/recipes/prt-player.lua:176-220`: one listener per epoch, never removed.
+
+### Problem
+
+The InputBox is shared by every application. The listener downloads every `InputAdded` it has ever emitted, although
+it uses only those with `appContract == app` (`prt-epoch.lua:66`) and `appContract` is an indexed topic that could be
+filtered. On every poll of an open epoch, it re-sorts the whole history: the comparator parses big integers, about
+15k-42k Lua instructions per log per poll. It does this even when no new log arrived. Each epoch keeps its own
+full-history copy, and sealed listeners are never dropped. Memory therefore grows with epochs times global InputBox
+volume, and poll time with global volume.
+
+### Evidence and test
+
+- Test: `bugs/R1-PLAYER-4/test.lua`. Run `bugs/run.sh R1-PLAYER-4`; it takes about 30 s.
+- It drives the real `prt-epoch.lua`, `prt-log-history.lua`, `prt-cast.lua` and `prt-ethereum.lua` decoder, and
+  replays `prt-player.lua`'s `open_epochs`/`pass` loop over three sealed epochs and one open epoch. Only the JSON-RPC
+  transport is replaced, by an in-memory node whose `eth_getLogs` honors address, block range and topics. dkjson is
+  stubbed, since only `json.null` is used.
+- Observed, deterministically, by the prover, the reviewer and the orchestrator:
+
+  | Foreign inputs per epoch | Retained by listeners | Steady poll | Foreign logs downloaded |
+  |---|---|---|---|
+  | 0 | 39.6 KiB | 94k Lua instructions | 0 |
+  | 1000 | 6.8 MiB | about 168M (about 1.4 s) | 10000 |
+  | 2000 | 13.5 MiB | about 359M (about 3 s) | 20000 |
+
+  Growth is linear in the foreign volume. The application's own deliveries are identical in every run.
+- With `R1_PLAYER_4_SIMULATE_FIX=yes`, the transport adds the topic filter `[InputAdded, appContract = app]`, every
+  metric returns to the baseline, and the test passes.
+
+### Scenario and reachability
+
+Anyone can call `InputBox.addInput` for any application, cheaply on an L2, and organic use of the shared InputBox
+adds to the same pile. Polls slow down and memory grows without bound until passes outrun the response windows, or
+the process runs out of memory and crash-loops. The honest claim can then time out. The foreign logs are data the
+operator may decline, since it can filter them, so section 8 rates this High rather than Critical. The bridge reads
+the shared tournament factory the same way (`prt-bridge.lua:52-72`); that part was not exercised.
+
+### Possible solution
+
+1. Give `chain:logs` a topics argument. Filter the InputBox on `[InputAdded, app]`, the consensus on `EpochSealed`,
+   and the factory on its events and indexed fields.
+2. Share one incremental history across listeners, or start each listener at the previous seal's block, inclusive.
+   Compact sealed listeners.
+3. Sort and validate only newly fetched logs, keeping the reorg checks.
+
+### Risks
+
+- Of the issue: an attacker paying only L2 gas, or ordinary InputBox growth, steadily degrades the honest operator
+  until it misses deadlines or crash-loops.
+- Of the fix: a wrongly encoded topic (32-byte padding, letter case) would filter out the application's own inputs;
+  the gap check would catch that, but only as a halt. A later start block must still include an input logged in the
+  seal block. Incremental polling must keep the detection of removed logs and changed block hashes.
 
 ---
 

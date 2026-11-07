@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **in progress** (round 1 hunting).
+Status: **in progress** (round 1 review).
 
 This report follows the plan in `AUDIT.md` and the definitions of `THREAT_MODEL.md`. Confirmed issues are in
 `BUGS.md`, and their tests are under `bugs/`.
@@ -55,11 +55,45 @@ Models: every agent runs on the session model (Opus 5.5) unless a fallback is re
 
 ## Candidates
 
-Filled in as rounds complete.
+### Round 1
 
-## Blocked reviewers
+Nine hunters ran; they reported 23 raw candidates, one from a blocked run that was discarded (see below). Dedup
+kept 20 of the 22 others. All 20 were proven, except R1-SOLIDITY-1, whose prover disproved it. Disproving review is
+in progress.
 
-None so far.
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R1-VERIFIER-1 | emulator | Critical | Uarch verifier aborts the process on a relayed log against a fabricated before-state | **Confirmed, Critical** | Reproduced by prover, reviewer and orchestrator; see `BUGS.md` |
+| R1-VERIFIER-2 | emulator | Medium | Mcycle-level step verifier lets the log header choose the hash function | Duplicate | Same root cause as R1-HASH-1 |
+| R1-SOLIDITY-1 | machine-solidity-step | Critical | Honest input-delivery proof cannot fit per-transaction limits for large inputs | Disproved by prover | The input record (rollups-contracts `InputBox`, `INPUT_MAX_SIZE = 1 << 16`) caps inputs at 64 KiB; the worst reachable proof is 82,824 bytes, with a 3.3M-gas calldata floor, within every limit |
+| R1-TRANSITIONS-1 | emulator | High | `collect_uarch_cycle_root_hashes` fast uarch reset restores only dirtied uarch-RAM words | Proven, in review | |
+| R1-ARCH-1 | emulator | Medium | CLINT `mtimecmp`-to-cycle conversion overflows, raising spurious timer interrupts | Proven, in review | |
+| R1-ARCH-2 | emulator | Medium | Misaligned SC.W/SC.D without a reservation returns failure instead of trapping | Proven, in review | |
+| R1-ARCH-3 | emulator | Medium | Page walk ignores PMA failures on PTE accesses (A/D updates to non-writable memory dropped) | Proven, in review | |
+| R1-ARCH-4 | emulator | Medium | `sip` writes let S-mode set or clear STIP and SEIP | Proven, in review | |
+| R1-HASH-1 | emulator | Medium | Step-log replay verifier lets the proof select the hash function | Proven, in review | |
+| R1-GUESTTOOLS-1 | prt-player-bridge | Critical | Honest player aborts when a guest yield's data exceeds the tx buffer | Proven, in review | |
+| R1-GUESTTOOLS-2 | prt-player-bridge | Critical | Honest player asserts the guest's outputs Merkle root matches its own frontier | Proven, in review | |
+| R1-GUESTTOOLS-3 | machine-guest-tools | Medium | `rollup voucher` accepts values shorter than 32 bytes | Proven, in review | |
+| R1-PLAYER-1 | prt-player-bridge | Critical | Relaunched honest bridge abandons its claim when an adversary joined that commitment first | Proven, in review | |
+| R1-PLAYER-2 | prt-player-bridge | Critical | 8-entry input-boundary cache makes reaching a chosen position cost about n/5 whole inputs | Proven, in review | |
+| R1-PLAYER-3 | prt-player-bridge | Critical | `get_seal` issues one unpaged `eth_getLogs` from deployment to tip | Proven, in review | |
+| R1-PLAYER-4 | prt-player-bridge | High | Epoch listener fetches and retains every InputBox log of every application | Proven, in review | |
+| R1-PLAYER-5 | prt-player-bridge | High | Next-epoch inputs run before the current dispute ticks, so an input flood delays it | Proven, in review | |
+| R1-REFEREE-1 | prt-referee-model | Critical | Late Sybil re-post of the honest claim sets its clock to one block | Proven, in review | |
+| R1-REFEREE-2 | prt-referee-model | Critical | Output proofs are not range-checked: each output is accepted again at index i - 2^63 | Proven, in review | |
+| R1-ROBUST-1 | prt-player-bridge | Critical | Honest player keeps every tx-output payload of an input in memory | Proven, in review | |
+| R1-ROBUST-2 | prt-player-bridge | Critical | Honest player crashes on a manual yield whose length field exceeds the tx buffer | Duplicate | Same root cause as R1-GUESTTOOLS-1 |
+| R1-ROBUST-3 | prt-player-bridge | High | Each guest automatic yield costs the honest player a JSON-RPC round trip | Proven, in review | |
+
+## Blocked agents
+
+- `hunt:HASH`, round 1: the hunter on the session model set `blocked_by_safeguards` but still returned one candidate:
+  "the referee model accepts an output proof at an index outside the outputs tree". The workflow treated the run as
+  blocked and retried it on `sonnet`, which completed and produced R1-HASH-1. The dropped candidate is the same defect
+  as R1-REFEREE-2, so it is covered.
+
+No reviewer has been blocked so far.
 
 ## Left uncovered
 
@@ -67,4 +101,14 @@ Filled in at the end of the audit.
 
 ## Gaps in the threat model
 
-Filled in at the end of the audit.
+Collected as the audit runs; final at the end.
+
+- **Input size versus chain limits.** The proof of an advance-state delivery grows linearly with the input. The
+  receive buffer holds 2 MiB, but deliveries above roughly 400 KB yield proofs that cannot fit an Ethereum
+  transaction. Today the only bound is `INPUT_MAX_SIZE = 1 << 16` in the rollups contracts' `InputBox`, which
+  section 5 does not list as an obligation (from R1-SOLIDITY-1). A3 or A7 could require the input record to cap
+  inputs at a size whose honest delivery proof fits the chain's per-transaction limits.
+- **Crash-safety of the referee itself.** Section 4 requires paths that carry relayed data to report errors without
+  terminating the process, and section 8 rates the referee model as a deployed referee. The model does not say
+  explicitly that one shared referee process failing on one match's data must not stop the other matches
+  (R1-VERIFIER-1).

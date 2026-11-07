@@ -213,6 +213,18 @@ candidates, and dedup kept all of them. All 6 were proven and confirmed by one r
 | R4-VARSPEC-1 | emulator | Medium | Page walk accepts non-leaf PTEs with the reserved A, D or U bits set | **Confirmed, Medium** | Deterministic, consistent across paths, no correct guest sets these bits; see `BUGS.md` |
 | R4-VARSPEC-2 | emulator | Medium | Interrupts change `instret` | **Confirmed, Medium** | Deterministic, consistent across paths, contradicts the manual's counter definition; see `BUGS.md` |
 
+### Round 5 (extra: data flow)
+
+Six hunters ran, one per untrusted source. DFCHAIN, DFCLAIMPROOF, DFPEER and DFLOADED found no new candidate. DFINPUT
+and DFGUESTOUT reported 3 candidates, and dedup kept all of them. Agents ran on Claude Opus 5.5 (exact ID) at High
+effort.
+
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R5-DFINPUT-1 | machine-guest-tools | Critical | libcmt `cmt_abi_get_bool` returns success for words that are not a valid bool | **Confirmed, Critical** | Reviewer-confirmed and orchestrator-reproduced; factual summary and committed test; see `BUGS.md` |
+| R5-DFGUESTOUT-1 | prt-player-bridge, emulator | Critical | Player and CLI use the guest's `tohost` DATA as the length when reading the outputs root | Proven, in review | |
+| R5-DFGUESTOUT-2 | emulator | Critical | CLI keeps every tx-output payload in memory and writes each report or rejected output to its own file | Proving | |
+
 ## Blocked agents
 
 - `hunt:HASH`, round 1: the hunter on the session model set `blocked_by_safeguards` but still returned one candidate:

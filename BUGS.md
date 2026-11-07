@@ -29,6 +29,7 @@ Flags required by `AUDIT.md`:
 | [R3-PLAYER-1](#r3-player-1) | Honest player cannot sign a `winLeafMatch` proof for inputs of about 37 KB or more, because calldata goes to `cast` as one shell argument | PRT player and bridge (transaction signing) | R4, R12, A7, section 1 completeness, section 4, section 8 Critical | Critical |
 | [R4-VARABORT-1](#r4-varabort-1) | `cartesi-machine` CLI cannot compute claims when a rejected input leaves DATA above the transmit-buffer size | emulator (`cartesi-machine` CLI, cmio computation-hash modes) | R4, R2, section 1 completeness, section 2, section 4, section 8 Critical | Critical |
 | [R4-VARRANGE-1](#r4-varrange-1) | libcmt ABI decoder omits a bounds check on a decoded dynamic offset | `machine-guest-tools` (libcmt ABI decoder) | Section 1 goal, section 2 correctly designed application, section 4, section 7, `AUDIT.md` guest-tools rule | Critical |
+| [R5-DFINPUT-1](#r5-dfinput-1) | libcmt `cmt_abi_get_bool` returns success for ABI words that are not a valid bool | `machine-guest-tools` (libcmt ABI decoder) | Section 2 correctly designed application, section 4, section 7, `AUDIT.md` guest-tools rule | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -1130,6 +1131,36 @@ R1-GUESTTOOLS-1 too.
 finding is a standard missing-bounds-check defect in an open-source parsing library; this is a factual summary, and
 the full reproduction is the committed test. The audit report flags it as confirmed with its detailed write-up
 withheld.
+
+---
+
+## R5-DFINPUT-1
+
+**libcmt `cmt_abi_get_bool` returns success for ABI words that are not a valid bool**
+
+- **Severity:** Critical (`AUDIT.md`: an input makes an application that uses these tools as documented commit a
+  wrong output). Confirmed by an independent disproving reviewer and reproduced by the orchestrator.
+- **Component and area:** `machine-guest-tools` v0.18.0; libcmt's public ABI decoder for `bool`.
+- **Cited rules:** section 2 (correctly designed application); section 4 (input senders send any bytes); section 7;
+  the `AUDIT.md` rule for `machine-guest-tools`.
+- **Location:** `machine-guest-tools` `sys-utils/libcmt/src/abi.c:264-272` (`cmt_abi_get_bool`) and
+  `abi.c:89-102` (`cmt_abi_decode_uint_nr`, which checks only the 31 leading bytes). The documented return codes in
+  `include/libcmt/abi.h:411-431` are 0 and `-ENOBUFS` only.
+- **Defect:** the decoder copies the last byte of the 32-byte word into the bool's storage unchanged, so a word whose
+  last byte is above 1 returns success and leaves a bool object that is neither 0 nor 1. libcmt's own encoder never
+  writes such a word, and Solidity's decoder rejects it.
+- **Evidence and test:** `bugs/R5-DFINPUT-1/` (`test.lua`, `app.c`, `build.sh`; boot artifacts are generated under
+  the gitignored `build/`). Run `bugs/run.sh R5-DFINPUT-1`. A guest application that decodes a bool payload with the
+  documented API and checks the return code is built against the live pinned libcmt and run on the pinned kernel and
+  rootfs. A control input behaves correctly; an input with a non-0/1 word is accepted, and the application commits
+  an output its logic cannot produce for any valid bool. With the decoder fixed in a patched copy, the input is
+  rejected and the test passes.
+- **Possible solution:** decode into a `uint8_t`, reject a word with nonzero leading bytes or a last byte above 1
+  (for example with `-EDOM`), and set the result from the checked byte. Document the new return code and add tests
+  for last bytes `0x02` and `0xff`. Applications must be rebuilt, as libcmt is statically linked.
+- **Risks:** a deployed application that decodes a bool from its input can be made to commit an output its logic
+  would never produce, and every honest validator computes the same result. The fix is local and rejects only input
+  that was never a valid ABI bool.
 
 ---
 

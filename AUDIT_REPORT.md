@@ -1,26 +1,48 @@
 # PRT Audit Report
 
-Status: **extra rounds in progress** (round 17 confirmed no new issue: **clean-round count 1**; round 18 must use a different strategy and be clean too). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
+Status: **complete**. The audit stopped under the requester's rule, two consecutive rounds with different strategies that
+confirm no new issue: round 17 (assert and error inventory of the honest operator, file by file) and round 18 (blind
+invariant audit by subsystem) were both clean, after 18 rounds.
 
-**Running extra-rounds total:** round 4 (variant analysis) confirmed 6 new issues, bringing the confirmed total to **30 (14 Critical, 8 High, 8 Medium)**. See the round 4 candidate table and the Extra rounds section.
-
-**Result: 24 confirmed issues (12 Critical, 6 High, 6 Medium), listed in `BUGS.md`; 5 candidates rejected and 3
-merged as duplicates.** All 24 tests under `bugs/` fail deterministically on `feature/prt-audit`. A final pass ran every
-one of them and each exited with status 1, the bug present, and none with a harness error.
+**Result: 55 confirmed issues (27 Critical, 13 High, 15 Medium), listed in `BUGS.md`.** 24 further candidates remain
+rejected, each with its reason in the round tables. Every confirmed issue has a deterministic failing test under `bugs/`. A final pass ran all 55 of them with
+`bugs/run.sh <ID>` on `feature/prt-audit`: each exited with status 1 (the bug present), and none with 0 or with a harness error (2).
 
 | Component | Critical | High | Medium |
 |---|---|---|---|
-| PRT player and bridge (honest operator) | 8 | 3 | 0 |
+| PRT player and bridge (honest operator) | 14 | 8 | 0 |
 | PRT referee model | 3 | 0 | 1 |
-| Emulator | 1 | 1 | 5 |
+| Emulator | 8 | 3 | 14 |
 | `machine-solidity-step` (with the emulator for R2-SOLIDITY-1) | 0 | 2 | 0 |
-| `machine-guest-tools` | 0 | 0 | 0 |
+| `machine-guest-tools` | 2 | 0 | 0 |
 
-The emulator's Critical, R1-VERIFIER-1, is also what kills the referee model. The honest operator holds most of the
-Criticals, and none of them needs an emulator defect: crashes on guest or relayed data, restarts, scheduling, and
-costs that grow with the adversary's inputs or the application's age. No soundness failure was found in the
-emulator's transition function or its verifiers at reachable states. Every verifier divergence found occurs only at
-unreachable before-states (High), or accepts trailing data without effect on the result (Medium).
+Most of the Criticals are in the honest operator and need no emulator defect: crashes on guest or relayed data,
+restarts, scheduling, fees, and costs that grow with the adversary's inputs or the application's age. The emulator's
+Criticals fall in three groups: a verifier that aborts the process on a relayed log (R1-VERIFIER-1), CLI
+claim computation that dies on guest data (R4-VARABORT-1, R5-DFGUESTOUT-2), and **stored machines that trust
+files outside the hashed state when they load** (R7-FPUARCH-1 and the cache files R10-MANCLI1-1, R11-FAMCACHE-1,
+R12-SECCACHE2-1 and -2), which the threat model forbids for a template that meets the valid-template conditions.
+No soundness failure was found in the transition function itself or in the verifiers at reachable states: every
+verifier divergence found occurs only at unreachable before-states (High), or accepts trailing data without effect
+on the result (Medium). Two guest-tools decoders accept malformed input (R4-VARRANGE-1, R5-DFINPUT-1).
+
+How the audit should be read:
+
+- **Not blind, then blind.** Rounds 1-12, 15-17 told the hunters about earlier findings. Rounds 13, 14 and 18 withheld them.
+  In those three rounds, blind hunters re-found 14, 14 and 29 earlier findings respectively (dedup merged 17 of 24,
+  18 of 20 and 29 of 30 raw candidates, into 14, 14 and 16 distinct earlier findings), which is evidence that the audit has covered what hunters reach from the
+  prompts used; it is not evidence that nothing remains.
+- **A calibration error was found and corrected late.** From round 5 to round 14 the prompts told hunters that a defect
+  needing an application that is not correctly designed was not a bug. Round 15's second opinion showed that the text
+  of `THREAT_MODEL.md` scopes that exclusion to the emulator, so honest-operator failures on guest-written data are in
+  scope (R4 at every reachable state). That overturned one refutation (R1-GUESTTOOLS-2) and rounds 16 and 17 swept the
+  class (R16-RGOUTPUT-1, R16-RGBRIDGE-2). Rounds 5 to 14 may have under-reported this class in components other than
+  the ones swept later; round 17 re-inventoried the whole honest operator under the corrected reading and found nothing.
+- **Fallback models.** Hunts that a safeguard stopped were re-run on `sonnet`; three confirmed issues were found only
+  that way (R8-DYNPERSIST-1, R12-SECCACHE2-1 and -2), and the proof of concept of one (R11-FAMFEES-1) was written by it.
+  Their provers or reviewers ran on Opus 5.5 and the orchestrator reproduced every test. `BUGS.md` flags them.
+- **Solidity.** A round 8 hunter executed the pinned contracts (solc-js and `revm`). It executed R2-SOLIDITY-2; the
+  orchestrator could not re-run that harness. R2-SOLIDITY-1's acceptance claim is still only modeled.
 
 This report follows the plan in `AUDIT.md` and the definitions of `THREAT_MODEL.md`. Confirmed issues are in
 `BUGS.md`, and their tests are under `bugs/`.
@@ -44,18 +66,23 @@ This report follows the plan in `AUDIT.md` and the definitions of `THREAT_MODEL.
 
 ### Environment limitations
 
-- No Solidity toolchain. Installing Foundry was refused by the sandbox's permission policy (both the installer
-  script and the prebuilt release tarball), and no `solc` or EVM is otherwise available. Findings in
-  `machine-solidity-step` are therefore demonstrated by differential tests against the C++ reference plus a trace of
-  the Solidity code, and are flagged in `BUGS.md` as not executed on-chain.
+- No Foundry. Installing it was refused by the sandbox's permission policy (both the installer script and the
+  prebuilt release tarball). The orchestrator's later attempt to install an EVM (`pip install pyrevm`) was refused too.
+  Findings in `machine-solidity-step` were therefore demonstrated by differential tests against the C++ reference plus a
+  trace of the Solidity code, and flagged in `BUGS.md` as not executed on-chain, until a round 8 hunter obtained solc-js
+  and `revm` from the package mirrors and executed the pinned contracts (see the Round 8 coverage list).
+- The Dave contracts are not available (out of scope), and neither are `anvil`, `cast` or `forge`. The bridge and the
+  referee model were exercised against mock chains and the pinned Dave sources that an agent compiled for its own harness.
+- The machine has 4 shared CPUs and, at one point, ran short of disk (finished scratch harnesses were removed).
 
 ## Process
 
-A workflow runs each round: one hunter per angle (at most 6 at a time, at most 5 candidates each, reasoning before
-proposing), a deduplication pass across hunters and earlier rounds, then for each distinct candidate a prover that
-writes a deterministic failing test under `bugs/<ID>/`, and one independent disproving reviewer (a second one only
-when the first is inconclusive). An agent blocked by safeguards is retried with a less capable model (`sonnet`, then
-`haiku`). Hunting stops after 3 rounds, and an angle is dropped after a round with no new candidate.
+A workflow runs each round: one hunter per angle (at most 6 at a time in rounds 1-4 and at most 10 afterwards, at most
+5 candidates each, reasoning before proposing), a deduplication pass across hunters and earlier rounds, then for each
+distinct candidate a prover that writes a deterministic failing test under `bugs/<ID>/`, and one independent disproving
+reviewer (a second one only when the first is inconclusive). An agent blocked by safeguards is retried with a less
+capable model (`sonnet`, then `haiku`). `AUDIT.md` bounds the hunt to 3 rounds; the requester then asked for extra rounds
+with different strategies until two consecutive rounds confirm no new issue (see Extra rounds).
 
 Models: every agent runs on the session model (Opus 5.5) unless a fallback is recorded below.
 
@@ -100,7 +127,12 @@ and unavailable.
 - From round 5, agents are pinned to the exact model ID `claude-opus-5-5` at High effort. A first launch of round 5
   used the alias `opus`, which resolved to Opus 4.8 on this setup; it was stopped after two hunters started and
   relaunched with the exact ID. No result from that launch was used.
-- Safeguard fallbacks (`sonnet`, then `haiku`) remain, as `AUDIT.md` requires.
+- Safeguard fallbacks (`sonnet`, then `haiku`) remain, as `AUDIT.md` requires. Fallback runs after round 4 are listed under
+  Blocked agents (`hunt:DYNUARCHDIFF`, `hunt:DYNPERSIST`, `hunt:SECCACHE2`, `hunt:RGUARCH`, `hunt:INVMODEL`,
+  `prove:R11-FAMFEES-1`).
+- Round 15 and the second-opinion reviewers ran on the exact ID `claude-opus-5-5` at High effort.
+- The orchestrator (this session) switched between Opus 5.5 and Sonnet 5.5 during the audit; the git commits after
+  round 7 carry a Sonnet 5.5 trailer for that reason.
 
 ## Extra rounds
 
@@ -127,7 +159,7 @@ refutations.
 | 15 | Second opinion on every refuted or disproved candidate (21): an independent reviewer re-reads each refutation against the text of `THREAT_MODEL.md` and `AUDIT.md` and may overturn it only by naming the step that contradicts them | R1-SOLIDITY-1, R1-HASH-1, R1-GUESTTOOLS-2/3, R2-ARCH-1, R6-LCSETUP-1/2, R7-FPMACHINE-1, R7-FPPRTREST-1, R8-DYNPRTSIM-1/2, R9-GOALACCEPT-1, R10-MANARCH-1/2, R12-SECPERUNIT-1, R13-ROLEVERSION-2, R13-ROLEAPPDEV-3/4, R13-ROLESPEC-4, R13-ROLECOST-3, R14-INVGUEST-3 |
 | 16 | R4 at every reachable state: the corrected reading of the "application not correctly designed" exclusion applied to every honest-operator path that handles guest-written data | RGPLAYER, RGCLI, RGEMU, RGUARCH, RGOUTPUT, RGSTALL, RGBRIDGE |
 | 17 | Assert and error inventory of the honest operator, file by file, under the corrected reading: every `assert`, `error`, unchecked access, unbounded loop and I/O call, and who controls each value | INVPRT1, INVPRT2, INVPRT3, INVPRT4, INVPLAYERMAIN, INVBRIDGE, INVTX, INVMODEL, INVCLISCRIPT |
-| 18 | Blind invariant audit by subsystem, again under the corrected reading (hunters are not shown the earlier findings) | planned |
+| 18 | Blind invariant audit by subsystem, again under the corrected reading (hunters are not shown the earlier findings) | B18INTERP, B18CSR, B18MMU, B18DEVICE, B18HASH, B18STORE, B18LOGS, B18API, B18REFEREE, B18OPERATOR, B18GUEST |
 
 ## Candidates
 
@@ -608,6 +640,57 @@ Round 17 coverage (a clean round is not evidence of absence):
   closed or blocking stdout, and the per-input clone cost without reflinks were not covered.
 - Almost every site was cleared by reading or matched to a known family, so very few harnesses ran in this round.
 
+### Round 18 (extra: blind invariant audit by subsystem, corrected reading)
+
+Eleven hunters ran (ten at a time), each owning one subsystem, deriving its invariants from scratch and attacking them
+under the corrected reading of the "application not correctly designed" exclusion, and **without the list of earlier
+findings**. They reported 30 raw candidates. Dedup merged 29 of them into 16 distinct earlier findings (among them the
+new Critical classes of rounds 15 and 16: the wrong outputs root, the stopped epoch, the DATA above the buffer, the
+output aliasing) and kept 1: the `rollup` CLI ignoring errors when it loads `/tmp/merkle.dat`. The prover proved it and
+the disproving reviewer refuted it. **No new issue was confirmed, so round 18 was clean: two consecutive clean rounds
+(17 and 18), with different strategies, and the audit stops.** No hunt, prover or reviewer was blocked.
+
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R18-B18GUEST-5 | machine-guest-tools | Medium | The `rollup` CLI ignores outputs-tree load errors: a missing or truncated `/tmp/merkle.dat` silently resets or corrupts the outputs tree | Refuted by reviewer | Reproduced, but the trigger is the application itself deleting or overwriting the CLI's private state file, which a correctly designed application does not do (`AUDIT.md`'s rule for `machine-guest-tools` is an application that uses the tools as documented); a missing file at the first call is the intended genesis case; any root committed is deterministic across validators and the goal is not threatened. A hardening note: load into a temporary and refuse on a short file |
+
+Round 18 coverage (a clean round is not evidence of absence):
+
+- **B18INTERP**, **B18CSR**, **B18MMU**: derived and checked about 20 invariants of the core, traps and translation; ran a native-versus-uarch
+  differential of about 600 random trials. Not done: bit-exact soft-float against an independent oracle (none installed),
+  a composite worst-case mcycle in uarch cycles, and a broad randomized differential over Sv39/48/57 page tables.
+- **B18DEVICE**, **B18HASH**, **B18STORE**, **B18LOGS**, **B18API**: by reading and targeted experiments. Not done: `SIGKILL`-mid-update
+  experiments on shared stores, power-loss ordering of the `.phtc`, JSON-RPC paths of `get_proof`, the JSON-RPC server's
+  fork/rebind/shutdown races, `dtb.cpp` in depth, and a line-by-line diff of the Solidity `UArchStep` against its source.
+- **B18REFEREE**, **B18OPERATOR**, **B18GUEST**: not covered by them: the C++ verifiers' internals (B18REFEREE), `prt-cast.lua`,
+  `prt-log-history.lua`, `prt-websocket.lua` and the supervisor scripts (B18OPERATOR, skimmed), the Linux `/dev/cmio` driver and
+  `rollup-http-client`/`echo-dapp` (B18GUEST).
+
+### Totals across all rounds
+
+| Round | Strategy | Confirmed | Clean? |
+|---|---|---|---|
+| 1-3 | Planned: threat-model angles | 16, 6, 2 (24) | no |
+| 4 | Variant analysis | 6 | no |
+| 5 | Data flow | 3 | no |
+| 6 | Lifecycle phase | 0 | yes (count 1, reset by round 7) |
+| 7 | File partition | 2 | no |
+| 8 | Dynamic testing | 2 | no |
+| 9 | Attack goals | 1 | no |
+| 10 | Manual and promise checking | 2 | no |
+| 11 | Family expansion of the late findings | 7 | no |
+| 12 | Second-order family expansion | 2 | no |
+| 13 | Blind adversary personas | 2 | no |
+| 14 | Blind invariant audit by subsystem | 1 | no |
+| 15 | Second opinion on 21 refuted candidates | 1 (an overturn) | no |
+| 16 | R4 at every reachable state | 2 | no |
+| 17 | Assert and error inventory, file by file | 0 | **yes (count 1)** |
+| 18 | Blind invariant audit by subsystem, corrected reading | 0 | **yes (count 2): stop** |
+| All | | **55 (27 Critical, 13 High, 15 Medium)** | |
+
+Round 6 found nothing new, but round 7 (a different strategy) then did, so it did not satisfy the stop rule. The rule was
+met only after two further clean rounds.
+
 ## Blocked agents
 
 - `hunt:HASH`, round 1: the hunter on the session model set `blocked_by_safeguards` but still returned one candidate:
@@ -729,7 +812,7 @@ hunters reported them as uncovered and later rounds did not close them.
   acceptance on demand without breaking any stated rule except the manual's.
 - **The honest operator's path stops at the emulator.** Section 2 lists obtaining the template, advancing, delivering,
   storing and reloading, computing claims and producing proofs. It does not list submitting transactions, observing
-  the chain, or restarting the operator process. Five of the twelve Criticals live there:
+  the chain, or restarting the operator process. Fourteen of the 27 Criticals live there (five of them were known by round 3):
   - R1-PLAYER-1: restart recovery;
   - R1-PLAYER-3: the node's log-range limit;
   - R1-PLAYER-5 and R2-PLAYER-1: scheduling across epochs and a shared account;
@@ -754,3 +837,24 @@ hunters reported them as uncovered and later rounds did not close them.
   before-states depends on the build type: `relwithdebinfo` aborts, while `release` silently aligns the address
   (R1-VERIFIER-1). R10 could state that verifier outcomes, including rejection, must not depend on build
   configuration.
+- **Where the "application that is not correctly designed" exclusion stops.** Section 8 lists it under "Out of scope for the
+  emulator", section 2 presumes any assignment of guest-writable memory reachable and does not require a valid template to
+  be a correctly designed application, and R4 applies at every reachable state. The text does not say whether the exclusion
+  covers the honest operator and the CLI's claim computation. The first reviewers read it as covering all of them; the
+  round 15 second opinion read it as scoped to the emulator (R1-GUESTTOOLS-2, R16-RGOUTPUT-1). The audit follows the second
+  reading. The threat model should state which components the exclusion covers.
+- **Who validates what a stored template carries.** Section 8 says that once a snapshot meets the valid-template conditions,
+  nothing it carries outside the hashed state may affect any transition. The conditions are about the contents and the
+  root, and no obligation tells the loader to validate the cache files, dirty-page tree and hash-tree files that the load
+  adopts (R7-FPUARCH-1, R10-MANCLI1-1, R11-FAMCACHE-1, R12-SECCACHE2-1 and -2). Either the loader must not trust them, or
+  the model must say that the template supplier is trusted for them.
+- **The listener must enforce A3 on its side.** A3 caps the inputs per epoch, but nothing says that the honest operator's
+  epoch listener must apply the same cap when the backlog exceeds it (R16-RGBRIDGE-2), nor which referee behavior it may
+  assume at the seal.
+- **What a version check must cover.** R13 requires the honest operator to detect and refuse a build/deployment mismatch,
+  and section 8 rates a node that cannot detect one as High. Which parts of the deployment must be compared (the pristine
+  hash, the verifier code, the split of the dispute constants) is not stated (R13-ROLEVERSION-3).
+- **Which entries of the machine configuration are protocol.** Registers such as `mvendorid`, `marchid`, `mimpid` and the
+  HTIF masks are configurable, stored, and hashed in some paths and not honored in others (R11-FAMMASK-1/2,
+  R10-MANLUA1-1). The model does not list which configuration fields are part of the transition function (R13).
+

@@ -858,3 +858,121 @@ hunters reported them as uncovered and later rounds did not close them.
   HTIF masks are configurable, stored, and hashed in some paths and not honored in others (R11-FAMMASK-1/2,
   R10-MANLUA1-1). The model does not list which configuration fields are part of the transition function (R13).
 
+## Cost, strategies and lessons
+
+Measured from the workflow records of the 18 hunting rounds (agent counts, subagent tokens and tool calls are exact; wall time
+is derived from file times and is approximate).
+
+### Totals
+
+| Item | Value |
+|---|---|
+| Rounds | 18 hunting rounds (3 planned by `AUDIT.md`, 15 extra); round 15 only re-reviewed refuted candidates |
+| Subagents | 348 (hunters, dedup, provers, reviewers, fallback re-runs) |
+| Subagent tokens | about 54.7 million, with about 11,850 tool calls |
+| Wall time | about 31 h from the first round launch (06 Nov 23:34 UTC) to the final commit (08 Nov 06:27 UTC); the workflows themselves ran about 24.7 h |
+| Models | all agents on Opus 5.5 at High effort, except `sonnet` for re-runs of blocked hunts |
+
+Not included in these numbers: the orchestrator's own tokens (the session was compacted at least three times), the setup
+time before round 1 (environment, images and toolchain), and the aborted runs (three launches that left empty outputs and
+the round 5 launch that used the wrong model alias).
+
+| Round | Strategy | Agents | Tokens (M) | Confirmed |
+|---|---|---|---|---|
+| 1 | Planned angles | 50 | 3.8 | 16 |
+| 2 | Planned angles | 25 | 2.2 | 6 |
+| 3 | Planned angles | 11 | 1.9 | 2 |
+| 4 | Variant analysis | 19 | 3.0 | 6 |
+| 5 | Data flow | 13 | 2.1 | 3 |
+| 6 | Lifecycle phase | 13 | 2.7 | 0 |
+| 7 | File partition | 19 | 3.8 | 2 |
+| 8 | Dynamic testing | 21 | 4.0 | 2 |
+| 9 | Attack goals | 15 | 3.2 | 1 |
+| 10 | Manual and promise checking | 17 | 3.3 | 2 |
+| 11 | Family expansion | 25 | 4.0 | 7 |
+| 12 | Second-order family expansion | 16 | 3.1 | 2 |
+| 13 | Blind adversary personas | 24 | 4.1 | 2 |
+| 14 | Blind invariant audit by subsystem | 16 | 3.4 | 1 |
+| 15 | Second opinion on refuted candidates | 21 | 1.8 | 1 (an overturn) |
+| 16 | R4 at every reachable state | 17 | 2.9 | 2 |
+| 17 | Assert and error inventory, file by file | 12 | 2.3 | 0 |
+| 18 | Blind invariant audit, corrected reading | 14 | 3.1 | 0 |
+
+### Angles
+
+135 distinct angles were defined and run as about 150 hunter runs (rounds 2 and 3 repeated angles); the per-round
+lists are in the Extra rounds table: 9 in rounds 1-3, 6 in round 4, 6 in round 5, 8 in round 6, 11 in round 7,
+10 in each of rounds 8, 9, 10 and 13, 9 in round 11, 8 in round 12, 11 in each of rounds 14 and 18, 7 in round 16
+and 9 in round 17. Round 15 had no angles; it re-reviewed 21 candidates.
+
+### Strategies
+
+Fifteen strategy types over the 18 rounds (the blind invariant audit ran twice, and rounds 11 and 12 use the same method):
+planned threat-model angles, variant analysis, data flow, lifecycle phase, file partition, dynamic testing, attack
+goals, manual and promise checking, family expansion, blind adversary personas, blind invariant audit by subsystem,
+second opinion on refuted candidates, R4 at every reachable state, and the file-by-file assert and error inventory.
+
+### Ranking by confirmed issues
+
+Read this ranking with care: early strategies met the easy bugs, so the order of the rounds inflates the early ones.
+
+| Rank | Strategy | Confirmed | Tokens (M) | Issues per M tokens |
+|---|---|---|---|---|
+| 1 | Planned angles (rounds 1-3) | 24 | 7.9 | 3.0 |
+| 2 | Variant analysis (round 4) | 6 | 3.0 | 2.0 |
+| 3 | Family expansion (rounds 11-12) | 9 | 7.1 | 1.3 |
+| 4 | Data flow (round 5) | 3, all Critical | 2.1 | 1.4 |
+| 5 | Second opinion (15) plus R4 at every reachable state (16) | 3 Critical | 4.7 | 0.6 |
+| 6 | Dynamic testing, file partition, manual checking, blind personas | 2 each (8) | about 15 | about 0.5 |
+| 7 | Attack goals, blind invariant audit (round 14) | 1 each | 6.6 | 0.3 |
+| 8 | Lifecycle, assert inventory, blind invariant audit (round 18) | 0 | 8.1 | 0 |
+
+- Round 15 was the best value per Critical: one found directly, and the calibration error it exposed produced two more in
+  round 16.
+- Dynamic testing and manual checking are the only strategies that found the crash-ordering bugs and the first
+  stored-cache trust bug.
+- Blind rounds are a saturation test: rediscovery was 17 of 24, 18 of 20 and 29 of 30 raw candidates in rounds 13, 14
+  and 18, and rounds 17 and 18 found nothing new. That is evidence of saturation under these prompts, not proof that
+  nothing remains.
+- About 28% of the tokens (rounds 6, 9, 14, 17, 18) found at most one issue each.
+
+### Ideas to improve the threat model, ranked
+
+1. **Say which components the exclusion "an application that is not correctly designed" covers.** It sits under "Out of scope
+   for the emulator" and was read too broadly for ten rounds (R1-GUESTTOOLS-2, R16-RGOUTPUT-1, R16-RGBRIDGE-2). Add a rule
+   that the honest operator computes the canonical claim for any guest state.
+2. **Add loader and persistence rules.** A loader validates or recomputes every file not covered by the root (dense,
+   sparse and dirty-page trees, page-hash-tree cache, shadow files). Every writer marks dirty before it stores. These two
+   rules would have caught about ten issues of rounds 7-12 (R7-FPUARCH-1, R8-DYNPERSIST-1, R9-GOALRESTORE-1,
+   R10-MANCLI1-1, R11-FAMCACHE-1, R11-FAMPERSISTA-1/2, R12-SECCACHE2-1/2).
+3. **Add operator-side rules.** No benign fault leaves a state from which the operator cannot move; observation and
+   persistence cost per guest-chosen count is bounded; gas limits cover the worst-case branch; the listener enforces the
+   2^24 cap; the version check lists what must be compared. About twelve issues of the operator family.
+4. **List which configuration fields are part of the transition function** and require one source of truth for every
+   register across the native interpreter, the uarch program and the verifiers (R11-FAMMASK-1/2, R10-MANLUA1-1,
+   R7-FPMEM-1).
+5. **Pin down the severity caps.** State how template-supplier trust is rated, that latent or unreachable states are
+   capped at High, and that a deviation consistent across paths is Medium. This would have removed several reviewer disputes.
+6. **Add an appendix of bug shapes** to the threat model: store-before-mark, trusted-on-load, assert-on-guest-data,
+   per-unit counts, estimate-versus-inclusion, ignored masks, 2^63 and 2^51 wraps, capacity caps.
+
+### Ideas to improve the audit prompt and process, ranked
+
+1. **Fix the calibration first and give hunters the shape catalog from round 1.** Run planned angles, then variant analysis,
+   data flow, "R4 at every reachable state", family expansion and the file inventory, with one blind round to measure
+   recall. Estimated: about 8 rounds and about 25M tokens instead of 18 rounds and 55M.
+2. **Do not tell hunters what is "not a bug".** Hunters under-reported what the calibration called out of scope. Have them
+   report everything and apply the exclusions at review.
+3. **Run a second-opinion round after round 3 and whenever the calibration changes.** It cost 1.8M tokens. Each reviewer
+   must quote the exact clause it relies on and say whether it covers that component.
+4. **Use blind rounds as the stop test.** Stop when two consecutive blind rounds, after the calibration is fixed, have a
+   high rediscovery rate and no new Critical. (Stopping at round 14 on that rule would have missed round 16's Criticals,
+   which came from the calibration fix, not from saturation.)
+5. **Ship a harness library up front**: the bare-metal guest builder, the mock chain, the stored-player runner, the
+   Solidity and EVM harness, and a prebuilt sanitizer copy. Hunters rebuilt these in almost every round.
+6. **Let the workflow read its arguments from a file.** Re-inlining 20-30 KB of arguments every round cost orchestrator
+   tokens and time. Pin the exact model ID from the start and clean scratch disk automatically.
+7. **Handle classifier stops deliberately.** Seven hunts were stopped and re-run on `sonnet`, which gave three
+   fallback-only findings. Ask for a "failing test" instead of an "exploit", and retry once on the primary model with a
+   rephrased prompt before falling back.
+

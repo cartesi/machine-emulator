@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **extra rounds in progress** (round 16 confirmed two more issues, both Critical, so the clean-round count restarted again; round 17 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
+Status: **extra rounds in progress** (round 17 confirmed no new issue: **clean-round count 1**; round 18 must use a different strategy and be clean too). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
 
 **Running extra-rounds total:** round 4 (variant analysis) confirmed 6 new issues, bringing the confirmed total to **30 (14 Critical, 8 High, 8 Medium)**. See the round 4 candidate table and the Extra rounds section.
 
@@ -126,7 +126,8 @@ refutations.
 | 14 | Blind invariant audit by subsystem: hunters again not shown the earlier findings; each owns one subsystem, derives its invariants from scratch and attacks them | INVINTERP, INVCSR, INVMMU, INVDEVICE, INVHASH, INVSTORE, INVLOGS, INVAPI, INVREFEREE, INVOPERATOR, INVGUEST |
 | 15 | Second opinion on every refuted or disproved candidate (21): an independent reviewer re-reads each refutation against the text of `THREAT_MODEL.md` and `AUDIT.md` and may overturn it only by naming the step that contradicts them | R1-SOLIDITY-1, R1-HASH-1, R1-GUESTTOOLS-2/3, R2-ARCH-1, R6-LCSETUP-1/2, R7-FPMACHINE-1, R7-FPPRTREST-1, R8-DYNPRTSIM-1/2, R9-GOALACCEPT-1, R10-MANARCH-1/2, R12-SECPERUNIT-1, R13-ROLEVERSION-2, R13-ROLEAPPDEV-3/4, R13-ROLESPEC-4, R13-ROLECOST-3, R14-INVGUEST-3 |
 | 16 | R4 at every reachable state: the corrected reading of the "application not correctly designed" exclusion applied to every honest-operator path that handles guest-written data | RGPLAYER, RGCLI, RGEMU, RGUARCH, RGOUTPUT, RGSTALL, RGBRIDGE |
-| 17 | To be chosen from what round 16 shows | planned |
+| 17 | Assert and error inventory of the honest operator, file by file, under the corrected reading: every `assert`, `error`, unchecked access, unbounded loop and I/O call, and who controls each value | INVPRT1, INVPRT2, INVPRT3, INVPRT4, INVPLAYERMAIN, INVBRIDGE, INVTX, INVMODEL, INVCLISCRIPT |
+| 18 | Blind invariant audit by subsystem, again under the corrected reading (hunters are not shown the earlier findings) | planned |
 
 ## Candidates
 
@@ -578,6 +579,35 @@ Round 16 coverage (hunts with no new candidate are not evidence of absence):
   generation in `prove_output` (reachable only through the referee model's demonstration), multi-execution CLI epochs with
   odd data at a batch boundary, and `gdbstub.lua`/`evmu.lua`.
 
+### Round 17 (extra: assert and error inventory of the honest operator)
+
+Nine hunters inventoried the honest operator and the Lua libraries file by file, under the corrected reading from round 15
+(any guest-written value, adversarial claim and benign fault is in scope). They enumerated about 700 sites between them
+(for example INVPLAYERMAIN about 95, INVCLISCRIPT about 228, INVPRT1 33, INVPRT2 about 90 including host API calls).
+Eight hunters reported nothing new; the one that did not (INVMODEL) was stopped by a safeguard and its `sonnet` re-run
+reported 1 candidate, which the prover disproved. **No new issue was confirmed, so round 17 was clean** (clean-round
+count 1). Every adversary-reachable misbehavior the hunters found in their ranges belonged to an already confirmed
+family. The strategy is new, but the round is not blind: the hunters saw the list of earlier findings.
+
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R17-INVMODEL-1 | prt-player-bridge | Critical | The honest player aborts when the guest emits outputs beyond the outputs tree (frontier overflow in `flush_pending_outputs`) | Disproved by prover (fallback-sourced candidate) | The assert fires, but the candidate used the wrong capacity: the outputs tree has 2^63 leaves (`ROLLUP_LOG2_MAX_OUTPUT_COUNT = 63`), not 2^24. Overflowing it takes at least 2^63 outputs, hence at least 2^63 mcycles over at least 2^15 inputs that each run near the deadline (about 292 years of emulation), which is outside the resources the deployment is sized for (section 1, R12, A7); a template with 2^63-1 prior outputs needs the same history |
+
+Round 17 coverage (a clean round is not evidence of absence):
+
+- **INVMODEL** is the weak spot: its Opus 5.5 hunter was stopped by a safety classifier partway, so `prt-bridge.lua` from line
+  520, the player event handlers in `prt.lua` from line 815, `evmu.lua` and the proof batch builders of `hash-tree.lua` after
+  line 330 were not inventoried by it, and the `sonnet` re-run produced only the candidate above. Other hunters covered
+  parts of `prt-bridge.lua` and `prt.lua`; `evmu.lua` and the late `hash-tree.lua` builders remain thin.
+- **INVTX**: `game-transport.lua` (1230 lines) was only skimmed. The Dave contracts (`Tournament`, `LeafTournament`,
+  `DaveConsensus`) are not available, so two questions about event ordering of child tournaments could not be settled.
+- **INVPRT3**, **INVPRT4**: no end-to-end crash-injection run; the crash windows were traced by reading. The
+  `frontier_forest_expand_leaf` authentication and the Dave `Match` `leftNode` semantics used by the bridge were not
+  re-verified.
+- **INVCLISCRIPT**: `gdbstub.lua` and `bash.lua` were skimmed; the CLI's root-hash printing runners, console output to a
+  closed or blocking stdout, and the per-input clone cost without reflinks were not covered.
+- Almost every site was cleared by reading or matched to a known family, so very few harnesses ran in this round.
+
 ## Blocked agents
 
 - `hunt:HASH`, round 1: the hunter on the session model set `blocked_by_safeguards` but still returned one candidate:
@@ -618,6 +648,10 @@ Round 16 coverage (hunts with no new candidate are not evidence of absence):
 - `hunt:RGUARCH`, round 16: the hunter on Opus 5.5 set `blocked_by_safeguards` (a safety classifier cut off the last step, a
   randomized differential harness, which never ran). The workflow re-ran it on `sonnet`, which found no candidate. The
   differential it was about to run was not done by any agent; it is listed under Left uncovered.
+
+- `hunt:INVMODEL`, round 17: the hunter on Opus 5.5 set `blocked_by_safeguards` (a classifier stopped it partway through the
+  inventory of the encoders and the referee modules). The workflow re-ran it on `sonnet`, whose one candidate the prover
+  disproved. The unfinished inventory is described in the Round 17 coverage list.
 
 No prover or reviewer was blocked in any other round, so no issue needed a fallback reviewer or was reported without a
 proof of concept. The only fallbacks were the hunters above.

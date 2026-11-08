@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **extra rounds in progress** (round 13 confirmed two more issues, so the clean-round count restarted again; round 14 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
+Status: **extra rounds in progress** (round 14 confirmed one more issue, a latent High, so the clean-round count restarted again; round 15 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
 
 **Running extra-rounds total:** round 4 (variant analysis) confirmed 6 new issues, bringing the confirmed total to **30 (14 Critical, 8 High, 8 Medium)**. See the round 4 candidate table and the Extra rounds section.
 
@@ -123,7 +123,8 @@ refutations.
 | 11 | Family expansion of the late findings: each hunter enumerates every site of one bug shape found in rounds 7-10 | FAMPERSISTA, FAMPERSISTB, FAMCACHE, FAMMASK, FAMWEDGE, FAMFEES, FAMSPEC, FAMOPERATORIO, FAMUARCH |
 | 12 | Second-order family expansion: the new shapes of round 11 (a register read from a constant on one path and from the shadow on another, decisions made at one chain state and executed at another) and the neighbors round 11 opened | SECSHADOW, SECPENDING, SECGAS, SECPERUNIT, SECCACHE2, SECLOCALREMOTE, SECEVMSEAM, SECCONFIG |
 | 13 | Blind adversary personas: hunters play one persona each and are NOT shown the list of earlier findings (it goes only to dedup, whose duplicates measure the rediscovery rate) | ROLEINPUT, ROLECLAIMANT, ROLETEMPLATE, ROLEFAULT, ROLEVERSION, ROLECONTRACT, ROLESPEC, ROLECOST, ROLEAPPDEV, ROLELOCALAUDITOR |
-| 14 | To be chosen from what round 13 shows | planned |
+| 14 | Blind invariant audit by subsystem: hunters again not shown the earlier findings; each owns one subsystem, derives its invariants from scratch and attacks them | INVINTERP, INVCSR, INVMMU, INVDEVICE, INVHASH, INVSTORE, INVLOGS, INVAPI, INVREFEREE, INVOPERATOR, INVGUEST |
+| 15 | To be chosen from what round 14 shows | planned |
 
 ## Candidates
 
@@ -491,6 +492,40 @@ verifiers against fabricated logs (ROLECLAIMANT looked only at how the referee c
 scope), the bridge's fee and nonce races under a Sybil flood (needs Dave on a chain), `prt-transactions.lua`,
 `prt-cast.lua`, `prt-websocket.lua` and `prt-log-history.lua` (ROLECLAIMANT), and the Solidity referee itself (ROLEINPUT, no
 EVM for that role).
+
+### Round 14 (extra: blind invariant audit by subsystem)
+
+Eleven hunters ran (ten at a time), each owning one subsystem, deriving its invariants from scratch and attacking them,
+and **again without the list of earlier findings**. They reported 20 raw candidates. Dedup merged 18 of them into 14
+distinct earlier findings and kept 2 (R14-INVLOGS-1 and R14-INVGUEST-3). One was confirmed and one refuted, so
+**round 14 was not clean**, although the one confirmation is a latent High with no reachable trigger. All agents ran on
+Claude Opus 5.5 (exact ID) at High effort; no hunt, prover or reviewer was blocked.
+
+Recall: for the second time in a row, blind hunters re-found most of the known issues in their subsystem without being told
+about them: the CLINT timer overflow (four hunters), the `sip` writes (two), the misaligned SC and the instret
+decrement, the page-walk PMA failures, the referee output aliasing (two), R2-PLAYER-1 and R1-PLAYER-1 (the
+honest bridge), libcmt's dynamic offset and bool decoders, the DATA-above-the-buffer abort, and the `replace_memory_range`
+mark loss. No blind hunter reported a new Critical.
+
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R14-INVLOGS-1 | emulator | High | The uarch-cycle hash collector throws when the uarch halts on the step that reaches `UARCH_CYCLE_MAX`, although R4 allows it and the verifiers accept the transition | **Confirmed, High** | Reproduced by prover, reviewer and orchestrator with a custom uarch image; with the pristine uarch the trigger is unreachable by bounding arguments, so this is a latent builder-versus-verifier divergence at a boundary that R2 names; see `BUGS.md` |
+| R14-INVGUEST-3 | machine-guest-tools | High | The `rollup` CLI with `--utf8-payload` consumes an input with invalid UTF-8 and then fails, so the application can neither read nor reject it on its merits | Refuted by reviewer | Reproduced, but `rollup reject` after the non-zero exit rejects the held input correctly (the reviewer ran that loop), so the interface stays intact and nothing wrong is committed; invalid UTF-8 has no text decoding by definition |
+
+Round 14 coverage (hunts with no new candidate are not evidence of absence):
+
+- **INVINTERP**, **INVCSR**, **INVMMU**: derived and checked about 20 invariants of the interpreter, CSRs, traps, interrupts
+  and translation (interrupts versus the native loop, TLB and fetch-cache invalidation, WARL masks, counters); ran
+  host differentials of soft-float against x86 and of native against emulated 128-bit arithmetic (2M vectors per operation,
+  zero mismatches). Not done: a native-versus-uarch lockstep over a full Linux boot, the worst-case uarch cycles of an
+  mcycle (estimated at about 3 flushes plus 2 Sv57 walks, far below 2^20), and rounding mode RMM against hardware.
+- **INVHASH**: no candidate; fuzzers used only Keccak and small machines; not run: crash consistency under a real kill,
+  OpenMP behavior after fork, SHA-256 trees, and machines large enough to reach the parallel-update thresholds.
+- **INVDEVICE**, **INVSTORE**, **INVAPI**, **INVLOGS**, **INVREFEREE**, **INVOPERATOR**, **INVGUEST**: found only
+  duplicates plus the two kept candidates. Not examined: `dtb.cpp` line by line, the JSON-RPC server's session lifecycle and
+  shutdown races, the CLI's computation-hash runners in depth, differential fuzzing of the forest functions,
+  `prt-websocket.lua` past the handshake, the durability of reflink clones, and booting Linux to run the guest-side
+  reproducers end to end.
 
 ## Blocked agents
 

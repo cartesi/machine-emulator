@@ -57,6 +57,7 @@ Flags required by `AUDIT.md`:
 | [R11-FAMOPERATORIO-1](#r11-famoperatorio-1) | The honest stored player writes and fsyncs one durable file per guest output at every input boundary, so its persistence cost and inode use grow with the number of outputs | `prt-player-bridge`; stored player output persistence (`doc/recipes/prt.lua`) | R12, A7, R4, section 8 High | High |
 | [R13-ROLECOST-2](#r13-rolecost-2) | The honest bridge re-polls every child tournament ever announced, at least twice per tick, so its per-move latency grows linearly with the number of Sybil child tournaments | `prt-player-bridge`; `doc/recipes/prt-bridge.lua` and `prt-log-history.lua` | R12 (loosely), A7, section 1 completeness, section 8 High | High |
 | [R13-ROLEVERSION-3](#r13-roleversion-3) | The honest player checks only the uarch pristine hash of a deployment, so a verifier build with a different transition function or dispute-constant split is never detected or refused | `prt-player-bridge`; deployment checks of `doc/recipes/prt-player.lua` and `prt-bridge.lua` (`read_geometry`) | R13, A6, section 1 completeness, section 8 High | High |
+| [R14-INVLOGS-1](#r14-invlogs-1) | The uarch-cycle hash collector throws when the uarch halts on the step that reaches `UARCH_CYCLE_MAX`, although R4 allows it and the verifiers accept the transition | emulator; `collect_uarch_cycle_root_hashes` and `collect_uarch_cycle_bundle` (`src/machine.cpp`), `uarch_step` | R4, R2, section 8 High | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
 | [R1-ARCH-2](#r1-arch-2) | Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping | emulator (atomics, LR/SC) | R7, section 8 Medium | Medium |
 | [R1-ARCH-3](#r1-arch-3) | Page walk ignores PMA failures on PTE accesses | emulator (address translation) | R7, section 8 Medium | Medium |
@@ -2672,6 +2673,72 @@ transition function or dispute-constant split is never detected or refused**
   valid deployments, which is a liveness issue, until the pinned hash is updated through a reproducible build (R13). -
   Pinning the hash in the player couples the emulator recipe to one Dave and machine-solidity-step release. - Adding a
   CM_MARCHID check alone gives false assurance, because CM_MARCHID does not identify the verifier semantics.
+
+---
+
+## R14-INVLOGS-1
+
+**The uarch-cycle hash collector throws when the uarch halts on the step that reaches `UARCH_CYCLE_MAX`, although R4
+allows it and the verifiers accept the transition**
+
+- **Severity:** High (`AUDIT.md` section 8). Confirmed by an independent disproving reviewer, who reran the test, and
+  reproduced by the orchestrator. Found in round 14 (blind invariant audit by subsystem). A real
+  builder-versus-verifier divergence at a boundary that R2 names (the last uarch cycle of an mcycle). The test uses a
+  custom uarch image that halts on exactly that step. With the pristine uarch program the trigger would need a
+  main-processor instruction that takes exactly 2^20-1 uarch cycles, which the reviewer judged unreachable by bounding
+  arguments (plausible worst cases are 10x below), so the rating is capped at High: it is a latent completeness
+  hazard, not a reachable failure.
+- **Component and area:** emulator; `collect_uarch_cycle_root_hashes` and `collect_uarch_cycle_bundle`
+  (`src/machine.cpp`), `uarch_step`.
+- **Cited rules:** R4, R2, section 8 High. Reviewer: R2; R4; R5; Completeness failure (section 1); Section 8 High:
+  divergence between paths only at demonstrably unreachable states.
+- **Location:** src/uarch-step.cpp:1103-1113, src/uarch-interpret.cpp:44-55, src/machine.cpp:2846-2869,
+  src/machine.cpp:2984
+- **Defect:** Two paths classify the same uarch outcome differently. uarch_step writes the incremented cycle and
+  checks `cycle >= UARCH_CYCLE_MAX` before the halt check, so it returns UArchCycleOverflow even when the instruction
+  just executed was the halting ECALL (uarch-step.cpp:1105-1113). uarch_interpret forwards that as
+  uarch_cycle_overflow (uarch-interpret.cpp:51-52). collect_uarch_cycle_root_hashes then throws 'uarch reached its
+  maximum cycle and cannot advance more uarch cycles' (machine.cpp:2866-2868) without checking uarch_halt. R4 says the
+  uarch 'halts no later than the uarch step that brings its cycle count to the last uarch position of the mcycle', so
+  halting on exactly that step is allowed. The verifier forms define that mcycle completely: the last ordinary step
+  verifies, the step at cycle MAX is a no-op, and step plus reset verifies. Only the builder (and
+  collect_uarch_cycle_bundle, which calls it at machine.cpp:2984) refuses it. The failed call also leaves the machine
+  mid-uarch (cycle=MAX, halt=1), although the code comments say a failed call leaves the machine unchanged.
+- **Evidence and test:** `bugs/R14-INVLOGS-1/` (`test.lua`, `halt.S`, `build.sh`). Run `bugs/run.sh R14-INVLOGS-1`. It
+  fails while the bug is present. Observed: I ran the test 3 times on feature/prt-audit. It failed the same way each
+  time, exit 1, about 20 s per run: "verifiers: step to cycle MAX (halts) verifies, step at MAX is a verified no-op,
+  reset verifies" "FAIL: collect_uarch_cycle_bundle cannot build the uarch computation hash of an mcycle the verifiers
+  fully accept (uarch halts on the step to cycle MAX): uarch reached its maximum cycle and cannot advance more uarch
+  cycles [machine left at uarch_cycle=1048575 uarch_halt=1]" "FAIL R14-INVLOGS-1 (bug present, status 1)"
+- **Scenario and reachability:** The mechanism is real, but it is reached only through a deliberate host change: a
+  custom uarch RAM image set through the config, which is out of scope for reachability (section 8, section 4). With
+  the pristine uarch (uarch/uarch-run.cpp: interpret one mcycle, then halt by ECALL), the defect needs a
+  main-processor instruction whose emulation takes exactly 2^20-1 uarch cycles. That would be a knife-edge: one cycle
+  more is an outright R4 violation by the uarch program, a different and Critical issue. Uarch registers and uarch RAM
+  are not guest-writable (R8), so the "presumed reachable" clause for guest-writable state does not apply. Every
+  guest-dependent loop in the interpreter is small and bounded: range-descriptor lookup, page walks of at most 5
+  levels, a TLB flush over a fixed 3x256 slots, and rv64i software multiply/divide and soft-float. Boot samples peak
+  below 1000 cycles per mcycle, and plausible worst cases stay in the 1e4-1e5 range, at least 10x below 2^20. So the
+  triggering state is unreachable, though shown by bounding arguments rather than a formal proof.
+- **Possible solution:** In collect_uarch_cycle_root_hashes, when uarch_interpret reports uarch_cycle_overflow, read
+  uarch_halt. If it is nonzero, treat the outcome as uarch_halted: break out of the loop and pad with the halted hash,
+  then the reset leaf. Throw only when the uarch overflows without halting, which is a genuine R4 violation by the
+  uarch program. An alternative is to give the halt check precedence over overflow when the executed instruction is
+  the halting ECALL, in uarch_step and uarch_interpret. Because the post-state is identical, that change does not
+  alter any verified hash. Still, the Solidity port (generated from uarch-step.cpp) should be regenerated and
+  differentially re-tested so the sources stay in lockstep. Also make the collector's failure path leave the machine
+  unchanged, or document that it does not, and update the near-limit corpus test to cover a halt at exactly
+  UARCH_CYCLE_MAX.
+- **Risks:** Risk of the issue: currently none at reachable states. It is a latent completeness hazard. If a future
+  uarch or interpreter version had an instruction taking exactly 2^20-1 uarch cycles, the honest operator could not
+  build the uarch-level claim or bundles for that mcycle, while the referee accepts every transition. The honest claim
+  could then miss its deadline and a dishonest claim win (Critical). The failed call also leaves the machine mid-uarch
+  (cycle=MAX, halt=1), so a caller that retries on the same machine gets "microarchitecture is not reset". Risks of
+  the fix: the leaf layout at the boundary must stay exactly MAX step-result leaves plus the reset leaf, and the
+  halt_position/reset_position assertions in collect_uarch_cycle_bundle must still hold. Other honest-node
+  implementations (for example Dave's) and the Lua prt player must adopt the same boundary reading, or nodes would
+  compute different uarch-level claims. Changing uarch_step precedence touches generated on-chain code and the pinned
+  uarch pristine hash, so A6/R13 would need a new protocol version. The builder-only fix avoids that.
 
 ---
 

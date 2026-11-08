@@ -46,6 +46,8 @@ Flags required by `AUDIT.md`:
 | [R11-FAMFEES-1](#r11-famfees-1) | The bridge signs `1.2 x eth_estimateGas at latest` with no worst-case floor, so an honest `joinTournament` or `winMatchByTimeout` runs out of gas when a front-running Sybil join triggers the pairing branch | `prt-player-bridge`; `doc/recipes/prt-transactions.lua` | R4, A7, section 1 completeness, section 2 honest operator's path | Critical |
 | [R12-SECCACHE2-1](#r12-seccache2-1) | Loading a stored machine trusts the inner-node hashes of its sparse hash tree (`hash_tree.sht`): a valid template with one wrong dormant inner node loads with the right root, then yields wrong proofs, roots and claims | emulator; sparse hash tree file of stored machines (CLI `--load`, JSON-RPC load, PRT player) | R1, R9, R2, R4, R10, section 2 valid template, section 8 | Critical |
 | [R12-SECCACHE2-2](#r12-seccache2-2) | Loading a stored machine trusts its dirty-page trees (`.dpt`): a valid template with one dirty interior node under clean ancestors loads and verifies cleanly, then every later write under that node is invisible to the hash tree | emulator; dirty-page tree files of stored machines (CLI `--load`, JSON-RPC load, PRT player) | R1, R9, R2, R4, R10, section 2 valid template, section 8 | Critical |
+| [R16-RGBRIDGE-2](#r16-rgbridge-2) | The epoch listener delivers every pending `InputAdded` to the honest player before the seal, but the referee seals at most 2^24 of them, so more than 2^24 pending inputs crash the listener at `EpochSealed` and the honest claim never enters the tournament | `prt-player-bridge`; `doc/recipes/prt-epoch.lua` (`poll`, lines 62-92), `prt.lua` (`input_added` has no cap either) | A3, R4, section 4 (relayed data), section 1 completeness, section 8 Critical | Critical |
+| [R16-RGOUTPUT-1](#r16-rgoutput-1) | The stored honest player cannot seal, or reopen after a restart, an epoch whose application stopped (a halt, a `TX_EXCEPTION` or another manual reason, or the input's mcycle deadline), so the honest claim for that epoch is never posted and a relaunch dies again | `prt-player-bridge`; `seal_epoch_state`, `store_next_epoch_checkpoint`, `assert_rolling_template`, `reopen_epoch_directory` and `validate_outputs_merkle_root_response` (`doc/recipes/prt.lua`), `prt-epoch.lua`, `prt-player.lua` | R4, R5, A5, section 1 completeness, section 8 Critical | Critical |
 | [R1-PLAYER-4](#r1-player-4) | Epoch listeners fetch, keep and re-sort every InputBox log of every application | PRT player and bridge (input observation) | Section 4, R12, A7, R4, section 7 | High |
 | [R1-ROBUST-3](#r1-robust-3) | Each guest automatic yield costs the honest player a host-API round trip, a guest-chosen constant-factor slowdown | PRT player and bridge (run loop, computation-hash collection) | R12, A7, section 8 High | High |
 | [R1-TRANSITIONS-1](#r1-transitions-1) | Uarch computation-hash builder's fast reset restores only dirtied uarch-RAM words | emulator (uarch computation-hash builder) | R2, R13, R5, section 2 transition form | High |
@@ -1880,6 +1882,160 @@ clean ancestors loads and verifies cleanly, then every later write under that no
   hot path. - The fast path that reopens the process's own shared directory after a crash must stay correct and keep
   the R7-FPUARCH-1, R8-DYNPERSIST-1 and R9-GOALRESTORE-1 fixes coherent. - A stricter verify_hash_tree may expose
   existing benign inconsistencies, such as the write-TLB dirty case, which must then be handled explicitly.
+
+---
+
+## R16-RGBRIDGE-2
+
+**The epoch listener delivers every pending `InputAdded` to the honest player before the seal, but the referee seals
+at most 2^24 of them, so more than 2^24 pending inputs crash the listener at `EpochSealed` and the honest claim never
+enters the tournament**
+
+- **Severity:** Critical (`AUDIT.md` section 8). Confirmed by an independent disproving reviewer, who reran the test,
+  and reproduced by the orchestrator. Found in round 16 (R4 at every reachable state). Reachability caveats from the
+  reviewer: the cost is about 2^24 `addInput` calls (prohibitive on L1, feasible on a cheap L2); the pinned
+  `DAVE_REF=v3.0.0-alpha.6` `DaveConsensus` does not cap the seal, so under that exact contract the seal assert passes
+  but the referee then assigns more than 2^24 inputs to one epoch (an A3 violation by the referee, out of scope);
+  `DaveConsensus` v3.0.0-alpha.7 and later cap at `lower + min(pending, 2^24)`, and any referee that meets A3 must
+  cap, so the listener cannot work with a compliant referee.
+- **Component and area:** `prt-player-bridge`; `doc/recipes/prt-epoch.lua` (`poll`, lines 62-92), `prt.lua`
+  (`input_added` has no cap either).
+- **Cited rules:** A3, R4, section 4 (relayed data), section 1 completeness, section 8 Critical. Reviewer: R4; A3;
+  section 2 dispute constants (input limit per epoch = 2^24); section 7 (any number of inputs the deployment accepts);
+  section 1 completeness failure; section 8 Critical: crash caused by relayed data the honest operator must process.
+- **Location:** doc/recipes/prt-epoch.lua:60-76 (InputAdded applied for every index >= input_begin while not sealed,
+  no upper bound), doc/recipes/prt-epoch.lua:87-92 (assert 'sealed input count mismatch'),
+  doc/recipes/prt.lua:1472-1480 and 2047-2075 (input_added/mcycle builder have no input-limit check);
+  DaveConsensus.sol _nextInputIndexUpperBound (lowerBound + min(pending, MAX_INPUTS_PER_EPOCH = 2^24)), out-of-scope
+  contract read only for its behavior
+- **Defect:** Epochs are sealed in acceptStagedTournamentResult of the previous epoch. The new epoch takes
+  inputIndexUpperBound = lower + min(pending, 2^24) (A3), and the backlog waits for later epochs. The listener of
+  epoch N treats every InputAdded log ordered before its EpochSealed log as belonging to epoch N. It asserts only
+  contiguity (index == input_begin + #inputs) and calls player.event_handler.input_added for each one. With more than
+  2^24 inputs pending when N is sealed, it delivers inputs past the epoch bound into the epoch machine. On the real
+  player, input_added at offset 2^24 already overruns the mcycle forest, whose 2^62 leaves are full. Otherwise the
+  EpochSealed check `inputIndexUpperBound == input_begin + #inputs` raises 'sealed input count mismatch' before the
+  bridge exists. The process exits, and a relaunch replays the same logs into the same crash. The applied inputs also
+  already corrupt the epoch machine and stored state.json, so the epoch claim would be wrong even without the assert.
+- **Evidence and test:** `bugs/R16-RGBRIDGE-2/` (`test.lua`). Run `bugs/run.sh R16-RGBRIDGE-2`. It fails while the bug
+  is present. Observed: I ran it 3 times on feature/prt-audit and got the same result each time, exit 1: "offsets
+  delivered to the player: 16777215,16777216 / poll: raised: .../doc/recipes/prt-epoch.lua:91: sealed input count
+  mismatch / FAIL: the epoch listener delivered input offset 16777216 (>= the 2^24 input limit per epoch, A3) to the
+  honest player, then crashed at the capped EpochSealed: .../prt-epoch.lua:91: sealed input count mismatch / FAIL
+  R16-RGBRIDGE-2 (bug present, status 1)". The copy adds one condition at line 67: `and index < self.input_begin + (1
+  << 24)`. With that copy the test exits 0: it delivers only offset 16777215, poll returns ok, the epoch seals with
+  2^24 inputs and the bridge is created.
+- **Scenario and reachability:** Reachable with no guest state. The trigger is the input count, which is relayed data
+  the honest operator must process (section 4). Section 7 lets the adversary send any number of inputs the deployment
+  accepts. The InputBox has no per-application limit, and epoch N is sealed only when epoch N-1's dispute is accepted,
+  so inputs can pile up past 2^24 while that dispute runs. Any referee that meets A3 under Dave's design has to cap
+  the seal and leave the rest pending. DaveConsensus v3.0.0-alpha.7 and later does this: lower + min(pending, 2^24).
+  The cost is about 2^24 addInput calls, which is prohibitive on L1 but feasible on a cheap L2.
+- **Possible solution:** In prt-epoch.lua, apply InputAdded only when input_begin <= index < input_begin +
+  2^cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH. Later indices still advance self.applied, so the log stream
+  stays consistent, but they are not delivered: the next epoch's listener picks them up, because it starts at the
+  seal's upper bound and rescans from first_block. At the seal, keep the assert that upperBound equals input_begin +
+  #inputs, which now also checks the referee's cap. As defense in depth, make prt.lua event_handler.input_added reject
+  epoch_input_offset >= 2^24 with a clear error before it touches the machine or state.json. Bump DAVE_REF in
+  doc/Dockerfile.prt to a Dave version that caps at the seal (v3.0.0-alpha.7 or later), so the pinned referee meets A3
+  and the listener's cap matches it.
+- **Risks:** Risk of the issue: an adversary with an L2 gas budget can permanently knock the honest operator out of an
+  epoch's tournament and get forged outputs accepted. It only needs more than 2^24 inputs pending at a seal. A
+  relaunch does not help, because the crash replays deterministically from finalized logs. Risks of the fix: - The
+  listener's cap must exactly match the deployed referee's sealing rule. If the listener caps but the referee does not
+  (Dave v3.0.0-alpha.6), the seal assert fires in the other direction. The bridge and the contract version must
+  therefore be pinned together (A6/R13), and the honest operator should refuse a mismatch. - Backlog inputs must not
+  be dropped: the next listener must still see InputAdded logs emitted before its own epoch was sealed. It does today,
+  because every listener scans from the global first_block. - Holding up to 2^24 input payloads in listener memory
+  (self.inputs) and processing them is a separate sizing concern under A7/R12. - The PoC uses a scaled length proxy
+  and stubbed chain and ABI. It is deterministic and exercises the real listener code at the real 2^24 limit, but it
+  was not run end to end against deployed contracts on a chain.
+
+---
+
+## R16-RGOUTPUT-1
+
+**The stored honest player cannot seal, or reopen after a restart, an epoch whose application stopped (a halt, a
+`TX_EXCEPTION` or another manual reason, or the input's mcycle deadline), so the honest claim for that epoch is never
+posted and a relaunch dies again**
+
+- **Severity:** Critical (`AUDIT.md` section 8). Confirmed by an independent disproving reviewer, who reran the test,
+  and reproduced by the orchestrator. Found in round 16 (R4 at every reachable state). Found independently by four
+  hunters of round 16 (RGPLAYER, RGSTALL, RGOUTPUT, RGBRIDGE; the others merged by dedup). The stall itself is out of
+  scope (section 8), but A5 protects a stalled application only if the settled state is the canonical stalled one,
+  which needs the honest claim to be posted and defended. The forked player seals the same epochs and computes the
+  claim, which shows the claim is computable (R4) and that stored and forked persistence diverge (R2). Overturning the
+  first reading of the "not correctly designed application" exclusion (see R1-GUESTTOOLS-2) is what made this class
+  reportable.
+- **Component and area:** `prt-player-bridge`; `seal_epoch_state`, `store_next_epoch_checkpoint`,
+  `assert_rolling_template`, `reopen_epoch_directory` and `validate_outputs_merkle_root_response`
+  (`doc/recipes/prt.lua`), `prt-epoch.lua`, `prt-player.lua`.
+- **Cited rules:** R4, R5, A5, section 1 completeness, section 8 Critical. Reviewer: R4; R5; R2; A5; section 1
+  completeness failure; section 2 reachable state; section 2 honest operator's path; section 8 Critical.
+- **Location:** doc/recipes/prt.lua:940-953 (assert_rolling_template), doc/recipes/prt.lua:2505-2520
+  (store_next_epoch_checkpoint calls assert_rolling_template), doc/recipes/prt.lua:2483-2488 (store_checkpoint_files:
+  validate_outputs_merkle_root_response), doc/recipes/prt.lua:2522-2526 (seal_epoch_state),
+  doc/recipes/prt.lua:2084-2097 (epoch_sealed), doc/recipes/prt.lua:2766-2772 (reopen_epoch_directory:
+  validate_outputs_merkle_root_response on the sealed final state), doc/recipes/prt-epoch.lua:96-120 (epoch_sealed
+  runs before bridge.new), doc/recipes/prt-player.lua:131-139 and 196-201 (honest kind = new_stored_player with
+  checkpoints/epoch-N+1), /home/user/ext/machine-guest-tools/rollup-http/rollup-http-server/src/dapp_process.rs:24-48
+- **Defect:** An epoch is stopped when its input halts, yields manually with TX_EXCEPTION or another
+  non-accept/non-reject reason, or reaches its mcycle deadline. These are R5 fixed points. run_to_input_mcycle_offset
+  handles them by setting self.epoch_stopped, and the forked player seals the epoch and computes the correct final
+  hash (all later deliveries are no-ops). The stored player assumes the sealed final state is a rolling template: -
+  epoch_sealed computes mcycle_forest and then calls stored_player_methods:seal_epoch_state. - With a checkpoint
+  directory (prt-player.lua always passes one), that calls store_next_epoch_checkpoint, whose assert_rolling_template
+  raises 'initial machine is not waiting on an rx-accepted manual yield'. store_checkpoint_files would next raise
+  'yield reason not rx-accepted' from validate_outputs_merkle_root_response. - Without a checkpoint directory the seal
+  completes, but reopen_epoch_directory of a sealed epoch calls
+  validate_outputs_merkle_root_response(state.outputs_merkle_root_proof, root_hash) and raises 'final state not
+  yielded' or 'yield reason not rx-accepted'. So any relaunch during the dispute fails. In prt-epoch.lua, epoch_sealed
+  is called before bridge.new, so no dispute bridge (and no claim) is ever created. prt-player.lua's main loop has no
+  pcall, so the process dies on every pass. prt-supervise.sh relaunches it, it replays the logs, and it hits the same
+  assert again.
+- **Evidence and test:** `bugs/R16-RGOUTPUT-1/` (`test.lua`, `yield.S`, `link.ld`, `build.sh`). Run `bugs/run.sh
+  R16-RGOUTPUT-1`. It fails while the bug is present. Observed: I ran it 3 times and got the same result each run:
+  exit 1, "FAIL R16-RGOUTPUT-1 (bug present, status 1)". For each variant, the control prt.new_forked_player seals and
+  returns a final hash: halt 0x302312ef...fc97, tx-exception 0x77266339...abadc. Then: - The stored player configured
+  like the honest node (new_stored_player with checkpoints/epoch-1) fails in epoch_sealed for both halt and
+  tx-exception with "prt.lua:941: initial machine is not waiting on an rx-accepted manual yield". - The stored player
+  without a checkpoint dir seals with the matching final hash. - Reopening that sealed epoch directory with
+  new_stored_player fails: "game-output.lua:39: final state not yielded" (halt) and "game-output.lua:46: yield reason
+  not rx-accepted" (tx-exception). One-line result: "R16-RGOUTPUT-1: the stored honest player cannot seal (or reopen)
+  an epoch whose application halted or raised TX_EXCEPTION, so it never posts the honest claim for that epoch (R4/R5):
+  halt: stored honest player (with checkpoint dir) cannot seal the stopped epoch: .../prt.lua:941: initial machine is
+  not waiting on an rx-accepted manual yield".
+- **Scenario and reachability:** The trigger is an epoch whose final state is an R5 fixed point other than an
+  rx-accepted yield: a halt, a manual yield with a reason other than accepted or rejected (such as TX_EXCEPTION), or a
+  stop at the input's mcycle deadline. A guest reaches the halt or the manual yield with one store to the
+  guest-writable HTIF tohost. Section 2 presumes any guest-writable assignment reachable, and reachability is defined
+  from valid templates, not from correctly designed applications. With the shipped guest tools, rollup-http-server
+  raises TX_EXCEPTION as its documented reaction when the dapp process exits. The honest node cannot avoid the path:
+  prt-player.lua's honest kind always calls new_stored_player with checkpoints/epoch-N+1. prt-epoch.lua calls
+  player.event_handler.epoch_sealed before bridge.new, so the raise happens before any claim exists. The main loop has
+  no pcall, so the process dies, and the relaunch replays the same seal and dies again. Without a checkpoint directory
+  the seal succeeds, but reopening the sealed epoch directory always fails, so any relaunch during the dispute fails.
+- **Possible solution:** Make the stored player's seal and reopen handle stopped epochs the same way the forked player
+  does: 1. In seal_epoch_state, skip store_next_epoch_checkpoint when self.epoch_stopped is true. A stopped final
+  state is not a valid template, so no next epoch can start from it. Optionally record a terminal marker so
+  open_epochs stops cleanly. 2. In epoch_sealed, keep the computed proof (or nil) when epoch_stopped. Do not require
+  an rx-accepted outputs root. 3. In reopen_epoch_directory, for a sealed epoch with state.epoch_stopped, skip
+  validate_outputs_merkle_root_response. Still check that the stored final machine's root hash equals the recorded
+  final_state_hash. 4. In prt-epoch.lua/prt-player.lua, make sure that a failure while storing the next checkpoint can
+  never prevent bridge.new and the claim post for the current epoch. For example, create the bridge and post the claim
+  first, or wrap the checkpoint step so its failure is logged rather than fatal. Add a regression test in which the
+  stored player's seal and reopen yield the forked player's final_state_hash, for the halt, TX_EXCEPTION and
+  mcycle-deadline cases.
+- **Risks:** Risks of the issue: - Any epoch that ends in a halt, an exception or the deadline leaves the honest node
+  crash-looping without ever posting its mcycle claim. - An adversary's claim with a forged rx-accepted final state
+  and an arbitrary outputs root then wins unopposed, and the application's assets can be drained through forged
+  vouchers. A5 is meant to prevent this, but A5 protects only when the honest stalled state settles. Risks of the fix:
+  - Skipping the outputs-root validation must be gated strictly on a recorded epoch_stopped. Otherwise a corrupted or
+  partial epoch directory could reopen with an unchecked final state. The final root hash should still be verified
+  against the stored machine. - Not storing a next-epoch checkpoint must not be mistaken for an incomplete seal on
+  relaunch, since store_next_epoch_checkpoint relies on the directory existing. Write a durable 'stopped' marker so
+  restarts are idempotent. - The referee and output paths must keep refusing extraction from a stopped settled state
+  (A5). The fix must not synthesize an outputs root for it.
 
 ---
 

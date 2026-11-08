@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **extra rounds in progress** (round 15, a second-opinion round, overturned one refutation and so confirmed one more issue; the clean-round count restarted again; round 16 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
+Status: **extra rounds in progress** (round 16 confirmed two more issues, both Critical, so the clean-round count restarted again; round 17 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
 
 **Running extra-rounds total:** round 4 (variant analysis) confirmed 6 new issues, bringing the confirmed total to **30 (14 Critical, 8 High, 8 Medium)**. See the round 4 candidate table and the Extra rounds section.
 
@@ -125,7 +125,8 @@ refutations.
 | 13 | Blind adversary personas: hunters play one persona each and are NOT shown the list of earlier findings (it goes only to dedup, whose duplicates measure the rediscovery rate) | ROLEINPUT, ROLECLAIMANT, ROLETEMPLATE, ROLEFAULT, ROLEVERSION, ROLECONTRACT, ROLESPEC, ROLECOST, ROLEAPPDEV, ROLELOCALAUDITOR |
 | 14 | Blind invariant audit by subsystem: hunters again not shown the earlier findings; each owns one subsystem, derives its invariants from scratch and attacks them | INVINTERP, INVCSR, INVMMU, INVDEVICE, INVHASH, INVSTORE, INVLOGS, INVAPI, INVREFEREE, INVOPERATOR, INVGUEST |
 | 15 | Second opinion on every refuted or disproved candidate (21): an independent reviewer re-reads each refutation against the text of `THREAT_MODEL.md` and `AUDIT.md` and may overturn it only by naming the step that contradicts them | R1-SOLIDITY-1, R1-HASH-1, R1-GUESTTOOLS-2/3, R2-ARCH-1, R6-LCSETUP-1/2, R7-FPMACHINE-1, R7-FPPRTREST-1, R8-DYNPRTSIM-1/2, R9-GOALACCEPT-1, R10-MANARCH-1/2, R12-SECPERUNIT-1, R13-ROLEVERSION-2, R13-ROLEAPPDEV-3/4, R13-ROLESPEC-4, R13-ROLECOST-3, R14-INVGUEST-3 |
-| 16 | To be chosen from what round 15 shows | planned |
+| 16 | R4 at every reachable state: the corrected reading of the "application not correctly designed" exclusion applied to every honest-operator path that handles guest-written data | RGPLAYER, RGCLI, RGEMU, RGUARCH, RGOUTPUT, RGSTALL, RGBRIDGE |
+| 17 | To be chosen from what round 16 shows | planned |
 
 ## Candidates
 
@@ -546,6 +547,37 @@ Process note: the 19 upheld refutations support the earlier rounds' reviewing st
 the cost of one rule applied too broadly (the "application that is not correctly designed" exclusion). That exclusion is
 now read as scoped to the emulator, not to the honest operator.
 
+### Round 16 (extra: R4 at every reachable state)
+
+Round 15's second opinion showed that the calibration given to hunters in rounds 5 to 14 had read the exclusion "an
+application that is not correctly designed" too broadly, so honest-operator failures on odd guest-written data may
+have been dropped by the hunters themselves. Seven hunters re-swept every honest-operator and emulator path that handles
+guest-written data, with the corrected reading in their prompt. They reported 13 raw candidates. Dedup merged 9 into earlier
+ones (four hunters independently reported the same stopped-epoch crash) and kept 4. Of those, the provers proved all 4,
+the reviewers confirmed 2 (both Critical) and refuted 2, so **round 16 was not clean**. Agents ran on Claude Opus 5.5 (exact
+ID) at High effort, except the re-run of one blocked hunt (see Blocked agents).
+
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R16-RGOUTPUT-1 | prt-player-bridge | Critical | The stored honest player cannot seal, or reopen after a restart, an epoch whose application stopped (a halt, `TX_EXCEPTION` or another manual reason, or the input's mcycle deadline), so the honest claim is never posted | **Confirmed, Critical** | Reproduced by prover, reviewer and orchestrator; found independently by four hunters; the forked player handles the same epochs; see `BUGS.md` |
+| R16-RGBRIDGE-2 | prt-player-bridge | Critical | The epoch listener delivers every pending `InputAdded` before the seal, but the referee seals at most 2^24, so more than 2^24 pending inputs crash the listener at `EpochSealed` | **Confirmed, Critical** | Reproduced by prover, reviewer and orchestrator; needs about 2^24 `addInput` calls and a referee that meets A3 (`DaveConsensus` alpha.7 or later; the pinned alpha.6 does not cap the seal); see `BUGS.md` |
+| R16-RGOUTPUT-2 | emulator | Critical | The `cartesi-machine` CLI aborts the claim computation by default when the guest's outputs root differs from the host frontier (the CLI counterpart of R1-GUESTTOOLS-2) | Refuted by reviewer | Reproduced, but the CLI is part of the emulator, where the exclusion applies; the check is documented and has an opt-out (`check_outputs_merkle_root:false`), and the player does not call the CLI. A hardening note: report the mismatch without aborting |
+| R16-RGCLI-2 | emulator | Critical | The CLI holds a full Merkle proof in memory for every accepted output and writes 2 files per output before reporting the claim | Refuted by reviewer | Linear in the mcycles the epoch covers (about 2.6 KB per output, each output costing several mcycles), so within R12 and A7; the proofs are optional CLI outputs the trusted operator chooses; the reference player is also O(outputs); at most a constant factor (High) even on the most generous reading |
+
+Round 16 coverage (hunts with no new candidate are not evidence of absence):
+
+- **RGEMU**: swept `collect_*`, `log_*`, `send_cmio_response`, `receive_cmio_request` and the proof functions against
+  guest-reachable states by reading only; no harness ran. Not done: leaf-by-leaf differentials of collection against
+  stepwise `log_step_uarch` at mcycles with interrupts and page-crossing Sv57 fetches, and a combined worst case of the
+  uarch cycles per mcycle (relied on the round 13 and 14 bounding arguments).
+- **RGUARCH**: the Opus 5.5 hunt was stopped by a safeguard before its last step (a randomized native-versus-uarch
+  differential over paging, S/U-mode and CSR states, which never ran); the `sonnet` re-run found nothing. That differential
+  remains uncovered, as do most of the soft-float conversions and a line-by-line diff of `UArchStep.sol`.
+- **RGPLAYER**, **RGCLI**, **RGSTALL**, **RGOUTPUT**, **RGBRIDGE**: ran bare-metal guests through the real player and the CLI.
+  Not done: console blocking with a closed stdout, per-input clone cost without reflinks, the eager all-outputs proof
+  generation in `prove_output` (reachable only through the referee model's demonstration), multi-execution CLI epochs with
+  odd data at a batch boundary, and `gdbstub.lua`/`evmu.lua`.
+
 ## Blocked agents
 
 - `hunt:HASH`, round 1: the hunter on the session model set `blocked_by_safeguards` but still returned one candidate:
@@ -582,6 +614,10 @@ now read as scoped to the emulator, not to the honest operator.
   response partway and that it would not continue or reconstruct that line of work. The workflow re-ran it on `sonnet`,
   which found R12-SECCACHE2-1 and R12-SECCACHE2-2: **fallback-only discoveries**. Their provers and reviewers ran on
   Opus 5.5. `BUGS.md` flags both.
+
+- `hunt:RGUARCH`, round 16: the hunter on Opus 5.5 set `blocked_by_safeguards` (a safety classifier cut off the last step, a
+  randomized differential harness, which never ran). The workflow re-ran it on `sonnet`, which found no candidate. The
+  differential it was about to run was not done by any agent; it is listed under Left uncovered.
 
 No prover or reviewer was blocked in any other round, so no issue needed a fallback reviewer or was reported without a
 proof of concept. The only fallbacks were the hunters above.
@@ -623,6 +659,10 @@ hunters reported them as uncovered and later rounds did not close them.
 - **`machine-guest-tools` at run time.** `rollup-http-server` under real concurrency and timeouts, `echo-dapp`, and
   libcmt's Merkle tree near 2^63 leaves were read but not exercised. Round 2's GUESTTOOLS hunter found nothing new
   inside the tools themselves.
+- **Native-versus-uarch randomized differential over S/U-mode paging and CSR states.** The round 16 hunt that was about to run it
+  was stopped by a safeguard, and no other round ran one over paging, stale TLB entries without `sfence`, `MPRV/SUM/MXR`,
+  LR/SC and AMO, page-crossing fetches and PLIC/CLINT sequences. Rounds 8 and 12 ran random-stream differentials, but those
+  streams mostly settle in trap loops.
 - **Operator plumbing.** `prt-websocket.lua` frame parsing, fee and nonce corner cases of `prt-transactions.lua` under
   reorgs, JSON-RPC per-request allocation for large relayed logs, and the CLI's rollup paths under adversarial inputs
   were read but not stress-tested.

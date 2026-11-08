@@ -186,38 +186,56 @@ that leaves any other value at an accepted yield aborts claim computation for go
   are opaque guest data), A5; section 8 Critical. The first reviewer's counter-arguments (a buggy or subverted guest
   controls the root anyway, and a corrupted guest-tools tree is its own finding) are fair but do not remove the R4
   breach.
-- **Location:** doc/recipes/prt.lua:1385-1394 (`flush_pending_outputs`:
-  `assert(frontier_get_root_hash(outputs_frontier) == outputs_merkle_root)`), :1984-1990 (`run_to_input_mcycle_offset`
-  reads the root from `tx[0..DATA)`), :2047-2075 (`input_added` has already cleared `epoch_pair` and `epoch_builder`
-  and bumped `input_count` before the input runs), :2485-2488 (a second fail-closed check of the same root in
-  `store_checkpoint_files`).
-- **Defect:** on a manual rx-accepted fixed point the player reads the root from the transmit buffer, with the length
-  taken from the guest's `DATA`, pushes the pending outputs into its frontier, and asserts equality. The transition
-  function never interprets that root. When the guest leaves anything else (a stale or garbage value, `DATA` not 32,
-  outputs emitted without libcmt), the assert raises inside `input_added`, which has already torn down the epoch
-  state, so the player can no longer advance, seal or claim the epoch, and a replay of the input is skipped.
-- **Evidence and test:** `bugs/R1-GUESTTOOLS-2/` (`test.lua`, `guest.S`, `link.ld`, `build.sh`). Run `bugs/run.sh
-  R1-GUESTTOOLS-2`. A bare-metal guest writes either 32 bytes of `0xAA` or the true root with `DATA = 0`, then yields
-  manual rx-accepted. The control variant advances and seals. In both fault variants `input_added(0)` raises "outputs
-  Merkle root mismatch", `input_added(1)` then raises "epoch is not open" and `epoch_sealed(2)` raises "sealed input
-  count mismatch", while the emulator computes the canonical hash and its logs verify. With only the assert at
-  prt.lua:1393 removed, the test passes.
-- **Scenario and reachability:** after reading an input, the guest leaves any value other than the true root of its
-  outputs at an accepted yield (a buggy application, a corrupted guest-tools tree such as a reset `merkle.dat`, or a
-  guest that an input subverted). Only the honest operator diverges: the emulator, the referee and the computation
-  hash are all well defined for that state. The honest claim misses its deadlines and is eliminated, and an
-  adversary's claim can settle any state. Retries hit the same assert deterministically. The first reviewer noted that
-  a correctly designed application never reaches this state; the finding rests on R4 holding at every reachable state,
-  as the threat model writes it, not only for correctly designed applications.
-- **Possible solution:** do not make claim computation depend on the guest's root. Record the epoch's outputs as
-  unprovable (or keep the frontier root alongside the guest value) and keep computing and defending the canonical
-  mcycle and uarch claims; refuse only to produce output proofs for that epoch. Make the check in
-  `store_checkpoint_files` non-fatal in the same way. Take the length of the root from the fixed 32 bytes, not from
-  `DATA` (see R5-DFGUESTOUT-1).
-- **Risks:** an application that writes a wrong root silently loses its outputs for that epoch while the honest
+- **Location:** `doc/recipes/prt.lua`:
+  - `1385-1394` (`flush_pending_outputs`: `assert(frontier_get_root_hash(outputs_frontier) == outputs_merkle_root)`);
+  - `1984-1990` (`run_to_input_mcycle_offset` reads the root from `tx[0..DATA)`);
+  - `2047-2075` (`input_added` has already cleared `epoch_pair` and `epoch_builder` and bumped `input_count` before the
+    input runs);
+  - `2485-2488` (a second fail-closed check of the same root in `store_checkpoint_files`).
+
+### Problem
+
+On a manual rx-accepted fixed point the player reads the root from the transmit buffer, with the length
+taken from the guest's `DATA`, pushes the pending outputs into its frontier, and asserts equality. The transition
+function never interprets that root. When the guest leaves anything else (a stale or garbage value, `DATA` not 32,
+outputs emitted without libcmt), the assert raises inside `input_added`, which has already torn down the epoch
+state, so the player can no longer advance, seal or claim the epoch, and a replay of the input is skipped.
+
+### Evidence and test
+
+- Test: `bugs/R1-GUESTTOOLS-2/` (`test.lua`, `guest.S`, `link.ld`, `build.sh`). Run
+  `bugs/run.sh R1-GUESTTOOLS-2`.
+- A bare-metal guest writes either 32 bytes of `0xAA` or the true root with `DATA = 0`, then yields manual
+  rx-accepted. The control variant advances and seals. In both fault variants `input_added(0)` raises "outputs Merkle
+  root mismatch", `input_added(1)` then raises "epoch is not open" and `epoch_sealed(2)` raises "sealed input count
+  mismatch", while the emulator computes the canonical hash and its logs verify. With only the assert at
+  `prt.lua:1393` removed, the test passes.
+
+### Scenario and reachability
+
+After reading an input, the guest leaves any value other than the true root of its
+outputs at an accepted yield (a buggy application, a corrupted guest-tools tree such as a reset `merkle.dat`, or a
+guest that an input subverted). Only the honest operator diverges: the emulator, the referee and the computation
+hash are all well defined for that state. The honest claim misses its deadlines and is eliminated, and an
+adversary's claim can settle any state. Retries hit the same assert deterministically. The first reviewer noted that
+a correctly designed application never reaches this state; the finding rests on R4 holding at every reachable state,
+as the threat model writes it, not only for correctly designed applications.
+
+### Possible solution
+
+Do not make claim computation depend on the guest's root. Record the epoch's outputs as
+unprovable (or keep the frontier root alongside the guest value) and keep computing and defending the canonical
+mcycle and uarch claims; refuse only to produce output proofs for that epoch. Make the check in
+`store_checkpoint_files` non-fatal in the same way. Take the length of the root from the fixed 32 bytes, not from
+`DATA` (see R5-DFGUESTOUT-1).
+
+### Risks
+
+- Of the issue: an application that writes a wrong root silently loses its outputs for that epoch while the honest
   operator keeps defending the canonical state, which is the intended division of responsibility (A5 governs what can
-  be extracted). The fix must keep the frontier consistent for later epochs and must not hide a real divergence
-  between the player's outputs and the guest's; log it loudly.
+  be extracted).
+- Of the fix: it must keep the frontier consistent for later epochs and must not hide a real divergence between the
+  player's outputs and the guest's; log it loudly.
 
 ---
 
@@ -255,7 +273,7 @@ requires ordinary and restarted ticks to derive identical actions. The existing 
 ### Evidence and test
 
 - Test: `bugs/R1-PLAYER-1/test.lua`. Run `bugs/run.sh R1-PLAYER-1`.
-- It drives the real `refresh` → `observe` → `update_claims` → `jobs` path of `prt-bridge.lua` over a mock chain,
+- It drives the real `refresh` -> `observe` -> `update_claims` -> `jobs` path of `prt-bridge.lua` over a mock chain,
   serving already-decoded logs as `prt-bridge-test.lua` does, and keeps the jobs due at the tip, exactly as `tick()`
   does. It covers two timelines:
   - root tournament: window `[10, 30)`, relaunch at tip 60, honest versus Sybil;
@@ -1060,7 +1078,7 @@ Linux caps a single argument at `MAX_ARG_STRLEN` = 131072 bytes, and the whole q
 `sh -c`. The proof of the transition at the start of an input slot embeds the entire input, plus about 28.5 KB of
 delivery and step logs, and the calldata is passed as hex. From an input of about 36.9 KB on, the command exceeds the
 cap. `execve` fails with `E2BIG`, `io.popen` returns nil, and the assert raises "Argument list too long". Nothing on
-`tick` → `attempt` → `submit` → `sign`, or in `pass()`, catches it, so the player exits. `prt-supervise.sh` relaunches
+`tick` -> `attempt` -> `submit` -> `sign`, or in `pass()`, catches it, so the player exits. `prt-supervise.sh` relaunches
 it into the same failure on every pass while the job is due. The transaction itself is fine for the chain: the 40 KB
 case is about 68.7 KB of calldata, under geth's 128 KiB pool limit, and about 1.1M calldata gas.
 
@@ -1200,16 +1218,26 @@ R1-GUESTTOOLS-1 too.
 - **Cited rules:** section 1 goal; section 2 (correctly designed application); section 4; section 7; the `AUDIT.md`
   rule for `machine-guest-tools`.
 - **Location:** `machine-guest-tools` `sys-utils/libcmt/src/abi.c:288-304` and `sys-utils/libcmt/src/buf.c:34-55`.
-- **Defect:** a dynamic offset taken from the input is not bounded against the frame before it is used to locate the
-  `bytes` field, so an out-of-range offset is accepted instead of rejected.
-- **Evidence and test:** `bugs/R4-VARRANGE-1/` (`test.sh`, `app.c`, `mkinputs.lua`, `check.lua`; boot artifacts are
-  generated under the gitignored `build/`). Run `bugs/run.sh R4-VARRANGE-1`. A correctly designed guest application
-  that decodes its payload with the documented API is driven on the pinned kernel and rootfs; a crafted input makes
-  it commit an output whose bytes are not in the payload (which enters the outputs Merkle root), and another crafted
-  input halts the machine. A patched libcmt with the bounds check rejects both and the test passes.
-- **Possible solution:** reject a decoded offset or length that exceeds the remaining buffer before forming a
-  pointer, and compare lengths rather than pointers in the buffer-split helper; add unit tests and cut a new
-  `machine-guest-tools` release (applications must rebuild, as libcmt is statically linked).
+
+### Problem
+
+A dynamic offset taken from the input is not bounded against the frame before it is used to locate the
+`bytes` field, so an out-of-range offset is accepted instead of rejected.
+
+### Evidence and test
+
+- Test: `bugs/R4-VARRANGE-1/` (`test.sh`, `app.c`, `mkinputs.lua`, `check.lua`; boot artifacts are generated under
+  the gitignored `build/`). Run `bugs/run.sh R4-VARRANGE-1`.
+- A correctly designed guest application that decodes its payload with the documented API is driven on the pinned
+  kernel and rootfs; a crafted input makes it commit an output whose bytes are not in the payload (which enters the
+  outputs Merkle root), and another crafted input halts the machine. A patched libcmt with the bounds check rejects
+  both and the test passes.
+
+### Possible solution
+
+Reject a decoded offset or length that exceeds the remaining buffer before forming a
+pointer, and compare lengths rather than pointers in the buffer-split helper; add unit tests and cut a new
+`machine-guest-tools` release (applications must rebuild, as libcmt is statically linked).
 
 **Write-up note:** a safety classifier stopped the orchestrator's detailed draft of this entry three times. The
 finding is a standard missing-bounds-check defect in an open-source parsing library; this is a factual summary, and
@@ -1367,21 +1395,33 @@ opt-in in the computation-hash modes.
 - **Location:** `machine-guest-tools` `sys-utils/libcmt/src/abi.c:264-272` (`cmt_abi_get_bool`) and
   `abi.c:89-102` (`cmt_abi_decode_uint_nr`, which checks only the 31 leading bytes). The documented return codes in
   `include/libcmt/abi.h:411-431` are 0 and `-ENOBUFS` only.
-- **Defect:** the decoder copies the last byte of the 32-byte word into the bool's storage unchanged, so a word whose
-  last byte is above 1 returns success and leaves a bool object that is neither 0 nor 1. libcmt's own encoder never
-  writes such a word, and Solidity's decoder rejects it.
-- **Evidence and test:** `bugs/R5-DFINPUT-1/` (`test.lua`, `app.c`, `build.sh`; boot artifacts are generated under
-  the gitignored `build/`). Run `bugs/run.sh R5-DFINPUT-1`. A guest application that decodes a bool payload with the
-  documented API and checks the return code is built against the live pinned libcmt and run on the pinned kernel and
-  rootfs. A control input behaves correctly; an input with a non-0/1 word is accepted, and the application commits
-  an output its logic cannot produce for any valid bool. With the decoder fixed in a patched copy, the input is
-  rejected and the test passes.
-- **Possible solution:** decode into a `uint8_t`, reject a word with nonzero leading bytes or a last byte above 1
-  (for example with `-EDOM`), and set the result from the checked byte. Document the new return code and add tests
-  for last bytes `0x02` and `0xff`. Applications must be rebuilt, as libcmt is statically linked.
-- **Risks:** a deployed application that decodes a bool from its input can be made to commit an output its logic
-  would never produce, and every honest validator computes the same result. The fix is local and rejects only input
-  that was never a valid ABI bool.
+
+### Problem
+
+The decoder copies the last byte of the 32-byte word into the bool's storage unchanged, so a word whose
+last byte is above 1 returns success and leaves a bool object that is neither 0 nor 1. libcmt's own encoder never
+writes such a word, and Solidity's decoder rejects it.
+
+### Evidence and test
+
+- Test: `bugs/R5-DFINPUT-1/` (`test.lua`, `app.c`, `build.sh`; boot artifacts are generated under the gitignored
+  `build/`). Run `bugs/run.sh R5-DFINPUT-1`.
+- A guest application that decodes a bool payload with the documented API and checks the return code is built
+  against the live pinned libcmt and run on the pinned kernel and rootfs. A control input behaves correctly; an input
+  with a non-0/1 word is accepted, and the application commits an output its logic cannot produce for any valid bool.
+  With the decoder fixed in a patched copy, the input is rejected and the test passes.
+
+### Possible solution
+
+Decode into a `uint8_t`, reject a word with nonzero leading bytes or a last byte above 1
+(for example with `-EDOM`), and set the result from the checked byte. Document the new return code and add tests
+for last bytes `0x02` and `0xff`. Applications must be rebuilt, as libcmt is statically linked.
+
+### Risks
+
+- Of the issue: a deployed application that decodes a bool from its input can be made to commit an output its logic
+  would never produce, and every honest validator computes the same result.
+- Of the fix: it is local and rejects only input that was never a valid ABI bool.
 
 ---
 
@@ -1431,7 +1471,7 @@ a load); mark-dirty is the one path that uses the unsafe order.
   - the dirty-page tree after the crash (leaf to root) is `261:1 130:0 65:0 32:0 16:0 8:0 4:0 2:0 1:0`;
   - the reopened root equals the stored root, so the player's recovery check passes;
   - after running to mcycle 2000, `verify_hash_tree()` fails ("RAM is not marked dirty but is dirty"), and the root
-    `0x2893…731f` differs from the uninterrupted run's `0xa17a…1977`.
+    `0x2893...731f` differs from the uninterrupted run's `0xa17a...1977`.
 - Control (`CONTROL=1`, same steps with no kill): the recovered root equals the uninterrupted root and the test
   passes.
 - Note from the prover: a normal close leaves the write-TLB pages consistently dirty, so the first update after a
@@ -1445,8 +1485,8 @@ the stored machine when `state.json` records the boundary, and recovery compares
 or an operator signal inside a hash-tree update leaves the torn file behind. From then on, every state hash,
 computation-hash leaf and proof the player builds comes from a stale tree, so it commits a wrong claim or produces
 proofs that fail their own verification. Snapshots cloned afterwards (`.revert`, machine-cache entries) copy the
-corrupted file forward. The test simulates the crash with `gdb` and SIGKILL, and I did not run the full `prt.lua`
-player through it.
+corrupted file forward. The test simulates the crash with `gdb` and SIGKILL, and the full `prt.lua`
+player was not run through it.
 
 ### Possible solution
 
@@ -1478,21 +1518,29 @@ even after fees return to 1 gwei**
   driven by the bridge tick (`prt-bridge.lua`).
 - **Cited rules:** R4 (honest completeness); section 1 completeness; section 2 (honest operator's path); A7 (clocks
   are sized for honest moves that are then never sent).
-- **Location:** `doc/recipes/prt-transactions.lua:130-144` (`fees`: replacement floor from the previous candidate),
-  `:176-192` (`submit`: rebroadcast only for the same job, otherwise `blocked = "fee ceiling"`), `:85-92`
-  (`nonce_record` pins new work to the journal's nonce), `:247-265` (the candidate is stored before it is published);
-  `doc/recipes/prt-bridge.lua:684-711,744-748` (`tick` picks the due job or the cancel, both blocked);
-  `doc/recipes/prt-cast.lua:93-104,229-231` (a publication HTTP failure raises after the store).
-- **Defect:** `submit()` always derives a replacement's fees from the last journaled candidate of the chain nonce:
-  priority is at least `ceil(prev.priority * 1.15)` and max fee at least `ceil(prev.max_fee * 1.15)`, and `fees()`
-  returns nil above the ceilings (defaults 100 gwei and 10 gwei). On nil, `submit()` rebroadcasts the stored bytes
-  only when `previous.job == intent.key`. For any other due job, and for the cancel, it returns
-  `{ blocked = "fee ceiling" }`. `nonce_record()` keeps every new job on that same nonce, and only a mined candidate
-  releases it. If nobody holds the stuck candidate, nothing can ever mine the nonce, and the floor is computed against
-  a transaction that does not exist. Job keys include the event's block hash, so the job changes when its window
-  closes, when the opponent moves, or after a reorg.
-- **Evidence and test:** `bugs/R8-DYNPLAYERFAULT-1/` (`test.lua`, `mockchain.lua`, `vendor/dkjson.lua`). Run
-  `bugs/run.sh R8-DYNPLAYERFAULT-1`. The real bridge tick and transaction journal run on an in-memory EIP-1559 node
+- **Location:**
+  - `doc/recipes/prt-transactions.lua:130-144` (`fees`: replacement floor from the previous candidate), `:176-192`
+    (`submit`: rebroadcast only for the same job, otherwise `blocked = "fee ceiling"`), `:85-92` (`nonce_record` pins
+    new work to the journal's nonce), `:247-265` (the candidate is stored before it is published);
+  - `doc/recipes/prt-bridge.lua:684-711,744-748` (`tick` picks the due job or the cancel, both blocked);
+  - `doc/recipes/prt-cast.lua:93-104,229-231` (a publication HTTP failure raises after the store).
+
+### Problem
+
+`submit()` always derives a replacement's fees from the last journaled candidate of the chain nonce:
+priority is at least `ceil(prev.priority * 1.15)` and max fee at least `ceil(prev.max_fee * 1.15)`, and `fees()`
+returns nil above the ceilings (defaults 100 gwei and 10 gwei). On nil, `submit()` rebroadcasts the stored bytes
+only when `previous.job == intent.key`. For any other due job, and for the cancel, it returns
+`{ blocked = "fee ceiling" }`. `nonce_record()` keeps every new job on that same nonce, and only a mined candidate
+releases it. If nobody holds the stuck candidate, nothing can ever mine the nonce, and the floor is computed against
+a transaction that does not exist. Job keys include the event's block hash, so the job changes when its window
+closes, when the opponent moves, or after a reorg.
+
+### Evidence and test
+
+- Test: `bugs/R8-DYNPLAYERFAULT-1/` (`test.lua`, `mockchain.lua`, `vendor/dkjson.lua`). Run
+  `bugs/run.sh R8-DYNPLAYERFAULT-1`.
+- The real bridge tick and transaction journal run on an in-memory EIP-1559 node
   (nonces, blocks, finalized tag, receipts, `eth_getTransactionByHash`, the geth 10% replacement rule). Only the
   bridge's observation is stubbed, to present two jobs. Three fault variants (process killed after the journal store,
   candidate dropped from the node's mempool, and a 9 gwei tip with a drop) end with "job B NEVER mined ... chain
@@ -1502,27 +1550,37 @@ even after fees return to 1 gwei**
   wedge. In a randomized run with fee spikes and random RPC faults, reorgs and mempool drops, 30 of 41 seeds (200-240)
   ended wedged. A patched copy that drops the replacement floor when no node holds a candidate of the nonce lets every
   variant mine B (test exits 0).
-- **Scenario and reachability:** on the honest operator's path with the default limits, no misconfiguration and no
-  guest behavior needed. (1) During a fee spike (base fee about 45 gwei or more, or a suggested tip of about 8.7 gwei
-  or more) the honest player signs a candidate for job A at the ceiling. (2) The candidate never reaches the node: the
-  process dies between store and publish, `eth_sendRawTransaction` fails (the player exits and is relaunched), or the
-  node restarts and loses its mempool. (3) Before A is mined, A's window closes, the adversary moves so that A is
-  superseded, or a reorg changes the event's block hash. (4) Fees fall back to 1 gwei. Every tick still reports "fee
-  ceiling" for the next due job and for the cancel, the nonce never advances, the honest claim sends no move for the
-  rest of the epoch and loses its matches by timeout. The adversary can force step 3 and can help with step 1 or 2 by
-  spamming fees or the mempool. The bridge prints "transaction waiting at fee ceiling; observing continues", which
-  blames high fees. A human operator could recover by restarting with a higher ceiling or hand-crafting a transaction
-  for the nonce; the automated honest operator never does.
-- **Possible solution:** in `submit()`, when `fees()` returns nil, check whether every candidate of the nonce is
-  unknown to the node and has no receipt. If so, either rebroadcast the stored bytes of the highest-fee candidate that
-  is still affordable at the current base fee, regardless of job (this frees the nonce), or sign the new action or the
-  cancel from the current fees without the replacement floor. Compute the floor only against candidates that some node
-  may still hold, and report "stuck candidate not held by the node" separately from a real fee ceiling.
-- **Risks:** an honest operator that survives a benign transient fault at high fees is frozen for the rest of the
-  epoch, and a dishonest claim can then win. The fix must keep the exclusive-nonce and journal invariants and must
-  never exceed the fee ceilings. "Unknown to the node" is local knowledge: another node or relay may still hold the old
-  candidate, in which case only one of the two consumes the nonce and the journal already tracks both. Rebroadcasting
-  an obsolete action can revert on chain and waste its fee, which is acceptable.
+
+### Scenario and reachability
+
+On the honest operator's path with the default limits, no misconfiguration and no
+guest behavior needed. (1) During a fee spike (base fee about 45 gwei or more, or a suggested tip of about 8.7 gwei
+or more) the honest player signs a candidate for job A at the ceiling. (2) The candidate never reaches the node: the
+process dies between store and publish, `eth_sendRawTransaction` fails (the player exits and is relaunched), or the
+node restarts and loses its mempool. (3) Before A is mined, A's window closes, the adversary moves so that A is
+superseded, or a reorg changes the event's block hash. (4) Fees fall back to 1 gwei. Every tick still reports "fee
+ceiling" for the next due job and for the cancel, the nonce never advances, the honest claim sends no move for the
+rest of the epoch and loses its matches by timeout. The adversary can force step 3 and can help with step 1 or 2 by
+spamming fees or the mempool. The bridge prints "transaction waiting at fee ceiling; observing continues", which
+blames high fees. A human operator could recover by restarting with a higher ceiling or hand-crafting a transaction
+for the nonce; the automated honest operator never does.
+
+### Possible solution
+
+In `submit()`, when `fees()` returns nil, check whether every candidate of the nonce is
+unknown to the node and has no receipt. If so, either rebroadcast the stored bytes of the highest-fee candidate that
+is still affordable at the current base fee, regardless of job (this frees the nonce), or sign the new action or the
+cancel from the current fees without the replacement floor. Compute the floor only against candidates that some node
+may still hold, and report "stuck candidate not held by the node" separately from a real fee ceiling.
+
+### Risks
+
+- Of the issue: an honest operator that survives a benign transient fault at high fees is frozen for the rest of the
+  epoch, and a dishonest claim can then win.
+- Of the fix: it must keep the exclusive-nonce and journal invariants and must never exceed the fee ceilings.
+  "Unknown to the node" is local knowledge: another node or relay may still hold the old candidate, in which case
+  only one of the two consumes the nonce and the journal already tracks both. Rebroadcasting an obsolete action can
+  revert on chain and waste its fee, which is acceptable.
 
 ---
 
@@ -1545,49 +1603,70 @@ proofs**
   completeness; section 2 (valid template; the honest operator's path includes obtaining the template and reloading
   it); section 8 (out-of-scope clause for untrusted snapshots, which does not apply to a snapshot that meets the
   conditions).
-- **Location:** `src/page-hash-tree-cache.hpp:433-455` (the constructor adopts a stored cache tagged initialized after
-  checking metadata only), `:563-575` (`borrow_entry` validates a hit only by the page root), `:352-372`
-  (`enqueue_hash_entry` rehashes only the words that differ from the cached page copy and reuses the cached word-level
-  siblings); `src/hash-tree.cpp:102-130` (`get_page_proof` takes word-level siblings from the cache entry) and
-  `:676-700` with `src/machine.cpp:1708-1711` (`verify_hash_tree` treats a write-TLB-dirty mismatch as consistent);
-  `src/cartesi-machine.lua:2884-2889,3132-3135` (`clear_hash_tree` is off by default and the manual never mentions it);
-  `doc/recipes/prt.lua:981-986` (the player loads the template with the default runtime and compares only
-  `get_root_hash`).
-- **Defect:** each cache entry holds a copy of a page and its 256-node word-level tree. On load, the stored cache is
-  adopted as is. The only check against the machine is that an entry's page root equals the dense-tree leaf, so an entry
-  with the correct page copy and page root but a wrong interior node passes unnoticed. The interior nodes do not feed
-  the root reported at load (that comes from the dense and sparse trees), so every load-time check passes. Later, a
-  write to a word of that page reuses the poisoned sibling, so the page hash, the dense tree and the root are wrong, and
-  `get_proof` for any word of the page returns siblings that do not fold to the root.
-- **Evidence and test:** `bugs/R10-MANCLI1-1/` (`test.lua`, `guest.S`, `link.ld`, `build.sh`). Run
-  `bugs/run.sh R10-MANCLI1-1`. A bare-metal guest is stored as directory A. Directory B is identical to A except for
-  32 bytes of `hash_tree.phtc` (the harness asserts this byte for byte). Results of the run: A and B load with the same
-  root, `verify_hash_tree()` is true for both and `cartesi-machine-stored-hash` agrees; but on B `get_proof` of the data
-  word does not fold to its root, after one ordinary advance-state input the root is `0xb9f6...` instead of `0x15b2...`,
-  and the CLI computes a different mcycle computation hash (`0xb17c...` against `0x58b7...`). Loading B with
-  `clear_hash_tree` reproduces A exactly, which rules out any change to hashed state. A harness error exits 2.
-- **Scenario and reachability:** the manual presents transferring a stored directory to other hosts and restoring it
-  with `--load` as the normal workflow ("the pre-store and post-load state hashes are equal because the same machine
-  state is restored"). Whoever controls the channel that delivers the template (developer, release artifact, mirror)
-  ships the exact valid contents, whose content hash equals the on-chain commitment, and alters only the cache entries of
-  pages that the application touches (its heap or data pages, and the transmit-buffer page that holds the outputs
-  root). Every documented check passes: `--initial-hash`, `cartesi-machine-stored-hash`, the player's root comparison and
-  `verify_hash_tree`. From the first input that writes a poisoned page, or the first proof of a word in it, the honest
-  operator computes wrong mcycle and uarch claims and proofs that the referee's verifiers reject. A dishonest claim with
-  the canonical hashes then eliminates the honest claim. No chain data and no adversarial guest behavior are needed.
-- **Possible solution:** never trust the persisted cache of a loaded directory without validation. Simplest: on load,
-  unless the process is reopening its own directory in place, reset the cache to uninitialized or clear every entry
-  (equivalent to `clear_hash_tree` for the cache only; the dense and sparse trees stay usable because their interior
-  nodes feed the root that is compared with the commitment). Alternatively recompute each adopted entry's 256-node tree
-  from its page copy, check the copy against the live page and `tree[1]` against the dense-tree leaf, and discard failures.
-  Defense in depth: on a hit in `borrow_entry`, compare the cached copy with the live page before the incremental
-  rehash; make `verify_hash_tree` check the cache interiors; have the player load third-party templates with
-  `clear_hash_tree`.
-- **Risks:** anyone who controls the template channel can make every honest operator compute wrong claims and proofs
-  from the first input on while every documented check passes. Dropping or validating the cache costs time on load (up
-  to `phtc_size` pages of 4 KiB plus 255 hashes each) or a slower first root hash on large machines. A partial check
-  leaves the same hole, and the fast path where a process reopens its own shared directory after a crash must stay
-  correct (see R7-FPUARCH-1, R8-DYNPERSIST-1, R9-GOALRESTORE-1).
+- **Location:**
+  - `src/page-hash-tree-cache.hpp:433-455` (the constructor adopts a stored cache tagged initialized after checking
+    metadata only), `:563-575` (`borrow_entry` validates a hit only by the page root), `:352-372`
+    (`enqueue_hash_entry` rehashes only the words that differ from the cached page copy and reuses the cached
+    word-level siblings);
+  - `src/hash-tree.cpp:102-130` (`get_page_proof` takes word-level siblings from the cache entry) and `:676-700` with
+    `src/machine.cpp:1708-1711` (`verify_hash_tree` treats a write-TLB-dirty mismatch as consistent);
+  - `src/cartesi-machine.lua:2884-2889,3132-3135` (`clear_hash_tree` is off by default and the manual never mentions
+    it);
+  - `doc/recipes/prt.lua:981-986` (the player loads the template with the default runtime and compares only
+    `get_root_hash`).
+
+### Problem
+
+Each cache entry holds a copy of a page and its 256-node word-level tree. On load, the stored cache is
+adopted as is. The only check against the machine is that an entry's page root equals the dense-tree leaf, so an entry
+with the correct page copy and page root but a wrong interior node passes unnoticed. The interior nodes do not feed
+the root reported at load (that comes from the dense and sparse trees), so every load-time check passes. Later, a
+write to a word of that page reuses the poisoned sibling, so the page hash, the dense tree and the root are wrong, and
+`get_proof` for any word of the page returns siblings that do not fold to the root.
+
+### Evidence and test
+
+- Test: `bugs/R10-MANCLI1-1/` (`test.lua`, `guest.S`, `link.ld`, `build.sh`). Run `bugs/run.sh R10-MANCLI1-1`.
+- A bare-metal guest is stored as directory A. Directory B is identical to A except for 32 bytes of `hash_tree.phtc`
+  (the harness asserts this byte for byte).
+- Results of the run: A and B load with the same root, `verify_hash_tree()` is true for both and
+  `cartesi-machine-stored-hash` agrees; but on B `get_proof` of the data word does not fold to its root, after one
+  ordinary advance-state input the root is `0xb9f6...` instead of `0x15b2...`, and the CLI computes a different mcycle
+  computation hash (`0xb17c...` against `0x58b7...`).
+- Loading B with `clear_hash_tree` reproduces A exactly, which rules out any change to hashed state. A harness error
+  exits 2.
+
+### Scenario and reachability
+
+The manual presents transferring a stored directory to other hosts and restoring it
+with `--load` as the normal workflow ("the pre-store and post-load state hashes are equal because the same machine
+state is restored"). Whoever controls the channel that delivers the template (developer, release artifact, mirror)
+ships the exact valid contents, whose content hash equals the on-chain commitment, and alters only the cache entries of
+pages that the application touches (its heap or data pages, and the transmit-buffer page that holds the outputs
+root). Every documented check passes: `--initial-hash`, `cartesi-machine-stored-hash`, the player's root comparison and
+`verify_hash_tree`. From the first input that writes a poisoned page, or the first proof of a word in it, the honest
+operator computes wrong mcycle and uarch claims and proofs that the referee's verifiers reject. A dishonest claim with
+the canonical hashes then eliminates the honest claim. No chain data and no adversarial guest behavior are needed.
+
+### Possible solution
+
+Never trust the persisted cache of a loaded directory without validation. Simplest: on load,
+unless the process is reopening its own directory in place, reset the cache to uninitialized or clear every entry
+(equivalent to `clear_hash_tree` for the cache only; the dense and sparse trees stay usable because their interior
+nodes feed the root that is compared with the commitment). Alternatively recompute each adopted entry's 256-node tree
+from its page copy, check the copy against the live page and `tree[1]` against the dense-tree leaf, and discard failures.
+Defense in depth: on a hit in `borrow_entry`, compare the cached copy with the live page before the incremental
+rehash; make `verify_hash_tree` check the cache interiors; have the player load third-party templates with
+`clear_hash_tree`.
+
+### Risks
+
+- Of the issue: anyone who controls the template channel can make every honest operator compute wrong claims and
+  proofs from the first input on while every documented check passes.
+- Of the fix: dropping or validating the cache costs time on load (up to `phtc_size` pages of 4 KiB plus 255 hashes
+  each) or a slower first root hash on large machines. A partial check leaves the same hole, and the fast path where a
+  process reopens its own shared directory after a crash must stay correct (see R7-FPUARCH-1, R8-DYNPERSIST-1,
+  R9-GOALRESTORE-1).
 
 ---
 
@@ -1606,59 +1685,90 @@ node keeps the right root and passes `verify_hash_tree`, then gives proofs and h
 - **Cited rules:** R1, R9, R2, R4, R10, section 2 valid template, section 8. Reviewer: R1; R9; R2; R4; section 2 valid
   template; section 2 honest operator's path; section 1 completeness; section 8 out-of-scope clause on snapshots (does
   not apply: hashed contents meet the valid-template conditions).
-- **Location:** src/memory-address-range.cpp:73-79, src/dense-hash-tree.hpp:61-66, src/hash-tree.cpp:503-535,
-  src/hash-tree.cpp:677-735, src/hash-tree.cpp:140-158, doc/recipes/prt.lua:981-994
-- **Defect:** memory_address_range adopts <range>.dht and .dpt whenever both filenames are set and mark_pages_dirty is
-  off (memory-address-range.cpp:73-79). That is always the case for a directory load, because
-  adjust_ar_backing_store_config sets both names. dense_hash_tree maps the file as is and checks nothing. The dense
-  tree is a heap array: index 1 is the root, and the page leaves start at 2^(L-1). If one interior node N is changed
-  while its parent keeps its correct stored value, the dense root, the sparse tree and get_root_hash are unchanged.
-  hash_tree::verify compares only page leaves with their contents and dirty marks, plus the dense root with the sparse
-  leaf, and a root mismatch is only printed (it does not set ret=false). So it reports true. Afterwards: (1) get_proof
-  returns N as a page-level sibling (hash-tree.cpp:140-158), so proofs of any word under sibling(N) do not fold to the
-  root; (2) when a page under sibling(N) is dirtied, update_dense_trees recomputes its ancestors from the stored
-  siblings (hash-tree.cpp:503-535), which includes the wrong N, so the range root and the machine root become wrong.
-  clear_hash_tree is off by default, and the player only compares get_root_hash.
-- **Evidence and test:** `bugs/R11-FAMCACHE-1/` (`test.lua`, `guest.S`, `link.ld`, `build.sh`). Run `bugs/run.sh
-  R11-FAMCACHE-1`. It fails while the bug is present. Observed: Failed with the same output on all 4 runs (about 2 s
-  each), status 1: "FAIL R11-FAMCACHE-1 (bug present, status 1)". - Template A: 0x0ea838aedcb9...a8c5. - B differs
-  from A only in 0000000080000000-100000.dht: 32 bytes, heap node 131. Before it is overwritten, the test asserts that
-  node 131 equals get_node_hash(0x80006000,13) and that index 1 is the RAM range root. - Template checks on B all
-  pass: cartesi-machine-stored-hash B = 0x0ea838ae...; load root = 0x0ea838ae...; verify_hash_tree = true. - On the
-  freshly loaded B, get_proof(0x80005000,5) does not fold (it folds on A and on B with clear_hash_tree). - After one
-  advance-state input, the root is 0x15b229ac109472d6... on A and on B with clear_hash_tree, but 0x4cb319e26bb476b1...
-  on B. verify_hash_tree on B is still true at that wrong root. - CLI --load --cmio-advance-state
-  --mcycle-computation-hash (log2 period 4, one input):   - A = 0x58b779ad6ce14ccb... - B = 0xfeadabeb6d59c321... - B
-  --clear-hash-tree = 0x58b779ad... (equals A, so no hashed byte was changed). - Failure line: "FAILURE: a stored
-  template that differs from the valid one only in one interior node of its RAM .dht (outside the hashed contents)
-  loads with the right root and passes verify_hash_tree, but then: get_proof of the data word on the freshly loaded
-  template does not fold to its root; root hash after one input differs from the uninterrupted/clear-cache run;
-  verify_hash_tree accepts the wrong root; cartesi-machine --load computes a different mcycle ...
-- **Scenario and reachability:** No guest or chain action is needed. The trigger is a stored template whose hashed
-  contents and content hash exactly match the valid template and the on-chain commitment, while 32 bytes of its RAM
-  .dht (a cache outside the hashed state) are changed. Obtaining and reloading the template is on the honest
-  operator's path (section 2). The manual presents shipping and reloading a stored directory as the normal workflow,
-  and says load reuses the .dht/.dpt files. Every documented check passes: cartesi-machine-stored-hash, the load root,
-  --initial-hash, the player's get_root_hash comparison (prt.lua:981-994) and verify_hash_tree. The wrong node is used
-  from the first write under sibling(N) (any ordinary input that touches the application's data or heap pages) or the
-  first proof of a word there.
-- **Possible solution:** When loading a directory that this process did not write and is not reopening in place, do
-  not trust the persisted .dht/.dpt/.sht/.phtc. Either: - force mark_pages_dirty and rebuild every dense tree and the
-  sparse tree from the page contents (a full rehash, with every node recomputed from its children), and reset the
-  phtc; or - recompute the dense tree bottom-up from the actual pages and reject the load on any mismatch with the
-  stored nodes. Make hash_tree::verify check every interior dense node and the sparse nodes against their children,
-  and set ret=false on a root mismatch instead of only printing it. Expose a load option or default (for example
-  clear_hash_tree, or a verify-on-load option) that the CLI --load, the JSON-RPC load and the PRT player's
-  new_machine/new_stored_machine use for third-party templates. A narrower step: have the player always load the
-  template it defends with clear_hash_tree and compare the recomputed root with the commitment.
-- **Risks:** Risks of the issue: whoever controls the template channel (developer, release artifact, mirror) can make
-  every honest operator commit wrong claims and proofs while every documented check passes. That eliminates the honest
-  claim, and no adversarial guest or chain action is needed. Risks of the fix: - A full rehash on load costs time
-  linear in the machine size, which is bounded but noticeable for multi-GiB ranges. - The fast path that lets a
-  process reopen its own shared directory after a crash (R7-FPUARCH-1, R8-DYNPERSIST-1, R9-GOALRESTORE-1) must keep
-  working, and stay correct, if it continues to trust the trees. - A partial fix (only the phtc, as R10's fix
-  proposes, or only the leaves) leaves this hole open. - Making verify_hash_tree stricter may expose existing benign
-  inconsistencies, such as the TLB-dirty case R10 mentions, so those need to be handled explicitly.
+- **Location:**
+  - `src/memory-address-range.cpp:73-79`;
+  - `src/dense-hash-tree.hpp:61-66`;
+  - `src/hash-tree.cpp:503-535`, `677-735`, `140-158`;
+  - `doc/recipes/prt.lua:981-994`.
+
+### Problem
+
+`memory_address_range` adopts `<range>.dht` and `.dpt` whenever both filenames are set and `mark_pages_dirty` is
+off (`memory-address-range.cpp:73-79`). That is always the case for a directory load, because
+`adjust_ar_backing_store_config` sets both names. `dense_hash_tree` maps the file as is and checks nothing. The dense
+tree is a heap array: index 1 is the root, and the page leaves start at 2^(L-1). If one interior node N is changed
+while its parent keeps its correct stored value, the dense root, the sparse tree and `get_root_hash` are unchanged.
+`hash_tree::verify` compares only page leaves with their contents and dirty marks, plus the dense root with the sparse
+leaf, and a root mismatch is only printed (it does not set `ret=false`). So it reports true. Afterwards: (1)
+`get_proof` returns N as a page-level sibling (`hash-tree.cpp:140-158`), so proofs of any word under sibling(N) do not
+fold to the root; (2) when a page under sibling(N) is dirtied, `update_dense_trees` recomputes its ancestors from the
+stored siblings (`hash-tree.cpp:503-535`), which includes the wrong N, so the range root and the machine root become
+wrong. `clear_hash_tree` is off by default, and the player only compares `get_root_hash`.
+
+### Evidence and test
+
+- Test: `bugs/R11-FAMCACHE-1/` (`test.lua`, `guest.S`, `link.ld`, `build.sh`). Run `bugs/run.sh R11-FAMCACHE-1`. It
+  fails while the bug is present.
+- Observed: Failed with the same output on all 4 runs (about 2 s each), status 1: "FAIL R11-FAMCACHE-1 (bug present,
+  status 1)".
+  - Template A: `0x0ea838aedcb9...a8c5`.
+  - B differs from A only in `0000000080000000-100000.dht`: 32 bytes, heap node 131. Before it is overwritten, the
+    test asserts that node 131 equals `get_node_hash(0x80006000,13)` and that index 1 is the RAM range root.
+  - Template checks on B all pass: `cartesi-machine-stored-hash` B = `0x0ea838ae...`; load root = `0x0ea838ae...`;
+    `verify_hash_tree` = true.
+  - On the freshly loaded B, `get_proof(0x80005000,5)` does not fold (it folds on A and on B with
+    `clear_hash_tree`).
+  - After one advance-state input, the root is `0x15b229ac109472d6...` on A and on B with `clear_hash_tree`, but
+    `0x4cb319e26bb476b1...` on B. `verify_hash_tree` on B is still true at that wrong root.
+  - CLI `--load --cmio-advance-state --mcycle-computation-hash` (log2 period 4, one input):
+    - A = `0x58b779ad6ce14ccb...`
+    - B = `0xfeadabeb6d59c321...`
+    - B `--clear-hash-tree` = `0x58b779ad...` (equals A, so no hashed byte was changed).
+  - Failure line: "FAILURE: a stored template that differs from the valid one only in one interior node of its RAM
+    .dht (outside the hashed contents) loads with the right root and passes verify_hash_tree, but then: get_proof of
+    the data word on the freshly loaded template does not fold to its root; root hash after one input differs from the
+    uninterrupted/clear-cache run; verify_hash_tree accepts the wrong root; cartesi-machine --load computes a different
+    mcycle computation hash (honest claim) (R1, R9, R2, R4)".
+
+### Scenario and reachability
+
+No guest or chain action is needed. The trigger is a stored template whose hashed
+contents and content hash exactly match the valid template and the on-chain commitment, while 32 bytes of its RAM
+`.dht` (a cache outside the hashed state) are changed. Obtaining and reloading the template is on the honest
+operator's path (section 2). The manual presents shipping and reloading a stored directory as the normal workflow,
+and says load reuses the `.dht`/`.dpt` files. Every documented check passes: `cartesi-machine-stored-hash`, the load
+root, `--initial-hash`, the player's `get_root_hash` comparison (`prt.lua:981-994`) and `verify_hash_tree`. The wrong
+node is used from the first write under sibling(N) (any ordinary input that touches the application's data or heap
+pages) or the first proof of a word there.
+
+### Possible solution
+
+When loading a directory that this process did not write and is not reopening in place, do
+not trust the persisted `.dht`/`.dpt`/`.sht`/`.phtc`. Either:
+
+- force `mark_pages_dirty` and rebuild every dense tree and the sparse tree from the page contents (a full rehash,
+  with every node recomputed from its children), and reset the phtc; or
+- recompute the dense tree bottom-up from the actual pages and reject the load on any mismatch with the stored nodes.
+
+Make `hash_tree::verify` check every interior dense node and the sparse nodes against their children,
+and set `ret=false` on a root mismatch instead of only printing it. Expose a load option or default (for example
+`clear_hash_tree`, or a verify-on-load option) that the CLI `--load`, the JSON-RPC load and the PRT player's
+`new_machine`/`new_stored_machine` use for third-party templates. A narrower step: have the player always load the
+template it defends with `clear_hash_tree` and compare the recomputed root with the commitment.
+
+### Risks
+
+- Of the issue: whoever controls the template channel (developer, release artifact, mirror) can make every honest
+  operator commit wrong claims and proofs while every documented check passes. That eliminates the honest claim, and
+  no adversarial guest or chain action is needed.
+- Of the fix:
+  - A full rehash on load costs time linear in the machine size, which is bounded but noticeable for multi-GiB
+    ranges.
+  - The fast path that lets a process reopen its own shared directory after a crash (R7-FPUARCH-1, R8-DYNPERSIST-1,
+    R9-GOALRESTORE-1) must keep working, and stay correct, if it continues to trust the trees.
+  - A partial fix (only the phtc, as R10's fix proposes, or only the leaves) leaves this hole open.
+  - Making `verify_hash_tree` stricter may expose existing benign inconsistencies, such as the TLB-dirty case R10
+    mentions, so those need to be handled explicitly.
 
 ---
 
@@ -1678,57 +1788,81 @@ node keeps the right root and passes `verify_hash_tree`, then gives proofs and h
   for a logarithmic number of matches, not one delay per Sybil); R12 (bounded cost of the honest response); Section 7
   (any number of Sybils; race and reorder transactions within chain rules); Section 8 Critical (breaks the goal at a
   reachable state on the honest operator's path).
-- **Location:** doc/recipes/prt-transactions.lua:206-215, doc/recipes/prt-transactions.lua:164-169,
-  doc/recipes/prt-bridge.lua:523-530, doc/recipes/prt-bridge.lua:684-698, doc/recipes/prt-bridge.lua:335-337,
-  doc/recipes/prt-bridge.lua:369-371
-- **Defect:** submit() calls eth_estimateGas on the latest block and signs gas = ceil(1.2 * estimate)
-  (prt-transactions.lua:206-214), with no lower bound from the action's worst case. The pinned Tournament's
-  joinTournament and winMatchByTimeout end in pairCommitment. If the tournament has no dangling commitment, it does
-  one SSTORE (it stores the caller as dangling). If one exists, it calls Match.create: three or four zero-to-nonzero
-  Match.State slots, a clock start, matchCount, clearing the dangling slot, and a MatchCreated event, about +100k gas.
-  Whether a dangling commitment exists is state that any participant changes with a joinTournament, or by winning any
-  other match, so the branch at inclusion can differ from the branch at estimation. Measured with the pinned
-  Tournament.sol compiled by solc 0.8.30 (viaIR, runs 200) and run in ethereumjs, estimating as the minimal successful
-  transaction gas: - joinTournament at height 30: estimate 172,808, bridge limit 207,370, needed after a Sybil join
-  274,841, out of gas. - joinTournament at height 62: 195,824, 234,989 and 297,858, out of gas. - winMatchByTimeout:
-  136,108, 163,330 and 224,018, out of gas. The honest transaction reverts and its nonce is consumed. The bridge never
-  reads receipt.status. receipt() and awaiting_observation() treat the reverted receipt like a successful one and
-  suppress the job until the observation head reaches the receipt block (prt-transactions.lua:165-169,
-  prt-bridge.lua:686-698). Only then does submit estimate again, against whatever state the adversary has set by that
-  time. There is no detection of out-of-gas, no immediate resend with more gas, and no use of the contract's own Gas.*
-  allocations (Gas.WIN_MATCH_BY_TIMEOUT = 261,000, for example) as a floor.
-- **Evidence and test:** `bugs/R11-FAMFEES-1/` (`test.lua`, `measured-gas.json`, `evm/measure.mjs`, `evm/build.json`,
-  `evm/Maker.sol`, `evm/compile.js`, `vendor/dkjson.lua`). Run `bugs/run.sh R11-FAMFEES-1`. It fails while the bug is
-  present. Observed: The test fails deterministically: 3 runs with the live EVM measurement and 1 run from the
-  recorded fixture, all exit 1. The failing line is: "FAIL R11-FAMFEES-1: prt-transactions.lua signs ceil(1.2 *
-  estimate at latest) with no worst-case floor ... joinTournament(h=30): signed 207370 < needed 274841;
-  winMatchByTimeout(h=30): signed 163330 < needed 224018; joinTournament(h=62): signed 234989 < needed 297858;
-  winMatchByTimeout(h=62): signed 163330 < needed 224018". Per scenario the output also shows that the honest tx, run
-  with the signed gas after the Sybil front-run, reverts. The same tx succeeds with the needed gas, so the revert is
-  out-of-gas and not a logic revert. After a status-0 receipt at block 17, the unmodified submit() returns waiting
-  until tip 21 (3 blocks of waiting, since observation head = tip-4 must reach the receipt block) and then resends.
-- **Scenario and reachability:** Reachable with section 7 capabilities only. The adversary posts legal Sybil joins:
-  the root accepts any final state, and a child accepts any commitment that ends at the dishonest contested state. It
-  front-runs the honest transaction on a public mempool with a higher tip. The pairing branch is normal pinned-Dave
-  behaviour. Even an unrelated concurrent join in the same block (another validator) triggers the revert. The bridge
-  is the in-scope honest operator (doc/recipes/prt-transactions.lua, prt-bridge.lua), and Dave v3.0.0-alpha.6 is the
-  referee it targets (doc/Dockerfile.prt DAVE_REF; the patch changes only geometry). No A1-A7 violation by the referee
-  is needed.
-- **Possible solution:** Give each contract action a gas floor for its worst-case branch. For every action that can
-  reach pairCommitment (joinTournament, winMatchByTimeout, winInnerTournament, winLeafMatch), compute the limit as
-  max(1.2*estimate, worst_case[kind]). The worst case can come from a fixed per-action table, measured on the pinned
-  build with the dangling-commitment branch plus headroom. It can also come from a second eth_estimateGas with a
-  stateOverride that sets a dangling commitment. Also check receipt.status. On a status-0 receipt for a still-due job,
-  stop suppressing the job until observation depth. Resend at once with a raised gas limit (for example, double it,
-  capped at the block gas limit), and report out-of-gas failures.
-- **Risks:** Risks of the issue: an adversary with enough bonds, or ordinary concurrent joins, can delay or prevent
-  the honest join or timeout win. The honest claim can then be eliminated, and a dishonest state settles. Benign
-  concurrency also causes spurious reverts that waste honest gas and clock time. Risks of the fix: - A larger gas
-  limit raises the balance the signer needs (gas * maxFee) and could hit fee-ceiling or balance checks. Unused gas is
-  not charged. - A hard-coded table can go stale if the contract version or geometry changes, so it should be tied to
-  the pinned artifacts or derived with a state override. - Retrying immediately on status 0 must not fight the
-  nonce/replacement logic, and must keep the reorg safety the observation wait currently gives. - The other pairing
-  actions (winInnerTournament, winLeafMatch) need the same treatment, or the bug remains there.
+- **Location:**
+  - `doc/recipes/prt-transactions.lua:206-215`, `164-169`;
+  - `doc/recipes/prt-bridge.lua:523-530`, `684-698`, `335-337`, `369-371`.
+
+### Problem
+
+`submit()` calls `eth_estimateGas` on the latest block and signs `gas = ceil(1.2 * estimate)`
+(`prt-transactions.lua:206-214`), with no lower bound from the action's worst case. The pinned `Tournament`'s
+`joinTournament` and `winMatchByTimeout` end in `pairCommitment`. If the tournament has no dangling commitment, it does
+one `SSTORE` (it stores the caller as dangling). If one exists, it calls `Match.create`: three or four zero-to-nonzero
+`Match.State` slots, a clock start, `matchCount`, clearing the dangling slot, and a `MatchCreated` event, about +100k
+gas. Whether a dangling commitment exists is state that any participant changes with a `joinTournament`, or by winning
+any other match, so the branch at inclusion can differ from the branch at estimation. Measured with the pinned
+`Tournament.sol` compiled by solc 0.8.30 (viaIR, runs 200) and run in ethereumjs, estimating as the minimal successful
+transaction gas:
+
+- `joinTournament` at height 30: estimate 172,808, bridge limit 207,370, needed after a Sybil join 274,841, out of
+  gas.
+- `joinTournament` at height 62: 195,824, 234,989 and 297,858, out of gas.
+- `winMatchByTimeout`: 136,108, 163,330 and 224,018, out of gas.
+
+The honest transaction reverts and its nonce is consumed. The bridge never reads `receipt.status`. `receipt()` and
+`awaiting_observation()` treat the reverted receipt like a successful one and suppress the job until the observation
+head reaches the receipt block (`prt-transactions.lua:165-169`, `prt-bridge.lua:686-698`). Only then does submit
+estimate again, against whatever state the adversary has set by that time. There is no detection of out-of-gas, no
+immediate resend with more gas, and no use of the contract's own `Gas.*` allocations
+(`Gas.WIN_MATCH_BY_TIMEOUT = 261,000`, for example) as a floor.
+
+### Evidence and test
+
+- Test: `bugs/R11-FAMFEES-1/` (`test.lua`, `measured-gas.json`, `evm/measure.mjs`, `evm/build.json`, `evm/Maker.sol`,
+  `evm/compile.js`, `vendor/dkjson.lua`). Run `bugs/run.sh R11-FAMFEES-1`. It fails while the bug is present.
+- Observed: The test fails deterministically: 3 runs with the live EVM measurement and 1 run from the recorded
+  fixture, all exit 1. The failing line is: "FAIL R11-FAMFEES-1: prt-transactions.lua signs ceil(1.2 * estimate at
+  latest) with no worst-case floor ... joinTournament(h=30): signed 207370 < needed 274841; winMatchByTimeout(h=30):
+  signed 163330 < needed 224018; joinTournament(h=62): signed 234989 < needed 297858; winMatchByTimeout(h=62): signed
+  163330 < needed 224018". Per scenario the output also shows that the honest tx, run with the signed gas after the
+  Sybil front-run, reverts. The same tx succeeds with the needed gas, so the revert is out-of-gas and not a logic
+  revert. After a status-0 receipt at block 17, the unmodified `submit()` returns waiting until tip 21 (3 blocks of
+  waiting, since observation head = tip-4 must reach the receipt block) and then resends.
+
+### Scenario and reachability
+
+Reachable with section 7 capabilities only. The adversary posts legal Sybil joins:
+the root accepts any final state, and a child accepts any commitment that ends at the dishonest contested state. It
+front-runs the honest transaction on a public mempool with a higher tip. The pairing branch is normal pinned-Dave
+behaviour. Even an unrelated concurrent join in the same block (another validator) triggers the revert. The bridge
+is the in-scope honest operator (`doc/recipes/prt-transactions.lua`, `prt-bridge.lua`), and Dave v3.0.0-alpha.6 is the
+referee it targets (`doc/Dockerfile.prt` `DAVE_REF`; the patch changes only geometry). No A1-A7 violation by the
+referee is needed.
+
+### Possible solution
+
+Give each contract action a gas floor for its worst-case branch. For every action that can
+reach `pairCommitment` (`joinTournament`, `winMatchByTimeout`, `winInnerTournament`, `winLeafMatch`), compute the limit
+as `max(1.2*estimate, worst_case[kind])`. The worst case can come from a fixed per-action table, measured on the pinned
+build with the dangling-commitment branch plus headroom. It can also come from a second `eth_estimateGas` with a
+`stateOverride` that sets a dangling commitment. Also check `receipt.status`. On a status-0 receipt for a still-due
+job, stop suppressing the job until observation depth. Resend at once with a raised gas limit (for example, double it,
+capped at the block gas limit), and report out-of-gas failures.
+
+### Risks
+
+- Of the issue: an adversary with enough bonds, or ordinary concurrent joins, can delay or prevent the honest join or
+  timeout win. The honest claim can then be eliminated, and a dishonest state settles. Benign concurrency also causes
+  spurious reverts that waste honest gas and clock time.
+- Of the fix:
+  - A larger gas limit raises the balance the signer needs (`gas * maxFee`) and could hit fee-ceiling or balance
+    checks. Unused gas is not charged.
+  - A hard-coded table can go stale if the contract version or geometry changes, so it should be tied to the pinned
+    artifacts or derived with a state override.
+  - Retrying immediately on status 0 must not fight the nonce/replacement logic, and must keep the reorg safety the
+    observation wait currently gives.
+  - The other pairing actions (`winInnerTournament`, `winLeafMatch`) need the same treatment, or the bug remains
+    there.
 
 ---
 
@@ -1750,66 +1884,99 @@ with one wrong dormant inner node loads with the right root, then yields wrong p
   completeness failure; section 2 valid template; section 2 honest operator's path (obtaining template, storing and
   reloading, computing claims, producing proofs); section 8 snapshot out-of-scope clause does not apply (template
   meets valid-template conditions by content hash).
-- **Location:** src/hash-tree.cpp:994-1003 (load validates only left/right/parent/log2_size, never hashes),
-  src/hash-tree.cpp:537-601 (update_sparse_tree recomputes only ancestors of changed address ranges from the stored
-  hashes of their siblings), src/hash-tree.cpp:70-75 and 203-253 (get_sparse_node_hash_view/get_proof use stored
-  sibling hashes), src/hash-tree.cpp:603-605 (get_root_hash returns stored node 1), src/hash-tree.cpp:677-742 (verify
-  never inspects inner sparse nodes), src/machine.cpp:307 and 320 (load keeps the file unless clear_hash_tree)
-- **Defect:** hash_tree.sht holds an array of sparse nodes (left,right,parent,log2_size,hash; 64 bytes each, hash at
-  offset 28). On load the topology fields are compared with the freshly computed ones, but the 32-byte hash of every
-  inner node is adopted as is. update_sparse_tree later recomputes a node only when one of its descendant address
-  ranges changed, and it recomputes it from the STORED hash of the sibling subtree. Nodes on the path of the
-  always-dirty ranges (shadow state, shadow uarch state) and of ranges whose page is in the write TLB are recomputed
-  at every update, so poisoning them has no lasting effect (that is why a first attempt showed nothing). A
-  sibling-of-path node whose parent is not recomputed at load is dormant: the loaded root, cartesi-machine-stored-hash
-  and verify_hash_tree are unchanged. With a 1 MiB RAM machine the topology is: node 73 = H(node 74 [cmio rx and tx
-  buffers], node 83 [0x70000000..0x7fffffff, holds the DTB]). Overwriting the 32-byte hash of node 83 (file offset
-  83*64+28) with 0x42 bytes changes nothing at load. When the first advance-state delivery writes the rx buffer, node
-  73 is recomputed as H(74, poisoned 83) and the root becomes wrong; get_proof of cmio and DTB words uses node 83's
-  hash as a level-28 sibling and does not fold to the root. verify_hash_tree has no check on inner nodes, and
-  --clear-hash-tree (off by default) restores the right behavior.
-- **Evidence and test:** `bugs/R12-SECCACHE2-1/` (`test.lua`, `guest.S`, `link.ld`, `build.sh`). Run `bugs/run.sh
-  R12-SECCACHE2-1`. It fails while the bug is present. Observed: I ran the test 3 times on feature/prt-audit. All 3
-  runs printed identical output and exited 1 ("FAIL R12-SECCACHE2-1 (bug present, status 1)"). Template A root:
-  0x2b026214...9e9a. B differs from A in exactly 32 bytes: the hash of sparse node 83 in hash_tree.sht, at offset
-  83*64+28. All the template checks pass on B: - cartesi-machine-stored-hash of B gives 0x2b026214...9e9a. - The
-  loaded root equals A's. - verify_hash_tree returns true. What follows on B: - A freshly loaded B gives a get_proof
-  of an rx word (0x60000000) that does not fold to the root. A's proof folds. - After one advance-state input, both
-  machines reach mcycle 24 with counter 0x1112, so the contents are identical. Root A = 0x533c806c...d61c, root B =
-  0x1e784426...e692. - verify_hash_tree on B still returns true with the wrong root. - On B after the input, get_proof
-  of a DTB word (0x7ff00000) does not fold. - B loaded with clear_hash_tree reproduces A exactly. - CLI `--load
-  --cmio-advance-state --mcycle-computation-hash`: A = 0x485040c55f8f..., B = 0xcea5a8d58cfc..., B with
-  --clear-hash-tree = 0x485040c55f8f... (equal to A). The test separates harness errors (exit 2) from the bug (exit
-  1). Exit 2 covers these cases: - control A fails its own checks; - the guest misbehaves; - the clear-cache run of B
-  disagrees with A; - B differs from A anywhere other than those 32 bytes; - the topology is not what the test expects
-  (it requires node 83 to be the right child of node 73 at log2 28 and log2 29, with stored hashes ...
-- **Scenario and reachability:** The trigger is a stored template directory whose hashed contents (.bin files) and
-  content hash exactly equal the valid template and the on-chain commitment. Only 32 bytes of hash_tree.sht are
-  changed, and that file is a cache outside the hashed state. Obtaining and reloading a template is on the honest
-  operator's path (section 2). Every documented check passes: cartesi-machine-stored-hash, the loaded get_root_hash
-  (which is what prt.lua new_stored_machine compares) and verify_hash_tree. No guest or chain action is needed beyond
-  an ordinary first advance-state input, which writes the rx buffer and recomputes the poisoned node's parent. Proofs
-  through the poisoned sibling are already wrong on the fresh load. Dormancy requires that no range under the poisoned
-  node's parent is recomputed at load (here, no write-TLB entry for the cmio range in the template). That is
-  realistic, because an ordinary sfence.vma ensures it, and other dormant sibling nodes exist (flash-drive branches,
-  for example).
-- **Possible solution:** When loading a stored directory that this process did not write itself and is not reopening
-  in place, recompute the hash tree instead of trusting the .sht file: - Rebuild every inner sparse node bottom-up
-  from the dense-tree roots and pristine hashes. This costs about as many hashes as there are sparse nodes, which is
-  small. - Alternatively, recompute and reject the load on any mismatch with the stored hashes. Also make
-  verify_hash_tree check every inner sparse node against H(left, right), and every sparse leaf against its dense root,
-  and make it set ret=false on a mismatch instead of only printing it. Apply this together with the R11 (dense
-  .dht/.dpt) and R10 (phtc) fixes, for example a full rehash on load or a verify-on-load option. The CLI --load, the
-  JSON-RPC load and the PRT player's new_stored_machine should use it for third-party templates. A narrower mitigation
-  is for the player to load the template it defends with clear_hash_tree.
-- **Risks:** Risks of the issue: whoever controls the template distribution channel (developer, release mirror) can
-  make every honest operator commit wrong claims and proofs that do not fold, while every documented check passes.
-  That eliminates the honest claim with no adversarial guest or chain action. Risks of the fix: - Recomputing only the
-  sparse tree is cheap, but a full rehash covering dense trees costs time linear in the machine size on every load. -
-  The fast path that lets a process reopen its own shared directory after a crash must keep working and stay correct.
-  - A partial fix, for example only the phtc or only the dense trees, leaves this hole open. - A stricter
-  verify_hash_tree may expose benign transient inconsistencies, such as ranges dirtied through the write TLB before an
-  update, which must then be handled explicitly.
+- **Location:**
+  - `src/hash-tree.cpp:994-1003` (load validates only `left`/`right`/`parent`/`log2_size`, never hashes), `537-601`
+    (`update_sparse_tree` recomputes only ancestors of changed address ranges from the stored hashes of their
+    siblings), `70-75` and `203-253` (`get_sparse_node_hash_view`/`get_proof` use stored sibling hashes), `603-605`
+    (`get_root_hash` returns stored node 1), `677-742` (verify never inspects inner sparse nodes);
+  - `src/machine.cpp:307` and `320` (load keeps the file unless `clear_hash_tree`).
+
+### Problem
+
+`hash_tree.sht` holds an array of sparse nodes (`left`,`right`,`parent`,`log2_size`,`hash`; 64 bytes each, hash at
+offset 28). On load the topology fields are compared with the freshly computed ones, but the 32-byte hash of every
+inner node is adopted as is. `update_sparse_tree` later recomputes a node only when one of its descendant address
+ranges changed, and it recomputes it from the STORED hash of the sibling subtree. Nodes on the path of the
+always-dirty ranges (shadow state, shadow uarch state) and of ranges whose page is in the write TLB are recomputed
+at every update, so poisoning them has no lasting effect (that is why a first attempt showed nothing). A
+sibling-of-path node whose parent is not recomputed at load is dormant: the loaded root, `cartesi-machine-stored-hash`
+and `verify_hash_tree` are unchanged. With a 1 MiB RAM machine the topology is: node 73 = H(node 74 [cmio rx and tx
+buffers], node 83 [`0x70000000..0x7fffffff`, holds the DTB]). Overwriting the 32-byte hash of node 83 (file offset
+`83*64+28`) with `0x42` bytes changes nothing at load. When the first advance-state delivery writes the rx buffer, node
+73 is recomputed as H(74, poisoned 83) and the root becomes wrong; `get_proof` of cmio and DTB words uses node 83's
+hash as a level-28 sibling and does not fold to the root. `verify_hash_tree` has no check on inner nodes, and
+`--clear-hash-tree` (off by default) restores the right behavior.
+
+### Evidence and test
+
+- Test: `bugs/R12-SECCACHE2-1/` (`test.lua`, `guest.S`, `link.ld`, `build.sh`). Run `bugs/run.sh R12-SECCACHE2-1`. It
+  fails while the bug is present.
+- Observed: the test was run 3 times on `feature/prt-audit`. All 3 runs printed identical output and exited 1 ("FAIL
+  R12-SECCACHE2-1 (bug present, status 1)"). Template A root: `0x2b026214...9e9a`. B differs from A in exactly 32
+  bytes: the hash of sparse node 83 in `hash_tree.sht`, at offset `83*64+28`. All the template checks pass on B:
+  - `cartesi-machine-stored-hash` of B gives `0x2b026214...9e9a`.
+  - The loaded root equals A's.
+  - `verify_hash_tree` returns true.
+
+  What follows on B:
+  - A freshly loaded B gives a `get_proof` of an rx word (`0x60000000`) that does not fold to the root. A's proof
+    folds.
+  - After one advance-state input, both machines reach mcycle 24 with counter `0x1112`, so the contents are
+    identical. Root A = `0x533c806c...d61c`, root B = `0x1e784426...e692`.
+  - `verify_hash_tree` on B still returns true with the wrong root.
+  - On B after the input, `get_proof` of a DTB word (`0x7ff00000`) does not fold.
+  - B loaded with `clear_hash_tree` reproduces A exactly.
+  - CLI `--load --cmio-advance-state --mcycle-computation-hash`: A = `0x485040c55f8f...`, B = `0xcea5a8d58cfc...`, B
+    with `--clear-hash-tree` = `0x485040c55f8f...` (equal to A).
+- The test separates harness errors (exit 2) from the bug (exit 1). Exit 2 covers these cases:
+  - control A fails its own checks;
+  - the guest misbehaves;
+  - the clear-cache run of B disagrees with A;
+  - B differs from A anywhere other than those 32 bytes;
+  - the topology is not what the test expects (it requires node 83 to be the right child of node 73 at log2 28 and
+    log2 29, with stored hashes equal to `get_node_hash(0x70000000, 28)` and `get_node_hash(0x60000000, 29)`).
+
+### Scenario and reachability
+
+The trigger is a stored template directory whose hashed contents (`.bin` files) and
+content hash exactly equal the valid template and the on-chain commitment. Only 32 bytes of `hash_tree.sht` are
+changed, and that file is a cache outside the hashed state. Obtaining and reloading a template is on the honest
+operator's path (section 2). Every documented check passes: `cartesi-machine-stored-hash`, the loaded `get_root_hash`
+(which is what `prt.lua` `new_stored_machine` compares) and `verify_hash_tree`. No guest or chain action is needed
+beyond an ordinary first advance-state input, which writes the rx buffer and recomputes the poisoned node's parent.
+Proofs through the poisoned sibling are already wrong on the fresh load. Dormancy requires that no range under the
+poisoned node's parent is recomputed at load (here, no write-TLB entry for the cmio range in the template). That is
+realistic, because an ordinary `sfence.vma` ensures it, and other dormant sibling nodes exist (flash-drive branches,
+for example).
+
+### Possible solution
+
+When loading a stored directory that this process did not write itself and is not reopening
+in place, recompute the hash tree instead of trusting the `.sht` file:
+
+- Rebuild every inner sparse node bottom-up from the dense-tree roots and pristine hashes. This costs about as many
+  hashes as there are sparse nodes, which is small.
+- Alternatively, recompute and reject the load on any mismatch with the stored hashes.
+
+Also make `verify_hash_tree` check every inner sparse node against H(left, right), and every sparse leaf against its
+dense root, and make it set `ret=false` on a mismatch instead of only printing it. Apply this together with the R11
+(dense `.dht`/`.dpt`) and R10 (phtc) fixes, for example a full rehash on load or a verify-on-load option. The CLI
+`--load`, the JSON-RPC load and the PRT player's `new_stored_machine` should use it for third-party templates. A
+narrower mitigation is for the player to load the template it defends with `clear_hash_tree`.
+
+### Risks
+
+- Of the issue: whoever controls the template distribution channel (developer, release mirror) can make every honest
+  operator commit wrong claims and proofs that do not fold, while every documented check passes. That eliminates the
+  honest claim with no adversarial guest or chain action.
+- Of the fix:
+  - Recomputing only the sparse tree is cheap, but a full rehash covering dense trees costs time linear in the machine
+    size on every load.
+  - The fast path that lets a process reopen its own shared directory after a crash must keep working and stay
+    correct.
+  - A partial fix, for example only the phtc or only the dense trees, leaves this hole open.
+  - A stricter `verify_hash_tree` may expose benign transient inconsistencies, such as ranges dirtied through the
+    write TLB before an update, which must then be handled explicitly.
 
 ---
 
@@ -1829,59 +1996,88 @@ clean ancestors loads and verifies cleanly, then every later write under that no
   completeness; section 2 valid template; section 2 honest operator's path (obtaining and reloading the template);
   section 8 snapshot out-of-scope clause (does not apply: once a snapshot meets the valid-template conditions, nothing
   it carries outside the hashed state may affect any transition).
-- **Location:** src/memory-address-range.cpp:62-81 (adopts the stored .dpt, no consistency check),
-  src/dirty-page-tree.hpp:82-84 and 109-126 (only byte 0, the init flag, is examined), src/dirty-page-tree.hpp:327-336
-  (do_mark_dirty_leaf_position_and_up stops at the first already-dirty node and assumes its ancestors are dirty),
-  src/dirty-page-tree.hpp:178-205 (down/up_then_down traverse only through dirty children from the root),
-  src/hash-tree.cpp:677-742 (verify compares only leaf and range-root flags, not the interior invariant),
-  src/hash-tree.cpp:416-435 (update_dirty_pages iterates dirty_offsets_view from the root)
-- **Defect:** The dirty-page tree is a heap array (byte 0 = initialized flag, node 1 = root, page leaves from
-  2^(L-1)). Load accepts any file whose byte 0 is non-zero. The code relies on the invariant 'dirty node implies dirty
-  ancestors': do_mark_dirty_leaf_position_and_up returns as soon as it meets a node already dirty, and
-  dirty_offsets_view/up_then_down only descend from a dirty root through dirty children. If an interior node N is
-  stored dirty while the root and the path above N are clean, nothing is detected at load (clean root means no work;
-  verify sees every leaf and the range root consistent with the clean contents). Later, any write to a page under N
-  (guest store through the write TLB, write_memory, collect paths that call mark_dirty_page_and_up) marks the leaf,
-  then stops at N; the root stays clean, so update() never visits the page, dht/sht keep the old page hash and
-  get_root_hash returns the stale root. For the 1 MiB RAM range, setting byte 65 of 0000000080000000-100000.dpt to 1
-  covers the guest's data page 0x80005000 (leaf 261, parents 130, 65). Evidence disappears quickly: verify_hash_tree()
-  is false on the unflushed state ('RAM is not marked dirty but is dirty'), but a following get_root_hash() cleans the
-  dpt and verify_hash_tree() then reports true on the stale tree.
-- **Evidence and test:** `bugs/R12-SECCACHE2-2/` (`test.lua`, `build.sh`, `guest.S`, `link.ld`). Run `bugs/run.sh
-  R12-SECCACHE2-2`. It fails while the bug is present. Observed: I ran it 3 times. All 3 runs printed the same output
-  and exited with status 1 ("FAIL R12-SECCACHE2-2 (bug present, status 1)"). - Template A: 0x6d1d6580450a107e... Copy
-  B differs from A only in byte 65 of 0000000080000000-100000.dpt (0 changed to 1). - B passes every template check:
-  cartesi-machine-stored-hash of B is 0x6d1d6580..., which equals A. B's load root equals A's, and verify_hash_tree
-  returns true. - After one advance-state input, the guest counter is 4370 in A, in B and in B loaded with
-  clear_hash_tree. - Root after the input: A = 0x27797cbeebc51844..., B = 0xa30164bdb448897e..., B with
-  clear_hash_tree = 0x27797cbeebc51844... - B's own post-input state, stored and then rehashed with clear_hash_tree,
-  gives 0x27797cbe... B therefore reports a root that is not the content hash of its own contents. - verify_hash_tree
-  on B after the input returns true, even though B's root is stale. - get_proof(0x80005000, 12) on B does not fold to
-  B's reported root. - CLI mcycle computation hash (log2_mcycle_period 4, one input): A = 0x12609d8e337ba429..., B =
-  0xf39d17ce9aacc1ca..., B with --clear-hash-tree = 0x12609d8e... The one-line failure message lists every failed
-  check and cites R1, R9, R2 and R4.
-- **Scenario and reachability:** Nothing from the guest or the chain is needed. The trigger is a stored template whose
-  .bin files and content hash are exactly those of the valid template (the on-chain commitment). Only one byte of a
-  RAM <range>.dpt differs, and that file is a cache outside the hashed state. Every documented check passes on it:
-  cartesi-machine-stored-hash, the loaded root, verify_hash_tree, and the player's get_root_hash comparison. Obtaining
-  and reloading the template is on the honest operator's path. The defect then fires on the first ordinary input whose
-  guest writes any page under the poisoned node. No dormancy condition and no TLB precondition apply.
-- **Possible solution:** Never adopt a persisted .dpt from a directory the process is not reopening in place. Either:
-  - force mark_pages_dirty on load, so every leaf and interior node is dirty and the next update rehashes the whole
-  range. Combine this with rebuilding the .dht, .sht and .phtc, as in R10 and R11. - or validate the dpt on load:
-  every non-pad leaf must be clean, no interior node may be dirty, and the init byte must hold exactly the dirty
-  value. Any other file is rejected or rebuilt. Defense in depth: - make do_mark_dirty_leaf_position_and_up mark up to
-  the root, at the cost of more work per write; - have hash_tree::verify check the dpt invariant (a dirty node implies
-  a dirty parent); - have the CLI --load, the JSON-RPC load and the PRT player load third-party templates with
-  clear_hash_tree and compare the recomputed root with the commitment.
-- **Risks:** Risk of the issue: whoever controls the template channel (developer, release artifact, mirror) can change
-  one byte of a cache file and make every honest operator compute wrong mcycle and uarch claims, and proofs that do
-  not fold. That eliminates the honest claim while every documented check passes. A narrow fix to the .dht values
-  (R11's validate-and-compare option) leaves this open. Risks of the fix: - A full rehash on load costs time linear in
-  the machine size, which is noticeable for multi-GiB ranges. - Marking up to the root on every write lengthens the
-  hot path. - The fast path that reopens the process's own shared directory after a crash must stay correct and keep
-  the R7-FPUARCH-1, R8-DYNPERSIST-1 and R9-GOALRESTORE-1 fixes coherent. - A stricter verify_hash_tree may expose
-  existing benign inconsistencies, such as the write-TLB dirty case, which must then be handled explicitly.
+- **Location:**
+  - `src/memory-address-range.cpp:62-81` (adopts the stored `.dpt`, no consistency check);
+  - `src/dirty-page-tree.hpp:82-84` and `109-126` (only byte 0, the init flag, is examined), `327-336`
+    (`do_mark_dirty_leaf_position_and_up` stops at the first already-dirty node and assumes its ancestors are dirty),
+    `178-205` (`down`/`up_then_down` traverse only through dirty children from the root);
+  - `src/hash-tree.cpp:677-742` (verify compares only leaf and range-root flags, not the interior invariant), `416-435`
+    (`update_dirty_pages` iterates `dirty_offsets_view` from the root).
+
+### Problem
+
+The dirty-page tree is a heap array (byte 0 = initialized flag, node 1 = root, page leaves from
+2^(L-1)). Load accepts any file whose byte 0 is non-zero. The code relies on the invariant "dirty node implies dirty
+ancestors": `do_mark_dirty_leaf_position_and_up` returns as soon as it meets a node already dirty, and
+`dirty_offsets_view`/`up_then_down` only descend from a dirty root through dirty children. If an interior node N is
+stored dirty while the root and the path above N are clean, nothing is detected at load (clean root means no work;
+verify sees every leaf and the range root consistent with the clean contents). Later, any write to a page under N
+(guest store through the write TLB, `write_memory`, collect paths that call `mark_dirty_page_and_up`) marks the leaf,
+then stops at N; the root stays clean, so `update()` never visits the page, dht/sht keep the old page hash and
+`get_root_hash` returns the stale root. For the 1 MiB RAM range, setting byte 65 of `0000000080000000-100000.dpt` to 1
+covers the guest's data page `0x80005000` (leaf 261, parents 130, 65). Evidence disappears quickly:
+`verify_hash_tree()` is false on the unflushed state ("RAM is not marked dirty but is dirty"), but a following
+`get_root_hash()` cleans the dpt and `verify_hash_tree()` then reports true on the stale tree.
+
+### Evidence and test
+
+- Test: `bugs/R12-SECCACHE2-2/` (`test.lua`, `build.sh`, `guest.S`, `link.ld`). Run `bugs/run.sh R12-SECCACHE2-2`. It
+  fails while the bug is present.
+- Observed: the test was run 3 times. All 3 runs printed the same output and exited with status 1 ("FAIL R12-SECCACHE2-2 (bug
+  present, status 1)").
+  - Template A: `0x6d1d6580450a107e...` Copy B differs from A only in byte 65 of `0000000080000000-100000.dpt` (0
+    changed to 1).
+  - B passes every template check: `cartesi-machine-stored-hash` of B is `0x6d1d6580...`, which equals A. B's load
+    root equals A's, and `verify_hash_tree` returns true.
+  - After one advance-state input, the guest counter is 4370 in A, in B and in B loaded with `clear_hash_tree`.
+  - Root after the input: A = `0x27797cbeebc51844...`, B = `0xa30164bdb448897e...`, B with `clear_hash_tree` =
+    `0x27797cbeebc51844...`
+  - B's own post-input state, stored and then rehashed with `clear_hash_tree`, gives `0x27797cbe...` B therefore
+    reports a root that is not the content hash of its own contents.
+  - `verify_hash_tree` on B after the input returns true, even though B's root is stale.
+  - `get_proof(0x80005000, 12)` on B does not fold to B's reported root.
+  - CLI mcycle computation hash (`log2_mcycle_period` 4, one input): A = `0x12609d8e337ba429...`, B =
+    `0xf39d17ce9aacc1ca...`, B with `--clear-hash-tree` = `0x12609d8e...` The one-line failure message lists every
+    failed check and cites R1, R9, R2 and R4.
+
+### Scenario and reachability
+
+Nothing from the guest or the chain is needed. The trigger is a stored template whose
+`.bin` files and content hash are exactly those of the valid template (the on-chain commitment). Only one byte of a
+RAM `<range>.dpt` differs, and that file is a cache outside the hashed state. Every documented check passes on it:
+`cartesi-machine-stored-hash`, the loaded root, `verify_hash_tree`, and the player's `get_root_hash` comparison.
+Obtaining and reloading the template is on the honest operator's path. The defect then fires on the first ordinary
+input whose guest writes any page under the poisoned node. No dormancy condition and no TLB precondition apply.
+
+### Possible solution
+
+Never adopt a persisted `.dpt` from a directory the process is not reopening in place. Either:
+
+- force `mark_pages_dirty` on load, so every leaf and interior node is dirty and the next update rehashes the whole
+  range. Combine this with rebuilding the `.dht`, `.sht` and `.phtc`, as in R10 and R11.
+- or validate the dpt on load: every non-pad leaf must be clean, no interior node may be dirty, and the init byte
+  must hold exactly the dirty value. Any other file is rejected or rebuilt.
+
+Defense in depth:
+
+- make `do_mark_dirty_leaf_position_and_up` mark up to the root, at the cost of more work per write;
+- have `hash_tree::verify` check the dpt invariant (a dirty node implies a dirty parent);
+- have the CLI `--load`, the JSON-RPC load and the PRT player load third-party templates with `clear_hash_tree` and
+  compare the recomputed root with the commitment.
+
+### Risks
+
+- Of the issue: whoever controls the template channel (developer, release artifact, mirror) can change one byte of a
+  cache file and make every honest operator compute wrong mcycle and uarch claims, and proofs that do not fold. That
+  eliminates the honest claim while every documented check passes. A narrow fix to the `.dht` values (R11's
+  validate-and-compare option) leaves this open.
+- Of the fix:
+  - A full rehash on load costs time linear in the machine size, which is noticeable for multi-GiB ranges.
+  - Marking up to the root on every write lengthens the hot path.
+  - The fast path that reopens the process's own shared directory after a crash must stay correct and keep the
+    R7-FPUARCH-1, R8-DYNPERSIST-1 and R9-GOALRESTORE-1 fixes coherent.
+  - A stricter `verify_hash_tree` may expose existing benign inconsistencies, such as the write-TLB dirty case, which
+    must then be handled explicitly.
 
 ---
 
@@ -1903,53 +2099,72 @@ enters the tournament**
 - **Cited rules:** A3, R4, section 4 (relayed data), section 1 completeness, section 8 Critical. Reviewer: R4; A3;
   section 2 dispute constants (input limit per epoch = 2^24); section 7 (any number of inputs the deployment accepts);
   section 1 completeness failure; section 8 Critical: crash caused by relayed data the honest operator must process.
-- **Location:** doc/recipes/prt-epoch.lua:60-76 (InputAdded applied for every index >= input_begin while not sealed,
-  no upper bound), doc/recipes/prt-epoch.lua:87-92 (assert 'sealed input count mismatch'),
-  doc/recipes/prt.lua:1472-1480 and 2047-2075 (input_added/mcycle builder have no input-limit check);
-  DaveConsensus.sol _nextInputIndexUpperBound (lowerBound + min(pending, MAX_INPUTS_PER_EPOCH = 2^24)), out-of-scope
-  contract read only for its behavior
-- **Defect:** Epochs are sealed in acceptStagedTournamentResult of the previous epoch. The new epoch takes
-  inputIndexUpperBound = lower + min(pending, 2^24) (A3), and the backlog waits for later epochs. The listener of
-  epoch N treats every InputAdded log ordered before its EpochSealed log as belonging to epoch N. It asserts only
-  contiguity (index == input_begin + #inputs) and calls player.event_handler.input_added for each one. With more than
-  2^24 inputs pending when N is sealed, it delivers inputs past the epoch bound into the epoch machine. On the real
-  player, input_added at offset 2^24 already overruns the mcycle forest, whose 2^62 leaves are full. Otherwise the
-  EpochSealed check `inputIndexUpperBound == input_begin + #inputs` raises 'sealed input count mismatch' before the
-  bridge exists. The process exits, and a relaunch replays the same logs into the same crash. The applied inputs also
-  already corrupt the epoch machine and stored state.json, so the epoch claim would be wrong even without the assert.
-- **Evidence and test:** `bugs/R16-RGBRIDGE-2/` (`test.lua`). Run `bugs/run.sh R16-RGBRIDGE-2`. It fails while the bug
-  is present. Observed: I ran it 3 times on feature/prt-audit and got the same result each time, exit 1: "offsets
-  delivered to the player: 16777215,16777216 / poll: raised: .../doc/recipes/prt-epoch.lua:91: sealed input count
-  mismatch / FAIL: the epoch listener delivered input offset 16777216 (>= the 2^24 input limit per epoch, A3) to the
-  honest player, then crashed at the capped EpochSealed: .../prt-epoch.lua:91: sealed input count mismatch / FAIL
-  R16-RGBRIDGE-2 (bug present, status 1)". The copy adds one condition at line 67: `and index < self.input_begin + (1
-  << 24)`. With that copy the test exits 0: it delivers only offset 16777215, poll returns ok, the epoch seals with
-  2^24 inputs and the bridge is created.
-- **Scenario and reachability:** Reachable with no guest state. The trigger is the input count, which is relayed data
-  the honest operator must process (section 4). Section 7 lets the adversary send any number of inputs the deployment
-  accepts. The InputBox has no per-application limit, and epoch N is sealed only when epoch N-1's dispute is accepted,
-  so inputs can pile up past 2^24 while that dispute runs. Any referee that meets A3 under Dave's design has to cap
-  the seal and leave the rest pending. DaveConsensus v3.0.0-alpha.7 and later does this: lower + min(pending, 2^24).
-  The cost is about 2^24 addInput calls, which is prohibitive on L1 but feasible on a cheap L2.
-- **Possible solution:** In prt-epoch.lua, apply InputAdded only when input_begin <= index < input_begin +
-  2^cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH. Later indices still advance self.applied, so the log stream
-  stays consistent, but they are not delivered: the next epoch's listener picks them up, because it starts at the
-  seal's upper bound and rescans from first_block. At the seal, keep the assert that upperBound equals input_begin +
-  #inputs, which now also checks the referee's cap. As defense in depth, make prt.lua event_handler.input_added reject
-  epoch_input_offset >= 2^24 with a clear error before it touches the machine or state.json. Bump DAVE_REF in
-  doc/Dockerfile.prt to a Dave version that caps at the seal (v3.0.0-alpha.7 or later), so the pinned referee meets A3
-  and the listener's cap matches it.
-- **Risks:** Risk of the issue: an adversary with an L2 gas budget can permanently knock the honest operator out of an
-  epoch's tournament and get forged outputs accepted. It only needs more than 2^24 inputs pending at a seal. A
-  relaunch does not help, because the crash replays deterministically from finalized logs. Risks of the fix: - The
-  listener's cap must exactly match the deployed referee's sealing rule. If the listener caps but the referee does not
-  (Dave v3.0.0-alpha.6), the seal assert fires in the other direction. The bridge and the contract version must
-  therefore be pinned together (A6/R13), and the honest operator should refuse a mismatch. - Backlog inputs must not
-  be dropped: the next listener must still see InputAdded logs emitted before its own epoch was sealed. It does today,
-  because every listener scans from the global first_block. - Holding up to 2^24 input payloads in listener memory
-  (self.inputs) and processing them is a separate sizing concern under A7/R12. - The PoC uses a scaled length proxy
-  and stubbed chain and ABI. It is deterministic and exercises the real listener code at the real 2^24 limit, but it
-  was not run end to end against deployed contracts on a chain.
+- **Location:**
+  - `doc/recipes/prt-epoch.lua:60-76` (`InputAdded` applied for every index `>= input_begin` while not sealed, no upper
+    bound), `doc/recipes/prt-epoch.lua:87-92` (assert "sealed input count mismatch");
+  - `doc/recipes/prt.lua:1472-1480` and `2047-2075` (`input_added`/mcycle builder have no input-limit check);
+  - `DaveConsensus.sol` `_nextInputIndexUpperBound` (`lowerBound + min(pending, MAX_INPUTS_PER_EPOCH = 2^24)`),
+    out-of-scope contract read only for its behavior.
+
+### Problem
+
+Epochs are sealed in `acceptStagedTournamentResult` of the previous epoch. The new epoch takes
+`inputIndexUpperBound = lower + min(pending, 2^24)` (A3), and the backlog waits for later epochs. The listener of
+epoch N treats every `InputAdded` log ordered before its `EpochSealed` log as belonging to epoch N. It asserts only
+contiguity (`index == input_begin + #inputs`) and calls `player.event_handler.input_added` for each one. With more
+than 2^24 inputs pending when N is sealed, it delivers inputs past the epoch bound into the epoch machine. On the real
+player, `input_added` at offset 2^24 already overruns the mcycle forest, whose 2^62 leaves are full. Otherwise the
+`EpochSealed` check `inputIndexUpperBound == input_begin + #inputs` raises "sealed input count mismatch" before the
+bridge exists. The process exits, and a relaunch replays the same logs into the same crash. The applied inputs also
+already corrupt the epoch machine and stored `state.json`, so the epoch claim would be wrong even without the assert.
+
+### Evidence and test
+
+- Test: `bugs/R16-RGBRIDGE-2/` (`test.lua`). Run `bugs/run.sh R16-RGBRIDGE-2`. It fails while the bug is present.
+- Observed: the test was run 3 times on `feature/prt-audit`, with the same result each time, exit 1:
+  - "offsets delivered to the player: 16777215,16777216"
+  - "poll: raised: .../doc/recipes/prt-epoch.lua:91: sealed input count mismatch"
+  - "FAIL: the epoch listener delivered input offset 16777216 (>= the 2^24 input limit per epoch, A3) to the honest
+    player, then crashed at the capped EpochSealed: .../prt-epoch.lua:91: sealed input count mismatch"
+  - "FAIL R16-RGBRIDGE-2 (bug present, status 1)".
+- The copy adds one condition at line 67: `and index < self.input_begin + (1 << 24)`. With that copy the test exits 0:
+  it delivers only offset 16777215, poll returns ok, the epoch seals with 2^24 inputs and the bridge is created.
+
+### Scenario and reachability
+
+Reachable with no guest state. The trigger is the input count, which is relayed data the honest operator must process
+(section 4). Section 7 lets the adversary send any number of inputs the deployment accepts. The InputBox has no
+per-application limit, and epoch N is sealed only when epoch N-1's dispute is accepted, so inputs can pile up past
+2^24 while that dispute runs. Any referee that meets A3 under Dave's design has to cap the seal and leave the rest
+pending. `DaveConsensus` v3.0.0-alpha.7 and later does this: `lower + min(pending, 2^24)`. The cost is about 2^24
+`addInput` calls, which is prohibitive on L1 but feasible on a cheap L2.
+
+### Possible solution
+
+In `prt-epoch.lua`, apply `InputAdded` only when
+`input_begin <= index < input_begin + 2^cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH`. Later indices still advance
+`self.applied`, so the log stream stays consistent, but they are not delivered: the next epoch's listener picks them
+up, because it starts at the seal's upper bound and rescans from `first_block`. At the seal, keep the assert that
+`upperBound` equals `input_begin + #inputs`, which now also checks the referee's cap. As defense in depth, make
+`prt.lua` `event_handler.input_added` reject `epoch_input_offset >= 2^24` with a clear error before it touches the
+machine or `state.json`. Bump `DAVE_REF` in `doc/Dockerfile.prt` to a Dave version that caps at the seal
+(v3.0.0-alpha.7 or later), so the pinned referee meets A3 and the listener's cap matches it.
+
+### Risks
+
+- Of the issue: an adversary with an L2 gas budget can permanently knock the honest operator out of an epoch's
+  tournament and get forged outputs accepted. It only needs more than 2^24 inputs pending at a seal. A relaunch does
+  not help, because the crash replays deterministically from finalized logs.
+- Of the fix:
+  - The listener's cap must exactly match the deployed referee's sealing rule. If the listener caps but the referee
+    does not (Dave v3.0.0-alpha.6), the seal assert fires in the other direction. The bridge and the contract version
+    must therefore be pinned together (A6/R13), and the honest operator should refuse a mismatch.
+  - Backlog inputs must not be dropped: the next listener must still see `InputAdded` logs emitted before its own
+    epoch was sealed. It does today, because every listener scans from the global `first_block`.
+  - Holding up to 2^24 input payloads in listener memory (`self.inputs`) and processing them is a separate sizing
+    concern under A7/R12.
+  - The PoC uses a scaled length proxy and stubbed chain and ABI. It is deterministic and exercises the real listener
+    code at the real 2^24 limit, but it was not run end to end against deployed contracts on a chain.
 
 ---
 
@@ -1972,70 +2187,104 @@ posted and a relaunch dies again**
   (`doc/recipes/prt.lua`), `prt-epoch.lua`, `prt-player.lua`.
 - **Cited rules:** R4, R5, A5, section 1 completeness, section 8 Critical. Reviewer: R4; R5; R2; A5; section 1
   completeness failure; section 2 reachable state; section 2 honest operator's path; section 8 Critical.
-- **Location:** doc/recipes/prt.lua:940-953 (assert_rolling_template), doc/recipes/prt.lua:2505-2520
-  (store_next_epoch_checkpoint calls assert_rolling_template), doc/recipes/prt.lua:2483-2488 (store_checkpoint_files:
-  validate_outputs_merkle_root_response), doc/recipes/prt.lua:2522-2526 (seal_epoch_state),
-  doc/recipes/prt.lua:2084-2097 (epoch_sealed), doc/recipes/prt.lua:2766-2772 (reopen_epoch_directory:
-  validate_outputs_merkle_root_response on the sealed final state), doc/recipes/prt-epoch.lua:96-120 (epoch_sealed
-  runs before bridge.new), doc/recipes/prt-player.lua:131-139 and 196-201 (honest kind = new_stored_player with
-  checkpoints/epoch-N+1), /home/user/ext/machine-guest-tools/rollup-http/rollup-http-server/src/dapp_process.rs:24-48
-- **Defect:** An epoch is stopped when its input halts, yields manually with TX_EXCEPTION or another
-  non-accept/non-reject reason, or reaches its mcycle deadline. These are R5 fixed points. run_to_input_mcycle_offset
-  handles them by setting self.epoch_stopped, and the forked player seals the epoch and computes the correct final
-  hash (all later deliveries are no-ops). The stored player assumes the sealed final state is a rolling template: -
-  epoch_sealed computes mcycle_forest and then calls stored_player_methods:seal_epoch_state. - With a checkpoint
-  directory (prt-player.lua always passes one), that calls store_next_epoch_checkpoint, whose assert_rolling_template
-  raises 'initial machine is not waiting on an rx-accepted manual yield'. store_checkpoint_files would next raise
-  'yield reason not rx-accepted' from validate_outputs_merkle_root_response. - Without a checkpoint directory the seal
-  completes, but reopen_epoch_directory of a sealed epoch calls
-  validate_outputs_merkle_root_response(state.outputs_merkle_root_proof, root_hash) and raises 'final state not
-  yielded' or 'yield reason not rx-accepted'. So any relaunch during the dispute fails. In prt-epoch.lua, epoch_sealed
-  is called before bridge.new, so no dispute bridge (and no claim) is ever created. prt-player.lua's main loop has no
-  pcall, so the process dies on every pass. prt-supervise.sh relaunches it, it replays the logs, and it hits the same
-  assert again.
-- **Evidence and test:** `bugs/R16-RGOUTPUT-1/` (`test.lua`, `yield.S`, `link.ld`, `build.sh`). Run `bugs/run.sh
-  R16-RGOUTPUT-1`. It fails while the bug is present. Observed: I ran it 3 times and got the same result each run:
-  exit 1, "FAIL R16-RGOUTPUT-1 (bug present, status 1)". For each variant, the control prt.new_forked_player seals and
-  returns a final hash: halt 0x302312ef...fc97, tx-exception 0x77266339...abadc. Then: - The stored player configured
-  like the honest node (new_stored_player with checkpoints/epoch-1) fails in epoch_sealed for both halt and
-  tx-exception with "prt.lua:941: initial machine is not waiting on an rx-accepted manual yield". - The stored player
-  without a checkpoint dir seals with the matching final hash. - Reopening that sealed epoch directory with
-  new_stored_player fails: "game-output.lua:39: final state not yielded" (halt) and "game-output.lua:46: yield reason
-  not rx-accepted" (tx-exception). One-line result: "R16-RGOUTPUT-1: the stored honest player cannot seal (or reopen)
-  an epoch whose application halted or raised TX_EXCEPTION, so it never posts the honest claim for that epoch (R4/R5):
-  halt: stored honest player (with checkpoint dir) cannot seal the stopped epoch: .../prt.lua:941: initial machine is
-  not waiting on an rx-accepted manual yield".
-- **Scenario and reachability:** The trigger is an epoch whose final state is an R5 fixed point other than an
-  rx-accepted yield: a halt, a manual yield with a reason other than accepted or rejected (such as TX_EXCEPTION), or a
-  stop at the input's mcycle deadline. A guest reaches the halt or the manual yield with one store to the
-  guest-writable HTIF tohost. Section 2 presumes any guest-writable assignment reachable, and reachability is defined
-  from valid templates, not from correctly designed applications. With the shipped guest tools, rollup-http-server
-  raises TX_EXCEPTION as its documented reaction when the dapp process exits. The honest node cannot avoid the path:
-  prt-player.lua's honest kind always calls new_stored_player with checkpoints/epoch-N+1. prt-epoch.lua calls
-  player.event_handler.epoch_sealed before bridge.new, so the raise happens before any claim exists. The main loop has
-  no pcall, so the process dies, and the relaunch replays the same seal and dies again. Without a checkpoint directory
-  the seal succeeds, but reopening the sealed epoch directory always fails, so any relaunch during the dispute fails.
-- **Possible solution:** Make the stored player's seal and reopen handle stopped epochs the same way the forked player
-  does: 1. In seal_epoch_state, skip store_next_epoch_checkpoint when self.epoch_stopped is true. A stopped final
-  state is not a valid template, so no next epoch can start from it. Optionally record a terminal marker so
-  open_epochs stops cleanly. 2. In epoch_sealed, keep the computed proof (or nil) when epoch_stopped. Do not require
-  an rx-accepted outputs root. 3. In reopen_epoch_directory, for a sealed epoch with state.epoch_stopped, skip
-  validate_outputs_merkle_root_response. Still check that the stored final machine's root hash equals the recorded
-  final_state_hash. 4. In prt-epoch.lua/prt-player.lua, make sure that a failure while storing the next checkpoint can
-  never prevent bridge.new and the claim post for the current epoch. For example, create the bridge and post the claim
-  first, or wrap the checkpoint step so its failure is logged rather than fatal. Add a regression test in which the
-  stored player's seal and reopen yield the forked player's final_state_hash, for the halt, TX_EXCEPTION and
-  mcycle-deadline cases.
-- **Risks:** Risks of the issue: - Any epoch that ends in a halt, an exception or the deadline leaves the honest node
-  crash-looping without ever posting its mcycle claim. - An adversary's claim with a forged rx-accepted final state
-  and an arbitrary outputs root then wins unopposed, and the application's assets can be drained through forged
-  vouchers. A5 is meant to prevent this, but A5 protects only when the honest stalled state settles. Risks of the fix:
-  - Skipping the outputs-root validation must be gated strictly on a recorded epoch_stopped. Otherwise a corrupted or
-  partial epoch directory could reopen with an unchecked final state. The final root hash should still be verified
-  against the stored machine. - Not storing a next-epoch checkpoint must not be mistaken for an incomplete seal on
-  relaunch, since store_next_epoch_checkpoint relies on the directory existing. Write a durable 'stopped' marker so
-  restarts are idempotent. - The referee and output paths must keep refusing extraction from a stopped settled state
-  (A5). The fix must not synthesize an outputs root for it.
+- **Location:**
+  - `doc/recipes/prt.lua:940-953` (`assert_rolling_template`), `doc/recipes/prt.lua:2505-2520`
+    (`store_next_epoch_checkpoint` calls `assert_rolling_template`), `doc/recipes/prt.lua:2483-2488`
+    (`store_checkpoint_files`: `validate_outputs_merkle_root_response`), `doc/recipes/prt.lua:2522-2526`
+    (`seal_epoch_state`), `doc/recipes/prt.lua:2084-2097` (`epoch_sealed`), `doc/recipes/prt.lua:2766-2772`
+    (`reopen_epoch_directory`: `validate_outputs_merkle_root_response` on the sealed final state);
+  - `doc/recipes/prt-epoch.lua:96-120` (`epoch_sealed` runs before `bridge.new`);
+  - `doc/recipes/prt-player.lua:131-139` and `196-201` (honest kind = `new_stored_player` with
+    `checkpoints/epoch-N+1`);
+  - `/home/user/ext/machine-guest-tools/rollup-http/rollup-http-server/src/dapp_process.rs:24-48`.
+
+### Problem
+
+An epoch is stopped when its input halts, yields manually with `TX_EXCEPTION` or another non-accept/non-reject reason,
+or reaches its mcycle deadline. These are R5 fixed points. `run_to_input_mcycle_offset` handles them by setting
+`self.epoch_stopped`, and the forked player seals the epoch and computes the correct final hash (all later deliveries
+are no-ops). The stored player assumes the sealed final state is a rolling template:
+
+- `epoch_sealed` computes `mcycle_forest` and then calls `stored_player_methods:seal_epoch_state`.
+- With a checkpoint directory (`prt-player.lua` always passes one), that calls `store_next_epoch_checkpoint`, whose
+  `assert_rolling_template` raises "initial machine is not waiting on an rx-accepted manual yield".
+  `store_checkpoint_files` would next raise "yield reason not rx-accepted" from
+  `validate_outputs_merkle_root_response`.
+- Without a checkpoint directory the seal completes, but `reopen_epoch_directory` of a sealed epoch calls
+  `validate_outputs_merkle_root_response(state.outputs_merkle_root_proof, root_hash)` and raises "final state not
+  yielded" or "yield reason not rx-accepted". So any relaunch during the dispute fails.
+
+In `prt-epoch.lua`, `epoch_sealed` is called before `bridge.new`, so no dispute bridge (and no claim) is ever created.
+`prt-player.lua`'s main loop has no `pcall`, so the process dies on every pass. `prt-supervise.sh` relaunches it, it
+replays the logs, and it hits the same assert again.
+
+### Evidence and test
+
+- Test: `bugs/R16-RGOUTPUT-1/` (`test.lua`, `yield.S`, `link.ld`, `build.sh`). Run `bugs/run.sh R16-RGOUTPUT-1`. It
+  fails while the bug is present.
+- Observed: the test was run 3 times, with the same result each run: exit 1, "FAIL R16-RGOUTPUT-1 (bug present, status 1)".
+  For each variant, the control `prt.new_forked_player` seals and returns a final hash: halt `0x302312ef...fc97`,
+  tx-exception `0x77266339...abadc`. Then:
+  - The stored player configured like the honest node (`new_stored_player` with `checkpoints/epoch-1`) fails in
+    `epoch_sealed` for both halt and tx-exception with "prt.lua:941: initial machine is not waiting on an rx-accepted
+    manual yield".
+  - The stored player without a checkpoint dir seals with the matching final hash.
+  - Reopening that sealed epoch directory with `new_stored_player` fails: "game-output.lua:39: final state not
+    yielded" (halt) and "game-output.lua:46: yield reason not rx-accepted" (tx-exception).
+- One-line result: "R16-RGOUTPUT-1: the stored honest player cannot seal (or reopen) an epoch whose application halted
+  or raised TX_EXCEPTION, so it never posts the honest claim for that epoch (R4/R5): halt: stored honest player (with
+  checkpoint dir) cannot seal the stopped epoch: .../prt.lua:941: initial machine is not waiting on an rx-accepted
+  manual yield".
+
+### Scenario and reachability
+
+The trigger is an epoch whose final state is an R5 fixed point other than an rx-accepted yield: a halt, a manual
+yield with a reason other than accepted or rejected (such as `TX_EXCEPTION`), or a stop at the input's mcycle
+deadline. A guest reaches the halt or the manual yield with one store to the guest-writable HTIF `tohost`. Section 2
+presumes any guest-writable assignment reachable, and reachability is defined from valid templates, not from correctly
+designed applications. With the shipped guest tools, `rollup-http-server` raises `TX_EXCEPTION` as its documented
+reaction when the dapp process exits. The honest node cannot avoid the path: `prt-player.lua`'s honest kind always
+calls `new_stored_player` with `checkpoints/epoch-N+1`. `prt-epoch.lua` calls `player.event_handler.epoch_sealed`
+before `bridge.new`, so the raise happens before any claim exists. The main loop has no `pcall`, so the process dies,
+and the relaunch replays the same seal and dies again. Without a checkpoint directory the seal succeeds, but reopening
+the sealed epoch directory always fails, so any relaunch during the dispute fails.
+
+### Possible solution
+
+Make the stored player's seal and reopen handle stopped epochs the same way the forked player does:
+
+1. In `seal_epoch_state`, skip `store_next_epoch_checkpoint` when `self.epoch_stopped` is true. A stopped final state
+   is not a valid template, so no next epoch can start from it. Optionally record a terminal marker so `open_epochs`
+   stops cleanly.
+2. In `epoch_sealed`, keep the computed proof (or nil) when `epoch_stopped`. Do not require an rx-accepted outputs
+   root.
+3. In `reopen_epoch_directory`, for a sealed epoch with `state.epoch_stopped`, skip
+   `validate_outputs_merkle_root_response`. Still check that the stored final machine's root hash equals the recorded
+   `final_state_hash`.
+4. In `prt-epoch.lua`/`prt-player.lua`, make sure that a failure while storing the next checkpoint can never prevent
+   `bridge.new` and the claim post for the current epoch. For example, create the bridge and post the claim first, or
+   wrap the checkpoint step so its failure is logged rather than fatal.
+
+Add a regression test in which the stored player's seal and reopen yield the forked player's `final_state_hash`, for
+the halt, `TX_EXCEPTION` and mcycle-deadline cases.
+
+### Risks
+
+- Of the issue:
+  - Any epoch that ends in a halt, an exception or the deadline leaves the honest node crash-looping without ever
+    posting its mcycle claim.
+  - An adversary's claim with a forged rx-accepted final state and an arbitrary outputs root then wins unopposed, and
+    the application's assets can be drained through forged vouchers. A5 is meant to prevent this, but A5 protects only
+    when the honest stalled state settles.
+- Of the fix:
+  - Skipping the outputs-root validation must be gated strictly on a recorded `epoch_stopped`. Otherwise a corrupted
+    or partial epoch directory could reopen with an unchecked final state. The final root hash should still be
+    verified against the stored machine.
+  - Not storing a next-epoch checkpoint must not be mistaken for an incomplete seal on relaunch, since
+    `store_next_epoch_checkpoint` relies on the directory existing. Write a durable "stopped" marker so restarts are
+    idempotent.
+  - The referee and output paths must keep refusing extraction from a stopped settled state (A5). The fix must not
+    synthesize an outputs root for it.
 
 ---
 
@@ -2146,19 +2395,19 @@ dispute forces.
   to RAM instead. The test drives the real forked player's `input_added` and a replay, and asserts the yield counts
   and that the input is processed.
 - Observed by the prover, the reviewer and the orchestrator in every run, forked player:
-  - `input_added`: about 112-127 µs extra per mcycle (about 1.44 s against 0.01 s), about 0.5 ms per yield;
-  - replay: about 15-19 µs per mcycle;
-  - the stored player adds about 13-24 µs per mcycle on `input_added` and almost nothing on replay;
-  - locally, resuming with `machine:run` costs about 0.9 µs per yield, against about 45 µs for
+  - `input_added`: about 112-127 us extra per mcycle (about 1.44 s against 0.01 s), about 0.5 ms per yield;
+  - replay: about 15-19 us per mcycle;
+  - the stored player adds about 13-24 us per mcycle on `input_added` and almost nothing on replay;
+  - locally, resuming with `machine:run` costs about 0.9 us per yield, against about 45 us for
     `collect_mcycle_root_hashes`.
-- This test measures time. It is not bit-exact, but it fails by a wide margin over its 10 µs-per-mcycle threshold, by
+- This test measures time. It is not bit-exact, but it fails by a wide margin over its 10 us-per-mcycle threshold, by
   a factor of about 2 to 12, on a shared 4-CPU host.
 
 ### Scenario and reachability
 
 An input that takes over the guest yields automatically in a tight loop. Each forced replay and the main run of the
 input slow down accordingly. The reviewer corrected the hunter's magnitude: against the existing guest-reachable
-worst case, a guest that dirties a new page every few mcycles costs about 11 µs per mcycle. The yield path is
+worst case, a guest that dirties a new page every few mcycles costs about 11 us per mcycle. The yield path is
 therefore a constant factor of about 5 to 10, not 10^4. The cost stays bounded and linear, so R12 holds literally,
 and a deployment sized per A7 for the true worst case survives. It erodes the margin of the dispute clocks, which is
 High. It would be Critical only for a deployment sized below the true worst case, which A7 makes the deployment's
@@ -2222,8 +2471,8 @@ defined on every state, so this is a path divergence.
   `collect_uarch_cycle_root_hashes`. The other runs the uarch to `UARCH_CYCLE_MAX`, then `log_reset_uarch` and
   `verify_reset_uarch`. A control run with the pristine, zero-extended image agrees on both paths.
 - Observed, deterministically, by the prover, the reviewer and the orchestrator:
-  - control: reset leaf `38fe2bab…2f90` on both paths;
-  - non-pristine uarch RAM: the builder gives `37cf4bfd…3df8`, the verified reset gives `38fe2bab…2f90`.
+  - control: reset leaf `38fe2bab...2f90` on both paths;
+  - non-pristine uarch RAM: the builder gives `37cf4bfd...3df8`, the verified reset gives `38fe2bab...2f90`.
 
 ### Scenario and reachability
 
@@ -2272,7 +2521,7 @@ mcycle with a full `reset_uarch()`.
     consensus deployment block.
   - `doc/recipes/prt-bridge.lua:43-82`: `observe` fetches the factory, the consensus, the root and every child from
     `first_block` with no topic filter, appends every log, and sorts them all.
-  - `doc/recipes/prt-bridge.lua:634-642`: `tick()` always calls `refresh()` → `observe()`, even for a done, settled
+  - `doc/recipes/prt-bridge.lua:634-642`: `tick()` always calls `refresh()` -> `observe()`, even for a done, settled
     bridge (`jobs()` returns nothing when done, line 316).
   - `doc/recipes/prt-log-history.lua:70-96` and `231-255`: each bridge's own history keeps every log forever.
 
@@ -2597,7 +2846,7 @@ forests, claims and final state it computed from the replaced inputs. Meanwhile 
 - Observed, deterministically, by the prover, the reviewer and the orchestrator, in three scenarios:
   1. Open epoch, input 3's bytes replaced: the running process fails closed (`prt-epoch.lua:59`). The relaunched one
      polls without error and keeps `original-input` while the bridge holds `replacement-input`. Its claim is
-     `0x90300a57…c8a2` against the canonical `0x370a1e22…c197`.
+     `0x90300a57...c8a2` against the canonical `0x370a1e22...c197`.
   2. Reorg across the seal, input bytes replaced: the running process fails closed (`prt-epoch.lua:22`). The
      relaunched one keeps the old claim.
   3. Reorg across the seal, sealed count changed from 2 to 1: the relaunched player keeps 2 inputs while the chain's
@@ -2639,54 +2888,75 @@ and Solidity verifiers read the hashed shadow register**
   input (see below), so the rating is capped at High (section 8: defects only at demonstrably unreachable
   before-states are at most High).
 - **Component and area:** emulator; machine-ID CSRs (`interpret.cpp` against `uarch`).
-- **Cited rules:** R2, R7, R13, section 8 High. Reviewer: R2; R13; R1; section 2 'State transition function' (defined
-  on every state); section 2 'Reachable state'; A1; section 8 High: divergence between paths only at demonstrably
+- **Cited rules:** R2, R7, R13, section 8 High. Reviewer: R2; R13; R1; section 2 state transition function (defined
+  on every state); section 2 reachable state; A1; section 8 High: divergence between paths only at demonstrably
   unreachable states.
-- **Location:** src/state-access.hpp:128-138, src/collect-mcycle-hashes-state-access.hpp:135-136,
-  src/machine.cpp:973-978, src/i-state-access.hpp:223-228, uarch/uarch-bridge-state-access.hpp:54,94
-  (i_prefer_shadow_state reads the shadow word), src/interpret.cpp:1926-1927,2049-2050
-- **Defect:** For mvendorid, marchid and mimpid, the native state_access (used by machine::run), the
-  collect_mcycle_root_hashes state access and machine::read_reg ignore the hashed shadow word. They return the
-  compile-time constants MVENDORID_INIT, MARCHID_INIT and MIMPID_INIT (state-access.hpp:128-138: `return
-  MARCHID_INIT;`). uarch_bridge_state_access is an i_prefer_shadow_state, so the uarch program reads these registers
-  from shadow memory (DEFINE_SA_READ(marchid) -> prefer_read_shadow_register). verify_step_uarch and UArchStep.sol
-  replay that uarch program, so they also use the shadow word. A `csrr rd, marchid` therefore yields different values
-  on the two paths whenever the shadow word differs from the constant. The two paths then write different rd values
-  and reach different after-hashes from the same before-state.
-- **Evidence and test:** `bugs/R11-FAMMASK-1/` (`test.lua`). Run `bugs/run.sh R11-FAMMASK-1`. It fails while the bug
-  is present. Observed: Ran 3 times. Exit status was 1 each time and the output was identical. For each of mvendorid,
-  marchid and mimpid, starting from one fabricated before-state, a single `csrr a0,<csr>; j .` gives different results
-  on the two paths. Example: "FAIL marchid: from the same before-state 4988bf3a30cecb5e, `csrr a0,marchid` gives
-  a0=0x16 natively but a0=0x5a4c via the uarch verifiers; mcycle-1 hashes differ (native 834b8e10d1e4a1d6 vs verified
-  b27c4b3b0e012392): R2 violated". mvendorid behaves the same way (0x6361727465736920 vs 0x636172746573337a) and so
-  does mimpid (0x17 vs 0x5a4d). The summary line is "native interpreter and uarch/verifiers disagree on 3 of 3
-  machine-ID CSRs (native returns build constants, uarch reads the hashed shadow word)". Every uarch step passed
-  verify_step_uarch, and the closing reset passed verify_reset_uarch. The verifiers therefore accept an mcycle-1 hash
-  that differs from the one native interpretation computes. The harness itself works: verify_hash_tree passes on the
-  fabricated state, read_word shows the patched shadow word, and both paths end at mcycle 1.
-- **Scenario and reachability:** The state is demonstrably unreachable. The guest cannot write these registers:
-  0xF11-0xF13 are read-only CSRs (csr_is_read_only, interpret.cpp:2460), and the guest cannot address the shadow range
-  (R8). The host write_reg throws 'register is read-only' (machine.cpp:1346-1351). init_processor never writes these
-  words. Config processor.registers.marchid=77 is accepted, but the shadow word stays 22 (I checked this with and
-  without skip_version_check). A normal load rejects a mismatched word (validate_processor_shadow). The only ways to
-  get a differing word are the whole-shadow write_memory special case, or a snapshot load, and both need runtime
-  skip_version_check. The manual does not document either one, and the CLI help for skip_version_check says not to use
-  it in production. So no valid template can hold such a word, and no input sequence can produce one. A1 keeps a
-  fabricated before-state with such a word out of any match against the honest claim.
-- **Possible solution:** Make every implementation read the same value. Preferred fix: have the native state_access,
-  collect_mcycle_hashes_state_access and machine::read_reg return m_s.shadow.registers.{mvendorid,marchid,mimpid}, so
-  that all paths read the hashed word, which is what the uarch and Solidity verifiers already do. The other option is
-  to keep the constants and make the uarch bridge return them too. That changes the uarch program, so it needs a new
-  pristine hash and new on-chain pins, which is a new protocol version (R13). Also consider making write_memory of the
-  whole shadow and snapshot loading refuse non-constant ID words even under skip_version_check, or always re-validate
-  them, so that such states cannot be built at all.
-- **Risks:** If the native fix is done wrong, it could make native depend on a word that some legacy path leaves
+- **Location:**
+  - `src/state-access.hpp:128-138`;
+  - `src/collect-mcycle-hashes-state-access.hpp:135-136`;
+  - `src/machine.cpp:973-978`;
+  - `src/i-state-access.hpp:223-228`;
+  - `uarch/uarch-bridge-state-access.hpp:54,94` (`i_prefer_shadow_state` reads the shadow word);
+  - `src/interpret.cpp:1926-1927,2049-2050`.
+
+### Problem
+
+For `mvendorid`, `marchid` and `mimpid`, the native `state_access` (used by `machine::run`), the
+`collect_mcycle_root_hashes` state access and `machine::read_reg` ignore the hashed shadow word. They return the
+compile-time constants `MVENDORID_INIT`, `MARCHID_INIT` and `MIMPID_INIT` (`state-access.hpp:128-138`:
+`return MARCHID_INIT;`). `uarch_bridge_state_access` is an `i_prefer_shadow_state`, so the uarch program reads these
+registers from shadow memory (`DEFINE_SA_READ(marchid)` -> `prefer_read_shadow_register`). `verify_step_uarch` and
+`UArchStep.sol` replay that uarch program, so they also use the shadow word. A `csrr rd, marchid` therefore yields
+different values on the two paths whenever the shadow word differs from the constant. The two paths then write
+different `rd` values and reach different after-hashes from the same before-state.
+
+### Evidence and test
+
+- Test: `bugs/R11-FAMMASK-1/` (`test.lua`). Run `bugs/run.sh R11-FAMMASK-1`. It fails while the bug is present.
+- Observed: Ran 3 times. Exit status was 1 each time and the output was identical. For each of `mvendorid`, `marchid`
+  and `mimpid`, starting from one fabricated before-state, a single `csrr a0,<csr>; j .` gives different results on
+  the two paths. Example: "FAIL marchid: from the same before-state 4988bf3a30cecb5e, `csrr a0,marchid` gives a0=0x16
+  natively but a0=0x5a4c via the uarch verifiers; mcycle-1 hashes differ (native 834b8e10d1e4a1d6 vs verified
+  b27c4b3b0e012392): R2 violated". `mvendorid` behaves the same way (`0x6361727465736920` vs `0x636172746573337a`) and
+  so does `mimpid` (`0x17` vs `0x5a4d`). The summary line is "native interpreter and uarch/verifiers disagree on 3 of 3
+  machine-ID CSRs (native returns build constants, uarch reads the hashed shadow word)".
+- Every uarch step passed `verify_step_uarch`, and the closing reset passed `verify_reset_uarch`. The verifiers
+  therefore accept an mcycle-1 hash that differs from the one native interpretation computes. The harness itself
+  works: `verify_hash_tree` passes on the fabricated state, `read_word` shows the patched shadow word, and both paths
+  end at mcycle 1.
+
+### Scenario and reachability
+
+The state is demonstrably unreachable. The guest cannot write these registers: `0xF11`-`0xF13` are read-only CSRs
+(`csr_is_read_only`, `interpret.cpp:2460`), and the guest cannot address the shadow range (R8). The host `write_reg`
+throws "register is read-only" (`machine.cpp:1346-1351`). `init_processor` never writes these words. Config
+`processor.registers.marchid=77` is accepted, but the shadow word stays 22 (checked with and without
+`skip_version_check`). A normal load rejects a mismatched word (`validate_processor_shadow`). The only ways to get a
+differing word are the whole-shadow `write_memory` special case, or a snapshot load, and both need runtime
+`skip_version_check`. The manual does not document either one, and the CLI help for `skip_version_check` says not to
+use it in production. So no valid template can hold such a word, and no input sequence can produce one. A1 keeps a
+fabricated before-state with such a word out of any match against the honest claim.
+
+### Possible solution
+
+Make every implementation read the same value. Preferred fix: have the native `state_access`,
+`collect_mcycle_hashes_state_access` and `machine::read_reg` return `m_s.shadow.registers.{mvendorid,marchid,mimpid}`,
+so that all paths read the hashed word, which is what the uarch and Solidity verifiers already do. The other option is
+to keep the constants and make the uarch bridge return them too. That changes the uarch program, so it needs a new
+pristine hash and new on-chain pins, which is a new protocol version (R13). Also consider making `write_memory` of the
+whole shadow and snapshot loading refuse non-constant ID words even under `skip_version_check`, or always re-validate
+them, so that such states cannot be built at all.
+
+### Risks
+
+- Of the issue: leaving the bug in place keeps a latent divergence. It would become Critical if any future
+  documented operation, config path or snapshot format let a template carry a non-constant ID word. One example is
+  `init_processor` starting to honor the `processor.registers.marchid` value from the config, which is currently
+  accepted but ignored. That would make the honest native claim disagree with the on-chain uarch verifier on any
+  `csrr` of these CSRs.
+- Of the fix: if the native fix is done wrong, it could make native depend on a word that some legacy path leaves
   uninitialized. This is unlikely, because the shadow defaults to the constants. The option that changes the uarch
-  side changes the uarch program hash, so it needs redeployment and must not mix versions (A6). Leaving the bug in
-  place keeps a latent divergence. It would become Critical if any future documented operation, config path or
-  snapshot format let a template carry a non-constant ID word. One example is init_processor starting to honor the
-  processor.registers.marchid value from the config, which is currently accepted but ignored. That would make the
-  honest native claim disagree with the on-chain uarch verifier on any csrr of these CSRs.
+  side changes the uarch program hash, so it needs redeployment and must not mix versions (A6).
 
 ---
 
@@ -2703,53 +2973,77 @@ persistence cost and inode use grow with the number of outputs**
   (resources the deployment was sized for); Section 2 honest operator's path (storing the machine, producing proofs);
   Section 7 (payloads chosen to maximize honest cost); Section 8 High: guest-triggered constant-factor increase within
   sizing.
-- **Location:** doc/recipes/prt.lua:2398-2410 (store_outputs), doc/recipes/prt.lua:2457-2468 (commit_epoch_state calls
-  store_outputs), doc/recipes/prt.lua:2047-2081 (input_added), src/os-filesystem.cpp:933-940 (write_durable_file:
-  mkostemp + write + fsync + rename)
-- **Defect:** store_outputs runs `for i, output_data in ipairs(outputs) do fs.write_durable_file(output_data,
-  get_output_path(directory, first + i - 1)) end`. For every tx output the guest emitted during the input, this
-  creates a temporary file in outputs/, writes it, fflush+fsyncs it and renames it to
-  outputs/<epoch_output_offset>.bin. One input boundary therefore costs one fsync, one inode and at least one
-  filesystem block (4 KiB) per output. An empty notice payload still uses a full block. All output files of every
-  epoch go into the single directory outputs/ and stay for the epoch directory's lifetime, which R4-VARGROWTH-1
-  already shows is forever. The per-output cost is not a batched write: there is one fsync per output. The keccaks are
-  already logged once per output in outputs.log, so all the data could be persisted in one append plus one sync.
-- **Evidence and test:** `bugs/R11-FAMOPERATORIO-1/` (`test.lua`, `build.sh`, `guest.c`, `start.S`, `link.ld`,
-  `libc/libc.c`, `libc/string.h`, `libc/strings.h`, `libc/stdio.h`, `libc/errno.h`). Run `bugs/run.sh
-  R11-FAMOPERATORIO-1`. It fails while the bug is present. Observed: The test failed (exit 1) in all 3 runs on
-  feature/prt-audit, for the reason claimed. Typical output: input 0:     1 outputs ->    16 sync operations (    1
-  durable output files), +   30 files in the epoch directory input 1:  2000 outputs ->  2016 sync operations ( 2000
-  durable output files), + 2030 files in the epoch directory, 0.60-1.31 s in durable writes of 1.76-2.54 s total
-  outputs/ holds 2001 files, du of outputs/: 7.9M (the notices hold about 200 KB of encoded data) low-inode epoch
-  directory (inodes used/free 12/500, bytes free 222M) before; after: 512/0, bytes free 86M   first player, input 0
-  with 600 outputs: raised: unable to create temporary file '.../epoch-0/outputs/376.bin.tmp.XXXXXX': mkostemp()
-  failed: No space left on device   relaunched player, input 0 with 600 outputs: raised: (same error, same output 376)
-  FAIL: honest stored player persistence is O(outputs) per input boundary: an input with 2000 outputs costs 2000 more
-  sync operations (one write_durable_file+fsync per output under outputs/) and 2000 more files/inodes than one with 1
-  (allowed: 4) ... Control: I ran the same test against a scratch copy of prt.lua in which store_outputs appends all
-  outputs to one file with a single sync_file. It passed (exit 0): input 1 needed 16 sync operations against 15 for
-  input 0, the same number of files, and the low-inode run committed on both attempts. So the test measures the defect
-  and passes once it is fixed. The whole test takes about 7 s.
-- **Scenario and reachability:** Reachable without breaking any assumption. A correctly designed application, such as
-  an echo or airdrop app, emits one notice per payload item, and the input sender picks the item count (section 7).
-  The honest bridge (prt.new_stored_player) runs input_added, then commit_epoch_state, then store_outputs at every
-  input boundary. It cannot decline the input. No subverted guest and no violation of A1-A7 is needed. Checked: an
-  output needs at least about 10k mcycles in a lean guest.
-- **Possible solution:** Persist an input's outputs with a constant number of syncs and files per boundary. Append
-  each payload to one per-epoch outputs data log, next to outputs.log, and record per-output offsets and lengths (for
-  example a 16-byte entry per output, or fold the lengths into outputs.log). Then fsync once and sync the directory
-  once per boundary. read_output then reads by offset. On recovery, truncate the data log to the length state.json
-  records, as is already done for outputs.log through seek to first*HASH_SIZE. Optionally keep only the hashes on the
-  dispute path and stream payloads to a separate, best-effort store, so that a full payload store cannot block
-  commit_epoch_state.
-- **Risks:** Risks of the issue: - The honest operator's disk and inode use grows about 10-30x faster than its payload
-  bytes, and stays for the epoch directory's lifetime. - An under-provisioned host (few inodes, a small volume, a
-  directory size limit) makes commit_epoch_state throw at every relaunch. The honest claim then cannot advance or
-  answer, which is a completeness failure. - The fsync time is a minor constant: the cost of hashing dirty state
-  dominates the worst case. Risks of the fix: - The appended data log needs crash-consistent truncation on recovery,
-  so that a torn append is never read as an output. - Offsets and lengths must be validated against state.json. -
-  Decoupling payload storage from the commit must not let the outputs Merkle root or outputs.log diverge from the
-  payloads served for A5 output proofs. - A format change requires migrating the state.json version.
+- **Location:**
+  - `doc/recipes/prt.lua:2398-2410` (`store_outputs`), `doc/recipes/prt.lua:2457-2468` (`commit_epoch_state` calls
+    `store_outputs`), `doc/recipes/prt.lua:2047-2081` (`input_added`);
+  - `src/os-filesystem.cpp:933-940` (`write_durable_file`: `mkostemp` + `write` + `fsync` + `rename`).
+
+### Problem
+
+`store_outputs` runs
+`for i, output_data in ipairs(outputs) do fs.write_durable_file(output_data, get_output_path(directory, first + i - 1)) end`.
+For every tx output the guest emitted during the input, this creates a temporary file in `outputs/`, writes it,
+`fflush`+`fsync`s it and renames it to `outputs/<epoch_output_offset>.bin`. One input boundary therefore costs one
+fsync, one inode and at least one filesystem block (4 KiB) per output. An empty notice payload still uses a full
+block. All output files of every epoch go into the single directory `outputs/` and stay for the epoch directory's
+lifetime, which R4-VARGROWTH-1 already shows is forever. The per-output cost is not a batched write: there is one
+fsync per output. The keccaks are already logged once per output in `outputs.log`, so all the data could be persisted
+in one append plus one sync.
+
+### Evidence and test
+
+- Test: `bugs/R11-FAMOPERATORIO-1/` (`test.lua`, `build.sh`, `guest.c`, `start.S`, `link.ld`, `libc/libc.c`,
+  `libc/string.h`, `libc/strings.h`, `libc/stdio.h`, `libc/errno.h`). Run `bugs/run.sh R11-FAMOPERATORIO-1`. It fails
+  while the bug is present.
+- Observed: The test failed (exit 1) in all 3 runs on `feature/prt-audit`, for the reason claimed. Typical output:
+  - `input 0:     1 outputs ->    16 sync operations (    1 durable output files), +   30 files in the epoch directory`
+  - `input 1:  2000 outputs ->  2016 sync operations ( 2000 durable output files), + 2030 files in the epoch directory,
+    0.60-1.31 s in durable writes of 1.76-2.54 s total`
+  - `outputs/ holds 2001 files, du of outputs/: 7.9M (the notices hold about 200 KB of encoded data)`
+  - `low-inode epoch directory (inodes used/free 12/500, bytes free 222M) before; after: 512/0, bytes free 86M`
+  - `first player, input 0 with 600 outputs: raised: unable to create temporary file
+    '.../epoch-0/outputs/376.bin.tmp.XXXXXX': mkostemp() failed: No space left on device`
+  - `relaunched player, input 0 with 600 outputs: raised: (same error, same output 376)`
+  - `FAIL: honest stored player persistence is O(outputs) per input boundary: an input with 2000 outputs costs 2000
+    more sync operations (one write_durable_file+fsync per output under outputs/) and 2000 more files/inodes than one
+    with 1 (allowed: 4) ...`
+- Control: the same test was run against a scratch copy of `prt.lua` in which `store_outputs` appends all outputs to one
+  file with a single `sync_file`. It passed (exit 0): input 1 needed 16 sync operations against 15 for input 0, the
+  same number of files, and the low-inode run committed on both attempts. So the test measures the defect and passes
+  once it is fixed. The whole test takes about 7 s.
+
+### Scenario and reachability
+
+Reachable without breaking any assumption. A correctly designed application, such as an echo or airdrop app, emits
+one notice per payload item, and the input sender picks the item count (section 7). The honest bridge
+(`prt.new_stored_player`) runs `input_added`, then `commit_epoch_state`, then `store_outputs` at every input boundary.
+It cannot decline the input. No subverted guest and no violation of A1-A7 is needed. Checked: an output needs at least
+about 10k mcycles in a lean guest.
+
+### Possible solution
+
+Persist an input's outputs with a constant number of syncs and files per boundary. Append each payload to one
+per-epoch outputs data log, next to `outputs.log`, and record per-output offsets and lengths (for example a 16-byte
+entry per output, or fold the lengths into `outputs.log`). Then fsync once and sync the directory once per boundary.
+`read_output` then reads by offset. On recovery, truncate the data log to the length `state.json` records, as is
+already done for `outputs.log` through seek to `first*HASH_SIZE`. Optionally keep only the hashes on the dispute path
+and stream payloads to a separate, best-effort store, so that a full payload store cannot block `commit_epoch_state`.
+
+### Risks
+
+- Of the issue:
+  - The honest operator's disk and inode use grows about 10-30x faster than its payload bytes, and stays for the
+    epoch directory's lifetime.
+  - An under-provisioned host (few inodes, a small volume, a directory size limit) makes `commit_epoch_state` throw at
+    every relaunch. The honest claim then cannot advance or answer, which is a completeness failure.
+  - The fsync time is a minor constant: the cost of hashing dirty state dominates the worst case.
+- Of the fix:
+  - The appended data log needs crash-consistent truncation on recovery, so that a torn append is never read as an
+    output.
+  - Offsets and lengths must be validated against `state.json`.
+  - Decoupling payload storage from the commit must not let the outputs Merkle root or `outputs.log` diverge from the
+    payloads served for A5 output proofs.
+  - A format change requires migrating the `state.json` version.
 
 ---
 
@@ -2767,57 +3061,82 @@ grows linearly with the number of Sybil child tournaments**
 - **Cited rules:** R12 (loosely), A7, section 1 completeness, section 8 High. Reviewer: A7; Section 1 completeness
   failure (cannot respond in time), limited to a margin loss; Section 7 (Sybils: any number of claims); Section 8 High
   (removes a margin the goal relies on).
-- **Location:** doc/recipes/prt-bridge.lua:43-75 (observe: addresses = factory, consensus, root plus every
-  NewInnerTournament child; one history:get_logs per address), prt-bridge.lua:77-80 (sort all logs every observation),
-  prt-bridge.lua:303-310 (refresh loops observe), prt-bridge.lua:541-552 (attempt calls refresh again before
-  publishing), prt-bridge.lua:641-645 (tick starts with refresh), doc/recipes/prt-log-history.lua:73-100 (get_logs
-  issues at least one eth_getLogs per address whenever head advanced)
-- **Defect:** Every observation rebuilds the address list from scratch. It adds the child tournament of every
-  NewInnerTournament event ever emitted, including finished Sybil-vs-Sybil tournaments the honest claim never enters,
-  and calls history:get_logs for each one. get_logs sends at least one sequential eth_getLogs over the single
-  persistent HTTP connection for every address whose fetched block is behind the head. A tick observes at least twice:
-  refresh at the start, and refresh again inside attempt before publishing. Each observation also re-sorts and
-  re-applies every log of the dispute. The latency before each honest response is therefore about 2 x (3 + T) RPC
-  round trips plus O(L log L) Lua work, where T is the number of child tournaments and L the number of logs. Both grow
-  linearly with the attacker's claim count, not logarithmically. Finished tournaments are never dropped from the
-  polling set until the epoch ends.
-- **Evidence and test:** `bugs/R13-ROLECOST-2/` (`test.lua`, `vendor/dkjson.lua`). Run `bugs/run.sh R13-ROLECOST-2`.
-  It fails while the bug is present. Observed: The test failed the same way on all 4 runs (exit 1). In every run the
-  first three lines matched exactly, apart from the CPU timing: K=   10 finished child tournaments: one tick after a
-  1-block head advance issued 13 eth_getLogs (17 RPCs total), re-sorted 32 logs, 0.001 s Lua CPU; at 30 ms/RPC = 0.5 s
-  K= 1000 finished child tournaments: one tick after a 1-block head advance issued 1003 eth_getLogs (1007 RPCs total),
-  re-sorted 3002 logs, 0.080 s Lua CPU; at 30 ms/RPC = 30.2 s K= 1000, 400 RPCs per 12 s block: one publishing tick
-  issued 2006 eth_getLogs (2016 RPCs, 60.5 s at 30 ms/RPC, published=true) FAIL: honest bridge per-tick eth_getLogs
-  count grows linearly with Sybil child tournaments (13 for K=10, 1003 for K=1000 = 3+K): every finished
-  NewInnerTournament child is re-polled on each observation (prt-bridge.lua observe, prt-log-history.lua get_logs)
-- **Scenario and reachability:** The trigger is reachable with attacker actions that section 7 allows: post Sybil
-  claims, pair them against each other, and bisect each pair to a leaf seal so the root emits NewInnerTournament.
-  Every child tournament ever announced goes into the honest bridge's polling set (prt-bridge.lua:53-74). The bridge
-  rebuilds that set from scratch on every observation and never prunes it, even for children whose parent match was
-  deleted. history:get_logs (prt-log-history.lua:73-97) sends at least one eth_getLogs per address whenever the head
-  moved. The honest operator cannot decline this work, because it runs inside its own observe() before any job is
-  scheduled. The count of children T is bounded only by the attacker's budget and by chain throughput: each child
-  costs a bond plus about 2 x height bisection transactions. An actual missed deadline was not demonstrated. It needs
-  a very large T, a slow or rate-limited RPC provider, or tight clocks.
-- **Possible solution:** - **Prune the polling set.** Keep a persistent set of tournaments that still matter: the
+- **Location:**
+  - `doc/recipes/prt-bridge.lua:43-75` (`observe`: addresses = factory, consensus, root plus every
+    `NewInnerTournament` child; one `history:get_logs` per address), `prt-bridge.lua:77-80` (sort all logs every
+    observation), `prt-bridge.lua:303-310` (`refresh` loops `observe`), `prt-bridge.lua:541-552` (`attempt` calls
+    `refresh` again before publishing), `prt-bridge.lua:641-645` (`tick` starts with `refresh`);
+  - `doc/recipes/prt-log-history.lua:73-100` (`get_logs` issues at least one `eth_getLogs` per address whenever head
+    advanced).
+
+### Problem
+
+Every observation rebuilds the address list from scratch. It adds the child tournament of every
+`NewInnerTournament` event ever emitted, including finished Sybil-vs-Sybil tournaments the honest claim never enters,
+and calls `history:get_logs` for each one. `get_logs` sends at least one sequential `eth_getLogs` over the single
+persistent HTTP connection for every address whose fetched block is behind the head. A tick observes at least twice:
+`refresh` at the start, and `refresh` again inside `attempt` before publishing. Each observation also re-sorts and
+re-applies every log of the dispute. The latency before each honest response is therefore about 2 x (3 + T) RPC
+round trips plus O(L log L) Lua work, where T is the number of child tournaments and L the number of logs. Both grow
+linearly with the attacker's claim count, not logarithmically. Finished tournaments are never dropped from the
+polling set until the epoch ends.
+
+### Evidence and test
+
+- Test: `bugs/R13-ROLECOST-2/` (`test.lua`, `vendor/dkjson.lua`). Run `bugs/run.sh R13-ROLECOST-2`. It fails while
+  the bug is present.
+- Observed: The test failed the same way on all 4 runs (exit 1). In every run the first three lines matched exactly,
+  apart from the CPU timing:
+  - `K=   10 finished child tournaments: one tick after a 1-block head advance issued 13 eth_getLogs (17 RPCs total),
+    re-sorted 32 logs, 0.001 s Lua CPU; at 30 ms/RPC = 0.5 s`
+  - `K= 1000 finished child tournaments: one tick after a 1-block head advance issued 1003 eth_getLogs (1007 RPCs
+    total), re-sorted 3002 logs, 0.080 s Lua CPU; at 30 ms/RPC = 30.2 s`
+  - `K= 1000, 400 RPCs per 12 s block: one publishing tick issued 2006 eth_getLogs (2016 RPCs, 60.5 s at 30 ms/RPC,
+    published=true)`
+  - "FAIL: honest bridge per-tick eth_getLogs count grows linearly with Sybil child tournaments (13 for K=10, 1003
+    for K=1000 = 3+K): every finished NewInnerTournament child is re-polled on each observation (prt-bridge.lua
+    observe, prt-log-history.lua get_logs)"
+
+### Scenario and reachability
+
+The trigger is reachable with attacker actions that section 7 allows: post Sybil
+claims, pair them against each other, and bisect each pair to a leaf seal so the root emits `NewInnerTournament`.
+Every child tournament ever announced goes into the honest bridge's polling set (`prt-bridge.lua:53-74`). The bridge
+rebuilds that set from scratch on every observation and never prunes it, even for children whose parent match was
+deleted. `history:get_logs` (`prt-log-history.lua:73-97`) sends at least one `eth_getLogs` per address whenever the
+head moved. The honest operator cannot decline this work, because it runs inside its own `observe()` before any job is
+scheduled. The count of children T is bounded only by the attacker's budget and by chain throughput: each child
+costs a bond plus about 2 x height bisection transactions. An actual missed deadline was not demonstrated. It needs
+a very large T, a slow or rate-limited RPC provider, or tight clocks.
+
+### Possible solution
+
+- **Prune the polling set.** Keep a persistent set of tournaments that still matter: the
   root, children on the honest claim's path, and children with outstanding cleanup or bond-recovery jobs. Stop polling
   children whose parent match is deleted and that have no pending job for this bridge. Keep enough to re-add them if a
-  reorg makes them current again. - **Batch the queries.** Fetch all tracked addresses in one eth_getLogs call per
-  range, since the address field accepts an array. Chunk the array to fit provider limits. Per-tick RPCs then depend
-  on new log volume, not on T. - **Apply logs incrementally.** Keep the derived snapshot and apply only the newly
-  fetched logs, in order, instead of re-sorting and re-applying every log on each observation. Rewind on a reorg to
-  the common ancestor the history already computes. - **Skip the second observation when nothing changed.** In
-  attempt(), skip the full re-observation when the head is unchanged. When it changed, apply only the delta.
-- **Risks:** Risks of the issue: an attacker with a large budget, or an operator on a slow or rate-limited RPC
+  reorg makes them current again.
+- **Batch the queries.** Fetch all tracked addresses in one `eth_getLogs` call per range, since the `address` field
+  accepts an array. Chunk the array to fit provider limits. Per-tick RPCs then depend on new log volume, not on T.
+- **Apply logs incrementally.** Keep the derived snapshot and apply only the newly fetched logs, in order, instead of
+  re-sorting and re-applying every log on each observation. Rewind on a reorg to the common ancestor the history
+  already computes.
+- **Skip the second observation when nothing changed.** In `attempt()`, skip the full re-observation when the head is
+  unchanged. When it changed, apply only the delta.
+
+### Risks
+
+- Of the issue: an attacker with a large budget, or an operator on a slow or rate-limited RPC
   provider, can raise the honest claim's per-move latency and consume its allowance. With tight clocks, it can make
   the bridge miss join windows or response deadlines and get the honest claim eliminated. Provider errors on
-  single-block pages are raised, and a relaunch refetches from the deployment block, which makes this worse. Risks of
-  the fix: - Pruning children too early can miss events that still matter: bond recovery, eliminateInnerTournament
-  cleanup, or a child that a reorg makes current again. prt-lua-bridge.md's TODO already requires keeping earlier
-  children until the root settlement is final. - Batched address queries hit provider limits on address count and
-  result size, so they still need the halving pager. - Incremental snapshot application adds state that must be
-  rewound exactly on a reorg. A mistake there could make the bridge act on stale or duplicated events, which is worse
-  than the latency.
+  single-block pages are raised, and a relaunch refetches from the deployment block, which makes this worse.
+- Of the fix:
+  - Pruning children too early can miss events that still matter: bond recovery, `eliminateInnerTournament`
+    cleanup, or a child that a reorg makes current again. `prt-lua-bridge.md`'s TODO already requires keeping earlier
+    children until the root settlement is final.
+  - Batched address queries hit provider limits on address count and result size, so they still need the halving
+    pager.
+  - Incremental snapshot application adds state that must be rewound exactly on a reorg. A mistake there could make
+    the bridge act on stale or duplicated events, which is worse than the latency.
 
 ---
 
@@ -2834,56 +3153,90 @@ transition function or dispute-constant split is never detected or refused**
   (`read_geometry`).
 - **Cited rules:** R13, A6, section 1 completeness, section 8 High. Reviewer: R13; A6; A2; R4; Section 8 High: node
   that cannot detect a version mismatch while every node runs the deployment's version.
-- **Location:** doc/recipes/prt-player.lua:92-99, doc/recipes/prt-bridge.lua:729-749 (read_geometry),
-  doc/recipes/prt-deploy.lua:47-52; deployed side: Dave CartesiStateTransition (CM_MARCHID and
-  UARCH_PRISTINE_STATE_HASH are its only published constants; LOG2_INPUT_WINDOW_SPAN =
-  ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE + ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE), machine-solidity-step
-  src/SendCmioResponse.sol:86 (mcycle deadline uses ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
-- **Defect:** Before joining, the player's only version check against the deployment is `chain:call(state_transition,
-  'UARCH_PRISTINE_STATE_HASH()') == cartesi.UARCH_PRISTINE_STATE_HASH`. It does not compare the published CM_MARCHID,
-  and does not compare the state-transition contract's code hash with the verifier built from the audited source.
-  read_geometry derives log2_mcycles_per_period from levels[1].height minus the local U and then checks only that
-  levels[0].height == E+M-p and levels[1].height == p+U. That constrains the sum E+M, not the split. The pristine hash
-  covers only the uarch program. It does not cover: - UArchStep.sol (the uarch ISA semantics); - UArchReset.sol (the
-  revert-on-reject logic); - SendCmioResponse.sol (delivery preconditions and the mcycle deadline, which depend on
-  ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE); - AccessLogs (the hash function); - the position-to-form map in
-  CartesiStateTransition (INPUT_MASK and UARCH_CYCLE_MASK). All of these are part of the transition function under
-  R13, and none appears in the uarch binary.
-- **Evidence and test:** `bugs/R13-ROLEVERSION-3/` (`test.lua`, `run-player.lua`, `vendor/dkjson.lua`). Run
-  `bugs/run.sh R13-ROLEVERSION-3`. It fails while the bug is present. Observed: 3 of 3 runs failed the same way, with
-  exit 1:   pristine-mismatch  -> refused .../prt-player.lua:93: emulator and Solidity pristine uarch hashes differ
-  (control: the harness reaches the player's check)   marchid-mismatch   -> accepted   split-mismatch     -> accepted
-  Counter 2^67: player proof encoding = plain uarch step (no input prefix); contract (M=47) form = input-window
-  opening (8-byte input prefix, CMIO, step); contract (M=48) form = plain uarch step; player input slot 0, contract
-  input slot 1. FAIL: the honest player joins a deployment whose CartesiStateTransition does not implement its
-  transition function (CM_MARCHID differs from cartesi.MARCHID; the verifier code is a different build
-  (dispute-constant split M=47/E=25)): it checks only UARCH_PRISTINE_STATE_HASH and the sum E+M of the factory
-  heights, so it cannot detect and refuse the version mismatch (R13, A6); under the M=47 build its honest proof at
-  counter 2^67 reverts. During startup the player made only these calls: the application, consensus and factory views,
-  UARCH_PRISTINE_STATE_HASH(), getTemplateHash(), tournamentLevelCount() and tournamentParameters(0/1). It never
-  called CM_MARCHID() or eth_getCode.
-- **Scenario and reachability:** The check runs on every start of the honest player (doc/recipes/prt-player.lua:92-99,
-  before any play). The player joins a deployment by application address and takes the state-transition address from
-  the factory. Its only deployment-version checks are UARCH_PRISTINE_STATE_HASH() and bridge.read_geometry
-  (prt-bridge.lua:729-749). A grep of the in-scope prt*/game-* modules finds no eth_getCode, CM_MARCHID or code-hash
-  comparison. The gap is always present. A wrong outcome (Critical) would also need a deployment that breaks A6, so
-  the reachable impact is the section 8 High case: the node cannot detect a mismatch.
-- **Possible solution:** At startup, have the player compare the deployed verifier with its own build: 1. Compare
-  eth_getCode(state_transition) with the deployedBytecode of CartesiStateTransition in the pinned Dave artifacts (the
-  --dave directory). The deploy takes no constructor arguments, so the bytecode is deterministic. Alternatively,
-  compare keccak of the code with a hash pinned from a reproducible build of the audited machine-solidity-step and
-  Dave revision. 2. Optionally also compare CM_MARCHID and any published dispute constants with the cartesi.* values,
-  and refuse to start on any difference. 3. Apply the same code-hash check to the tournament implementation and the
-  factory. Their constants (heights and log2step) and the form map also define the protocol. 4. Treat the remaining
-  factory geometry as the cross-check it already is.
-- **Risks:** Risk of the issue: an operator can join a deployment whose verifier implements a different transition
+- **Location:**
+  - `doc/recipes/prt-player.lua:92-99`;
+  - `doc/recipes/prt-bridge.lua:729-749` (`read_geometry`);
+  - `doc/recipes/prt-deploy.lua:47-52`;
+  - deployed side: Dave `CartesiStateTransition` (`CM_MARCHID` and `UARCH_PRISTINE_STATE_HASH` are its only published
+    constants; `LOG2_INPUT_WINDOW_SPAN` = `ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE` +
+    `ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE`);
+  - `machine-solidity-step` `src/SendCmioResponse.sol:86` (mcycle deadline uses
+    `ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE`).
+
+### Problem
+
+Before joining, the player's only version check against the deployment is `chain:call(state_transition,
+'UARCH_PRISTINE_STATE_HASH()') == cartesi.UARCH_PRISTINE_STATE_HASH`. It does not compare the published `CM_MARCHID`,
+and does not compare the state-transition contract's code hash with the verifier built from the audited source.
+`read_geometry` derives `log2_mcycles_per_period` from `levels[1].height` minus the local U and then checks only that
+`levels[0].height == E+M-p` and `levels[1].height == p+U`. That constrains the sum E+M, not the split. The pristine
+hash covers only the uarch program. It does not cover:
+
+- `UArchStep.sol` (the uarch ISA semantics);
+- `UArchReset.sol` (the revert-on-reject logic);
+- `SendCmioResponse.sol` (delivery preconditions and the mcycle deadline, which depend on
+  `ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE`);
+- `AccessLogs` (the hash function);
+- the position-to-form map in `CartesiStateTransition` (`INPUT_MASK` and `UARCH_CYCLE_MASK`).
+
+All of these are part of the transition function under R13, and none appears in the uarch binary.
+
+### Evidence and test
+
+- Test: `bugs/R13-ROLEVERSION-3/` (`test.lua`, `run-player.lua`, `vendor/dkjson.lua`). Run
+  `bugs/run.sh R13-ROLEVERSION-3`. It fails while the bug is present.
+- Observed: 3 of 3 runs failed the same way, with exit 1:
+  - `pristine-mismatch  -> refused .../prt-player.lua:93: emulator and Solidity pristine uarch hashes differ`
+    (control: the harness reaches the player's check)
+  - `marchid-mismatch   -> accepted`
+  - `split-mismatch     -> accepted`
+  - "Counter 2^67: player proof encoding = plain uarch step (no input prefix); contract (M=47) form = input-window
+    opening (8-byte input prefix, CMIO, step); contract (M=48) form = plain uarch step; player input slot 0, contract
+    input slot 1."
+  - "FAIL: the honest player joins a deployment whose CartesiStateTransition does not implement its transition
+    function (CM_MARCHID differs from cartesi.MARCHID; the verifier code is a different build (dispute-constant split
+    M=47/E=25)): it checks only UARCH_PRISTINE_STATE_HASH and the sum E+M of the factory heights, so it cannot detect
+    and refuse the version mismatch (R13, A6); under the M=47 build its honest proof at counter 2^67 reverts."
+- During startup the player made only these calls: the application, consensus and factory views,
+  `UARCH_PRISTINE_STATE_HASH()`, `getTemplateHash()`, `tournamentLevelCount()` and `tournamentParameters(0/1)`. It
+  never called `CM_MARCHID()` or `eth_getCode`.
+
+### Scenario and reachability
+
+The check runs on every start of the honest player (`doc/recipes/prt-player.lua:92-99`,
+before any play). The player joins a deployment by application address and takes the state-transition address from
+the factory. Its only deployment-version checks are `UARCH_PRISTINE_STATE_HASH()` and `bridge.read_geometry`
+(`prt-bridge.lua:729-749`). A grep of the in-scope `prt*`/`game-*` modules finds no `eth_getCode`, `CM_MARCHID` or
+code-hash comparison. The gap is always present. A wrong outcome (Critical) would also need a deployment that breaks
+A6, so the reachable impact is the section 8 High case: the node cannot detect a mismatch.
+
+### Possible solution
+
+At startup, have the player compare the deployed verifier with its own build:
+
+1. Compare `eth_getCode(state_transition)` with the `deployedBytecode` of `CartesiStateTransition` in the pinned Dave
+   artifacts (the `--dave` directory). The deploy takes no constructor arguments, so the bytecode is deterministic.
+   Alternatively, compare keccak of the code with a hash pinned from a reproducible build of the audited
+   `machine-solidity-step` and Dave revision.
+2. Optionally also compare `CM_MARCHID` and any published dispute constants with the `cartesi.*` values, and refuse
+   to start on any difference.
+3. Apply the same code-hash check to the tournament implementation and the factory. Their constants (heights and
+   `log2step`) and the form map also define the protocol.
+4. Treat the remaining factory geometry as the cross-check it already is.
+
+### Risks
+
+- Of the issue: an operator can join a deployment whose verifier implements a different transition
   function, with no warning. That deployment already breaks A6. There, honest proofs at input-window boundaries or
-  with the wrong imcyclemax revert, and the honest claim is eliminated. With A6 holding, only the safety margin is
-  lost. Risks of the fix: - An exact bytecode comparison breaks on any recompilation: different compiler settings or
-  metadata hash, or a chain-specific deployment such as a proxy or immutables. Honest operators would then refuse
-  valid deployments, which is a liveness issue, until the pinned hash is updated through a reproducible build (R13). -
-  Pinning the hash in the player couples the emulator recipe to one Dave and machine-solidity-step release. - Adding a
-  CM_MARCHID check alone gives false assurance, because CM_MARCHID does not identify the verifier semantics.
+  with the wrong `imcyclemax` revert, and the honest claim is eliminated. With A6 holding, only the safety margin is
+  lost.
+- Of the fix:
+  - An exact bytecode comparison breaks on any recompilation: different compiler settings or metadata hash, or a
+    chain-specific deployment such as a proxy or immutables. Honest operators would then refuse valid deployments,
+    which is a liveness issue, until the pinned hash is updated through a reproducible build (R13).
+  - Pinning the hash in the player couples the emulator recipe to one Dave and `machine-solidity-step` release.
+  - Adding a `CM_MARCHID` check alone gives false assurance, because `CM_MARCHID` does not identify the verifier
+    semantics.
 
 ---
 
@@ -2903,53 +3256,73 @@ allows it and the verifiers accept the transition**
   (`src/machine.cpp`), `uarch_step`.
 - **Cited rules:** R4, R2, section 8 High. Reviewer: R2; R4; R5; Completeness failure (section 1); Section 8 High:
   divergence between paths only at demonstrably unreachable states.
-- **Location:** src/uarch-step.cpp:1103-1113, src/uarch-interpret.cpp:44-55, src/machine.cpp:2846-2869,
-  src/machine.cpp:2984
-- **Defect:** Two paths classify the same uarch outcome differently. uarch_step writes the incremented cycle and
-  checks `cycle >= UARCH_CYCLE_MAX` before the halt check, so it returns UArchCycleOverflow even when the instruction
-  just executed was the halting ECALL (uarch-step.cpp:1105-1113). uarch_interpret forwards that as
-  uarch_cycle_overflow (uarch-interpret.cpp:51-52). collect_uarch_cycle_root_hashes then throws 'uarch reached its
-  maximum cycle and cannot advance more uarch cycles' (machine.cpp:2866-2868) without checking uarch_halt. R4 says the
-  uarch 'halts no later than the uarch step that brings its cycle count to the last uarch position of the mcycle', so
-  halting on exactly that step is allowed. The verifier forms define that mcycle completely: the last ordinary step
-  verifies, the step at cycle MAX is a no-op, and step plus reset verifies. Only the builder (and
-  collect_uarch_cycle_bundle, which calls it at machine.cpp:2984) refuses it. The failed call also leaves the machine
-  mid-uarch (cycle=MAX, halt=1), although the code comments say a failed call leaves the machine unchanged.
-- **Evidence and test:** `bugs/R14-INVLOGS-1/` (`test.lua`, `halt.S`, `build.sh`). Run `bugs/run.sh R14-INVLOGS-1`. It
-  fails while the bug is present. Observed: I ran the test 3 times on feature/prt-audit. It failed the same way each
-  time, exit 1, about 20 s per run: "verifiers: step to cycle MAX (halts) verifies, step at MAX is a verified no-op,
-  reset verifies" "FAIL: collect_uarch_cycle_bundle cannot build the uarch computation hash of an mcycle the verifiers
-  fully accept (uarch halts on the step to cycle MAX): uarch reached its maximum cycle and cannot advance more uarch
-  cycles [machine left at uarch_cycle=1048575 uarch_halt=1]" "FAIL R14-INVLOGS-1 (bug present, status 1)"
-- **Scenario and reachability:** The mechanism is real, but it is reached only through a deliberate host change: a
-  custom uarch RAM image set through the config, which is out of scope for reachability (section 8, section 4). With
-  the pristine uarch (uarch/uarch-run.cpp: interpret one mcycle, then halt by ECALL), the defect needs a
-  main-processor instruction whose emulation takes exactly 2^20-1 uarch cycles. That would be a knife-edge: one cycle
-  more is an outright R4 violation by the uarch program, a different and Critical issue. Uarch registers and uarch RAM
-  are not guest-writable (R8), so the "presumed reachable" clause for guest-writable state does not apply. Every
-  guest-dependent loop in the interpreter is small and bounded: range-descriptor lookup, page walks of at most 5
-  levels, a TLB flush over a fixed 3x256 slots, and rv64i software multiply/divide and soft-float. Boot samples peak
-  below 1000 cycles per mcycle, and plausible worst cases stay in the 1e4-1e5 range, at least 10x below 2^20. So the
-  triggering state is unreachable, though shown by bounding arguments rather than a formal proof.
-- **Possible solution:** In collect_uarch_cycle_root_hashes, when uarch_interpret reports uarch_cycle_overflow, read
-  uarch_halt. If it is nonzero, treat the outcome as uarch_halted: break out of the loop and pad with the halted hash,
-  then the reset leaf. Throw only when the uarch overflows without halting, which is a genuine R4 violation by the
-  uarch program. An alternative is to give the halt check precedence over overflow when the executed instruction is
-  the halting ECALL, in uarch_step and uarch_interpret. Because the post-state is identical, that change does not
-  alter any verified hash. Still, the Solidity port (generated from uarch-step.cpp) should be regenerated and
-  differentially re-tested so the sources stay in lockstep. Also make the collector's failure path leave the machine
-  unchanged, or document that it does not, and update the near-limit corpus test to cover a halt at exactly
-  UARCH_CYCLE_MAX.
-- **Risks:** Risk of the issue: currently none at reachable states. It is a latent completeness hazard. If a future
+- **Location:**
+  - `src/uarch-step.cpp:1103-1113`;
+  - `src/uarch-interpret.cpp:44-55`;
+  - `src/machine.cpp:2846-2869`, `src/machine.cpp:2984`.
+
+### Problem
+
+Two paths classify the same uarch outcome differently. `uarch_step` writes the incremented cycle and
+checks `cycle >= UARCH_CYCLE_MAX` before the halt check, so it returns `UArchCycleOverflow` even when the instruction
+just executed was the halting ECALL (`uarch-step.cpp:1105-1113`). `uarch_interpret` forwards that as
+`uarch_cycle_overflow` (`uarch-interpret.cpp:51-52`). `collect_uarch_cycle_root_hashes` then throws "uarch reached its
+maximum cycle and cannot advance more uarch cycles" (`machine.cpp:2866-2868`) without checking `uarch_halt`. R4 says
+the uarch "halts no later than the uarch step that brings its cycle count to the last uarch position of the mcycle",
+so halting on exactly that step is allowed. The verifier forms define that mcycle completely: the last ordinary step
+verifies, the step at cycle MAX is a no-op, and step plus reset verifies. Only the builder (and
+`collect_uarch_cycle_bundle`, which calls it at `machine.cpp:2984`) refuses it. The failed call also leaves the machine
+mid-uarch (`cycle=MAX`, `halt=1`), although the code comments say a failed call leaves the machine unchanged.
+
+### Evidence and test
+
+- Test: `bugs/R14-INVLOGS-1/` (`test.lua`, `halt.S`, `build.sh`). Run `bugs/run.sh R14-INVLOGS-1`. It fails while
+  the bug is present.
+- Observed: the test was run 3 times on `feature/prt-audit`. It failed the same way each time, exit 1, about 20 s per
+  run:
+  - "verifiers: step to cycle MAX (halts) verifies, step at MAX is a verified no-op, reset verifies"
+  - "FAIL: collect_uarch_cycle_bundle cannot build the uarch computation hash of an mcycle the verifiers fully accept
+    (uarch halts on the step to cycle MAX): uarch reached its maximum cycle and cannot advance more uarch cycles
+    [machine left at uarch_cycle=1048575 uarch_halt=1]"
+  - "FAIL R14-INVLOGS-1 (bug present, status 1)"
+
+### Scenario and reachability
+
+The mechanism is real, but it is reached only through a deliberate host change: a
+custom uarch RAM image set through the config, which is out of scope for reachability (section 8, section 4). With
+the pristine uarch (`uarch/uarch-run.cpp`: interpret one mcycle, then halt by ECALL), the defect needs a
+main-processor instruction whose emulation takes exactly 2^20-1 uarch cycles. That would be a knife-edge: one cycle
+more is an outright R4 violation by the uarch program, a different and Critical issue. Uarch registers and uarch RAM
+are not guest-writable (R8), so the "presumed reachable" clause for guest-writable state does not apply. Every
+guest-dependent loop in the interpreter is small and bounded: range-descriptor lookup, page walks of at most 5
+levels, a TLB flush over a fixed 3x256 slots, and rv64i software multiply/divide and soft-float. Boot samples peak
+below 1000 cycles per mcycle, and plausible worst cases stay in the 1e4-1e5 range, at least 10x below 2^20. So the
+triggering state is unreachable, though shown by bounding arguments rather than a formal proof.
+
+### Possible solution
+
+In `collect_uarch_cycle_root_hashes`, when `uarch_interpret` reports `uarch_cycle_overflow`, read
+`uarch_halt`. If it is nonzero, treat the outcome as `uarch_halted`: break out of the loop and pad with the halted
+hash, then the reset leaf. Throw only when the uarch overflows without halting, which is a genuine R4 violation by the
+uarch program. An alternative is to give the halt check precedence over overflow when the executed instruction is
+the halting ECALL, in `uarch_step` and `uarch_interpret`. Because the post-state is identical, that change does not
+alter any verified hash. Still, the Solidity port (generated from `uarch-step.cpp`) should be regenerated and
+differentially re-tested so the sources stay in lockstep. Also make the collector's failure path leave the machine
+unchanged, or document that it does not, and update the near-limit corpus test to cover a halt at exactly
+`UARCH_CYCLE_MAX`.
+
+### Risks
+
+- Of the issue: currently none at reachable states. It is a latent completeness hazard. If a future
   uarch or interpreter version had an instruction taking exactly 2^20-1 uarch cycles, the honest operator could not
   build the uarch-level claim or bundles for that mcycle, while the referee accepts every transition. The honest claim
   could then miss its deadline and a dishonest claim win (Critical). The failed call also leaves the machine mid-uarch
-  (cycle=MAX, halt=1), so a caller that retries on the same machine gets "microarchitecture is not reset". Risks of
-  the fix: the leaf layout at the boundary must stay exactly MAX step-result leaves plus the reset leaf, and the
-  halt_position/reset_position assertions in collect_uarch_cycle_bundle must still hold. Other honest-node
+  (`cycle=MAX`, `halt=1`), so a caller that retries on the same machine gets "microarchitecture is not reset".
+- Of the fix: the leaf layout at the boundary must stay exactly MAX step-result leaves plus the reset leaf, and the
+  `halt_position`/`reset_position` assertions in `collect_uarch_cycle_bundle` must still hold. Other honest-node
   implementations (for example Dave's) and the Lua prt player must adopt the same boundary reading, or nodes would
-  compute different uarch-level claims. Changing uarch_step precedence touches generated on-chain code and the pinned
-  uarch pristine hash, so A6/R13 would need a new protocol version. The builder-only fix avoids that.
+  compute different uarch-level claims. Changing `uarch_step` precedence touches generated on-chain code and the
+  pinned uarch pristine hash, so A6/R13 would need a new protocol version. The builder-only fix avoids that.
 
 ---
 
@@ -3493,34 +3866,51 @@ process stop in between leaves a stored machine whose hash tree does not commit 
   (`fill_memory`: same order), `:2063-2065` (`write_word`: same order). Reached also through
   `state_access::do_write_memory` (`send_cmio_response`, `src/state-access.hpp:459`) and
   `uarch_state_access::do_write_word` (uarch ECALL writes, `src/uarch-state-access.hpp:94`).
-- **Defect:** with `SHARING_ALL` the RAM `.bin`, `.dpt` and `.dht` files are `MAP_SHARED`, and a load trusts the
-  `.dpt` and `.dht` (`src/memory-address-range.cpp:76-79`). The three writers store the data first and mark the page
-  dirty afterward, and nothing else records the pending change (host API writes bypass the write TLB that protects
-  interpreter writes). A stop between the two leaves the new bytes in RAM, the page clean in the `.dpt` and the old
-  page hash in the `.dht`. The reloaded root is the exact pre-write root, so a check of the form "root equals the
-  expected boundary root" passes on different contents.
-- **Evidence and test:** `bugs/R8-DYNPERSIST-1/` (`test.lua`, `common.lua`, `crash.lua`,
-  `kill-after-data-store.py`). Run `bugs/run.sh R8-DYNPERSIST-1`. Under gdb, a hardware watchpoint on the shared RAM
-  mapping kills the process the instant the written byte changes, for `write_memory` and for `write_word`. After the
-  reload, the word is `0xabab...` but `get_root_hash` equals the pre-write root, the oracle root of an uninterrupted
-  machine given the same write differs, and `verify_hash_tree()` fails with "page ... is not marked dirty but is
-  dirty". The control (no kill) matches the oracle. The harness checks that the watchpoint fired and the kill landed,
-  otherwise it exits 2. `fill_memory` has the same shape but no Lua binding, so it is not exercised.
-- **Scenario and reachability:** any crash, kill or OOM in that window of a process that holds a machine loaded with
-  shared backing stores, reached from the public C or Lua API, from `send_cmio_response`, or from uarch ECALL writes
-  (the CLI with `--load=...,sharing:all` is one such user). The stored PRT player is protected: it writes to its shared
-  epoch machine only after cloning `machine.revert`, which `revert_interrupted_input` (`doc/recipes/prt.lua:2636`)
-  restores when its root matches `state.json`, and its replay and proof machines are temporary clones deleted on
-  reopen. No honest-operator path that reloads such a store after an interrupted API write without a snapshot was
-  found, hence Medium; it would be Critical if a player change wrote to a shared machine outside a snapshot window.
-- **Possible solution:** mark the page dirty before storing the data in `write_memory`, `fill_memory` and
-  `write_word` (keep the `memcmp` check first so unchanged pages stay clean), and make the marking itself crash-safe
-  in the order R7-FPUARCH-1 requires. A sturdier alternative is an "open" flag in the shared directory, set on load
-  and cleared on clean shutdown, that forces `mark_pages_dirty` and a rebuild after an unclean stop.
-- **Risks:** a tool that relies on reloading a shared store after a crash gets a root hash that does not commit to the
-  contents, and a later run on it yields roots that differ from an uninterrupted run. Marking first can only produce
-  spurious dirty pages, which cost a rehash and are hash-neutral, provided all validation stays ahead of the mark. None
-  of these gives power-loss consistency without `msync` or `fsync` barriers.
+
+### Problem
+
+With `SHARING_ALL` the RAM `.bin`, `.dpt` and `.dht` files are `MAP_SHARED`, and a load trusts the
+`.dpt` and `.dht` (`src/memory-address-range.cpp:76-79`). The three writers store the data first and mark the page
+dirty afterward, and nothing else records the pending change (host API writes bypass the write TLB that protects
+interpreter writes). A stop between the two leaves the new bytes in RAM, the page clean in the `.dpt` and the old
+page hash in the `.dht`. The reloaded root is the exact pre-write root, so a check of the form "root equals the
+expected boundary root" passes on different contents.
+
+### Evidence and test
+
+- Test: `bugs/R8-DYNPERSIST-1/` (`test.lua`, `common.lua`, `crash.lua`, `kill-after-data-store.py`). Run
+  `bugs/run.sh R8-DYNPERSIST-1`.
+- Under gdb, a hardware watchpoint on the shared RAM mapping kills the process the instant the written byte changes,
+  for `write_memory` and for `write_word`. After the reload, the word is `0xabab...` but `get_root_hash` equals the
+  pre-write root, the oracle root of an uninterrupted machine given the same write differs, and `verify_hash_tree()`
+  fails with "page ... is not marked dirty but is dirty". The control (no kill) matches the oracle.
+- The harness checks that the watchpoint fired and the kill landed, otherwise it exits 2. `fill_memory` has the same
+  shape but no Lua binding, so it is not exercised.
+
+### Scenario and reachability
+
+Any crash, kill or OOM in that window of a process that holds a machine loaded with
+shared backing stores, reached from the public C or Lua API, from `send_cmio_response`, or from uarch ECALL writes
+(the CLI with `--load=...,sharing:all` is one such user). The stored PRT player is protected: it writes to its shared
+epoch machine only after cloning `machine.revert`, which `revert_interrupted_input` (`doc/recipes/prt.lua:2636`)
+restores when its root matches `state.json`, and its replay and proof machines are temporary clones deleted on
+reopen. No honest-operator path that reloads such a store after an interrupted API write without a snapshot was
+found, hence Medium; it would be Critical if a player change wrote to a shared machine outside a snapshot window.
+
+### Possible solution
+
+Mark the page dirty before storing the data in `write_memory`, `fill_memory` and
+`write_word` (keep the `memcmp` check first so unchanged pages stay clean), and make the marking itself crash-safe
+in the order R7-FPUARCH-1 requires. A sturdier alternative is an "open" flag in the shared directory, set on load
+and cleared on clean shutdown, that forces `mark_pages_dirty` and a rebuild after an unclean stop.
+
+### Risks
+
+- Of the issue: a tool that relies on reloading a shared store after a crash gets a root hash that does not commit
+  to the contents, and a later run on it yields roots that differ from an uninterrupted run.
+- Of the fix: marking first can only produce spurious dirty pages, which cost a rehash and are hash-neutral, provided
+  all validation stays ahead of the mark. None of these gives power-loss consistency without `msync` or `fsync`
+  barriers.
 
 ---
 
@@ -3543,39 +3933,55 @@ contents**
   `src/translate-virtual-address.hpp:61-77` (`write_ram_uint64` writes the PTE and marks the page only for
   `i_accept_dirty_pages` accessors), `src/machine.cpp:2484-2504` (the set reaches the shared `.dpt` only after
   `interpret_with_console` returns at the period target).
-- **Defect:** while collecting hashes, a page-walk write of an accessed or dirty bit changes the PTE in the
-  `MAP_SHARED` RAM file, and the only record of the change is an in-process set that is flushed at the end of the
-  period. Ordinary stores are safe because their page sits in a write-TLB slot, which persists in the shadow TLB file
-  and is re-marked on load. A walk installs only a read or code TLB entry for the target page, so nothing persistent
-  records the changed page-table page. After a stop, the `.dpt` leaf is clean and the `.dht` hash is old; the A bit is
-  already set, so re-running never writes that PTE again and the page is never re-hashed.
-- **Evidence and test:** `bugs/R9-GOALRESTORE-1/` (`test.lua`, `common.lua`, `child.lua`, `kill-after-pte.sh`,
-  `guest.S`, `guest.bin`, `build.sh`). Run `bugs/run.sh R9-GOALRESTORE-1`. A bare-metal guest enables Sv39 with one
-  gigapage PTE whose A bit is clear and performs one load. A child process loads the stored machine with `SHARING_ALL`
-  and calls `collect_mcycle_root_hashes` with a period that keeps it inside one call; the script waits until the PTE
-  write is visible in the shared RAM file, then sends SIGKILL. After the reload the PTE holds `0x2000004f`, but the
-  `.dpt` does not mark the page, `verify_hash_tree()` fails ("page 0x80010000 (in RAM) is not marked dirty but is
-  dirty"), the reloaded root differs from the root recomputed from the contents, and 200 mcycles later the reloaded
-  machine and the recomputed copy still differ. The control, in which the child calls plain `run()` and is killed the
-  same way, reloads consistently and agrees with the recomputation, so the cause is the collection accessor and not the
-  kill method. The harness exits 2 if the control fails.
-- **Scenario and reachability:** every state is ordinary and guest-reachable: a guest with PTEs whose A or D bit is
-  clear triggers the write on its first access. The trigger is any process stop (kill, OOM, restart) during a
-  collection on a machine loaded with `SHARING_ALL`; the window is a whole sampling period. The stored PRT player is
-  not exposed: it clones `machine.revert` before it delivers an input (`doc/recipes/prt.lua:1405-1412`, `:1083-1090`),
-  `revert_interrupted_input` (`:2636-2650`) restores that snapshot when its root matches `state.json`, and its pair
-  directories are removed on reopen (`:2653-2676`). The only other collect call on the shared machine runs at a fixed
-  point and executes no instruction. No path reuses a directory that was interrupted during collection, hence Medium; it
-  would be Critical if one did and checked only the persisted root.
-- **Possible solution:** make the collect accessor an `i_accept_dirty_pages` that marks the shared `.dpt` at the moment
-  of a page-walk A/D write (the cost is a few byte writes per PTE update, which are rare), or mark the page before the
-  store in `write_ram_uint64` for every accessor not covered by a write-TLB slot. As defense in depth, an "open" flag in
-  the shared directory, set on a `SHARING_ALL` load and cleared on clean shutdown, can force `mark_pages_dirty` and a
-  rebuild after an unclean stop, which also covers R7-FPUARCH-1 and R8-DYNPERSIST-1.
-- **Risks:** a tool or a future player change that reopens a shared directory interrupted during collection and checks
-  only its root would compute every later hash and proof from a tree that does not commit to the contents. Marking
-  eagerly can only cause spurious rehashes, which are hash-neutral. No fix gives power-loss consistency without `msync`
-  or `fsync` ordering.
+
+### Problem
+
+While collecting hashes, a page-walk write of an accessed or dirty bit changes the PTE in the
+`MAP_SHARED` RAM file, and the only record of the change is an in-process set that is flushed at the end of the
+period. Ordinary stores are safe because their page sits in a write-TLB slot, which persists in the shadow TLB file
+and is re-marked on load. A walk installs only a read or code TLB entry for the target page, so nothing persistent
+records the changed page-table page. After a stop, the `.dpt` leaf is clean and the `.dht` hash is old; the A bit is
+already set, so re-running never writes that PTE again and the page is never re-hashed.
+
+### Evidence and test
+
+- Test: `bugs/R9-GOALRESTORE-1/` (`test.lua`, `common.lua`, `child.lua`, `kill-after-pte.sh`, `guest.S`, `guest.bin`,
+  `build.sh`). Run `bugs/run.sh R9-GOALRESTORE-1`.
+- A bare-metal guest enables Sv39 with one gigapage PTE whose A bit is clear and performs one load. A child process
+  loads the stored machine with `SHARING_ALL` and calls `collect_mcycle_root_hashes` with a period that keeps it
+  inside one call; the script waits until the PTE write is visible in the shared RAM file, then sends SIGKILL.
+- After the reload the PTE holds `0x2000004f`, but the `.dpt` does not mark the page, `verify_hash_tree()` fails
+  ("page 0x80010000 (in RAM) is not marked dirty but is dirty"), the reloaded root differs from the root recomputed
+  from the contents, and 200 mcycles later the reloaded machine and the recomputed copy still differ.
+- The control, in which the child calls plain `run()` and is killed the same way, reloads consistently and agrees with
+  the recomputation, so the cause is the collection accessor and not the kill method. The harness exits 2 if the
+  control fails.
+
+### Scenario and reachability
+
+Every state is ordinary and guest-reachable: a guest with PTEs whose A or D bit is
+clear triggers the write on its first access. The trigger is any process stop (kill, OOM, restart) during a
+collection on a machine loaded with `SHARING_ALL`; the window is a whole sampling period. The stored PRT player is
+not exposed: it clones `machine.revert` before it delivers an input (`doc/recipes/prt.lua:1405-1412`, `:1083-1090`),
+`revert_interrupted_input` (`:2636-2650`) restores that snapshot when its root matches `state.json`, and its pair
+directories are removed on reopen (`:2653-2676`). The only other collect call on the shared machine runs at a fixed
+point and executes no instruction. No path reuses a directory that was interrupted during collection, hence Medium; it
+would be Critical if one did and checked only the persisted root.
+
+### Possible solution
+
+Make the collect accessor an `i_accept_dirty_pages` that marks the shared `.dpt` at the moment
+of a page-walk A/D write (the cost is a few byte writes per PTE update, which are rare), or mark the page before the
+store in `write_ram_uint64` for every accessor not covered by a write-TLB slot. As defense in depth, an "open" flag in
+the shared directory, set on a `SHARING_ALL` load and cleared on clean shutdown, can force `mark_pages_dirty` and a
+rebuild after an unclean stop, which also covers R7-FPUARCH-1 and R8-DYNPERSIST-1.
+
+### Risks
+
+- Of the issue: a tool or a future player change that reopens a shared directory interrupted during collection and
+  checks only its root would compute every later hash and proof from a tree that does not commit to the contents.
+- Of the fix: marking eagerly can only cause spurious rehashes, which are hash-neutral. No fix gives power-loss
+  consistency without `msync` or `fsync` ordering.
 
 ---
 
@@ -3594,20 +4000,36 @@ when the guest requests it**
   read path at `:49-50`). Compare `htif_yield` (`:74-90`) and `htif_console` (`:93-121`), which gate on
   `iyield` and `iconsole`. Manual: `doc/README.md:7507-7509` ("Unavailable commands are silently ignored by the
   machine"); configuration field `processor.registers.htif.ihalt` at `:3212` (default `0x1` at `:3542`).
-- **Defect:** `htif_halt` checks only that the command is halt and that data bit 0 is set, then sets `iflags_H`. With
-  `ihalt = 0` the request must be a silent no-op and execution must continue.
-- **Evidence and test:** `bugs/R10-MANLUA1-1/` (`test.lua`, `halt.S`, `link.ld`, `build.sh`; the guest is built at run
-  time). Run `bugs/run.sh R10-MANLUA1-1`. A guest writes `tohost = 1` and spins. The control with `ihalt = 1` halts at
-  mcycle 3. With `ihalt = 0` the native run still halts at mcycle 3 (`iflags_H = 1`, break reason halted) and so does the
-  uarch path (8 `run_uarch` and `reset_uarch` rounds), with the same root hash as the native run. Expected: no halt.
-- **Scenario and reachability:** a template made with the documented `ihalt = 0` is a valid template, and any guest
-  instruction stream can write `tohost`. The deviation is the same on every path (the uarch program is compiled from the
-  same C++, so the on-chain verifiers follow it too; that part was not run on-chain). Halting is a stall that a
-  correctly designed application does not use, and A5 already excludes outputs from halted states, hence Medium.
-- **Possible solution:** gate the halt like the other sub-devices:
-  `cmd < 64 && ((read_htif_ihalt() >> cmd) & 1) != 0 && cmd == HTIF_HALT_CMD_HALT && (data & 1) != 0`, and ignore the
-  request otherwise. Alternatively document `ihalt` as informational only or remove the field.
-- **Risks:** the fix changes the state transition function (R13): the uarch program, its pinned pristine hash and the
+
+### Problem
+
+`htif_halt` checks only that the command is halt and that data bit 0 is set, then sets `iflags_H`. With
+`ihalt = 0` the request must be a silent no-op and execution must continue.
+
+### Evidence and test
+
+- Test: `bugs/R10-MANLUA1-1/` (`test.lua`, `halt.S`, `link.ld`, `build.sh`; the guest is built at run time). Run
+  `bugs/run.sh R10-MANLUA1-1`.
+- A guest writes `tohost = 1` and spins. The control with `ihalt = 1` halts at
+mcycle 3. With `ihalt = 0` the native run still halts at mcycle 3 (`iflags_H = 1`, break reason halted) and so does the
+uarch path (8 `run_uarch` and `reset_uarch` rounds), with the same root hash as the native run. Expected: no halt.
+
+### Scenario and reachability
+
+A template made with the documented `ihalt = 0` is a valid template, and any guest
+instruction stream can write `tohost`. The deviation is the same on every path (the uarch program is compiled from the
+same C++, so the on-chain verifiers follow it too; that part was not run on-chain). Halting is a stall that a
+correctly designed application does not use, and A5 already excludes outputs from halted states, hence Medium.
+
+### Possible solution
+
+Gate the halt like the other sub-devices:
+`cmd < 64 && ((read_htif_ihalt() >> cmd) & 1) != 0 && cmd == HTIF_HALT_CMD_HALT && (data & 1) != 0`, and ignore the
+request otherwise. Alternatively document `ihalt` as informational only or remove the field.
+
+### Risks
+
+- Of the fix: it changes the state transition function (R13): the uarch program, its pinned pristine hash and the
   on-chain verifiers change together and must not be mixed with old deployments (A6). The default `ihalt = 0x1` is
   unaffected; a template created with `ihalt = 0` would stop halting and change its canonical trajectory.
 
@@ -3623,48 +4045,71 @@ the manual says they are checked at instantiation**
   machines created from a configuration.
 - **Component and area:** emulator; machine configuration validation.
 - **Cited rules:** R13, R7, section 8 Medium. Reviewer: R13; A6; THREAT_MODEL section 8 (manual/behavior contradiction
-  on a security-relevant point; Medium: violates the manual without affecting the goal); section 2 'Valid template'
+  on a security-relevant point; Medium: violates the manual without affecting the goal); section 2 valid template
   (created from a configuration by operations the manual specifies).
-- **Location:** src/machine.cpp:129-195 (init_processor never writes reg::mvendorid/marchid/mimpid),
-  src/machine.cpp:199-211 (validate_processor_shadow compares the shadow, not the config),
-  src/machine-config.cpp:205-215 (adjust_defaults keeps any value other than -1)
-- **Defect:** The manual (doc/README.md:3355-3359) says users set mvendorid, mimpid and marchid in the config, 'which
-  the emulator checks at instantiation to ensure the configuration matches the running emulator version', and that
-  production code should hard-code them. adjust_defaults replaces only -1. init_processor writes every register field
-  of the config into the shadow except these three; the shadow keeps the processor_state{} defaults, which equal the
-  build constants. validate_processor_shadow then compares those defaults with the constants, a check that always
-  passes. The config's values are never compared with anything. They stay in get_initial_config(), and machine::store
-  writes them into config.json, while read_reg and the hashed shadow hold the build's values.
-- **Evidence and test:** `bugs/R11-FAMMASK-2/` (`test.lua`). Run `bugs/run.sh R11-FAMMASK-2`. It fails while the bug
-  is present. Observed: I ran it 3 times and it exited 1 each time with the same output:   marchid=12367 (build 22)
-  accepted at creation: get_initial_config=12367, read_reg=22, config.json=12367, reload succeeded
-  mvendorid=7161130726739634471 (build 7161130726739634464) accepted at creation:
-  get_initial_config=7161130726739634471, read_reg=7161130726739634464, config.json=7161130726739634471, reload
-  succeeded   mimpid=122 (build 23) accepted at creation: get_initial_config=122, read_reg=23, config.json=122, reload
-  succeeded FAIL: cartesi.machine(config) accepts mvendorid/marchid/mimpid that do not match the build; the manual
-  says they are checked at instantiation (R13 version-mismatch detection lost) FAIL R11-FAMMASK-2 (bug present, status
-  1) Sanity checks passed first. Configs with the build's own IDs are accepted, and so are configs with -1. A failure
+- **Location:**
+  - `src/machine.cpp:129-195` (`init_processor` never writes `reg::mvendorid`/`marchid`/`mimpid`), `:199-211`
+    (`validate_processor_shadow` compares the shadow, not the config);
+  - `src/machine-config.cpp:205-215` (`adjust_defaults` keeps any value other than -1).
+
+### Problem
+
+The manual (`doc/README.md:3355-3359`) says users set `mvendorid`, `mimpid` and `marchid` in the config, "which the
+emulator checks at instantiation to ensure the configuration matches the running emulator version", and that
+production code should hard-code them. `adjust_defaults` replaces only -1. `init_processor` writes every register
+field of the config into the shadow except these three; the shadow keeps the `processor_state{}` defaults, which equal
+the build constants. `validate_processor_shadow` then compares those defaults with the constants, a check that always
+passes. The config's values are never compared with anything. They stay in `get_initial_config()`, and
+`machine::store` writes them into `config.json`, while `read_reg` and the hashed shadow hold the build's values.
+
+### Evidence and test
+
+- Test: `bugs/R11-FAMMASK-2/` (`test.lua`). Run `bugs/run.sh R11-FAMMASK-2`. It fails while the bug is present.
+- Observed: the test was run 3 times and exited 1 each time with the same output:
+  - `marchid=12367 (build 22) accepted at creation: get_initial_config=12367, read_reg=22, config.json=12367, reload
+    succeeded`
+  - `mvendorid=7161130726739634471 (build 7161130726739634464) accepted at creation:
+    get_initial_config=7161130726739634471, read_reg=7161130726739634464, config.json=7161130726739634471, reload
+    succeeded`
+  - `mimpid=122 (build 23) accepted at creation: get_initial_config=122, read_reg=23, config.json=122, reload
+    succeeded`
+  - `FAIL: cartesi.machine(config) accepts mvendorid/marchid/mimpid that do not match the build; the manual says they
+    are checked at instantiation (R13 version-mismatch detection lost)`
+  - `FAIL R11-FAMMASK-2 (bug present, status 1)`
+- Sanity checks passed first. Configs with the build's own IDs are accepted, and so are configs with -1. A failure
   there exits 2 as a harness error, so the exit 1 comes from the defect.
-- **Scenario and reachability:** Reached deterministically on the documented template-creation path
-  (cartesi.machine(config) / cm_create_new) by any host that follows the manual and hard-codes the IDs. No adversary
-  or guest action is involved. It is host configuration data, so input senders and dishonest claimants cannot trigger
-  it.
-- **Possible solution:** In machine::init_processor, for a newly created processor, check the config's version
-  registers unless r.skip_version_check is set: after adjust_defaults has turned -1 into the build constants, throw
-  std::invalid_argument("marchid/mvendorid/mimpid mismatch, emulator version is incompatible") when
-  p.registers.marchid != MARCHID_INIT, and the same for mvendorid and mimpid. Optionally, also normalize the stored
-  config so that get_initial_config()/config.json always report the values in the shadow. The other option is to
-  change the manual to say that the IDs are read-only and that the config values are ignored, but that drops the
-  documented production safeguard.
-- **Risks:** Issue risk: - Operators who hard-code the IDs as instructed get no refusal at creation. - Tooling that
-  reads config.json or get_initial_config() to decide which emulator version a template belongs to is misled. Those
-  files can advertise IDs that differ from the hashed state. - The goal is not broken, because content-hash comparison
-  against the on-chain commitment and the stored-shadow check still catch a real mismatch. Fix risk: - Creation now
-  throws for configs that worked before. Examples are configs copied from another build's config.json, or configs
-  carrying stale IDs. - The check must apply only to newly created processors, so that a stored machine's config.json
-  is not re-validated against values that are ignored anyway. Otherwise it can conflict with the shadow-based check
-  and with skip_version_check. - The JSON-RPC/remote creation paths share the same code and need the same behavior, so
-  that paths do not diverge.
+
+### Scenario and reachability
+
+Reached deterministically on the documented template-creation path (`cartesi.machine(config)` / `cm_create_new`) by
+any host that follows the manual and hard-codes the IDs. No adversary or guest action is involved. It is host
+configuration data, so input senders and dishonest claimants cannot trigger it.
+
+### Possible solution
+
+In `machine::init_processor`, for a newly created processor, check the config's version registers unless
+`r.skip_version_check` is set: after `adjust_defaults` has turned -1 into the build constants, throw
+`std::invalid_argument("marchid/mvendorid/mimpid mismatch, emulator version is incompatible")` when
+`p.registers.marchid != MARCHID_INIT`, and the same for `mvendorid` and `mimpid`. Optionally, also normalize the stored
+config so that `get_initial_config()`/`config.json` always report the values in the shadow. The other option is to
+change the manual to say that the IDs are read-only and that the config values are ignored, but that drops the
+documented production safeguard.
+
+### Risks
+
+- Of the issue:
+  - Operators who hard-code the IDs as instructed get no refusal at creation.
+  - Tooling that reads `config.json` or `get_initial_config()` to decide which emulator version a template belongs to
+    is misled. Those files can advertise IDs that differ from the hashed state.
+  - The goal is not broken, because content-hash comparison against the on-chain commitment and the stored-shadow
+    check still catch a real mismatch.
+- Of the fix:
+  - Creation now throws for configs that worked before. Examples are configs copied from another build's
+    `config.json`, or configs carrying stale IDs.
+  - The check must apply only to newly created processors, so that a stored machine's `config.json` is not
+    re-validated against values that are ignored anyway. Otherwise it can conflict with the shadow-based check and
+    with `skip_version_check`.
+  - The JSON-RPC/remote creation paths share the same code and need the same behavior, so that paths do not diverge.
 
 ---
 
@@ -3680,56 +4125,74 @@ dirty, so a stop in between leaves a stale hash tree in a shared stored machine*
 - **Component and area:** emulator; `write_ram_uint64` on the native `state_access` path (plain `run()`).
 - **Cited rules:** R9, R2, section 8 Medium. Reviewer: R9; R2; section 8 Medium: persistence defects off the honest
   operator's path.
-- **Location:** src/translate-virtual-address.hpp:62-77 (store at :70, mark at :74),
-  src/translate-virtual-address.hpp:233-241 (A/D update call), src/state-access.hpp:479-481 (do_write_memory_word
-  writes through the host pointer, no mark), src/state-access.hpp:567-568, src/i-accept-dirty-pages.hpp:29-40
-- **Defect:** write_ram_uint64 first calls a.write_memory_word(faddr, pma_index, val), which for state_access is a raw
-  aliased_aligned_write into the MAP_SHARED RAM file. Only afterwards does it call a.mark_dirty_page(paddr,
-  pma_index), which sets the leaf and its ancestors in the shared .dpt. Nothing else records the change: the
-  page-table page is not in a write-TLB slot, because a walk installs only a read or code entry for the target page.
-  On reload, the .dpt and .dht (dense hash tree) files are trusted (memory-address-range.cpp:76-79). This is a
-  different accessor and site from R9-GOALRESTORE-1, where the collect accessor defers the mark to the end of the
-  period; R9's own control claimed plain run() was safe. It is also a different site from R8-DYNPERSIST-1, which
-  covers the host API writers.
-- **Evidence and test:** `bugs/R11-FAMPERSISTA-1/` (`test.lua`, `child.lua`, `kill.py`, `common.lua`, `guest.S`,
-  `guest.bin`, `build.sh`). Run `bugs/run.sh R11-FAMPERSISTA-1`. It fails while the bug is present. Observed: I ran
-  the test 4 times on feature/prt-audit. It failed with exit 1 every time, with identical output: "child killed right
-  after the PTE store, at: cartesi::write_ram_uint64<cartesi::state_access> src/translate-virtual-address.hpp:74" -
-  reloaded PTE 0x2000004f (the A bit is set in the shared RAM file) - reloaded root
-  0x8a4273cfd24e555b16a5bea7edff040ebec8f1ff814739ecffed022f80457b00 - root recomputed with clear_hash_tree
-  0x25f3934edecb72d6a91e0b2bc77899d4f2c643afda75167bdd76aecd536e9bf8 - verify_hash_tree false ("page 0x80010000 (in
-  RAM) is not marked dirty but is dirty") - after 200 more mcycles: reloaded 0x04dcf617... vs recomputed 0x47b7f0b7...
-  Final line: "FAIL: SIGKILL right after the page walk's A-bit store in plain run() left a SHARING_ALL stored machine
+- **Location:**
+  - `src/translate-virtual-address.hpp:62-77` (store at `:70`, mark at `:74`), `:233-241` (A/D update call);
+  - `src/state-access.hpp:479-481` (`do_write_memory_word` writes through the host pointer, no mark), `:567-568`;
+  - `src/i-accept-dirty-pages.hpp:29-40`.
+
+### Problem
+
+`write_ram_uint64` first calls `a.write_memory_word(faddr, pma_index, val)`, which for `state_access` is a raw
+`aliased_aligned_write` into the `MAP_SHARED` RAM file. Only afterwards does it call
+`a.mark_dirty_page(paddr, pma_index)`, which sets the leaf and its ancestors in the shared `.dpt`. Nothing else records
+the change: the page-table page is not in a write-TLB slot, because a walk installs only a read or code entry for the
+target page. On reload, the `.dpt` and `.dht` (dense hash tree) files are trusted (`memory-address-range.cpp:76-79`).
+This is a different accessor and site from R9-GOALRESTORE-1, where the collect accessor defers the mark to the end of
+the period; R9's own control claimed plain `run()` was safe. It is also a different site from R8-DYNPERSIST-1, which
+covers the host API writers.
+
+### Evidence and test
+
+- Test: `bugs/R11-FAMPERSISTA-1/` (`test.lua`, `child.lua`, `kill.py`, `common.lua`, `guest.S`, `guest.bin`,
+  `build.sh`). Run `bugs/run.sh R11-FAMPERSISTA-1`. It fails while the bug is present.
+- Observed: the test was run 4 times on `feature/prt-audit`. It failed with exit 1 every time, with identical output:
+  "child killed right after the PTE store, at: `cartesi::write_ram_uint64<cartesi::state_access>
+  src/translate-virtual-address.hpp:74`"
+  - reloaded PTE `0x2000004f` (the A bit is set in the shared RAM file);
+  - reloaded root `0x8a4273cfd24e555b16a5bea7edff040ebec8f1ff814739ecffed022f80457b00`;
+  - root recomputed with `clear_hash_tree` `0x25f3934edecb72d6a91e0b2bc77899d4f2c643afda75167bdd76aecd536e9bf8`;
+  - `verify_hash_tree` false ("page 0x80010000 (in RAM) is not marked dirty but is dirty");
+  - after 200 more mcycles: reloaded `0x04dcf617...` vs recomputed `0x47b7f0b7...`.
+- Final line: "FAIL: SIGKILL right after the page walk's A-bit store in plain run() left a SHARING_ALL stored machine
   whose persisted root ... differs from the root of its contents ...: write_ram_uint64 stores before mark_dirty_page
-  (violates R9/R2)". The reloaded and recomputed roots agree (0x47b7f0b7... after +200 mcycles) and the test exits 0.
+  (violates R9/R2)". The reloaded and recomputed roots agree (`0x47b7f0b7...` after +200 mcycles) and the test exits 0.
   So the failure comes from the store-to-mark window and from nothing else, and a fix that marks before storing would
   make the test pass.
-- **Scenario and reachability:** The guest state is ordinary and reachable. Any PTE with A or D clear works (section 2
-  presumes any guest-writable memory reachable, and Linux creates such PTEs routinely). Any API or CLI user that runs
-  a machine loaded with SHARING_ALL hits the site with plain run(), through state_access. The trigger is a process
-  stop (SIGKILL, OOM, crash) inside a window a few host instructions long. That window sits between
-  aliased_aligned_write of the PTE (translate-virtual-address.hpp:70) and mark_dirty_page (:74). The PoC hits it
-  deterministically with a gdb hardware watchpoint on the PTE byte in the MAP_SHARED RAM mapping. In practice the
-  window is narrow, but each page walk that sets an A or D bit reopens it. The stored PRT player is not exposed: it
-  runs inside an input only after stored_machine_pair:snapshot(), which calls clone_stored. After a crash,
-  revert_interrupted_input restores machine.revert whenever the recorded boundary root matches it (prt.lua:2636-2650).
-  After the input ends, the run has finished, so the mark has already landed before state.json records the boundary.
-  So this is off the honest operator's path.
-- **Possible solution:** In write_ram_uint64, when the accessor is an i_accept_dirty_pages (state_access,
-  record_step_state_access), call a.mark_dirty_page(paddr, pma_index) before a.write_memory_word(faddr, pma_index,
-  val). Marking a page dirty only forces a rehash, so doing it first is hash-neutral. The general invariant is "mark
-  the shared dirty-page tree before any store to shared memory that no write-TLB entry covers". Audit the other
-  untracked writers against it in the same pass, for example the write-TLB slot replacement order (mark the old page
-  before the shadow slot is overwritten) and the host API writers. A more conservative alternative is to record a
-  "possibly unclean" flag in the stored directory while a SHARING_ALL machine runs, and to reload with
-  mark_pages_dirty when the flag is set.
-- **Risks:** Risk of the issue: a CLI or API user who reloads a SHARING_ALL directory after a crash and trusts its
-  root gets a root and proofs that do not commit to the contents. Every later hash from that machine is wrong. A
-  protocol participant who did this outside the player's snapshot discipline could compute a wrong claim, but the
-  stored PRT player is protected. Risk of the fix: almost none. If a crash lands between the new mark and the store,
-  the page is spuriously marked dirty and only rehashed. The extra cost is a dirty-page-tree mark that already happens
-  today, just earlier. Performance is unchanged. record_step_state_access marks the machine's tree, not the log, so
-  the change does not alter any log or proof and touches no verifier.
+
+### Scenario and reachability
+
+The guest state is ordinary and reachable. Any PTE with A or D clear works (section 2 presumes any guest-writable
+memory reachable, and Linux creates such PTEs routinely). Any API or CLI user that runs a machine loaded with
+`SHARING_ALL` hits the site with plain `run()`, through `state_access`. The trigger is a process stop (SIGKILL, OOM,
+crash) inside a window a few host instructions long. That window sits between `aliased_aligned_write` of the PTE
+(`translate-virtual-address.hpp:70`) and `mark_dirty_page` (`:74`). The PoC hits it deterministically with a gdb
+hardware watchpoint on the PTE byte in the `MAP_SHARED` RAM mapping. In practice the window is narrow, but each page
+walk that sets an A or D bit reopens it. The stored PRT player is not exposed: it runs inside an input only after
+`stored_machine_pair:snapshot()`, which calls `clone_stored`. After a crash, `revert_interrupted_input` restores
+`machine.revert` whenever the recorded boundary root matches it (`prt.lua:2636-2650`). After the input ends, the run
+has finished, so the mark has already landed before `state.json` records the boundary. So this is off the honest
+operator's path.
+
+### Possible solution
+
+In `write_ram_uint64`, when the accessor is an `i_accept_dirty_pages` (`state_access`, `record_step_state_access`),
+call `a.mark_dirty_page(paddr, pma_index)` before `a.write_memory_word(faddr, pma_index, val)`. Marking a page dirty
+only forces a rehash, so doing it first is hash-neutral. The general invariant is "mark the shared dirty-page tree
+before any store to shared memory that no write-TLB entry covers". Audit the other untracked writers against it in the
+same pass, for example the write-TLB slot replacement order (mark the old page before the shadow slot is overwritten)
+and the host API writers. A more conservative alternative is to record a "possibly unclean" flag in the stored
+directory while a `SHARING_ALL` machine runs, and to reload with `mark_pages_dirty` when the flag is set.
+
+### Risks
+
+- Of the issue: a CLI or API user who reloads a `SHARING_ALL` directory after a crash and trusts its root gets a root
+  and proofs that do not commit to the contents. Every later hash from that machine is wrong. A protocol participant
+  who did this outside the player's snapshot discipline could compute a wrong claim, but the stored PRT player is
+  protected.
+- Of the fix: almost none. If a crash lands between the new mark and the store, the page is spuriously marked dirty
+  and only rehashed. The extra cost is a dirty-page-tree mark that already happens today, just earlier. Performance is
+  unchanged. `record_step_state_access` marks the machine's tree, not the log, so the change does not alter any log or
+  proof and touches no verifier.
 
 ---
 
@@ -3744,52 +4207,74 @@ stored hash tree no longer commits to its contents (no crash needed)**
 - **Component and area:** emulator; `replace_memory_range` on a `SHARING_ALL` machine.
 - **Cited rules:** R9, R2, section 8 Medium. Reviewer: R9; R2; THREAT_MODEL section 8 Medium: persistence defects off
   the honest operator's path; section 2 Honest operator's path (storing and reloading).
-- **Location:** src/machine.cpp:717-770 (m_ars.replace at :765, then only init_hot_tlb_contents at :769; no
-  mark_write_tlb_dirty_pages before the old range is dropped), src/machine-address-ranges.cpp:656-680 (old range
-  object destroyed at :674), src/machine.hpp:722-727 and src/machine.cpp:1611-1628 (a later eviction or destruction
-  marks the slot's page through read_pma(pma_index), which now names the NEW range)
-- **Defect:** A page stored through a write-TLB slot is recorded only by that slot. Its .dpt mark is deferred until
-  mark_write_tlb_dirty_pages runs, which happens in update_hash_tree, store, ~machine, shadow overwrite, or eviction
-  in write_verified_tlb or write_unverified_tlb. replace_memory_range swaps in the new range without first flushing
-  those pending marks into the old range's dirty-page tree. Afterwards, every flush of the slot (sfence.vma, satp or
-  prv changes, slot replacement, ~machine) resolves pma_index to the replacement range, marks the page there (a
-  spurious mark), and the mark for the old range is lost for good. If the old range was loaded SHARING_ALL, its .bin
-  in the stored directory already holds the guest's bytes, while its .dpt and .dht still show the previous clean hash.
-- **Evidence and test:** `bugs/R11-FAMPERSISTA-2/` (`test.lua`, `guest.S`, `build.sh`, `guest.bin`). Run `bugs/run.sh
-  R11-FAMPERSISTA-2`. It fails while the bug is present. Observed: I ran the test 3 times and got the same result each
-  time: exit 1, with identical hashes on every run. - Defect scenario: the reloaded directory's flash word is
-  0x1122334455667788. Its stored root is 0x450f8cff8a629ede74e9c1043a9b6a50bdf61b52cf154f20f02e3d238af3d19a, but the
-  root recomputed with clear_hash_tree=true is 0x04cec1c810065f2d966aa89ba54b08e17f17ffdca588e4115b50fd0f5f1af2aa.
-  verify_hash_tree reports 'page 0x80000000000000 (in flash drive 0) is not marked dirty but is dirty' and returns
-  false. - Control scenario: identical except that get_root_hash() is called before replace_memory_range, which
-  flushes the pending marks. Stored and recomputed roots both equal 0x04cec1c8... and verify is true. - Printed line:
-  "FAIL: after replace_memory_range on a SHARING_ALL machine, the stored directory's hash tree no longer commits to
-  its flash contents (pending write-TLB dirty mark lost) ...".
-- **Scenario and reachability:** The test is deterministic and needs no crash, only documented API calls: store D,
-  load(D, SHARING_ALL), get_root_hash, run, replace_memory_range on the flash range, run (the guest executes
-  sfence.vma), destroy, then reload D. I ran bash bugs/run.sh R11-FAMPERSISTA-2. The control scenario passes: it
-  flushes the dirty marks with get_root_hash before the replace, and then reloaded == recomputed == 0x04cec1c8... and
-  verify_hash_tree is true. The defect scenario fails. D's flash file holds 0x1122334455667788, but the reloaded root
-  is 0x450f8cff... while the root recomputed from contents is 0x04cec1c8..., and verify_hash_tree reports 'page
-  0x80000000000000 (in flash drive 0) is not marked dirty but is dirty'. The hashes quoted in the candidate text
-  (0x9d5c..., 0xbdd1...) differ from what the shipped test prints, but the mechanism and the verdict are the same. The
-  trigger is off the honest operator's path. The PRT player, bridge and referee model (doc/recipes/prt*.lua,
-  game-*.lua) never call replace_memory_range. The CLI calls it only at startup (src/cartesi-machine.lua:3252-3255),
-  before any run in that process, when no write-TLB marks are pending: the stored snapshot already has them flushed,
-  because store calls mark_write_tlb_dirty_pages.
-- **Possible solution:** In machine::replace_memory_range, call mark_write_tlb_dirty_pages() before
-  m_ars.replace(replacement), after the validation and while the old range is still installed. That flushes every
-  pending write-TLB mark into the dirty-page trees of the ranges the slots actually refer to. Optionally, also mark
-  the hot write-TLB entries clean or re-verify them, so that later flushes do not mark the new range spuriously
-  (harmless, since a new range starts all dirty). Then call init_hot_tlb_contents() as today. Apply the same
-  flush-before-drop rule to any other path that destroys or swaps an address range while write-TLB slots may still
-  point into it. Add a regression test equivalent to bugs/R11-FAMPERSISTA-2.
-- **Risks:** Risk of the issue: a host that runs a SHARING_ALL (or shared-backing-store) machine and then replaces a
-  range mid-run leaves a stored directory whose root does not commit to its contents. Every later hash or proof
-  computed from that directory without clear_hash_tree is wrong, and the stale page is never re-hashed until it is
-  written again. This is silent corruption of a snapshot the emulator wrote, but it is off the PRT honest operator's
-  path, so the goal of section 1 is not affected. Risks of the fix: - mark_write_tlb_dirty_page can throw on a corrupt
-  TLB. It must run before any mutation, so that replace_memory_range keeps strong exception safety and the throw does
-  not leave a half-replaced machine. - The flush adds only O(TLB_SET_SIZE) work per replace. - It must not change any
-  hashed state. It only touches dirty-page bookkeeping, so the canonical hashes are unchanged and no protocol-version
-  (R13) impact is expected.
+- **Location:**
+  - `src/machine.cpp:717-770` (`m_ars.replace` at `:765`, then only `init_hot_tlb_contents` at `:769`; no
+    `mark_write_tlb_dirty_pages` before the old range is dropped);
+  - `src/machine-address-ranges.cpp:656-680` (old range object destroyed at `:674`);
+  - `src/machine.hpp:722-727` and `src/machine.cpp:1611-1628` (a later eviction or destruction marks the slot's page
+    through `read_pma(pma_index)`, which now names the NEW range).
+
+### Problem
+
+A page stored through a write-TLB slot is recorded only by that slot. Its `.dpt` mark is deferred until
+`mark_write_tlb_dirty_pages` runs, which happens in `update_hash_tree`, `store`, `~machine`, shadow overwrite, or
+eviction in `write_verified_tlb` or `write_unverified_tlb`. `replace_memory_range` swaps in the new range without first
+flushing those pending marks into the old range's dirty-page tree. Afterwards, every flush of the slot (`sfence.vma`,
+`satp` or `prv` changes, slot replacement, `~machine`) resolves `pma_index` to the replacement range, marks the page
+there (a spurious mark), and the mark for the old range is lost for good. If the old range was loaded `SHARING_ALL`,
+its `.bin` in the stored directory already holds the guest's bytes, while its `.dpt` and `.dht` still show the
+previous clean hash.
+
+### Evidence and test
+
+- Test: `bugs/R11-FAMPERSISTA-2/` (`test.lua`, `guest.S`, `build.sh`, `guest.bin`). Run
+  `bugs/run.sh R11-FAMPERSISTA-2`. It fails while the bug is present.
+- Observed: the test was run 3 times, with the same result each time: exit 1, with identical hashes on every run.
+  - Defect scenario: the reloaded directory's flash word is `0x1122334455667788`. Its stored root is
+    `0x450f8cff8a629ede74e9c1043a9b6a50bdf61b52cf154f20f02e3d238af3d19a`, but the root recomputed with
+    `clear_hash_tree=true` is `0x04cec1c810065f2d966aa89ba54b08e17f17ffdca588e4115b50fd0f5f1af2aa`.
+    `verify_hash_tree` reports "page 0x80000000000000 (in flash drive 0) is not marked dirty but is dirty" and returns
+    false.
+  - Control scenario: identical except that `get_root_hash()` is called before `replace_memory_range`, which flushes
+    the pending marks. Stored and recomputed roots both equal `0x04cec1c8...` and verify is true.
+  - Printed line: "FAIL: after replace_memory_range on a SHARING_ALL machine, the stored directory's hash tree no
+    longer commits to its flash contents (pending write-TLB dirty mark lost) ...".
+
+### Scenario and reachability
+
+The test is deterministic and needs no crash, only documented API calls: store D, `load(D, SHARING_ALL)`,
+`get_root_hash`, run, `replace_memory_range` on the flash range, run (the guest executes `sfence.vma`), destroy, then
+reload D. `bash bugs/run.sh R11-FAMPERSISTA-2` was run. The control scenario passes: it flushes the dirty marks with
+`get_root_hash` before the replace, and then reloaded == recomputed == `0x04cec1c8...` and `verify_hash_tree` is true.
+The defect scenario fails. D's flash file holds `0x1122334455667788`, but the reloaded root is `0x450f8cff...` while
+the root recomputed from contents is `0x04cec1c8...`, and `verify_hash_tree` reports "page 0x80000000000000 (in flash
+drive 0) is not marked dirty but is dirty". The hashes quoted in the candidate text (`0x9d5c...`, `0xbdd1...`) differ
+from what the shipped test prints, but the mechanism and the verdict are the same. The trigger is off the honest
+operator's path. The PRT player, bridge and referee model (`doc/recipes/prt*.lua`, `game-*.lua`) never call
+`replace_memory_range`. The CLI calls it only at startup (`src/cartesi-machine.lua:3252-3255`), before any run in that
+process, when no write-TLB marks are pending: the stored snapshot already has them flushed, because `store` calls
+`mark_write_tlb_dirty_pages`.
+
+### Possible solution
+
+In `machine::replace_memory_range`, call `mark_write_tlb_dirty_pages()` before `m_ars.replace(replacement)`, after the
+validation and while the old range is still installed. That flushes every pending write-TLB mark into the dirty-page
+trees of the ranges the slots actually refer to. Optionally, also mark the hot write-TLB entries clean or re-verify
+them, so that later flushes do not mark the new range spuriously (harmless, since a new range starts all dirty). Then
+call `init_hot_tlb_contents()` as today. Apply the same flush-before-drop rule to any other path that destroys or
+swaps an address range while write-TLB slots may still point into it. Add a regression test equivalent to
+`bugs/R11-FAMPERSISTA-2`.
+
+### Risks
+
+- Of the issue: a host that runs a `SHARING_ALL` (or shared-backing-store) machine and then replaces a range mid-run
+  leaves a stored directory whose root does not commit to its contents. Every later hash or proof computed from that
+  directory without `clear_hash_tree` is wrong, and the stale page is never re-hashed until it is written again. This
+  is silent corruption of a snapshot the emulator wrote, but it is off the PRT honest operator's path, so the goal of
+  section 1 is not affected.
+- Of the fix:
+  - `mark_write_tlb_dirty_page` can throw on a corrupt TLB. It must run before any mutation, so that
+    `replace_memory_range` keeps strong exception safety and the throw does not leave a half-replaced machine.
+  - The flush adds only `O(TLB_SET_SIZE)` work per replace.
+  - It must not change any hashed state. It only touches dirty-page bookkeeping, so the canonical hashes are unchanged
+    and no protocol-version (R13) impact is expected.

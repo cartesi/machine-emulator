@@ -55,6 +55,8 @@ Flags required by `AUDIT.md`:
 | [R4-VARSTATE-1](#r4-varstate-1) | After a deep reorg aborts the honest player, the relaunched player silently keeps its stored epoch and claims over replaced inputs | PRT player and bridge (stored epoch reopen) | R4, R2, A3, section 1 completeness, section 2 honest operator's path, section 8 High | High |
 | [R11-FAMMASK-1](#r11-fammask-1) | The native interpreter returns constant `mvendorid`, `marchid` and `mimpid` while the uarch program and the uarch and Solidity verifiers read the hashed shadow register | emulator; machine-ID CSRs (`interpret.cpp` against `uarch`) | R2, R7, R13, section 8 High | High |
 | [R11-FAMOPERATORIO-1](#r11-famoperatorio-1) | The honest stored player writes and fsyncs one durable file per guest output at every input boundary, so its persistence cost and inode use grow with the number of outputs | `prt-player-bridge`; stored player output persistence (`doc/recipes/prt.lua`) | R12, A7, R4, section 8 High | High |
+| [R13-ROLECOST-2](#r13-rolecost-2) | The honest bridge re-polls every child tournament ever announced, at least twice per tick, so its per-move latency grows linearly with the number of Sybil child tournaments | `prt-player-bridge`; `doc/recipes/prt-bridge.lua` and `prt-log-history.lua` | R12 (loosely), A7, section 1 completeness, section 8 High | High |
+| [R13-ROLEVERSION-3](#r13-roleversion-3) | The honest player checks only the uarch pristine hash of a deployment, so a verifier build with a different transition function or dispute-constant split is never detected or refused | `prt-player-bridge`; deployment checks of `doc/recipes/prt-player.lua` and `prt-bridge.lua` (`read_geometry`) | R13, A6, section 1 completeness, section 8 High | High |
 | [R1-ARCH-1](#r1-arch-1) | CLINT `mtimecmp`-to-cycle conversion wraps, raising spurious timer interrupts (and none for `mtimecmp == 0`) | emulator (CLINT, timer interrupts) | R7, section 8 Medium | Medium |
 | [R1-ARCH-2](#r1-arch-2) | Misaligned SC.W/SC.D without a matching reservation fails silently instead of trapping | emulator (atomics, LR/SC) | R7, section 8 Medium | Medium |
 | [R1-ARCH-3](#r1-arch-3) | Page walk ignores PMA failures on PTE accesses | emulator (address translation) | R7, section 8 Medium | Medium |
@@ -2536,6 +2538,140 @@ persistence cost and inode use grow with the number of outputs**
   so that a torn append is never read as an output. - Offsets and lengths must be validated against state.json. -
   Decoupling payload storage from the commit must not let the outputs Merkle root or outputs.log diverge from the
   payloads served for A5 output proofs. - A format change requires migrating the state.json version.
+
+---
+
+## R13-ROLECOST-2
+
+**The honest bridge re-polls every child tournament ever announced, at least twice per tick, so its per-move latency
+grows linearly with the number of Sybil child tournaments**
+
+- **Severity:** High (`AUDIT.md` section 8). Confirmed by an independent disproving reviewer, who reran the test, and
+  reproduced by the orchestrator. Found in round 13 (blind adversary personas). The reviewer notes three
+  overstatements in the claim: "twice per tick" holds only when the head advanced between observations; observation is
+  not one of R12's units of work; and no missed deadline was demonstrated (it needs a very large number of children or
+  a slow provider). It survives as a loss of the margin that A7 sizes the clocks for.
+- **Component and area:** `prt-player-bridge`; `doc/recipes/prt-bridge.lua` and `prt-log-history.lua`.
+- **Cited rules:** R12 (loosely), A7, section 1 completeness, section 8 High. Reviewer: A7; Section 1 completeness
+  failure (cannot respond in time), limited to a margin loss; Section 7 (Sybils: any number of claims); Section 8 High
+  (removes a margin the goal relies on).
+- **Location:** doc/recipes/prt-bridge.lua:43-75 (observe: addresses = factory, consensus, root plus every
+  NewInnerTournament child; one history:get_logs per address), prt-bridge.lua:77-80 (sort all logs every observation),
+  prt-bridge.lua:303-310 (refresh loops observe), prt-bridge.lua:541-552 (attempt calls refresh again before
+  publishing), prt-bridge.lua:641-645 (tick starts with refresh), doc/recipes/prt-log-history.lua:73-100 (get_logs
+  issues at least one eth_getLogs per address whenever head advanced)
+- **Defect:** Every observation rebuilds the address list from scratch. It adds the child tournament of every
+  NewInnerTournament event ever emitted, including finished Sybil-vs-Sybil tournaments the honest claim never enters,
+  and calls history:get_logs for each one. get_logs sends at least one sequential eth_getLogs over the single
+  persistent HTTP connection for every address whose fetched block is behind the head. A tick observes at least twice:
+  refresh at the start, and refresh again inside attempt before publishing. Each observation also re-sorts and
+  re-applies every log of the dispute. The latency before each honest response is therefore about 2 x (3 + T) RPC
+  round trips plus O(L log L) Lua work, where T is the number of child tournaments and L the number of logs. Both grow
+  linearly with the attacker's claim count, not logarithmically. Finished tournaments are never dropped from the
+  polling set until the epoch ends.
+- **Evidence and test:** `bugs/R13-ROLECOST-2/` (`test.lua`, `vendor/dkjson.lua`). Run `bugs/run.sh R13-ROLECOST-2`.
+  It fails while the bug is present. Observed: The test failed the same way on all 4 runs (exit 1). In every run the
+  first three lines matched exactly, apart from the CPU timing: K=   10 finished child tournaments: one tick after a
+  1-block head advance issued 13 eth_getLogs (17 RPCs total), re-sorted 32 logs, 0.001 s Lua CPU; at 30 ms/RPC = 0.5 s
+  K= 1000 finished child tournaments: one tick after a 1-block head advance issued 1003 eth_getLogs (1007 RPCs total),
+  re-sorted 3002 logs, 0.080 s Lua CPU; at 30 ms/RPC = 30.2 s K= 1000, 400 RPCs per 12 s block: one publishing tick
+  issued 2006 eth_getLogs (2016 RPCs, 60.5 s at 30 ms/RPC, published=true) FAIL: honest bridge per-tick eth_getLogs
+  count grows linearly with Sybil child tournaments (13 for K=10, 1003 for K=1000 = 3+K): every finished
+  NewInnerTournament child is re-polled on each observation (prt-bridge.lua observe, prt-log-history.lua get_logs)
+- **Scenario and reachability:** The trigger is reachable with attacker actions that section 7 allows: post Sybil
+  claims, pair them against each other, and bisect each pair to a leaf seal so the root emits NewInnerTournament.
+  Every child tournament ever announced goes into the honest bridge's polling set (prt-bridge.lua:53-74). The bridge
+  rebuilds that set from scratch on every observation and never prunes it, even for children whose parent match was
+  deleted. history:get_logs (prt-log-history.lua:73-97) sends at least one eth_getLogs per address whenever the head
+  moved. The honest operator cannot decline this work, because it runs inside its own observe() before any job is
+  scheduled. The count of children T is bounded only by the attacker's budget and by chain throughput: each child
+  costs a bond plus about 2 x height bisection transactions. An actual missed deadline was not demonstrated. It needs
+  a very large T, a slow or rate-limited RPC provider, or tight clocks.
+- **Possible solution:** - **Prune the polling set.** Keep a persistent set of tournaments that still matter: the
+  root, children on the honest claim's path, and children with outstanding cleanup or bond-recovery jobs. Stop polling
+  children whose parent match is deleted and that have no pending job for this bridge. Keep enough to re-add them if a
+  reorg makes them current again. - **Batch the queries.** Fetch all tracked addresses in one eth_getLogs call per
+  range, since the address field accepts an array. Chunk the array to fit provider limits. Per-tick RPCs then depend
+  on new log volume, not on T. - **Apply logs incrementally.** Keep the derived snapshot and apply only the newly
+  fetched logs, in order, instead of re-sorting and re-applying every log on each observation. Rewind on a reorg to
+  the common ancestor the history already computes. - **Skip the second observation when nothing changed.** In
+  attempt(), skip the full re-observation when the head is unchanged. When it changed, apply only the delta.
+- **Risks:** Risks of the issue: an attacker with a large budget, or an operator on a slow or rate-limited RPC
+  provider, can raise the honest claim's per-move latency and consume its allowance. With tight clocks, it can make
+  the bridge miss join windows or response deadlines and get the honest claim eliminated. Provider errors on
+  single-block pages are raised, and a relaunch refetches from the deployment block, which makes this worse. Risks of
+  the fix: - Pruning children too early can miss events that still matter: bond recovery, eliminateInnerTournament
+  cleanup, or a child that a reorg makes current again. prt-lua-bridge.md's TODO already requires keeping earlier
+  children until the root settlement is final. - Batched address queries hit provider limits on address count and
+  result size, so they still need the halving pager. - Incremental snapshot application adds state that must be
+  rewound exactly on a reorg. A mistake there could make the bridge act on stale or duplicated events, which is worse
+  than the latency.
+
+---
+
+## R13-ROLEVERSION-3
+
+**The honest player checks only the uarch pristine hash of a deployment, so a verifier build with a different
+transition function or dispute-constant split is never detected or refused**
+
+- **Severity:** High (`AUDIT.md` section 8). Confirmed by an independent disproving reviewer, who reran the test, and
+  reproduced by the orchestrator. Found in round 13 (blind adversary personas). The reachable impact is the loss of
+  detection: a real mismatch needs a deployment that already breaks A6. The CM_MARCHID part of the candidate is weak
+  on its own; the core is that the player never compares the verifier code or the split of the dispute constants.
+- **Component and area:** `prt-player-bridge`; deployment checks of `doc/recipes/prt-player.lua` and `prt-bridge.lua`
+  (`read_geometry`).
+- **Cited rules:** R13, A6, section 1 completeness, section 8 High. Reviewer: R13; A6; A2; R4; Section 8 High: node
+  that cannot detect a version mismatch while every node runs the deployment's version.
+- **Location:** doc/recipes/prt-player.lua:92-99, doc/recipes/prt-bridge.lua:729-749 (read_geometry),
+  doc/recipes/prt-deploy.lua:47-52; deployed side: Dave CartesiStateTransition (CM_MARCHID and
+  UARCH_PRISTINE_STATE_HASH are its only published constants; LOG2_INPUT_WINDOW_SPAN =
+  ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE + ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE), machine-solidity-step
+  src/SendCmioResponse.sol:86 (mcycle deadline uses ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
+- **Defect:** Before joining, the player's only version check against the deployment is `chain:call(state_transition,
+  'UARCH_PRISTINE_STATE_HASH()') == cartesi.UARCH_PRISTINE_STATE_HASH`. It does not compare the published CM_MARCHID,
+  and does not compare the state-transition contract's code hash with the verifier built from the audited source.
+  read_geometry derives log2_mcycles_per_period from levels[1].height minus the local U and then checks only that
+  levels[0].height == E+M-p and levels[1].height == p+U. That constrains the sum E+M, not the split. The pristine hash
+  covers only the uarch program. It does not cover: - UArchStep.sol (the uarch ISA semantics); - UArchReset.sol (the
+  revert-on-reject logic); - SendCmioResponse.sol (delivery preconditions and the mcycle deadline, which depend on
+  ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE); - AccessLogs (the hash function); - the position-to-form map in
+  CartesiStateTransition (INPUT_MASK and UARCH_CYCLE_MASK). All of these are part of the transition function under
+  R13, and none appears in the uarch binary.
+- **Evidence and test:** `bugs/R13-ROLEVERSION-3/` (`test.lua`, `run-player.lua`, `vendor/dkjson.lua`). Run
+  `bugs/run.sh R13-ROLEVERSION-3`. It fails while the bug is present. Observed: 3 of 3 runs failed the same way, with
+  exit 1:   pristine-mismatch  -> refused .../prt-player.lua:93: emulator and Solidity pristine uarch hashes differ
+  (control: the harness reaches the player's check)   marchid-mismatch   -> accepted   split-mismatch     -> accepted
+  Counter 2^67: player proof encoding = plain uarch step (no input prefix); contract (M=47) form = input-window
+  opening (8-byte input prefix, CMIO, step); contract (M=48) form = plain uarch step; player input slot 0, contract
+  input slot 1. FAIL: the honest player joins a deployment whose CartesiStateTransition does not implement its
+  transition function (CM_MARCHID differs from cartesi.MARCHID; the verifier code is a different build
+  (dispute-constant split M=47/E=25)): it checks only UARCH_PRISTINE_STATE_HASH and the sum E+M of the factory
+  heights, so it cannot detect and refuse the version mismatch (R13, A6); under the M=47 build its honest proof at
+  counter 2^67 reverts. During startup the player made only these calls: the application, consensus and factory views,
+  UARCH_PRISTINE_STATE_HASH(), getTemplateHash(), tournamentLevelCount() and tournamentParameters(0/1). It never
+  called CM_MARCHID() or eth_getCode.
+- **Scenario and reachability:** The check runs on every start of the honest player (doc/recipes/prt-player.lua:92-99,
+  before any play). The player joins a deployment by application address and takes the state-transition address from
+  the factory. Its only deployment-version checks are UARCH_PRISTINE_STATE_HASH() and bridge.read_geometry
+  (prt-bridge.lua:729-749). A grep of the in-scope prt*/game-* modules finds no eth_getCode, CM_MARCHID or code-hash
+  comparison. The gap is always present. A wrong outcome (Critical) would also need a deployment that breaks A6, so
+  the reachable impact is the section 8 High case: the node cannot detect a mismatch.
+- **Possible solution:** At startup, have the player compare the deployed verifier with its own build: 1. Compare
+  eth_getCode(state_transition) with the deployedBytecode of CartesiStateTransition in the pinned Dave artifacts (the
+  --dave directory). The deploy takes no constructor arguments, so the bytecode is deterministic. Alternatively,
+  compare keccak of the code with a hash pinned from a reproducible build of the audited machine-solidity-step and
+  Dave revision. 2. Optionally also compare CM_MARCHID and any published dispute constants with the cartesi.* values,
+  and refuse to start on any difference. 3. Apply the same code-hash check to the tournament implementation and the
+  factory. Their constants (heights and log2step) and the form map also define the protocol. 4. Treat the remaining
+  factory geometry as the cross-check it already is.
+- **Risks:** Risk of the issue: an operator can join a deployment whose verifier implements a different transition
+  function, with no warning. That deployment already breaks A6. There, honest proofs at input-window boundaries or
+  with the wrong imcyclemax revert, and the honest claim is eliminated. With A6 holding, only the safety margin is
+  lost. Risks of the fix: - An exact bytecode comparison breaks on any recompilation: different compiler settings or
+  metadata hash, or a chain-specific deployment such as a proxy or immutables. Honest operators would then refuse
+  valid deployments, which is a liveness issue, until the pinned hash is updated through a reproducible build (R13). -
+  Pinning the hash in the player couples the emulator recipe to one Dave and machine-solidity-step release. - Adding a
+  CM_MARCHID check alone gives false assurance, because CM_MARCHID does not identify the verifier semantics.
 
 ---
 

@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **extra rounds in progress** (round 12 confirmed two more issues, so the clean-round count restarted again; round 13 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
+Status: **extra rounds in progress** (round 13 confirmed two more issues, so the clean-round count restarted again; round 14 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
 
 **Running extra-rounds total:** round 4 (variant analysis) confirmed 6 new issues, bringing the confirmed total to **30 (14 Critical, 8 High, 8 Medium)**. See the round 4 candidate table and the Extra rounds section.
 
@@ -122,7 +122,8 @@ refutations.
 | 10 | Manual and promise checking: each normative statement of the manual and each documented invariant in the code is checked against the implementation | MANCLI1, MANCLI2, MANLUA1, MANLUA2, MANGUEST, MANARCH, MANSTATE, MANCOMP, MANPRT, PROMISES |
 | 11 | Family expansion of the late findings: each hunter enumerates every site of one bug shape found in rounds 7-10 | FAMPERSISTA, FAMPERSISTB, FAMCACHE, FAMMASK, FAMWEDGE, FAMFEES, FAMSPEC, FAMOPERATORIO, FAMUARCH |
 | 12 | Second-order family expansion: the new shapes of round 11 (a register read from a constant on one path and from the shadow on another, decisions made at one chain state and executed at another) and the neighbors round 11 opened | SECSHADOW, SECPENDING, SECGAS, SECPERUNIT, SECCACHE2, SECLOCALREMOTE, SECEVMSEAM, SECCONFIG |
-| 13 | Independent re-derivation: hunters who see no earlier candidate rebuild the verdict on a slice from scratch | planned |
+| 13 | Blind adversary personas: hunters play one persona each and are NOT shown the list of earlier findings (it goes only to dedup, whose duplicates measure the rediscovery rate) | ROLEINPUT, ROLECLAIMANT, ROLETEMPLATE, ROLEFAULT, ROLEVERSION, ROLECONTRACT, ROLESPEC, ROLECOST, ROLEAPPDEV, ROLELOCALAUDITOR |
+| 14 | To be chosen from what round 13 shows | planned |
 
 ## Candidates
 
@@ -457,6 +458,39 @@ Round 12 coverage (hunts with no candidate are not evidence of absence):
   for non-power-of-two lengths.
 - **SECPERUNIT**: tabulated per-unit costs; no reflink file system was available, so the stored player's per-input clone
   cost under the documented reflink requirement was not measured.
+
+### Round 13 (extra: blind adversary personas)
+
+Ten hunters ran, each playing one persona (the input sender, the dishonest claimant, the template supplier, the unlucky
+honest operator, the deployment engineer, the author of the consuming contracts, the RISC-V specification lawyer, the
+worst-case cost attacker, the application developer and the hash-tree auditor). **They were not shown the list of earlier
+findings**, which went only to the dedup step, so this round also measures the audit's recall. They reported 24 raw
+candidates. Dedup merged 17 of them into earlier findings and kept 7. Of those 7, 2 were confirmed (both High) and 5 were
+refuted or disproved, so **round 13 was not clean**. All agents ran on Claude Opus 5.5 (exact ID) at High effort; no hunt,
+prover or reviewer was blocked.
+
+Recall: the 17 duplicates re-found 14 distinct earlier findings (R1-REFEREE-1, R1-REFEREE-2, R2-REFEREE-1,
+R2-PLAYER-1, R1-PLAYER-2, R1-PLAYER-3, R1-PLAYER-4, R4-VARSTATE-1, R10-MANCLI1-1, R1-VERIFIER-1, R4-VARRANGE-1, R2-SOLIDITY-1,
+R1-ARCH-1/3/4 and R1-GUESTTOOLS-3), most of them from several personas. Every Critical referee and player finding of
+round 1 and 2 that a persona could reach was found again without being told about it. Of the 7 new candidates, none was
+Critical.
+
+| ID | Component | Claimed | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R13-ROLEVERSION-3 | prt-player-bridge | High | The honest player checks only the uarch pristine hash of a deployment, so a verifier build with a different transition function or dispute-constant split is never detected or refused | **Confirmed, High** | Reproduced by prover, reviewer and orchestrator; R13 requires the operator to detect and refuse a mismatch; see `BUGS.md` |
+| R13-ROLECOST-2 | prt-player-bridge | High | The honest bridge re-polls every child tournament ever announced, at least twice per tick, so per-move latency grows linearly with the number of Sybil child tournaments | **Confirmed, High** | Reproduced; the reviewer trimmed the claim (no deadline miss shown, observation is not an R12 unit); see `BUGS.md` |
+| R13-ROLEVERSION-2 | emulator | High | The build embeds a stale uarch program and pristine hash when only headers changed, so the native interpreter and the uarch diverge and the version check still passes | Refuted by reviewer | Facts hold (the uarch Makefile has no header dependencies and the pristine hash is generated once), but building an audited tag on stale generated artifacts is operator build hygiene on the trusted side (section 4); no section 7 adversary can cause it. A hardening note: track header dependencies in `uarch/Makefile` |
+| R13-ROLEAPPDEV-3 | machine-guest-tools | High | `cmt_gio_request` and `rollup gio` accept GIO domains equal to the accepted and rejected reasons, so a guest can forge the outputs root and swallow an input | Refuted by reviewer | Reproduced, but the application forwards queries that the input chooses, which is not a correctly designed application (section 2); the HTTP server already validates the domain. Hardening note: validate the domain in `cmt_gio_request` |
+| R13-ROLEAPPDEV-4 | machine-guest-tools | Medium | `rollup-http-server` strips the first two payload characters without checking for `0x` | Refuted by reviewer | The trigger is the application's own violation of the documented payload format; a correctly designed application never sees truncation, and the panic restarts the worker without committing anything |
+| R13-ROLESPEC-4 | emulator | Medium | Writes to `mcycle` raise illegal-instruction, and the hpm counters and PMP CSRs are absent | Refuted by reviewer | Deliberate and required by R8 and R13 (`mcycle` is the dispute-grid coordinate), and the manual documents the departure in substance; the absent CSRs are implementation-defined optional features |
+| R13-ROLECOST-3 | emulator | High | `sfence.vma` and `satp` writes cost about 17.5K uarch cycles (768 serialized `write_tlb` ECALLs) | Disproved by prover | Within the 2^20 cycles per mcycle that A7 must size for (about 1.7%); the shadow TLB is hashed state, so invalidating its 768 slots must change 768 hashed slots |
+
+Round 13 coverage (hunts with no new candidate are not evidence of absence): each persona walked the whole system from
+its seat, so the coverage is by question and not by file. Not reached by the personas that said so: the C++ and Solidity
+verifiers against fabricated logs (ROLECLAIMANT looked only at how the referee calls them), the Dave contracts (out of
+scope), the bridge's fee and nonce races under a Sybil flood (needs Dave on a chain), `prt-transactions.lua`,
+`prt-cast.lua`, `prt-websocket.lua` and `prt-log-history.lua` (ROLECLAIMANT), and the Solidity referee itself (ROLEINPUT, no
+EVM for that role).
 
 ## Blocked agents
 

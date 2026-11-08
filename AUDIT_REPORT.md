@@ -976,3 +976,45 @@ Read this ranking with care: early strategies met the easy bugs, so the order of
    fallback-only findings. Ask for a "failing test" instead of an "exploit", and retry once on the primary model with a
    rephrased prompt before falling back.
 
+## Conclusion
+
+This audit is finished. It ran 18 rounds, with 348 subagents and about 54.7 million subagent tokens. It stopped under the
+requester's rule: rounds 17 and 18 used different strategies and both confirmed no new issue.
+
+**Findings.** 55 confirmed issues: 27 Critical, 13 High and 15 Medium. All are in `BUGS.md`, ordered by severity. Each has
+a deterministic failing test under `bugs/`, run with `bugs/run.sh <ID>`. All 55 were run at the end and all fail as
+expected on `feature/prt-audit`. 24 other candidates were rejected, each with its reason in the round tables.
+
+**Where the problems are.**
+- The honest PRT operator holds most of the Criticals (14 Critical and 8 High in the player and bridge, 3 Critical in the
+  referee model). They need no emulator defect. The player and bridge crash on guest or relayed data, lose their claim
+  after a restart, or pay costs that grow with the adversary's inputs or the application's age.
+- The emulator's Criticals are verifier and CLI aborts on guest or relayed data, and stored machines that trust files
+  outside the hashed state when they load. Its Medium issues are mostly verifier deviations at unreachable states and
+  trailing data accepted without effect.
+- `machine-solidity-step` has two High issues and `machine-guest-tools` has two Critical decoder issues.
+- No soundness failure was found in the transition function, or in the verifiers at reachable states.
+
+**What this audit does not show.**
+- It does not show that no further issue exists. Blind rounds re-found nearly everything (17 of 24, 18 of 20 and 29 of 30
+  raw candidates), which shows saturation under these prompts, not completeness.
+- The calibration error on the "application not correctly designed" exclusion stood from round 5 to round 14. The classes
+  swept after it was fixed (R4 at every reachable state, round 16, and the file-by-file inventory, round 17) are the best
+  covered. Other classes got less attention.
+- Seven hunts and one proof were stopped by safeguards. Three issues were found only on fallback models and are flagged
+  in `BUGS.md`. The areas left uncovered and the threat-model gaps are listed above and should be settled before the next
+  audit.
+- The Solidity verifier results rest on a hunter's EVM harness. The orchestrator could not re-run it, because the
+  package install was denied.
+- `THREAT_MODEL.md`, `AUDIT.md`, `src/`, `uarch/` and `doc/` were not modified.
+
+**Next audit.** It should start only after the relevant bugs above are fixed, so that it audits the fixed code and not
+issues already known. Before it starts:
+1. Settle the threat-model gaps in "Gaps in the threat model", at least the scope of the exclusion, the loader and
+   persistence rules, and the severity caps.
+2. Apply the process changes in "Cost, strategies and lessons": fix the calibration, give hunters the catalog of bug shapes,
+   and ship the harness library.
+3. Re-run `bugs/run.sh` for every fixed issue. Each test that now exits 0 becomes a regression test, and a test that still
+   exits 1 means the fix is incomplete.
+4. Keep one blind round as the stop test, run after the calibration is fixed.
+

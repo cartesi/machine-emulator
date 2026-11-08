@@ -22,6 +22,7 @@ Flags required by `AUDIT.md`:
 | ID | Title | Component | Cited rules | Severity |
 |---|---|---|---|---|
 | [R1-GUESTTOOLS-1](#r1-guesttools-1) | Honest PRT player aborts for good when a guest yield's DATA exceeds the transmit buffer | PRT player and bridge (yield handling) | R4, section 1 completeness, section 2 reachable state, section 4, A7 | Critical |
+| [R1-GUESTTOOLS-2](#r1-guesttools-2) | The honest PRT player asserts that the outputs Merkle root left by the guest equals its own frontier, so a guest that leaves any other value at an accepted yield aborts claim computation for good | `prt-player-bridge` (`doc/recipes/prt.lua`) | R4, section 1 completeness, section 4, A5, section 8 | Critical |
 | [R1-PLAYER-1](#r1-player-1) | Relaunched honest bridge abandons its own claim when an adversary joined that commitment first | PRT player and bridge (claim binding after restart) | R4, A7, section 1 completeness, section 7 | Critical |
 | [R1-PLAYER-2](#r1-player-2) | Eight-entry input-boundary cache makes reaching a disputed position cost about n/5 whole inputs | PRT player and bridge (machine cache, replay cost) | R12, A7, R4, section 1 completeness, section 7 | Critical |
 | [R1-PLAYER-3](#r1-player-3) | Player reads the previous epoch's seal with one unpaged `eth_getLogs` and crash-loops once the chain outgrows the node's range limit | PRT player and bridge (epoch discovery) | R4, A7, section 4, section 1 completeness | Critical |
@@ -161,6 +162,60 @@ Claim computation depends only on state hashes and must not depend on output boo
 - Of the fix: the root the player reads must match the on-chain extraction exactly. Any policy for oversized outputs
   must stay consistent with A5, since such an output can never be proven. Changing the C++ `receive_cmio_request`
   instead would be a host API change other callers rely on, though not a change of the transition function.
+
+---
+
+## R1-GUESTTOOLS-2
+
+**The honest PRT player asserts that the outputs Merkle root left by the guest equals its own frontier, so a guest
+that leaves any other value at an accepted yield aborts claim computation for good**
+
+- **Severity:** Critical (`THREAT_MODEL.md` section 8: violating a rule at a reachable state, or anywhere on the
+  honest operator's path). **Overturned on a second opinion in round 15.** Round 1's reviewer refuted it as out of
+  scope (the trigger needs an application that is not correctly designed); the round 15 reviewer showed that this
+  reading does not follow the text: the section 8 exclusion "an application that is not correctly designed" is listed
+  under "Out of scope for the emulator" and `AUDIT.md` keeps findings in components it puts in scope (the honest
+  operator) out of that exclusion; a valid template (section 2) does not require a correctly designed application; and
+  section 2 presumes any assignment of guest-writable memory reachable. R4 then requires the honest operator to
+  compute the claim from that state. Reproduced by the orchestrator.
+- **Component and area:** `prt-player-bridge`; player output collection (`flush_pending_outputs`) on a manual
+  rx-accepted yield.
+- **Cited rules:** R4 (honest completeness), section 1 completeness failure, section 4 (the outputs root and payloads
+  are opaque guest data), A5; section 8 Critical. The first reviewer's counter-arguments (a buggy or subverted guest
+  controls the root anyway, and a corrupted guest-tools tree is its own finding) are fair but do not remove the R4
+  breach.
+- **Location:** doc/recipes/prt.lua:1385-1394 (`flush_pending_outputs`:
+  `assert(frontier_get_root_hash(outputs_frontier) == outputs_merkle_root)`), :1984-1990 (`run_to_input_mcycle_offset`
+  reads the root from `tx[0..DATA)`), :2047-2075 (`input_added` has already cleared `epoch_pair` and `epoch_builder`
+  and bumped `input_count` before the input runs), :2485-2488 (a second fail-closed check of the same root in
+  `store_checkpoint_files`).
+- **Defect:** on a manual rx-accepted fixed point the player reads the root from the transmit buffer, with the length
+  taken from the guest's `DATA`, pushes the pending outputs into its frontier, and asserts equality. The transition
+  function never interprets that root. When the guest leaves anything else (a stale or garbage value, `DATA` not 32,
+  outputs emitted without libcmt), the assert raises inside `input_added`, which has already torn down the epoch
+  state, so the player can no longer advance, seal or claim the epoch, and a replay of the input is skipped.
+- **Evidence and test:** `bugs/R1-GUESTTOOLS-2/` (`test.lua`, `guest.S`, `link.ld`, `build.sh`). Run `bugs/run.sh
+  R1-GUESTTOOLS-2`. A bare-metal guest writes either 32 bytes of `0xAA` or the true root with `DATA = 0`, then yields
+  manual rx-accepted. The control variant advances and seals. In both fault variants `input_added(0)` raises "outputs
+  Merkle root mismatch", `input_added(1)` then raises "epoch is not open" and `epoch_sealed(2)` raises "sealed input
+  count mismatch", while the emulator computes the canonical hash and its logs verify. With only the assert at
+  prt.lua:1393 removed, the test passes.
+- **Scenario and reachability:** after reading an input, the guest leaves any value other than the true root of its
+  outputs at an accepted yield (a buggy application, a corrupted guest-tools tree such as a reset `merkle.dat`, or a
+  guest that an input subverted). Only the honest operator diverges: the emulator, the referee and the computation
+  hash are all well defined for that state. The honest claim misses its deadlines and is eliminated, and an
+  adversary's claim can settle any state. Retries hit the same assert deterministically. The first reviewer noted that
+  a correctly designed application never reaches this state; the finding rests on R4 holding at every reachable state,
+  as the threat model writes it, not only for correctly designed applications.
+- **Possible solution:** do not make claim computation depend on the guest's root. Record the epoch's outputs as
+  unprovable (or keep the frontier root alongside the guest value) and keep computing and defending the canonical
+  mcycle and uarch claims; refuse only to produce output proofs for that epoch. Make the check in
+  `store_checkpoint_files` non-fatal in the same way. Take the length of the root from the fixed 32 bytes, not from
+  `DATA` (see R5-DFGUESTOUT-1).
+- **Risks:** an application that writes a wrong root silently loses its outputs for that epoch while the honest
+  operator keeps defending the canonical state, which is the intended division of responsibility (A5 governs what can
+  be extracted). The fix must keep the frontier consistent for later epochs and must not hide a real divergence
+  between the player's outputs and the guest's; log it loudly.
 
 ---
 

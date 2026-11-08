@@ -1,6 +1,6 @@
 # PRT Audit Report
 
-Status: **extra rounds in progress** (round 14 confirmed one more issue, a latent High, so the clean-round count restarted again; round 15 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
+Status: **extra rounds in progress** (round 15, a second-opinion round, overturned one refutation and so confirmed one more issue; the clean-round count restarted again; round 16 next). The headline block below is the rounds 1-3 snapshot; it is rewritten when the extra rounds finish.
 
 **Running extra-rounds total:** round 4 (variant analysis) confirmed 6 new issues, bringing the confirmed total to **30 (14 Critical, 8 High, 8 Medium)**. See the round 4 candidate table and the Extra rounds section.
 
@@ -124,7 +124,8 @@ refutations.
 | 12 | Second-order family expansion: the new shapes of round 11 (a register read from a constant on one path and from the shadow on another, decisions made at one chain state and executed at another) and the neighbors round 11 opened | SECSHADOW, SECPENDING, SECGAS, SECPERUNIT, SECCACHE2, SECLOCALREMOTE, SECEVMSEAM, SECCONFIG |
 | 13 | Blind adversary personas: hunters play one persona each and are NOT shown the list of earlier findings (it goes only to dedup, whose duplicates measure the rediscovery rate) | ROLEINPUT, ROLECLAIMANT, ROLETEMPLATE, ROLEFAULT, ROLEVERSION, ROLECONTRACT, ROLESPEC, ROLECOST, ROLEAPPDEV, ROLELOCALAUDITOR |
 | 14 | Blind invariant audit by subsystem: hunters again not shown the earlier findings; each owns one subsystem, derives its invariants from scratch and attacks them | INVINTERP, INVCSR, INVMMU, INVDEVICE, INVHASH, INVSTORE, INVLOGS, INVAPI, INVREFEREE, INVOPERATOR, INVGUEST |
-| 15 | To be chosen from what round 14 shows | planned |
+| 15 | Second opinion on every refuted or disproved candidate (21): an independent reviewer re-reads each refutation against the text of `THREAT_MODEL.md` and `AUDIT.md` and may overturn it only by naming the step that contradicts them | R1-SOLIDITY-1, R1-HASH-1, R1-GUESTTOOLS-2/3, R2-ARCH-1, R6-LCSETUP-1/2, R7-FPMACHINE-1, R7-FPPRTREST-1, R8-DYNPRTSIM-1/2, R9-GOALACCEPT-1, R10-MANARCH-1/2, R12-SECPERUNIT-1, R13-ROLEVERSION-2, R13-ROLEAPPDEV-3/4, R13-ROLESPEC-4, R13-ROLECOST-3, R14-INVGUEST-3 |
+| 16 | To be chosen from what round 15 shows | planned |
 
 ## Candidates
 
@@ -149,7 +150,7 @@ two in-flight provers ran again.
 | R1-ARCH-4 | emulator | Medium | `sip` writes let S-mode set or clear STIP and SEIP | **Confirmed, Medium** | Deterministic, consistent across paths, affects only S-mode's own interrupts; see `BUGS.md` |
 | R1-HASH-1 | emulator | Medium | Step-log replay verifier lets the proof select the hash function | Refuted by reviewer | `machine::verify_step` serves no transition form; it is the documented sha256 step log for ZK proving (out of scope), and the form verifiers hard-code keccak256 |
 | R1-GUESTTOOLS-1 | prt-player-bridge | Critical | Honest player aborts when a guest yield's data exceeds the tx buffer | **Confirmed, Critical** | Reachable with a correctly designed application (DATA is ignored on reject); see `BUGS.md` |
-| R1-GUESTTOOLS-2 | prt-player-bridge | Critical | Honest player asserts the guest's outputs Merkle root matches its own frontier | Refuted by reviewer | The assert fires only when the guest's root disagrees with its own accepted outputs, which a correctly designed application never does; a subverted guest already controls everything the canonical state commits to |
+| R1-GUESTTOOLS-2 | prt-player-bridge | Critical | Honest player asserts the guest's outputs Merkle root matches its own frontier | **Confirmed, Critical (overturned in round 15)** | Round 1's reviewer refuted it because the trigger needs an application that is not correctly designed. The round 15 second opinion overturned that: the section 8 exclusion is listed for the emulator and `AUDIT.md` keeps components it puts in scope (the honest operator) out of it, a valid template does not require a correctly designed application, and R4 holds at every reachable state; reproduced by the orchestrator; see `BUGS.md` |
 | R1-GUESTTOOLS-3 | machine-guest-tools | Medium | `rollup voucher` accepts values shorter than 32 bytes | Refuted by reviewer | Triggered only when the application violates the CLI's documented 32-byte value format (not correctly designed); no rule violated, the emulator stays deterministic |
 | R1-PLAYER-1 | prt-player-bridge | Critical | Relaunched honest bridge abandons its claim when an adversary joined that commitment first | **Confirmed, Critical** | Section 7 adversary plus any relaunch after the joining window; see `BUGS.md` |
 | R1-PLAYER-2 | prt-player-bridge | Critical | 8-entry input-boundary cache makes reaching a chosen position cost about n/5 whole inputs | **Confirmed, Critical** | Reach cost grows linearly with the adversary-chosen input count; see `BUGS.md` |
@@ -526,6 +527,24 @@ Round 14 coverage (hunts with no new candidate are not evidence of absence):
   shutdown races, the CLI's computation-hash runners in depth, differential fuzzing of the forest functions,
   `prt-websocket.lua` past the handshake, the durability of reflink clones, and booting Linux to run the guest-side
   reproducers end to end.
+
+### Round 15 (extra: second opinion on every refuted candidate)
+
+This round hunts for no new defect. It tests the other half of the process: 21 candidates had been refuted or disproved by
+one reviewer or prover each, and a wrong refutation would hide a real bug. One independent reviewer (Opus 5.5, High
+effort) re-read each refutation against the text of `THREAT_MODEL.md` and `AUDIT.md` and the code, with the instruction
+to uphold it unless it could name the exact step that contradicts them. 19 refutations were upheld and 2 overturned.
+**One overturn stands as a new confirmation, so round 15 was not clean.** No reviewer was blocked.
+
+| ID | Earlier outcome | Second opinion | Reason |
+|---|---|---|---|
+| R1-GUESTTOOLS-2 | Refuted by reviewer (round 1) | **Overturned: Confirmed, Critical** | The first reviewer treated the trigger (a guest that leaves a wrong root at an accepted yield) as an application that is not correctly designed, which section 8 lists as out of scope *for the emulator*. `AUDIT.md` keeps components it puts in scope (the honest operator) out of that exclusion, a valid template (section 2) does not require a correctly designed application, section 2 presumes any assignment of guest-writable memory reachable, and R4 holds at every reachable state. The orchestrator reproduced the test and agrees; this is consistent with R1-GUESTTOOLS-1 and R5-DFGUESTOUT-1. See `BUGS.md` |
+| R1-HASH-1 | Refuted by reviewer (round 1) | Overturn recorded, **no new finding** | The reviewer examined the stored candidate, which is the referee-model output-index aliasing (bit 63) that the blocked primary hunt reported; the refutation was about a different candidate of the same ID (the step-log hash function of the mcycle verifier, which is ZK-only and stays refuted). The aliasing is already confirmed as R1-REFEREE-2 (the dropped candidate `R1-HASH-blocked`). The test in `bugs/R1-HASH-1/` never tested the aliasing; the reviewer reproduced the aliasing directly |
+| R1-SOLIDITY-1, R1-GUESTTOOLS-3, R2-ARCH-1, R6-LCSETUP-1, R6-LCSETUP-2, R7-FPMACHINE-1, R7-FPPRTREST-1, R8-DYNPRTSIM-1, R8-DYNPRTSIM-2, R9-GOALACCEPT-1, R10-MANARCH-1, R10-MANARCH-2, R12-SECPERUNIT-1, R13-ROLEVERSION-2, R13-ROLEAPPDEV-3, R13-ROLEAPPDEV-4, R13-ROLESPEC-4, R13-ROLECOST-3, R14-INVGUEST-3 | Refuted or disproved | Upheld | Each reviewer re-derived the refuting argument against the quoted text of the threat model and agreed with it. For example, R1-SOLIDITY-1 rests on the `InputBox` 64 KiB cap, which the reviewer re-verified in the pinned `rollups-contracts` source, and R10-MANARCH-1/2 rest on the RISC-V text that allows the behavior |
+
+Process note: the 19 upheld refutations support the earlier rounds' reviewing standard, and the 1 genuine overturn shows
+the cost of one rule applied too broadly (the "application that is not correctly designed" exclusion). That exclusion is
+now read as scoped to the emulator, not to the honest operator.
 
 ## Blocked agents
 

@@ -47,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed the PRT and verification game recipes to rebuild the hash tree of each epoch's first machine
 - Changed `sync_stored` to fail while a machine loaded with shared backing stores uses the stored machine
 - Changed the `sync` key of `--load` and the commits of `--revert-mode=stored` to reload the machine around the sync
+- Changed `--revert-mode=stored` to keep a synced copy of the last committed state in `<directory>.revert`
+- Changed `--revert-mode=stored` to remove `<directory>.revert` on a clean exit
 
 ### Removed
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`

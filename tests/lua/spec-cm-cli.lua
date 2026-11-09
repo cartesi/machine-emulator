@@ -1091,9 +1091,8 @@ dofile(%q)
                 run_ok(flags)
                 local first = operation .. ":" .. tostring(option ~= false) .. "\n"
                 local reload = "load:" .. tostring(option == "--clear-hash-tree=always") .. "\n"
-                -- Creation only reloads during the setup snapshot and commit; inspection also commits, snapshots and
-                -- reverts.
-                expect.equal(filesystem.read_file(calls_file), first .. reload:rep(operation == "create" and 2 or 5))
+                -- Creation only reloads during the setup commit; inspection also commits and reverts.
+                expect.equal(filesystem.read_file(calls_file), first .. reload:rep(operation == "create" and 1 or 3))
                 local root = operation == "create" and source:get_root_hash() or template:get_root_hash()
                 expect.equal(filesystem.read_file(initial_hash), root)
                 expect.equal(filesystem.read_file(final_hash), root)
@@ -2901,6 +2900,54 @@ dofile(%q)
         expect.falsy(os.rename(machine_dir .. ".revert", machine_dir .. ".revert"))
     end)
 
+    -- A clean exit removes the backup of the last committed state, and a run that fails keeps it to resume from.
+    it("stored revert keeps the committed state when a run fails", function()
+        local _ <close>, template_dir = scope_stored_dirname()
+        local _ <close>, machine_dir = scope_stored_dirname()
+        local _ <close>, reference_dir = scope_stored_dirname()
+        local _ <close>, prefix = tests_util.scope_temp_pathname()
+        local _ <close> = tests_util.scope_exit(function()
+            pcall(cartesi.machine.remove_stored, cartesi.machine, machine_dir .. ".revert")
+            for _, suffix in ipairs({ "-input-0.bin", "-output-0-0.bin", "-committed.bin" }) do
+                os.remove(prefix .. suffix)
+            end
+        end)
+        run_ok({
+            "--store=" .. template_dir,
+            "--assert-rolling-template",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop --vouchers=0 --notices=1 --reports=0",
+        })
+        filesystem.write_file(encode_advance(0, "first"), prefix .. "-input-0.bin")
+        local function advance_flags(dir, input_end)
+            return {
+                "--load=" .. dir .. ",clone:" .. template_dir .. ",sharing:all",
+                "--revert-mode=stored",
+                "--cmio-advance-state=input:"
+                    .. prefix
+                    .. "-input-%i.bin,input_file_index_begin:0,input_file_index_end:"
+                    .. input_end
+                    .. ",output:"
+                    .. prefix
+                    .. "-output-%o-%i.bin,output_proof:,report:,outputs_merkle_root:",
+                "--max-mcycle=2000000000",
+                "--no-init-splash",
+                "--quiet",
+            }
+        end
+        local reference_flags = advance_flags(reference_dir, 1)
+        reference_flags[#reference_flags + 1] = "--final-hash=" .. prefix .. "-committed.bin"
+        run_ok(reference_flags)
+        expect.falsy(os.rename(reference_dir .. ".revert", reference_dir .. ".revert"))
+        -- There is no input 1, so the run fails after committing input 0
+        run_fail(advance_flags(machine_dir, 2))
+        local backup <close> = cartesi.machine(machine_dir .. ".revert")
+        expect.equal(backup:get_root_hash(), filesystem.read_file(prefix .. "-committed.bin"))
+    end)
+
     -- A cycle limit inside an input leaves the interrupted machine to the outputs requested at
     -- that cycle, the final hash and the exported machine, without padding the unfinished
     -- computation hash. Cleanup restores the boundary before any requested machine destruction.
@@ -3019,7 +3066,9 @@ dofile(%q)
         local restored <close> = cartesi.machine(machine_dir)
         expect.equal(restored:read_reg("mcycle"), boundary_mcycle)
         expect.equal(restored:get_root_hash(), boundary)
-        expect.falsy(os.rename(machine_dir .. ".revert", machine_dir .. ".revert"))
+        -- The run failed, so the backup of the committed boundary stays to resume from
+        local backup <close> = cartesi.machine(machine_dir .. ".revert")
+        expect.equal(backup:get_root_hash(), boundary)
     end)
 
     -- -------------------------------------------------------------------------

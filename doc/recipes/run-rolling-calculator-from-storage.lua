@@ -56,7 +56,9 @@ local function snapshot(m)
 end
 
 local function commit(m)
+    m:destroy()
     m:sync_stored("machine")
+    m:load("machine", nil, cartesi.SHARING_ALL)
     if backup_directory then
         m:remove_stored(backup_directory)
     end
@@ -112,8 +114,6 @@ repeat
         end
     end
 until break_reason == cartesi.BREAK_REASON_HALTED
-commit(machine)
-
 -- Make the final on-disk state durable and print its hash
-machine:sync_stored("machine")
+commit(machine)
 stderr("final state hash: %s\n", cartesi.tohex(machine:get_root_hash()))

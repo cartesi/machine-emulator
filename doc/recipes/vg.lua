@@ -537,15 +537,15 @@ function player_methods:reset_bisection()
 end
 -- docs:end reset_bisection
 
-local function get_machine_word(machine, address)
+local function prove_machine_word(machine, address)
     address = address & ~(WORD_SIZE - 1)
     return machine:read_memory(address, WORD_SIZE), machine:get_proof(address, cartesi.HASH_TREE_LOG2_WORD_SIZE)
 end
 
 local function get_outputs_merkle_root_proof(machine)
-    local y, yp = get_machine_word(machine, cartesi.machine:get_reg_address("iflags_Y"))
-    local tohost, tp = get_machine_word(machine, cartesi.machine:get_reg_address("htif_tohost"))
-    local tx, txp = get_machine_word(machine, cartesi.AR_CMIO_TX_BUFFER_START)
+    local y, yp = prove_machine_word(machine, cartesi.machine:get_reg_address("iflags_Y"))
+    local tohost, tp = prove_machine_word(machine, cartesi.machine:get_reg_address("htif_tohost"))
+    local tx, txp = prove_machine_word(machine, cartesi.AR_CMIO_TX_BUFFER_START)
     return {
         iflags_y_data = y,
         iflags_y_proof = yp,

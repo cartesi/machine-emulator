@@ -54,10 +54,12 @@ class uarch_replay_step_state_access :
     public i_prefer_shadow_uarch_state<uarch_replay_step_state_access<Dumper>> {
 public:
     struct context {
-        step_log log;                          ///< Parsed step log (witnessed tree)
-        bool reverted{false};                  ///< Set when the reset reverted the state on a rejected input
-        machine_hash reverted_root_hash{};     ///< Canonical post-state hash when reverted (the revert root hash)
-        [[no_unique_address]] Dumper dumper{}; ///< Receives the dump; the no-op sink takes no space
+        step_log log;                         ///< Parsed step log (witnessed tree)
+        bool reverted{false};                 ///< Set when the reset reverted the state on a rejected input
+        machine_hash reverted_root_hash{};    ///< Canonical post-state hash when reverted (the revert root hash)
+        slice_entry *uarch_registers_slice{}; ///< Slice holding the 35 uarch registers; null in a reset log
+        unsigned char *uarch_registers{};     ///< Their bytes in that slice
+        Dumper dumper{};                      ///< Receives the dump
     };
 
 private:
@@ -72,10 +74,12 @@ public:
     /// Keccak-256 (the only one the uarch protocol and its on-chain verifier support)
     uarch_replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size) : m_context(context) {
         m_context.log = step_log::decode(log_image, log_size, hash_function_type::keccak256);
-        // The uarch registers are witnessed as a unit, so their slice must cover all of them.
-        // A reset log has no such slice: it witnesses a subtree node instead.
-        if (const auto *slice = m_context.log.try_find_slice(AR_SHADOW_UARCH_STATE_START)) {
-            (void) m_context.log.find_data(*slice, AR_SHADOW_UARCH_STATE_START, sizeof(shadow_uarch_state));
+        // Registers are read and written through the one slice that covers all of them (step-log.hpp),
+        // found here once. A reset log has no such slice: it witnesses a subtree node instead.
+        m_context.uarch_registers_slice = m_context.log.try_find_slice(AR_SHADOW_UARCH_STATE_START);
+        if (m_context.uarch_registers_slice != nullptr) {
+            m_context.uarch_registers = m_context.log.find_data(*m_context.uarch_registers_slice,
+                AR_SHADOW_UARCH_STATE_START, sizeof(shadow_uarch_state));
         }
     }
 
@@ -103,24 +107,31 @@ private:
         return cast_ptr_to_host_addr(m_context.log.find_data(*slice, paddr, sizeof(uint64_t)));
     }
 
+    host_addr uarch_register_haddr(shadow_uarch_state_what what) const {
+        if (m_context.uarch_registers == nullptr) {
+            THROW(std::runtime_error, "required slice not found");
+        }
+        return cast_ptr_to_host_addr(m_context.uarch_registers) +
+            (static_cast<uint64_t>(what) - AR_SHADOW_UARCH_STATE_START);
+    }
+
     // -----
     // i_prefer_shadow_uarch_state interface implementation
     // -----
     friend i_prefer_shadow_uarch_state<uarch_replay_step_state_access>;
 
     uint64_t do_read_shadow_uarch_state(shadow_uarch_state_what what) const {
-        const auto paddr = static_cast<uint64_t>(what);
-        const auto val = aliased_aligned_read<uint64_t>(paddr_to_haddr(paddr));
-        m_context.dumper.read(shadow_uarch_state_get_what_name(what), paddr, val);
+        const auto val = aliased_aligned_read<uint64_t>(uarch_register_haddr(what));
+        m_context.dumper.read(shadow_uarch_state_get_what_name(what), static_cast<uint64_t>(what), val);
         return val;
     }
 
     void do_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) const {
-        const auto paddr = static_cast<uint64_t>(what);
-        const auto haddr = paddr_to_haddr_for_write(paddr);
+        const auto haddr = uarch_register_haddr(what);
         const auto old_val = aliased_aligned_read<uint64_t>(haddr);
-        m_context.dumper.write(shadow_uarch_state_get_what_name(what), paddr, old_val, val);
+        m_context.dumper.write(shadow_uarch_state_get_what_name(what), static_cast<uint64_t>(what), old_val, val);
         aliased_aligned_write<uint64_t>(haddr, val);
+        m_context.uarch_registers_slice->hash = machine_hash{}; // so the after-root pass rehashes the slice
     }
 
     // -----

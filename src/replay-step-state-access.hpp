@@ -75,10 +75,10 @@ class replay_step_state_access :
     public i_prefer_shadow_state<replay_step_state_access<Dumper>> {
 public:
     struct context {
-        step_log log;                          ///< Parsed step log (witnessed tree)
-        mock_address_ranges ars{};             ///< Array of address ranges
-        hot_tlb_state tlb{};                   ///< Hot TLB cache for validated entries
-        [[no_unique_address]] Dumper dumper{}; ///< Receives the dump; the no-op sink takes no space
+        step_log log;              ///< Parsed step log (witnessed tree)
+        mock_address_ranges ars{}; ///< Array of address ranges
+        hot_tlb_state tlb{};       ///< Hot TLB cache for validated entries
+        Dumper dumper{};           ///< Receives the dump
     };
 
 private:

@@ -128,7 +128,7 @@ class replay_send_cmio_state_access :
 public:
     struct context {
         step_log log;
-        [[no_unique_address]] Dumper dumper{};
+        Dumper dumper{};
     };
 
 private:

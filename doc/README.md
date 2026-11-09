@@ -5484,16 +5484,17 @@ supports them.
 `machine:rename_stored(<source_directory>, <destination_directory>)`
 atomically renames a stored machine without overwriting the destination
 and syncs the affected parent directories before returning.
-`machine:sync_stored(<directory>)` flushes the state held in the backing
-stores of a loaded directory to permanent storage. A machine using the
-stored files changes them on any call, including `get_root_hash` and
-`get_proof`, so the stored machine is durable only as of the last
-`sync_stored`. `machine:remove_stored(<directory>)` removes a stored
-machine from disk and makes the removal durable. All four are also
-available on `cartesi.machine` itself, so a script can manipulate stored
-machines without holding a loaded instance. These functions are the
-basis for the `clone:` and `sync` keys of the command-line utility’s
-`--load` option.
+`machine:sync_stored(<directory>)` flushes a stored machine to permanent
+storage. A machine loaded from the directory with shared backing stores
+changes its files on any call, including `get_root_hash` and
+`get_proof`, and when it is destroyed, so sync only after destroying
+that machine. Where file locks are available, `sync_stored` fails while
+such a machine still uses the directory.
+`machine:remove_stored(<directory>)` removes a stored machine from disk
+and makes the removal durable. All four are also available on
+`cartesi.machine` itself, so a script can manipulate stored machines
+without holding a loaded instance. These functions are the basis for the
+`clone:` and `sync` keys of the command-line utility’s `--load` option.
 
 The disk-based driver is the calculator driver from the Rolling Cartesi
 Machine [example](#rolling-cartesi-machines-1), with the fork-based
@@ -5520,7 +5521,9 @@ local function snapshot(m)
 end
 
 local function commit(m)
+    m:destroy()
     m:sync_stored("machine")
+    m:load("machine", nil, cartesi.SHARING_ALL)
     if backup_directory then
         m:remove_stored(backup_directory)
     end
@@ -5540,18 +5543,18 @@ end
 The live machine is loaded from a clone of the template with
 `cartesi.SHARING_ALL` (the third argument of the `cartesi.machine`
 constructor), so every modification lands directly on the backing stores
-of `machine` and there is no store step. `commit` syncs `machine` at
-every accepted boundary, including the initial boundary, so `snapshot`
-can clone the already-durable directory to `machine.revert` and sync the
-clone before execution modifies `machine`. The backing stores of a
-loaded directory are locked, so the machine is closed around the clone
-and reloaded afterward, a cheap operation that copies nothing. When a
-backup exists, `commit` removes it after syncing the accepted machine.
-`revert` discards the rejected state with `remove_stored`, durably
-renames `machine.revert` as `machine`, and reloads it. The script still
-records `revert_root_hash` when feeding each input, as every
-advance-state request requires, even though a rejection here is undone
-at the filesystem level.
+of `machine` and there is no store step. `commit` closes the machine,
+syncs `machine`, and reloads it at every accepted boundary, including
+the initial boundary, so `snapshot` can clone the already-durable
+directory to `machine.revert` and sync the clone before execution
+modifies `machine`. The backing stores of a loaded directory are locked,
+so the machine is closed around the clone and reloaded afterward, a
+cheap operation that copies nothing. When a backup exists, `commit`
+removes it after syncing the accepted machine. `revert` discards the
+rejected state with `remove_stored`, durably renames `machine.revert` as
+`machine`, and reloads it. The script still records `revert_root_hash`
+when feeding each input, as every advance-state request requires, even
+though a rejection here is undone at the filesystem level.
 
 Run the script with the expressions and the stored template in the
 working directory

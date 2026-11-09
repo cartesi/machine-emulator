@@ -976,20 +976,21 @@ local function fork_server(machine)
     return fork
 end
 
--- Loads the given directory (by default the one named after the state hash) into a spawned server
--- and checks its state hash. By default, changes stay in memory.
+-- Loads the given directory (by default the one named after the state hash) into a spawned server,
+-- rebuilds its hash tree from its contents, and checks its state hash. By default, changes stay in memory.
 local function new_machine(initial_state_hash, directory, sharing)
     local machine <close> = assert(cartesi_jsonrpc.spawn_server("127.0.0.1:0"))
-    machine:load(directory or cartesi.tohex(initial_state_hash), nil, sharing)
+    machine:load(directory or cartesi.tohex(initial_state_hash), { clear_hash_tree = true }, sharing)
     assert(machine:get_root_hash() == initial_state_hash, "initial machine snapshot hash mismatch")
     return machine:move()
 end
 
 -- Loads a stored machine into this process, sharing every change with its directory, and checks its
 -- state hash. Its locks go with the process, so a player that crashes leaves no machine holding them.
-local function new_stored_machine(state_hash, directory)
+-- The runtime configuration is optional.
+local function new_stored_machine(state_hash, directory, runtime)
     local machine <close> = cartesi.new()
-    machine:load(directory, nil, cartesi.SHARING_ALL)
+    machine:load(directory, runtime, cartesi.SHARING_ALL)
     assert(machine:get_root_hash() == state_hash, "stored machine hash mismatch")
     return machine:move()
 end
@@ -2859,8 +2860,11 @@ local function new_stored_player(dapp_contract, label, previous_outputs_frontier
         dapp_contract.machine_directory or cartesi.tohex(initial_state_hash),
         machine_directory
     )
-    self.epoch_pair =
-        new_stored_machine_pair(new_stored_machine(initial_state_hash, machine_directory), machine_directory)
+    -- The epoch's first machine rebuilds its hash tree, so nothing cached in the clone affects the epoch.
+    self.epoch_pair = new_stored_machine_pair(
+        new_stored_machine(initial_state_hash, machine_directory, { clear_hash_tree = true }),
+        machine_directory
+    )
     local machine = self.epoch_pair.machine
     assert_rolling_template(machine)
     self.machine_cache = new_stored_machine_cache(epoch_directory, machine_directory, machine)

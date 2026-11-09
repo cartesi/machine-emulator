@@ -360,11 +360,11 @@ function player_methods:close()
 end
 player_meta.__close = player_methods.close
 
--- Load the epoch's initial machine from its content-addressed snapshot.
+-- Load the epoch's initial machine from its content-addressed snapshot, rebuilding its hash tree from its contents.
 -- Dishonest roles override this to change how the machine executes.
 function player_methods:new_machine(initial_state_hash) -- luacheck: ignore 212 self
     local machine <close> = assert(jsonrpc.spawn_server("127.0.0.1:0"))
-    machine:load(cartesi.tohex(initial_state_hash))
+    machine:load(cartesi.tohex(initial_state_hash), { clear_hash_tree = true })
     assert(machine:get_root_hash() == initial_state_hash, "initial machine snapshot hash mismatch")
     return machine:move()
 end

@@ -13,8 +13,11 @@ local outputs_merkle_root_proof = read_proof(assert(arg[2], "missing outputs Mer
 local output_proof = read_proof(assert(arg[3], "missing output proof"))
 local output = fs.read_file(assert(arg[4], "missing output"))
 
--- The outputs Merkle root proof must be rooted at the agreed machine state hash
+-- The outputs Merkle root proof must target the tx-buffer word of the agreed machine state hash
 assert(outputs_merkle_root_proof.root_hash == machine_hash, "proof not rooted at the machine state hash")
+assert(outputs_merkle_root_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "proof not whole-machine")
+assert(outputs_merkle_root_proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE, "proof target not a word")
+assert(outputs_merkle_root_proof.target_address == cartesi.AR_CMIO_TX_BUFFER_START, "proof not at the tx buffer")
 hash_tree.verify_slice(outputs_merkle_root_proof)
 
 -- The output proof's root is the outputs Merkle root, the value the tx-buffer word holds
@@ -22,6 +25,11 @@ assert(
     cartesi.keccak256(output_proof.root_hash) == outputs_merkle_root_proof.target_hash,
     "tx buffer holds another value"
 )
+
+-- The output proof must target a leaf of the full-height outputs tree, at an index inside it
+assert(output_proof.log2_target_size == 0, "output proof target not a leaf")
+assert(output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "output proof height mismatch")
+assert(output_proof.target_address >> cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT == 0, "output index out of range")
 hash_tree.verify_slice(output_proof)
 
 -- The output proof's target must be the hash of the output itself

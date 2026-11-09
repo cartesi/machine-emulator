@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fixed the verification game and the output verification recipe accepting output proofs at aliased indices
+- Fixed the output verification recipe accepting proofs of other tree heights or outside the tx buffer
+
 ## [0.23.0-test2] - 2026-11-06
 
 This prerelease changes the C signatures of `cm_create`, `cm_create_new`, and

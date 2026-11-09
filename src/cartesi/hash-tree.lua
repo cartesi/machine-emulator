@@ -26,6 +26,7 @@ local function roll_hash_up_tree(proof, target_hash, hash_type)
 end
 -- docs:end roll_hash_up_tree
 
+-- Address bits at or above log2_root_size locate the tree, so callers indexing leaves must range-check them.
 -- docs:begin verify_slice
 local function verify_slice(proof, hash_type)
     local log2_target_size, log2_root_size = proof.log2_target_size, proof.log2_root_size

@@ -402,7 +402,7 @@ describe("backing stores", function()
         end
     end)
 
-    it("should sync a stored machine while it is in use", function()
+    it("should refuse to sync a stored machine while it is in use", function()
         local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
 
         do -- store new machine
@@ -413,8 +413,16 @@ describe("backing stores", function()
             cartesi.machine:remove_stored(stored_dirname)
         end)
 
-        do -- load stored machine with all backing stores shared and sync while it is running
+        do -- a machine with all backing stores shared writes its files, so they cannot be synced under it
             local machine <close> = cartesi.machine(stored_dirname, {}, cartesi.SHARING_ALL)
+            machine:run()
+            expect.fail(function()
+                cartesi.machine:sync_stored(stored_dirname)
+            end, "flock() failed")
+        end
+
+        do -- a machine that shares no backing store leaves the files alone
+            local machine <close> = cartesi.machine(stored_dirname, {}, cartesi.SHARING_NONE)
             machine:run()
             cartesi.machine:sync_stored(stored_dirname)
         end
@@ -450,7 +458,9 @@ describe("backing stores", function()
                 machine:write_memory(0x80000000, string.rep("A", 0x20000))
                 machine:get_root_hash()
                 if operation == "sync" then
+                    machine:destroy()
                     machine:sync_stored(stored_dirname)
+                    machine:load(stored_dirname, {}, cartesi.SHARING_ALL)
                 else
                     machine:destroy()
                     machine:clone_stored(stored_dirname, cloned_dirname)
@@ -1006,7 +1016,7 @@ describe("backing stores", function()
             return (string.unpack("<I8", filesystem.read_file(directory .. "/hash_tree.phtc")))
         end
 
-        it("should keep a stored cache uninitialized while it changes, until a sync, store or destruction", function()
+        it("should keep a stored cache uninitialized while it changes, until a store or destruction", function()
             local _ <close>, directory = tests_util.scope_temp_pathname()
             local _ <close>, stored_directory = tests_util.scope_temp_pathname()
             local _ <close> = tests_util.scope_exit(function()
@@ -1020,15 +1030,17 @@ describe("backing stores", function()
             }, {}, directory)
             machine:get_root_hash()
             expect.equal(read_tag(directory), 0)
-            machine:sync_stored(directory)
-            expect.equal(read_tag(directory), initialized_tag)
-            machine:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+            expect.fail(function()
+                machine:sync_stored(directory)
+            end, "flock() failed")
             expect.equal(read_tag(directory), 0)
             machine:store(stored_directory)
             expect.equal(read_tag(stored_directory), initialized_tag)
             machine:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
             expect.equal(read_tag(directory), 0)
             machine:destroy()
+            expect.equal(read_tag(directory), initialized_tag)
+            machine:sync_stored(directory)
             expect.equal(read_tag(directory), initialized_tag)
         end)
 

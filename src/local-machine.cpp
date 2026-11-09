@@ -96,10 +96,6 @@ void local_machine::do_remove_stored(const std::string &dir, remove_mode mode) c
 }
 
 void local_machine::do_sync_stored(const std::string &dir) const {
-    // A machine using the stored files keeps its stored cache uninitialized until marked initialized
-    if (m_machine != nullptr) {
-        m_machine->mark_stored_page_cache_initialized();
-    }
     machine::sync_stored(dir);
 }
 

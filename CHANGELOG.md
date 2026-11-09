@@ -107,6 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `cartesi-machine` ignoring runtime options such as `--clear-hash-tree` with `--no-remote-create`
 - Fixed the verification game and the output verification recipe accepting output proofs at aliased indices
 - Fixed the output verification recipe accepting proofs of other tree heights or outside the tx buffer
+- Fixed the output verification recipe accepting outputs Merkle roots of states that did not accept their last input
 
 ## [0.22.0] - 2026-10-15
 ### Added

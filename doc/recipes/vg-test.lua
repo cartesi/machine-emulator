@@ -797,6 +797,19 @@ for _, output_count in ipairs({ 0, 2 }) do
     else
         assert(offer.output_index == #previous_hashes + output_count - 1)
         assert(require("game-output").validate_output_response(offer, root))
+        -- Bit 63 takes no part in the roll-up, so the same proof under that aliased index must be refused.
+        local aliased_proof = {}
+        for key, value in pairs(offer.output_proof) do
+            aliased_proof[key] = value
+        end
+        aliased_proof.target_address = offer.output_index | (1 << 63)
+        local aliased = {
+            output_index = aliased_proof.target_address,
+            output_data = offer.output_data,
+            output_proof = aliased_proof,
+        }
+        local ok, err = pcall(require("game-output").validate_output_response, aliased, root)
+        assert(not ok and tostring(err):find("output index out of range", 1, true), "aliased output index was accepted")
     end
 end
 

@@ -1194,14 +1194,15 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
         local page_idx = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START >> cartesi.HASH_TREE_LOG2_PAGE_SIZE
         local offset = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START & ((1 << cartesi.HASH_TREE_LOG2_PAGE_SIZE) - 1)
         local found
-        for _, p in ipairs(log_data.pages) do
-            if p.index == page_idx then
+        for _, p in ipairs(log_data.slices) do
+            if p.page_index == page_idx then
                 found = p
             end
         end
         assert(found, "reset log must record the shadow page holding the revert root hash")
         assert(
-            found.data:sub(offset - found.offset + 1, offset - found.offset + cartesi.HASH_SIZE) == CMIO_REVERT_HASH,
+            found.data:sub(offset - found.page_offset + 1, offset - found.page_offset + cartesi.HASH_SIZE)
+                == CMIO_REVERT_HASH,
             "revert root hash not found at its shadow slot in the reset log"
         )
         assert(machine:verify_reset_uarch(initial_hash, log) == final_hash)
@@ -1772,8 +1773,11 @@ do_test("send_cmio_response across data-size boundaries: machine state + log con
         -- entry at rx_start carrying the pre-write subtree hash.
         local log_data = parse_step_log(log)
         if c.write_log2 == nil then
-            for _, p in ipairs(log_data.pages) do
-                assert(p.index ~= rx_page_idx, string.format("unexpected rx page touch for data_len=%d", c.data_len))
+            for _, p in ipairs(log_data.slices) do
+                assert(
+                    p.page_index ~= rx_page_idx,
+                    string.format("unexpected rx page touch for data_len=%d", c.data_len)
+                )
             end
             for _, n in ipairs(log_data.nodes) do
                 assert(n.address ~= rx_start, string.format("unexpected rx node for data_len=%d", c.data_len))
@@ -1794,14 +1798,14 @@ do_test("send_cmio_response across data-size boundaries: machine state + log con
             assert(found.hash == expected_hash, string.format("node hash mismatch for data_len=%d", c.data_len))
         else
             local found
-            for _, p in ipairs(log_data.pages) do
-                if p.index == rx_page_idx then
+            for _, p in ipairs(log_data.slices) do
+                if p.page_index == rx_page_idx then
                     found = p
                 end
             end
             assert(found, string.format("missing rx page for data_len=%d", c.data_len))
             assert(
-                found.offset == 0
+                found.page_offset == 0
                     and found.log2_size == math.max(c.write_log2, 9)
                     and found.data == string.rep("x", 1 << found.log2_size),
                 string.format("rx page pre-state mismatch for data_len=%d", c.data_len)

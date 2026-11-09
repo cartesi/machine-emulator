@@ -28,13 +28,13 @@ end
 local HASH_SIZE = cartesi and cartesi.HASH_SIZE or 32
 local HASH_TREE_LOG2_WORD_SIZE = cartesi and cartesi.HASH_TREE_LOG2_WORD_SIZE or 5
 local HASH_TREE_LOG2_PAGE_SIZE = cartesi and cartesi.HASH_TREE_LOG2_PAGE_SIZE or 12
-local STEP_LOG_SIGNATURE = cartesi and cartesi.STEP_LOG_SIGNATURE or "CTSI\x04\x00\x00\x00"
+local STEP_LOG_SIGNATURE = cartesi and cartesi.STEP_LOG_SIGNATURE or "CTSI\x05\x00\x00\x00"
 local SIGNATURE_SIZE = #STEP_LOG_SIGNATURE
 
 -- step_log_header layout (see src/step-log.hpp):
 --   signature(8) + hash_function(8) + slice_count(8) + node_count(8) + sibling_count(8)
 local HEADER_SIZE = SIGNATURE_SIZE + 4 * 8
-local SLICE_HEADER_SIZE = 16
+local SLICE_ENTRY_SIZE = 56
 local NODE_ENTRY_SIZE = 8 + 8 + HASH_SIZE
 local SIBLING_SIZE = HASH_SIZE
 
@@ -124,20 +124,22 @@ local function read_descriptors(path)
     info.slice_data_bytes = 0
     info.slice_entries_bytes = 0
     for i = 1, info.slice_count do
-        local entry = f:read(SLICE_HEADER_SIZE)
-        assert(entry and #entry == SLICE_HEADER_SIZE, string.format("step log truncated at slice %d", i))
-        local address, log2_size = string.unpack("<I8I8", entry)
+        local entry = f:read(SLICE_ENTRY_SIZE)
+        assert(entry and #entry == SLICE_ENTRY_SIZE, string.format("step log truncated at slice %d", i))
+        local address, log2_size, data_offset = string.unpack("<I8I8I8", entry)
         assert(
             log2_size >= HASH_TREE_LOG2_WORD_SIZE and log2_size <= HASH_TREE_LOG2_PAGE_SIZE,
             "invalid slice log2_size"
         )
         local size = 1 << log2_size
         assert(address & (size - 1) == 0, "unaligned slice address")
-        info.slices[i] = { address = address, log2_size = log2_size }
+        assert(data_offset == info.slice_data_bytes, "slice data offset mismatch")
+        info.slices[i] = { address = address, log2_size = log2_size, data_offset = data_offset }
         info.slice_data_bytes = info.slice_data_bytes + size
-        info.slice_entries_bytes = info.slice_entries_bytes + SLICE_HEADER_SIZE + size + HASH_SIZE
-        assert(f:seek("cur", size + HASH_SIZE) <= file_size, "truncated slice data or hash")
+        info.slice_entries_bytes = info.slice_entries_bytes + SLICE_ENTRY_SIZE + size
     end
+
+    assert(f:seek("cur", info.slice_data_bytes) <= file_size, "truncated slice data")
 
     local remaining = file_size - f:seek()
     assert(
@@ -275,20 +277,20 @@ commands["batch-stats"] = function(args)
     print(string.format("%-6s %-6s %-8s %-12s %s", "slices", "nodes", "siblings", "size", "path"))
     print(string.rep("-", 80))
 
-    local total = { page = 0, node = 0, sibling = 0, size = 0 }
-    local max = { page = 0, node = 0, sibling = 0, size = 0 }
-    local max_path = { page = "", node = "", sibling = "", size = "" }
+    local total = { slice = 0, node = 0, sibling = 0, size = 0 }
+    local max = { slice = 0, node = 0, sibling = 0, size = 0 }
+    local max_path = { slice = "", node = "", sibling = "", size = "" }
     for _, path in ipairs(files) do
         local ok, info = pcall(read_descriptors, path)
         if ok then
             print_stats_row(info)
-            total.page = total.page + info.slice_count
+            total.slice = total.slice + info.slice_count
             total.node = total.node + info.node_count
             total.sibling = total.sibling + info.sibling_count
             total.size = total.size + info.file_size
-            if info.slice_count > max.page then
-                max.page = info.slice_count
-                max_path.page = path
+            if info.slice_count > max.slice then
+                max.slice = info.slice_count
+                max_path.slice = path
             end
             if info.node_count > max.node then
                 max.node = info.node_count
@@ -312,13 +314,13 @@ commands["batch-stats"] = function(args)
     print(
         string.format(
             "Avg slices: %.1f   Avg nodes: %.1f   Avg siblings: %.1f   Avg size: %s",
-            total.page / #files,
+            total.slice / #files,
             total.node / #files,
             total.sibling / #files,
             format_size(total.size // #files)
         )
     )
-    print(string.format("Max slices: %d (%s)", max.page, max_path.page))
+    print(string.format("Max slices: %d (%s)", max.slice, max_path.slice))
     print(string.format("Max nodes: %d (%s)", max.node, max_path.node))
     print(string.format("Max siblings: %d (%s)", max.sibling, max_path.sibling))
     print(string.format("Max size: %s (%s)", format_size(max.size), max_path.size))

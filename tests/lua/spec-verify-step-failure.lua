@@ -88,16 +88,16 @@ local function verify_corrupted(log, mutate, root_hash_before, mcycle_count, roo
 end
 
 -- Build the sibling stream for the retained slices from the pre-state machine.
-local function get_siblings_for_slices(machine, pages)
+local function get_siblings_for_slices(machine, slices)
     local siblings = {}
-    local next_page = 1
+    local next_slice = 1
     local function walk(first_leaf, height)
-        local page = pages[next_page]
-        local leaf = page and (((page.index << LOG2_PAGE_SIZE) + page.offset) >> 5)
+        local slice = slices[next_slice]
+        local leaf = slice and (((slice.page_index << LOG2_PAGE_SIZE) + slice.page_offset) >> 5)
         if not leaf or leaf >= first_leaf + (1 << height) then
             siblings[#siblings + 1] = machine:get_node_hash(first_leaf << 5, height + 5)
-        elseif leaf == first_leaf and page.log2_size == height + 5 then
-            next_page = next_page + 1
+        elseif leaf == first_leaf and slice.log2_size == height + 5 then
+            next_slice = next_slice + 1
         else
             assert(height > 0)
             walk(first_leaf, height - 1)
@@ -183,7 +183,7 @@ describe("verify_step", function()
 
         it("rejects page_count overflow against file size", function()
             expect_corruption_error("slice count exceeds step log size", function(log_data)
-                log_data.override_page_count = cartesi.MCYCLE_MAX
+                log_data.override_slice_count = cartesi.MCYCLE_MAX
             end)
         end)
 
@@ -273,25 +273,25 @@ describe("verify_step", function()
     describe("page validation", function()
         it("rejects an empty page list", function()
             expect_corruption_error("slice count is zero", function(log_data)
-                log_data.pages = {}
+                log_data.slices = {}
             end)
         end)
 
         it("rejects page indices not in ascending order", function()
             expect_corruption_error("invalid log format: slice addresses not in increasing order", function(log_data)
-                log_data.pages[2].index = log_data.pages[1].index
+                log_data.slices[2].page_index = log_data.slices[1].page_index
             end)
         end)
 
         it("rejects a non-zero page scratch hash area", function()
             expect_corruption_error("invalid log format: slice scratch hash area is not zero", function(log_data)
-                log_data.pages[1].scratch_hash = string.rep("\1", HASH_SIZE)
+                log_data.slices[1].scratch_hash = string.rep("\1", HASH_SIZE)
             end)
         end)
 
         it("rejects modified page data via the root hash before check", function()
             expect_corruption_error("root hash before does not match step log", function(log_data)
-                log_data.pages[1].data = string.reverse(log_data.pages[1].data)
+                log_data.slices[1].data = string.reverse(log_data.slices[1].data)
             end)
         end)
     end)
@@ -299,12 +299,12 @@ describe("verify_step", function()
     describe("sibling validation", function()
         it("rejects an extra page that needs missing sibling hashes", function()
             expect_corruption_error("too few sibling hashes in log", function(log_data)
-                local last = log_data.pages[#log_data.pages]
-                table.insert(log_data.pages, {
+                local last = log_data.slices[#log_data.slices]
+                table.insert(log_data.slices, {
                     -- A distant branch needs new siblings; an adjacent whole page can
                     -- instead consume an existing sibling and leave one too many.
-                    index = 1 << 50,
-                    offset = last.offset,
+                    page_index = 1 << 50,
+                    page_offset = last.page_offset,
                     log2_size = last.log2_size,
                     data = last.data,
                     scratch_hash = last.scratch_hash,
@@ -314,7 +314,7 @@ describe("verify_step", function()
 
         it("rejects a removed page that frees a sibling slot", function()
             expect_corruption_error("too many sibling hashes in log", function(log_data)
-                table.remove(log_data.pages)
+                table.remove(log_data.slices)
             end)
         end)
 
@@ -376,7 +376,7 @@ describe("verify_step", function()
         it("rejects a node overlapping a witnessed page", function()
             expect_corruption_error("slice or node overlaps a previous entry", function(log_data)
                 -- A two-page-aligned node covering the first witnessed page's pair overlaps it.
-                local pair_index = log_data.pages[1].index & ~1
+                local pair_index = log_data.slices[1].page_index & ~1
                 log_data.nodes = {
                     { address = pair_index << LOG2_PAGE_SIZE, log2_size = LOG2_PAGE_SIZE + 1, hash = BAD_HASH },
                 }
@@ -387,16 +387,16 @@ describe("verify_step", function()
     describe("interpret: adversarial log with missing page", function()
         -- An attacker can produce a log where pages + siblings hash to the
         -- agreed root, yet a page the interpreter needs is absent. The
-        -- constructor accepts the log; find_page must reject it during replay.
+        -- constructor accepts the log; find_slice must reject it during replay.
         it("rejects a log with a required page omitted", function()
             local log, root_hash_before = produce_valid_log()
             local log_data = test_util.parse_step_log(log)
 
-            assert(#log_data.pages >= 2, "test needs a machine that produces at least 2 pages per step")
+            assert(#log_data.slices >= 2, "test needs a machine that produces at least 2 pages per step")
 
-            table.remove(log_data.pages)
+            table.remove(log_data.slices)
             local fresh <close> = build_machine()
-            log_data.siblings = get_siblings_for_slices(fresh, log_data.pages)
+            log_data.siblings = get_siblings_for_slices(fresh, log_data.slices)
             assert(test_util.recompute_step_log_root(log_data) == root_hash_before)
 
             local adversarial = test_util.serialize_step_log(log_data)
@@ -404,7 +404,7 @@ describe("verify_step", function()
                 cartesi.machine:verify_step(root_hash_before, adversarial, MCYCLE_COUNT)
             end)
             expect.falsy(ok)
-            expect.truthy(err and err:find("required page not found", 1, true), err)
+            expect.truthy(err and err:find("required slice not found", 1, true), err)
         end)
     end)
 
@@ -436,19 +436,21 @@ describe("verify_step", function()
         local function corrupt_pma_entry(index)
             local log_data = test_util.parse_step_log(produce_valid_log())
             local hash_fn = log_data.hash_function == 0 and "keccak256" or "sha256"
-            local page
-            for _, p in ipairs(log_data.pages) do
-                if p.index == pma_page_index then
-                    page = p
+            local slice
+            for _, p in ipairs(log_data.slices) do
+                if p.page_index == pma_page_index then
+                    slice = p
                     break
                 end
             end
-            assert(page, "PMA page not found in log -- machine config must touch it")
-            local offset = index * 16 + 8 - page.offset
-            page.data = page.data:sub(1, offset) .. string.pack("<I8", BAD_LENGTH) .. page.data:sub(offset + 9)
+            assert(slice, "PMA page not found in log -- machine config must touch it")
+            local offset = index * 16 + 8 - slice.page_offset
+            slice.data = slice.data:sub(1, offset) .. string.pack("<I8", BAD_LENGTH) .. slice.data:sub(offset + 9)
             local fresh <close> = build_machine()
             local full_page = fresh:read_memory(cartesi.AR_PMAS_START, PAGE_SIZE)
-            full_page = full_page:sub(1, page.offset) .. page.data .. full_page:sub(page.offset + #page.data + 1)
+            full_page = full_page:sub(1, slice.page_offset)
+                .. slice.data
+                .. full_page:sub(slice.page_offset + #slice.data + 1)
             return test_util.serialize_step_log(log_data),
                 root_with_pma_page(fresh, full_page, hash_fn),
                 full_page,

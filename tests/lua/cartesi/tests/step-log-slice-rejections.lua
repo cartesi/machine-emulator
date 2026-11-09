@@ -4,9 +4,9 @@
 -- Shared rejection recipes for the C++/Lua specs and cross-verifier fixtures.
 -- Mutations deliberately serialize invalid geometry; do not use the verifier's
 -- parser to construct these inputs.
-local function resize(page, size, offset)
-    page.offset, page.log2_size = offset or 0, size
-    page.data = string.rep("\0", 1 << size)
+local function resize(slice, size, offset)
+    slice.page_offset, slice.log2_size = offset or 0, size
+    slice.data = string.rep("\0", 1 << size)
 end
 
 return {
@@ -14,67 +14,75 @@ return {
         tag = "old_signature",
         error = "invalid step log signature",
         mutate = function(log)
-            log.signature = "CTSI\3\0\0\0"
+            log.signature = "CTSI\4\0\0\0"
         end,
     },
     {
         tag = "slice_size_low",
         error = "slice log2 size out of range",
         mutate = function(log)
-            log.pages[1].log2_size = 4
+            log.slices[1].log2_size = 4
         end,
     },
     {
         tag = "slice_size_high",
         error = "slice log2 size out of range",
         mutate = function(log)
-            log.pages[1].log2_size = 13
+            log.slices[1].log2_size = 13
         end,
     },
     {
         tag = "slice_unaligned",
         error = "slice address not aligned to its size",
         mutate = function(log)
-            log.pages[1].offset = log.pages[1].offset | 8
+            log.slices[1].page_offset = log.slices[1].page_offset | 8
+        end,
+    },
+    {
+        tag = "slice_data_offset",
+        error = "slice data offset mismatch",
+        mutate = function(log)
+            log.slices[2].override_data_offset = log.slices[2].data_offset + 8
         end,
     },
     {
         tag = "slice_unsorted",
         error = "slice addresses not in increasing order",
         mutate = function(log)
-            log.pages[1], log.pages[2] = log.pages[2], log.pages[1]
+            log.slices[1], log.slices[2] = log.slices[2], log.slices[1]
         end,
     },
     {
         tag = "slice_overlap",
         error = "slice overlaps previous slice",
         mutate = function(log)
-            resize(log.pages[1], 12)
-            resize(log.pages[2], 9, 512)
-            log.pages[2].index = log.pages[1].index
+            resize(log.slices[1], 12)
+            resize(log.slices[2], 9, 512)
+            log.slices[2].page_index = log.slices[1].page_index
         end,
     },
     {
         tag = "slice_same_page",
         error = "multiple slices in the same page",
         mutate = function(log)
-            resize(log.pages[1], 5)
-            resize(log.pages[2], 5, 32)
-            log.pages[2].index = log.pages[1].index
+            resize(log.slices[1], 5)
+            resize(log.slices[2], 5, 32)
+            log.slices[2].page_index = log.slices[1].page_index
         end,
     },
     {
         tag = "slice_node_overlap",
         error = "slice or node overlaps a previous entry",
         mutate = function(log)
-            log.nodes = { { address = (log.pages[1].index & ~1) << 12, log2_size = 13, hash = string.rep("\0", 32) } }
+            log.nodes =
+                { { address = (log.slices[1].page_index & ~1) << 12, log2_size = 13, hash = string.rep("\0", 32) } }
         end,
     },
     {
         tag = "slice_truncated",
-        error = "truncated slice data or hash",
+        error = "truncated slice data",
         mutate = function(log)
-            log.pages = { log.pages[1] }
+            log.slices = { log.slices[1] }
             log.nodes, log.siblings = {}, {}
         end,
         wire = function(bytes)

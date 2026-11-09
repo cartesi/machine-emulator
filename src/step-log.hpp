@@ -20,15 +20,18 @@
 /// \file
 /// \brief Binary layout and parsed form of a step log.
 ///
-/// A step log is a fixed-size header followed by three variable-length arrays:
-///
-///     step_log_header header;
-///     { slice_entry_header; data[1 << log2_size]; machine_hash; } slices[header.slice_count];
-///     node_entry      nodes[header.node_count];
+///     step_log_header header;                    // 40 bytes
+///     slice_entry     slices[header.slice_count]; // 56 bytes each
+///     unsigned char   data[sum of slice sizes];   // contents, in table order
+///     node_entry      nodes[header.node_count];   // 48 bytes each
 ///     machine_hash    siblings[header.sibling_count];
 ///
-/// All multi-byte integer fields use host (little-endian) byte order; there is no endian marker.
-/// Slice descriptors use caller-provided storage; contents and hashes remain in the log image.
+/// A slice is an aligned power-of-two piece of one page whose bytes the log carries.
+/// The wire allows sizes 2^5..2^12; the recorder's minimum slice size is 2^9.
+/// The uarch registers are witnessed as a unit: a slice in their page covers all 35 of them,
+/// so a verifier can load and store them in one pass instead of looking each one up.
+/// All multi-byte integer fields use little-endian byte order; there is no endian marker.
+/// Decode allocates nothing and borrows the image, so the same code can run in uarch and zkVM guests.
 
 #include <algorithm>
 #include <array>
@@ -52,8 +55,8 @@
 namespace cartesi {
 
 /// \brief Signature at the start of a binary step log buffer: magic + version + reserved.
-/// Version 4.
-constexpr std::array<char, 8> STEP_LOG_SIGNATURE = {'C', 'T', 'S', 'I', 4, 0, 0, 0};
+/// Version 5.
+constexpr std::array<char, 8> STEP_LOG_SIGNATURE = {'C', 'T', 'S', 'I', 5, 0, 0, 0};
 
 /// \brief Fixed-size prefix of a step log buffer.
 struct PACKED step_log_header {
@@ -65,20 +68,12 @@ struct PACKED step_log_header {
 };
 static_assert(sizeof(step_log_header) == 40, "expected wire size of step_log_header is 40 bytes");
 
-/// \brief Fixed prefix of a variable-size slice entry on the wire.
-struct PACKED slice_entry_header {
-    uint64_t address;   ///< Byte address, aligned to the slice size
-    uint64_t log2_size; ///< 5..12; followed by data and a 32-byte scratch hash
-};
-static_assert(sizeof(slice_entry_header) == 16, "expected wire size of slice_entry_header is 16 bytes");
-
-/// \brief Descriptor for one witnessed slice, keyed by its enclosing page.
-/// \details Data and scratch hash point into the caller-owned log image.
-struct slice_entry {
-    uint64_t address;
-    uint64_t log2_size;
-    unsigned char *data;
-    machine_hash *hash;
+/// \brief Witnessed slice with a scratch slot: zero on the wire, current hash during replay.
+struct PACKED slice_entry {
+    uint64_t address;     ///< Byte address, aligned to the slice size
+    uint64_t log2_size;   ///< Log2 of the slice size, 5..12
+    uint64_t data_offset; ///< Offset of the slice's bytes in the data region
+    machine_hash hash;    ///< Current slice hash; zero means it needs hashing
 
     uint64_t size() const {
         return UINT64_C(1) << log2_size;
@@ -86,16 +81,8 @@ struct slice_entry {
     uint64_t page_index() const {
         return address >> AR_LOG2_PAGE_SIZE;
     }
-
-    unsigned char *find_data(uint64_t paddr, uint64_t length) const {
-        const uint64_t offset = paddr - address;
-        // Subtraction also rejects addresses below the slice, without an overflowing end address.
-        if (length > size() || offset > size() - length) {
-            THROW(std::runtime_error, "access outside witnessed slice");
-        }
-        return data + offset;
-    }
 };
+static_assert(sizeof(slice_entry) == 56, "expected wire size of slice_entry is 56 bytes");
 
 static_assert(HASH_TREE_LOG2_PAGE_SIZE == AR_LOG2_PAGE_SIZE,
     "step-log page lookup requires matching hash-tree and address-range page sizes");
@@ -113,28 +100,26 @@ static_assert(sizeof(node_entry) == 48, "expected wire size of node_entry is 48 
 
 // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast,misc-no-recursion)
 
-/// The verifier selects its accepted witness shape; the wire format is shared.
-enum class step_log_shape { slices, whole_pages };
+/// \brief Slice sizes a verifier accepts: any size from one word up to a page, or whole pages only.
+/// \details The wire format is the same either way. Uarch, reset and cmio replay accept any size
+/// and bounds-check each access against its slice; machine replay accepts whole pages only and
+/// skips that check.
+enum class step_log_shape { any_size, whole_pages };
 
 /// \brief Parsed binary step log: the witnessed tree plus the header values it was decoded from.
-/// \details Borrows the caller's slice descriptors and log image; decoding performs no heap allocation.
+/// \details Borrows the caller's log image; decoding performs no heap allocation.
 struct step_log {
     machine_hash root_hash_before{}; ///< Root hash before the step, recomputed from the witnessed tree at decode
     hash_function_type hash_function{hash_function_type::keccak256}; ///< Hash function used for the step log
-    std::span<slice_entry> slices;          ///< Witnessed slices, rehashed into their scratch slots
+    std::span<slice_entry> slices;          ///< Witnessed slices; scratch slot is the current hash, zero when stale
+    unsigned char *data{};                  ///< Start of the contiguous slice data region
     std::span<node_entry> nodes;            ///< Subtree-write nodes, kept current during replay
     std::span<const machine_hash> siblings; ///< Sibling hashes for untouched subtrees
-
-    /// \brief Read the slice count, bounded by log length, before allocating descriptor storage.
-    static size_t get_slice_count(const unsigned char *log_image, uint64_t log_size) {
-        return static_cast<size_t>(read_header(log_image, log_size).slice_count);
-    }
 
     /// \brief Decode and validate a binary step log without allocating memory.
     /// \param log_image Pointer to the step log buffer. The returned step_log keeps spans into it,
     /// so it must outlive the step_log.
     /// \param log_size Size of the log bytes.
-    /// \param slice_storage Caller-owned descriptors; must outlive the returned step_log.
     /// \param required_hash_function When set, reject a log declaring any other hash function.
     /// Verifiers whose protocol fixes the hash function (the on-chain replayer is Keccak-256 only)
     /// pass it so a mismatched log fails here instead of at the initial-root recompute.
@@ -142,9 +127,9 @@ struct step_log {
     /// \return A validated step_log with root_hash_before recomputed from the witnessed tree.
     /// \throw runtime_error if the log is malformed.
     /// \details Mirrors StepLog.decode in the Solidity replayer.
-    static step_log decode(unsigned char *log_image, uint64_t log_size, std::span<slice_entry> slice_storage,
+    static step_log decode(unsigned char *log_image, uint64_t log_size,
         std::optional<hash_function_type> required_hash_function = std::nullopt,
-        step_log_shape shape = step_log_shape::slices) {
+        step_log_shape shape = step_log_shape::any_size) {
         step_log log;
         const auto header = read_header(log_image, log_size);
         switch (header.hash_function) {
@@ -161,39 +146,34 @@ struct step_log {
             THROW(std::runtime_error, "step log hash function not supported by this verifier");
         }
         uint64_t remaining = log_size - sizeof(step_log_header);
-        if (header.slice_count > slice_storage.size()) {
-            THROW(std::runtime_error, "slice count exceeds descriptor storage capacity");
-        }
         auto *cursor = log_image + sizeof(step_log_header);
-        log.slices = slice_storage.first(static_cast<size_t>(header.slice_count));
-        for (uint64_t i = 0; i < header.slice_count; ++i) {
-            if (remaining < sizeof(slice_entry_header)) {
-                THROW(std::runtime_error, "truncated slice header");
-            }
-            slice_entry_header entry{};
-            std::memcpy(&entry, cursor, sizeof(entry));
-            cursor += sizeof(entry);
-            remaining -= sizeof(entry);
+        const uint64_t slice_table_bytes = header.slice_count * sizeof(slice_entry);
+        log.slices = {reinterpret_cast<slice_entry *>(cursor), static_cast<size_t>(header.slice_count)};
+        cursor += slice_table_bytes;
+        remaining -= slice_table_bytes;
+        uint128_t data_size = 0;
+        for (const auto &entry : log.slices) {
             if (entry.log2_size < HASH_TREE_LOG2_WORD_SIZE || entry.log2_size > HASH_TREE_LOG2_PAGE_SIZE) {
                 THROW(std::runtime_error, "invalid log format: slice log2 size out of range");
             }
             if (shape == step_log_shape::whole_pages && entry.log2_size != HASH_TREE_LOG2_PAGE_SIZE) {
                 THROW(std::runtime_error, "machine replay requires whole-page witnesses");
             }
-            const uint64_t size = UINT64_C(1) << entry.log2_size;
+            const uint64_t size = entry.size();
             if ((entry.address & (size - 1)) != 0) {
                 THROW(std::runtime_error, "invalid log format: slice address not aligned to its size");
             }
-            if (remaining < size + sizeof(machine_hash)) {
-                THROW(std::runtime_error, "truncated slice data or hash");
+            if (data_size != entry.data_offset) {
+                THROW(std::runtime_error, "slice data offset mismatch");
             }
-            log.slices[i] = {.address = entry.address,
-                .log2_size = entry.log2_size,
-                .data = cursor,
-                .hash = reinterpret_cast<machine_hash *>(cursor + size)};
-            cursor += size + sizeof(machine_hash);
-            remaining -= size + sizeof(machine_hash);
+            data_size += size;
         }
+        if (data_size > remaining) {
+            THROW(std::runtime_error, "truncated slice data");
+        }
+        log.data = cursor;
+        cursor += static_cast<uint64_t>(data_size);
+        remaining -= static_cast<uint64_t>(data_size);
         if (header.node_count > remaining / sizeof(node_entry)) {
             THROW(std::runtime_error, "node count exceeds step log size");
         }
@@ -212,31 +192,46 @@ struct step_log {
         return log;
     }
 
-    /// \brief Try to find a witnessed page by physical address.
-    /// \param paddr_page Any physical address inside the page.
-    /// \return Pointer to the page entry if witnessed, nullptr otherwise.
-    const slice_entry *try_find_page(uint64_t paddr_page) const {
-        const auto page_index = paddr_page >> AR_LOG2_PAGE_SIZE;
+    /// \brief The slice witnessed in the page containing \p paddr, or nullptr.
+    /// \param paddr Any physical address inside the page.
+    /// \return Pointer to the slice entry if witnessed, nullptr otherwise.
+    slice_entry *try_find_slice(uint64_t paddr) const {
+        const auto page_index = paddr >> AR_LOG2_PAGE_SIZE;
         auto it = std::ranges::lower_bound(slices, page_index, std::ranges::less{},
-            [](const auto &page) { return page.page_index(); });
+            [](const auto &slice) { return slice.page_index(); });
         if (it != slices.end() && it->page_index() == page_index) {
             return &(*it);
         }
         return nullptr;
     }
 
-    /// \brief Find a witnessed page by any physical address inside it, or throw if absent.
-    const slice_entry *find_page(uint64_t paddr_page) const {
-        const auto *page_log = try_find_page(paddr_page);
-        if (page_log == nullptr) {
-            THROW(std::runtime_error, "required page not found");
+    /// \brief Same, throwing "required slice not found" when absent.
+    slice_entry *find_slice(uint64_t paddr) const {
+        auto *slice = try_find_slice(paddr);
+        if (slice == nullptr) {
+            THROW(std::runtime_error, "required slice not found");
         }
-        return page_log;
+        return slice;
+    }
+
+    /// \brief Pointer to a validated slice's bytes in the borrowed data region.
+    unsigned char *get_data(const slice_entry &entry) const {
+        return data + entry.data_offset;
+    }
+
+    /// \brief Checked pointer to \p length bytes at physical address \p paddr in \p entry.
+    unsigned char *find_data(const slice_entry &entry, uint64_t paddr, uint64_t length = sizeof(uint64_t)) const {
+        const uint64_t offset = paddr - entry.address;
+        // Subtraction also rejects addresses below the slice, without an overflowing end address.
+        if (length > entry.size() || offset > entry.size() - length) {
+            THROW(std::runtime_error, "access outside witnessed slice");
+        }
+        return get_data(entry) + offset;
     }
 
     /// \brief Checked pointer to \p length bytes at physical address \p paddr within a witnessed slice.
     unsigned char *find_data(uint64_t paddr, uint64_t length = sizeof(uint64_t)) const {
-        return find_page(paddr)->find_data(paddr, length);
+        return find_data(*find_slice(paddr), paddr, length);
     }
 
     /// \brief Try to find a subtree-write node by its start address.
@@ -261,23 +256,23 @@ struct step_log {
     }
 
     /// \brief Recompute the machine root hash from the witnessed tree's current state.
-    /// \details A zero scratch slot means "needs hashing": slices arrive zero on the wire and replay
-    /// accessors re-zero a page's slot on write, so the decode-time pass hashes every page and the
-    /// finish-time pass rehashes only the slices the operation wrote. Node slots are used as they
-    /// stand; replayed bulk writes keep them current.
+    /// \details Node slots are used as they stand; replayed bulk writes keep them current.
     machine_hash compute_root_hash() const {
         static const machine_hash all_zeros{};
-        for (auto &page : slices) {
-            if (*page.hash == all_zeros) {
-                merkle_tree_hash(hash_function, page.data, page.size(), reinterpret_cast<hash_type>(page.hash));
+        for (auto &slice : slices) {
+            // zero means stale: decode hashes every slice, a replayed write re-zeroes its slot,
+            // finish rehashes only those
+            if (slice.hash == all_zeros) {
+                merkle_tree_hash(hash_function, get_data(slice), slice.size(),
+                    reinterpret_cast<hash_type>(&slice.hash));
             }
         }
-        size_t next_page = 0;
+        size_t next_slice = 0;
         size_t next_node = 0;
         size_t next_sibling = 0;
-        auto root_hash = compute_subtree(0, HASH_TREE_LOG2_ROOT_SIZE, next_page, next_node, next_sibling);
-        if (next_page != slices.size()) {
-            THROW(std::runtime_error, "too many pages in log");
+        auto root_hash = compute_subtree_hash(0, HASH_TREE_LOG2_ROOT_SIZE, next_slice, next_node, next_sibling);
+        if (next_slice != slices.size()) {
+            THROW(std::runtime_error, "too many slices in log");
         }
         if (next_node != nodes.size()) {
             THROW(std::runtime_error, "too many nodes in log");
@@ -288,7 +283,7 @@ struct step_log {
         return root_hash;
     }
 
-    /// \brief Assert a caller-claimed pre-operation root hash matches the witnessed tree.
+    /// \brief Throw unless the caller-claimed root hash before matches the witnessed tree.
     /// \param claimed Root hash the caller expects the operation to start from.
     void check_root_hash_before(const_machine_hash_view claimed) const {
         if (!std::ranges::equal(claimed, root_hash_before)) {
@@ -307,12 +302,10 @@ private:
         if (header.signature != STEP_LOG_SIGNATURE) {
             THROW(std::runtime_error, "invalid step log signature");
         }
-        constexpr uint64_t min_slice_bytes =
-            sizeof(slice_entry_header) + (UINT64_C(1) << HASH_TREE_LOG2_WORD_SIZE) + sizeof(machine_hash);
         if (header.slice_count == 0) {
             THROW(std::runtime_error, "slice count is zero");
         }
-        if (header.slice_count > (log_size - sizeof(step_log_header)) / min_slice_bytes ||
+        if (header.slice_count > (log_size - sizeof(step_log_header)) / sizeof(slice_entry) ||
             header.slice_count > SIZE_MAX) {
             THROW(std::runtime_error, "slice count exceeds step log size");
         }
@@ -335,7 +328,7 @@ private:
                     THROW(std::runtime_error, "invalid log format: multiple slices in the same page");
                 }
             }
-            if (*slices[i].hash != zero) {
+            if (slices[i].hash != zero) {
                 THROW(std::runtime_error, "invalid log format: slice scratch hash area is not zero");
             }
         }
@@ -375,25 +368,25 @@ private:
     /// 128-bit arithmetic so an entry ending at 2^64 cannot overflow.
     static void validate_entries_ordered_and_disjoint(std::span<const slice_entry> slices,
         std::span<const node_entry> nodes) {
-        size_t next_page = 0;
+        size_t next_slice = 0;
         size_t next_node = 0;
         uint128_t prev_end = 0;
-        while (next_page < slices.size() || next_node < nodes.size()) {
+        while (next_slice < slices.size() || next_node < nodes.size()) {
             uint128_t entry_start{};
             uint128_t entry_end{};
-            bool take_page = false;
-            if (next_page >= slices.size()) {
-                take_page = false;
+            bool take_slice = false;
+            if (next_slice >= slices.size()) {
+                take_slice = false;
             } else if (next_node >= nodes.size()) {
-                take_page = true;
+                take_slice = true;
             } else {
-                const auto page_start = static_cast<uint128_t>(slices[next_page].address);
-                take_page = page_start < nodes[next_node].address;
+                const auto slice_start = static_cast<uint128_t>(slices[next_slice].address);
+                take_slice = slice_start < nodes[next_node].address;
             }
-            if (take_page) {
-                entry_start = static_cast<uint128_t>(slices[next_page].address);
-                entry_end = entry_start + slices[next_page].size();
-                ++next_page;
+            if (take_slice) {
+                entry_start = static_cast<uint128_t>(slices[next_slice].address);
+                entry_end = entry_start + slices[next_slice].size();
+                ++next_slice;
             } else {
                 entry_start = nodes[next_node].address;
                 entry_end = entry_start + (static_cast<uint128_t>(1) << nodes[next_node].log2_size);
@@ -406,29 +399,30 @@ private:
         }
     }
 
-    /// \brief Reconstruct a subtree with cursors into slices, bulk-write nodes and siblings.
-    machine_hash compute_subtree(uint64_t address, int log2_size, size_t &next_page, size_t &next_node,
+    /// \brief Hash of the subtree at (address, log2_size), consuming the slice, node and sibling cursors in address
+    /// order.
+    machine_hash compute_subtree_hash(uint64_t address, uint64_t log2_size, size_t &next_slice, size_t &next_node,
         size_t &next_sibling) const {
         const uint128_t end = static_cast<uint128_t>(address) + (static_cast<uint128_t>(1) << log2_size);
-        const bool page_in = next_page < slices.size() && static_cast<uint128_t>(slices[next_page].address) < end;
+        const bool slice_in = next_slice < slices.size() && static_cast<uint128_t>(slices[next_slice].address) < end;
         const bool node_in = next_node < nodes.size() && static_cast<uint128_t>(nodes[next_node].address) < end;
-        if (!page_in && !node_in) {
+        if (!slice_in && !node_in) {
             if (next_sibling >= siblings.size()) {
                 THROW(std::runtime_error, "too few sibling hashes in log");
             }
             return siblings[next_sibling++];
         }
-        if (node_in && nodes[next_node].address == address && std::cmp_equal(nodes[next_node].log2_size, log2_size)) {
+        if (node_in && nodes[next_node].address == address && nodes[next_node].log2_size == log2_size) {
             return nodes[next_node++].hash;
         }
-        if (page_in && slices[next_page].address == address && std::cmp_equal(slices[next_page].log2_size, log2_size)) {
-            return *slices[next_page++].hash;
+        if (slice_in && slices[next_slice].address == address && slices[next_slice].log2_size == log2_size) {
+            return slices[next_slice++].hash;
         }
         if (log2_size <= HASH_TREE_LOG2_WORD_SIZE) {
-            THROW(std::runtime_error, "invalid log format: slice or node crosses subtree boundary");
+            THROW(std::runtime_error, "invalid log format: slice or node not aligned to a subtree");
         }
-        const auto left = compute_subtree(address, log2_size - 1, next_page, next_node, next_sibling);
-        const auto right = compute_subtree(address + (UINT64_C(1) << (log2_size - 1)), log2_size - 1, next_page,
+        const auto left = compute_subtree_hash(address, log2_size - 1, next_slice, next_node, next_sibling);
+        const auto right = compute_subtree_hash(address + (UINT64_C(1) << (log2_size - 1)), log2_size - 1, next_slice,
             next_node, next_sibling);
         machine_hash hash{};
         concat_hash(hash_function, reinterpret_cast<const_hash_type>(&left), reinterpret_cast<const_hash_type>(&right),

@@ -34,7 +34,6 @@
 #include <cstring>
 #include <exception>
 #include <memory>
-#include <vector>
 
 #include <step-log.hpp>
 
@@ -42,7 +41,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (size == 0) {
         return 0;
     }
-    const auto shape = (data[0] & 1) != 0 ? cartesi::step_log_shape::whole_pages : cartesi::step_log_shape::slices;
+    const auto shape = (data[0] & 1) != 0 ? cartesi::step_log_shape::whole_pages : cartesi::step_log_shape::any_size;
     const auto hash_function =
         (data[0] & 2) != 0 ? cartesi::hash_function_type::sha256 : cartesi::hash_function_type::keccak256;
     ++data;
@@ -56,11 +55,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     std::memcpy(image, data, size);
 
     try {
-        std::vector<cartesi::slice_entry> slices(cartesi::step_log::get_slice_count(image, size));
-        auto log = cartesi::step_log::decode(image, size, slices, hash_function, shape);
+        auto log = cartesi::step_log::decode(image, size, hash_function, shape);
         // A structurally valid log (an unmutated seed) also exercises the
         // queries and the post-state walk; both must be exception-safe.
-        log.try_find_page(log.slices[0].address);
+        log.try_find_slice(log.slices[0].address);
         log.try_find_node(0);
         log.compute_root_hash();
     } catch (const std::exception &) {

@@ -21,6 +21,11 @@ local cartesi = require("cartesi")
 local M = {}
 
 M.errors = {
+    slice_data_offset = {
+        cpp_pattern = "slice data offset mismatch",
+        solidity_signature = "SliceDataOffsetMismatch(uint64)",
+        solidity_message = "",
+    },
     uarch_register_window_short = {
         cpp_pattern = "access outside witnessed slice",
         solidity_signature = "AccessOutsideSlice()",
@@ -48,7 +53,7 @@ M.errors = {
     },
     slice_unsorted = {
         cpp_pattern = "slice addresses not in increasing order",
-        solidity_signature = "PagesNotInOrder()",
+        solidity_signature = "SlicesNotInOrder()",
         solidity_message = "",
     },
     slice_overlap = {
@@ -67,7 +72,7 @@ M.errors = {
         solidity_message = "",
     },
     slice_truncated = {
-        cpp_pattern = "truncated slice data or hash",
+        cpp_pattern = "truncated slice data",
         solidity_signature = "LogTruncated()",
         solidity_message = "",
     },
@@ -96,14 +101,14 @@ M.errors = {
         solidity_signature = "UnsupportedHashFunction(uint64)",
         solidity_message = "",
     },
-    page_count_zero = {
+    slice_count_zero = {
         cpp_pattern = "slice count is zero",
-        solidity_signature = "PageCountZero()",
+        solidity_signature = "SliceCountZero()",
         solidity_message = "",
     },
-    page_index_not_increasing = {
+    slice_address_not_increasing = {
         cpp_pattern = "slice addresses not in increasing order",
-        solidity_signature = "PagesNotInOrder()",
+        solidity_signature = "SlicesNotInOrder()",
         solidity_message = "",
     },
     entries_overlap = {
@@ -131,9 +136,9 @@ M.errors = {
         solidity_signature = "TooFewSiblings()",
         solidity_message = "",
     },
-    required_page_not_found = {
-        cpp_pattern = "required page not found",
-        solidity_signature = "RequiredPageNotFound(uint64)",
+    required_slice_not_found = {
+        cpp_pattern = "required slice not found",
+        solidity_signature = "RequiredSliceNotFound(uint64)",
         solidity_message = "",
     },
     required_node_not_found = {
@@ -141,9 +146,9 @@ M.errors = {
         solidity_signature = "RequiredNodeNotFound(uint64)",
         solidity_message = "",
     },
-    too_many_pages = {
-        cpp_pattern = "too many pages in log",
-        solidity_signature = "TooManyPages()",
+    too_many_slices = {
+        cpp_pattern = "too many slices in log",
+        solidity_signature = "TooManySlices()",
         solidity_message = "",
     },
     too_many_siblings = {
@@ -199,7 +204,7 @@ M.machine_errors = {
     slice_same_page = "machine replay requires whole-page witnesses",
     -- Host verify_step supports both hashes: the forged declaration fails the pre-root check.
     keccak256_declared = "root hash before does not match step log",
-    page_count_exceeds_size = "slice count exceeds step log size",
+    slice_count_exceeds_size = "slice count exceeds step log size",
     sibling_count_mismatch = "step log byte length does not match counts",
 }
 for tag, error_spec in pairs(M.errors) do

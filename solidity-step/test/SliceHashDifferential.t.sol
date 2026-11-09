@@ -36,7 +36,7 @@ contract SliceHashDifferentialTest is StepLogTestBase {
             freeAfter := mload(0x40)
             zeroSlot := mload(0x60)
         }
-        assertEq(actual, expected, "page hash");
+        assertEq(actual, expected, "slice hash");
         assertEq(freeAfter, freeBefore, "temporary space became an allocation");
         assertEq(zeroSlot, 0, "zero slot");
         assertEq(keccak256(data), contentsBefore, "input or neighbors changed");
@@ -54,17 +54,17 @@ contract SliceHashDifferentialTest is StepLogTestBase {
         VmSafe.DirEntry[] memory entries = vm.readDir("test/fixtures", 3);
         require(entries.length > 0, "no fixture entries");
         uint256 logs;
-        uint256 pages;
+        uint256 slices;
         for (uint256 i; i < entries.length; ++i) {
             if (entries[i].isDir || !isLog(entries[i].path)) continue;
             uint256 count = this.compareLogSlices(vm.readFileBinary(entries[i].path));
             if (count != 0) {
                 ++logs;
-                pages += count;
+                slices += count;
             }
         }
-        require(logs != 0 && pages != 0, "no fixture pages");
-        console.log("page differential logs / pages", logs, pages);
+        require(logs != 0 && slices != 0, "no fixture slices");
+        console.log("slice differential logs / slices", logs, slices);
     }
 
     function isLog(string memory path) private pure returns (bool) {
@@ -74,22 +74,23 @@ contract SliceHashDifferentialTest is StepLogTestBase {
             && name[n - 1] == "g";
     }
 
-    function compareLogSlices(bytes calldata log) external pure returns (uint256 pages) {
-        // Parse slice bodies independently, including complete entries in rejected logs.
+    function compareLogSlices(bytes calldata log) external pure returns (uint256 slices) {
+        // Parse slice contents independently, including complete entries in rejected logs.
         if (log.length < 40) return 0;
         uint256 declared = le64(log, 16);
-        uint256 cursor = 40;
+        if (declared > (log.length - 40) / 56) return 0;
+        uint256 dataBase = 40 + declared * 56;
         for (uint256 i; i < declared; ++i) {
-            if (log.length - cursor < 16) break;
-            uint256 log2Size = le64(log, cursor + 8);
+            uint256 entry = 40 + i * 56;
+            uint256 log2Size = le64(log, entry + 8);
             if (log2Size < 5 || log2Size > 12) break;
             uint256 size = uint256(1) << log2Size;
-            cursor += 16;
-            if (log.length - cursor < size + 32) break;
-            bytes memory slice = log[cursor:cursor + size];
+            uint256 offset = le64(log, entry + 16);
+            if (offset > log.length - dataBase || log.length - dataBase - offset < size) break;
+            uint256 start = dataBase + offset;
+            bytes memory slice = log[start:start + size];
             compareSlice(slice, 0, size);
-            cursor += size + 32;
-            ++pages;
+            ++slices;
         }
     }
 

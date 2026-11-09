@@ -5624,24 +5624,26 @@ reverts the state of the uarch to its pristine form. Note that the
 functions indeed perform the action, and therefore modify the uarch
 state, in addition to recording the log.
 
-The binary step log uses the slices format (version 4):
+The binary step log uses the slices format (version 5):
 
-    step_log ::= header slice_entry^slice_count node_entry^node_count sibling_entry^sibling_count
+    step_log ::= header slice_entry^slice_count data_region node_entry^node_count sibling_entry^sibling_count
 
     header ::= {                        -- 40 bytes
-      signature     ::= "CTSI" 4 0 0 0, -- magic + version + reserved
+      signature     ::= "CTSI" 5 0 0 0, -- magic + version + reserved
       hash_function ::= uint64,         -- 0 for Keccak-256, 1 for SHA-256
       slice_count   ::= uint64,          -- number of slices
       node_count    ::= uint64,
       sibling_count ::= uint64
     }
 
-    slice_entry ::= {                   -- 48 + 2^log2_size bytes
-      address   ::= uint64,             -- byte address, aligned to 2^log2_size
-      log2_size ::= uint64,             -- 5..12 (32..4096 bytes)
-      data      ::= byte^(2^log2_size),  -- slice contents as of first touch
-      hash      ::= hash                -- scratch slot, must be zero on the wire
+    slice_entry ::= {                   -- 56 bytes, fixed stride
+      address     ::= uint64,           -- byte address, aligned to 2^log2_size
+      log2_size   ::= uint64,           -- 5..12 (32..4096 bytes)
+      data_offset ::= uint64,           -- offset in data_region, sum of preceding slice sizes
+      hash        ::= hash             -- scratch slot, must be zero on the wire
     }
+
+    data_region ::= byte^(sum of slice sizes) -- first-touch contents, in slice-table order
 
     node_entry ::= {                    -- 48 bytes: a bulk write spanning > 1 page
       address   ::= uint64,             -- subtree start, aligned to 2^log2_size
@@ -5652,21 +5654,22 @@ The binary step log uses the slices format (version 4):
 
     sibling_entry ::= hash              -- untouched subtrees, in depth-first walk order
 
-All integers are little-endian and every `hash` is 32 bytes. Version 3
-logs are rejected. A verifier whose protocol fixes the hash function
+All integers are little-endian and every `hash` is 32 bytes. Earlier
+versions are rejected. A verifier whose protocol fixes the hash function
 (the on-chain replayer is Keccak-256 only) rejects a log that declares
 the other. Each witnessed 4 KiB page contributes at most one slice,
 containing every byte the step read or wrote. The recorder starts with
 the full page and repeatedly selects one half only when the other half
-was untouched, stopping at its fixed 512-byte floor or when both halves
-were touched. This floor applies to `log_step_uarch`, `log_reset_uarch`,
-and `log_send_cmio_response`; their verifiers accept every legal slice
-size. `log_step` records whole 4 KiB pages, and machine replay
-(`verify_step`, RISC0 and SP1) rejects any smaller slice with "machine
-replay requires whole-page witnesses". The wire format is the same for
-both shapes. The uarch register cache’s whole load and flush window
-counts as touched.
+was untouched, stopping at its minimum slice size, 512 bytes, or when
+both halves were touched. This minimum applies to `log_step_uarch`,
+`log_reset_uarch`, and `log_send_cmio_response`; their verifiers accept
+every legal slice size. `log_step` records whole 4 KiB pages, and
+machine replay (`verify_step`, RISC0 and SP1) rejects any smaller slice
+with "machine replay requires whole-page witnesses". The wire format is
+the same for both shapes. The uarch registers are witnessed as a unit: a
+slice in their page always covers all 35 of them.
 
+Each data offset must equal the running sum of preceding slice sizes.
 Slices must be aligned, strictly ascending by address, disjoint, and
 unique by enclosing page. Nodes represent bulk writes replacing whole
 subtrees, as in uarch reset and input inclusion, and cannot overlap a

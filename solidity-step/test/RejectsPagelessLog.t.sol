@@ -20,10 +20,10 @@ import {StepLogTestBase} from "./StepLogTestBase.sol";
 import {EmulatorConstants} from "src/EmulatorConstants.sol";
 import {StepLog} from "src/StepLog.sol";
 
-/// A zero-page log with a single root-sized node would stand up a "witnessed tree" that is
-/// nothing but one attacker-chosen hash. The page-count guard in decode rejects it.
+/// A zero-slice log with a single root-sized node would stand up a "witnessed tree" that is
+/// nothing but one attacker-chosen hash. The slice-count guard in decode rejects it.
 contract RejectsPagelessLogTest is StepLogTestBase {
-    /// Build an 88-byte step log: 40-byte header + one root-sized node, no pages,
+    /// Build an 88-byte step log: 40-byte header + one root-sized node, no slices,
     /// no siblings. The single node covers the entire address space (addr 0,
     /// log2Size 64), so it alone would determine the pre-state root.
     function buildSingleRootNodeLog(bytes32 rootBefore) internal pure returns (bytes memory) {
@@ -43,7 +43,7 @@ contract RejectsPagelessLogTest is StepLogTestBase {
     function testPagelessLogIsRejected() public {
         bytes32 rootBefore = keccak256("arbitrary pre-state");
         bytes memory log = buildSingleRootNodeLog(rootBefore);
-        vm.expectRevert(StepLog.PageCountZero.selector);
+        vm.expectRevert(StepLog.SliceCountZero.selector);
         this.verifyStep(log, rootBefore);
     }
 }

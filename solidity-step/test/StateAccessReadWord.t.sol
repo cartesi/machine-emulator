@@ -37,7 +37,7 @@ contract StateAccessReadWordTest is ManifestParser {
         ) {
             return StepLog.readUarchWord(ctx, (paddr - EmulatorConstants.UARCH_HALT_ADDR) / 8);
         }
-        uint256 ptr = StepLog.findPage(ctx, paddr);
+        uint256 ptr = StepLog.findData(ctx, paddr);
         bytes32 word;
         assembly ("memory-safe") {
             word := mload(ptr)
@@ -172,7 +172,7 @@ contract StateAccessReadWordTest is ManifestParser {
                 base,
                 missing,
                 warm != 0,
-                abi.encodeWithSelector(StepLog.RequiredPageNotFound.selector, base + 183)
+                abi.encodeWithSelector(StepLog.RequiredSliceNotFound.selector, base + 183)
             );
             compareRevert(
                 base,

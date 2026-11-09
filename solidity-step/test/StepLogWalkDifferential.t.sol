@@ -50,7 +50,7 @@ contract StepLogWalkDifferentialTest is ManifestParser {
     function assertWalksAgree(bytes calldata log) external pure {
         StepLog.Context memory ctx = StepLog.decode(log);
         assertEq(compareWalks(ctx, 0, ROOT_LOG2_SIZE), ctx.rootHashBefore, "decoded root");
-        // Replay rewrites page and node hash slots in place; perturb them so the walks
+        // Replay rewrites slice and node hash slots in place; perturb them so the walks
         // are compared on non-decoded hashes.
         for (uint256 i; i < ctx.sliceHashes.length; ++i) {
             ctx.sliceHashes[i] = keccak256(abi.encode(ctx.sliceHashes[i], i));
@@ -78,7 +78,7 @@ contract StepLogWalkDifferentialTest is ManifestParser {
             zeroSlot := mload(0x60)
         }
         assertEq(actual, expected, "walk root");
-        assertEq(cAsm.nextPage, cRef.nextPage, "page cursor");
+        assertEq(cAsm.nextSlice, cRef.nextSlice, "slice cursor");
         assertEq(cAsm.nextNode, cRef.nextNode, "node cursor");
         assertEq(cAsm.nextSibling, cRef.nextSibling, "sibling cursor");
         assertEq(zeroSlot, 0, "zero slot");

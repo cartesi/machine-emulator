@@ -59,8 +59,8 @@ contract SliceBoundsTest is Test {
         StepLog.Context memory ctx = context(start, log2Size);
         if (warm) StateAccess.readWord(ctx, start);
         if (useReference) {
-            if (write) StepLog.writeLE64Memory(StepLog.findPageForWrite(ctx, target), 42);
-            uint256 ptr = StepLog.findPage(ctx, target);
+            if (write) StepLog.writeLE64Memory(StepLog.findDataForWrite(ctx, target), 42);
+            uint256 ptr = StepLog.findData(ctx, target);
             uint64 result;
             assembly ("memory-safe") {
                 result := byte(0, mload(ptr))
@@ -102,7 +102,7 @@ contract SliceBoundsTest is Test {
         StateAccess.writeX(ctx, 31, 42);
         StepLog.flushUarchRegisters(ctx);
         assertEq(StateAccess.readX(ctx, 31), 42);
-        // The last leaf has 8 bytes beyond the 35-word window; these must remain untouched.
+        // The format witnesses all 35 registers; the 8 extra bytes in their last leaf must remain untouched.
         for (uint256 i = 280; i < 288; ++i) {
             assertEq(ctx.sliceData[i], bytes1(0));
         }

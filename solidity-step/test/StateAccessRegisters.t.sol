@@ -164,8 +164,8 @@ contract StateAccessRegistersTest is ManifestParser {
         compareRoots(actual, expected); // cached root; no pending writes
 
         // Raw writes invalidate the register cache. The next read must reload it.
-        uint256 actualPtr = StepLog.findPageForWrite(actual, addr);
-        uint256 expectedPtr = StepLog.findPageForWrite(expected, addr);
+        uint256 actualPtr = StepLog.findDataForWrite(actual, addr);
+        uint256 expectedPtr = StepLog.findDataForWrite(expected, addr);
         StepLog.writeLE64Memory(actualPtr, ~second);
         StepLog.writeLE64Memory(expectedPtr, ~second);
         assertEq(actual.uarchShadowPtr, 0);
@@ -175,13 +175,13 @@ contract StateAccessRegistersTest is ManifestParser {
 
         // A raw read materializes dirty words without invalidating cached registers.
         compareWriteX(actual, expected, reg, first);
-        StepLog.findPage(actual, addr);
-        StepLog.findPage(expected, addr);
+        StepLog.findData(actual, addr);
+        StepLog.findData(expected, addr);
         assertFalse(actual.uarchRegistersDirty);
         compareState(actual, expected);
         // Flush/invalidate again to exercise the PC writer's cold loader.
-        StepLog.findPageForWrite(actual, addr);
-        StepLog.findPageForWrite(expected, addr);
+        StepLog.findDataForWrite(actual, addr);
+        StepLog.findDataForWrite(expected, addr);
         compareWritePc(actual, expected, ~pc);
         compareRoots(actual, expected);
         assertEq(actual.sliceData[280], bytes1(0xa5));
@@ -254,7 +254,7 @@ contract StateAccessRegistersTest is ManifestParser {
 
     function testMissingRegisterPageReverts() public view {
         bytes memory reason = abi.encodeWithSelector(
-            StepLog.RequiredPageNotFound.selector, EmulatorConstants.UARCH_HALT_ADDR >> 12
+            StepLog.RequiredSliceNotFound.selector, EmulatorConstants.UARCH_HALT_ADDR >> 12
         );
         for (uint8 op; op < 3; ++op) {
             compareReverts(op, 31, false, false, reason);

@@ -50,7 +50,7 @@ library StateAccess {
         ) {
             StepLog.flushUarchRegisters(ctx);
         }
-        // Inline twin of locatePage.
+        // Inline twin of locateSlice.
         uint256[61] memory cache = ctx.pageLookupCache;
         uint64 idx = paddr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
         uint256 cacheSlot = uint256(idx) % cache.length;
@@ -63,7 +63,7 @@ library StateAccess {
             if (cached >> 6 == uint256(idx) + 1) {
                 lo = cached & 0x3f;
             } else {
-                lo = StepLog.resolvePageMiss(ctx, idx, cacheSlot);
+                lo = StepLog.findSlicePosition(ctx, idx, cacheSlot);
             }
         }
         bytes memory pd = ctx.sliceData;
@@ -104,7 +104,7 @@ library StateAccess {
             StepLog.flushUarchRegisters(ctx);
             ctx.uarchShadowPtr = 0;
         }
-        // Inline twin of findPageForWrite.
+        // Inline twin of findDataForWrite.
         uint256[61] memory cache = ctx.pageLookupCache;
         uint64 idx = paddr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
         uint256 cacheSlot = uint256(idx) % cache.length;
@@ -117,7 +117,7 @@ library StateAccess {
             if (cached >> 6 == uint256(idx) + 1) {
                 lo = cached & 0x3f;
             } else {
-                lo = StepLog.resolvePageMiss(ctx, idx, cacheSlot);
+                lo = StepLog.findSlicePosition(ctx, idx, cacheSlot);
             }
         }
         bytes memory pd = ctx.sliceData;
@@ -225,24 +225,24 @@ library StateAccess {
     }
 
     // The revert root hash occupies a full 32-byte shadow slot, stored raw (no byte swap) so the
-    // page bytes match the C++/RISC0 replayers. The slot ends exactly at the page boundary.
+    // slice bytes match the C++/RISC0 replayers. The slot ends exactly at the page boundary.
     function writeRevertRootHash(StepLog.Context memory ctx, bytes32 h) internal pure {
         uint256 ptr =
-            StepLog.findPageForWrite(ctx, EmulatorConstants.AR_SHADOW_REVERT_ROOT_HASH_START, 32);
+            StepLog.findDataForWrite(ctx, EmulatorConstants.AR_SHADOW_REVERT_ROOT_HASH_START, 32);
         assembly ("memory-safe") {
             mstore(ptr, h)
         }
     }
 
     function readRevertRootHash(StepLog.Context memory ctx) internal pure returns (bytes32 h) {
-        uint256 ptr = StepLog.findPage(ctx, EmulatorConstants.AR_SHADOW_REVERT_ROOT_HASH_START, 32);
+        uint256 ptr = StepLog.findData(ctx, EmulatorConstants.AR_SHADOW_REVERT_ROOT_HASH_START, 32);
         assembly ("memory-safe") {
             h := mload(ptr)
         }
     }
 
-    // Records that the reset reverted the canonical state on a rejected input. The page model recomputes
-    // the tree from the pages (which reflect the pristine uarch), so the revert root hash is carried on
+    // Records that the reset reverted the canonical state on a rejected input. The witnessed tree
+    // reflects the pristine uarch, so the revert root hash is carried on
     // the context and returned by Verify.verifyReset as the obtained root.
     function revertState(StepLog.Context memory ctx) internal pure {
         ctx.reverted = true;
@@ -273,7 +273,7 @@ library StateAccess {
     ) internal pure {
         if (writeLengthLog2Size <= EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE) {
             // Mirrors copy_n + fill_n in do_write_memory_with_padding (replay-step-state-access.hpp).
-            uint256 dstPtr = StepLog.findPageForWrite(ctx, paddr, uint256(1) << writeLengthLog2Size);
+            uint256 dstPtr = StepLog.findDataForWrite(ctx, paddr, uint256(1) << writeLengthLog2Size);
             uint256 len = uint256(dataLength);
             uint256 padLen = (uint256(1) << writeLengthLog2Size) - len;
             assembly ("memory-safe") {
@@ -330,7 +330,7 @@ library StateAccess {
                 + slotIndex * EmulatorConstants.SHADOW_TLB_SLOT_SIZE;
         }
 
-        // A 32-byte-aligned slot fits wholly within one witnessed page. Locate
+        // A 32-byte-aligned slot fits wholly within one witnessed slice. Locate
         // and invalidate it once, then store the three little-endian fields and
         // eight bytes of zero padding together.
         if (
@@ -340,7 +340,7 @@ library StateAccess {
             StepLog.flushUarchRegisters(ctx);
             ctx.uarchShadowPtr = 0;
         }
-        // Inline twin of findPageForWrite.
+        // Inline twin of findDataForWrite.
         uint256[61] memory cache = ctx.pageLookupCache;
         uint64 idx = slotAddr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
         uint256 cacheSlot = uint256(idx) % cache.length;
@@ -353,7 +353,7 @@ library StateAccess {
             if (cached >> 6 == uint256(idx) + 1) {
                 lo = cached & 0x3f;
             } else {
-                lo = StepLog.resolvePageMiss(ctx, idx, cacheSlot);
+                lo = StepLog.findSlicePosition(ctx, idx, cacheSlot);
             }
         }
         bytes memory pd = ctx.sliceData;

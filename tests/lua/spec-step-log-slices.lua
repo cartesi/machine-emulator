@@ -14,7 +14,6 @@ end
 lester.describe("page-slice witnesses", function()
     lester.it("uses whole pages for machine steps and preserves roots for reads and writes", function()
         local m <close> = machine()
-        assert(m:get_runtime_config().log2_slice_floor == nil)
         m:write_reg("pc", 0x80000000)
         m:write_reg("x1", 0x80002000)
         -- sd x2,0(x1); ld x3,0(x1)
@@ -24,24 +23,24 @@ lester.describe("page-slice witnesses", function()
         local bytes = m:log_step(2)
         assert(cartesi.machine:verify_step(before, bytes, 2) == m:get_root_hash())
         local log = util.parse_step_log(bytes)
-        assert(log.signature == "CTSI\4\0\0\0")
-        for _, page in ipairs(log.pages) do
-            assert(page.log2_size == 12 and page.offset == 0)
+        assert(log.signature == "CTSI\5\0\0\0")
+        for _, slice in ipairs(log.slices) do
+            assert(slice.log2_size == 12 and slice.page_offset == 0)
         end
     end)
 
-    lester.it("keeps floor 9 for uarch steps and resets", function()
+    lester.it("keeps a 512-byte minimum slice size for uarch steps and resets", function()
         local m <close> = machine()
         for _, operation in ipairs({ "log_step_uarch", "log_reset_uarch" }) do
             local before = m:get_root_hash()
             local bytes = operation == "log_step_uarch" and m:log_step_uarch(1) or m:log_reset_uarch()
             local log = util.parse_step_log(bytes)
-            local found_floor = false
-            for _, page in ipairs(log.pages) do
-                assert(page.log2_size >= 9)
-                found_floor = found_floor or page.log2_size == 9
+            local found_min_slice_size = false
+            for _, slice in ipairs(log.slices) do
+                assert(slice.log2_size >= 9)
+                found_min_slice_size = found_min_slice_size or slice.log2_size == 9
             end
-            assert(found_floor)
+            assert(found_min_slice_size)
             local after = operation == "log_step_uarch" and cartesi.machine:verify_step_uarch(before, bytes, 1)
                 or cartesi.machine:verify_reset_uarch(before, bytes)
             assert(after == m:get_root_hash())
@@ -96,11 +95,11 @@ lester.describe("page-slice witnesses", function()
         local bytes = m:log_send_cmio_response(0, data, before)
         assert(cartesi.machine:verify_send_cmio_response(0, data, before, bytes, before) == m:get_root_hash())
         local log = util.parse_step_log(bytes)
-        local found_floor = false
-        for _, page in ipairs(log.pages) do
-            found_floor = found_floor or page.log2_size == 9
+        local found_min_slice_size = false
+        for _, slice in ipairs(log.slices) do
+            found_min_slice_size = found_min_slice_size or slice.log2_size == 9
         end
-        assert(found_floor)
+        assert(found_min_slice_size)
         util.restrict_step_log_slice(log, cartesi.AR_CMIO_RX_BUFFER_START >> 12, 0, 5)
         assert(util.recompute_step_log_root(log) == before)
         util.assert_error("access outside witnessed slice", function()

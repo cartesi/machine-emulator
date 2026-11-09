@@ -128,7 +128,7 @@ $(BUILDDIR)/test-uarch-pma-cache: test-uarch-pma-cache.o ../../src/libcartesi.a 
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
 
 test-step-log.o: CXXFLAGS += -I../../third-party/llvm-flang-uint128
-test-step-log.o: ../../src/step-log.hpp ../../src/step-log-recorder.hpp ../../src/step-log-slice.hpp ../../src/replay-step-state-access.hpp
+test-step-log.o: ../../src/step-log.hpp ../../src/step-log-recorder.hpp ../../src/replay-step-state-access.hpp
 
 $(BUILDDIR)/test-step-log: test-step-log.o ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)

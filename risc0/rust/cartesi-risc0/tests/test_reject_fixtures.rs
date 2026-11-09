@@ -114,20 +114,3 @@ fn test_host_rejects_wrong_belief() {
         .expect_err("wrong root_after accepted");
     assert!(e.contains("root_hash_after mismatch"), "{e:?}");
 }
-
-#[test]
-fn test_guest_rejects_descriptor_capacity_overflow() {
-    // The freestanding guest provides 65,536 descriptors. Supply enough bytes for
-    // the declared minimum entries so rejection is specifically the capacity gate.
-    let count = 65537u64;
-    let mut log = vec![0u8; 40 + count as usize * 80];
-    log[..8].copy_from_slice(b"CTSI\x04\0\0\0");
-    log[8..16].copy_from_slice(&1u64.to_le_bytes());
-    log[16..24].copy_from_slice(&count.to_le_bytes());
-    let err = try_prove(REPLAY_STEP_ELF, &[0; 32], &log, 1, &[0; 32])
-        .expect_err("guest accepted more slices than its static descriptor table");
-    assert!(
-        err.contains("slice count exceeds descriptor storage capacity"),
-        "{err:?}"
-    );
-}

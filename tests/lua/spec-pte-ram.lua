@@ -78,8 +78,8 @@ lester.describe("RAM-only page tables", function()
                         assert(native:read_memory(region.start, 4096) == pte_before, "PTE must not be written")
                         assert(native:read_memory(data, 8) == string.pack("<I8", 0x1122334455667788))
                         for _, witness in ipairs({ native_log, log }) do
-                            for _, slice in ipairs(test_util.parse_step_log(witness).pages) do
-                                local page = slice.index << 12
+                            for _, slice in ipairs(test_util.parse_step_log(witness).slices) do
+                                local page = slice.page_index << 12
                                 assert(page ~= region.start, "out-of-RAM PTE must not be read")
                             end
                         end

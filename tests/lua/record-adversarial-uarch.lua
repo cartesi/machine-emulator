@@ -97,10 +97,12 @@ end
 -- matches the claimed one. Errors if the page is absent -- a guard that the reset still records
 -- this page.
 local function tamper_page_byte(log, page_idx, off)
-    for _, page in ipairs(log.pages) do
-        if page.index == page_idx then
-            off = off - (page.offset or 0)
-            page.data = page.data:sub(1, off) .. string.char(page.data:byte(off + 1) ~ 0xff) .. page.data:sub(off + 2)
+    for _, slice in ipairs(log.slices) do
+        if slice.page_index == page_idx then
+            off = off - (slice.page_offset or 0)
+            slice.data = slice.data:sub(1, off)
+                .. string.char(slice.data:byte(off + 1) ~ 0xff)
+                .. slice.data:sub(off + 2)
             return
         end
     end
@@ -114,8 +116,8 @@ end
 local function refold_witness(log, edit)
     local tree = test_util.walk_step_log(log, function(hash)
         return { hash = assert(hash) }
-    end, function(page)
-        return { page = page, hash = hash_tree.get_data_root_hash(page.data, page.log2_size, "keccak256") }
+    end, function(slice)
+        return { slice = slice, hash = hash_tree.get_data_root_hash(slice.data, slice.log2_size, "keccak256") }
     end, function(node)
         return { node = node, hash = node.hash }
     end, function(left, right)
@@ -134,15 +136,15 @@ local function refold_witness(log, edit)
         if t.left then
             t.hash = cartesi.keccak256(t.left.hash, t.right.hash)
         end
-        t.witnessed = t.page ~= nil or t.node ~= nil or (t.left and (t.left.witnessed or t.right.witnessed))
+        t.witnessed = t.slice ~= nil or t.node ~= nil or (t.left and (t.left.witnessed or t.right.witnessed))
     end
     change(tree)
     assert(edits == 1, "expected exactly one witness edit")
 
-    log.pages, log.nodes, log.siblings = {}, {}, {}
+    log.slices, log.nodes, log.siblings = {}, {}, {}
     local function emit(t)
-        if t.page then
-            log.pages[#log.pages + 1] = t.page
+        if t.slice then
+            log.slices[#log.slices + 1] = t.slice
         elseif t.node then
             log.nodes[#log.nodes + 1] = t.node
         elseif t.witnessed then
@@ -178,22 +180,22 @@ local cases = {
             log.hash_function = 99
         end,
     },
-    -- Page / node structure
+    -- Slice / node structure
     {
-        tag = "page_count_zero",
+        tag = "slice_count_zero",
         kind = "cycle",
         base = UARCH_BASE,
         mutate = function(log)
-            log.pages = {}
+            log.slices = {}
         end,
     },
     {
-        tag = "page_index_not_increasing",
+        tag = "slice_address_not_increasing",
         kind = "cycle",
         base = UARCH_BASE,
         mutate = function(log)
-            log.pages[#log.pages].index = log.pages[#log.pages - 1].index
-            log.pages[#log.pages].offset = log.pages[#log.pages - 1].offset
+            log.slices[#log.slices].page_index = log.slices[#log.slices - 1].page_index
+            log.slices[#log.slices].page_offset = log.slices[#log.slices - 1].page_offset
         end,
     },
     {
@@ -201,7 +203,7 @@ local cases = {
         kind = "reset_uarch",
         base = RESET_BASE,
         -- Move the still-aligned uarch-state node onto shadow page 0 so the combined
-        -- pages+nodes disjointness walk sees overlapping entries.
+        -- slices+nodes disjointness walk sees overlapping entries.
         mutate = function(log)
             log.nodes[1].address = 0
         end,
@@ -227,7 +229,7 @@ local cases = {
         kind = "cycle",
         base = UARCH_BASE,
         mutate = function(log)
-            log.pages[1].scratch_hash = string.rep("\255", 32)
+            log.slices[1].scratch_hash = string.rep("\255", 32)
         end,
     },
     {
@@ -240,13 +242,13 @@ local cases = {
         end,
     },
     {
-        tag = "required_page_not_found",
+        tag = "required_slice_not_found",
         kind = "cycle",
         base = UARCH_BASE,
         mutate = function(log)
             local before = refold_witness(log, function(t)
-                if t.page and t.page.index == PC_PAGE then
-                    t.page = nil
+                if t.slice and t.slice.page_index == PC_PAGE then
+                    t.slice = nil
                     return true
                 end
             end)
@@ -270,15 +272,15 @@ local cases = {
         end,
     },
     {
-        tag = "page_index_not_increasing",
+        tag = "slice_address_not_increasing",
         name = "page_address_wrap",
         kind = "cycle",
         base = UARCH_BASE,
         -- Slice entries carry a uint64 byte address. The old out-of-range page
         -- index 2^52 now wraps to address zero and is rejected as out of order.
         mutate = function(log)
-            log.pages[#log.pages + 1] = {
-                index = 1 << 52,
+            log.slices[#log.slices + 1] = {
+                page_index = 1 << 52,
                 data = string.rep("\0", 4096),
                 scratch_hash = string.rep("\0", 32),
             }
@@ -323,7 +325,7 @@ local cases = {
         base = UARCH_BASE,
         -- Tamper a page byte: the recomputed pre-root no longer matches the claimed one.
         mutate = function(log)
-            local p = log.pages[#log.pages]
+            local p = log.slices[#log.slices]
             p.data = string.char(p.data:byte(1) ~ 0xff) .. p.data:sub(2)
         end,
     },
@@ -446,7 +448,7 @@ cases[#cases + 1] = {
     kind = "cycle",
     base = UARCH_BASE,
     mutate = function(log)
-        -- A valid 256-byte slice covers the early registers, but not the full 280-byte window.
+        -- A valid 256-byte slice covers the early registers, but the format requires all 35 (280 bytes).
         -- Keep the pre-root by moving the excluded leaves into the sibling proof.
         test_util.restrict_step_log_slice(log, UARCH_SHADOW_PAGE, 0, 8)
     end,

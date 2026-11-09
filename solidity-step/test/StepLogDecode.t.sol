@@ -36,12 +36,12 @@ contract StepLogDecodeTest is ManifestParser {
         expectedRootBefore = row.rootHashBefore;
     }
 
-    /// The sibling cap must cover the page cap's worst case: a maximally address-spread log can
-    /// need one sibling per tree level per page, so MAX_SIBLING_COUNT >= depth * MAX_PAGE_COUNT.
-    function testSiblingCapCoversPageCap() public pure {
+    /// The sibling cap must cover the slice cap's worst case: a maximally address-spread log can
+    /// need one sibling per tree level per slice, so MAX_SIBLING_COUNT >= depth * MAX_SLICE_COUNT.
+    function testSiblingCapCoversSliceCap() public pure {
         uint256 depth =
             EmulatorConstants.HASH_TREE_LOG2_ROOT_SIZE - EmulatorConstants.HASH_TREE_LOG2_WORD_SIZE;
-        assertGe(uint256(StepLog.MAX_SIBLING_COUNT), depth * uint256(StepLog.MAX_PAGE_COUNT));
+        assertGe(uint256(StepLog.MAX_SIBLING_COUNT), depth * uint256(StepLog.MAX_SLICE_COUNT));
     }
 
     /// decode parses the header and exposes a self-consistent context.
@@ -55,14 +55,14 @@ contract StepLogDecodeTest is ManifestParser {
             ctx.rootHashBefore, expectedRootBefore, "recomputed rootHashBefore matches manifest"
         );
 
-        uint256 pageCount = ctx.pageIndices.length;
-        assertGt(pageCount, 0, "log has pages");
+        uint256 sliceCount = ctx.pageIndices.length;
+        assertGt(sliceCount, 0, "log has slices");
         uint256 contentBytes;
-        for (uint256 i; i < pageCount; ++i) {
+        for (uint256 i; i < sliceCount; ++i) {
             contentBytes += uint256(1) << StepLog.sliceLog2Size(ctx.slices[i]);
         }
         assertEq(ctx.sliceData.length, contentBytes, "sliceData length tracks slice contents");
-        assertEq(ctx.sliceHashes.length, pageCount, "sliceHashes allocated per page");
+        assertEq(ctx.sliceHashes.length, sliceCount, "sliceHashes allocated per slice");
         assertEq(ctx.pageIndices[0], EXPECTED_FIRST_PAGE_INDEX, "uarch shadow state page first");
     }
 
@@ -93,7 +93,7 @@ contract StepLogDecodeTest is ManifestParser {
     }
 
     function testRejectsTruncatedAfterHeader() public {
-        // Header says it has pages but we only provide the header.
+        // Header says it has slices but we only provide the header.
         bytes memory bad = new bytes(StepLog.HEADER_SIZE);
         for (uint256 i = 0; i < StepLog.HEADER_SIZE; i++) {
             bad[i] = fixture[i];
@@ -102,12 +102,14 @@ contract StepLogDecodeTest is ManifestParser {
         this.decodeAt(bad, 0);
     }
 
-    /// Decode recomputes the pre-state root, so a tampered page byte changes it.
-    function testTamperedPageChangesRootBefore() public view {
+    /// Decode recomputes the pre-state root, so a tampered slice byte changes it.
+    function testTamperedSliceChangesRootBefore() public view {
         bytes memory bad = bytes(fixture);
-        // First page data starts after the header + the 16-byte slice prefix.
-        uint256 firstPageDataOff = StepLog.HEADER_SIZE + 16;
-        bad[firstPageDataOff] = bytes1(uint8(bad[firstPageDataOff]) ^ 0xff);
+        // Slice contents start after the complete fixed-stride table.
+        StepLog.Context memory original = this.decode(fixture);
+        uint256 firstSliceDataOff =
+            StepLog.HEADER_SIZE + original.slices.length * StepLog.SLICE_ENTRY_SIZE;
+        bad[firstSliceDataOff] = bytes1(uint8(bad[firstSliceDataOff]) ^ 0xff);
         StepLog.Context memory ctx = this.decode(bad);
         assertTrue(
             ctx.rootHashBefore != expectedRootBefore, "tamper must change the recomputed root"
@@ -127,12 +129,12 @@ contract StepLogDecodeTest is ManifestParser {
         this.decode(padded);
     }
 
-    // The three counts occupy the last 24 bytes of the header (page, node, sibling).
-    function testRejectsPageCountOverCap() public {
+    // The three counts occupy the last 24 bytes of the header (slice, node, sibling).
+    function testRejectsSliceCountOverCap() public {
         bytes memory bad = bytes(fixture);
-        uint64 over = StepLog.MAX_PAGE_COUNT + 1;
+        uint64 over = StepLog.MAX_SLICE_COUNT + 1;
         setLE64(bad, StepLog.HEADER_SIZE - 24, over);
-        vm.expectRevert(abi.encodeWithSelector(StepLog.PageCountExceedsLimit.selector, over));
+        vm.expectRevert(abi.encodeWithSelector(StepLog.SliceCountExceedsLimit.selector, over));
         this.decodeAt(bad, 0);
     }
 
@@ -177,7 +179,7 @@ contract StepLogDecodeTest is ManifestParser {
         ctx.nodes = new StepLog.NodeEntry[](1);
         ctx.nodes[0] =
             StepLog.NodeEntry(0, EmulatorConstants.HASH_TREE_LOG2_ROOT_SIZE, bytes32(uint256(2)));
-        vm.expectRevert(StepLog.TooManyPages.selector);
+        vm.expectRevert(StepLog.TooManySlices.selector);
         this.computeRoot(ctx);
     }
 

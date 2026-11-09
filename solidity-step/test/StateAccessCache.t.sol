@@ -159,7 +159,7 @@ contract StateAccessCacheTest is StepLogTestBase {
     function testRawPointerReadFlushesRegisters() public pure {
         StepLog.Context memory ctx = registerContext();
         StateAccess.writeX(ctx, 1, 0x123456789abcdef0);
-        uint256 ptr = StepLog.findPage(ctx, EmulatorConstants.UARCH_X_BASE_ADDR + 8);
+        uint256 ptr = StepLog.findData(ctx, EmulatorConstants.UARCH_X_BASE_ADDR + 8);
         uint64 raw;
         assembly ("memory-safe") {
             raw := shr(192, mload(ptr))
@@ -197,7 +197,7 @@ contract StateAccessCacheTest is StepLogTestBase {
     function testRawPointerWriteInvalidatesRegisters() public pure {
         StepLog.Context memory ctx = registerContext();
         StateAccess.writeX(ctx, 1, 42);
-        uint256 ptr = StepLog.findPageForWrite(ctx, EmulatorConstants.UARCH_X_BASE_ADDR + 8);
+        uint256 ptr = StepLog.findDataForWrite(ctx, EmulatorConstants.UARCH_X_BASE_ADDR + 8);
         assembly ("memory-safe") {
             mstore8(ptr, 99)
         }
@@ -226,12 +226,12 @@ contract StateAccessCacheTest is StepLogTestBase {
     }
 
     function testCollidingMissingPageRejects() public {
-        vm.expectRevert(abi.encodeWithSelector(StepLog.RequiredPageNotFound.selector, uint64(183)));
+        vm.expectRevert(abi.encodeWithSelector(StepLog.RequiredSliceNotFound.selector, uint64(183)));
         this.readCollidingMissingPage();
     }
 
     function testUnwitnessedPageZeroRejects() public {
-        vm.expectRevert(abi.encodeWithSelector(StepLog.RequiredPageNotFound.selector, uint64(0)));
+        vm.expectRevert(abi.encodeWithSelector(StepLog.RequiredSliceNotFound.selector, uint64(0)));
         this.readUnwitnessedPageZero();
     }
 
@@ -250,7 +250,7 @@ contract StateAccessCacheTest is StepLogTestBase {
     function testUnwitnessedRegisterPageRejects() public {
         vm.expectRevert(
             abi.encodeWithSelector(
-                StepLog.RequiredPageNotFound.selector, EmulatorConstants.UARCH_HALT_ADDR >> 12
+                StepLog.RequiredSliceNotFound.selector, EmulatorConstants.UARCH_HALT_ADDR >> 12
             )
         );
         this.writeUnwitnessedRegister();

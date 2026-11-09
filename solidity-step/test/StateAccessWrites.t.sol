@@ -40,7 +40,7 @@ contract StateAccessWritesTest is ManifestParser {
             StepLog.writeUarchWord(ctx, (paddr - EmulatorConstants.UARCH_HALT_ADDR) / 8, value);
             return;
         }
-        StepLog.writeLE64Memory(StepLog.findPageForWrite(ctx, paddr), value);
+        StepLog.writeLE64Memory(StepLog.findDataForWrite(ctx, paddr), value);
     }
 
     function referenceWriteTlb(
@@ -52,7 +52,7 @@ contract StateAccessWritesTest is ManifestParser {
         uint64 addr = EmulatorConstants.AR_SHADOW_TLB_START
             + setIndex * EmulatorConstants.SHADOW_TLB_SET_LENGTH
             + slotIndex * EmulatorConstants.SHADOW_TLB_SLOT_SIZE;
-        uint256 ptr = StepLog.findPageForWrite(ctx, addr, 32);
+        uint256 ptr = StepLog.findDataForWrite(ctx, addr, 32);
         uint256 word = (uint256(StepLog.swapBytes64(fields[0])) << 192)
             | (uint256(StepLog.swapBytes64(fields[1])) << 128)
             | (uint256(StepLog.swapBytes64(fields[2])) << 64);
@@ -317,7 +317,7 @@ contract StateAccessWritesTest is ManifestParser {
                 missing,
                 false,
                 warm != 0,
-                abi.encodeWithSelector(StepLog.RequiredPageNotFound.selector, base + 183)
+                abi.encodeWithSelector(StepLog.RequiredSliceNotFound.selector, base + 183)
             );
             compareRevert(
                 base,
@@ -332,7 +332,7 @@ contract StateAccessWritesTest is ManifestParser {
                 0,
                 true,
                 warm != 0,
-                abi.encodeWithSelector(StepLog.RequiredPageNotFound.selector, uint64(6))
+                abi.encodeWithSelector(StepLog.RequiredSliceNotFound.selector, uint64(6))
             );
         }
     }
@@ -350,7 +350,7 @@ contract StateAccessWritesTest is ManifestParser {
 
     function probe(bool fast, uint64 base, uint64 addr, bool tlb, bool warm) external pure {
         StepLog.Context memory ctx = physicalContext(base);
-        if (warm) StepLog.findPageForWrite(ctx, base << 12);
+        if (warm) StepLog.findDataForWrite(ctx, base << 12);
         if (tlb) {
             if (fast) StateAccess.writeTlbECALL(ctx, 2, 255, 1, 2, 3);
             else referenceWriteTlb(ctx, 2, 255, [uint64(1), uint64(2), uint64(3)]);

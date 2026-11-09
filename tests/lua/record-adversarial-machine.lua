@@ -72,9 +72,9 @@ local cases = {
     {
         tag = "whole_page_only",
         mutate = function(log)
-            -- A legal floor-9 witness with the original pre-root: machine replay rejects its shape.
+            -- A legal witness with a 512-byte minimum and the original pre-root: machine replay rejects its shape.
             local before = test_util.recompute_step_log_root(log, "sha256")
-            test_util.restrict_step_log_slice(log, log.pages[1].index, 0, 9)
+            test_util.restrict_step_log_slice(log, log.slices[1].page_index, 0, 9)
             assert(test_util.recompute_step_log_root(log, "sha256") == before)
         end,
     },
@@ -100,21 +100,21 @@ local cases = {
     {
         tag = "nonzero_scratch_hash",
         mutate = function(log)
-            log.pages[1].scratch_hash = string.rep("\255", 32)
+            log.slices[1].scratch_hash = string.rep("\255", 32)
         end,
     },
     {
-        tag = "page_count_zero",
+        tag = "slice_count_zero",
         -- A valid log always witnesses at least one page; an empty page set is malformed.
         mutate = function(log)
-            log.pages = {}
+            log.slices = {}
         end,
     },
     {
-        tag = "page_count_exceeds_size",
+        tag = "slice_count_exceeds_size",
         -- Header claims far more pages than the body can hold.
         mutate = function(log)
-            log.override_page_count = 0xffffffffff
+            log.override_slice_count = 0xffffffffff
         end,
     },
     {
@@ -125,10 +125,10 @@ local cases = {
         end,
     },
     {
-        tag = "page_index_not_increasing",
+        tag = "slice_address_not_increasing",
         -- Pages must be strictly ascending by index; duplicate the first index onto the second.
         mutate = function(log)
-            log.pages[2].index = log.pages[1].index
+            log.slices[2].page_index = log.slices[1].page_index
         end,
     },
     {

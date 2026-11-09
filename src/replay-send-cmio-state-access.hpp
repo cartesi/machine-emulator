@@ -135,10 +135,8 @@ private:
     context &m_context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
-    replay_send_cmio_state_access(context &context, unsigned char *log_image, uint64_t log_size,
-        std::span<slice_entry> slice_storage) :
-        m_context(context) {
-        m_context.log = step_log::decode(log_image, log_size, slice_storage, hash_function_type::keccak256);
+    replay_send_cmio_state_access(context &context, unsigned char *log_image, uint64_t log_size) : m_context(context) {
+        m_context.log = step_log::decode(log_image, log_size, hash_function_type::keccak256);
     }
 
     machine_hash finish() {
@@ -160,7 +158,7 @@ private:
     void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
         const auto paddr = static_cast<uint64_t>(what);
         auto *data = m_context.log.find_data(paddr);
-        *m_context.log.find_page(paddr)->hash = machine_hash{};
+        m_context.log.find_slice(paddr)->hash = machine_hash{};
         m_context.dumper.write(nullptr, paddr, aliased_aligned_read<uint64_t>(data), val);
         aliased_aligned_write<uint64_t>(data, val);
     }
@@ -185,11 +183,11 @@ private:
                 std::span<const unsigned char>{data, data_length});
             return;
         }
-        // Sub-page: mutate the logged page in place so its new hash flows into root reconstruction.
+        // Sub-page: mutate the logged slice in place so its new hash flows into root reconstruction.
         const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        auto *page_log = m_context.log.find_page(paddr_page);
-        *page_log->hash = machine_hash{};
-        auto *slice_data = page_log->find_data(paddr, write_length);
+        auto *slice = m_context.log.find_slice(paddr_page);
+        slice->hash = machine_hash{};
+        auto *slice_data = m_context.log.find_data(*slice, paddr, write_length);
         m_context.dumper.write_bytes(nullptr, paddr, write_length_log2_size,
             std::span<const unsigned char>{slice_data, write_length},
             std::span<const unsigned char>{data, data_length});

@@ -68,17 +68,14 @@ public:
     /// \param context Context to be filled with replay step log data
     /// \param log_image Pointer to the step log buffer bytes
     /// \param log_size Size of the log bytes
-    /// \param slice_storage Caller-owned descriptors; must outlive this replay
     /// \throw runtime_error if the log is malformed or declares a hash function other than
     /// Keccak-256 (the only one the uarch protocol and its on-chain verifier support)
-    uarch_replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size,
-        std::span<slice_entry> slice_storage) :
-        m_context(context) {
-        m_context.log = step_log::decode(log_image, log_size, slice_storage, hash_function_type::keccak256);
-        // Reset witnesses a subtree node instead. If the register slice is present,
-        // require the same complete window that Solidity loads on its first access.
-        if (const auto *slice = m_context.log.try_find_page(AR_SHADOW_UARCH_STATE_START)) {
-            (void) slice->find_data(AR_SHADOW_UARCH_STATE_START, sizeof(shadow_uarch_state));
+    uarch_replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size) : m_context(context) {
+        m_context.log = step_log::decode(log_image, log_size, hash_function_type::keccak256);
+        // The uarch registers are witnessed as a unit, so their slice must cover all of them.
+        // A reset log has no such slice: it witnesses a subtree node instead.
+        if (const auto *slice = m_context.log.try_find_slice(AR_SHADOW_UARCH_STATE_START)) {
+            (void) m_context.log.find_data(*slice, AR_SHADOW_UARCH_STATE_START, sizeof(shadow_uarch_state));
         }
     }
 
@@ -98,12 +95,12 @@ private:
         return cast_ptr_to_host_addr(m_context.log.find_data(paddr));
     }
 
-    /// Like paddr_to_haddr, but invalidates the page's scratch hash so the after-root pass rehashes it.
+    /// Like paddr_to_haddr, but invalidates the slice's scratch hash so the after-root pass rehashes it.
     host_addr paddr_to_haddr_for_write(uint64_t paddr) const {
         const auto paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        auto *page_log = m_context.log.find_page(paddr_page);
-        *page_log->hash = machine_hash{};
-        return cast_ptr_to_host_addr(page_log->find_data(paddr, sizeof(uint64_t)));
+        auto *slice = m_context.log.find_slice(paddr_page);
+        slice->hash = machine_hash{};
+        return cast_ptr_to_host_addr(m_context.log.find_data(*slice, paddr, sizeof(uint64_t)));
     }
 
     // -----
@@ -164,7 +161,7 @@ private:
 
     void do_revert_state() const {
         // The canonical post-state hash is the recorded revert root hash, read raw from its leaf in the
-        // witnessed shadow page. finish() returns it instead of the recomputed tree root.
+        // witnessed shadow slice. finish() returns it instead of the recomputed tree root.
         std::copy_n(m_context.log.find_data(AR_SHADOW_REVERT_ROOT_HASH_START, m_context.reverted_root_hash.size()),
             m_context.reverted_root_hash.size(), m_context.reverted_root_hash.begin());
         m_context.reverted = true;

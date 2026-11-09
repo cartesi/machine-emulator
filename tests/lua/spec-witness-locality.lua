@@ -34,14 +34,14 @@ lester.describe("whole-mcycle witness locality", function()
             local log = m:log_step_uarch(1 << 20)
             local cycles = m:read_reg("uarch_cycle")
             assert(m:read_reg("uarch_halt") ~= 0 and m:read_reg("mcycle") == case.mcycle + 1, "incomplete mcycle")
-            assert(log:sub(1, 8) == "CTSI\4\0\0\0", "step-log format changed; review locality parser")
+            assert(log:sub(1, 8) == "CTSI\5\0\0\0", "step-log format changed; review locality parser")
             local parsed = test_util.parse_step_log(log)
-            local pages, slice_bytes = #parsed.pages, 0
-            for _, slice in ipairs(parsed.pages) do
+            local pages, slice_bytes = #parsed.slices, 0
+            for _, slice in ipairs(parsed.slices) do
                 slice_bytes = slice_bytes + #slice.data
             end
             assert(
-                #parsed.nodes == 0 and #log == 40 + pages * 48 + slice_bytes + #parsed.siblings * 32,
+                #parsed.nodes == 0 and #log == 40 + pages * 56 + slice_bytes + #parsed.siblings * 32,
                 "unexpected log geometry"
             )
             assert(cartesi.machine:verify_step_uarch(before, log, 1 << 20) == m:get_root_hash())
@@ -51,8 +51,8 @@ lester.describe("whole-mcycle witness locality", function()
                     "expected delegated instruction page fault"
                 )
                 local tlb_pages = 0
-                for _, slice in ipairs(parsed.pages) do
-                    local page = slice.index << 12
+                for _, slice in ipairs(parsed.slices) do
+                    local page = slice.page_index << 12
                     if
                         page >= cartesi.AR_SHADOW_TLB_START
                         and page < cartesi.AR_SHADOW_TLB_START + cartesi.AR_SHADOW_TLB_LENGTH

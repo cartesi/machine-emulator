@@ -76,18 +76,19 @@ assert(before == recorder:get_root_hash(), "initial roots differ")
 local limit = 1 << 20
 local log = recorder:log_step_uarch(limit)
 assert(recorder:read_reg("uarch_halt") ~= 0 and recorder:read_reg("mcycle") == target + 1, "not a whole mcycle")
-local pages, nodes, siblings = string.unpack("<I8I8I8", log, 17)
-assert(log:sub(1, 8) == "CTSI\4\0\0\0" and nodes == 0, "unexpected whole-mcycle log format")
+local slice_count, nodes, siblings = string.unpack("<I8I8I8", log, 17)
+assert(log:sub(1, 8) == "CTSI\5\0\0\0" and nodes == 0, "unexpected whole-mcycle log format")
 local slices, pos, slice_bytes = {}, 41, 0
-for i = 1, pages do
-    local address, log2_size
-    address, log2_size, pos = string.unpack("<I8I8", log, pos)
+for i = 1, slice_count do
+    local address, log2_size, data_offset
+    address, log2_size, data_offset, pos = string.unpack("<I8I8I8", log, pos)
+    assert(data_offset == slice_bytes)
     assert(log2_size >= 5 and log2_size <= 12)
     slices[i] = { address = address, size = 1 << log2_size }
     slice_bytes = slice_bytes + (1 << log2_size)
-    pos = pos + (1 << log2_size) + 32
+    pos = pos + 32
 end
-assert(pos - 1 + siblings * 32 == #log, "unexpected whole-mcycle log geometry")
+assert(pos - 1 + slice_bytes + siblings * 32 == #log, "unexpected whole-mcycle log geometry")
 assert(cartesi.machine:verify_step_uarch(before, log, limit) == recorder:get_root_hash(), "replay root differs")
 
 local code, data, tables, ecalls = {}, {}, {}, {}
@@ -136,7 +137,7 @@ print(
         "mcycle %d: %d uarch cycles; %d witness pages; %d log bytes; %d siblings",
         target,
         cycles,
-        pages,
+        slice_count,
         #log,
         siblings
     )

@@ -147,11 +147,11 @@ end
 
 -- Patch bytes at a page-relative offset in a witnessed slice.
 function tests_util.patch_step_log_page(log, index, offset, bytes)
-    for _, page in ipairs(log.pages) do
-        if page.index == index then
-            local at = offset - (page.offset or 0)
-            assert(at >= 0 and at + #bytes <= #page.data, "patch outside witnessed slice")
-            page.data = page.data:sub(1, at) .. bytes .. page.data:sub(at + #bytes + 1)
+    for _, slice in ipairs(log.slices) do
+        if slice.page_index == index then
+            local at = offset - (slice.page_offset or 0)
+            assert(at >= 0 and at + #bytes <= #slice.data, "patch outside witnessed slice")
+            slice.data = slice.data:sub(1, at) .. bytes .. slice.data:sub(at + #bytes + 1)
             return
         end
     end
@@ -315,7 +315,7 @@ function tests_util.parse_step_log(log)
     local parsed = {
         signature = take(8),
         hash_function = u64(),
-        pages = {},
+        slices = {},
         nodes = {},
         siblings = {},
     }
@@ -323,14 +323,17 @@ function tests_util.parse_step_log(log)
     local node_count = u64()
     local sibling_count = u64()
     for i = 1, slice_count do
-        local address, log2_size = u64(), u64()
-        parsed.pages[i] = {
-            index = address >> PAGE_LOG2_SIZE,
-            offset = address & (PAGE_SIZE - 1),
+        local address, log2_size, data_offset = u64(), u64(), u64()
+        parsed.slices[i] = {
+            page_index = address >> PAGE_LOG2_SIZE,
+            page_offset = address & (PAGE_SIZE - 1),
             log2_size = log2_size,
-            data = take(1 << log2_size),
+            data_offset = data_offset,
             scratch_hash = take(32),
         }
+    end
+    for _, slice in ipairs(parsed.slices) do
+        slice.data = take(1 << slice.log2_size)
     end
     for i = 1, node_count do
         parsed.nodes[i] = {
@@ -345,21 +348,30 @@ function tests_util.parse_step_log(log)
     return parsed
 end
 
--- override_{page,node,sibling}_count lets a test fake a header count that
+-- override_{slice,node,sibling}_count lets a test fake a header count that
 -- diverges from the actual entry array length (to exercise overflow checks).
+-- Offsets follow the serialized data; slice.override_data_offset permits an intentional mismatch.
 function tests_util.serialize_step_log(logdata)
     local parts = {
         logdata.signature,
         string.pack("<I8", logdata.hash_function),
-        string.pack("<I8", logdata.override_page_count or #logdata.pages),
+        string.pack("<I8", logdata.override_slice_count or #logdata.slices),
         string.pack("<I8", logdata.override_node_count or #logdata.nodes),
         string.pack("<I8", logdata.override_sibling_count or #logdata.siblings),
     }
-    for _, page in ipairs(logdata.pages) do
-        parts[#parts + 1] =
-            string.pack("<I8I8", (page.index << PAGE_LOG2_SIZE) | (page.offset or 0), page.log2_size or PAGE_LOG2_SIZE)
-        parts[#parts + 1] = page.data
-        parts[#parts + 1] = page.scratch_hash
+    local data_offset = 0
+    for _, slice in ipairs(logdata.slices) do
+        parts[#parts + 1] = string.pack(
+            "<I8I8I8",
+            (slice.page_index << PAGE_LOG2_SIZE) | (slice.page_offset or 0),
+            slice.log2_size or PAGE_LOG2_SIZE,
+            slice.override_data_offset or data_offset
+        )
+        parts[#parts + 1] = slice.scratch_hash
+        data_offset = data_offset + #slice.data
+    end
+    for _, slice in ipairs(logdata.slices) do
+        parts[#parts + 1] = slice.data
     end
     for _, node in ipairs(logdata.nodes) do
         parts[#parts + 1] = string.pack("<I8", node.address)
@@ -391,20 +403,21 @@ end
 -- root is identical, and a node no write touches folds into the post-state root as an
 -- unchanged region, so the transformed log must still verify.
 --
--- Mirrors the replayer's three-cursor walk (pages, nodes, siblings) to locate the first
+-- Mirrors the replayer's three-cursor walk (slices, nodes, siblings) to locate the first
 -- sibling spanning more than one page (node sizes must exceed a page), then moves that
 -- sibling's hash into log.nodes. Works on logs that already carry a node (reset/cmio).
 local function walk_step_log(log, sibling_fn, slice_fn, node_fn, parent_fn)
-    local next_page, next_node, next_sibling = 1, 1, 1
+    local next_slice, next_node, next_sibling = 1, 1, 1
     local function walk(first_leaf, log2_leaves)
         local end_leaf = first_leaf + (1 << log2_leaves)
-        local page = log.pages[next_page]
+        local slice = log.slices[next_slice]
         local node = log.nodes[next_node]
-        local page_leaf = page and (((page.index << PAGE_LOG2_SIZE) | (page.offset or 0)) >> WORD_LOG2_SIZE)
-        local page_in = page_leaf and page_leaf < end_leaf
+        local slice_leaf = slice
+            and (((slice.page_index << PAGE_LOG2_SIZE) | (slice.page_offset or 0)) >> WORD_LOG2_SIZE)
+        local slice_in = slice_leaf and slice_leaf < end_leaf
         local node_in = node and (node.address >> WORD_LOG2_SIZE) < end_leaf
         local address, log2_size = first_leaf << WORD_LOG2_SIZE, log2_leaves + WORD_LOG2_SIZE
-        if not page_in and not node_in then
+        if not slice_in and not node_in then
             local i = next_sibling
             next_sibling = i + 1
             return sibling_fn(log.siblings[i], address, log2_size, i)
@@ -413,9 +426,9 @@ local function walk_step_log(log, sibling_fn, slice_fn, node_fn, parent_fn)
             next_node = next_node + 1
             return node_fn(node)
         end
-        if page_in and page_leaf == first_leaf and (page.log2_size or PAGE_LOG2_SIZE) == log2_size then
-            next_page = next_page + 1
-            return slice_fn(page)
+        if slice_in and slice_leaf == first_leaf and (slice.log2_size or PAGE_LOG2_SIZE) == log2_size then
+            next_slice = next_slice + 1
+            return slice_fn(slice)
         end
         assert(log2_leaves > 0, "invalid slice geometry")
         local left = walk(first_leaf, log2_leaves - 1)
@@ -423,7 +436,7 @@ local function walk_step_log(log, sibling_fn, slice_fn, node_fn, parent_fn)
         return parent_fn(left, right, address, log2_size)
     end
     local root = walk(0, ROOT_LOG2_SIZE - WORD_LOG2_SIZE)
-    assert(next_page == #log.pages + 1 and next_node == #log.nodes + 1 and next_sibling == #log.siblings + 1)
+    assert(next_slice == #log.slices + 1 and next_node == #log.nodes + 1 and next_sibling == #log.siblings + 1)
     return root
 end
 
@@ -453,8 +466,8 @@ function tests_util.recompute_step_log_root(log, hash_fn)
     hash_fn = hash_fn or "keccak256"
     return walk_step_log(log, function(hash)
         return assert(hash, "missing sibling")
-    end, function(page)
-        return hash_tree.get_data_root_hash(page.data, page.log2_size or PAGE_LOG2_SIZE, hash_fn)
+    end, function(slice)
+        return hash_tree.get_data_root_hash(slice.data, slice.log2_size or PAGE_LOG2_SIZE, hash_fn)
     end, function(node)
         return node.hash
     end, function(left, right)
@@ -488,21 +501,21 @@ function tests_util.restrict_step_log_slice(log, page_index, offset, log2_size)
         remember(hash, address, size)
         return hash
     end
-    local function slice(page)
-        if page.index == page_index then
-            target = page
-            split(page.data, (page.index << PAGE_LOG2_SIZE) | page.offset, page.log2_size)
+    local function remember_slice(slice)
+        if slice.page_index == page_index then
+            target = slice
+            split(slice.data, (slice.page_index << PAGE_LOG2_SIZE) | slice.page_offset, slice.log2_size)
         end
     end
     local function noop() end
-    walk_step_log(log, remember, slice, noop, noop)
+    walk_step_log(log, remember, remember_slice, noop, noop)
     assert(target, "slice to restrict was not found")
     local count = 1 << log2_size
-    local relative = offset - target.offset
+    local relative = offset - target.page_offset
     assert(log2_size >= WORD_LOG2_SIZE and log2_size <= target.log2_size and offset & (count - 1) == 0)
     assert(relative >= 0 and relative + count <= #target.data)
     target.data = target.data:sub(relative + 1, relative + count)
-    target.offset, target.log2_size = offset, log2_size
+    target.page_offset, target.log2_size = offset, log2_size
     log.siblings = {}
     walk_step_log(log, function(_, address, size)
         log.siblings[#log.siblings + 1] = assert(hashes[key(address, size)], "missing restricted-slice sibling")

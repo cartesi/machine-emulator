@@ -64,8 +64,9 @@ struct i_state_access_fast_addr<replay_step_state_access<Dumper>> {
     using type = host_addr;
 };
 
-/// \brief Provides machine state from a whole-page step log buffer
-/// Full-page validation at decode makes host-pointer TLB hits and constant register offsets safe.
+/// \brief Provides machine state from a step log decoded with whole-page slices
+/// Decoding with step_log_shape::whole_pages checks that every slice is a page, which makes
+/// host-pointer TLB hits and constant register offsets safe.
 template <typename Dumper = no_step_log_dumper>
 // NOLINTNEXTLINE(misc-multiple-inheritance)
 class replay_step_state_access :
@@ -81,23 +82,21 @@ public:
     };
 
 private:
-    context &m_context;                                     // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-    mutable const slice_entry *m_shadow_regs_page{nullptr}; ///< cache shadow registers page
+    context &m_context;                                // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+    mutable slice_entry *m_shadow_regs_slice{nullptr}; ///< cache shadow registers slice
 
 public:
     // \brief Construct a replay_step_state_access object from a log image
     // \param context The context object to be filled with the replay step log data
     // \param log_image Image of the step log file
     // \param log_size The size of the log data
-    // \param slice_storage Caller-owned descriptors; must outlive this replay
     // \param required_hash_function When set, reject a log declaring any other hash function
     // (see step_log::decode); machine step logs are otherwise hash-function agnostic
     // \throw runtime_error if the log data is invalid
     replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size,
-        std::span<slice_entry> slice_storage, std::optional<hash_function_type> required_hash_function = std::nullopt) :
+        std::optional<hash_function_type> required_hash_function = std::nullopt) :
         m_context(context) {
-        m_context.log =
-            step_log::decode(log_image, log_size, slice_storage, required_hash_function, step_log_shape::whole_pages);
+        m_context.log = step_log::decode(log_image, log_size, required_hash_function, step_log_shape::whole_pages);
         // initialize hot TLB entries as unverified
         for (auto set_index : {TLB_CODE, TLB_READ, TLB_WRITE}) {
             for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
@@ -117,39 +116,32 @@ public:
     }
 
 private:
-    /// \brief Try to find a page in the logged data by the host address of its data
-    /// \param haddr Host address of page data
-    /// \return A pointer to the slice_entry structure if found, nullptr otherwise
-    const slice_entry *try_find_page(host_addr haddr_page) const {
+    /// \brief Find the whole-page slice whose data starts at host address \p haddr_page.
+    /// \details The interpreter addresses memory through host pointers into slice data (TLB hits,
+    /// vh_offset), so do_write_tlb holds a host address and has to map it back to a slice. Decode
+    /// lays slice data out in address order, so a binary search on data addresses is sound.
+    const slice_entry *find_slice(host_addr haddr_page) const {
         auto it = std::ranges::lower_bound(m_context.log.slices, haddr_page, std::ranges::less{},
-            [](const auto &page) { return cast_ptr_to_host_addr(page.data); });
-        if (it != m_context.log.slices.end() && cast_ptr_to_host_addr(it->data) == haddr_page) {
-            return &(*it);
-        }
-        return nullptr;
-    }
-
-    const slice_entry *find_page(host_addr haddr_page) const {
-        auto *page_log = try_find_page(haddr_page);
-        // The only caller is do_write_tlb, which receives vh_offset from the interpreter's page walk.
-        // The interpreter computes vh_offset from do_get_faddr, which already called find_page(uint64_t)
-        // successfully for the same page. Since vaddr_page + vh_offset points to that page's data,
-        // the host_addr lookup will always find it.
+            [this](const auto &slice) { return cast_ptr_to_host_addr(m_context.log.get_data(slice)); });
+        // vh_offset came from do_get_faddr, which found this page by its paddr, so the lookup cannot miss.
         // LCOV_EXCL_START
-        if (page_log == nullptr) {
-            THROW(std::runtime_error, "required page not found");
+        if (it == m_context.log.slices.end() || cast_ptr_to_host_addr(m_context.log.get_data(*it)) != haddr_page) {
+            THROW(std::runtime_error, "required slice not found");
         }
         // LCOV_EXCL_STOP
-        return page_log;
+        return &(*it);
     }
 
-    /// \brief Zero the cached scratch hash of the page containing \p haddr so compute_root_hash
+    /// \brief Zero the scratch hash of the slice containing \p haddr so compute_root_hash
     /// rehashes it on the after-root pass.
-    /// \details haddr is inside a witnessed page; see find_page.
-    void invalidate_page_hash(host_addr haddr) const {
-        auto it = std::ranges::upper_bound(m_context.log.slices, haddr, std::ranges::less{},
-            [](const auto &page) { return cast_ptr_to_host_addr(page.data); });
-        *(--it)->hash = machine_hash{};
+    /// \details haddr came from do_get_faddr or a TLB offset this class computed, so some slice's data
+    /// contains it: the first slice whose data reaches haddr.
+    void invalidate_slice_hash(host_addr haddr) const {
+        auto it = std::ranges::lower_bound(m_context.log.slices, haddr, std::ranges::less{}, [this](const auto &slice) {
+            return cast_ptr_to_host_addr(m_context.log.get_data(slice)) + (slice.size() - 1);
+        });
+        assert(it != m_context.log.slices.end() && cast_ptr_to_host_addr(m_context.log.get_data(*it)) <= haddr);
+        it->hash = machine_hash{};
     }
 
     static_assert(sizeof(shadow_registers_state) <= AR_PAGE_SIZE, "shadow registers must fit in a single page");
@@ -158,10 +150,10 @@ private:
         const auto paddr = static_cast<uint64_t>(what);
         const auto page = paddr & ~PAGE_OFFSET_MASK;
         const auto offset = paddr & PAGE_OFFSET_MASK;
-        if (m_shadow_regs_page == nullptr) {
-            m_shadow_regs_page = m_context.log.find_page(page);
+        if (m_shadow_regs_slice == nullptr) {
+            m_shadow_regs_slice = m_context.log.find_slice(page);
         }
-        return cast_ptr_to_host_addr(m_shadow_regs_page->data) + offset;
+        return cast_ptr_to_host_addr(m_context.log.get_data(*m_shadow_regs_slice)) + offset;
     }
 
     uint64_t read_pmas_istart(uint64_t index) const {
@@ -187,7 +179,7 @@ private:
 
     void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
         const auto haddr = get_shadow_reg_host_addr(what);
-        *m_shadow_regs_page->hash = machine_hash{}; // written page: rehash on the after-root pass
+        m_shadow_regs_slice->hash = machine_hash{}; // written slice: rehash on the after-root pass
         m_context.dumper.write(nullptr, static_cast<uint64_t>(what), aliased_aligned_read<uint64_t>(haddr), val);
         aliased_aligned_write<uint64_t>(haddr, val);
     }
@@ -209,7 +201,8 @@ private:
     host_addr do_get_faddr(uint64_t paddr, uint64_t /* pma_index */ = 0) const {
         // This assumes the corresponding page has been touched
         // (replay_step_state_access makes sure of it for any address we try to convert)
-        return cast_ptr_to_host_addr(m_context.log.find_page(paddr)->data) + (paddr & PAGE_OFFSET_MASK);
+        return cast_ptr_to_host_addr(m_context.log.get_data(*m_context.log.find_slice(paddr))) +
+            (paddr & PAGE_OFFSET_MASK);
     }
 
     // LCOV_EXCL_START
@@ -268,7 +261,7 @@ private:
 
     template <typename T, typename A>
     void do_write_memory_word(host_addr haddr, uint64_t /* pma_index */, T val) const {
-        invalidate_page_hash(haddr);
+        invalidate_slice_hash(haddr);
         aliased_aligned_write<T, A>(haddr, val);
     }
 
@@ -296,7 +289,7 @@ private:
     template <typename TYPE>
     auto write_tlb_field(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what, TYPE val) const {
         const auto haddr = do_get_faddr(shadow_tlb_get_abs_addr(set_index, slot_index, what));
-        invalidate_page_hash(haddr);
+        invalidate_slice_hash(haddr);
         aliased_aligned_write<TYPE>(haddr, val);
     }
 
@@ -317,9 +310,9 @@ private:
             hot_slot.vaddr_page = TLB_INVALID_PAGE;
             return TLB_INVALID_PAGE;
         }
-        // Find the target page in the log and compute vh_offset pointing into log data
+        // Find the target whole-page slice and compute vh_offset pointing into log data
         const auto paddr_page = vaddr_page + vp_offset;
-        const auto haddr_page = cast_ptr_to_host_addr(m_context.log.find_page(paddr_page)->data);
+        const auto haddr_page = cast_ptr_to_host_addr(m_context.log.get_data(*m_context.log.find_slice(paddr_page)));
         const auto vh_offset = haddr_page - vaddr_page;
         // Verification passed -- promote to hot entry
         hot_slot.vaddr_page = vaddr_page;
@@ -338,7 +331,7 @@ private:
         write_tlb_field(SET, slot_index, shadow_tlb_what::vaddr_page, vaddr_page);
         if (vaddr_page != TLB_INVALID_PAGE) {
             // Convert vh_offset to vp_offset for the log (shadow stores vp_offset)
-            const auto paddr_page = find_page(vaddr_page + vh_offset)->address;
+            const auto paddr_page = find_slice(vaddr_page + vh_offset)->address;
             write_tlb_field(SET, slot_index, shadow_tlb_what::vp_offset, paddr_page - vaddr_page);
         } else {
             write_tlb_field(SET, slot_index, shadow_tlb_what::vp_offset, static_cast<uint64_t>(vh_offset));

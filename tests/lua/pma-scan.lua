@@ -72,14 +72,14 @@ for _, fixture in ipairs(logs) do
     for _, target in ipairs({ cartesi.AR_PMAS_START, cartesi.AR_PLIC_START, cartesi.AR_RAM_START }) do
         local log = util.parse_step_log(fixture.data)
         local found
-        for _, page in ipairs(log.pages) do
-            if page.index == cartesi.AR_PMAS_START >> 12 then
+        for _, slice in ipairs(log.slices) do
+            if slice.page_index == cartesi.AR_PMAS_START >> 12 then
                 for index = 0, 31 do
-                    local istart, length = string.unpack("<I8I8", page.data, index * 16 + 1)
+                    local istart, length = string.unpack("<I8I8", slice.data, index * 16 + 1)
                     if length > 0 and istart & ~4095 == target then
-                        page.data = page.data:sub(1, index * 16 + 8)
+                        slice.data = slice.data:sub(1, index * 16 + 8)
                             .. string.pack("<I8", 4095)
-                            .. page.data:sub(index * 16 + 17)
+                            .. slice.data:sub(index * 16 + 17)
                         found = index
                         break
                     end

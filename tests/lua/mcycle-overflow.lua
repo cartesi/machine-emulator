@@ -189,10 +189,10 @@ do_test("logged uarch step should preserve state at max uarch cycle", function(m
     local hash_before = machine:get_root_hash()
     local log = machine:log_step_uarch(1)
     local parsed = tests_util.parse_step_log(log)
-    assert(#parsed.pages == 1 and parsed.pages[1].index << 12 == cartesi.AR_SHADOW_UARCH_STATE_START)
-    local page = parsed.pages[1]
-    local offset = machine:get_reg_address("uarch_cycle") - (page.index << 12) - page.offset
-    assert(string.unpack("<I8", page.data, offset + 1) == MAX_UARCH_CYCLE)
+    assert(#parsed.slices == 1 and parsed.slices[1].page_index << 12 == cartesi.AR_SHADOW_UARCH_STATE_START)
+    local slice = parsed.slices[1]
+    local offset = machine:get_reg_address("uarch_cycle") - (slice.page_index << 12) - slice.page_offset
+    assert(string.unpack("<I8", slice.data, offset + 1) == MAX_UARCH_CYCLE)
     assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
     assert(machine:read_reg("uarch_halt") == 0)
     local hash_after = machine:get_root_hash()

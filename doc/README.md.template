@@ -1413,7 +1413,7 @@ xgenext2fs \
 Running a Rolling Cartesi Machine in the command line requires using the `cartesi-jsonrpc-machine` server in combination with the `cartesi-machine` client.
 The server provides the fork functionality the client uses to roll the machine state back when an input to an advance-state request is rejected, or after an inspect-state request.
 With the encoded inputs and `calc.ext2` in the working directory, run the remote server with the command
-```{.bash key=rolling_calc_run vars=rolling_calc_encode,calc_ext2->calc_ext2/calc.ext2/path,port->ports/rolling_calc_run outputs=server,client1,client2,output-0-input-0.bin,output-1-input-2.bin,output-2-input-3.bin,output-3-input-4.bin,output-4-input-5.bin,rejected-output-1-input-1.bin,output-0-input-0-proof.lua,output-1-input-2-proof.lua,output-2-input-3-proof.lua,output-3-input-4-proof.lua,output-4-input-5-proof.lua,input-0-outputs-merkle-root.bin,input-2-outputs-merkle-root.bin,input-3-outputs-merkle-root.bin,input-4-outputs-merkle-root.bin,input-5-outputs-merkle-root.bin,input-0-outputs-merkle-root-proof.lua,input-2-outputs-merkle-root-proof.lua,input-3-outputs-merkle-root-proof.lua,input-4-outputs-merkle-root-proof.lua,input-5-outputs-merkle-root-proof.lua,epoch-0-state-hash.bin,query-report-0.bin replace=source/server}
+```{.bash key=rolling_calc_run vars=rolling_calc_encode,calc_ext2->calc_ext2/calc.ext2/path,port->ports/rolling_calc_run outputs=server,client1,client2,output-0-input-0.bin,output-1-input-2.bin,output-2-input-3.bin,output-3-input-4.bin,output-4-input-5.bin,rejected-output-1-input-1.bin,output-0-input-0-proof.lua,output-1-input-2-proof.lua,output-2-input-3-proof.lua,output-3-input-4-proof.lua,output-4-input-5-proof.lua,input-0-outputs-merkle-root.bin,input-2-outputs-merkle-root.bin,input-3-outputs-merkle-root.bin,input-4-outputs-merkle-root.bin,input-5-outputs-merkle-root.bin,epoch-0-outputs-merkle-root-proof.lua,epoch-1-outputs-merkle-root-proof.lua,epoch-0-state-hash.bin,query-report-0.bin replace=source/server}
 ln -sf $rolling_calc_encode/*.bin .
 rm -f calc.ext2 calc-server.address
 ln -sf "$calc_ext2" .
@@ -1435,7 +1435,7 @@ cartesi-machine \
     --remote-address=filename:calc-server.address \
     --no-remote-destroy \
     --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
-    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3,outputs_merkle_root_proof:epoch-0-outputs-merkle-root-proof.lua,print_input_state_hashes \
     --final-hash=epoch-0-state-hash.bin \
     -- /mnt/calc/calc.sh
 # docs:end client1
@@ -1448,7 +1448,7 @@ cartesi-machine \
     --remote-address=filename:calc-server.address \
     --no-remote-create \
     --remote-shutdown \
-    --cmio-advance-state=input_file_index_begin:3,input_file_index_end:6,last_output_proof:output-1-input-2-proof.lua,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:3,input_file_index_end:6,last_output_proof:output-1-input-2-proof.lua,outputs_merkle_root_proof:epoch-1-outputs-merkle-root-proof.lua,print_input_state_hashes \
     --cmio-inspect-state=query:query.bin,print_query_state_hashes
 # docs:end client2
 } > client2 2>&1
@@ -1505,9 +1505,10 @@ The resulting `manual yield rx-rejected` at cycle []{replace=rolling_calc_output
 The state hash before input 2, [...]{replace=rolling_calc_output/hash_before_input2}, is identical to the hash after input 0 was accepted, which confirms the rejected input left no trace.
 
 Input index 2, with payload `2^2048`, is accepted like the first, so the client stores `output-1-input-2.bin` and `input-2-outputs-merkle-root.bin`.
-On each accept the client also writes the proof that the outputs Merkle root occupied the machine's CMIO tx buffer, as `input-0-outputs-merkle-root-proof.lua` and `input-2-outputs-merkle-root-proof.lua`.
-The two output proofs for this epoch, `output-0-input-0-proof.lua` and `output-1-input-2-proof.lua`, are written at the end, once all of the epoch's outputs are known.
-Each proves that one of the epoch's outputs belongs to the tree the final outputs Merkle root commits to.
+After the epoch's last input, the client writes the epoch's proofs.
+`epoch-0-outputs-merkle-root-proof.lua` holds state value proofs of three words of the final state.
+The `iflags_Y` and `htif_tohost` words show that the machine is in a manual yield with reason rx-accepted, so the tx-buffer word holds the epoch's outputs Merkle root.
+The two output proofs, `output-0-input-0-proof.lua` and `output-1-input-2-proof.lua`, each prove that one of the epoch's outputs belongs to the tree that root commits to.
 The `--final-hash` option saves the machine state hash at the end of the epoch, as `epoch-0-state-hash.bin`, the state a dispute over this epoch would settle on.
 
 Now run the client to process the second epoch in the same server
@@ -1522,6 +1523,7 @@ The three inputs evaluate `(2^256 - 1) * (2^256 - 1)`, `sqrt(2)` to 80 decimal p
 Arbitrary-precision results like these are awkward to compute on the blockchain, whose native arithmetic works on fixed-width 256-bit integers and has no fractions.
 Their outputs continue the global output index, becoming outputs 2, 3, and 4.
 The file range selects `input-3.bin` through `input-5.bin`, and `%i` uses those same indices in output, report, and proof filenames.
+The outputs Merkle root proof of this epoch goes to `epoch-1-outputs-merkle-root-proof.lua`.
 The run passes `--remote-shutdown` to stop the server once the epoch is done.
 
 The client shell now shows
@@ -1671,29 +1673,31 @@ Stored mode performs the whole epoch in one invocation without a server
 ln -sf $rolling_calc_encode/input-?.bin .
 ln -sfn "$tmpl" rolling-calculator-template
 rm -rf machine machine.revert
-rm -f output-* rejected-output-* input-*-outputs-merkle-root* final-hash.bin stored-hash.bin
+rm -f output-* rejected-output-* input-*-outputs-merkle-root* outputs-merkle-root-proof.lua final-hash.bin stored-hash.bin
 {
 # docs:begin
 cartesi-machine \
     --revert-mode=stored \
     --load="machine,clone:rolling-calculator-template,sharing:all" \
-    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:6,output_proof:,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:6,output_proof:,outputs_merkle_root_proof:outputs-merkle-root-proof.lua,print_input_state_hashes \
     --final-hash=final-hash.bin
 # docs:end
 } > run 2>&1
 cartesi-machine --load=machine --initial-hash=stored-hash.bin > /dev/null 2>&1
 cmp final-hash.bin stored-hash.bin
 for f in output-?-input-?.bin rejected-output-1-input-1.bin \
-    input-?-outputs-merkle-root.bin input-?-outputs-merkle-root-proof.lua; do
+    input-?-outputs-merkle-root.bin; do
     cmp "$f" "$rolling_calc_run/$f"
 done
+cmp outputs-merkle-root-proof.lua "$rolling_calc_run/epoch-1-outputs-merkle-root-proof.lua"
 ```
 Before modifying an input boundary, the command syncs `machine`, clones it to `machine.revert`, and syncs the clone.
 An accepted input syncs `machine` before removing the snapshot.
 A rejected input or inspect-state query discards `machine`, durably renames the snapshot back to it, and reloads it.
 Stored-machine operations never overwrite an existing directory, so the initial clone check fails without touching `machine.revert` if it already exists.
 
-The output files, rejected output, outputs Merkle roots, and root state-value proofs are byte-for-byte identical to those of the server-backed epoch runs.
+The output files, rejected output, and outputs Merkle roots are byte-for-byte identical to those of the server-backed epoch runs.
+So is the outputs Merkle root proof, which matches the one written at the end of the second epoch because both runs end in the same state.
 Output proofs are disabled by passing an empty `output_proof` filename pattern because this example does not use them.
 Loading `machine` after the command exits reproduces `final-hash.bin`, confirming that the accepted final state is durable.
 An abbreviated log shows the six inputs advancing in the same invocation
@@ -3021,6 +3025,8 @@ The guest writes it to the CMIO tx buffer on every accept, so it is part of the 
 Disputes are settled over the machine state hash at the end of an epoch.
 The latest outputs Merkle root sits in the tx-buffer in that state.
 A [state value proof](#state-value-proofs-1) of the tx-buffer word it occupies ties it to the state hash.
+The tx-buffer word holds the outputs Merkle root only when the machine is in a manual yield with reason rx-accepted.
+State value proofs of the `iflags_Y` and `htif_tohost` words show that it is.
 Therefore, once the [verification game](#verification-game) settles the state hash, the outputs Merkle root is settled with it.
 The blockchain then verifies any output with its *output proof* alone, checking that the leaf
 `keccak256(<output>)` rolls up to the settled outputs Merkle root from its global output index.
@@ -3040,15 +3046,17 @@ These helpers are shown and explained under [The hash tree frontier](#the-hash-t
 Blockchain perspective.
 
 The following script extends the Rolling Cartesi Machine calculator [example](#rolling-cartesi-machines-1) to collect output proofs and
-the state-value proof for the outputs Merkle root.
+the outputs Merkle root proof.
 It buffers the outputs of each input until the input's verdict is known.
-On accept, it folds the buffered outputs into the running frontier, checks the resulting root against the
-outputs Merkle root the guest wrote to the tx buffer, and saves the state value proof of that tx-buffer
-word, obtained with `machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)`,
-whose `target_hash` equals `cartesi.keccak256(<root hash>)`.
+On accept, it folds the buffered outputs into the running frontier and checks the resulting root against the
+outputs Merkle root the guest wrote to the tx buffer.
 On reject, it simply discards the buffered outputs, leaving the tree untouched.
-Once the epoch closes, it generates the per-output proofs against the final root and verifies each with the
-same `verify_slice` used above.
+Once the epoch closes, it saves the outputs Merkle root proof, with the `iflags_Y`, `htif_tohost`, and
+tx-buffer words of the final state.
+The script's `prove_machine_word` function reads the word that contains an address and obtains the word's state value
+proof with `machine:get_proof(<word address>, cartesi.HASH_TREE_LOG2_WORD_SIZE)`.
+The script then generates the per-output proofs against the final root and verifies each with the same
+`verify_slice` used above.
 ```{.lua key=run_rolling_calculator_output_proofs include=run-rolling-calculator-output-proofs.lua title="run-rolling-calculator-output-proofs.lua"}
 ```
 
@@ -3081,15 +3089,15 @@ wait "$srv_pid"
 Then, run the `run-rolling-calculator-output-proofs.lua` client script in the other shell
 ```{.bash replace=lua_rolling_calculator_output_proofs/source/client}
 ```
-The expression `6*2^1024 + 3*2^512` produces the expected result, after which the client saves the
-tx-buffer-word proof tying the outputs Merkle root into the accepting state, and then, once the expressions
-run out and the epoch closes, the per-output proof against that root.
+The expression `6*2^1024 + 3*2^512` produces the expected result.
+Once the expressions run out and the epoch closes, the client saves the outputs Merkle root proof and the
+per-output proof against that root.
 The full transcript is
 ```{replace=lua_rolling_calculator_output_proofs/client}
 ```
 
-The same proofs are what the `cartesi-machine` command-line utility writes for each accepted input and output
-when given `--cmio-advance-state=outputs_merkle_root_proof:<pattern>,output_proof:<pattern>`.
+The `cartesi-machine` command-line utility writes the same proofs at the end of an epoch when given
+`--cmio-advance-state=outputs_merkle_root_proof:<filename>,output_proof:<pattern>`.
 Verifying these proofs against a machine state hash, from the blockchain's perspective, is shown under
 [Output verification](#output-verification).
 
@@ -4867,35 +4875,34 @@ The slicing and splicing operations above extract a result from a halted machine
 A Rolling Cartesi Machine instead emits outputs one at a time and keeps running.
 The analogous operation is to verify the contents of a given output it produced.
 This is possible between epochs, once the state hash of the machine is agreed upon.
-From that state hash, a slicing operation recovers the outputs Merkle root from the machine's CMIO tx buffer.
+From that state hash, slicing operations recover the outputs Merkle root from the machine's CMIO tx buffer and confirm that the machine accepted its last input.
 As described under [Output proofs](#output-proofs), this is the root of a Merkle tree.
 Its leaves are the hashes of all outputs ever produced, in order.
 A second slicing operation, in that tree, then proves the output's hash is one of its leaves.
 
 When the [Rolling Cartesi Machine calculator](#rolling-cartesi-machines) processed its first epoch, it saved more than the outputs themselves.
-For each accepted input, it saved a proof that the outputs Merkle root occupied the CMIO tx buffer.
-For each output, it saved an output proof.
+At the end of the epoch, it saved the outputs Merkle root proof, with the `iflags_Y`, `htif_tohost`, and tx-buffer words of the final state.
+For each output, it saved an output proof against the epoch's final outputs Merkle root.
 Through `--final-hash`, it also saved the machine state hash the epoch settled on.
-The output proofs are built against the epoch's final outputs Merkle root.
-They therefore pair with the outputs Merkle root proof from the last accepted input, input 2.
 The following script verifies output 0 from the settled state hash and those artifacts alone, without instantiating any machine.
 ```{.lua key=verify_output_proof include=verify-output-proof.lua title="verify-output-proof.lua"}
 ```
-The script first confirms the output proof's root equals the value the outputs Merkle root proof locates in the tx-buffer word.
-That joins the two trees.
-It then hashes the output's bytes and matches them against the leaf the output proof locates, pinning down this exact output.
+The script first checks the three words against the state hash.
+The `iflags_Y` and `htif_tohost` words must show a manual yield with reason rx-accepted, so the tx-buffer word holds the outputs Merkle root.
+It then confirms the output proof's root equals that value, which joins the two trees.
+Finally, it hashes the output's bytes and matches them against the leaf the output proof locates, pinning down this exact output.
 
 Running the script over the artifacts the Rolling Cartesi Machine calculator saved
 ```{.bash key=lua_verify_output_proof vars=rolling_calc_run depends=verify_output_proof replace=source}
 ln -sf $rolling_calc_run/epoch-0-state-hash.bin .
-ln -sf $rolling_calc_run/input-2-outputs-merkle-root-proof.lua .
+ln -sf $rolling_calc_run/epoch-0-outputs-merkle-root-proof.lua .
 ln -sf $rolling_calc_run/output-0-input-0-proof.lua .
 ln -sf $rolling_calc_run/output-0-input-0.bin .
 ln -sf "$RECIPES_DIR/verify-output-proof.lua" .
 # docs:begin
 lua5.4 verify-output-proof.lua \
     epoch-0-state-hash.bin \
-    input-2-outputs-merkle-root-proof.lua \
+    epoch-0-outputs-merkle-root-proof.lua \
     output-0-input-0-proof.lua \
     output-0-input-0.bin
 # docs:end

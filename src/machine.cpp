@@ -704,8 +704,8 @@ void machine::remove_stored(const std::string &dir, remove_mode mode) {
 }
 
 void machine::sync_stored(const std::string &dir) {
-    // Sync all files
-    for_each_stored_filename(dir, os::sync_file);
+    // Sync all files, failing if a running machine maps any of them for writing
+    for_each_stored_filename(dir, [](const std::string &filename) { os::sync_file(filename, true); });
 
     // Sync directory entries
     os::sync_directory(dir);

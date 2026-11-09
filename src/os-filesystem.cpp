@@ -723,7 +723,7 @@ std::pair<FILE *, std::string> create_temporary_file(const std::string &dirname,
 #warning "sync_file() cannot flush changes still held in shared mappings of a running machine on this platform"
 #endif
 
-void sync_file(const std::string &filename) {
+void sync_file(const std::string &filename, [[maybe_unused]] bool lock) {
     // Open the file
 #ifdef _WIN32
     // On Windows, FlushFileBuffers() requires a handle with write access,
@@ -751,8 +751,12 @@ void sync_file(const std::string &filename) {
     }
     auto failure_close = scope_fail([&] { std::ignore = retry_on_eintr([&] { return close(fd); }); });
 
-    // The file is deliberately not locked,
-    // it may be locked by a running machine that maps it.
+#ifdef HAVE_FLOCK
+    // A running machine that maps the file for writing holds an exclusive lock on it
+    if (lock && flock(fd, LOCK_SH | LOCK_NB) != 0) {
+        throw make_path_system_error(errno, "unable to sync file"s, filename, "flock() failed"s);
+    }
+#endif
 
     // Flush all file modifications to permanent storage
     sync_fd(fd, "unable to sync file"s, filename);

@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed `outputs_merkle_root_proof` of `--cmio-advance-state` to a single file, with no default, written when the epoch ends
 - Changed the outputs Merkle root proof to hold the `iflags_Y`, `htif_tohost` and tx buffer words with their proofs
 - Changed the PRT and verification game recipes to rebuild the hash tree of each epoch's first machine
+- Changed `sync_stored` to fail while a machine loaded with shared backing stores uses the stored machine
 
 ### Removed
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`

@@ -2515,13 +2515,16 @@ cartesi-machine \
     --final-hash=final-hash.bin
 ```
 
-Before modifying an input boundary, the command syncs `machine`, clones
-it to `machine.revert`, and syncs the clone. An accepted input syncs
-`machine` before removing the snapshot. A rejected input or
-inspect-state query discards `machine`, durably renames the snapshot
-back to it, and reloads it. Stored-machine operations never overwrite an
-existing directory, so the initial clone check fails without touching
-`machine.revert` if it already exists.
+`machine.revert` always holds a synced copy of the last committed state.
+At the start, and after each accepted input, the command destroys the
+loaded machine, syncs the `machine` directory, replaces `machine.revert`
+with a synced clone of it, and loads `machine` again. A rejected input
+or inspect-state query removes `machine`, clones `machine.revert` back
+to it, and loads it again, leaving `machine.revert` in place. If the
+command stops before exiting cleanly, `machine.revert` holds the state
+to resume from. A clean exit removes it. Stored-machine operations never
+overwrite an existing directory, so the initial clone check fails
+without touching `machine.revert` if it already exists.
 
 The output files, rejected output, and outputs Merkle roots are
 byte-for-byte identical to those of the server-backed epoch runs. So is
@@ -5501,60 +5504,57 @@ Machine [example](#rolling-cartesi-machines-1), with the fork-based
 `snapshot`, `commit`, and `revert` reimplemented over stored machines,
 feeding the same expressions the command-line example processed so the
 resulting state hashes can be compared. The helpers and the main loop
-are unchanged, and the script ends by syncing the final on-disk state
-and printing its hash, so the excerpt below shows only the reimplemented
-part
+are unchanged, and the script ends by committing the final state,
+removing its backup, and printing its hash, so the excerpt below shows
+only the reimplemented part
 
 ``` lua
 -- Load a fresh clone of the rolling-calculator template, operating directly on its backing stores
 cartesi.machine:clone_stored("rolling-calculator-template", "machine")
 local machine = cartesi.machine("machine", nil, cartesi.SHARING_ALL)
 
--- Snapshot via storage: machine.revert keeps a copy of the pre-input state.
+-- Snapshot via storage: machine.revert keeps a synced copy of the last committed state
 local backup_directory
-local function snapshot(m)
+local function snapshot(_)
+    assert(backup_directory, "no committed state to revert to")
+end
+
+local function commit(m)
     m:destroy()
+    m:sync_stored("machine")
+    if backup_directory then
+        m:remove_stored(backup_directory)
+    end
     m:clone_stored("machine", "machine.revert")
     backup_directory = "machine.revert"
     m:sync_stored(backup_directory)
     m:load("machine", nil, cartesi.SHARING_ALL)
 end
 
-local function commit(m)
-    m:destroy()
-    m:sync_stored("machine")
-    m:load("machine", nil, cartesi.SHARING_ALL)
-    if backup_directory then
-        m:remove_stored(backup_directory)
-    end
-    backup_directory = nil
-end
-
 local function revert(m)
     assert(backup_directory, "no snapshot to revert to")
     m:destroy()
     m:remove_stored("machine")
-    m:rename_stored(backup_directory, "machine")
+    m:clone_stored(backup_directory, "machine")
     m:load("machine", nil, cartesi.SHARING_ALL)
-    backup_directory = nil
 end
 ```
 
 The live machine is loaded from a clone of the template with
 `cartesi.SHARING_ALL` (the third argument of the `cartesi.machine`
 constructor), so every modification lands directly on the backing stores
-of `machine` and there is no store step. `commit` closes the machine,
-syncs `machine`, and reloads it at every accepted boundary, including
-the initial boundary, so `snapshot` can clone the already-durable
-directory to `machine.revert` and sync the clone before execution
-modifies `machine`. The backing stores of a loaded directory are locked,
-so the machine is closed around the clone and reloaded afterward, a
-cheap operation that copies nothing. When a backup exists, `commit`
-removes it after syncing the accepted machine. `revert` discards the
-rejected state with `remove_stored`, durably renames `machine.revert` as
-`machine`, and reloads it. The script still records `revert_root_hash`
-when feeding each input, as every advance-state request requires, even
-though a rejection here is undone at the filesystem level.
+of `machine` and there is no store step. `commit` destroys the loaded
+machine, syncs the `machine` directory, replaces `machine.revert` with a
+synced clone of it, and loads `machine` again, at every accepted
+boundary including the initial one. `machine.revert` therefore always
+holds a synced copy of the last committed state. A loaded directory is
+locked, so the machine is destroyed around the clone and loaded again
+afterward, a cheap operation that copies nothing. `revert` removes the
+rejected state with `remove_stored`, clones `machine.revert` back as
+`machine`, and loads it again, leaving the backup in place until the
+next commit. The script still records `revert_root_hash` when feeding
+each input, as every advance-state request requires, even though a
+rejection here is undone at the filesystem level.
 
 Run the script with the expressions and the stored template in the
 working directory

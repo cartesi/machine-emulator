@@ -160,11 +160,14 @@ where options are:
 
     <mode> is one of
         fork: snapshot by forking a remote machine server.
-        stored: snapshot a machine loaded from <directory> with sharing:all or
-            created with --create=<directory> by cloning it to <directory>.revert.
+        stored: keep in <directory>.revert a synced copy of the last committed
+            state of a machine loaded from <directory> with sharing:all or
+            created with --create=<directory>.
             this mode cannot be combined with --replace-memory-range.
-            accepted state is synced before the snapshot is removed, and rejected or
-            inspected state is replaced by the synced snapshot.
+            accepted state is synced and copied to <directory>.revert, and
+            rejected or inspected state is replaced by a copy of it.
+            after a crash, resume from <directory>.revert. a clean exit
+            removes it.
         none: disable snapshots. inspect states are not reverted. a rejected
             advance cannot be reverted and aborts the run.
     the default mode is "fork".
@@ -3814,6 +3817,7 @@ local revert_none = {
         commit = function() end,
         revert = function() end,
         has_snapshot = function() return false end,
+        remove_backup = function() end,
     },
     __close = function() end,
 }
@@ -3857,49 +3861,62 @@ end
 
 function revert_fork.__index:has_snapshot() return self.backup_machine ~= nil end
 
+function revert_fork.__index.remove_backup() end
+
 function revert_fork:__close(err)
     if err ~= nil and self:has_snapshot() then self:revert() end
 end
 
 local function new_revert_fork(m) return setmetatable({ machine = m }, revert_fork) end
 
+-- The backup directory always holds a synced copy of the last committed state, so a crash leaves it to resume from.
+-- A snapshot only records that the machine is about to diverge from it.
 local revert_stored = { __index = {} }
 
 function revert_stored.__index:snapshot()
-    assert(not self.backup_directory, "snapshot already exists")
+    assert(not self.snapshot_taken, "snapshot already exists")
+    self.snapshot_taken = true
+end
+
+function revert_stored.__index:commit()
     local m = self.machine
     local backup_directory = self.machine_directory .. ".revert"
+    -- A machine using the stored files changes them, so it is destroyed for the sync and loaded again
     m:destroy()
+    m:sync_stored(self.machine_directory)
+    -- While the backup is replaced, the synced machine directory holds the committed state
+    if self.backup_directory then
+        m:remove_stored(self.backup_directory)
+        self.backup_directory = nil
+    end
     m:clone_stored(self.machine_directory, backup_directory)
     -- Take ownership only after cloning succeeds, so cleanup leaves pre-existing backups untouched.
     self.backup_directory = backup_directory
     m:sync_stored(backup_directory)
     m:load(self.machine_directory, self.runtime_config, cartesi.SHARING_ALL)
-end
-
-function revert_stored.__index:commit()
-    local m = self.machine
-    -- A machine using the stored files changes them, so it is destroyed for the sync and loaded again
-    m:destroy()
-    m:sync_stored(self.machine_directory)
-    m:load(self.machine_directory, self.runtime_config, cartesi.SHARING_ALL)
-    if self.backup_directory then
-        m:remove_stored(self.backup_directory)
-        self.backup_directory = nil
-    end
+    self.snapshot_taken = false
 end
 
 function revert_stored.__index:revert()
-    assert(self.backup_directory, "no stored snapshot to revert to")
+    assert(self.snapshot_taken, "no stored snapshot to revert to")
     local m = self.machine
     m:destroy()
     m:remove_stored(self.machine_directory)
-    m:rename_stored(self.backup_directory, self.machine_directory)
-    self.backup_directory = nil
+    -- The backup stays, so it still holds the committed state if the process stops before the next commit
+    m:clone_stored(self.backup_directory, self.machine_directory)
     m:load(self.machine_directory, self.runtime_config, cartesi.SHARING_ALL)
+    self.snapshot_taken = false
 end
 
-function revert_stored.__index:has_snapshot() return self.backup_directory ~= nil end
+function revert_stored.__index:has_snapshot() return self.snapshot_taken end
+
+-- Once the machine no longer changes, the copy of its last committed state is no longer needed.
+function revert_stored.__index:remove_backup()
+    if self.backup_directory then
+        self.machine:remove_stored(self.backup_directory)
+        self.backup_directory = nil
+    end
+end
 
 function revert_stored:__close(err)
     if err ~= nil and self:has_snapshot() then self:revert() end
@@ -3912,9 +3929,9 @@ local function new_revert_stored(m, machine_directory, runtime)
         machine = m,
         machine_directory = machine_directory,
         runtime_config = runtime,
+        snapshot_taken = false,
     }, revert_stored)
     -- Cloning fails without overwriting anything if the backup directory already exists.
-    backup:snapshot()
     backup:commit()
     return backup:move()
 end
@@ -4891,5 +4908,8 @@ if cmdline.load_sync then
     machine:load(cmdline.load_dir, runtime_config, cmdline.load_sharing)
 end
 if backup:has_snapshot() then backup:revert() end
-if not cmdline.remote_address or cmdline.remote_destroy then machine:destroy() end
+if not cmdline.remote_address or cmdline.remote_destroy then
+    machine:destroy()
+    backup:remove_backup()
+end
 os.exit(exit_code, true)

@@ -1694,9 +1694,11 @@ for f in output-?-input-?.bin rejected-output-1-input-1.bin \
 done
 cmp outputs-merkle-root-proof.lua "$rolling_calc_run/epoch-1-outputs-merkle-root-proof.lua"
 ```
-Before modifying an input boundary, the command syncs `machine`, clones it to `machine.revert`, and syncs the clone.
-An accepted input syncs `machine` before removing the snapshot.
-A rejected input or inspect-state query discards `machine`, durably renames the snapshot back to it, and reloads it.
+`machine.revert` always holds a synced copy of the last committed state.
+At the start, and after each accepted input, the command destroys the loaded machine, syncs the `machine` directory, replaces `machine.revert` with a synced clone of it, and loads `machine` again.
+A rejected input or inspect-state query removes `machine`, clones `machine.revert` back to it, and loads it again, leaving `machine.revert` in place.
+If the command stops before exiting cleanly, `machine.revert` holds the state to resume from.
+A clean exit removes it.
 Stored-machine operations never overwrite an existing directory, so the initial clone check fails without touching `machine.revert` if it already exists.
 
 The output files, rejected output, and outputs Merkle roots are byte-for-byte identical to those of the server-backed epoch runs.
@@ -3120,14 +3122,14 @@ All four are also available on `cartesi.machine` itself, so a script can manipul
 These functions are the basis for the `clone:` and `sync` keys of the command-line utility's `--load` option.
 
 The disk-based driver is the calculator driver from the Rolling Cartesi Machine [example](#rolling-cartesi-machines-1), with the fork-based `snapshot`, `commit`, and `revert` reimplemented over stored machines, feeding the same expressions the command-line example processed so the resulting state hashes can be compared.
-The helpers and the main loop are unchanged, and the script ends by syncing the final on-disk state and printing its hash, so the excerpt below shows only the reimplemented part
+The helpers and the main loop are unchanged, and the script ends by committing the final state, removing its backup, and printing its hash, so the excerpt below shows only the reimplemented part
 ```{.lua key=run_rolling_calculator_from_storage include=run-rolling-calculator-from-storage.lua/storage title="run-rolling-calculator-from-storage.lua (excerpt)"}
 ```
 The live machine is loaded from a clone of the template with `cartesi.SHARING_ALL` (the third argument of the `cartesi.machine` constructor), so every modification lands directly on the backing stores of `machine` and there is no store step.
-`commit` closes the machine, syncs `machine`, and reloads it at every accepted boundary, including the initial boundary, so `snapshot` can clone the already-durable directory to `machine.revert` and sync the clone before execution modifies `machine`.
-The backing stores of a loaded directory are locked, so the machine is closed around the clone and reloaded afterward, a cheap operation that copies nothing.
-When a backup exists, `commit` removes it after syncing the accepted machine.
-`revert` discards the rejected state with `remove_stored`, durably renames `machine.revert` as `machine`, and reloads it.
+`commit` destroys the loaded machine, syncs the `machine` directory, replaces `machine.revert` with a synced clone of it, and loads `machine` again, at every accepted boundary including the initial one.
+`machine.revert` therefore always holds a synced copy of the last committed state.
+A loaded directory is locked, so the machine is destroyed around the clone and loaded again afterward, a cheap operation that copies nothing.
+`revert` removes the rejected state with `remove_stored`, clones `machine.revert` back as `machine`, and loads it again, leaving the backup in place until the next commit.
 The script still records `revert_root_hash` when feeding each input, as every advance-state request requires, even though a rejection here is undone at the filesystem level.
 
 Run the script with the expressions and the stored template in the working directory

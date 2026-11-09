@@ -141,6 +141,28 @@ describe("cartesi-machine CLI", function()
         })
     end
 
+    -- Reads a JSON outputs Merkle root proof. Every word must verify, and the tx-buffer word must hold
+    -- the expected outputs Merkle root.
+    local function read_outputs_merkle_root_proof(filename, outputs_merkle_root, hash_type)
+        local proof = cartesi.fromjson(filesystem.read_file(filename), "OutputsMerkleRootProof", {
+            OutputsMerkleRootProof = {
+                iflags_y_data = "Base64",
+                iflags_y_proof = "Proof",
+                htif_tohost_data = "Base64",
+                htif_tohost_proof = "Proof",
+                tx_buffer_data = "Base64",
+                tx_buffer_proof = "Proof",
+            },
+        })
+        for _, word in ipairs({ "iflags_y", "htif_tohost", "tx_buffer" }) do
+            local word_proof = proof[word .. "_proof"]
+            expect.equal(word_proof.target_hash, cartesi[hash_type or "keccak256"](proof[word .. "_data"]))
+            hash_tree.verify_slice(word_proof, hash_type)
+        end
+        expect.equal(proof.tx_buffer_data, outputs_merkle_root)
+        return proof
+    end
+
     -- Interpreter used for sub-invocations of cartesi-machine.lua.
     -- Under coverage (coverage=yes), the Makefile exports LUA_CLI as
     -- "lua5.4 -lluacov" so that cartesi-machine.lua children are measured.
@@ -2494,10 +2516,8 @@ dofile(%q)
             "--",
             "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0",
         })
-        local proof = cartesi.fromjson(filesystem.read_file(root_proof), "Proof")
-        expect.equal(proof.target_hash, cartesi.sha256(filesystem.read_file(root)))
-        hash_tree.verify_slice(proof, "sha256")
-        proof = cartesi.fromjson(filesystem.read_file(output_proof), "Proof")
+        read_outputs_merkle_root_proof(root_proof, filesystem.read_file(root), "sha256")
+        local proof = cartesi.fromjson(filesystem.read_file(output_proof), "Proof")
         expect.equal(proof.target_hash, cartesi.keccak256(filesystem.read_file(output)))
         expect.equal(proof.root_hash, filesystem.read_file(root))
         hash_tree.verify_slice(proof, "keccak256")
@@ -2677,6 +2697,67 @@ dofile(%q)
         end
     end)
 
+    it("outputs Merkle root proof of an epoch that ends on a rejected input", function()
+        local _ <close>, address = scope_spawned_server()
+        local _ <close>, prefix = tests_util.scope_temp_pathname()
+        local _ <close> = tests_util.scope_exit(function()
+            for _, suffix in ipairs({ "-in-0.bin", "-in-1.bin", "-oh-0.bin", "-omrp.lua", "-final.bin" }) do
+                os.remove(prefix .. suffix)
+            end
+        end)
+        filesystem.write_file(encode_advance(0, "ok"), prefix .. "-in-0.bin")
+        filesystem.write_file(encode_advance(1, "reject-me"), prefix .. "-in-1.bin")
+        run_ok({
+            "--remote-address=" .. address,
+            "--console-io=output_destination:to_null",
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-in-%i.bin,"
+                .. "input_file_index_begin:0,input_file_index_end:2,"
+                .. "output:,rejected_output:,output_proof:,report:,"
+                .. "outputs_merkle_root:"
+                .. prefix
+                .. "-oh-%i.bin,outputs_merkle_root_proof:"
+                .. prefix
+                .. "-omrp.lua",
+            "--final-hash=" .. prefix .. "-final.bin",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --reject=1",
+        })
+
+        -- The rejection reverts to the state that accepted input 0, and the proof authenticates its words.
+        local proof = assert(load(filesystem.read_file(prefix .. "-omrp.lua"), "proof", "t", {}))()
+        local final_hash = filesystem.read_file(prefix .. "-final.bin")
+        local addresses = {
+            iflags_y = cartesi.machine:get_reg_address("iflags_Y"),
+            htif_tohost = cartesi.machine:get_reg_address("htif_tohost"),
+            tx_buffer = cartesi.AR_CMIO_TX_BUFFER_START,
+        }
+        local word_mask = (1 << cartesi.HASH_TREE_LOG2_WORD_SIZE) - 1
+        local function read_register(word)
+            return (string.unpack("<I8", proof[word .. "_data"], 1 + (addresses[word] & word_mask)))
+        end
+        for word, word_address in pairs(addresses) do
+            local word_proof = proof[word .. "_proof"]
+            expect.equal(word_proof.target_address, word_address & ~word_mask)
+            expect.equal(word_proof.target_hash, cartesi.keccak256(proof[word .. "_data"]))
+            expect.equal(word_proof.root_hash, final_hash)
+            hash_tree.verify_slice(word_proof)
+        end
+        expect.equal(proof.tx_buffer_data, filesystem.read_file(prefix .. "-oh-0.bin"))
+        expect.truthy(read_register("iflags_y") ~= 0)
+        local tohost = read_register("htif_tohost")
+        expect.equal((tohost & cartesi.HTIF_DEV_MASK) >> cartesi.HTIF_DEV_SHIFT, cartesi.HTIF_DEV_YIELD)
+        expect.equal((tohost & cartesi.HTIF_CMD_MASK) >> cartesi.HTIF_CMD_SHIFT, cartesi.HTIF_YIELD_CMD_MANUAL)
+        expect.equal(
+            (tohost & cartesi.HTIF_REASON_MASK) >> cartesi.HTIF_REASON_SHIFT,
+            cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
+        )
+    end)
+
     -- -------------------------------------------------------------------------
     -- Guest failures surface in the exit status of an advance-state run
     --
@@ -2689,6 +2770,7 @@ dofile(%q)
         local _ <close>, prefix = tests_util.scope_temp_pathname()
         local _ <close> = tests_util.scope_exit(function()
             os.remove(prefix .. "-st-0.bin")
+            os.remove(prefix .. "-st-proof.lua")
         end)
         filesystem.write_file(encode_advance(0, "last-input"), prefix .. "-st-0.bin")
         local rc, _, log = run({
@@ -2698,7 +2780,9 @@ dofile(%q)
                 .. "-st-%i.bin,"
                 .. "input_file_index_begin:0,input_file_index_end:1,"
                 .. "output:,rejected_output:,output_proof:,report:,"
-                .. "outputs_merkle_root:,outputs_merkle_root_proof:",
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:"
+                .. prefix
+                .. "-st-proof.lua",
             "--revert-mode=none",
             "--max-mcycle=2000000000",
             "--no-init-splash",
@@ -2707,6 +2791,8 @@ dofile(%q)
         })
         expect.equal(rc, 7)
         expect.truthy(log:find("Halted with payload: 7", 1, true))
+        -- A halted epoch has no outputs Merkle root, so it writes no proof of one.
+        expect.falsy(io.open(prefix .. "-st-proof.lua"))
     end)
 
     it("rollup stored revert flow", function()
@@ -3870,10 +3956,8 @@ dofile(%q)
             prefix .. "-eoh-1.bin",
             prefix .. "-eoh-2.bin",
             prefix .. "-eoh-4.bin",
-            prefix .. "-erootproof-0.json",
-            prefix .. "-erootproof-1.json",
-            prefix .. "-erootproof-2.json",
-            prefix .. "-erootproof-4.json",
+            prefix .. "-erootproof-e1.json",
+            prefix .. "-erootproof-e2.json",
             prefix .. "-e2report-2-0.bin",
             prefix .. "-e2report-3-0.bin",
             prefix .. "-e2report-4-0.bin",
@@ -3903,7 +3987,7 @@ dofile(%q)
                 .. prefix
                 .. "-eoh-%i.bin,outputs_merkle_root_proof:"
                 .. prefix
-                .. "-erootproof-%i.json,"
+                .. "-erootproof-e1.json,"
                 .. "output_proof:"
                 .. prefix
                 .. "-e1proof-%o-%i.json",
@@ -3914,10 +3998,9 @@ dofile(%q)
             "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=3",
         })
 
-        local first_roots, first_root_proofs = {}, {}
+        local first_roots = {}
         for i = 0, 1 do
             first_roots[i] = filesystem.read_file(prefix .. "-eoh-" .. i .. ".bin")
-            first_root_proofs[i] = filesystem.read_file(prefix .. "-erootproof-" .. i .. ".json")
         end
 
         -- Epoch 2: reuse the same live machine (no new entrypoint), seeded with epoch 1's last output
@@ -3949,7 +4032,7 @@ dofile(%q)
                 .. prefix
                 .. "-eoh-%i.bin,outputs_merkle_root_proof:"
                 .. prefix
-                .. "-erootproof-%i.json",
+                .. "-erootproof-e2.json",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
@@ -3957,16 +4040,13 @@ dofile(%q)
 
         for i = 0, 1 do
             expect.equal(filesystem.read_file(prefix .. "-eoh-" .. i .. ".bin"), first_roots[i])
-            expect.equal(filesystem.read_file(prefix .. "-erootproof-" .. i .. ".json"), first_root_proofs[i])
         end
         for i = 2, 4 do
             expect.truthy(filesystem.read_file(prefix .. "-e2report-" .. i .. "-0.bin"))
         end
-        for _, i in ipairs({ 2, 4 }) do
-            local proof = cartesi.fromjson(filesystem.read_file(prefix .. "-erootproof-" .. i .. ".json"), "Proof")
-            expect.equal(proof.target_hash, cartesi.keccak256(filesystem.read_file(prefix .. "-eoh-" .. i .. ".bin")))
-            hash_tree.verify_slice(proof)
-        end
+        -- Each epoch's proof holds the outputs Merkle root of its last accepted input.
+        read_outputs_merkle_root_proof(prefix .. "-erootproof-e1.json", first_roots[1])
+        read_outputs_merkle_root_proof(prefix .. "-erootproof-e2.json", filesystem.read_file(prefix .. "-eoh-4.bin"))
 
         -- Epoch 2 outputs use input file indices 2 and 4 and global output indices 4..7, and verify
         -- against epoch 2's final root. Rejected input 3 advanced nothing.

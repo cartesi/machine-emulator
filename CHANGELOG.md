@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `frontier_store` and `frontier_load` to `cartesi.hash-tree`
 - Added `frontier_forest_store` and `frontier_forest_load` to `cartesi.hash-tree`
 - Added `encode_abi` and `decode_abi` to `cartesi.evmu`
+- Added `decode_tohost` and `encode_fromhost` to `cartesi.util`
 - Added the permissionless refereed tournament to the user manual
 - Added a recipe that runs the tournament against Dave's contracts on a local chain
 - Added the `mode` argument to `remove_stored` in the C, Lua, and JSON-RPC APIs

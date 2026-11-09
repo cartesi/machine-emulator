@@ -1,6 +1,7 @@
 -- Final-state and output checks shared by the verification game and PRT.
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
+local util = require("cartesi.util")
 local keccak = cartesi.keccak256
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
 local WORD_MASK = WORD_SIZE - 1
@@ -25,13 +26,6 @@ local function get_uint64(data, offset)
     return string.unpack("<I8", data, 1 + offset)
 end
 
-local function split_tohost(tohost)
-    local dev = (tohost & cartesi.HTIF_DEV_MASK) >> cartesi.HTIF_DEV_SHIFT
-    local cmd = (tohost & cartesi.HTIF_CMD_MASK) >> cartesi.HTIF_CMD_SHIFT
-    local reason = (tohost & cartesi.HTIF_REASON_MASK) >> cartesi.HTIF_REASON_SHIFT
-    return dev, cmd, reason
-end
-
 -- Establishes that the settled machine is yielded manually with RX_ACCEPTED, then returns the
 -- outputs Merkle root authenticated at its tx-buffer word, matching Dave's machine validity proof.
 local function validate_outputs_merkle_root_response(result, final_state_hash)
@@ -40,7 +34,7 @@ local function validate_outputs_merkle_root_response(result, final_state_hash)
 
     verify_machine_word(result.htif_tohost_data, result.htif_tohost_proof, HTIF_TOHOST_ADDRESS, final_state_hash)
     local htif_tohost = get_uint64(result.htif_tohost_data, HTIF_TOHOST_ADDRESS & WORD_MASK)
-    local dev, cmd, reason = split_tohost(htif_tohost)
+    local dev, cmd, reason = util.decode_tohost(htif_tohost)
     assert(dev == cartesi.HTIF_DEV_YIELD, "tohost not a yield")
     assert(cmd == cartesi.HTIF_YIELD_CMD_MANUAL, "yield not manual")
     assert(reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED, "yield reason not rx-accepted")

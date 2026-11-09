@@ -1090,21 +1090,13 @@ local function clone_loaded_directory(machine, directory, clone_directory)
     return clone:move()
 end
 
--- A directory can be synced only while no machine uses it, so its machine is destroyed around the sync
--- and reloaded after.
-local function sync_loaded_directory(machine, directory)
-    machine:destroy()
-    machine:sync_stored(directory)
-    machine:load(directory, nil, cartesi.SHARING_ALL)
-end
-
 -- Removes a stored machine that a crash or an earlier pair may have left, possibly incomplete.
 local function remove_leftover_stored_machine(directory)
     cartesi.machine:remove_stored(directory, cartesi.REMOVE_FORCED)
 end
 
--- A stored pair runs its machine on the backing stores of its directory and snapshots by cloning
--- that directory. Committing removes the snapshot, so callers commit only after recording the boundary.
+-- A stored pair runs its machine on the backing stores of its directory and keeps a synced copy of the
+-- last committed state in a backup. Callers commit only after recording the boundary.
 -- Closing only releases the machine, so an error leaves the disk as a crash would.
 local stored_machine_pair_meta = { __index = setmetatable({}, { __index = machine_pair_methods }) }
 local stored_machine_pair_methods = stored_machine_pair_meta.__index
@@ -1121,31 +1113,42 @@ function stored_machine_pair_methods:move()
 end
 
 function stored_machine_pair_methods:snapshot()
-    assert(not self.backup_directory, "machine already has a snapshot")
-    self.backup_directory = clone_loaded_directory(self.machine, self.directory, self.directory .. ".revert")
+    assert(not self.snapshot_taken, "machine already has a snapshot")
+    self.snapshot_taken = true
 end
 
+-- The machine is destroyed for the sync and the clone, and loaded again after.
 function stored_machine_pair_methods:commit()
-    if self.backup_directory then
-        self.machine:remove_stored(self.backup_directory)
-        self.backup_directory = nil
+    local machine = self.machine
+    machine:destroy()
+    machine:sync_stored(self.directory)
+    local backup_directory = self.directory .. ".revert"
+    if fs.exists(backup_directory) then
+        machine:remove_stored(backup_directory)
     end
+    machine:clone_stored(self.directory, backup_directory)
+    machine:sync_stored(backup_directory)
+    machine:load(self.directory, nil, cartesi.SHARING_ALL)
+    self.snapshot_taken = false
 end
 
+-- The backup stays until the next commit.
 function stored_machine_pair_methods:revert()
-    local backup_directory = assert(self.backup_directory, "no snapshot to revert to")
+    assert(self.snapshot_taken, "no snapshot to revert to")
     local machine = self.machine
     machine:destroy()
     machine:remove_stored(self.directory)
-    machine:rename_stored(backup_directory, self.directory)
-    self.backup_directory = nil
+    machine:clone_stored(self.directory .. ".revert", self.directory)
     machine:load(self.directory, nil, cartesi.SHARING_ALL)
+    self.snapshot_taken = false
     assert(machine:get_root_hash() == self.revert_root_hash, "rollback did not restore the input boundary")
 end
 
+-- The first commit creates the backup.
 local function new_stored_machine_pair(machine, directory)
     local pair <close> = setmetatable({ machine = machine, directory = directory }, stored_machine_pair_meta)
     pair.revert_root_hash = machine:get_root_hash()
+    pair:commit()
     return pair:move()
 end
 
@@ -2463,9 +2466,9 @@ local function store_epoch_state(self, root_hash, files, pad_bundle)
     self.state_files = files
 end
 
--- Commits the boundary the epoch pair has reached. The input's snapshot stays until the caller commits
--- the pair after this, so a crash before this commit reverts. Any call on the machine changes its stored
--- files, so the directory is synced after the last one, before state.json records the boundary.
+-- Commits the boundary the epoch pair has reached. The backup keeps the previous boundary until the caller
+-- commits the pair after this. The machine is destroyed and its directory synced before state.json records
+-- the boundary.
 function stored_player_methods:commit_epoch_state(pair, builder, outputs)
     local directory = self.epoch_directory
     local files = get_boundary_files(self.input_count)
@@ -2476,7 +2479,8 @@ function stored_player_methods:commit_epoch_state(pair, builder, outputs)
         store_outputs(self, outputs)
     end
     local root_hash = pair.machine:get_root_hash()
-    sync_loaded_directory(pair.machine, pair.directory)
+    pair.machine:destroy()
+    pair.machine:sync_stored(pair.directory)
     store_epoch_state(self, root_hash, files, builder.pad_bundle)
 end
 
@@ -2534,13 +2538,18 @@ function stored_player_methods:seal_epoch_state(pair)
     end
     local directory = self.epoch_directory
     -- Sealing called the machine after the last boundary commit, so its directory is synced again.
-    sync_loaded_directory(pair.machine, pair.directory)
+    pair.machine:destroy()
+    pair.machine:sync_stored(pair.directory)
     store_forest(self.mcycle_forest, directory, "mcycle", MCYCLE_FOREST_FILE)
     store_epoch_state(self, self.final_state_hash, {
         outputs_frontier = self.state_files.outputs_frontier,
         machine_cache = self.state_files.machine_cache,
         mcycle_forest = MCYCLE_FOREST_FILE,
     })
+    -- A sealed epoch no longer needs the backup
+    if fs.exists(pair.directory .. ".revert") then
+        remove_leftover_stored_machine(pair.directory .. ".revert")
+    end
 end
 
 -- Stores the checkpoint epoch 0 starts from (the template machine with an empty output history) the
@@ -2639,9 +2648,8 @@ local function get_stored_root_hash(directory)
     return stored:get_root_hash()
 end
 
--- Brings the epoch machine to the recorded boundary. machine.revert holds it when a crash came
--- during an input, before state.json recorded the input's end. Otherwise the epoch machine was
--- synced at that boundary and is unchanged since.
+-- Brings the epoch machine and its backup to the recorded boundary. The backup holds it, unless a crash
+-- came before the commit replaced it, when the epoch machine, synced at that boundary, holds it instead.
 local function revert_interrupted_input(directory, root_hash)
     local machine_directory = directory .. "/machine"
     local backup_directory = machine_directory .. ".revert"
@@ -2649,13 +2657,15 @@ local function revert_interrupted_input(directory, root_hash)
         if fs.exists(machine_directory) then
             remove_leftover_stored_machine(machine_directory)
         end
-        cartesi.machine:rename_stored(backup_directory, machine_directory)
+        cartesi.machine:clone_stored(backup_directory, machine_directory)
         return
     end
     assert(get_stored_root_hash(machine_directory) == root_hash, "the epoch machine does not match its state")
     if fs.exists(backup_directory) then
         remove_leftover_stored_machine(backup_directory)
     end
+    cartesi.machine:clone_stored(machine_directory, backup_directory)
+    cartesi.machine:sync_stored(backup_directory)
 end
 
 -- The files a state.json names, keyed by the field that names them.
@@ -2772,6 +2782,10 @@ local function reopen_epoch_directory(self)
         self.epoch_builder = builder
         return
     end
+    -- A sealed epoch no longer needs the backup
+    if fs.exists(machine_directory .. ".revert") then
+        remove_leftover_stored_machine(machine_directory .. ".revert")
+    end
     self.final_state_hash = root_hash
     self.outputs_merkle_root_proof = state.outputs_merkle_root_proof
     assert(
@@ -2878,6 +2892,7 @@ local function new_stored_player(dapp_contract, label, previous_outputs_frontier
     self.machine_cache = new_stored_machine_cache(epoch_directory, machine_directory, machine)
     begin_epoch(self)
     self:commit_epoch_state(self.epoch_pair, self.epoch_builder, {})
+    self.epoch_pair:commit()
     return self:move()
 end
 

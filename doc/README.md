@@ -1087,7 +1087,11 @@ If the directory already exists, the operation will fail. (This prevents
 the overwriting of a Cartesi Machine by mistake.) Once created, the
 directory can be compressed and transferred to other hosts. To restore
 the corresponding Cartesi Machine, use the command-line option
-`--load=<directory>`. For example,
+`--load=<directory>`. Besides the machine state, the directory holds
+cached hash-tree data, which is outside the state hash and is not
+checked on load. Load a directory you did not produce with
+`--clear-hash-tree`, which rebuilds that data from the machine state,
+before trusting its state hash. For example,
 
 ``` bash
 cartesi-machine \
@@ -1126,7 +1130,9 @@ the pre-store and post-load state hashes are equal because the same
 machine state is restored.
 
 The `cartesi-machine-stored-hash` command-line utility can be used to
-extract the state hash from a stored Cartesi Machine. The command
+extract the state hash from a stored Cartesi Machine. It reads the hash
+from the cached hash-tree data, so it does not check a directory you did
+not produce. The command
 
 ``` bash
 cartesi-machine-stored-hash machine-0xe26d9f

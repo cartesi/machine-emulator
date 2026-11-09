@@ -736,6 +736,8 @@ where options are:
   --clear-hash-tree[=<mode>]
     clear all cached hash-tree data.
     hashes are rebuilt lazily on the next hash or proof request.
+    use it when loading a stored machine you did not produce, because its
+    cached hash-tree data is outside the state hash and is not checked.
 
     <mode> is one of
         once: clear only after initially creating or loading the machine.

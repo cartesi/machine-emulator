@@ -101,7 +101,7 @@ local output_hashes = {} -- keccak256 leaf of every accepted output, in order
 local output_inputs = {} -- the input index each accepted output came from
 local pending_outputs = {} -- outputs of the current input, buffered until its verdict is known
 
--- On accept, fold the input's outputs into the tree and save its tx-buffer root-hash proof
+-- On accept, fold the input's outputs into the tree and check the outputs Merkle root the guest wrote
 local function flush_accepted(input_index, root_hash)
     for _, output in ipairs(pending_outputs) do
         local leaf = cartesi.keccak256(output)
@@ -112,11 +112,24 @@ local function flush_accepted(input_index, root_hash)
     pending_outputs = {}
     assert(#root_hash == cartesi.HASH_SIZE, "expected outputs Merkle root in tx buffer")
     assert(hash_tree.frontier_get_root_hash(running_frontier) == root_hash, "outputs Merkle root mismatch")
-    local proof = machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
-    assert(proof.root_hash == machine:get_root_hash(), "proof root mismatch")
-    assert(proof.target_hash == cartesi.keccak256(root_hash), "tx buffer does not hold the outputs Merkle root")
-    hash_tree.verify_slice(proof)
-    save_proof(proof, string.format("input-%d-outputs-merkle-root-proof.lua", input_index))
+end
+
+-- Return the data of the machine word that contains the address, and its proof
+local function prove_machine_word(m, address)
+    local log2_word_size = cartesi.HASH_TREE_LOG2_WORD_SIZE
+    local word_address = address & ~((1 << log2_word_size) - 1)
+    return m:read_memory(word_address, 1 << log2_word_size), m:get_proof(word_address, log2_word_size)
+end
+
+-- At epoch close, prove the machine accepted its last input with the outputs Merkle root in the tx buffer
+local function save_outputs_merkle_root_proof(m)
+    local proof = {}
+    proof.iflags_y_data, proof.iflags_y_proof = prove_machine_word(m, cartesi.machine:get_reg_address("iflags_Y"))
+    proof.htif_tohost_data, proof.htif_tohost_proof =
+        prove_machine_word(m, cartesi.machine:get_reg_address("htif_tohost"))
+    proof.tx_buffer_data, proof.tx_buffer_proof = prove_machine_word(m, cartesi.AR_CMIO_TX_BUFFER_START)
+    assert(proof.tx_buffer_data == hash_tree.frontier_get_root_hash(running_frontier), "outputs Merkle root mismatch")
+    save_proof(proof, "outputs-merkle-root-proof.lua")
 end
 
 -- Run the machine until it halts or the expressions run out
@@ -135,6 +148,7 @@ repeat
             end
             local input <close> = io.open(string.format("expression-%d.txt", i), "r")
             if not input then
+                save_outputs_merkle_root_proof(machine)
                 break
             end
             local expr = assert(input:read("l"), string.format("empty expression file: expression-%d.txt", i))

@@ -148,12 +148,10 @@ private:
 
     host_addr get_shadow_reg_host_addr(shadow_registers_what what) const {
         const auto paddr = static_cast<uint64_t>(what);
-        const auto page = paddr & ~PAGE_OFFSET_MASK;
-        const auto offset = paddr & PAGE_OFFSET_MASK;
         if (m_shadow_regs_slice == nullptr) {
-            m_shadow_regs_slice = m_context.log.find_slice(page);
+            m_shadow_regs_slice = m_context.log.find_slice(paddr);
         }
-        return cast_ptr_to_host_addr(m_context.log.get_data(*m_shadow_regs_slice)) + offset;
+        return cast_ptr_to_host_addr(m_context.log.get_data(*m_shadow_regs_slice)) + (paddr & PAGE_OFFSET_MASK);
     }
 
     uint64_t read_pmas_istart(uint64_t index) const {

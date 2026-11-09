@@ -96,15 +96,15 @@ public:
 
 private:
     host_addr paddr_to_haddr(uint64_t paddr) const {
-        return cast_ptr_to_host_addr(m_context.log.find_data(paddr));
+        return cast_ptr_to_host_addr(m_context.log.find_data(paddr, sizeof(uint64_t)));
     }
 
     /// Like paddr_to_haddr, but invalidates the slice's scratch hash so the after-root pass rehashes it.
     host_addr paddr_to_haddr_for_write(uint64_t paddr) const {
-        const auto paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        auto *slice = m_context.log.find_slice(paddr_page);
+        auto *slice = m_context.log.find_slice(paddr);
+        auto *data = m_context.log.find_data(*slice, paddr, sizeof(uint64_t));
         slice->hash = machine_hash{};
-        return cast_ptr_to_host_addr(m_context.log.find_data(*slice, paddr, sizeof(uint64_t)));
+        return cast_ptr_to_host_addr(data);
     }
 
     host_addr uarch_register_haddr(shadow_uarch_state_what what) const {

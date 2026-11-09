@@ -219,7 +219,7 @@ void full_page_equivalence() {
         require(std::memcmp(log.get_data(log.slices[i]), saved[i].data(), 4096) == 0);
     }
     require(log.compute_root_hash() == before);
-    std::memcpy(log.find_data(AR_RAM_START + 88), &replacement, sizeof(replacement));
+    std::memcpy(log.find_data(AR_RAM_START + 88, sizeof(replacement)), &replacement, sizeof(replacement));
     log.find_slice(AR_RAM_START)->hash = machine_hash{};
     require(log.compute_root_hash() == m.get_root_hash());
     std::puts("4,096-byte minimum slice size: page set, contents, siblings and roots equal to page-level reference");

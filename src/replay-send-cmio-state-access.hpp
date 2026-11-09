@@ -150,14 +150,14 @@ private:
 
     uint64_t do_read_shadow_register(shadow_registers_what what) const {
         const auto paddr = static_cast<uint64_t>(what);
-        const auto val = aliased_aligned_read<uint64_t>(m_context.log.find_data(paddr));
+        const auto val = aliased_aligned_read<uint64_t>(m_context.log.find_data(paddr, sizeof(uint64_t)));
         m_context.dumper.read(nullptr, paddr, val);
         return val;
     }
 
     void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
         const auto paddr = static_cast<uint64_t>(what);
-        auto *data = m_context.log.find_data(paddr);
+        auto *data = m_context.log.find_data(paddr, sizeof(uint64_t));
         m_context.log.find_slice(paddr)->hash = machine_hash{};
         m_context.dumper.write(nullptr, paddr, aliased_aligned_read<uint64_t>(data), val);
         aliased_aligned_write<uint64_t>(data, val);
@@ -184,10 +184,9 @@ private:
             return;
         }
         // Sub-page: mutate the logged slice in place so its new hash flows into root reconstruction.
-        const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        auto *slice = m_context.log.find_slice(paddr_page);
-        slice->hash = machine_hash{};
+        auto *slice = m_context.log.find_slice(paddr);
         auto *slice_data = m_context.log.find_data(*slice, paddr, write_length);
+        slice->hash = machine_hash{};
         m_context.dumper.write_bytes(nullptr, paddr, write_length_log2_size,
             std::span<const unsigned char>{slice_data, write_length},
             std::span<const unsigned char>{data, data_length});

@@ -220,7 +220,7 @@ struct step_log {
     }
 
     /// \brief Checked pointer to \p length bytes at physical address \p paddr in \p entry.
-    unsigned char *find_data(const slice_entry &entry, uint64_t paddr, uint64_t length = sizeof(uint64_t)) const {
+    unsigned char *find_data(const slice_entry &entry, uint64_t paddr, uint64_t length) const {
         const uint64_t offset = paddr - entry.address;
         // Subtraction also rejects addresses below the slice, without an overflowing end address.
         if (length > entry.size() || offset > entry.size() - length) {
@@ -230,7 +230,7 @@ struct step_log {
     }
 
     /// \brief Checked pointer to \p length bytes at physical address \p paddr within a witnessed slice.
-    unsigned char *find_data(uint64_t paddr, uint64_t length = sizeof(uint64_t)) const {
+    unsigned char *find_data(uint64_t paddr, uint64_t length) const {
         return find_data(*find_slice(paddr), paddr, length);
     }
 

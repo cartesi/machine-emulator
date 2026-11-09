@@ -5,19 +5,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
-### Fixed
-- Fixed the verification game and the output verification recipe accepting output proofs at aliased indices
-- Fixed the output verification recipe accepting proofs of other tree heights or outside the tx buffer
-
-## [0.23.0-test2] - 2026-11-06
-
-This prerelease changes the C signatures of `cm_create`, `cm_create_new`, and
-`cm_remove_stored`; applications must rebuild against the 0.23 headers and libraries.
-Stored machines use archive version 9 and cannot load version 8 archives directly.
-JSON-RPC clients and servers must both use protocol 0.9.0. Shared-machine recovery
-hardening does not guarantee recovery from power loss during work after the last sync.
-
 ### Added
 - Added computation-hash corpus cases for accepted and rejected inputs at the saturated input budget,
   followed by another input, including uarch periods on both sides of the input boundary
@@ -115,6 +102,8 @@ hardening does not guarantee recovery from power loss during work after the last
 - Fixed `--dump-memory-ranges` passing its directory name to the shell
 - Fixed `cartesi.filesystem.write_file` ignoring errors that only show when the file is closed
 - Fixed `cartesi-machine` ignoring runtime options such as `--clear-hash-tree` with `--no-remote-create`
+- Fixed the verification game and the output verification recipe accepting output proofs at aliased indices
+- Fixed the output verification recipe accepting proofs of other tree heights or outside the tx buffer
 
 ## [0.22.0] - 2026-10-15
 ### Added

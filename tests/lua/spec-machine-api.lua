@@ -202,6 +202,28 @@ for _, variant in ipairs(variants) do
                 expect.equal(source:get_root_hash(), tests_util.calculate_emulator_hash(source))
             end)
 
+            it("should rebuild hashes whatever the stored dirty-page tree holds", function()
+                local length = 0x3000
+                local source <close> = variant.create({ ram = { length = length } })
+                source:write_memory(cartesi.AR_RAM_START, string.rep("A", 0x1000))
+                local root = source:get_root_hash()
+                local _ <close>, dirname = tests_util.scope_temp_pathname()
+                local _ <close> = tests_util.scope_exit(function()
+                    cartesi.machine:remove_stored(dirname)
+                end)
+                source:store(dirname)
+                -- Byte 0 is the initialization flag, then come the root, its two children, and the four leaves.
+                -- A clean root over dirty children stops a page from marking the root dirty.
+                local dpt = string.format("%s/%016x-%x.dpt", dirname, cartesi.AR_RAM_START, length)
+                local data = filesystem.read_file(dpt)
+                expect.equal(#data, 8)
+                filesystem.write_file(data:sub(1, 1) .. "\0\1\1" .. data:sub(5), dpt)
+                local loaded <close> = variant.new()
+                loaded:load(dirname, { clear_hash_tree = true })
+                expect.equal(loaded:get_root_hash(), root)
+                expect.truthy(loaded:verify_hash_tree())
+            end)
+
             it("should reject an empty machine", function()
                 local source <close> = variant.new()
                 expect.fail(function()

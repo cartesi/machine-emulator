@@ -353,6 +353,11 @@ protected:
         assert(m_tree[*get_root_position()] == status_type::clean);
     }
 
+    /// \brief Marks every node dirty, which also keeps the tree marked as initialized
+    void do_mark_dirty() noexcept override {
+        std::ranges::fill(m_tree, status_type::dirty);
+    }
+
     /// \brief Gets storage data
     std::span<const unsigned char> do_get_storage_data() const noexcept override {
         return m_mapped_memory.get_storage_data();

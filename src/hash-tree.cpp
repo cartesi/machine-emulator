@@ -746,8 +746,8 @@ void hash_tree::clear(address_ranges ars) noexcept {
     for (auto &ar : ars) {
         // Mark pages dirty before clearing their hashes, so an interrupted clear never leaves a clean page with a
         // cleared hash in a stored hash tree.
-        // Include padding leaves in ranges whose length is not a power of two.
-        ar.get_dirty_page_tree().mark_dirty_pages_and_up(0, std::bit_ceil(ar.get_length()));
+        // Mark every node, so no previous state of the tree can hide a page from the next update.
+        ar.get_dirty_page_tree().mark_dirty();
         ar.get_dense_hash_tree().clear();
     }
     for (auto &node : m_sparse_nodes) {

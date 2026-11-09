@@ -3124,7 +3124,7 @@ The helpers and the main loop are unchanged, and the script ends by syncing the 
 ```{.lua key=run_rolling_calculator_from_storage include=run-rolling-calculator-from-storage.lua/storage title="run-rolling-calculator-from-storage.lua (excerpt)"}
 ```
 The live machine is loaded from a clone of the template with `cartesi.SHARING_ALL` (the third argument of the `cartesi.machine` constructor), so every modification lands directly on the backing stores of `machine` and there is no store step.
-`commit` syncs `machine` at every accepted boundary, including the initial boundary, so `snapshot` can clone the already-durable directory to `machine.revert` and sync the clone before execution modifies `machine`.
+`commit` closes the machine, syncs `machine`, and reloads it at every accepted boundary, including the initial boundary, so `snapshot` can clone the already-durable directory to `machine.revert` and sync the clone before execution modifies `machine`.
 The backing stores of a loaded directory are locked, so the machine is closed around the clone and reloaded afterward, a cheap operation that copies nothing.
 When a backup exists, `commit` removes it after syncing the accepted machine.
 `revert` discards the rejected state with `remove_stored`, durably renames `machine.revert` as `machine`, and reloads it.

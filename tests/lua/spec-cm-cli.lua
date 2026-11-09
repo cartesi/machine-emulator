@@ -1091,8 +1091,9 @@ dofile(%q)
                 run_ok(flags)
                 local first = operation .. ":" .. tostring(option ~= false) .. "\n"
                 local reload = "load:" .. tostring(option == "--clear-hash-tree=always") .. "\n"
-                -- Creation only reloads during setup; inspection also snapshots and reverts.
-                expect.equal(filesystem.read_file(calls_file), first .. reload:rep(operation == "create" and 1 or 3))
+                -- Creation only reloads during the setup snapshot and commit; inspection also commits, snapshots and
+                -- reverts.
+                expect.equal(filesystem.read_file(calls_file), first .. reload:rep(operation == "create" and 2 or 5))
                 local root = operation == "create" and source:get_root_hash() or template:get_root_hash()
                 expect.equal(filesystem.read_file(initial_hash), root)
                 expect.equal(filesystem.read_file(final_hash), root)
@@ -1983,6 +1984,26 @@ dofile(%q)
                 "--no-init-splash",
                 "--quiet",
             })
+        end
+
+        -- --load=<dir>,sync with --no-remote-destroy: the machine is reloaded after the sync and stays on the server
+        do
+            local srv <close>, address = jsonrpc.spawn_server()
+            assert(srv, "failed to spawn server")
+            local _ <close>, stored = scope_stored_dirname()
+            run_ok({ "--store=" .. stored, "--max-mcycle=0", "--no-init-splash", "--quiet" })
+            run_ok({
+                "--remote-address=" .. address,
+                "--load=" .. stored .. ",sharing:all,sync",
+                "--revert-mode=none",
+                "--no-remote-destroy",
+                "--max-mcycle=1000",
+                "--quiet",
+            })
+            local remote_hash = srv:get_root_hash()
+            srv:destroy()
+            local synced <close> = cartesi.machine(stored)
+            expect.equal(synced:get_root_hash(), remote_hash)
         end
     end)
 

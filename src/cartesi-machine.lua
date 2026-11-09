@@ -741,7 +741,8 @@ where options are:
 
     <mode> is one of
         once: clear only after initially creating or loading the machine.
-        always: also clear when reloading during stored snapshots and reverts.
+        always: also clear when reloading during stored snapshots, commits,
+            and reverts.
     the default mode is "once".
 
   --max-mcycle=<number>
@@ -942,8 +943,9 @@ where options are:
         permanent storage before exiting. with a sharing mode other than "none"
         there is no final store, and process exit does not guarantee the
         modifications are durable on disk. even queries such as computing the
-        root hash modify the backing stores. sync fsyncs every backing store
-        file, the directory, and its parent before exit.
+        root hash modify the backing stores, so sync destroys the machine,
+        fsyncs every backing store file, the directory, and its parent, and
+        loads the machine again before exit.
         requires a sharing mode other than "none".
 
   --store=<directory>[,<key>:<value>[,...]...]
@@ -3877,7 +3879,10 @@ end
 
 function revert_stored.__index:commit()
     local m = self.machine
+    -- A machine using the stored files changes them, so it is destroyed for the sync and loaded again
+    m:destroy()
     m:sync_stored(self.machine_directory)
+    m:load(self.machine_directory, self.runtime_config, cartesi.SHARING_ALL)
     if self.backup_directory then
         m:remove_stored(self.backup_directory)
         self.backup_directory = nil
@@ -4880,7 +4885,10 @@ if cmdline.assert_rolling_template then assert_rolling_template(machine, cmdline
 if cmdline.store_dir then store_machine(machine, initial_config, cmdline.store_dir, cmdline.store_sharing) end
 if cmdline.load_sync then
     stderr("Syncing machine: please wait\n")
+    -- A machine using the stored files changes them, so it is destroyed for the sync and loaded again
+    machine:destroy()
     machine:sync_stored(cmdline.load_dir)
+    machine:load(cmdline.load_dir, runtime_config, cmdline.load_sharing)
 end
 if backup:has_snapshot() then backup:revert() end
 if not cmdline.remote_address or cmdline.remote_destroy then machine:destroy() end

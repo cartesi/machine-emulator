@@ -1867,7 +1867,7 @@ end
 -- docs:end prove_state_transition
 
 -- Returns the data and proof of the word that contains the address (registers may sit within a word).
-local function get_machine_leaf(machine, address)
+local function prove_machine_word(machine, address)
     local target_address = address & ~WORD_MASK
     return machine:read_memory(target_address, WORD_SIZE),
         machine:get_proof(target_address, cartesi.HASH_TREE_LOG2_WORD_SIZE)
@@ -1877,9 +1877,9 @@ end
 -- the word whose data is the outputs Merkle root.
 -- docs:begin prove_outputs_merkle_root
 local function get_outputs_merkle_root_proof(machine)
-    local iflags_y_data, iflags_y_proof = get_machine_leaf(machine, IFLAGS_Y_ADDRESS)
-    local htif_tohost_data, htif_tohost_proof = get_machine_leaf(machine, HTIF_TOHOST_ADDRESS)
-    local tx_buffer_data, tx_buffer_proof = get_machine_leaf(machine, CMIO_TX_BUFFER_ADDRESS)
+    local iflags_y_data, iflags_y_proof = prove_machine_word(machine, IFLAGS_Y_ADDRESS)
+    local htif_tohost_data, htif_tohost_proof = prove_machine_word(machine, HTIF_TOHOST_ADDRESS)
+    local tx_buffer_data, tx_buffer_proof = prove_machine_word(machine, CMIO_TX_BUFFER_ADDRESS)
     return {
         iflags_y_data = iflags_y_data,
         iflags_y_proof = iflags_y_proof,

@@ -1090,6 +1090,14 @@ local function clone_loaded_directory(machine, directory, clone_directory)
     return clone:move()
 end
 
+-- A directory can be synced only while no machine uses it, so its machine is destroyed around the sync
+-- and reloaded after.
+local function sync_loaded_directory(machine, directory)
+    machine:destroy()
+    machine:sync_stored(directory)
+    machine:load(directory, nil, cartesi.SHARING_ALL)
+end
+
 -- Removes a stored machine that a crash or an earlier pair may have left, possibly incomplete.
 local function remove_leftover_stored_machine(directory)
     cartesi.machine:remove_stored(directory, cartesi.REMOVE_FORCED)
@@ -2468,7 +2476,7 @@ function stored_player_methods:commit_epoch_state(pair, builder, outputs)
         store_outputs(self, outputs)
     end
     local root_hash = pair.machine:get_root_hash()
-    pair.machine:sync_stored(pair.directory)
+    sync_loaded_directory(pair.machine, pair.directory)
     store_epoch_state(self, root_hash, files, builder.pad_bundle)
 end
 
@@ -2526,7 +2534,7 @@ function stored_player_methods:seal_epoch_state(pair)
     end
     local directory = self.epoch_directory
     -- Sealing called the machine after the last boundary commit, so its directory is synced again.
-    pair.machine:sync_stored(pair.directory)
+    sync_loaded_directory(pair.machine, pair.directory)
     store_forest(self.mcycle_forest, directory, "mcycle", MCYCLE_FOREST_FILE)
     store_epoch_state(self, self.final_state_hash, {
         outputs_frontier = self.state_files.outputs_frontier,

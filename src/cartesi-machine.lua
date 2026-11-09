@@ -450,7 +450,7 @@ where options are:
         format:<lua|json>
         report:<filename-pattern>
         outputs_merkle_root:<filename-pattern>
-        outputs_merkle_root_proof:<filename-pattern>
+        outputs_merkle_root_proof:<filename>
         check_outputs_merkle_root:<boolean>
         print_input_state_hashes
 
@@ -530,7 +530,7 @@ where options are:
 
         format (optional)
         selects the format of output proofs, the previous epoch's last output
-        proof, and outputs Merkle root proofs. when omitted, it is inferred from
+        proof, and the outputs Merkle root proof. when omitted, it is inferred from
         the filename extension (.json/.lua), defaulting to Lua.
 
         report (default: "input-%%i-report-%%o.bin")
@@ -541,10 +541,14 @@ where options are:
         the pattern that derives the name of the file written for the outputs
         Merkle root after input %%i.
 
-        outputs_merkle_root_proof (default: "input-%%i-outputs-merkle-root-proof.<format>")
-        write the proof that the outputs Merkle root occupied the tx buffer
-        when input %%i was accepted. serialized according to <format>. when left
-        at the default, its extension tracks <format>.
+        outputs_merkle_root_proof (default: "")
+        when the epoch ends after its last input, write to this file the proof
+        that its final state is a manual yield with the accepted reason whose tx
+        buffer holds the outputs Merkle root. the proof holds the iflags_Y,
+        htif_tohost, and tx buffer words with their proofs, under the machine's
+        hash function. serialized according to <format>. an epoch that ends at
+        a halt, mcycle overflow, exception, or unexpected manual yield writes no
+        proof.
 
         check_outputs_merkle_root (default: true)
         check that the outputs Merkle root maintained by the host matches
@@ -2062,9 +2066,7 @@ options = {
             r.output_proof = r.output_proof or ("output-%o-input-%i-proof." .. (r.format or "lua"))
             r.report = r.report or "input-%i-report-%o.bin"
             r.outputs_merkle_root = r.outputs_merkle_root or "input-%i-outputs-merkle-root.bin"
-            -- Like output_proof, the default extension tracks <format> while an explicit value is left as-is.
-            r.outputs_merkle_root_proof = r.outputs_merkle_root_proof
-                or ("input-%i-outputs-merkle-root-proof." .. (r.format or "lua"))
+            r.outputs_merkle_root_proof = r.outputs_merkle_root_proof or ""
             if r.check_outputs_merkle_root == nil then r.check_outputs_merkle_root = true end
             cmdline.cmio_advance = r
             return true
@@ -3341,10 +3343,22 @@ local function save_cmio_outputs_merkle_root(advance, data)
     return save_cmio_data(advance, data, advance.outputs_merkle_root)
 end
 
--- Serializes a Proof to a string in the resolved format. Lua keeps hashes raw (like
--- machine:get_proof), JSON base64-encodes them via the "Proof" schema.
-local function serialize_proof(proof, format)
-    if format == "json" then return cartesi.tojson(proof, 2, "Proof") .. "\n" end
+-- The outputs Merkle root proof holds the data and proof of the words the blockchain checks.
+local PROOF_SCHEMAS = {
+    OutputsMerkleRootProof = {
+        iflags_y_data = "Base64",
+        iflags_y_proof = "Proof",
+        htif_tohost_data = "Base64",
+        htif_tohost_proof = "Proof",
+        tx_buffer_data = "Base64",
+        tx_buffer_proof = "Proof",
+    },
+}
+
+-- Serializes a proof to a string in the resolved format. Lua keeps hashes raw (like
+-- machine:get_proof), JSON base64-encodes them via the schema (default "Proof").
+local function serialize_proof(proof, format, schema)
+    if format == "json" then return cartesi.tojson(proof, 2, schema or "Proof", PROOF_SCHEMAS) .. "\n" end
     local parts = {}
     util.dump_table(proof, {
         write = function(_, ...)
@@ -3600,17 +3614,27 @@ local function save_cmio_output_proofs(advance)
     end
 end
 
--- Writes the proof, in the machine state in which the just-accepted input was accepted, that the
--- outputs Merkle root occupied the first word of the tx buffer (its 32 bytes are exactly one
--- tree word). This ties the outputs Merkle root, against which "output_proof" proves each output,
--- back into the machine state hash. Must be called while the machine still sits at the accept yield.
-local function save_cmio_outputs_merkle_root_proof(advance, proof)
+-- Returns the data of the machine word that holds the address, and the word's proof.
+local function prove_machine_word(machine, address)
+    local log2_word_size = cartesi.HASH_TREE_LOG2_WORD_SIZE
+    local word_address = address & ~((1 << log2_word_size) - 1)
+    return machine:read_memory(word_address, 1 << log2_word_size), machine:get_proof(word_address, log2_word_size)
+end
+
+-- Writes the outputs Merkle root proof of the epoch's final state, which sits at the accepted manual
+-- yield of its last accepted input. Its iflags_Y and htif_tohost words show that yield, and its first
+-- tx-buffer word holds the outputs Merkle root against which "output_proof" proves each output.
+local function save_cmio_outputs_merkle_root_proof(advance, machine)
     if advance.outputs_merkle_root_proof == "" then return end
-    local values = { i = advance.input_file_index }
-    local name = instantiate_filename(advance.outputs_merkle_root_proof, values)
-    local format = resolve_format(advance.format, advance.outputs_merkle_root_proof)
+    local proof = {}
+    proof.iflags_y_data, proof.iflags_y_proof = prove_machine_word(machine, cartesi.machine:get_reg_address("iflags_Y"))
+    proof.htif_tohost_data, proof.htif_tohost_proof =
+        prove_machine_word(machine, cartesi.machine:get_reg_address("htif_tohost"))
+    proof.tx_buffer_data, proof.tx_buffer_proof = prove_machine_word(machine, cartesi.AR_CMIO_TX_BUFFER_START)
+    local name = advance.outputs_merkle_root_proof
+    local format = resolve_format(advance.format, name)
     stderr("Storing %s\n", name)
-    fs.write_file(serialize_proof(proof, format), name)
+    fs.write_file(serialize_proof(proof, format, "OutputsMerkleRootProof"), name)
 end
 
 local function save_cmio_hashes_and_indices(advance, hashes)
@@ -3638,7 +3662,7 @@ end
 -- are saved, added to the current hash-tree frontier (for the root check), and accumulated for the
 -- end-of-epoch proofs. Otherwise (a reject, halt, or exception) the outputs go to their own files
 -- and never enter the tree.
-local function flush_pending_outputs(machine, advance, yield_reason, data)
+local function flush_pending_outputs(advance, yield_reason, data)
     if is_rx_accepted(yield_reason) then
         local hashes = {}
         for _, output in ipairs(advance.pending_outputs) do
@@ -3657,13 +3681,6 @@ local function flush_pending_outputs(machine, advance, yield_reason, data)
                 advance.input_file_index
             )
         end
-        -- The accept-state proof uses the machine's hash function.
-        local proof = machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
-        assert(
-            proof.target_hash == cartesi[initial_config.hash_tree.hash_function](data),
-            "tx buffer does not hold the outputs Merkle root"
-        )
-        save_cmio_outputs_merkle_root_proof(advance, proof)
         save_cmio_hashes_and_indices(advance, hashes)
     else
         for position, output in ipairs(advance.pending_outputs) do
@@ -4657,9 +4674,9 @@ local function run_advance_state_input(builder, runner, input_file_index, revert
     if is_rx_rejected(yield_reason) then
         backup:revert()
         builder:check_revert(revert_root_hash, runner:get_root_hash())
-        flush_pending_outputs(runner, advance, yield_reason, data)
+        flush_pending_outputs(advance, yield_reason, data)
     else
-        flush_pending_outputs(runner, advance, yield_reason, data)
+        flush_pending_outputs(advance, yield_reason, data)
         -- acceptance and sticky stops retain the running machine
         backup:commit()
     end
@@ -4732,6 +4749,7 @@ local function run_advance_state_epoch(builder, runner)
             end
             -- Last input provided is epoch's last
             save_cmio_output_proofs(advance)
+            save_cmio_outputs_merkle_root_proof(advance, runner)
             break
         end
         builder:persist_epoch_state(runner)

@@ -2164,8 +2164,8 @@ if arg[1] then
     end
     local function stored_layout(input_count)
         return string.format(
-            "entries,forests,frontier-%d.json,inputs,machine,machine-cache-%d.json,outputs,outputs-frontier-%d.json,"
-                .. "outputs.log,state.json",
+            "entries,forests,frontier-%d.json,inputs,machine,machine-cache-%d.json,machine.revert,outputs,"
+                .. "outputs-frontier-%d.json,outputs.log,state.json",
             input_count,
             input_count,
             input_count
@@ -2240,12 +2240,13 @@ if arg[1] then
         end
         local input_path = fixture_input(inputs[1])
         for _, case in ipairs({
-            -- The snapshot's sync fails before the input runs.
+            -- The backup's sync fails after the state records the input, so reopening keeps the input.
             {
                 "sync_stored",
                 function(directory)
                     return directory:find("%.revert$")
                 end,
+                1,
             },
             -- The input fails after its delivery has changed the machine.
             {
@@ -2253,6 +2254,7 @@ if arg[1] then
                 function()
                     return true
                 end,
+                0,
             },
             -- The new entry's sync fails after the input has run, before the state records it.
             {
@@ -2260,6 +2262,7 @@ if arg[1] then
                 function(directory)
                     return directory:find("/entries/1$")
                 end,
+                0,
             },
         }) do
             local _ <close>, epoch_directory = new_scope_epoch_directory()
@@ -2272,16 +2275,23 @@ if arg[1] then
                     tostring(failure)
                 )
             end
+            local recorded = case[3]
+            local state = cartesi.fromjson(fs.read_file(epoch_directory .. "/state.json"))
             do
                 local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
-                assert(reopened.input_count == 0, "a failed input was recorded")
+                assert(reopened.input_count == recorded, "reopening did not keep the recorded inputs")
                 assert(
-                    reopened.epoch_pair.machine:get_root_hash() == initial_state_hash,
+                    reopened.epoch_pair.machine:get_root_hash() == cartesi.fromhex(state.root_hash),
                     "reopening did not restore the recorded boundary"
+                )
+                assert(
+                    recorded > 0 or state.root_hash == cartesi.tohex(initial_state_hash),
+                    "a failed input was recorded"
                 )
             end
             local layout, entries = list_epoch_directory(epoch_directory)
-            assert(layout == stored_layout(0) and entries == "0", "reopening left " .. layout)
+            assert(layout == stored_layout(recorded), "reopening left " .. layout)
+            assert(entries == (recorded > 0 and "0,1" or "0"), "reopening left entries " .. entries)
         end
         -- A temporary pair that fails to load removes its clone.
         local _ <close>, epoch_directory = new_scope_epoch_directory()

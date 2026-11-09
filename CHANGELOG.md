@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed the `sync` key of `--load` and the commits of `--revert-mode=stored` to reload the machine around the sync
 - Changed `--revert-mode=stored` to keep a synced copy of the last committed state in `<directory>.revert`
 - Changed `--revert-mode=stored` to remove `<directory>.revert` on a clean exit
+- Changed the PRT stored player to keep a synced copy of its last recorded boundary in `machine.revert`
 
 ### Removed
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`

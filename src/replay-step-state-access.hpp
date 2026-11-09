@@ -177,7 +177,7 @@ private:
 
     void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
         const auto haddr = get_shadow_reg_host_addr(what);
-        m_shadow_regs_slice->hash = machine_hash{}; // written slice: rehash on the after-root pass
+        m_shadow_regs_slice->hash = machine_hash{}; // so the after-root pass rehashes the slice
         m_context.dumper.write(nullptr, static_cast<uint64_t>(what), aliased_aligned_read<uint64_t>(haddr), val);
         aliased_aligned_write<uint64_t>(haddr, val);
     }
@@ -197,8 +197,8 @@ private:
     /// \param paddr The physical address
     /// \return Host address
     host_addr do_get_faddr(uint64_t paddr, uint64_t /* pma_index */ = 0) const {
-        // This assumes the corresponding page has been touched
-        // (replay_step_state_access makes sure of it for any address we try to convert)
+        // record_step_state_access touched the page of every address converted here;
+        // find_slice throws if the log lacks it
         return cast_ptr_to_host_addr(m_context.log.get_data(*m_context.log.find_slice(paddr))) +
             (paddr & PAGE_OFFSET_MASK);
     }
@@ -225,7 +225,7 @@ private:
 
     std::pair<uint64_t, uint64_t> do_read_pma_bounds(uint64_t index) const {
         assert(index < PMA_MAX);
-        // Preserve snapshots already selected by lookup or TLB validation.
+        // An entry read_pma already built has these bounds; otherwise read them from the log.
         auto &mock = m_context.ars[index];
         if (!std::holds_alternative<std::monostate>(mock)) {
             const auto &ar = get_mock_address_range(mock, [](const char *err) { THROW(std::runtime_error, err); });
@@ -240,7 +240,7 @@ private:
             return sentinel;
         }
         // record_step_state_access will have recorded the access to istart and
-        // ilength in its implementation of read_pmas_entry.
+        // ilength in its implementation of read_pma.
         const uint64_t istart = read_pmas_istart(index);
         const uint64_t ilength = read_pmas_ilength(index);
         const auto i = static_cast<size_t>(index);

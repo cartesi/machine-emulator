@@ -334,4 +334,28 @@ function _M.find_drive(config, what, label)
     return nil, string.format("missing %s %s", label, what)
 end
 
+-- Splits an HTIF tohost value into its device, command, reason, and data fields.
+function _M.decode_tohost(tohost)
+    local dev = (tohost & cartesi.HTIF_DEV_MASK) >> cartesi.HTIF_DEV_SHIFT
+    local cmd = (tohost & cartesi.HTIF_CMD_MASK) >> cartesi.HTIF_CMD_SHIFT
+    local reason = (tohost & cartesi.HTIF_REASON_MASK) >> cartesi.HTIF_REASON_SHIFT
+    local data = (tohost & cartesi.HTIF_DATA_MASK) >> cartesi.HTIF_DATA_SHIFT
+    return dev, cmd, reason, data
+end
+
+-- Places a value in its HTIF field, rejecting values that do not fit.
+local function encode_htif_field(value, shift, mask, name)
+    local field = value << shift
+    assert(field >> shift == value and field & ~mask == 0, string.format("HTIF %s out of range", name))
+    return field
+end
+
+-- Builds an HTIF fromhost value from its device, command, reason, and data fields.
+function _M.encode_fromhost(dev, cmd, reason, data)
+    return encode_htif_field(dev, cartesi.HTIF_DEV_SHIFT, cartesi.HTIF_DEV_MASK, "dev")
+        | encode_htif_field(cmd, cartesi.HTIF_CMD_SHIFT, cartesi.HTIF_CMD_MASK, "cmd")
+        | encode_htif_field(reason, cartesi.HTIF_REASON_SHIFT, cartesi.HTIF_REASON_MASK, "reason")
+        | encode_htif_field(data, cartesi.HTIF_DATA_SHIFT, cartesi.HTIF_DATA_MASK, "data")
+end
+
 return _M

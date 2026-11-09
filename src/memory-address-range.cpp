@@ -17,7 +17,6 @@
 #include "memory-address-range.hpp"
 
 #include <algorithm>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -76,7 +75,7 @@ memory_address_range::memory_address_range(const std::string &description, uint6
         !backing_store.dht_filename.empty() && backing_store.shared} {
     if (backing_store.mark_pages_dirty || backing_store.dht_filename.empty() || backing_store.dpt_filename.empty()) {
         // Rebuild the entire dense tree when requested or when its backing files cannot be reused.
-        m_dpt.mark_dirty_pages_and_up(0, std::bit_ceil(length));
+        m_dpt.mark_dirty();
     }
 } catch (const std::exception &e) {
     throw std::invalid_argument{std::string{e.what()}.append(" when initializing ").append(description)};

@@ -192,6 +192,9 @@ protected:
     /// \detail The derived class is free to ignore the operation
     virtual void do_clean() noexcept = 0;
 
+    /// \brief Marks every node of the tree dirty, whatever its previous state
+    virtual void do_mark_dirty() noexcept = 0;
+
     /// \brief Gets storage data
     virtual std::span<const unsigned char> do_get_storage_data() const noexcept = 0;
 
@@ -294,6 +297,11 @@ public:
         do_clean();
     }
 
+    /// \brief Marks every node dirty, whatever its previous state
+    void mark_dirty() noexcept {
+        do_mark_dirty();
+    }
+
     /// \brief Tells if the dirty page tree is clean
     /// \returns True if root node is clean, false otherwise
     bool is_clean() const noexcept {
@@ -362,6 +370,10 @@ protected:
     }
 
     void do_clean() noexcept override {
+        ;
+    }
+
+    void do_mark_dirty() noexcept override {
         ;
     }
 

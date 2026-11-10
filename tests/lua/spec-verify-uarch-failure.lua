@@ -819,6 +819,51 @@ describe("verify_reset_uarch at a rejected input", function()
     end
 end)
 
+describe("verify_step_uarch on a misaligned uarch pc", function()
+    -- A before-state with a misaligned uarch pc, and a log of the reads that precede the instruction fetch
+    local function new_misaligned_case()
+        local machine <close> = build_default_machine()
+        machine:write_reg("uarch_pc", machine:read_reg("uarch_pc") + 2)
+        local root_hash = machine:get_root_hash()
+        local log2_word_size = cartesi.HASH_TREE_LOG2_WORD_SIZE
+        local function read_access(reg)
+            local address = machine:get_reg_address(reg)
+            local word_address = address & ~((1 << log2_word_size) - 1)
+            local proof = machine:get_proof(word_address, log2_word_size)
+            return {
+                type = "read",
+                address = address,
+                log2_size = 3,
+                read_hash = proof.target_hash,
+                read = machine:read_memory(word_address, 1 << log2_word_size),
+                sibling_hashes = proof.sibling_hashes,
+            }
+        end
+        local log = {
+            log_type = { has_annotations = false, has_large_data = false },
+            accesses = { read_access("uarch_cycle"), read_access("uarch_halt"), read_access("uarch_pc") },
+        }
+        return root_hash, log
+    end
+
+    it("should reject the log instead of aborting", function()
+        local root_hash, log = new_misaligned_case()
+        expect.fail(function()
+            cartesi.machine:verify_step_uarch(root_hash, log)
+        end, "misaligned readUint32 address")
+    end)
+
+    it("should reject the log through a JSON-RPC server, which keeps serving", function()
+        local jsonrpc = require("cartesi.jsonrpc")
+        local remote <close> = jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN)
+        local root_hash, log = new_misaligned_case()
+        expect.fail(function()
+            remote:verify_step_uarch(root_hash, log)
+        end, "misaligned readUint32 address")
+        expect.truthy(remote:get_server_version())
+    end)
+end)
+
 describe("verification through a JSON-RPC machine object", function()
     local jsonrpc = require("cartesi.jsonrpc")
     local sibling_count_error = "access sibling hash count is inconsistent with proof size"

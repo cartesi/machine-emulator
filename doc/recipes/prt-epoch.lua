@@ -1,5 +1,7 @@
 -- One accumulating epoch, followed by its sealed dispute. Input and seal logs
--- share one ordered stream, so an input after the seal belongs to the next player.
+-- share one ordered stream, so an input after the seal, or past the epoch's input limit,
+-- belongs to a later player.
+local cartesi = require("cartesi")
 local fs = require("cartesi.filesystem")
 local eth = require("prt-ethereum")
 local cast = require("prt-cast")
@@ -7,6 +9,9 @@ local bridge = require("prt-bridge")
 local log_history = require("prt-log-history")
 local M = {}
 local methods = {}
+
+-- The consensus seals at most this many pending inputs per epoch.
+local MAX_INPUTS_PER_EPOCH = 1 << cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
 
 local function key(log)
     return log.blockHash .. ":" .. log.logIndex
@@ -64,7 +69,7 @@ function methods:poll()
         local event = self.abi:event(log)
         if event and event.name == "InputAdded" and log.address == self.input_box and event.appContract == self.app then
             local index = eth.small(event.index)
-            if not self.dispute and index >= self.input_begin then
+            if not self.dispute and index >= self.input_begin and index < self.input_begin + MAX_INPUTS_PER_EPOCH then
                 assert(index == self.input_begin + #self.inputs, "input stream has a gap or duplicate")
                 -- The player reads the input from a file that lasts only for its event. The listener
                 -- keeps the chain's bytes, which proofs must encode.

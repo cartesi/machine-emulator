@@ -1003,7 +1003,7 @@ local function frontier_forest_get_node_hash(forest, position, height)
     return descend_tree(forest, forest, top, forest.height, position, height)
 end
 
--- Expands an opaque leaf of a full forest using a full forest of the same height and
+-- Expands a subtree of a full forest using a full forest of the same height and
 -- root hash. Position is a logical leaf address. Repeated entries share the expansion,
 -- including when the selected position lies in an implicit suffix. Coverage and cached
 -- ancestor hashes do not change. Stored trees on the path load as in a query. All checks
@@ -1020,13 +1020,18 @@ local function frontier_forest_expand_leaf(forest, position, subtree)
     assert(is_tree(replacement), "the replacement leaf is opaque")
     while true do
         local tree = load_value(forest, container, key, container_height)
-        if not is_tree(tree) then
-            assert(container_height == height, "leaf height mismatch")
-            assert(tree == replacement.hash, "leaf hash mismatch")
+        if container_height == height then
+            assert(get_value_hash(tree) == replacement.hash, "leaf hash mismatch")
+            merge_node(
+                forest,
+                { container = { replacement }, key = 1, height = height },
+                { container = container, key = key, height = height }
+            )
             if forest.directory then store_expansion(forest, replacement) end
             container[key] = replacement
             return
         end
+        assert(is_tree(tree) and container_height > height, "leaf height mismatch")
         if tree.kind == "mixed" then
             local half = 1 << (tree.height - 1)
             if position < half then

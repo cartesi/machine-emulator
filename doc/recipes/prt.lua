@@ -1463,21 +1463,67 @@ local function new_null_computation_hash_builder()
     }
 end
 
-local function mcycle_computation_hash_push_collected(builder, collected)
+-- Rejected inputs sample the saved boundary, even when halt takes precedence over the yield.
+local function get_mcycle_sample_hash(machine)
+    if
+        machine:read_reg("iflags_Y") ~= 0
+        and machine:read_reg("htif_tohost_dev") == cartesi.HTIF_DEV_YIELD
+        and machine:read_reg("htif_tohost_cmd") == cartesi.HTIF_YIELD_CMD_MANUAL
+        and is_rx_rejected(machine:read_reg("htif_tohost_reason"))
+    then
+        return machine:read_revert_root_hash()
+    end
+    return machine:get_root_hash()
+end
+
+local function new_mcycle_pad_bundle(state_hash, bundle_height, expected_hash)
+    local bundle = hash_tree.frontier_forest(bundle_height, "keccak256")
+    hash_tree.frontier_forest_pad_back(bundle, state_hash)
+    assert(hash_tree.frontier_forest_get_root_hash(bundle) == expected_hash, "mcycle padding bundle hash mismatch")
+    return bundle
+end
+
+local function mcycle_computation_hash_push_collected(builder, machine, collected)
     local count = #collected.hashes
     local at_fixed_point = is_at_fixed_point(collected.break_reason)
     if at_fixed_point then
         -- The last root describes the fixed-point repetition, not additional coverage.
-        builder.pad_bundle = collected.hashes[count]
         count = count - 1
     end
     assert(
         count <= builder.max_bundles_per_input - builder.input_bundle_count,
         "mcycle collection exceeds the input's bundle capacity"
     )
-    hash_tree.frontier_forest_append(builder.frontier, collected.hashes, 1, count + 1, builder.bundle_height)
+    local final_bundle, pad_bundle
+    if collected.final_bundle_sibling_hashes or at_fixed_point then
+        local state_hash = get_mcycle_sample_hash(machine)
+        if collected.final_bundle_sibling_hashes then
+            final_bundle = hash_tree.frontier_forest({
+                target_address = (1 << builder.bundle_height) - 1,
+                log2_target_size = 0,
+                log2_root_size = builder.bundle_height,
+                target_hash = state_hash,
+                root_hash = collected.hashes[count],
+                sibling_hashes = collected.final_bundle_sibling_hashes,
+            }, "keccak256")
+        end
+        if at_fixed_point then
+            pad_bundle = new_mcycle_pad_bundle(state_hash, builder.bundle_height, collected.hashes[#collected.hashes])
+        end
+    end
+    hash_tree.frontier_forest_append(
+        builder.frontier,
+        collected.hashes,
+        1,
+        final_bundle and count or count + 1,
+        builder.bundle_height
+    )
+    if final_bundle then
+        hash_tree.frontier_forest_push_back(builder.frontier, final_bundle)
+    end
     builder.input_bundle_count = builder.input_bundle_count + count
     if at_fixed_point then
+        builder.pad_bundle = pad_bundle
         local pad_count = builder.max_bundles_per_input - builder.input_bundle_count
         hash_tree.frontier_forest_pad_back(builder.frontier, builder.pad_bundle, pad_count, builder.bundle_height)
         builder.input_bundle_count = builder.max_bundles_per_input
@@ -1490,7 +1536,11 @@ local function mcycle_computation_hash_begin_epoch(builder, machine)
     local collected =
         machine:collect_mcycle_root_hashes(machine:read_reg("mcycle"), builder.log2_period, 0, builder.bundle_height)
     assert(is_at_fixed_point(collected.break_reason), "mcycle computation hash started outside a fixed point")
-    builder.pad_bundle = collected.hashes[#collected.hashes]
+    builder.pad_bundle = new_mcycle_pad_bundle(
+        get_mcycle_sample_hash(machine),
+        builder.bundle_height,
+        collected.hashes[#collected.hashes]
+    )
 end
 
 local function mcycle_computation_hash_begin_input(builder, _, epoch_input_offset)
@@ -1516,7 +1566,7 @@ local function mcycle_computation_hash_run(builder, machine, mcycle_end)
             builder.bundle_height,
             collected.partial_bundle
         )
-        mcycle_computation_hash_push_collected(builder, collected)
+        mcycle_computation_hash_push_collected(builder, machine, collected)
     until not is_target_mcycle(collected.break_reason) or chunk_end == mcycle_end
     builder.mcycle_phase = collected.mcycle_phase
     builder.partial_bundle = collected.partial_bundle
@@ -2448,7 +2498,10 @@ local function store_epoch_state(self, root_hash, files, pad_bundle)
         machine_cache = files.machine_cache,
     }
     if files.epoch_builder then
-        state.epoch_builder = { frontier = files.epoch_builder, pad_bundle = cartesi.tohex(pad_bundle) }
+        state.epoch_builder = {
+            frontier = files.epoch_builder,
+            pad_bundle = cartesi.tohex(hash_tree.frontier_forest_get_root_hash(pad_bundle)),
+        }
     else
         state.mcycle_forest = files.mcycle_forest
         state.outputs_merkle_root_proof = self.outputs_merkle_root_proof
@@ -2789,7 +2842,11 @@ local function reopen_epoch_directory(self)
             forests_directory .. "/mcycle",
             directory .. "/" .. state.epoch_builder.frontier
         )
-        builder.pad_bundle = cartesi.fromhex(state.epoch_builder.pad_bundle)
+        builder.pad_bundle = new_mcycle_pad_bundle(
+            get_mcycle_sample_hash(self.epoch_pair.machine),
+            builder.bundle_height,
+            cartesi.fromhex(state.epoch_builder.pad_bundle)
+        )
         builder.input_bundle_count = 0
         self.epoch_builder = builder
         return

@@ -1368,6 +1368,47 @@ describe("hash-tree.lua", function()
             end
         end)
 
+        for _, stored in ipairs({ false, true }) do
+            it("merges a retained proof with an expansion " .. (stored and "after storing" or "in memory"), function()
+                local _ <close>, directory = new_scope_directory()
+                local leaves = make_leaves(MAX4)
+                local reference = hash_tree.frontier_forest(H4, "keccak256")
+                hash_tree.frontier_forest_append(reference, leaves)
+                local forest = hash_tree.frontier_forest({
+                    target_address = MAX4 - 1,
+                    log2_target_size = 0,
+                    log2_root_size = H4,
+                    target_hash = leaves[MAX4],
+                    root_hash = hash_tree.frontier_forest_get_root_hash(reference),
+                    sibling_hashes = hash_tree.frontier_forest_get_siblings(reference, MAX4 - 1, 0),
+                }, "keccak256")
+                local frontier_path = directory .. "/frontier.json"
+                if stored then
+                    hash_tree.frontier_forest_store(forest, directory, frontier_path)
+                    forest = hash_tree.frontier_forest_load(directory, frontier_path)
+                end
+                local left = hash_tree.frontier_forest(H4, "keccak256")
+                hash_tree.frontier_forest_append(left, leaves, 1, MAX4 // 2 + 1)
+                hash_tree.frontier_forest_push_back(
+                    left,
+                    hash_tree.frontier_forest_get_node_hash(reference, MAX4 // 2, H4 - 1),
+                    H4 - 1
+                )
+                hash_tree.frontier_forest_expand_leaf(forest, 0, left)
+                if stored then
+                    forest = hash_tree.frontier_forest_load(directory, frontier_path)
+                end
+                expect.equal(hash_tree.frontier_forest_get_node_hash(forest, 0, 0), leaves[1])
+                expect.equal(hash_tree.frontier_forest_get_node_hash(forest, MAX4 - 1, 0), leaves[MAX4])
+                expect.equal(hash_tree.frontier_forest_get_node_hash(forest, MAX4 // 2, 0), nil)
+                hash_tree.frontier_forest_expand_leaf(forest, 0, reference)
+                if stored then
+                    forest = hash_tree.frontier_forest_load(directory, frontier_path)
+                end
+                expect_matches_reference(forest, leaves)
+            end)
+        end
+
         it("rejects invalid expansions before mutation", function()
             local leaves = make_leaves(MAX4)
             local bundle = hash_tree.frontier_forest(2, "keccak256")
@@ -1408,9 +1449,7 @@ describe("hash-tree.lua", function()
                 hash_tree.frontier_forest_expand_leaf(opaque, 0, opaque)
             end, "replacement leaf is opaque")
             hash_tree.frontier_forest_expand_leaf(forest, 0, bundle)
-            expect.fail(function()
-                hash_tree.frontier_forest_expand_leaf(forest, 0, bundle)
-            end, "leaf height mismatch")
+            hash_tree.frontier_forest_expand_leaf(forest, 0, bundle)
             local expected = {}
             for i = 1, MAX4 do
                 expected[i] = leaves[((i - 1) % 4) + 1]

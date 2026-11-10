@@ -100,12 +100,17 @@ local function new_fake_machine(root_hash, mcycle, counts, outputs_root)
         self.root_hash = data
     end
     function machine:collect_mcycle_root_hashes(_, _, phase, bundle_height)
-        -- Cache-only fixtures use readable labels; forests require actual hashes.
-        local hash = #self.root_hash == 32 and self.root_hash or keccak(self.root_hash)
-        for _ = 1, bundle_height do
+        local hash, siblings = self.root_hash, {}
+        for level = 1, bundle_height do
+            siblings[level] = hash
             hash = keccak(hash, hash)
         end
-        return { hashes = { hash }, mcycle_phase = phase, break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY }
+        return {
+            hashes = { hash, hash },
+            final_bundle_sibling_hashes = siblings,
+            mcycle_phase = phase,
+            break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
+        }
     end
     function machine:collect_mcycle_bundle(_, _, log2_bundle_mcycle_count)
         local hash = #self.root_hash == 32 and self.root_hash or keccak(self.root_hash)
@@ -246,11 +251,21 @@ for _, case in ipairs({
     { log2_period = 43, ordinary = 1 }, -- one completed bundle, followed by one padding bundle
     { log2_period = 44, ordinary = 2, invalid = true }, -- ordinary overcollection must fail
 }) do
-    local ordinary, padding = keccak("ordinary bundle"), keccak("padding bundle")
+    local ordinary, state_hash = keccak("ordinary bundle"), keccak("final state")
+    local padding = state_hash
+    for _ = 1, LOG2_BUNDLE_MCYCLE_COUNT do
+        padding = keccak(padding, padding)
+    end
     local machine = { mcycle = 100 }
     function machine:read_reg(name)
+        if name == "iflags_Y" then
+            return 0
+        end
         assert(name == "mcycle")
         return self.mcycle
+    end
+    function machine.get_root_hash()
+        return state_hash
     end
     function machine.collect_mcycle_root_hashes()
         local hashes = {}
@@ -285,6 +300,116 @@ for _, case in ipairs({
             hash_tree.frontier_forest_get_node_hash(forest, last_leaf, builder.bundle_height) == padding,
             "fixed-point padding has the wrong final sample"
         )
+    end
+end
+
+-- A fully occupied epoch retains the final execution bundle's path, including when the
+-- collector ends at a fixed point and its separate padding descriptor is unused.
+for _, ending in ipairs({ "target", "halt", "rejected", "invalid" }) do
+    local height = LOG2_BUNDLE_MCYCLE_COUNT + 1
+    local leaves, bundles = {}, {}
+    for i = 1, 1 << height do
+        leaves[i] = keccak("sample " .. i)
+    end
+    local reference = hash_tree.frontier_forest(height, "keccak256")
+    hash_tree.frontier_forest_append(reference, leaves)
+    for i = 1, 2 do
+        bundles[i] = hash_tree.frontier_forest(LOG2_BUNDLE_MCYCLE_COUNT, "keccak256")
+        hash_tree.frontier_forest_append(
+            bundles[i],
+            leaves,
+            ((i - 1) << LOG2_BUNDLE_MCYCLE_COUNT) + 1,
+            (i << LOG2_BUNDLE_MCYCLE_COUNT) + 1
+        )
+    end
+    local machine = new_fake_machine(leaves[1])
+    local _ <close> = machine
+    local collect = machine.collect_mcycle_root_hashes
+    local calls = 0
+    function machine:collect_mcycle_root_hashes(target, ...)
+        if target == 0 then
+            return collect(self, target, ...)
+        end
+        calls = calls + 1
+        self.mcycle = target
+        self.root_hash = leaves[calls << LOG2_BUNDLE_MCYCLE_COUNT]
+        local last = calls == 2
+        local collected = {
+            hashes = { hash_tree.frontier_forest_get_root_hash(bundles[calls]) },
+            mcycle_phase = 0,
+            break_reason = last and ending ~= "target" and cartesi.BREAK_REASON_HALTED
+                or cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
+        }
+        if last then
+            collected.final_bundle_sibling_hashes =
+                hash_tree.frontier_forest_get_siblings(bundles[calls], (1 << LOG2_BUNDLE_MCYCLE_COUNT) - 1, 0)
+            if ending ~= "target" then
+                local padding = self.root_hash
+                for _ = 1, LOG2_BUNDLE_MCYCLE_COUNT do
+                    padding = keccak(padding, padding)
+                end
+                collected.hashes[2] = padding
+            end
+            if ending == "invalid" then
+                collected.final_bundle_sibling_hashes[1] = keccak("wrong sibling")
+            elseif ending == "rejected" then
+                self.root_hash = keccak("rejected machine")
+                self.read_reg = function(_, name)
+                    if name == "mcycle" then
+                        return target
+                    end
+                    if name == "iflags_Y" then
+                        return 1
+                    end
+                    if name == "htif_tohost_dev" then
+                        return cartesi.HTIF_DEV_YIELD
+                    end
+                    if name == "htif_tohost_cmd" then
+                        return cartesi.HTIF_YIELD_CMD_MANUAL
+                    end
+                    assert(name == "htif_tohost_reason")
+                    return cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED
+                end
+            end
+        end
+        return collected
+    end
+    function machine.read_revert_root_hash()
+        return leaves[#leaves]
+    end
+    local builder = prt.new_mcycle_computation_hash_builder(cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - height)
+    builder.height = height
+    builder:begin_epoch(machine)
+    builder:begin_input(machine, 0)
+    builder:run(machine, 1)
+    local ok, err = pcall(builder.run, builder, machine, 2)
+    if ending == "invalid" then
+        assert(
+            not ok and tostring(err):find("target node not in tree", 1, true),
+            "the builder did not reject the invalid final-bundle proof"
+        )
+        assert(
+            hash_tree.frontier_forest_get_leaf_count(builder.frontier) == 1 << LOG2_BUNDLE_MCYCLE_COUNT,
+            "invalid proof changed the forest before failing"
+        )
+    else
+        assert(ok, err)
+        builder:end_input()
+        local openings = 0
+        local tree = prt.new_tree(height, LOG2_BUNDLE_MCYCLE_COUNT, builder:end_epoch(), function(_, index)
+            openings = openings + 1
+            return bundles[index + 1]
+        end)
+        local proof = tree:get_proof(#leaves - 1)
+        assert(openings == 0, "the final-leaf proof replayed the last execution bundle")
+        assert(proof.root_hash == hash_tree.frontier_forest_get_root_hash(reference))
+        assert(proof.target_hash == leaves[#leaves])
+        hash_tree.verify_slice(proof)
+        proof = tree:get_proof(1 << LOG2_BUNDLE_MCYCLE_COUNT)
+        assert(openings == 1, "an opaque sibling did not open its bundle")
+        hash_tree.verify_slice(proof)
+        assert(tree:get_proof(#leaves - 1).target_hash == leaves[#leaves])
+        assert(openings == 1, "opening an opaque sibling lost the final-leaf path")
     end
 end
 
@@ -1026,7 +1151,7 @@ end
 -- Failed acquisition or replay must leave only the retained entry alive, whether the
 -- failure happened before snapshotting, during execution, or after committing the input.
 for _, phase in ipairs({ "factory", "begin_epoch", "begin_input", "run", "end_input", "end_epoch" }) do
-    local initial = new_fake_machine("initial")
+    local initial = new_fake_machine(keccak("initial"))
     local cache <close> = prt.new_forked_machine_cache(initial, 2, 1)
     local player = new_test_player(prt.new_geometry(10), cache)
     seed_inputs(player, { "accepted" })
@@ -1051,14 +1176,17 @@ end
 
 -- Forward failures release the working machine and its pending rollback snapshot.
 for _, phase in ipairs({ "begin_input", "run", "end_input" }) do
-    local initial = new_fake_machine("initial")
+    local initial = new_fake_machine(keccak("initial"))
     local cache <close> = prt.new_forked_machine_cache(initial)
     local player = new_test_player(prt.new_geometry(10), cache)
-    seed_inputs(player, { "accepted" })
+    seed_inputs(player, { keccak("accepted") })
     player.epoch_builder[phase] = function()
         error("injected " .. phase .. " failure")
     end
-    assert(player.inputs[1] == "accepted" and player.machine_cache == cache, "player lost its replay dependencies")
+    assert(
+        player.inputs[1] == keccak("accepted") and player.machine_cache == cache,
+        "player lost its replay dependencies"
+    )
     local ok, err = pcall(new_mcycle_tree, player)
     assert(not ok and err:find("injected " .. phase .. " failure"), "builder failure was not propagated")
     assert(initial.counts.live == #cache.entries, "builder failure leaked its execution scope")
@@ -1072,7 +1200,7 @@ for _, terminal in ipairs({
     cartesi.BREAK_REASON_MCYCLE_OVERFLOW,
     cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
 }) do
-    local initial = new_fake_machine("initial")
+    local initial = new_fake_machine(keccak("initial"))
     local cache <close> = prt.new_forked_machine_cache(initial)
     local reasons = {
         cartesi.BREAK_REASON_YIELDED_SOFTLY,
@@ -1132,7 +1260,7 @@ end
 
 -- Input delivery must use the saved boundary hash even if preparation changes the running machine.
 for _, phase in ipairs({ "begin_input", "snapshot" }) do
-    local initial = new_fake_machine("initial")
+    local initial = new_fake_machine(keccak("initial"))
     local cache <close> = prt.new_forked_machine_cache(initial)
     local player = new_test_player(prt.new_geometry(10), cache)
     local snapshot = player.epoch_pair.snapshot
@@ -1160,7 +1288,7 @@ end
 -- when it is the last input replayed before returning a machine to the caller.
 -- Replay skips automatic yields without reading their output payloads.
 for _, corrupt in ipairs({ false, true }) do
-    local initial = new_fake_machine("initial")
+    local initial = new_fake_machine(keccak("initial"))
     local cache <close> = prt.new_forked_machine_cache(initial)
     if corrupt then
         local fork = initial.fork_server
@@ -1210,7 +1338,7 @@ end
 -- A missing wrapper field forwards a machine method; absence of a private snapshot must instead
 -- be represented explicitly. Exercise this before the slower real-machine checks.
 do
-    local cache <close> = prt.new_forked_machine_cache(new_fake_machine("initial"))
+    local cache <close> = prt.new_forked_machine_cache(new_fake_machine(keccak("initial")))
     dishonest.new_tamperer(prt.new_geometry(10), cache, 0, 100)
     local owner <close> = cache:nearest_not_past_epoch_input_offset(0)
     local machine = owner.machine
@@ -2381,9 +2509,14 @@ if arg[1] then
                 stored_tree:get_root_hash() == honest_tree:get_root_hash(),
                 "reopening between inputs changed the claim"
             )
+            local collect = reopened.collect_mcycle_bundle
+            reopened.collect_mcycle_bundle = function()
+                error("the final-leaf proof replayed a bundle after reopening")
+            end
+            sealed.claim = encode_response(reopened.event_handler.commit_mcycle_claim(reopened), "Claim")
+            reopened.collect_mcycle_bundle = collect
             sealed.opened_proof =
                 encode_response(stored_tree:get_proof(dapp_contract.geometry.periods_per_input), "Proof")
-            sealed.claim = encode_response(reopened.event_handler.commit_mcycle_claim(reopened), "Claim")
             sealed.outputs_merkle_root_proof =
                 encode_response(reopened.event_handler.prove_outputs_merkle_root(reopened), "OutputsMerkleRootProof")
             local final_leaf = (1 << stored_tree.height) - 1
@@ -2990,6 +3123,12 @@ if arg[1] then
     end
     local last_period = dapp_contract.geometry.periods_per_input - 1
     local chain_bundle_index = (2 * dapp_contract.geometry.periods_per_input + last_period) >> LOG2_BUNDLE_MCYCLE_COUNT
+    local tail_bundle = chain:collect_mcycle_bundle(2, last_period >> LOG2_BUNDLE_MCYCLE_COUNT)
+    assert(
+        hash_tree.frontier_forest_get_root_hash(tail_bundle)
+            == chain_tree:get_node_hash(chain_bundle_index << chain_tree.bundle_height, chain_tree.bundle_height),
+        "replayed rejection tail differs from its retained bundle"
+    )
     chain_tree:get_proof(chain_bundle_index << chain_tree.bundle_height)
     assert(lookups == 1, "reverted-tail bundle collection performed multiple lookups")
     assert(replay_begins == 1 and replay_ends == 1, "cache replay bypassed the epoch driver's builder lifecycle")
@@ -3300,21 +3439,20 @@ if arg[1] then
         end
         local tree = new_mcycle_tree(player)
         assert(tree:get_root_hash() == expected, terminal .. " has the wrong fixed-point tail")
-        tree:get_proof(0)
-        assert(counts.bundles == 1, "first mcycle opening bypassed the player collector")
-        -- Explicit padding shares the completed first bundle when their hashes match.
-        -- For both terminal inputs and empty epochs, opening the first bundle opens
-        -- the whole repeated tail without another machine replay.
         local mcycle_last = (1 << contract.geometry.mcycle_height) - 1
         tree:get_proof(mcycle_last)
         assert(tree:get_node_hash(mcycle_last, 0) == terminal_root, "last mcycle bundle has the wrong state")
+        assert(counts.bundles == 0, "the final-leaf proof replayed a fixed-point bundle")
+        tree:get_proof(0)
+        local expected_openings = terminal == "empty" and 0 or 1
+        assert(counts.bundles == expected_openings, "first mcycle opening called the wrong number of collectors")
         local uarch = player:new_uarch_tree(2, 60000)
         uarch:get_proof(0)
         assert(counts.uarch == 2, "uarch build or first opening bypassed the selected builder or collector")
         local uarch_last = (1 << contract.geometry.uarch_height) - 1
         uarch:get_proof(uarch_last)
         assert(counts.outer == 1, "mcycle build bypassed the selected builder factory")
-        assert(counts.bundles == 1, terminal .. " opening replayed an already expanded mcycle bundle")
+        assert(counts.bundles == expected_openings, terminal .. " opening replayed an already expanded mcycle bundle")
         -- A uarch bundle is a whole mcycle, so the first opening holds the reset as well. Every
         -- mcycle of the period repeats that fixed-point mcycle and shares its expansion.
         assert(counts.uarch == 2, terminal .. " opening called the wrong number of uarch builders")

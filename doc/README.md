@@ -9278,13 +9278,18 @@ local function frontier_forest_expand_leaf(forest, position, subtree)
     assert(is_tree(replacement), "the replacement leaf is opaque")
     while true do
         local tree = load_value(forest, container, key, container_height)
-        if not is_tree(tree) then
-            assert(container_height == height, "leaf height mismatch")
-            assert(tree == replacement.hash, "leaf hash mismatch")
+        if container_height == height then
+            assert(get_value_hash(tree) == replacement.hash, "leaf hash mismatch")
+            merge_node(
+                forest,
+                { container = { replacement }, key = 1, height = height },
+                { container = container, key = key, height = height }
+            )
             if forest.directory then store_expansion(forest, replacement) end
             container[key] = replacement
             return
         end
+        assert(is_tree(tree) and container_height > height, "leaf height mismatch")
         if tree.kind == "mixed" then
             local half = 1 << (tree.height - 1)
             if position < half then
@@ -9303,18 +9308,19 @@ local function frontier_forest_expand_leaf(forest, position, subtree)
 end
 ```
 
-It replaces the opaque hash at `<position>` with a full forest of the
-same height, after checking that the forest’s root is the hash it
-replaces. No ancestor hash changes, so the forest’s root is unaffected.
-When the opaque hash is the repeated last value of a fixed-point tree,
-every repetition reads the same entry, so all of them share the
-expansion. A forest stored with `frontier_forest_store` keeps its trees
-in a directory, one file per tree named by its hash, and
-`frontier_forest_load` reopens it. Queries and expansions then load the
-stored tree in place of a raw hash when they reach one, and an expansion
-also stores its new trees there. A stored or loaded forest cannot be
-appended to another forest or used in an expansion, since some of its
-trees may exist only as files in its own directory.
+It fills in the subtree at `<position>` using a full forest of the same
+height, after checking that their root hashes match. Any branches
+already known at that position are retained. No ancestor hash changes,
+so the forest’s root is unaffected. When the opaque hash is the repeated
+last value of a fixed-point tree, every repetition reads the same entry,
+so all of them share the expansion. A forest stored with
+`frontier_forest_store` keeps its trees in a directory, one file per
+tree named by its hash, and `frontier_forest_load` reopens it. Queries
+and expansions then load the stored tree in place of a raw hash when
+they reach one, and an expansion also stores its new trees there. A
+stored or loaded forest cannot be appended to another forest or used in
+an expansion, since some of its trees may exist only as files in its own
+directory.
 
 ## Verification game
 
@@ -10425,16 +10431,18 @@ Second, the stored nodes need not be leaves. The emulator delivers the
 sampled hashes in *bundles*, one subtree root per 2<sup>4</sup> mcycle
 samples (or one per mcycle, 2<sup>20</sup> uarch transitions). Bundle
 roots are interior nodes of the hash tree, so the computation hash is
-unchanged, and the player stores one node per bundle. The three inputs
-of our epoch fit in about nine thousand mcycle bundles, and one uarch
-period in at most 2<sup>10</sup>.
+unchanged. The player stores those roots and retains the final-leaf
+paths returned by mcycle collection inside the forest, along with the
+repeated state inside padding bundles. The three inputs of our epoch fit
+in about nine thousand mcycle bundles, and one uarch period in at most
+2<sup>10</sup>.
 
-When the dispute descends below a bundle, the player opens it. It
-replays a machine from the nearest retained input boundary through the
-bundle’s transitions and hands the leaves to the forest. The forest
-checks the rebuilt subtree against the committed bundle root before
-installing it, so a faulty replay cannot change a claim. Later queries
-in that bundle read the installed subtree, and so do the other
+When a query reaches an unknown node inside a bundle, the player opens
+it. It replays a machine from the nearest retained input boundary
+through the bundle’s transitions and hands the leaves to the forest. The
+forest checks the rebuilt subtree against the committed bundle root
+before installing it, so a faulty replay cannot change a claim. Later
+queries in that bundle read the installed subtree, and so do the other
 occurrences of a repeated bundle:
 
 ``` lua
@@ -10475,7 +10483,8 @@ completed input boundary to the same machine cache the verification game
 uses. At `epoch_sealed`, it pads the rest of the epoch with the final
 state hash, saves the outputs Merkle root proof, and closes the forest.
 Its claim is the root’s two children and a proof of the last leaf, which
-is the final state hash.
+is the final state hash. The mcycle forest already holds that leaf’s
+path, so producing the claim needs no bundle replay.
 
 The verification game’s player keeps an agreed pair and a tentative pair
 of machines and advances them to answer each midpoint. The PRT player

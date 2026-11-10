@@ -54,6 +54,7 @@ local WORD_MASK = WORD_SIZE - 1
 local IFLAGS_Y_ADDRESS = cartesi.machine:get_reg_address("iflags_Y")
 local HTIF_TOHOST_ADDRESS = cartesi.machine:get_reg_address("htif_tohost")
 local CMIO_TX_BUFFER_ADDRESS = cartesi.AR_CMIO_TX_BUFFER_START
+local CMIO_TX_BUFFER_LENGTH = 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE
 local LOG2_MAX_ADVANCE_STATES_PER_EPOCH = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
 local LOG2_MAX_MCYCLES_PER_ADVANCE_STATE = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 local LOG2_MAX_UARCH_CYCLES_PER_MCYCLE = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
@@ -1404,17 +1405,14 @@ local function run_to_stop(builder, machine, mcycle_end, on_yield_automatic)
     end
 end
 
--- Retain only accepted outputs and check their cumulative root. Pending outputs from other
--- outcomes are discarded when the input driver returns.
-local function flush_pending_outputs(pending_outputs, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
-    if not outputs or not is_rx_accepted(yield_reason) then
-        return
-    end
+-- Retain the outputs of an accepted input and return whether their cumulative root is the one the
+-- machine holds. Pending outputs from other outcomes are discarded when the input driver returns.
+local function flush_pending_outputs(pending_outputs, outputs, outputs_frontier, outputs_merkle_root)
     for _, output_data in ipairs(pending_outputs) do
         outputs[#outputs + 1] = output_data
         hash_tree.frontier_push_back(outputs_frontier, keccak(output_data))
     end
-    assert(hash_tree.frontier_get_root_hash(outputs_frontier) == outputs_merkle_root, "outputs Merkle root mismatch")
+    return hash_tree.frontier_get_root_hash(outputs_frontier) == outputs_merkle_root
 end
 
 -- Delivers a posted input, recording the root a rejection reverts to. The machine and
@@ -2045,6 +2043,9 @@ function player_meta.__index:run_to_input_mcycle_offset(
     if outputs then
         function on_yield_automatic(yield_reason, output_data)
             if is_tx_output(yield_reason) then
+                if machine:read_reg("htif_tohost_data") > CMIO_TX_BUFFER_LENGTH then
+                    self:report_anomaly("oversized_output", "input " .. epoch_input_offset)
+                end
                 pending_outputs[#pending_outputs + 1] = output_data
             end
         end
@@ -2054,14 +2055,20 @@ function player_meta.__index:run_to_input_mcycle_offset(
     if not is_at_fixed_point(break_reason) then
         return break_reason, nil, input_mcycle_base
     end
-    local yield_reason, outputs_merkle_root
+    local yield_reason
     if is_yielded_manual(break_reason) then
-        yield_reason, outputs_merkle_root = receive_cmio_request(machine)
+        yield_reason = receive_cmio_request(machine)
     end
     if is_rx_rejected(yield_reason) then
         pair:revert()
     else
-        flush_pending_outputs(pending_outputs, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
+        if outputs and is_rx_accepted(yield_reason) then
+            -- The referee reads the outputs Merkle root from the first word of the tx buffer
+            local outputs_merkle_root = machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE)
+            if not flush_pending_outputs(pending_outputs, outputs, outputs_frontier, outputs_merkle_root) then
+                self:report_anomaly("outputs_root_mismatch", "input " .. epoch_input_offset)
+            end
+        end
         if is_rx_accepted(yield_reason) then
             pair.revert_root_hash = machine:get_root_hash()
         end
@@ -2266,6 +2273,12 @@ function player_meta.__index:seal_epoch_state() end -- luacheck: ignore 212 self
 
 function player_meta.__index:store_uarch_claim() end -- luacheck: ignore 212 self
 
+-- Reports application behavior the player defends against but cannot vouch for, such as outputs that do
+-- not hash to the root the machine holds. The position names where, such as "input 3". The default prints it.
+function player_meta.__index:report_anomaly(kind, position)
+    io.stderr:write(string.format("%s: %s at %s\n", self.label, kind, position))
+end
+
 -- Clients may request any accepted output from the sealed epoch by its global index, independently of
 -- the output the demonstration offers to the referee. Missing indices are no offer.
 function player_meta.__index:prove_output(output_index)
@@ -2278,6 +2291,11 @@ function player_meta.__index:prove_output(output_index)
     -- The first request proves every output of the epoch at once.
     if not self.output_proofs then
         self.output_proofs = hash_tree.frontier_next_proofs(self.previous_outputs_frontier, self:read_output_hashes())
+    end
+    -- An output proves only against the root the settled machine holds
+    if self.output_proofs[epoch_output_offset + 1].root_hash ~= self.outputs_merkle_root_proof.tx_buffer_data then
+        self:report_anomaly("unprovable_output", "output " .. output_index)
+        return "nothing"
     end
     return {
         output_index = output_index,
@@ -2561,10 +2579,9 @@ end
 local function store_checkpoint_files(self, directory)
     local outputs_root =
         output_verifier.validate_outputs_merkle_root_response(self.outputs_merkle_root_proof, self.final_state_hash)
-    assert(
-        outputs_root == hash_tree.frontier_get_root_hash(self.outputs_frontier),
-        "checkpoint output history does not match the machine"
-    )
+    if outputs_root ~= hash_tree.frontier_get_root_hash(self.outputs_frontier) then
+        self:report_anomaly("outputs_root_mismatch", "the epoch's end")
+    end
     hash_tree.frontier_store(self.outputs_frontier, directory .. "/outputs-frontier.json")
     fs.write_durable_file(cartesi.tojson({
         version = 2,
@@ -2831,12 +2848,13 @@ local function reopen_epoch_directory(self)
     local forests_directory = directory .. "/forests"
     if state.epoch_builder then
         self.epoch_pair = new_stored_machine_pair(new_stored_machine(root_hash, machine_directory), machine_directory)
-        assert(
-            self.epoch_stopped
-                or self.epoch_pair.machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE)
-                    == hash_tree.frontier_get_root_hash(self.outputs_frontier),
-            "output history does not match the epoch machine"
-        )
+        if
+            not self.epoch_stopped
+            and self.epoch_pair.machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE)
+                ~= hash_tree.frontier_get_root_hash(self.outputs_frontier)
+        then
+            self:report_anomaly("outputs_root_mismatch", "input " .. self.input_count)
+        end
         local builder = self:new_mcycle_computation_hash_builder()
         builder.frontier = hash_tree.frontier_forest_load(
             forests_directory .. "/mcycle",
@@ -2857,11 +2875,12 @@ local function reopen_epoch_directory(self)
     end
     self.final_state_hash = root_hash
     self.outputs_merkle_root_proof = state.outputs_merkle_root_proof
-    assert(
+    if
         output_verifier.validate_outputs_merkle_root_response(self.outputs_merkle_root_proof, root_hash)
-            == hash_tree.frontier_get_root_hash(self.outputs_frontier),
-        "the outputs Merkle root proof does not match the output history"
-    )
+        ~= hash_tree.frontier_get_root_hash(self.outputs_frontier)
+    then
+        self:report_anomaly("outputs_root_mismatch", "the epoch's end")
+    end
     self.mcycle_forest =
         hash_tree.frontier_forest_load(forests_directory .. "/mcycle", directory .. "/" .. state.mcycle_forest)
     for _, stored in ipairs(state.uarch_claims) do
@@ -2909,11 +2928,12 @@ local function begin_epoch(self)
     local machine = self.epoch_pair.machine
     self.epoch_builder = self:new_mcycle_computation_hash_builder()
     self.epoch_builder:begin_epoch(machine)
-    assert(
+    if
         machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE)
-            == hash_tree.frontier_get_root_hash(self.previous_outputs_frontier),
-        "output history does not match initial machine"
-    )
+        ~= hash_tree.frontier_get_root_hash(self.previous_outputs_frontier)
+    then
+        self:report_anomaly("outputs_root_mismatch", "the epoch's start")
+    end
     self.outputs_frontier = hash_tree.frontier_copy(self.previous_outputs_frontier)
 end
 
@@ -2975,10 +2995,6 @@ local function load_epoch_checkpoint(directory)
     )
     local frontier = load_outputs_frontier(directory .. "/outputs-frontier.json")
     assert(hash_tree.frontier_get_leaf_count(frontier) == manifest.output_count, "checkpoint output count mismatch")
-    assert(
-        cartesi.tohex(hash_tree.frontier_get_root_hash(frontier)) == manifest.outputs_root,
-        "checkpoint output root mismatch"
-    )
     return {
         initial_state_hash = cartesi.fromhex(manifest.final_state_hash),
         machine_directory = directory,

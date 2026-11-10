@@ -816,25 +816,42 @@ do
     assert(initial.counts.live == #cache.entries, "sealing leaked its execution")
 end
 
--- A continuation frontier must be an outputs frontier whose root is this machine's output root.
+-- A continuation frontier must be an outputs frontier. A frontier whose root is not this machine's
+-- output root, or none for a machine with an output history, is reported and the player still starts.
 do
     local frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
     hash_tree.frontier_push_back(frontier, keccak("first"))
     hash_tree.frontier_push_back(frontier, keccak("last"))
     local root_hash = hash_tree.frontier_get_root_hash(frontier)
     local short = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT - 1, "keccak256")
-    for _, case in ipairs({
-        { frontier = frontier, root = keccak("other history") },
-        { frontier = short, root = hash_tree.frontier_get_root_hash(short) },
-        { root = root_hash },
-    }) do
-        local initial = new_fake_machine(keccak("fixture initial"), nil, nil, case.root)
+    do
+        local initial = new_fake_machine(keccak("fixture initial"), nil, nil, hash_tree.frontier_get_root_hash(short))
         local cache = prt.new_forked_machine_cache(initial)
         assert(
-            not pcall(new_test_player, nil, cache, "invalid continuation", case.frontier),
-            "invalid or missing continuation frontier was accepted"
+            not pcall(new_test_player, nil, cache, "invalid continuation", short),
+            "a frontier of another height was accepted"
         )
         assert(initial.counts.live == 0, "failed continuation leaked its machines")
+    end
+    for _, case in ipairs({
+        { frontier = frontier, root = keccak("other history") },
+        { root = root_hash },
+    }) do
+        local cache = prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial"), nil, nil, case.root))
+        local stderr, reports = io.stderr, {}
+        io.stderr = { -- luacheck: ignore 122
+            write = function(_, text)
+                reports[#reports + 1] = text
+            end,
+        }
+        local started, player = pcall(new_test_player, nil, cache, "mismatched continuation", case.frontier)
+        io.stderr = stderr -- luacheck: ignore 122
+        assert(started, player)
+        getmetatable(player).__close(player)
+        assert(
+            table.concat(reports) == "mismatched continuation: outputs_root_mismatch at the epoch's start\n",
+            "a mismatched continuation was not reported"
+        )
     end
     local cache = prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial"), nil, nil, root_hash))
     local player = new_test_player(nil, cache, "empty continuation", frontier)
@@ -872,6 +889,8 @@ for _, previous_count in ipairs({ 0, 3 }) do
     assert(hash_tree.frontier_get_leaf_count(player.previous_outputs_frontier) == previous_count)
     assert(hash_tree.frontier_get_leaf_count(player.outputs_frontier) == previous_count + #outputs)
     local expected_root = hash_tree.frontier_get_root_hash(player.outputs_frontier)
+    -- A well-behaved application holds the root of its outputs when the epoch seals
+    player.epoch_pair.machine.outputs_root = expected_root
     local completed_frontier = player.outputs_frontier
     local clone = player.new_machine_pair_at_epoch_input_offset
     player.new_machine_pair_at_epoch_input_offset = function()
@@ -896,6 +915,41 @@ for _, previous_count in ipairs({ 0, 3 }) do
     )
     assert(not pcall(player.prove_output, player, 0.5), "noninteger output index was accepted")
     player.new_machine_pair_at_epoch_input_offset = clone
+end
+
+-- An accept whose root is not the root of the input's outputs is reported, and the player still seals.
+do
+    local player = new_test_player(nil, prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial"))))
+    local reports = {}
+    function player.report_anomaly(_, kind, position)
+        reports[#reports + 1] = kind .. " at " .. position
+    end
+    local machine = player.epoch_pair.machine
+    local send = machine.send_cmio_response
+    function machine:send_cmio_response(...)
+        send(self, ...)
+        self.outputs_root = keccak("not the outputs root")
+    end
+    -- The fake machine takes the delivered input as its root hash
+    player.event_handler.input_added(player, 0, fixture_input(keccak("input")))
+    player.event_handler.epoch_sealed(player, 1)
+    assert(table.concat(reports, ",") == "outputs_root_mismatch at input 0", "the mismatch was not reported once")
+    getmetatable(player).__close(player)
+end
+
+-- An output that does not prove against the root the settled machine holds is reported and not offered.
+do
+    local player = new_test_player(nil, prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial"))))
+    local reports = {}
+    function player.report_anomaly(_, kind, position)
+        reports[#reports + 1] = kind .. " at " .. position
+    end
+    player.outputs, player.output_count = { "first" }, 1
+    hash_tree.frontier_push_back(player.outputs_frontier, keccak("first"))
+    player.event_handler.epoch_sealed(player, 0)
+    assert(player:prove_output(0) == "nothing", "an unprovable output was offered")
+    assert(table.concat(reports, ",") == "unprovable_output at output 0", "the unprovable output was not reported")
+    getmetatable(player).__close(player)
 end
 
 -- Forward execution retains the working machine even when thinning discards every later base.

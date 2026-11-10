@@ -413,14 +413,13 @@ local function settle_uarch_state_hash(tournament, match, state_transition_offse
     local start_instant = current_time()
     local deadline_one = start_instant + match.claims[1].allowance
     local deadline_two = start_instant + match.claims[2].allowance
-    local proof_deadline = math.min(deadline_one, deadline_two)
     local eliminable_at = math.max(deadline_one, deadline_two)
     local proof <close> = request_first_valid(
         subscriptions,
         EVENTS.prove_state_transition,
         { tournament.epoch_input_offset, tournament.input_period_offset, state_transition_offset },
         function(response, _, received_at)
-            assert(received_at < proof_deadline, "late state transition proof")
+            assert(received_at < eliminable_at, "late state transition proof")
             return validate_state_transition_response(
                 tournament.dapp_contract,
                 root_hash_before,
@@ -430,7 +429,7 @@ local function settle_uarch_state_hash(tournament, match, state_transition_offse
             )
         end
     )
-    local obtained_root_hash = proof:wait_at_most(proof_deadline)
+    local obtained_root_hash = proof:wait_at_most(eliminable_at)
     if not obtained_root_hash then
         wait_until(eliminable_at)
         local elimination <close> = request_first_valid(

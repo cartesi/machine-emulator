@@ -2528,6 +2528,13 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
             const state_access sa(*this);
             root_hash = is_rejected_manual_yield(sa) ? read_revert_root_hash() : m_ht.get_root_hash();
 
+            // Preserve the rightmost leaf's siblings before completing the final bundle
+            const bool collection_ends = at_fixed_point ||
+                result.break_reason != interpreter_break_reason::reached_target_mcycle || mcycle_reached == mcycle_end;
+            if (collection_ends && log2_bundle_mcycle_count > 0 && back_tree.get_remaining_leaf_count() == 1) {
+                result.final_bundle_sibling_hashes = back_tree.get_context();
+            }
+
             // Add the state root hash to the current bundle
             back_tree.push_back(root_hash);
 
@@ -2557,7 +2564,10 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
         // Complete the partial bundle and append its bundle root hash
         if (!back_tree.empty()) {
             assert(!back_tree.full());
-            back_tree.pad_back(back_tree.get_remaining_leaf_count(), pad_hashes);
+            // Leave the rightmost leaf for last so its siblings are still in the frontier
+            back_tree.pad_back(back_tree.get_remaining_leaf_count() - 1, pad_hashes);
+            result.final_bundle_sibling_hashes = back_tree.get_context();
+            back_tree.push_back(root_hash);
             result.hashes.emplace_back(back_tree.get_root_hash());
             back_tree.clear();
         }

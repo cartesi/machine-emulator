@@ -920,6 +920,14 @@ CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *brea
 /// point. Otherwise it contains the partial bundle and must be passed to a subsequent call to continue bundling the
 /// sequence of state root hashes correctly.
 ///
+/// With bundling, "final_bundle_sibling_hashes" is returned when the call stops on a sampling point that completes a
+/// bundle, or at a fixed point. It contains log2_bundle_mcycle_count base64-encoded sibling hashes ordered from leaf
+/// to root, proving the rightmost leaf of the last bundle in "hashes", excluding the fixed-point-only padding entry.
+/// At a fixed point, that leaf is the final state root hash, including the revert root hash for rejected inputs.
+/// Otherwise it is the state root hash at the final sampling point. The field is omitted when bundling is disabled
+/// or the call does not complete a bundle at its stopping point. A bundle started in a previous call can supply the
+/// proof when completed by this call.
+///
 /// If a console I/O error occurs during execution, it does NOT cause the operation to stop or fail.
 /// Instead, the machine continues running until completion. Any console I/O error message is returned
 /// in the "console_io_error" field of the result JSON object. This allows you to detect and handle

@@ -5640,7 +5640,17 @@ recorded revert root hash takes its place. With
 is instead the root hash of a complete subtree over that many
 consecutive samples, and a `partial_bundle` field returns the samples
 that did not fill a subtree, to be passed as `<partial_bundle>` to the
-next call.
+next call. When the call stops at a sampling point that completes a
+bundle, `final_bundle_sibling_hashes` contains the siblings proving its
+rightmost leaf, ordered from leaf to root. At a fixed point, the
+collector completes the current bundle with repetitions of the final
+state hash and returns these siblings for that bundle, followed by a
+separate bundle root in `hashes` containing only repetitions of the
+final state hash for padding. The proof therefore targets
+`hashes[#hashes - 1]` at a fixed point and `hashes[#hashes]` otherwise.
+The field is omitted when bundling is disabled or the call does not
+complete a bundle at its stopping point, and completing a bundle passed
+in `partial_bundle` also supplies the proof.
 
 `machine:collect_uarch_cycle_root_hashes(<mcycle_end>, <log2_bundle_uarch_cycle_count>, <revert_uarch_tail>)`
 runs the machine up to `<mcycle_end>` one uarch cycle at a time,

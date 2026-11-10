@@ -84,6 +84,7 @@ local function expect_mcycle_root_hashes(machine, mcycle_end, mcycle_period, mcy
         assert(machine:read_reg("mcycle") == mcycle_end, "unsupported call")
     end
     local partial_bundle
+    local final_bundle_sibling_hashes
     if log2_bundle_mcycle_count and log2_bundle_mcycle_count > 0 then
         local bundle_mcycle_count = 1 << log2_bundle_mcycle_count
         if at_fixed_point then
@@ -91,6 +92,12 @@ local function expect_mcycle_root_hashes(machine, mcycle_end, mcycle_period, mcy
             while #hashes % bundle_mcycle_count ~= 0 do
                 table.insert(hashes, hashes[#hashes])
             end
+        end
+        local final_leaf_index = #hashes
+        if final_leaf_index > 0 and final_leaf_index % bundle_mcycle_count == 0 then
+            final_bundle_sibling_hashes = {}
+        end
+        if at_fixed_point then
             -- add a bundle with repetitions of the last root hash
             for _ = 1, bundle_mcycle_count do
                 table.insert(hashes, hashes[#hashes])
@@ -105,6 +112,10 @@ local function expect_mcycle_root_hashes(machine, mcycle_end, mcycle_period, mcy
         end
         -- bundle the root hashes
         for _ = 1, log2_bundle_mcycle_count do
+            if final_bundle_sibling_hashes then
+                table.insert(final_bundle_sibling_hashes, hashes[final_leaf_index - 1])
+                final_leaf_index = final_leaf_index // 2
+            end
             local next_hashes = {}
             for i = 0, #hashes // 2 - 1 do
                 table.insert(next_hashes, cartesi.keccak256(hashes[i * 2 + 1], hashes[i * 2 + 2]))
@@ -120,6 +131,7 @@ local function expect_mcycle_root_hashes(machine, mcycle_end, mcycle_period, mcy
         break_reason = break_reason,
         mcycle_phase = mcycle_phase,
         partial_bundle = partial_bundle,
+        final_bundle_sibling_hashes = final_bundle_sibling_hashes,
     }
 end
 
@@ -381,6 +393,7 @@ local function collect_mcycle_root_hashes_in_parts(
         break_reason = last.break_reason,
         mcycle_phase = last.mcycle_phase,
         partial_bundle = last.partial_bundle,
+        final_bundle_sibling_hashes = last.final_bundle_sibling_hashes,
     }
 end
 
@@ -686,7 +699,9 @@ describe("collect hashes", function()
                 machine:write_reg("iflags_H", 1)
                 local expected_root_hash = machine:get_root_hash()
                 local expected_bundle_hash = expected_root_hash
+                local expected_sibling_hashes = {}
                 for _ = 1, log2_bundle_mcycle_count do
+                    table.insert(expected_sibling_hashes, expected_bundle_hash)
                     expected_bundle_hash = cartesi.keccak256(expected_bundle_hash, expected_bundle_hash)
                 end
 
@@ -699,6 +714,7 @@ describe("collect hashes", function()
                     ),
                     {
                         hashes = { expected_bundle_hash, expected_bundle_hash },
+                        final_bundle_sibling_hashes = expected_sibling_hashes,
                         break_reason = cartesi.BREAK_REASON_HALTED,
                         mcycle_phase = mcycle_phase,
                     }
@@ -1199,6 +1215,91 @@ describe("collect hashes", function()
                 end
             end)
 
+            it("should prove the final bundle across call partitions", function()
+                for _, log2_bundle_mcycle_count in ipairs({ 1, 3, 6 }) do
+                    local mcycle_end = 1 << log2_bundle_mcycle_count
+                    local machine <close> = create_machine(add_machine_config)
+                    local compare_machine <close> = cartesi.machine(add_machine_config)
+                    local collected = collect_mcycle_root_hashes_in_parts(
+                        machine,
+                        { mcycle_end - 1, mcycle_end },
+                        1,
+                        0,
+                        log2_bundle_mcycle_count
+                    )
+                    expect.equal(
+                        collected,
+                        expect_mcycle_root_hashes(compare_machine, mcycle_end, 1, 0, log2_bundle_mcycle_count)
+                    )
+                    expect.equal(machine:get_root_hash(), compare_machine:get_root_hash())
+                    local proof = {
+                        target_address = mcycle_end - 1,
+                        log2_target_size = 0,
+                        log2_root_size = log2_bundle_mcycle_count,
+                        target_hash = compare_machine:get_root_hash(),
+                        root_hash = collected.hashes[#collected.hashes],
+                        sibling_hashes = collected.final_bundle_sibling_hashes,
+                    }
+                    hash_tree.verify_slice(proof)
+                    proof.sibling_hashes[1] = string.rep("\x00", cartesi.HASH_SIZE)
+                    expect.fail(function()
+                        hash_tree.verify_slice(proof)
+                    end, "target node not in tree")
+                    local empty = machine:collect_mcycle_root_hashes(mcycle_end, 0, 0, log2_bundle_mcycle_count)
+                    expect.equal(empty.hashes, {})
+                    expect.not_exist(empty.final_bundle_sibling_hashes)
+                end
+            end)
+
+            it("should omit final bundle siblings when stopping outside a bundle boundary", function()
+                for _, mcycle_end in ipairs({ 0, 1, 4, 31, 33, 36 }) do
+                    local machine <close> = create_machine(add_machine_config)
+                    local collected = machine:collect_mcycle_root_hashes(mcycle_end, 2, 0, 3)
+                    expect.not_exist(collected.final_bundle_sibling_hashes)
+                    expect.equal(machine:read_reg("mcycle"), mcycle_end)
+                end
+            end)
+
+            it("should prove the final bundle at every fixed-point padding length", function()
+                local log2_bundle_mcycle_count = 3
+                local bundle_mcycle_count = 1 << log2_bundle_mcycle_count
+                for mcycle_end = 1, bundle_mcycle_count do
+                    local config = tabular.deep_copy(add_machine_config)
+                    config.processor = { registers = { imcyclemax = mcycle_end } }
+                    local machine <close> = create_machine(config)
+                    local compare_machine <close> = cartesi.machine(config)
+                    local collected = collect_mcycle_root_hashes_in_parts(
+                        machine,
+                        { mcycle_end - 1, mcycle_end },
+                        1,
+                        0,
+                        log2_bundle_mcycle_count
+                    )
+                    local leaves = {}
+                    for mcycle = 1, mcycle_end do
+                        compare_machine:run(mcycle)
+                        table.insert(leaves, compare_machine:get_root_hash())
+                    end
+                    local final_hash = compare_machine:get_root_hash()
+                    while #leaves < bundle_mcycle_count do
+                        table.insert(leaves, final_hash)
+                    end
+                    expect.equal(collected.break_reason, cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
+                    expect.equal(machine:get_root_hash(), final_hash)
+                    expect.not_exist(collected.partial_bundle)
+                    expect.equal(#collected.hashes, 2)
+                    expect.equal(collected.hashes[1], bundle_root_hash(leaves))
+                    hash_tree.verify_slice({
+                        target_address = bundle_mcycle_count - 1,
+                        log2_target_size = 0,
+                        log2_root_size = log2_bundle_mcycle_count,
+                        target_hash = final_hash,
+                        root_hash = collected.hashes[1],
+                        sibling_hashes = collected.final_bundle_sibling_hashes,
+                    })
+                end
+            end)
+
             it("should bundle mcycle root hashes leaving no partial bundle when the last bundle is complete", function()
                 local max_log2_bundle_mcycle_count = 3
                 local mcycle_start = 1
@@ -1379,6 +1480,7 @@ describe("collect hashes", function()
                         break_reason = last_collected.break_reason,
                         hashes = all_hashes,
                         partial_bundle = last_collected.partial_bundle,
+                        final_bundle_sibling_hashes = last_collected.final_bundle_sibling_hashes,
                     }
                     expect.not_exist(all_collected.partial_bundle)
                     local expected_collected = expect_mcycle_root_hashes(
@@ -1575,6 +1677,14 @@ describe("collect hashes", function()
                     if collected.break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY then
                         if is_rejected_manual_yield(machine) then
                             expect.equal(collected.hashes[#collected.hashes], revert_bundle_hash)
+                            hash_tree.verify_slice({
+                                target_address = (1 << log2_bundle_mcycle_count) - 1,
+                                log2_target_size = 0,
+                                log2_root_size = log2_bundle_mcycle_count,
+                                target_hash = revert_root_hash,
+                                root_hash = collected.hashes[#collected.hashes - 1],
+                                sibling_hashes = collected.final_bundle_sibling_hashes,
+                            })
                             count_rejected_yields = count_rejected_yields + 1
                         end
                         machine:write_reg("iflags_Y", 0)

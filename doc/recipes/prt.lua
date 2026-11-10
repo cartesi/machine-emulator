@@ -222,23 +222,36 @@ local function subscription_hash(tournament_id, claim)
     return keccak(tournament_id, claim.computation_hash)
 end
 
--- Partitions claim responses by computation hash, in the join order of their first posters, and
--- subscribes each sender to its claim. This makes the bracket a function of the claims and the join
--- order. Each clock starts at the tournament's allowance less the blocks since the tournament opened.
+-- Partitions claim responses by computation hash and subscribes each sender to its claim. A claim joins
+-- at its earliest post, and the bracket pairs claims in join order, ties broken by admission order. Each
+-- clock starts at the tournament's allowance less the blocks from the tournament's opening to the join.
 -- docs:begin partition_claims
 local function partition_claims(responses, order, tournament_id, start_instant, allowance)
     local claims = {}
     local by_hash = {}
-    for _, sender in ipairs(order) do
+    local joins = {}
+    for admission, sender in ipairs(order) do
         local response = responses[sender]
         local claim = by_hash[response.claim.computation_hash]
         if not claim then
             claim = response.claim
-            claim.allowance = allowance - (response.received_at - start_instant)
             by_hash[claim.computation_hash] = claim
             claims[#claims + 1] = claim
+            joins[claim] = { received_at = response.received_at, admission = admission }
+        elseif response.received_at < joins[claim].received_at then
+            joins[claim].received_at = response.received_at
         end
         subscribe_connection(subscription_hash(tournament_id, claim), response.connection)
+    end
+    table.sort(claims, function(a, b)
+        local join_a, join_b = joins[a], joins[b]
+        if join_a.received_at ~= join_b.received_at then
+            return join_a.received_at < join_b.received_at
+        end
+        return join_a.admission < join_b.admission
+    end)
+    for _, claim in ipairs(claims) do
+        claim.allowance = allowance - (joins[claim].received_at - start_instant)
     end
     return claims
 end

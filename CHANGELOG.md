@@ -117,6 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `clear_hash_tree` keeping the dirty-page tracking of a stored machine, which could leave a wrong root hash
 - Fixed `verify_step_uarch` aborting the process on a log with a misaligned uarch access
 - Fixed release builds accepting uarch steps with misaligned accesses that the Solidity verifier rejects
+- Fixed the PRT referee model starting a claim's clock at a later re-post instead of its earliest post
 
 ## [0.22.0] - 2026-10-15
 ### Added

@@ -773,14 +773,17 @@ local function descend_tree(forest, container, key, height, position, stop_heigh
     return descend_tree(forest, values, index, tree.base_height, position, stop_height, siblings)
 end
 
--- An empty frontier forest of the given height, ready to append 2^log2_max_leaves leaves.
+-- A height creates an empty forest. A last-leaf proof restores coverage through that leaf,
+-- retaining its path within the completed subtrees and leaving sibling subtrees opaque.
 -- The level array is that of a frontier. Values first accumulate in a pending partial array
 -- whose last value implicitly fills the positions padded after it, and materialize into
 -- complete trees when the accumulated region ends, so the leaf count is tracked explicitly.
 -- Heights stay below 63 so counts and indices remain positive Lua integers. A taller tree
 -- splits into bundle forests under an outer forest.
-local function frontier_forest(log2_max_leaves, hash_type)
+local function frontier_forest(log2_max_leaves_or_last_proof, hash_type)
     assert(hash_type ~= nil, "hash type is required")
+    local proof = is_proof(log2_max_leaves_or_last_proof) and log2_max_leaves_or_last_proof or nil
+    local log2_max_leaves = proof and proof.log2_root_size or log2_max_leaves_or_last_proof
     assert(
         math.type(log2_max_leaves) == "integer" and log2_max_leaves >= 0 and log2_max_leaves < 63,
         "unsupported forest height"
@@ -795,6 +798,24 @@ local function frontier_forest(log2_max_leaves, hash_type)
     }
     for level = 1, log2_max_leaves + 1 do
         forest[level] = false
+    end
+    if proof then
+        assert_valid_frontier_proof(proof, hash_type)
+        forest.leaf_count = proof.target_address + 1
+        local subtree = proof.target_hash
+        local level = 1
+        -- Join the trailing right-child path into the lowest complete subtree.
+        while (forest.leaf_count & (1 << (level - 1))) == 0 do
+            subtree = new_mixed_tree(forest.hash_function, level, proof.sibling_hashes[level], subtree)
+            level = level + 1
+        end
+        forest[level] = subtree
+        -- The remaining complete subtrees are the proof's left siblings above that path.
+        for sibling_level = level + 1, log2_max_leaves do
+            if (forest.leaf_count & (1 << (sibling_level - 1))) ~= 0 then
+                forest[sibling_level] = proof.sibling_hashes[sibling_level]
+            end
+        end
     end
     return forest
 end

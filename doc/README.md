@@ -10851,14 +10851,13 @@ local function settle_uarch_state_hash(tournament, match, state_transition_offse
     local start_instant = current_time()
     local deadline_one = start_instant + match.claims[1].allowance
     local deadline_two = start_instant + match.claims[2].allowance
-    local proof_deadline = math.min(deadline_one, deadline_two)
     local eliminable_at = math.max(deadline_one, deadline_two)
     local proof <close> = request_first_valid(
         subscriptions,
         EVENTS.prove_state_transition,
         { tournament.epoch_input_offset, tournament.input_period_offset, state_transition_offset },
         function(response, _, received_at)
-            assert(received_at < proof_deadline, "late state transition proof")
+            assert(received_at < eliminable_at, "late state transition proof")
             return validate_state_transition_response(
                 tournament.dapp_contract,
                 root_hash_before,
@@ -10868,7 +10867,7 @@ local function settle_uarch_state_hash(tournament, match, state_transition_offse
             )
         end
     )
-    local obtained_root_hash = proof:wait_at_most(proof_deadline)
+    local obtained_root_hash = proof:wait_at_most(eliminable_at)
     if not obtained_root_hash then
         wait_until(eliminable_at)
         local elimination <close> = request_first_valid(
@@ -10974,14 +10973,13 @@ end
 Each valid response is charged the blocks it took beyond a response
 budget equal to the allowance, so in this model no clock runs down. At a
 sealed uarch leaf both clocks run from the seal, and either side may
-prove the transition before the earlier deadline. Nobody may claim a
-timeout win at a sealed leaf. If no proof arrives, anyone may eliminate
-both claims from the later deadline. Expiry alone never eliminates a
-claim, since a valid timeout-win or elimination response must arrive. A
-player that connects and never answers therefore stalls the
-demonstration, where a blockchain would let its deadline pass. An mcycle
-match has no clock running while its uarch tournament runs, and the
-uarch result settles it as soon as that tournament ends.
+prove the transition before the later deadline. If no proof arrives,
+anyone may eliminate both claims from that deadline. Expiry alone never
+eliminates a claim, since a valid timeout-win or elimination response
+must arrive. A player that connects and never answers therefore stalls
+the demonstration, where a blockchain would let its deadline pass. An
+mcycle match has no clock running while its uarch tournament runs, and
+the uarch result settles it as soon as that tournament ends.
 
 ### Running the tournament
 
@@ -11251,9 +11249,12 @@ as two claims exist. Each claim that joins meets the one waiting, and a
 claim that joins late may meet one that has already won a match. The
 model gathers a tournament’s claims first and runs the bracket in
 rounds, which is simpler to narrate. A uarch result settles its mcycle
-match at once, where Dave needs a transaction to propagate it. The [Lua
-PRT bridge](recipes/prt-lua-bridge.md) runs the same players against the
-deployed Dave contracts on a local chain. For the real thing, see the
-[Dave repository](https://github.com/cartesi/dave), the [Permissionless
-Refereed Tournaments](https://arxiv.org/abs/2212.12439) paper, and the
+match at once, where Dave needs a transaction to propagate it. At a
+sealed uarch leaf, Dave accepts a proof only before the earlier
+deadline, and then lets the claim with the later deadline win by
+timeout. The [Lua PRT bridge](recipes/prt-lua-bridge.md) runs the same
+players against the deployed Dave contracts on a local chain. For the
+real thing, see the [Dave repository](https://github.com/cartesi/dave),
+the [Permissionless Refereed
+Tournaments](https://arxiv.org/abs/2212.12439) paper, and the
 [Dave](https://doi.org/10.1145/3734698) paper.

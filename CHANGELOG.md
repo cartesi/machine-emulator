@@ -118,6 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `verify_step_uarch` aborting the process on a log with a misaligned uarch access
 - Fixed release builds accepting uarch steps with misaligned accesses that the Solidity verifier rejects
 - Fixed the PRT referee model starting a claim's clock at a later re-post instead of its earliest post
+- Fixed the PRT referee model limiting a sealed leaf's proof to the earlier of the two deadlines
 
 ## [0.22.0] - 2026-10-15
 ### Added

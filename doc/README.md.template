@@ -5770,9 +5770,8 @@ It waits for a timeout win until the match becomes eliminable, and then for an e
 ```{.lua key=prt_settle_timeout include=prt.lua/settle_timeout title="prt.lua settle_timeout"}
 ```
 Each valid response is charged the blocks it took beyond a response budget equal to the allowance, so in this model no clock runs down.
-At a sealed uarch leaf both clocks run from the seal, and either side may prove the transition before the earlier deadline.
-Nobody may claim a timeout win at a sealed leaf.
-If no proof arrives, anyone may eliminate both claims from the later deadline.
+At a sealed uarch leaf both clocks run from the seal, and either side may prove the transition before the later deadline.
+If no proof arrives, anyone may eliminate both claims from that deadline.
 Expiry alone never eliminates a claim, since a valid timeout-win or elimination response must arrive.
 A player that connects and never answers therefore stalls the demonstration, where a blockchain would let its deadline pass.
 An mcycle match has no clock running while its uarch tournament runs, and the uarch result settles it as soon as that tournament ends.
@@ -5998,6 +5997,7 @@ In Dave, a dispute starts as soon as two claims exist.
 Each claim that joins meets the one waiting, and a claim that joins late may meet one that has already won a match.
 The model gathers a tournament's claims first and runs the bracket in rounds, which is simpler to narrate.
 A uarch result settles its mcycle match at once, where Dave needs a transaction to propagate it.
+At a sealed uarch leaf, Dave accepts a proof only before the earlier deadline, and then lets the claim with the later deadline win by timeout.
 The [Lua PRT bridge](recipes/prt-lua-bridge.md) runs the same players against the deployed Dave contracts on a local chain.
 For the real thing, see the [Dave repository](https://github.com/cartesi/dave), the [Permissionless Refereed Tournaments](https://arxiv.org/abs/2212.12439) paper, and the [Dave](https://doi.org/10.1145/3734698) paper.
 

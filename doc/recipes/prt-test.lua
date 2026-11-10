@@ -809,7 +809,7 @@ do
         expected, padding = keccak(expected, padding), keccak(padding, padding)
     end
     assert(tree:get_root_hash() == expected, "streamed claim changed its input order or padding")
-    assert(player.outputs and not player.output_proofs, "sealing lost the outputs or proved them early")
+    assert(not player.last_output, "empty epoch kept an output")
     assert(handlers.prove_output(player) == "nothing", "empty epoch invented an output")
     assert(handlers.prove_outputs_merkle_root(player), "sealed epoch cannot prove its output root")
     assert(not player.epoch_pair and not player.epoch_builder, "sealing retained a working builder")
@@ -863,7 +863,7 @@ do
     )
 end
 
--- One sealed epoch answers arbitrary client output requests without acquiring a machine.
+-- One sealed epoch proves its last output without acquiring a machine. Other indices are no offer.
 for _, previous_count in ipairs({ 0, 3 }) do
     local genesis = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
     local previous_hashes = { keccak("previous first"), keccak("previous second"), keccak("previous last") }
@@ -882,10 +882,16 @@ for _, previous_count in ipairs({ 0, 3 }) do
     local player = new_test_player(nil, cache, "output fixture", previous_outputs_frontier)
     assert(player.label == "output fixture", "constructor lost the player label")
     local outputs = { "first", "", "third" }
-    player.outputs, player.output_count = outputs, #outputs
+    -- The input driver proves each input's last output before its hash joins the frontier
     for _, output in ipairs(outputs) do
-        hash_tree.frontier_push_back(player.outputs_frontier, keccak(output))
+        local output_hash = keccak(output)
+        player.last_output = {
+            output_data = output,
+            output_proof = hash_tree.frontier_next_proofs(player.outputs_frontier, { output_hash })[1],
+        }
+        hash_tree.frontier_push_back(player.outputs_frontier, output_hash)
     end
+    player.output_count = #outputs
     assert(hash_tree.frontier_get_leaf_count(player.previous_outputs_frontier) == previous_count)
     assert(hash_tree.frontier_get_leaf_count(player.outputs_frontier) == previous_count + #outputs)
     local expected_root = hash_tree.frontier_get_root_hash(player.outputs_frontier)
@@ -897,22 +903,18 @@ for _, previous_count in ipairs({ 0, 3 }) do
         error("output proof acquired a machine")
     end
     player.event_handler.epoch_sealed(player, 0)
-    assert(player.outputs_frontier == completed_frontier and not player.output_proofs, "sealing proved outputs")
+    assert(player.outputs_frontier == completed_frontier, "sealing changed the outputs frontier")
     assert(hash_tree.frontier_get_leaf_count(player.previous_outputs_frontier) == previous_count)
-    for _, index in ipairs({ 2, 0, 1, 2, 0 }) do
-        local response = player:prove_output(previous_count + index)
-        assert(response.output_index == previous_count + index and response.output_data == outputs[index + 1])
+    for _ = 1, 2 do
+        local response = player.event_handler.prove_output(player)
+        assert(response.output_index == previous_count + 2 and response.output_data == outputs[3])
         assert(response.output_proof.target_hash == keccak(response.output_data))
         assert(response.output_proof.root_hash == expected_root, "output proof changed the epoch root")
         hash_tree.verify_slice(response.output_proof)
     end
-    assert(
-        player.event_handler.prove_output(player).output_index == previous_count + 2,
-        "client request changed the offered output"
-    )
-    assert(
-        player:prove_output(previous_count + 3) == "nothing" and player:prove_output(previous_count - 1) == "nothing"
-    )
+    for _, index in ipairs({ -1, 0, 1, 3 }) do
+        assert(player:prove_output(previous_count + index) == "nothing", "an output other than the last was offered")
+    end
     assert(not pcall(player.prove_output, player, 0.5), "noninteger output index was accepted")
     player.new_machine_pair_at_epoch_input_offset = clone
 end
@@ -944,7 +946,11 @@ do
     function player.report_anomaly(_, kind, position)
         reports[#reports + 1] = kind .. " at " .. position
     end
-    player.outputs, player.output_count = { "first" }, 1
+    player.last_output = {
+        output_data = "first",
+        output_proof = hash_tree.frontier_next_proofs(player.outputs_frontier, { keccak("first") })[1],
+    }
+    player.output_count = 1
     hash_tree.frontier_push_back(player.outputs_frontier, keccak("first"))
     player.event_handler.epoch_sealed(player, 0)
     assert(player:prove_output(0) == "nothing", "an unprovable output was offered")
@@ -2344,19 +2350,25 @@ if arg[1] then
         return table.concat(fs.list_directory(epoch_directory), ","),
             table.concat(fs.list_directory(epoch_directory .. "/entries"), ",")
     end
-    local function stored_layout(input_count)
+    -- The file of the epoch's last output, which exists once the epoch has an output.
+    local function last_output_layout(output_count)
+        return output_count > 0 and string.format("last-output-%d.json,", output_count) or ""
+    end
+    local function stored_layout(input_count, output_count)
         return string.format(
-            "entries,forests,frontier-%d.json,inputs,machine,machine-cache-%d.json,machine.revert,outputs,"
-                .. "outputs-frontier-%d.json,outputs.log,state.json",
+            "entries,forests,frontier-%d.json,inputs,%smachine,machine-cache-%d.json,machine.revert,"
+                .. "outputs-frontier-%d.json,state.json",
             input_count,
+            last_output_layout(output_count),
             input_count,
             input_count
         )
     end
-    local function sealed_layout(input_count)
+    local function sealed_layout(input_count, output_count)
         return string.format(
-            "entries,forests,inputs,machine,machine-cache-%d.json,mcycle-forest.json,outputs,outputs-frontier-%d.json,"
-                .. "outputs.log,state.json",
+            "entries,forests,inputs,%smachine,machine-cache-%d.json,mcycle-forest.json,outputs-frontier-%d.json,"
+                .. "state.json",
+            last_output_layout(output_count),
             input_count,
             input_count
         )
@@ -2472,7 +2484,7 @@ if arg[1] then
                 )
             end
             local layout, entries = list_epoch_directory(epoch_directory)
-            assert(layout == stored_layout(recorded), "reopening left " .. layout)
+            assert(layout == stored_layout(recorded, state.output_count), "reopening left " .. layout)
             assert(entries == (recorded > 0 and "0,1" or "0"), "reopening left entries " .. entries)
         end
         -- A temporary pair that fails to load removes its clone.
@@ -2482,7 +2494,7 @@ if arg[1] then
             stored.machine_cache.entries[1].root_hash = keccak("wrong entry")
             assert(not pcall(stored.new_machine_pair_at_epoch_input_offset, stored, 0))
             local layout = list_epoch_directory(epoch_directory)
-            assert(layout == stored_layout(0), "a failed temporary pair left " .. layout)
+            assert(layout == stored_layout(0, 0), "a failed temporary pair left " .. layout)
         end
     end
     -- A player on stored machines, reopened from its epoch directory before each input, builds the
@@ -2495,7 +2507,7 @@ if arg[1] then
     end
     do
         local _ <close>, epoch_directory = new_scope_epoch_directory()
-        local sealed = { outputs = {} }
+        local sealed = {}
         for i = 1, #input_files do
             local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
             assert(reopened.input_count == i - 1, "reopening lost or invented inputs")
@@ -2591,12 +2603,12 @@ if arg[1] then
                 "checkpoint lost the output history"
             )
             assert(manifest.output_count > 0, "the fixture produced no outputs")
-            for output_index = 0, manifest.output_count - 1 do
-                local response = reopened:prove_output(output_index)
-                assert(response.output_proof.root_hash == cartesi.fromhex(manifest.outputs_root))
-                hash_tree.verify_slice(response.output_proof)
-                sealed.outputs[output_index + 1] = encode_response(response, "OutputProof")
-            end
+            local response = reopened.event_handler.prove_output(reopened)
+            assert(response.output_index == manifest.output_count - 1, "the offer is not the last output")
+            assert(response.output_proof.root_hash == cartesi.fromhex(manifest.outputs_root))
+            hash_tree.verify_slice(response.output_proof)
+            sealed.output = encode_response(response, "OutputProof")
+            sealed.output_count = manifest.output_count
         end
         -- Scratch from the last snapshot and pair stays until a reopen, which removes it.
         do
@@ -2622,12 +2634,10 @@ if arg[1] then
                     == sealed.outputs_merkle_root_proof,
                 "reopening changed the outputs Merkle root proof"
             )
-            for output_index, encoded in ipairs(sealed.outputs) do
-                assert(
-                    encode_response(reopened:prove_output(output_index - 1), "OutputProof") == encoded,
-                    "reopening changed an output proof"
-                )
-            end
+            assert(
+                encode_response(reopened.event_handler.prove_output(reopened), "OutputProof") == sealed.output,
+                "reopening changed the output proof"
+            )
         end
         -- The stored player answers as the honest fork-mode player sealed on the same inputs.
         assert(
@@ -2639,14 +2649,12 @@ if arg[1] then
                 == sealed.outputs_merkle_root_proof,
             "stored machines changed the outputs Merkle root proof"
         )
-        for output_index, encoded in ipairs(sealed.outputs) do
-            assert(
-                encode_response(honest:prove_output(output_index - 1), "OutputProof") == encoded,
-                "stored machines changed an output proof"
-            )
-        end
+        assert(
+            encode_response(honest.event_handler.prove_output(honest), "OutputProof") == sealed.output,
+            "stored machines changed the output proof"
+        )
         local layout, entries = list_epoch_directory(epoch_directory)
-        assert(layout == sealed_layout(3), "reopening left unexpected files: " .. layout)
+        assert(layout == sealed_layout(3, sealed.output_count), "reopening left unexpected files: " .. layout)
         assert(entries == "0,1,2,3", "stored machines kept unexpected entries: " .. entries)
         -- Equal hashes in separate claim forests must not share expansions through their files.
         local bundle = hash_tree.frontier_forest(LOG2_BUNDLE_UARCH_CYCLE_COUNT, "keccak256")
@@ -2692,7 +2700,7 @@ if arg[1] then
         end
         local state_path = epoch_directory .. "/state.json"
         local state = fs.read_file(state_path)
-        local old_state, replacements = state:gsub('"version": 3', '"version": 2', 1)
+        local old_state, replacements = state:gsub('"version": 4', '"version": 3', 1)
         assert(replacements == 1, "epoch state did not record its new layout version")
         fs.write_file(old_state, state_path)
         local loaded_old, failure = pcall(prt.new_stored_player, dapp_contract, "old layout", nil, epoch_directory)
@@ -2726,7 +2734,7 @@ if arg[1] then
             print("prt-test: skipping crash cut points without reflinks")
         else
             -- What the player recovers at a boundary: inputs, epoch machine, claim forest frontier,
-            -- outputs, and cache.
+            -- last output, and cache.
             local function describe_state(player)
                 local frontier = player.epoch_builder.frontier
                 local parts = {
@@ -2744,9 +2752,8 @@ if arg[1] then
                         parts[#parts + 1] = level .. ":" .. cartesi.tohex(frontier[level].hash)
                     end
                 end
-                for epoch_output_offset, output_hash in ipairs(player:read_output_hashes()) do
-                    assert(keccak(player:read_output(epoch_output_offset - 1)) == output_hash)
-                    parts[#parts + 1] = cartesi.tohex(output_hash)
+                if player.last_output then
+                    parts[#parts + 1] = encode_response(player.last_output, "OutputProof")
                 end
                 return table.concat(parts, "|")
             end
@@ -2762,6 +2769,9 @@ if arg[1] then
                     fs.read_file(player.epoch_directory .. "/" .. player.state_files.machine_cache),
                     encode_response(player.event_handler.prove_outputs_merkle_root(player), "OutputsMerkleRootProof"),
                 }
+                if player.last_output then
+                    parts[#parts + 1] = encode_response(player.last_output, "OutputProof")
+                end
                 for _, claim in ipairs(player.uarch_claims) do
                     parts[#parts + 1] = string.format(
                         "%d:%d:%s",
@@ -2877,7 +2887,10 @@ if arg[1] then
                 if not reopened.mcycle_forest then
                     assert(crash.processing == "seal", where .. " lost the seal")
                     assert(describe_state(reopened) == references[3], where .. " recovered a different state")
-                    assert(list_epoch_directory(crash.directory) == stored_layout(3), where .. " left files")
+                    assert(
+                        list_epoch_directory(crash.directory) == stored_layout(3, reopened.output_count),
+                        where .. " left files"
+                    )
                     kind = "seal:open"
                 elseif #reopened.uarch_claims == 0 then
                     assert(describe_sealed_state(reopened) == references.sealed, where .. " recovered a different seal")
@@ -2966,7 +2979,8 @@ if arg[1] then
                     table.sort(entries)
                     local layout, stored_entries = list_epoch_directory(crash.directory)
                     assert(
-                        layout == stored_layout(boundary) and stored_entries == table.concat(entries, ","),
+                        layout == stored_layout(boundary, reopened.output_count)
+                            and stored_entries == table.concat(entries, ","),
                         "reopening after a crash at " .. crash.step .. " left " .. layout
                     )
                     local kind = string.format("%d:%s:%d", crash.processing, crash.snapshot, boundary)
@@ -3257,19 +3271,20 @@ if arg[1] then
     )
     local latest = honest.event_handler.prove_output(honest)
     assert(latest.output_data and latest.output_index == 1, "accepted output was lost during replay")
-    local earlier = honest:prove_output(0)
-    assert(earlier.output_data and earlier.output_index == 0, "the player cannot prove an earlier output")
     local again = honest.event_handler.prove_output(honest)
     assert(
         again.output_index == latest.output_index and again.output_data == latest.output_data,
-        "client changed the offered output"
+        "a repeated request changed the offered output"
     )
-    for _, output in ipairs({ latest, earlier, again }) do
+    for _, output in ipairs({ latest, again }) do
         assert(output.output_proof.root_hash == result.tx_buffer_data, "output proof used the wrong root")
         assert(output.output_proof.target_hash == keccak(output.output_data), "output proof used the wrong payload")
         hash_tree.verify_slice(output.output_proof)
     end
-    assert(honest:prove_output(2) == "nothing", "the player invented an output at a missing index")
+    assert(
+        honest:prove_output(0) == "nothing" and honest:prove_output(2) == "nothing",
+        "the player offered an output other than the last"
+    )
 
     local forger_inputs, forger_cache <close> = new_test_cache(dapp_contract)
     local original_input = dapp_contract.inputs[1]

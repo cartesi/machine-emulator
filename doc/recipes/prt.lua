@@ -1405,12 +1405,30 @@ local function run_to_stop(builder, machine, mcycle_end, on_yield_automatic)
     end
 end
 
--- Retain the outputs of an accepted input and return whether their cumulative root is the one the
--- machine holds. Pending outputs from other outcomes are discarded when the input driver returns.
-local function flush_pending_outputs(pending_outputs, outputs, outputs_frontier, outputs_merkle_root)
-    for _, output_data in ipairs(pending_outputs) do
-        outputs[#outputs + 1] = output_data
-        hash_tree.frontier_push_back(outputs_frontier, keccak(output_data))
+-- The proof of an output whose hash is the next to join the outputs frontier.
+local function prove_next_output(outputs_frontier, output_hash)
+    return hash_tree.frontier_next_proofs(outputs_frontier, { output_hash })[1]
+end
+
+-- Retain the last output of an accepted input with its proof, push the input's output hashes, and return
+-- whether their cumulative root is the one the machine holds. Pending output hashes from other outcomes
+-- are discarded when the input driver returns.
+local function flush_pending_outputs(
+    pending_output_hashes,
+    last_output_data,
+    last_output,
+    outputs_frontier,
+    outputs_merkle_root
+)
+    local count = #pending_output_hashes
+    for i = 1, count - 1 do
+        hash_tree.frontier_push_back(outputs_frontier, pending_output_hashes[i])
+    end
+    if count > 0 then
+        -- The last output is proven before its hash joins the frontier
+        last_output.output_data = last_output_data
+        last_output.output_proof = prove_next_output(outputs_frontier, pending_output_hashes[count])
+        hash_tree.frontier_push_back(outputs_frontier, pending_output_hashes[count])
     end
     return hash_tree.frontier_get_root_hash(outputs_frontier) == outputs_merkle_root
 end
@@ -2030,7 +2048,7 @@ function player_meta.__index:run_to_input_mcycle_offset(
     epoch_input_offset,
     input_data,
     input_mcycle_offset,
-    outputs,
+    last_output,
     outputs_frontier
 )
     if input_mcycle_offset == 0 then
@@ -2038,15 +2056,16 @@ function player_meta.__index:run_to_input_mcycle_offset(
     end
     local machine = pair.machine
     local input_mcycle_base = begin_input(builder, pair, epoch_input_offset, input_data)
-    local pending_outputs = {}
+    local pending_output_hashes, last_output_data = {}, nil
     local on_yield_automatic
-    if outputs then
+    if last_output then
         function on_yield_automatic(yield_reason, output_data)
             if is_tx_output(yield_reason) then
                 if machine:read_reg("htif_tohost_data") > CMIO_TX_BUFFER_LENGTH then
                     self:report_anomaly("oversized_output", "input " .. epoch_input_offset)
                 end
-                pending_outputs[#pending_outputs + 1] = output_data
+                pending_output_hashes[#pending_output_hashes + 1] = keccak(output_data)
+                last_output_data = output_data
             end
         end
     end
@@ -2062,10 +2081,18 @@ function player_meta.__index:run_to_input_mcycle_offset(
     if is_rx_rejected(yield_reason) then
         pair:revert()
     else
-        if outputs and is_rx_accepted(yield_reason) then
+        if last_output and is_rx_accepted(yield_reason) then
             -- The referee reads the outputs Merkle root from the first word of the tx buffer
             local outputs_merkle_root = machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE)
-            if not flush_pending_outputs(pending_outputs, outputs, outputs_frontier, outputs_merkle_root) then
+            if
+                not flush_pending_outputs(
+                    pending_output_hashes,
+                    last_output_data,
+                    last_output,
+                    outputs_frontier,
+                    outputs_merkle_root
+                )
+            then
                 self:report_anomaly("outputs_root_mismatch", "input " .. epoch_input_offset)
             end
         end
@@ -2136,7 +2163,7 @@ function event_handler.input_added(self, epoch_input_offset, path)
     assert(epoch_input_offset == self.input_count, "input events are not ordered")
     self:store_input(epoch_input_offset, path)
     self.input_count = epoch_input_offset + 1
-    local outputs = {}
+    local last_output = {}
     if not self.epoch_stopped then
         local break_reason, yield_reason = self:run_to_input_mcycle_offset(
             builder,
@@ -2144,7 +2171,7 @@ function event_handler.input_added(self, epoch_input_offset, path)
             epoch_input_offset,
             self:read_input(epoch_input_offset),
             MAX_MCYCLES_PER_ADVANCE_STATE,
-            outputs,
+            last_output,
             self.outputs_frontier
         )
         if not is_rx_accepted(yield_reason) and not is_rx_rejected(yield_reason) then
@@ -2153,8 +2180,9 @@ function event_handler.input_added(self, epoch_input_offset, path)
         end
     end
     self.machine_cache:consider(epoch_input_offset + 1, pair.machine)
-    self.output_count = self.output_count + #outputs
-    self:commit_epoch_state(pair, builder, outputs)
+    self.output_count = hash_tree.frontier_get_leaf_count(self.outputs_frontier)
+        - hash_tree.frontier_get_leaf_count(self.previous_outputs_frontier)
+    self:commit_epoch_state(pair, builder, last_output)
     -- The boundary is recorded, so the input no longer needs its snapshot
     pair:commit()
     self.epoch_pair, self.epoch_builder = pair:move(), builder
@@ -2244,8 +2272,8 @@ function player_meta.__index:collect_uarch_cycle_bundle(epoch_input_offset, inpu
 end
 -- docs:end collect_uarch_cycle_bundle
 
--- The player keeps its inputs and outputs in memory and commits nothing. A stored player overrides
--- these methods. The input's bytes are read at once, so its file need not outlive the event.
+-- The player keeps its inputs and the epoch's last output in memory and commits nothing. A stored player
+-- overrides these methods. The input's bytes are read at once, so its file need not outlive the event.
 function player_meta.__index:store_input(epoch_input_offset, path)
     self.inputs[epoch_input_offset + 1] = fs.read_file(path)
 end
@@ -2255,18 +2283,11 @@ function player_meta.__index:read_input(epoch_input_offset)
     return self.inputs[epoch_input_offset + 1]
 end
 
-function player_meta.__index:read_output(epoch_output_offset)
-    return self.outputs[epoch_output_offset + 1]
-end
-
--- The keccak of each output of the epoch, in order.
-function player_meta.__index:read_output_hashes()
-    return map(self.outputs, keccak)
-end
-
--- Keeps the outputs of the latest input (the epoch's last #outputs).
-function player_meta.__index:commit_epoch_state(_, _, outputs)
-    table.move(outputs, 1, #outputs, self.output_count - #outputs + 1, self.outputs)
+-- Keeps the last output of the latest input, if it had any.
+function player_meta.__index:commit_epoch_state(_, _, last_output)
+    if last_output.output_proof then
+        self.last_output = last_output
+    end
 end
 
 function player_meta.__index:seal_epoch_state() end -- luacheck: ignore 212 self
@@ -2279,28 +2300,23 @@ function player_meta.__index:report_anomaly(kind, position)
     io.stderr:write(string.format("%s: %s at %s\n", self.label, kind, position))
 end
 
--- Clients may request any accepted output from the sealed epoch by its global index, independently of
--- the output the demonstration offers to the referee. Missing indices are no offer.
+-- Proves the epoch's last output, the only one the player keeps. Other indices are no offer.
 function player_meta.__index:prove_output(output_index)
     assert(math.type(output_index) == "integer", "invalid output index")
     assert(self.mcycle_forest, "epoch is not sealed")
-    local epoch_output_offset = output_index - hash_tree.frontier_get_leaf_count(self.previous_outputs_frontier)
-    if epoch_output_offset < 0 or epoch_output_offset >= self.output_count then
+    local last_output = self.last_output
+    if not last_output or output_index ~= last_output.output_proof.target_address then
         return "nothing"
     end
-    -- The first request proves every output of the epoch at once.
-    if not self.output_proofs then
-        self.output_proofs = hash_tree.frontier_next_proofs(self.previous_outputs_frontier, self:read_output_hashes())
-    end
     -- An output proves only against the root the settled machine holds
-    if self.output_proofs[epoch_output_offset + 1].root_hash ~= self.outputs_merkle_root_proof.tx_buffer_data then
+    if last_output.output_proof.root_hash ~= self.outputs_merkle_root_proof.tx_buffer_data then
         self:report_anomaly("unprovable_output", "output " .. output_index)
         return "nothing"
     end
     return {
         output_index = output_index,
-        output_data = self:read_output(epoch_output_offset),
-        output_proof = self.output_proofs[epoch_output_offset + 1],
+        output_data = last_output.output_data,
+        output_proof = last_output.output_proof,
     }
 end
 
@@ -2362,14 +2378,13 @@ end
 -- until state.json records the input's end.
 -- Small player fields are inline in state.json, and large ones are named by the file that holds
 -- them. A field is absent when the player does not have it, so an open epoch has an epoch_builder
--- and a sealed epoch has the seal's fields instead. Inputs and outputs live in files of
--- their own, and outputs.log holds the output keccaks. state.json reaches them through its input
--- and output counts.
+-- and a sealed epoch has the seal's fields instead. Inputs live in files of their own, which
+-- state.json reaches through its input count.
 -- The forests directory contains one tree directory per claim: mcycle/ for the epoch builder
 -- and sealed mcycle forest, and uarch-<input>-<period>/ for each uarch claim.
 --------------------------------------------------------------------------------
 
-local EPOCH_SUBDIRECTORIES = { "entries", "forests", "inputs", "outputs" }
+local EPOCH_SUBDIRECTORIES = { "entries", "forests", "inputs" }
 
 -- state.json names the file of each large player field. The boundary files take the input count,
 -- so a new boundary never overwrites the files the committed state.json names.
@@ -2379,6 +2394,12 @@ local function get_boundary_files(input_count)
         outputs_frontier = "outputs-frontier-" .. input_count .. ".json",
         machine_cache = "machine-cache-" .. input_count .. ".json",
     }
+end
+
+-- The file of the epoch's last output takes the output count instead. A boundary without new outputs
+-- names the file the committed state.json names, so the file is not written again.
+local function get_last_output_file(output_count)
+    return "last-output-" .. output_count .. ".json"
 end
 
 local MCYCLE_FOREST_FILE = "mcycle-forest.json"
@@ -2410,6 +2431,7 @@ end
 local EPOCH_FILE_PATTERNS = {
     "^frontier%-%d+%.json$",
     "^outputs%-frontier%-%d+%.json$",
+    "^last%-output%-%d+%.json$",
     "^machine%-cache%-%d+%.json$",
     "^mcycle%-forest%.json$",
     "^uarch%-%d+%-%d+%.json$",
@@ -2424,7 +2446,8 @@ local function is_epoch_file(name)
     return name:find(".tmp.", 1, true) ~= nil
 end
 
--- state.json keeps the sealed epoch's outputs Merkle root proof inline.
+-- state.json keeps the sealed epoch's outputs Merkle root proof inline. LastOutput is the schema of the
+-- file that holds the epoch's last output.
 local EPOCH_STATE_SCHEMAS = {
     EpochState = { outputs_merkle_root_proof = "OutputsMerkleRootProof", uarch_claims = "UarchClaims" },
     UarchClaims = { items = "Default" },
@@ -2436,21 +2459,14 @@ local EPOCH_STATE_SCHEMAS = {
         tx_buffer_data = "Base64",
         tx_buffer_proof = "Proof",
     },
+    LastOutput = { output_data = "Base64", output_proof = "Proof" },
 }
 
 local function get_input_path(directory, epoch_input_offset)
     return directory .. "/inputs/" .. epoch_input_offset .. ".bin"
 end
 
-local function get_output_path(directory, epoch_output_offset)
-    return directory .. "/outputs/" .. epoch_output_offset .. ".bin"
-end
-
-local function get_outputs_log_path(directory)
-    return directory .. "/outputs.log"
-end
-
--- A stored player keeps its inputs, outputs, and state in its epoch directory.
+-- A stored player keeps its inputs, its last output, and its state in its epoch directory.
 local stored_player_meta = { __index = setmetatable({}, { __index = player_meta.__index }) }
 local stored_player_methods = stored_player_meta.__index
 stored_player_meta.__close = player_meta.__close
@@ -2471,48 +2487,19 @@ function stored_player_methods:read_input(epoch_input_offset)
     return fs.read_file(get_input_path(self.epoch_directory, epoch_input_offset))
 end
 
-function stored_player_methods:read_output(epoch_output_offset)
-    return fs.read_file(get_output_path(self.epoch_directory, epoch_output_offset))
-end
-
-function stored_player_methods:read_output_hashes()
-    local log = fs.read_file(get_outputs_log_path(self.epoch_directory))
-    assert(#log == self.output_count * cartesi.HASH_SIZE, "outputs.log does not match the output count")
-    local hashes = {}
-    for epoch_output_offset = 0, self.output_count - 1 do
-        local first = epoch_output_offset * cartesi.HASH_SIZE + 1
-        hashes[epoch_output_offset + 1] = log:sub(first, first + cartesi.HASH_SIZE - 1)
-    end
-    return hashes
-end
-
--- Stores the outputs of the latest input (the epoch's last #outputs) and writes their keccaks to
--- outputs.log after the committed records.
-local function store_outputs(self, outputs)
-    local directory = self.epoch_directory
-    local first = self.output_count - #outputs
-    for i, output_data in ipairs(outputs) do
-        fs.write_durable_file(output_data, get_output_path(directory, first + i - 1))
-    end
-    fs.sync_directory(directory .. "/outputs")
-    local log <close> = assert(io.open(get_outputs_log_path(directory), "r+b"))
-    assert(log:seek("set", first * cartesi.HASH_SIZE))
-    assert(log:write(table.concat(map(outputs, keccak))))
-    fs.sync_file(log)
-end
-
 -- Commits the player's fields in state.json. The caller makes the files it names durable first.
 -- Afterwards, the files only the previous state.json named and the evicted cache entries are removed.
 local function store_epoch_state(self, root_hash, files, pad_bundle)
     local directory = self.epoch_directory
     local state = {
-        version = 3,
+        version = 4,
         input_count = self.input_count,
         output_count = self.output_count,
         root_hash = cartesi.tohex(root_hash),
         epoch_stopped = self.epoch_stopped == true,
         initial_outputs_merkle_root = cartesi.tohex(hash_tree.frontier_get_root_hash(self.previous_outputs_frontier)),
         outputs_frontier = files.outputs_frontier,
+        last_output = files.last_output,
         machine_cache = files.machine_cache,
     }
     if files.epoch_builder then
@@ -2552,14 +2539,22 @@ end
 -- Commits the boundary the epoch pair has reached. The backup keeps the previous boundary until the caller
 -- commits the pair after this. The machine is destroyed and its directory synced before state.json records
 -- the boundary.
-function stored_player_methods:commit_epoch_state(pair, builder, outputs)
+function stored_player_methods:commit_epoch_state(pair, builder, last_output)
     local directory = self.epoch_directory
     local files = get_boundary_files(self.input_count)
     store_forest(builder.frontier, directory, "mcycle", files.epoch_builder)
     hash_tree.frontier_store(self.outputs_frontier, directory .. "/" .. files.outputs_frontier)
     self.machine_cache:store(directory .. "/" .. files.machine_cache)
-    if #outputs > 0 then
-        store_outputs(self, outputs)
+    if self.output_count > 0 then
+        files.last_output = get_last_output_file(self.output_count)
+    end
+    if last_output.output_proof then
+        self.last_output = last_output
+        fs.write_durable_file(
+            cartesi.tojson(last_output, 2, "LastOutput", EPOCH_STATE_SCHEMAS) .. "\n",
+            directory .. "/" .. files.last_output
+        )
+        fs.sync_directory(directory)
     end
     local root_hash = pair.machine:get_root_hash()
     pair.machine:destroy()
@@ -2625,6 +2620,7 @@ function stored_player_methods:seal_epoch_state(pair)
     store_forest(self.mcycle_forest, directory, "mcycle", MCYCLE_FOREST_FILE)
     store_epoch_state(self, self.final_state_hash, {
         outputs_frontier = self.state_files.outputs_frontier,
+        last_output = self.state_files.last_output,
         machine_cache = self.state_files.machine_cache,
         mcycle_forest = MCYCLE_FOREST_FILE,
     })
@@ -2688,12 +2684,12 @@ local function clear_epoch_directory(directory)
                 remove_forest_directory(path .. "/" .. forest)
             end
             fs.remove_directory(path)
-        elseif name == "inputs" or name == "outputs" then
+        elseif name == "inputs" then
             for _, file in ipairs(fs.list_directory(path)) do
                 fs.remove_file(path .. "/" .. file)
             end
             fs.remove_directory(path)
-        elseif name == "state.json" or name == "outputs.log" or is_epoch_file(name) then
+        elseif name == "state.json" or is_epoch_file(name) then
             fs.remove_file(path)
         else
             error("epoch directory holds a file its layout does not create: " .. name)
@@ -2713,7 +2709,6 @@ local function create_epoch_directory(directory)
     for _, name in ipairs(EPOCH_SUBDIRECTORIES) do
         fs.create_directory(directory .. "/" .. name)
     end
-    fs.write_durable_file("", get_outputs_log_path(directory))
     fs.sync_directory(directory)
 end
 
@@ -2755,13 +2750,13 @@ local function get_state_files(state)
     return {
         epoch_builder = state.epoch_builder and state.epoch_builder.frontier,
         outputs_frontier = state.outputs_frontier,
+        last_output = state.last_output,
         machine_cache = state.machine_cache,
         mcycle_forest = state.mcycle_forest,
     }
 end
 
--- Removes everything state.json does not reach, including inputs, outputs, and outputs.log records
--- past its counts.
+-- Removes everything state.json does not reach, including inputs past its count.
 local function remove_epoch_leftovers(directory, state, machine_cache)
     local function remove_files(subdirectory, count)
         for _, name in ipairs(fs.list_directory(subdirectory)) do
@@ -2801,12 +2796,6 @@ local function remove_epoch_leftovers(directory, state, machine_cache)
         end
     end
     remove_files(directory .. "/inputs", state.input_count)
-    remove_files(directory .. "/outputs", state.output_count)
-    local outputs_log_path = get_outputs_log_path(directory)
-    local outputs_log_size = state.output_count * cartesi.HASH_SIZE
-    assert(fs.get_file_size(outputs_log_path) >= outputs_log_size, "outputs.log lost committed records")
-    fs.truncate_file(outputs_log_path, outputs_log_size)
-    fs.sync_file(outputs_log_path)
     local entries = {}
     for _, entry in ipairs(machine_cache.entries) do
         entries[tostring(entry.epoch_input_offset)] = true
@@ -2824,7 +2813,7 @@ end
 local function reopen_epoch_directory(self)
     local directory = self.epoch_directory
     local state = cartesi.fromjson(fs.read_file(directory .. "/state.json"), "EpochState", EPOCH_STATE_SCHEMAS)
-    assert(state.version == 3, "unsupported epoch state version")
+    assert(state.version == 4, "unsupported epoch state version")
     assert(
         cartesi.fromhex(state.initial_outputs_merkle_root)
             == hash_tree.frontier_get_root_hash(self.previous_outputs_frontier),
@@ -2845,6 +2834,14 @@ local function reopen_epoch_directory(self)
             == hash_tree.frontier_get_leaf_count(self.previous_outputs_frontier) + self.output_count,
         "the outputs frontier does not match the output count"
     )
+    if state.last_output then
+        self.last_output =
+            cartesi.fromjson(fs.read_file(directory .. "/" .. state.last_output), "LastOutput", EPOCH_STATE_SCHEMAS)
+        assert(
+            self.last_output.output_proof.root_hash == hash_tree.frontier_get_root_hash(self.outputs_frontier),
+            "the last output does not match the outputs frontier"
+        )
+    end
     local forests_directory = directory .. "/forests"
     if state.epoch_builder then
         self.epoch_pair = new_stored_machine_pair(new_stored_machine(root_hash, machine_directory), machine_directory)
@@ -2940,7 +2937,7 @@ end
 -- A forked player runs on forked servers.
 local function new_forked_player(dapp_contract, label, previous_outputs_frontier)
     local self <close> = new_empty_player(player_meta, dapp_contract, label, previous_outputs_frontier)
-    self.inputs, self.outputs = {}, {}
+    self.inputs = {}
     self.epoch_pair =
         new_forked_machine_pair(prt.new_machine(dapp_contract.initial_state_hash, dapp_contract.machine_directory))
     local machine = self.epoch_pair.machine

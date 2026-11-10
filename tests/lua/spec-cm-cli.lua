@@ -3559,6 +3559,42 @@ dofile(%q)
     end)
 
     -- -------------------------------------------------------------------------
+    -- A rejection that declares more data than the tx buffer
+    --
+    -- What: The guest writes the whole tohost word, so a rejected yield may declare any data
+    --       length. The CLI ignores a rejection's data, so it still computes the epoch's claim.
+    -- How:  The guest accepts once with rollup, then rejects the input with the yield utility,
+    --       declaring one byte past the tx buffer.
+    -- -------------------------------------------------------------------------
+    it("mcycle computation hash survives a rejection declaring more data than the tx buffer", function()
+        local _ <close>, address = scope_spawned_server()
+        local _ <close>, prefix = tests_util.scope_temp_pathname()
+        local _ <close> = tests_util.scope_exit(function()
+            os.remove(prefix .. "-oversized-0.bin")
+            os.remove(prefix .. "-oversized-hash.bin")
+        end)
+        filesystem.write_file(encode_advance(0, "reject-me"), prefix .. "-oversized-0.bin")
+        local tx_buffer_length = 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE
+        run_ok({
+            "--remote-address=" .. address,
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-oversized-%i.bin,input_file_index_begin:0,input_file_index_end:1,output:,rejected_output:,"
+                .. "output_proof:,report:,outputs_merkle_root:,outputs_merkle_root_proof:",
+            "--mcycle-computation-hash=filename:"
+                .. prefix
+                .. "-oversized-hash.bin,log2_mcycle_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "rollup accept > /dev/null && yield manual rx-rejected " .. (tx_buffer_length + 1),
+        })
+        expect.equal(#filesystem.read_file(prefix .. "-oversized-hash.bin"), cartesi.HASH_SIZE)
+    end)
+
+    -- -------------------------------------------------------------------------
     -- Plain runs without reverts abort at the first rejection
     --
     -- What: --revert-mode=none exists for fast runs of inputs expected to be accepted. A

@@ -1050,8 +1050,8 @@ CM_API cm_error cm_reset_uarch(cm_machine *m);
 /// \param data Receives the yield data. If NULL, length will still be set without reading any data.
 /// \param length Receives the yield data length. Must be initialized to the size of data buffer.
 /// If initialized to 0, length will still be set without reading any data, as if data were NULL.
-/// \details May fail if the machine is not in a valid yield state, the yield data does not fit in the
-/// CMIO TX buffer, or the data buffer is too small.
+/// \details May fail if the machine is not in a valid yield state or the data buffer is too small.
+/// A data length the guest declares beyond the CMIO TX buffer is clamped to the buffer's length.
 /// In case of an automatic yield with progress reason, length is 4 and data is the per mille progress as an integer.
 /// In case of other automatic yields, length is variable (up to 2MB) and data is an output or reports.
 /// In case of a manual yield with accepted reason, length is 32 and data is filled with the outputs Merkle root.

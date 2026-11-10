@@ -1990,10 +1990,8 @@ machine_cmio_request machine::receive_cmio_request(std::span<uint8_t> data) cons
             std::memcpy(data.data(), &tohost_data, request.available_length);
         }
     } else {
-        request.available_length = tohost_data;
-        if (request.available_length > AR_CMIO_TX_BUFFER_LENGTH) {
-            throw std::runtime_error{"CMIO request data is too large"};
-        }
+        // The guest declares any length, but only the tx buffer holds data
+        request.available_length = std::min<uint64_t>(tohost_data, AR_CMIO_TX_BUFFER_LENGTH);
         if (!data.empty()) {
             if (request.available_length > data.size()) {
                 throw std::invalid_argument{"data buffer length is too small"};

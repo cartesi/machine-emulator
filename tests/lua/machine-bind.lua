@@ -1434,16 +1434,31 @@ do_test("receive_cmio_request fails if machine is not yielded", function(machine
     end)
 end)
 
-do_test("receive_cmio_request fails if data is too big", function(machine)
+do_test("receive_cmio_request clamps data to the tx buffer", function(machine)
+    local tx_buffer_length = 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE
+    machine:write_memory(cartesi.AR_CMIO_TX_BUFFER_START + tx_buffer_length - 4, "last")
+    local tx_buffer = machine:read_memory(cartesi.AR_CMIO_TX_BUFFER_START, tx_buffer_length)
+    for _, yield in ipairs({
+        { "iflags_Y", cartesi.HTIF_YIELD_CMD_MANUAL, cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED },
+        { "iflags_X", cartesi.HTIF_YIELD_CMD_AUTOMATIC, cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT },
+    }) do
+        local flag, yield_cmd, yield_reason = table.unpack(yield)
+        machine:write_reg("iflags_X", 0)
+        machine:write_reg("iflags_Y", 0)
+        machine:write_reg(flag, 1)
+        machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+        machine:write_reg("htif_tohost_cmd", yield_cmd)
+        machine:write_reg("htif_tohost_reason", yield_reason)
+        machine:write_reg("htif_tohost_data", tx_buffer_length + 1)
+        local cmd, reason, data = machine:receive_cmio_request()
+        assert(cmd == yield_cmd and reason == yield_reason)
+        assert(data == tx_buffer, "an oversized data length was not clamped to the tx buffer")
+    end
+    machine:write_reg("iflags_X", 0)
     machine:write_reg("iflags_Y", 1)
-    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
     machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
     machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
-    machine:write_reg("htif_tohost_data", 1 + (1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE))
-    tests_util.assert_error("CMIO request data is too large", function()
-        machine:receive_cmio_request()
-    end)
-    -- a data length that fits in the tx buffer is accepted
+    -- a data length that fits in the tx buffer is returned as is
     local expected_data = "12345678"
     machine:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, expected_data)
     machine:write_reg("htif_tohost_data", 8)

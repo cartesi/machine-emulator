@@ -629,6 +629,47 @@ do
     append("inputbox", 0, input_event(4))
     assert(not pcall(session.poll, session) and #calls == 0, "missing input was accepted")
 end
+-- The consensus seals at most 2^24 pending inputs, so an input past that limit belongs to a later
+-- epoch and is not delivered, and a seal that takes it is refused. Delivering that many inputs is
+-- infeasible, so the delivered inputs start one short of the limit.
+for _, past_limit in ipairs({ false, true }) do
+    local cartesi = require("cartesi")
+    local limit = 1 << cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+    local session, _, append, input_event, seal_event = accumulating()
+    local delivered = {}
+    session.player = {
+        event_handler = {
+            input_added = function(_, epoch_input_offset)
+                delivered[#delivered + 1] = epoch_input_offset
+            end,
+            epoch_sealed = function(_, count)
+                delivered.sealed = count
+            end,
+        },
+    }
+    local added = 0
+    session.inputs = setmetatable({}, {
+        __len = function()
+            return limit - 1 + added
+        end,
+        __newindex = function(inputs, index, data)
+            added = added + 1
+            rawset(inputs, index, data)
+        end,
+    })
+    append("inputbox", 0, input_event(3 + limit - 1))
+    append("inputbox", 1, input_event(3 + limit))
+    local sealed = seal_event()
+    sealed.inputIndexUpperBound = 3 + limit + (past_limit and 1 or 0)
+    append("consensus", 2, sealed)
+    local polled = pcall(session.poll, session)
+    assert(#delivered == 1 and delivered[1] == limit - 1, "an input past the epoch's limit was delivered")
+    if past_limit then
+        assert(not polled and not delivered.sealed, "a seal past the epoch's input limit was accepted")
+    else
+        assert(polled and delivered.sealed == limit, "the capped seal was refused")
+    end
+end
 -- Depths count successors. Consensus tags use the node's block, and an
 -- unavailable tag must never silently fall back to latest.
 do

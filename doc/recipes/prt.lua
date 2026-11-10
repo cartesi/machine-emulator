@@ -2161,6 +2161,7 @@ function event_handler.input_added(self, epoch_input_offset, path)
     local builder = self.epoch_builder
     self.epoch_pair, self.epoch_builder = nil, nil
     assert(epoch_input_offset == self.input_count, "input events are not ordered")
+    assert(epoch_input_offset < 1 << LOG2_MAX_ADVANCE_STATES_PER_EPOCH, "input offset past the epoch's input limit")
     self:store_input(epoch_input_offset, path)
     self.input_count = epoch_input_offset + 1
     local last_output = {}

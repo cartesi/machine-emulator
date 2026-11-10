@@ -19,7 +19,7 @@ WORKDIR /opt/dave
 ENTRYPOINT []
 
 FROM tools AS contracts
-ARG DAVE_REF=v3.0.0-alpha.6
+ARG DAVE_REF=v3.0.0-alpha.7
 RUN git init . && git remote add origin https://github.com/cartesi/dave.git && \
     git fetch --depth 1 origin "$DAVE_REF" && git checkout --detach FETCH_HEAD && \
     git submodule update --init machine/step && \

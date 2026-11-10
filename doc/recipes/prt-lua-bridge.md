@@ -168,9 +168,10 @@ compute them again after a relaunch.
 ## Image and deployment
 
 The Dockerfile fetches the Dave revision pinned by `DAVE_REF` in
-`doc/Dockerfile.prt` (the v3.0.0-alpha.6 release, which includes [Dave pull
+`doc/Dockerfile.prt` (the v3.0.0-alpha.7 release, which includes [Dave pull
 request 297](https://github.com/cartesi/dave/pull/297) and the events the bridge
-consumes). [prt-contracts.patch](prt-contracts.patch) replaces only Dave's
+consumes). Its consensus seals at most 2^24 pending inputs per epoch and leaves
+the rest for later epochs. [prt-contracts.patch](prt-contracts.patch) replaces only Dave's
 two-level tournament table with the recipe's geometry. It keeps Dave's events,
 gas allocations, and commitment budget. The build checks and applies the patch
 and compiles through Dave's `just build-smart-contracts`, so a run deploys

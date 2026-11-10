@@ -9126,19 +9126,24 @@ a frontier, with the same binary carry, but each occupied level holds
 the complete tree standing there rather than only its root hash.
 
 The constructor is `frontier_forest`, which takes the same height and
-hash type as `frontier` and returns an empty forest. Three functions
-append to it, mirroring `frontier_push_back`, `frontier_append`, and
-`frontier_pad_back`. The function `frontier_forest_push_back` appends
-one value, `frontier_forest_append` appends raw hashes in a half-open
-range with the same defaults as `frontier_append`, and
-`frontier_forest_pad_back` appends a number of copies of one value, or
-fills the rest of the forest when the count is omitted. Each also takes
-the height of what it appends. A value is a raw hash, standing for a
-subtree of that height, or a full forest, which keeps its own height and
-all of its nodes. A full forest goes in as the complete tree at its top
-level, which can then become a base value of a fixed-point tree.
-Appending a full forest is how small trees, built separately, nest into
-a larger one.
+hash type as `frontier` and returns an empty forest. Like `frontier`, it
+also accepts a proof of the last appended leaf instead of a height,
+verifies it, and restores coverage through that leaf. The forest retains
+the authenticated path within its completed subtrees, so queries can
+recover it once the forest is full. Sibling subtrees remain opaque, and
+the leaves after the target are supplied by subsequent appends. Three
+functions append to it, mirroring `frontier_push_back`,
+`frontier_append`, and `frontier_pad_back`. The function
+`frontier_forest_push_back` appends one value, `frontier_forest_append`
+appends raw hashes in a half-open range with the same defaults as
+`frontier_append`, and `frontier_forest_pad_back` appends a number of
+copies of one value, or fills the rest of the forest when the count is
+omitted. Each also takes the height of what it appends. A value is a raw
+hash, standing for a subtree of that height, or a full forest, which
+keeps its own height and all of its nodes. A full forest goes in as the
+complete tree at its top level, which can then become a base value of a
+fixed-point tree. Appending a full forest is how small trees, built
+separately, nest into a larger one.
 
 Appended values do not go into the levels right away. They accumulate in
 a pending array of equal-height values, together with a count of how

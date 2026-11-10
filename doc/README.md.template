@@ -5001,6 +5001,9 @@ A *frontier forest* answers them.
 It has the same level array as a frontier, with the same binary carry, but each occupied level holds the complete tree standing there rather than only its root hash.
 
 The constructor is `frontier_forest`, which takes the same height and hash type as `frontier` and returns an empty forest.
+Like `frontier`, it also accepts a proof of the last appended leaf instead of a height, verifies it, and restores coverage through that leaf.
+The forest retains the authenticated path within its completed subtrees, so queries can recover it once the forest is full.
+Sibling subtrees remain opaque, and the leaves after the target are supplied by subsequent appends.
 Three functions append to it, mirroring `frontier_push_back`, `frontier_append`, and `frontier_pad_back`.
 The function `frontier_forest_push_back` appends one value, `frontier_forest_append` appends raw hashes in a half-open range with the same defaults as `frontier_append`, and `frontier_forest_pad_back` appends a number of copies of one value, or fills the rest of the forest when the count is omitted.
 Each also takes the height of what it appends.

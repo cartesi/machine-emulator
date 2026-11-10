@@ -259,7 +259,7 @@ describe("hash-tree.lua", function()
             end
         end)
 
-        it("rejects invalid last proofs before constructing a frontier", function()
+        it("rejects invalid last proofs before constructing a frontier or forest", function()
             -- Repeated leaves keep the root valid when address bits change, isolating the range check.
             local frontier = hash_tree.frontier(4, "keccak256")
             hash_tree.frontier_pad_back(frontier, leaf(1), 15)
@@ -285,6 +285,9 @@ describe("hash-tree.lua", function()
                 expect.fail(function()
                     hash_tree.frontier(corrupted, "keccak256")
                 end, case[3])
+                expect.fail(function()
+                    hash_tree.frontier_forest(corrupted, "keccak256")
+                end, case[1] == "log2_root_size" and "unsupported forest height" or case[3])
             end
         end)
 
@@ -821,14 +824,15 @@ describe("hash-tree.lua", function()
         local keccak = cartesi.keccak256
 
         -- Every node of the fully materialized reference tree over exactly 2^H4 leaves.
-        local function reference_levels(leaves)
+        local function reference_levels(leaves, hash_type)
             assert(#leaves == MAX4)
+            local hash_function = cartesi[hash_type or "keccak256"]
             local levels = { [0] = leaves }
             for log2_size = 1, H4 do
                 local parents = {}
                 local children = levels[log2_size - 1]
                 for i = 1, #children, 2 do
-                    parents[#parents + 1] = keccak(children[i], children[i + 1])
+                    parents[#parents + 1] = hash_function(children[i], children[i + 1])
                 end
                 levels[log2_size] = parents
             end
@@ -864,6 +868,97 @@ describe("hash-tree.lua", function()
                 end
             end
         end
+
+        it("restores coverage and the last leaf's path from a proof", function()
+            local leaves = make_leaves(MAX4)
+            for _, hash_type in ipairs({ "keccak256", "sha256" }) do
+                local levels = reference_levels(leaves, hash_type)
+                for position = 0, MAX4 - 1 do
+                    local siblings = {}
+                    for height = 0, H4 - 1 do
+                        siblings[height + 1] = levels[height][((position >> height) ~ 1) + 1]
+                    end
+                    local proof = {
+                        log2_root_size = H4,
+                        log2_target_size = 0,
+                        target_address = position,
+                        target_hash = leaves[position + 1],
+                        root_hash = levels[H4][1],
+                        sibling_hashes = siblings,
+                    }
+                    local forest = hash_tree.frontier_forest(proof, hash_type)
+                    expect.equal(hash_tree.frontier_forest_get_leaf_count(forest), position + 1)
+                    hash_tree.frontier_forest_append(forest, leaves, position + 2)
+                    expect.equal(hash_tree.frontier_forest_get_root_hash(forest), proof.root_hash)
+                    expect.equal(hash_tree.frontier_forest_get_node_hash(forest, position, 0), proof.target_hash)
+                    expect.equal(hash_tree.frontier_forest_get_siblings(forest, position, 0), siblings)
+                    for level = 1, H4 do
+                        expect.equal(forest[level], false)
+                    end
+                end
+            end
+        end)
+
+        it("retains the rightmost path through storage without opening its siblings", function()
+            local leaves = make_leaves(MAX4)
+            local levels = reference_levels(leaves)
+            local siblings = {}
+            for height = 0, H4 - 1 do
+                siblings[height + 1] = levels[height][(MAX4 >> height) - 1]
+            end
+            local proof = {
+                log2_root_size = H4,
+                log2_target_size = 0,
+                target_address = MAX4 - 1,
+                target_hash = leaves[MAX4],
+                root_hash = levels[H4][1],
+                sibling_hashes = siblings,
+            }
+            local forest = hash_tree.frontier_forest(proof, "keccak256")
+            local _ <close>, directory = new_scope_directory()
+            local path = directory .. "/frontier.json"
+            hash_tree.frontier_forest_store(forest, directory, path)
+            forest = hash_tree.frontier_forest_load(directory, path)
+            expect.equal(hash_tree.frontier_forest_get_root_hash(forest), proof.root_hash)
+            expect.equal(hash_tree.frontier_forest_get_node_hash(forest, MAX4 - 1, 0), leaves[MAX4])
+            expect.equal(hash_tree.frontier_forest_get_siblings(forest, MAX4 - 1, 0), siblings)
+            expect.equal(hash_tree.frontier_forest_get_node_hash(forest, 0, H4 - 1), siblings[H4])
+            local hash, err = hash_tree.frontier_forest_get_node_hash(forest, 0, 0)
+            expect.equal(hash, nil)
+            expect.equal(err, "the node is below an opaque hash")
+        end)
+
+        it("restores full forests from last proofs at the supported height boundaries", function()
+            for _, height in ipairs({ 0, 1, 62 }) do
+                local hash, siblings = leaf(1), {}
+                for level = 1, height do
+                    siblings[level] = hash
+                    hash = keccak(hash, hash)
+                end
+                local proof = {
+                    log2_root_size = height,
+                    log2_target_size = 0,
+                    target_address = (1 << height) - 1,
+                    target_hash = leaf(1),
+                    root_hash = hash,
+                    sibling_hashes = siblings,
+                }
+                local forest = hash_tree.frontier_forest(proof, "keccak256")
+                expect.equal(hash_tree.frontier_forest_get_leaf_count(forest), 1 << height)
+                expect.equal(hash_tree.frontier_forest_get_root_hash(forest), hash)
+                expect.equal(hash_tree.frontier_forest_get_siblings(forest, proof.target_address, 0), siblings)
+                for level = 1, height do
+                    expect.equal(forest[level], false)
+                end
+                expect.fail(function()
+                    hash_tree.frontier_forest_push_back(forest, leaf(2))
+                end, "too many leaves")
+                proof.log2_root_size = 63
+                expect.fail(function()
+                    hash_tree.frontier_forest(proof, "keccak256")
+                end, "unsupported forest height")
+            end
+        end)
 
         it("fills to capacity with raw hashes and retained subtrees", function()
             for _, height in ipairs({ 0, 2, H4 }) do

@@ -669,6 +669,7 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) {
                     {"hashes", "Base64Array"},
                     {"break_reason", "InterpreterBreakReason"},
                     {"partial_bundle", "PartialBundle"},
+                    {"final_bundle_sibling_hashes", "Base64Array"},
                 }},
             {"UarchCycleRootHashes",
                 {{"hashes", "Base64Array"}, {"mcycle_hash_offsets", "ArrayArrayIndex"},

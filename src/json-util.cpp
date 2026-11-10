@@ -2210,6 +2210,11 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, mcycle_root_hashes 
     ju_get_field(jconfig, "mcycle_phase"s, value.mcycle_phase, new_path);
     ju_get_field(jconfig, "break_reason"s, value.break_reason, new_path);
     ju_get_opt_field(jconfig, "partial_bundle"s, value.partial_bundle, new_path);
+    value.final_bundle_sibling_hashes.reset();
+    if (contains(jconfig, "final_bundle_sibling_hashes", new_path)) {
+        ju_get_vector_like_field(jconfig, "final_bundle_sibling_hashes"s, value.final_bundle_sibling_hashes.emplace(),
+            new_path);
+    }
     ju_get_opt_field(jconfig, "console_io_error"s, value.console_io_error, new_path);
 }
 
@@ -2692,6 +2697,9 @@ void to_json(nlohmann::json &j, const mcycle_root_hashes &result) {
         {"break_reason", result.break_reason}};
     if (result.partial_bundle.has_value()) {
         j["partial_bundle"] = result.partial_bundle;
+    }
+    if (result.final_bundle_sibling_hashes.has_value()) {
+        j["final_bundle_sibling_hashes"] = base64_machine_hashes(result.final_bundle_sibling_hashes.value());
     }
     if (!result.console_io_error.empty()) {
         j["console_io_error"] = result.console_io_error;

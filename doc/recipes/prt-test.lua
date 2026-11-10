@@ -699,7 +699,7 @@ do
     cache.nearest_not_past_epoch_input_offset = select_pair
 end
 
-for _, phase in ipairs({ "clone", "hash", "yield", "cache_fork", "begin_epoch" }) do
+for _, phase in ipairs({ "clone", "hash", "cache_fork", "begin_epoch" }) do
     local initial = new_fake_machine(keccak("initial"))
     local cache <close> = prt.new_forked_machine_cache(initial)
     local template = cache.entries[1].machine
@@ -709,10 +709,6 @@ for _, phase in ipairs({ "clone", "hash", "yield", "cache_fork", "begin_epoch" }
         local machine = fork(self)
         if phase == "hash" then
             machine.root_hash = keccak("wrong initial state")
-        elseif phase == "yield" then
-            machine.run = function()
-                return cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
-            end
         elseif phase == "cache_fork" then
             machine.fork_server = function()
                 error("injected cache bootstrap fork failure")
@@ -3394,23 +3390,56 @@ if arg[1] then
         end
     end
 
-    -- A template that is not waiting for an input is a deployment error. Check it once
-    -- at construction, independently of the sender's no-op transitions.
+    -- An epoch may start from a machine whose application stopped. Its first input stops the epoch.
+    -- The stored player seals it with a checkpoint directory and reopens it at the forked player's
+    -- final state.
     for _, terminal in ipairs({ "halt", "halt_with_yield", "exception", "unexpected", "overflow" }) do
         local template = prt.new_machine(initial_state_hash)
         force_terminal(template, terminal)
+        local stopped_hash = template:get_root_hash()
+        local template_directory = temporary_directory .. "/stopped-template"
+        template:store(template_directory)
+        local _ <close> = setmetatable({}, {
+            __close = function()
+                cartesi.machine:remove_stored(template_directory)
+            end,
+        })
+        local contract = {
+            initial_state_hash = stopped_hash,
+            machine_directory = template_directory,
+            geometry = dapp_contract.geometry,
+        }
         local template_cache <close> = prt.new_forked_machine_cache(template)
-        local built, failure = pcall(new_test_player, dapp_contract.geometry, template_cache)
-        local message = tostring(failure)
-        assert(not built, terminal .. " template built a claim")
-        assert(
-            message:find("initial machine is not waiting on an rx-accepted manual yield", 1, true),
-            terminal .. " template was refused for the wrong reason: " .. message
-        )
+        local forked = new_test_player(contract.geometry, template_cache)
+        forked.event_handler.input_added(forked, 0, fixture_input(inputs[1]))
+        assert(forked.epoch_stopped, terminal .. " template did not stop the epoch")
+        forked.event_handler.epoch_sealed(forked, 1)
+        local checkpoint_directory = temporary_directory .. "/stopped-checkpoint"
+        local _ <close> = setmetatable({}, {
+            __close = function()
+                if fs.exists(checkpoint_directory) then
+                    fs.remove_file(checkpoint_directory .. "/epoch.json")
+                    fs.remove_file(checkpoint_directory .. "/outputs-frontier.json")
+                    cartesi.machine:remove_stored(checkpoint_directory)
+                end
+            end,
+        })
+        local _ <close>, epoch_directory = new_scope_epoch_directory()
+        do
+            local stored <close> =
+                prt.new_stored_player(contract, "stopped", nil, epoch_directory, checkpoint_directory)
+            stored.event_handler.input_added(stored, 0, fixture_input(inputs[1]))
+            stored.event_handler.epoch_sealed(stored, 1)
+            assert(stored.final_state_hash == forked.final_state_hash, terminal .. " stored seal differs from forked")
+        end
+        assert(fs.exists(checkpoint_directory), terminal .. " seal did not store the next checkpoint")
+        local reopened <close> = prt.new_stored_player(contract, "reopened", nil, epoch_directory)
+        assert(reopened.mcycle_forest and reopened.epoch_stopped, terminal .. " reopening lost the seal")
+        assert(reopened.final_state_hash == forked.final_state_hash, terminal .. " reopening changed the final state")
     end
 
     -- A manual yield takes precedence over an exhausted input budget, including the saturated
-    -- counter. Checking template readiness must not execute or mutate either boundary.
+    -- counter. Starting an epoch must not execute or mutate either boundary.
     for _, mcycle in ipairs({ 1 << 48, cartesi.MCYCLE_MAX }) do
         local template = prt.new_machine(initial_state_hash)
         template:write_reg("mcycle", mcycle)

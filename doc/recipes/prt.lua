@@ -2572,8 +2572,7 @@ end
 
 -- Writes the files load_epoch_checkpoint reads next to the final machine stored in a checkpoint directory.
 local function store_checkpoint_files(self, directory)
-    local outputs_root =
-        output_verifier.validate_outputs_merkle_root_response(self.outputs_merkle_root_proof, self.final_state_hash)
+    local outputs_root = self.outputs_merkle_root_proof.tx_buffer_data
     if outputs_root ~= hash_tree.frontier_get_root_hash(self.outputs_frontier) then
         self:report_anomaly("outputs_root_mismatch", "the epoch's end")
     end
@@ -2600,7 +2599,6 @@ local function store_next_epoch_checkpoint(self, machine, directory)
     if fs.exists(temporary_directory) then
         remove_leftover_stored_machine(temporary_directory)
     end
-    assert_rolling_template(machine)
     machine:store(temporary_directory)
     machine:sync_stored(temporary_directory)
     store_checkpoint_files(self, temporary_directory)
@@ -2872,10 +2870,7 @@ local function reopen_epoch_directory(self)
     end
     self.final_state_hash = root_hash
     self.outputs_merkle_root_proof = state.outputs_merkle_root_proof
-    if
-        output_verifier.validate_outputs_merkle_root_response(self.outputs_merkle_root_proof, root_hash)
-        ~= hash_tree.frontier_get_root_hash(self.outputs_frontier)
-    then
+    if self.outputs_merkle_root_proof.tx_buffer_data ~= hash_tree.frontier_get_root_hash(self.outputs_frontier) then
         self:report_anomaly("outputs_root_mismatch", "the epoch's end")
     end
     self.mcycle_forest =
@@ -2940,9 +2935,7 @@ local function new_forked_player(dapp_contract, label, previous_outputs_frontier
     self.inputs = {}
     self.epoch_pair =
         new_forked_machine_pair(prt.new_machine(dapp_contract.initial_state_hash, dapp_contract.machine_directory))
-    local machine = self.epoch_pair.machine
-    assert_rolling_template(machine)
-    self.machine_cache = prt.new_forked_machine_cache(fork_server(machine))
+    self.machine_cache = prt.new_forked_machine_cache(fork_server(self.epoch_pair.machine))
     begin_epoch(self)
     return self:move()
 end
@@ -2973,9 +2966,7 @@ local function new_stored_player(dapp_contract, label, previous_outputs_frontier
         new_stored_machine(initial_state_hash, machine_directory, { clear_hash_tree = true }),
         machine_directory
     )
-    local machine = self.epoch_pair.machine
-    assert_rolling_template(machine)
-    self.machine_cache = new_stored_machine_cache(epoch_directory, machine_directory, machine)
+    self.machine_cache = new_stored_machine_cache(epoch_directory, machine_directory, self.epoch_pair.machine)
     begin_epoch(self)
     self:commit_epoch_state(self.epoch_pair, self.epoch_builder, {})
     self.epoch_pair:commit()

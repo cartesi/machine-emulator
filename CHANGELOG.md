@@ -115,6 +115,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed the output verification recipe accepting proofs of other tree heights or outside the tx buffer
 - Fixed the output verification recipe accepting outputs Merkle roots of states that did not accept their last input
 - Fixed `clear_hash_tree` keeping the dirty-page tracking of a stored machine, which could leave a wrong root hash
+- Fixed `verify_step_uarch` aborting the process on a log with a misaligned uarch access
+- Fixed release builds accepting uarch steps with misaligned accesses that the Solidity verifier rejects
 
 ## [0.22.0] - 2026-10-15
 ### Added

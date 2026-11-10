@@ -7655,11 +7655,12 @@ device.
 The low-level view of what happens inside the machine is as follows:
 
     Initialize
+    Write outputs Merkle root (of the empty tree) to CMIO TX buffer
     `reason` = HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
-    `length` = 0
+    `length` = hash size
     Repeat
         Yield manual with `reason` as `REASON` and `length` as `DATA` in `tohost`
-        If `DATA` in `fromhost` is HTIF_YIELD_REASON_ADVANCE_STATE
+        If `REASON` in `fromhost` is HTIF_YIELD_REASON_ADVANCE_STATE
             Read ABI-encoded EvmAdvance(...) from CMIO RX buffer
             Process advance-state request
             For each output to emit (voucher, delegate-call voucher, or notice)
@@ -7682,7 +7683,7 @@ The low-level view of what happens inside the machine is as follows:
                 `length` = hash size
                 `reason` = HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
             End
-        ElseIf `DATA` in `fromhost` is HTIF_YIELD_REASON_INSPECT_STATE
+        ElseIf `REASON` in `fromhost` is HTIF_YIELD_REASON_INSPECT_STATE
             Read raw query from CMIO RX buffer
             Process inspect-state request
             For each report to emit
@@ -7693,7 +7694,8 @@ The low-level view of what happens inside the machine is as follows:
                 Write raw exception data to CMIO TX buffer and its length to `length`
                 `reason` = HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION
             Else
-                `length` = 0
+                Write outputs Merkle root to CMIO TX buffer
+                `length` = hash size
                 `reason` = HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
             End
         Else

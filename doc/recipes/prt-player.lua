@@ -24,6 +24,7 @@ local eth = require("prt-ethereum")
 local prt = require("prt")
 local dishonest = require("prt-dishonest")
 local epoch = require("prt-epoch")
+local log_history = require("prt-log-history")
 local bridge = require("prt-bridge")
 local websocket = require("prt-websocket")
 
@@ -162,9 +163,14 @@ local function new_player(dapp, outputs_frontier, epoch_directory, checkpoint_di
     return player
 end
 
+-- The consensus's seals come from a history, which pages its requests and fetches only the blocks
+-- it has not seen.
+local seal_history = log_history.new(chain)
+
 -- The consensus's seal of an epoch, or nil while it is open.
 local function get_seal(number)
-    for _, log in ipairs(chain:logs(consensus, (chain:head()), first_block)) do
+    seal_history:observe(chain:head())
+    for _, log in ipairs(seal_history:get_logs(consensus, first_block)) do
         local event = abi:event(log)
         if event and event.name == "EpochSealed" and eth.small(event.epochNumber) == number then
             return event

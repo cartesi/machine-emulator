@@ -2153,20 +2153,76 @@ function player_meta.__index:run_to_epoch_input_offset(pair, epoch_input_offset_
     return builder:end_epoch()
 end
 
--- Advances the epoch pair over one input. The pair is scoped while it runs, so an error releases the
--- machine and any rollback snapshot.
+-- Records an input and runs it at once.
 function event_handler.input_added(self, epoch_input_offset, path)
-    -- A restarted bridge delivers events for inputs already applied again.
-    if epoch_input_offset < self.input_count then
+    self:add_pending_input(epoch_input_offset, path)
+    self:run_pending_inputs()
+end
+
+-- A stored player only records its inputs and runs them in idle time, so an open epoch never delays a
+-- response in a sealed epoch's dispute.
+local stored_event_handler = setmetatable({
+    input_added = function(self, epoch_input_offset, path)
+        self:add_pending_input(epoch_input_offset, path)
+    end,
+}, { __index = event_handler })
+
+-- Runs one pending input in idle time, and returns whether more remain.
+function event_handler.idle(self)
+    if self:has_pending_input() then
+        self:run_next_input()
+    end
+    return self:has_pending_input()
+end
+
+-- An input is pending from the event that delivers it until it runs. input_count counts the inputs that ran,
+-- and pending_input_count the ones after them, whose bytes store_input keeps until they run.
+function player_meta.__index:add_pending_input(epoch_input_offset, path)
+    local next_epoch_input_offset = self.input_count + self.pending_input_count
+    -- A restarted bridge delivers events for inputs already pending or run again.
+    if epoch_input_offset < next_epoch_input_offset then
         return
     end
+    assert(self.epoch_pair, "epoch is not open")
+    assert(epoch_input_offset == next_epoch_input_offset, "input events are not ordered")
+    assert(epoch_input_offset < 1 << LOG2_MAX_ADVANCE_STATES_PER_EPOCH, "input offset past the epoch's input limit")
+    self:store_input(epoch_input_offset, path)
+    self.pending_input_count = self.pending_input_count + 1
+end
+
+function player_meta.__index:has_pending_input()
+    return self.pending_input_count > 0
+end
+
+function player_meta.__index:run_pending_inputs()
+    while self:has_pending_input() do
+        self:run_next_input()
+    end
+end
+
+-- Called at each new block, after the idle time of the previous one. More pending inputs than the cache's gap
+-- between boundaries means the player is not keeping up with its inputs. It is reported once each time it starts.
+function player_meta.__index:check_backlog()
+    local behind = self.pending_input_count > self.machine_cache.input_gap
+    if behind and not self.falling_behind then
+        self:report_anomaly(
+            "falling_behind",
+            "at input %d: %d inputs pending",
+            self.input_count,
+            self.pending_input_count
+        )
+    end
+    self.falling_behind = behind
+end
+
+-- Advances the epoch pair over the next pending input. The pair is scoped while it runs, so an error releases
+-- the machine and any rollback snapshot.
+function player_meta.__index:run_next_input()
     local pair <close> = assert(self.epoch_pair, "epoch is not open")
     local builder = self.epoch_builder
     self.epoch_pair, self.epoch_builder = nil, nil
-    assert(epoch_input_offset == self.input_count, "input events are not ordered")
-    assert(epoch_input_offset < 1 << LOG2_MAX_ADVANCE_STATES_PER_EPOCH, "input offset past the epoch's input limit")
-    self:store_input(epoch_input_offset, path)
-    self.input_count = epoch_input_offset + 1
+    local epoch_input_offset = self.input_count
+    self.input_count, self.pending_input_count = epoch_input_offset + 1, self.pending_input_count - 1
     local last_output = {}
     if not self.epoch_stopped then
         local break_reason, yield_reason = self:run_to_input_mcycle_offset(
@@ -2199,6 +2255,8 @@ function event_handler.epoch_sealed(self, input_count)
     if self.mcycle_forest then
         return
     end
+    -- The claim covers every input delivered
+    self:run_pending_inputs()
     assert(input_count == nil or input_count == self.input_count, "sealed input count mismatch")
     local pair <close> = assert(self.epoch_pair, "epoch is not open")
     self.epoch_pair = nil
@@ -2831,6 +2889,8 @@ local function reopen_epoch_directory(self)
     remove_epoch_leftovers(directory, state, self.machine_cache)
     self.state_files = get_state_files(state)
     self.input_count, self.output_count = state.input_count, state.output_count
+    -- Pending inputs are not stored. A restarted bridge delivers them again.
+    self.pending_input_count = 0
     self.epoch_stopped = state.epoch_stopped
     self.outputs_frontier = load_outputs_frontier(directory .. "/" .. state.outputs_frontier)
     assert(
@@ -2914,6 +2974,7 @@ local function new_empty_player(meta, dapp_contract, label, previous_outputs_fro
         dapp_contract = dapp_contract,
         geometry = dapp_contract.geometry,
         input_count = 0,
+        pending_input_count = 0,
         output_count = 0,
         trees = {},
         uarch_claims = {},
@@ -2950,6 +3011,7 @@ end
 -- directory holds. With a checkpoint directory, the epoch seal stores the next epoch's checkpoint there.
 local function new_stored_player(dapp_contract, label, previous_outputs_frontier, epoch_directory, checkpoint_directory)
     local self <close> = new_empty_player(stored_player_meta, dapp_contract, label, previous_outputs_frontier)
+    self.event_handler = stored_event_handler
     self.epoch_directory = epoch_directory
     self.checkpoint_directory = checkpoint_directory
     if fs.exists(epoch_directory .. "/state.json") then
@@ -3006,6 +3068,7 @@ prt = {
     LOG2_BUNDLE_UARCH_CYCLE_COUNT = LOG2_BUNDLE_UARCH_CYCLE_COUNT,
     new_forked_player = new_forked_player,
     new_stored_player = new_stored_player,
+    stored_event_handler = stored_event_handler,
     new_tree = new_tree,
     new_machine = new_machine,
     new_null_computation_hash_builder = new_null_computation_hash_builder,

@@ -122,6 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed the PRT referee model starting a claim's clock at a later re-post instead of its earliest post
 - Fixed the PRT referee model limiting a sealed leaf's proof to the earlier of the two deadlines
 - Fixed `run`, `collect_mcycle_root_hashes` and `read_reg` reading constant `mvendorid`, `marchid` and `mimpid` instead of the values in the machine state that the uarch reads
+- Fixed `collect_uarch_cycle_root_hashes` accepting a non-pristine microarchitecture, whose reset it computed wrongly
 
 ## [0.22.0] - 2026-10-15
 ### Added

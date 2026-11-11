@@ -758,23 +758,33 @@ describe("uarch TLB writes with an invalid set index", function()
         end
         it("should fail cleanly when running, logging and collecting set index " .. name, function()
             for _, step in ipairs({
-                function(machine)
-                    machine:run_uarch(16)
-                end,
-                function(machine)
-                    for _ = 1, 16 do
-                        machine:log_step_uarch()
-                    end
-                end,
-                function(machine)
-                    local revert_tail = { string.rep("\0", cartesi.HASH_SIZE), string.rep("\0", cartesi.HASH_SIZE) }
-                    machine:collect_uarch_cycle_root_hashes(1, 0, revert_tail)
-                end,
+                {
+                    function(machine)
+                        machine:run_uarch(16)
+                    end,
+                    "TLB set index out of bounds",
+                },
+                {
+                    function(machine)
+                        for _ = 1, 16 do
+                            machine:log_step_uarch()
+                        end
+                    end,
+                    "TLB set index out of bounds",
+                },
+                -- The collector refuses the custom uarch program before running it
+                {
+                    function(machine)
+                        local revert_tail = { string.rep("\0", cartesi.HASH_SIZE), string.rep("\0", cartesi.HASH_SIZE) }
+                        machine:collect_uarch_cycle_root_hashes(1, 0, revert_tail)
+                    end,
+                    "microarchitecture is not pristine",
+                },
             }) do
                 local machine <close> = build_machine()
                 expect.fail(function()
-                    step(machine)
-                end, "TLB set index out of bounds")
+                    step[1](machine)
+                end, step[2])
             end
         end)
     end

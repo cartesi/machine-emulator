@@ -2772,6 +2772,11 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
     if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
         throw std::runtime_error{"microarchitecture is not reset"};
     }
+    // The reset that closes each mcycle only restores the uarch words written during it
+    if (get_node_hash(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, skip_hash_tree_update) !=
+        get_uarch_pristine_hash()) {
+        throw std::runtime_error{"microarchitecture is not pristine"};
+    }
 
     uarch_cycle_root_hashes result;
     result.break_reason = get_state_break_reason(interpreter_break_reason::reached_target_mcycle);

@@ -47,8 +47,6 @@ export CARTESI_TESTS_UARCH_PATH
 export CARTESI_COMPUTATION_HASH_CORPUS_PATH
 
 COMPUTATION_HASH_GUEST = $(CARTESI_TESTS_PATH)/computation_hash.bin
-COMPUTATION_HASH_UARCH_NEAR_LIMIT = $(CARTESI_TESTS_UARCH_PATH)/rv64ui-uarch-computation-hash-near-limit.bin
-COMPUTATION_HASH_UARCH_OVERFLOW = $(CARTESI_TESTS_UARCH_PATH)/rv64ui-uarch-computation-hash-overflow.bin
 COMPUTATION_HASH_MANIFEST = $(CARTESI_COMPUTATION_HASH_CORPUS_PATH)/manifest.json
 COMPUTATION_HASH_GENERATOR = lua/create-computation-hash-corpus.lua
 COMPUTATION_HASH_ARCHIVE = computation-hash-corpus.tar.gz
@@ -158,15 +156,10 @@ build-tests-fuzz:
 
 build-tests-images: images
 
-build-tests-computation-hash-fixtures: $(COMPUTATION_HASH_GUEST) \
-	$(COMPUTATION_HASH_UARCH_NEAR_LIMIT) $(COMPUTATION_HASH_UARCH_OVERFLOW)
+build-tests-computation-hash-fixtures: $(COMPUTATION_HASH_GUEST)
 
 $(COMPUTATION_HASH_GUEST): machine/src/computation_hash.S
 	@$(MAKE) -C machine/src BUILDDIR=$(CARTESI_TESTS_PATH) $@
-
-$(COMPUTATION_HASH_UARCH_NEAR_LIMIT) $(COMPUTATION_HASH_UARCH_OVERFLOW): \
-	$(CARTESI_TESTS_UARCH_PATH)/rv64ui-uarch-%.bin: uarch/%.S
-	@$(MAKE) -C uarch BUILDDIR=$(CARTESI_TESTS_UARCH_PATH) $@
 
 build-computation-hash-corpus-with-toolchain:
 	$(MAKE) toolchain-exec CONTAINER_COMMAND="make build-tests-computation-hash-fixtures"
@@ -185,8 +178,7 @@ archive-computation-hash-corpus: $(COMPUTATION_HASH_MANIFEST)
 # Regenerate an existing artifact when its generator changes. Building missing fixture binaries
 # remains an explicit toolchain-managed step.
 $(COMPUTATION_HASH_MANIFEST): $(COMPUTATION_HASH_GENERATOR)
-	@test -f $(COMPUTATION_HASH_GUEST) -a -f $(COMPUTATION_HASH_UARCH_NEAR_LIMIT) \
-		-a -f $(COMPUTATION_HASH_UARCH_OVERFLOW) || \
+	@test -f $(COMPUTATION_HASH_GUEST) || \
 		{ echo 'Run make build-computation-hash-corpus-with-toolchain first' >&2; exit 1; }
 	@rm -rf $(CARTESI_COMPUTATION_HASH_CORPUS_PATH)
 	$(MAKE) create-computation-hash-corpus

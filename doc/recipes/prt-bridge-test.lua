@@ -1279,4 +1279,72 @@ do
     assert(table.concat(calls, ",") == "other", "head change reused obsolete cancellation decisions")
 end
 
+-- Every epoch's bridge shares the signer's nonce. A settled epoch's bridge, idle or with a bond recovery
+-- due, leaves the live epoch's pending transaction alone, and the live epoch keeps working on it.
+do
+    local signer = { address = "alice" }
+    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true, order = {} }
+    local pending = { job = "join", context = { epoch = "1" } }
+    local calls = {}
+    local publisher = {
+        receipt = function() end,
+        pending = function()
+            return pending
+        end,
+        submit = function(_, _, intent)
+            calls[#calls + 1] = intent and intent.key or "cancel"
+            return { waiting = true }
+        end,
+    }
+    local function new_client(epoch_number, keys)
+        local client = bridge.new({
+            geometry = geometry,
+            chain = {
+                head = function()
+                    return observed.tip, observed.tip_hash
+                end,
+                is_canonical = function()
+                    return true
+                end,
+            },
+            transactions = publisher,
+            abi = {},
+            root = "root",
+            factory = "factory",
+            consensus = "consensus",
+            player = {},
+            signer = signer,
+            label = "epoch " .. epoch_number,
+            epoch = epoch_number,
+        })
+        function client.refresh()
+            return observed
+        end
+        function client.jobs()
+            local jobs = {}
+            for _, key in ipairs(keys) do
+                jobs[#jobs + 1] = {
+                    key = key,
+                    kind = key,
+                    first = 0,
+                    last = math.maxinteger,
+                    context = { address = "root" },
+                    event = { log = { blockHash = "block4", logIndex = "0x0" } },
+                }
+            end
+            return jobs
+        end
+        function client.prepare()
+            return { signer = signer, to = "root", data = "0x" }
+        end
+        return client
+    end
+    new_client(0, {}):tick()
+    assert(#calls == 0, "an idle settled epoch replaced the live epoch's transaction")
+    new_client(0, { "recover" }):tick()
+    assert(#calls == 0, "a settled epoch's recovery replaced the live epoch's transaction")
+    new_client(1, { "join" }):tick()
+    assert(table.concat(calls, ",") == "join", "the live epoch stopped working on its own transaction")
+end
+
 print("PRT bridge encoding, scheduling, input streaming, and process-boundary tests passed.")

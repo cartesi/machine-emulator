@@ -673,6 +673,11 @@ function methods:tick()
     local candidate = self.transactions:pending(self.signer.address)
     if candidate then
         next_block = snapshot.tip + 1
+        -- Every epoch's bridge shares the signer's nonce. Another epoch's pending transaction is left alone
+        -- until it is mined, so a settled epoch never cancels or outbids the live epoch's moves.
+        if candidate.context and candidate.context.epoch ~= tostring(self.epoch) then
+            return snapshot, false, next_block
+        end
         local eligible = due[self.signer.address] or {}
         local selected = eligible[1]
         for _, job in ipairs(eligible) do

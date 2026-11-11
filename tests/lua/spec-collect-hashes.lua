@@ -2325,5 +2325,47 @@ describe("collect hashes", function()
     end -- for hash function
 end) -- describe collect hashes
 
+describe("machine-ID registers", function()
+    -- Only skip_version_check admits shadow words that differ from the emulator's constants
+    local ids = { mvendorid = cartesi.MVENDORID + 1, marchid = cartesi.MARCHID + 1, mimpid = cartesi.MIMPID + 1 }
+    local function csrrs(rd, csr)
+        return string.pack("<I4", (csr << 20) | (0x2 << 12) | (rd << 7) | 0x73)
+    end
+    -- csrrs a0, mvendorid; csrrs a1, marchid; csrrs a2, mimpid; j .
+    local program = csrrs(10, 0xF11) .. csrrs(11, 0xF12) .. csrrs(12, 0xF13) .. string.pack("<I4", 0x6f)
+    local function create_machine()
+        local machine = cartesi.machine({ ram = { length = 4096 } }, { skip_version_check = true })
+        machine:write_memory(cartesi.AR_RAM_START, program)
+        local shadow = machine:read_memory(cartesi.AR_SHADOW_STATE_START, cartesi.AR_SHADOW_STATE_LENGTH)
+        for reg, value in pairs(ids) do
+            local offset = machine:get_reg_address(reg) - cartesi.AR_SHADOW_STATE_START
+            shadow = shadow:sub(1, offset) .. string.pack("<I8", value) .. shadow:sub(offset + 9)
+        end
+        machine:write_memory(cartesi.AR_SHADOW_STATE_START, shadow)
+        return machine
+    end
+
+    it("should read the shadow words natively, through the uarch, and while collecting hashes", function()
+        local native <close> = create_machine()
+        for reg, value in pairs(ids) do
+            expect.equal(native:read_reg(reg), value)
+        end
+        local uarch <close> = create_machine()
+        local collector <close> = create_machine()
+        local collected = collector:collect_mcycle_root_hashes(3, 0)
+        for mcycle = 1, 3 do
+            native:run(mcycle)
+            uarch:run_uarch(cartesi.UARCH_CYCLE_MAX)
+            uarch:reset_uarch()
+            expect.equal(uarch:read_reg("mcycle"), mcycle)
+            expect.equal(uarch:get_root_hash(), native:get_root_hash())
+            expect.equal(collected.hashes[mcycle], native:get_root_hash())
+        end
+        expect.equal(native:read_reg("x10"), ids.mvendorid)
+        expect.equal(native:read_reg("x11"), ids.marchid)
+        expect.equal(native:read_reg("x12"), ids.mimpid)
+    end)
+end)
+
 lester.report()
 lester.exit()

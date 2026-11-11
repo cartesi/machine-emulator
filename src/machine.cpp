@@ -971,11 +971,11 @@ uint64_t machine::read_reg(reg r) const {
         case reg::fcsr:
             return m_s->shadow.registers.fcsr;
         case reg::mvendorid:
-            return MVENDORID_INIT;
+            return m_s->shadow.registers.mvendorid;
         case reg::marchid:
-            return MARCHID_INIT;
+            return m_s->shadow.registers.marchid;
         case reg::mimpid:
-            return MIMPID_INIT;
+            return m_s->shadow.registers.mimpid;
         case reg::mcycle:
             return m_s->shadow.registers.mcycle;
         case reg::icycleinstret:

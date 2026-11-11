@@ -296,25 +296,26 @@ do
     successful(manager, "work", resumed.candidate.hash)
 end
 
--- Crash recovery at the exact fee ceiling republishes the already signed
--- bytes, without inventing a new nonce or bypassing the configured ceiling.
-do
+-- A candidate lost at the fee ceiling, here to a crash before publication, sets no replacement floor. The
+-- same job, or another job once the lost one is no longer due, is signed again at current fees, at the same
+-- nonce and within the configured ceiling.
+for _, key in ipairs({ "work", "other" }) do
     local manager, args = fresh({ max_fee = "3000000000", max_priority_fee = "1000000000" })
     local publish = chain.publish
-    local original
-    function chain.publish(_, raw)
-        original = raw
+    function chain.publish()
         error("fixture crash before publication at ceiling")
     end
-    assert(not pcall(submit, manager, intent()))
+    local lost = intent()
+    assert(not pcall(submit, manager, lost))
     chain.publish = publish
     manager = transactions.new(args)
     mine(2, 1000000000)
-    local resumed = submit(manager, intent())
-    assert(resumed.rebroadcast and resumed.candidate.raw == original and resumed.candidate.nonce == 0)
-    assert(not submit(manager, intent()).published, "rebroadcast was not throttled")
+    local resumed = submit(manager, intent(key))
+    assert(resumed.published and resumed.candidate.nonce == 0, "a lost candidate at the ceiling blocked its nonce")
+    assert(evmu.bint(resumed.candidate.max_fee) <= evmu.bint(args.max_fee), "the ceiling was exceeded")
+    assert(not submit(manager, intent(key)).published, "republication was not throttled")
     mine()
-    successful(manager, "work", resumed.candidate.hash)
+    successful(manager, key, resumed.candidate.hash)
 end
 
 -- A live tip change while the keystore signs invalidates the attempt. Nothing

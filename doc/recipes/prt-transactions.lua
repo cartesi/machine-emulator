@@ -190,21 +190,24 @@ function methods:submit(signer, intent, observation)
         end
     end
     local fee, priority = self:fees(previous, block)
-    local rebroadcast
+    if not fee and previous then
+        -- At the ceiling, outbid only the newest candidate of the nonce that the node still holds. One it
+        -- lost, to a crash before publication or a dropped mempool, cannot be mined through it and sets no
+        -- floor, so the next action at the nonce is signed at current fees.
+        local held
+        for i = #record.candidates, 1, -1 do
+            local candidate = record.candidates[i]
+            if assert(self.chain:rpc("eth_getTransactionByHash", { candidate.hash })) ~= json.null then
+                held = candidate
+                break
+            end
+        end
+        if held ~= previous then
+            fee, priority = self:fees(held, block)
+        end
+    end
     if not fee then
-        -- A lost publication at the fee ceiling must not strand an otherwise
-        -- affordable signed transaction. Retry identical bytes only for the
-        -- same action, after checking the local node no longer has them.
-        local same_action = previous and previous.job == (intent and intent.key)
-        if
-            same_action
-            and quantity(previous.max_fee) >= quantity(block.baseFeePerGas) + quantity(previous.priority_fee)
-        then
-            rebroadcast = assert(self.chain:rpc("eth_getTransactionByHash", { previous.hash })) == json.null
-        end
-        if not rebroadcast then
-            return { blocked = "fee_ceiling", nonce = nonce, hash = previous and previous.hash }
-        end
+        return { blocked = "fee_ceiling", nonce = nonce, hash = previous and previous.hash }
     end
     local to, data, value = address, "0x", "0"
     if intent then
@@ -231,24 +234,23 @@ function methods:submit(signer, intent, observation)
     local estimate, gas_limit = eth.small(assert(gas)), eth.small(block.gasLimit)
     assert(estimate <= gas_limit, "estimated transaction exceeds block gas limit")
     gas = math.min(math.max(estimate * 2, (exhausted_gas or 0) * 2), gas_limit)
-    local candidate = rebroadcast and previous
-        or {
-            chain_id = self.state.chain_id,
-            nonce = nonce,
-            gas = gas,
-            to = to,
-            data = data,
-            value = tostring(value),
-            max_fee = fee,
-            priority_fee = priority,
-            job = intent and intent.key,
-            action = intent and intent.kind or "cancel",
-            context = intent and intent.context,
-            block = tip,
-            block_hash = block.hash,
-            observation_block = observation.head,
-            observation_hash = observation.hash,
-        }
+    local candidate = {
+        chain_id = self.state.chain_id,
+        nonce = nonce,
+        gas = gas,
+        to = to,
+        data = data,
+        value = tostring(value),
+        max_fee = fee,
+        priority_fee = priority,
+        job = intent and intent.key,
+        action = intent and intent.kind or "cancel",
+        context = intent and intent.context,
+        block = tip,
+        block_hash = block.hash,
+        observation_block = observation.head,
+        observation_hash = observation.hash,
+    }
     -- A pool reserves the whole limit at the max fee against the balance, so a shortfall blocks the
     -- transaction before it is signed or stored.
     local needed = evmu.bint(candidate.gas) * quantity(candidate.max_fee) + quantity(candidate.value)
@@ -261,21 +263,7 @@ function methods:submit(signer, intent, observation)
             available = tostring(available),
         }
     end
-    if rebroadcast then
-        assert(
-            candidate.to == to and candidate.data == data and candidate.value == tostring(value),
-            "job changed its signed action"
-        )
-        if candidate.gas < gas then
-            return { blocked = "fee_ceiling", nonce = nonce, hash = candidate.hash }
-        end
-        assert(
-            self.chain:verify_signed(signer, candidate, candidate.raw) == candidate.hash,
-            "journal signature mismatch"
-        )
-    else
-        candidate.raw, candidate.hash = self.chain:sign(signer, candidate)
-    end
+    candidate.raw, candidate.hash = self.chain:sign(signer, candidate)
     local _, current_hash = self.chain:head()
     if current_hash ~= block.hash or not self.chain:is_canonical(observation.head, observation.hash) then
         return { waiting = true }
@@ -288,10 +276,8 @@ function methods:submit(signer, intent, observation)
     account.nonces[tostring(nonce)] = record
     account.high_water = math.max(account.high_water, nonce)
     record.last_attempt = { block = tip, block_hash = block.hash }
-    if not rebroadcast then
-        record.candidates[#record.candidates + 1] = candidate
-    end
-    if candidate.job and not rebroadcast then
+    record.candidates[#record.candidates + 1] = candidate
+    if candidate.job then
         self.jobs[candidate.job] = self.jobs[candidate.job] or {}
         table.insert(self.jobs[candidate.job], candidate)
     end
@@ -308,7 +294,6 @@ function methods:submit(signer, intent, observation)
     return {
         published = true,
         candidate = candidate,
-        rebroadcast = rebroadcast,
         publication_error = publication_failure and publication_failure.code,
     }
 end

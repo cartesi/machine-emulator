@@ -125,6 +125,18 @@ function methods:receipt(key)
     return latest
 end
 
+-- The gas limit of a job's transaction that ran out of gas in the job's latest receipt, if one did. Running
+-- out of gas consumes the whole limit, which tells it apart from a revert the contract's state caused.
+local function get_exhausted_gas(self, key, receipt)
+    if receipt and eth.small(receipt.status) == 0 then
+        for _, candidate in ipairs(self.jobs[key]) do
+            if candidate.hash == receipt.transactionHash:lower() and eth.small(receipt.gasUsed) == candidate.gas then
+                return candidate.gas
+            end
+        end
+    end
+end
+
 function methods:fees(previous, block)
     local base = quantity(assert(block.baseFeePerGas, "EIP-1559 base fee missing"))
     local suggested = quantity(assert(self.chain:rpc("eth_maxPriorityFeePerGas", {})))
@@ -161,11 +173,13 @@ function methods:submit(signer, intent, observation)
     if intent and (tip + 1 < intent.first or tip + 1 >= intent.last) then
         return { waiting = true }
     end
+    local exhausted_gas
     if intent then
         local receipt = self:receipt(intent.key)
         if receipt and eth.small(receipt.blockNumber) > observation.head then
             return { waiting = true }
         end
+        exhausted_gas = get_exhausted_gas(self, intent.key, receipt)
     end
     if previous and previous.job == (intent and intent.key) then
         -- A changed branch may need immediate republication at an earlier
@@ -211,8 +225,12 @@ function methods:submit(signer, intent, observation)
         assert(estimate_failure.code == 3, "gas estimation RPC failure")
         return { rejected = estimate_failure }
     end
-    gas = (eth.small(assert(gas)) * 12 + 9) // 10
-    assert(gas <= eth.small(block.gasLimit), "estimated transaction exceeds block gas limit")
+    -- Twice the estimate covers the pairing branch, the only branch a join or a win can switch to between
+    -- the estimate and inclusion, since creating a match costs less than the action that creates it. A job
+    -- whose previous transaction ran out of gas anyway doubles that transaction's limit.
+    local estimate, gas_limit = eth.small(assert(gas)), eth.small(block.gasLimit)
+    assert(estimate <= gas_limit, "estimated transaction exceeds block gas limit")
+    gas = math.min(math.max(estimate * 2, (exhausted_gas or 0) * 2), gas_limit)
     local candidate = rebroadcast and previous
         or {
             chain_id = self.state.chain_id,

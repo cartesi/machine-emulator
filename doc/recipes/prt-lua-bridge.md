@@ -489,13 +489,16 @@ transaction whose job became obsolete is replaced at once by a due job, or by a
 zero-value transfer to itself that cancels it. A replacement is only a higher
 bid for the nonce, and the original may still be included.
 
-Before signing, the bridge estimates gas with a 20% margin (an estimate above
-the block gas limit aborts) and simulates the exact call, signer, and bond. A
-call that reverts is dropped for that tip, so dishonest moves fail here without
-broadcasting. `prt-cast.lua` signs with `cast mktx` (explicit chain id, nonce,
-gas, value, and both fee fields, from the keystore and password file), decodes
-the result with `cast`, and checks the signer and every field before publishing.
-Diagnostics never print signer paths, credentials, or endpoints.
+Before signing, the bridge simulates the exact call, signer, and bond, and
+estimates gas. It signs twice the estimate, since creating a match (the branch a
+join or a win can switch to before inclusion) costs less than the action that
+creates it. A job whose previous transaction ran out of gas signs twice that
+limit. The limit stops at the block gas limit, and an estimate above it aborts.
+A call that reverts is dropped for that tip, so dishonest moves fail here
+without broadcasting. `prt-cast.lua` signs with `cast mktx` (explicit chain id,
+nonce, gas, value, and both fee fields, from the keystore and password file),
+decodes the result with `cast`, and checks the signer and every field before
+publishing. Diagnostics never print signer paths, credentials, or endpoints.
 
 Every join carries the creation event's bond. A player must budget for the root
 bond, the bond of the child tournament it is in, gas, and further joins before
@@ -579,8 +582,9 @@ fixtures and suites also cover the following.
   fetching across reorgs.
 - Gas surges with mining disabled, same-nonce replacement, fee ceilings and
   recovery, dropped candidates, underpriced replacements, write-before-publish,
-  cancellation and older-candidate races, reverted receipts, multi-nonce reorgs,
-  journal reload after a crash, and identical-byte rebroadcast at the ceiling.
+  cancellation and older-candidate races, reverted receipts, out-of-gas retries,
+  multi-nonce reorgs, journal reload after a crash, and identical-byte
+  rebroadcast at the ceiling.
 - Job derivation without side effects, expiry during claim computation, and
   cancellation decisions refreshed after a head change.
 - The README's protocol suite, including invalid, missing, or non-last

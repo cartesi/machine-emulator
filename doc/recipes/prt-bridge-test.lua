@@ -1149,6 +1149,42 @@ do
     )
 end
 
+-- A transaction the player cannot publish is reported once each time the reason changes.
+do
+    local player = { event_handler = {}, reports = {} }
+    function player.report_anomaly(_, kind, fmt, ...)
+        player.reports[#player.reports + 1] = { kind = kind, message = string.format(fmt, ...) }
+    end
+    local client = bridge.new({
+        geometry = geometry,
+        chain = {},
+        abi = {},
+        root = "root",
+        factory = "factory",
+        consensus = "consensus",
+        player = player,
+        signer = { address = "alice" },
+        label = "blocked",
+        transactions = {},
+    })
+    local short = { blocked = "insufficient_funds", nonce = 3, needed = "10", available = "1" }
+    client:report_blocked(short)
+    client:report_blocked(short)
+    client:report_blocked({ blocked = "fee_ceiling", nonce = 3 })
+    client:report_blocked({ published = true })
+    client:report_blocked(short)
+    local reports = player.reports
+    assert(
+        #reports == 3
+            and reports[1].kind == "insufficient_funds"
+            and reports[1].message == "at nonce 3: needs 10 wei, has 1 wei"
+            and reports[2].kind == "fee_ceiling"
+            and reports[2].message == "at nonce 3"
+            and reports[3].kind == "insufficient_funds",
+        "blocked transactions were not reported once per change"
+    )
+end
+
 -- Pending actions are revalidated on every observation, including when no new
 -- action can be prepared. A failed replacement cannot strand obsolete work.
 do

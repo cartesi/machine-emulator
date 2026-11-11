@@ -531,9 +531,20 @@ function methods:awaiting_observation(job, snapshot)
     return false
 end
 
+-- Reports a transaction the player cannot publish, once each time the reason changes. Observing continues.
 function methods:report_blocked(result)
     if result.blocked and self.blocked[self.label] ~= result.blocked then
-        io.stderr:write(self.label, ": transaction waiting at ", result.blocked, "; observing continues.\n")
+        if result.needed then
+            self.player:report_anomaly(
+                result.blocked,
+                "at nonce %d: needs %s wei, has %s wei",
+                result.nonce,
+                result.needed,
+                result.available
+            )
+        else
+            self.player:report_anomaly(result.blocked, "at nonce %d", result.nonce)
+        end
     end
     self.blocked[self.label] = result.blocked
 end

@@ -498,10 +498,13 @@ join or a win can switch to before inclusion) costs less than the action that
 creates it. A job whose previous transaction ran out of gas signs twice that
 limit. The limit stops at the block gas limit, and an estimate above it aborts.
 A call that reverts is dropped for that tip, so dishonest moves fail here
-without broadcasting. `prt-cast.lua` signs with `cast mktx` (explicit chain id,
-nonce, gas, value, and both fee fields, from the keystore and password file),
-decodes the result with `cast`, and checks the signer and every field before
-publishing. Diagnostics never print signer paths, credentials, or endpoints.
+without broadcasting. The bridge encodes each transaction itself (a type-2
+transaction with an explicit chain id, nonce, gas, value, and both fee fields),
+and `cast wallet sign` signs only its 32-byte digest with the keystore and
+password file, since a leaf proof's calldata can exceed the size of a command
+argument. `cast` then decodes the signed transaction from stdin, and the bridge
+checks the signer and every field before publishing. Diagnostics never print
+signer paths, credentials, or endpoints.
 
 Every join carries the creation event's bond. A player must budget for the root
 bond, the bond of the child tournament it is in, gas, and further joins before

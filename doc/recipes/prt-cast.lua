@@ -1,7 +1,10 @@
 -- Chain transport for the PRT recipe. The signer owns an exclusive account.
 local json = require("dkjson")
 local socket = require("socket")
+local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")
+local fs = require("cartesi.filesystem")
+local eth = require("prt-ethereum")
 
 local M = {}
 local methods = {}
@@ -10,11 +13,24 @@ local function quote(value)
     return "'" .. tostring(value):gsub("'", "'\\''") .. "'"
 end
 
-function M.run(arguments)
+-- A temporary file holding a command's input, if it has one.
+local function new_input_file(input)
+    if input then
+        return fs.write_scope_temp_file(input)
+    end
+end
+
+-- Runs a command and returns its output. An input, if given, is read from a temporary file, since the
+-- size of a single command argument is limited.
+function M.run(arguments, input)
     local command = {}
     for i, value in ipairs(arguments) do
         assert(not tostring(value):find("\0", 1, true), "NUL in command argument")
         command[i] = quote(value)
+    end
+    local input_file <close>, input_path = new_input_file(input) -- luacheck: ignore 211
+    if input_path then
+        command[#command + 1] = "< " .. quote(input_path)
     end
     local pipe = assert(io.popen(table.concat(command, " ") .. " 2>/dev/null", "r"))
     local output = pipe:read("a")
@@ -172,36 +188,27 @@ function methods:simulate(signer, to, data, value, block)
 end
 
 -- All fields are explicit: signing must not choose a nonce or estimate fees.
+-- cast signs only the transaction's digest, since the calldata of a proof can exceed the size of a
+-- command argument.
 function methods:sign(signer, transaction)
-    local arguments = {
+    local signature = M.run({
         "cast",
-        "mktx",
+        "wallet",
+        "sign",
+        "--no-hash",
         "--keystore",
         signer.keystore,
         "--password-file",
         signer.password_file,
-        "--chain",
-        tostring(evmu.bint(transaction.chain_id)),
-        "--nonce",
-        transaction.nonce,
-        "--gas-limit",
-        transaction.gas,
-        "--gas-price",
-        transaction.max_fee,
-        "--priority-gas-price",
-        transaction.priority_fee,
-        "--value",
-        transaction.value,
-        transaction.to,
-        transaction.data,
-    }
-    local raw = M.run(arguments):gsub("%s+$", ""):lower()
+        cartesi.tohex(eth.transaction_digest(transaction)),
+    }):gsub("%s+$", "")
+    local raw = eth.signed_transaction(transaction, cartesi.fromhex(signature))
     return raw, self:verify_signed(signer, transaction, raw)
 end
 
 function methods.verify_signed(_, signer, transaction, raw)
     assert(raw:match("^0x02%x+$") and #raw % 2 == 0, "invalid signed EIP-1559 transaction")
-    local decoded = decode_json(M.run({ "cast", "decode-transaction", raw }))
+    local decoded = decode_json(M.run({ "cast", "decode-transaction" }, raw))
     assert(decoded.signer:lower() == signer.address:lower(), "transaction used the wrong signer")
     assert(decoded.to:lower() == transaction.to:lower(), "transaction has the wrong destination")
     assert(decoded.input:lower() == transaction.data:lower(), "transaction calldata differs from the prepared action")

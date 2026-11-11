@@ -62,6 +62,44 @@ local function successful(manager, key, hash)
     return receipt
 end
 
+-- The player encodes its transactions and cast signs only their digest. The bytes match what cast builds
+-- for the same fields, and calldata larger than a command argument is signed and mined.
+do
+    local manager = fresh()
+    local small = submit(manager, intent()).candidate
+    local built = cast.run({
+        "cast",
+        "mktx",
+        "--keystore",
+        signer.keystore,
+        "--password-file",
+        signer.password_file,
+        "--chain",
+        tostring(evmu.bint(small.chain_id)),
+        "--nonce",
+        tostring(small.nonce),
+        "--gas-limit",
+        tostring(small.gas),
+        "--gas-price",
+        small.max_fee,
+        "--priority-gas-price",
+        small.priority_fee,
+        "--value",
+        small.value,
+        small.to,
+        small.data,
+    }):gsub("%s+$", "")
+    assert(small.raw == built:lower(), "the encoded transaction differs from cast's")
+    mine()
+    successful(manager, "work", small.hash)
+    local large = intent("large")
+    large.data = "0x" .. string.rep("01", 70000)
+    local published = submit(manager, large)
+    assert(published.published, "a transaction with large calldata was not published")
+    mine()
+    successful(manager, "large", published.candidate.hash)
+end
+
 -- A fee surge leaves the original pending. Restart the tracker, then replace
 -- it at the SAME nonce. No transaction receipt is needed to return from submit.
 do

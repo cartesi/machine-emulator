@@ -196,4 +196,66 @@ function M.validity_proof(response, final_state)
     return result
 end
 
+-- Ethereum's RLP serialization. A string is a byte string and a table is a list of items, so it needs no
+-- schema. Callers encode integers with rlp_integer.
+local function rlp_length(length, base)
+    if length < 56 then
+        return string.char(base + length)
+    end
+    local bytes = string.pack(">I8", length):gsub("^%z+", "")
+    return string.char(base + 55 + #bytes) .. bytes
+end
+
+local function rlp(item)
+    if type(item) == "table" then
+        local encoded = {}
+        for i, element in ipairs(item) do
+            encoded[i] = rlp(element)
+        end
+        local payload = table.concat(encoded)
+        return rlp_length(#payload, 0xc0) .. payload
+    end
+    if #item == 1 and item:byte() < 0x80 then
+        return item
+    end
+    return rlp_length(#item, 0x80) .. item
+end
+
+-- An integer as big-endian bytes without leading zeros, so zero is the empty string.
+local function rlp_integer(value)
+    return (evmu.bint.tobe(evmu.bint(value)):gsub("^%z+", ""))
+end
+
+-- The fields of a type-2 (EIP-1559) transaction, in order.
+local function transaction_fields(transaction)
+    return {
+        rlp_integer(transaction.chain_id),
+        rlp_integer(transaction.nonce),
+        rlp_integer(transaction.priority_fee),
+        rlp_integer(transaction.max_fee),
+        rlp_integer(transaction.gas),
+        cartesi.fromhex(transaction.to),
+        rlp_integer(transaction.value),
+        cartesi.fromhex(transaction.data),
+        {}, -- no access list
+    }
+end
+
+-- The hash the signer of a type-2 transaction signs.
+function M.transaction_digest(transaction)
+    return cartesi.keccak256("\2" .. rlp(transaction_fields(transaction)))
+end
+
+-- A signed type-2 transaction in hex, from its 65-byte signature: r, s, and a recovery id of 27 or 28.
+function M.signed_transaction(transaction, signature)
+    assert(#signature == 65, "invalid transaction signature")
+    local recovery = signature:byte(65)
+    assert(recovery == 27 or recovery == 28, "invalid signature recovery id")
+    local fields = transaction_fields(transaction)
+    fields[#fields + 1] = rlp_integer(recovery - 27)
+    fields[#fields + 1] = (signature:sub(1, 32):gsub("^%z+", ""))
+    fields[#fields + 1] = (signature:sub(33, 64):gsub("^%z+", ""))
+    return cartesi.tohex("\2" .. rlp(fields))
+end
+
 return M

@@ -231,19 +231,24 @@ end
 local function pass()
     open_epochs()
     local status = { epochs = {}, published = false }
+    local disputes = {}
     for _, listener in ipairs(listeners) do
         local dispute = measure("poll", listener.poll, listener)
         status.epochs[tostring(listener.epoch)] = { inputs = #listener.inputs, sealed = dispute ~= nil }
-        if dispute then
-            local snapshot, published, next_block = measure("tick", dispute.tick, dispute)
-            -- A rejected observation leaves the bridge to try again at the same tip.
-            status.retry = status.retry or snapshot == nil
-            status.published = status.published or published
-            if next_block then
-                status.next_block = math.min(status.next_block or next_block, next_block)
-            end
-            status.terminal = status.terminal or dispute.terminal
+        disputes[#disputes + 1] = dispute
+    end
+    -- Only the newest sealed epoch has deadlines (older ones keep at most bond recoveries), so its bridge
+    -- ticks first and takes the signer's next nonce before them.
+    for i = #disputes, 1, -1 do
+        local dispute = disputes[i]
+        local snapshot, published, next_block = measure("tick", dispute.tick, dispute)
+        -- A rejected observation leaves the bridge to try again at the same tip.
+        status.retry = status.retry or snapshot == nil
+        status.published = status.published or published
+        if next_block then
+            status.next_block = math.min(status.next_block or next_block, next_block)
         end
+        status.terminal = status.terminal or dispute.terminal
     end
     return status
 end

@@ -483,9 +483,10 @@ replaced at the same nonce, with both fee fields raised by at least
 `PRT_FEE_BUMP_PERCENT`, within the fee ceilings. A player at a ceiling reports
 it as an anomaly, keeps the nonce, and resumes if fees fall. A player whose
 balance cannot cover a transaction's gas limit at its fee cap reports that too,
-and signs and stores nothing until the funds arrive. If the node no longer has a
-candidate at the ceiling, the player publishes its identical signed bytes again.
-A candidate survives an underpriced or ambiguous publication response, and a
+and signs and stores nothing until the funds arrive. A candidate the node no
+longer holds (lost to a crash before publication or a dropped mempool) sets no
+replacement floor, so the next action at its nonce is signed at current fees. A
+candidate survives an underpriced or ambiguous publication response, and a
 later attempt raises the fees at the same nonce. A pending transaction whose job
 became obsolete is replaced at once by a due job, or by a zero-value transfer to
 itself that cancels it. A replacement is only a higher bid for the nonce, and
@@ -586,7 +587,7 @@ fixtures and suites also cover the following.
   recovery, insufficient funds, dropped candidates, underpriced replacements,
   write-before-publish, cancellation and older-candidate races, reverted
   receipts, out-of-gas retries, multi-nonce reorgs, journal reload after a
-  crash, and identical-byte rebroadcast at the ceiling.
+  crash, and candidates lost at the ceiling.
 - Job derivation without side effects, expiry during claim computation, and
   cancellation decisions refreshed after a head change.
 - The README's protocol suite, including invalid, missing, or non-last

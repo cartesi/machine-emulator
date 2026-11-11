@@ -98,7 +98,7 @@ do
     assert(submit(manager, intent()).published)
     mine(2, 50000000000)
     local capped = submit(manager, intent())
-    assert(capped.blocked == "fee ceiling" and not capped.published)
+    assert(capped.blocked == "fee_ceiling" and not capped.published)
     assert(not manager:idle() and manager:nonce(signer.address) == 0)
     mine(1, 1000000000)
     if not manager:receipt("work") then
@@ -277,6 +277,23 @@ do
     rpc("anvil_setStorageAt", { destination, "0x0", set })
     mine()
     successful(manager, "work", retried.hash)
+end
+
+-- A balance below the gas limit at the max fee blocks the transaction before it is signed or stored, and
+-- publication resumes once the balance covers it.
+do
+    local manager = fresh()
+    local balance = rpc("eth_getBalance", { signer.address, "latest" })
+    rpc("anvil_setBalance", { signer.address, "0x1" })
+    local short = submit(manager, intent())
+    assert(short.blocked == "insufficient_funds" and not short.published, "a shortfall was not blocked")
+    assert(short.available == "1" and evmu.bint(short.needed) > 1, "the shortfall was misreported")
+    assert(manager:idle(), "a blocked transaction was stored")
+    rpc("anvil_setBalance", { signer.address, balance })
+    local resumed = submit(manager, intent())
+    assert(resumed.published, "publication did not resume")
+    mine()
+    successful(manager, "work", resumed.candidate.hash)
 end
 
 -- Crash recovery at the exact fee ceiling republishes the already signed

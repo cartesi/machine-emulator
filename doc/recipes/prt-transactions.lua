@@ -203,7 +203,7 @@ function methods:submit(signer, intent, observation)
             rebroadcast = assert(self.chain:rpc("eth_getTransactionByHash", { previous.hash })) == json.null
         end
         if not rebroadcast then
-            return { blocked = "fee ceiling", nonce = nonce, hash = previous and previous.hash }
+            return { blocked = "fee_ceiling", nonce = nonce, hash = previous and previous.hash }
         end
     end
     local to, data, value = address, "0x", "0"
@@ -249,13 +249,25 @@ function methods:submit(signer, intent, observation)
             observation_block = observation.head,
             observation_hash = observation.hash,
         }
+    -- A pool reserves the whole limit at the max fee against the balance, so a shortfall blocks the
+    -- transaction before it is signed or stored.
+    local needed = evmu.bint(candidate.gas) * quantity(candidate.max_fee) + quantity(candidate.value)
+    local available = quantity(assert(self.chain:rpc("eth_getBalance", { address, block.number })))
+    if available < needed then
+        return {
+            blocked = "insufficient_funds",
+            nonce = nonce,
+            needed = tostring(needed),
+            available = tostring(available),
+        }
+    end
     if rebroadcast then
         assert(
             candidate.to == to and candidate.data == data and candidate.value == tostring(value),
             "job changed its signed action"
         )
         if candidate.gas < gas then
-            return { blocked = "fee ceiling", nonce = nonce, hash = candidate.hash }
+            return { blocked = "fee_ceiling", nonce = nonce, hash = candidate.hash }
         end
         assert(
             self.chain:verify_signed(signer, candidate, candidate.raw) == candidate.hash,

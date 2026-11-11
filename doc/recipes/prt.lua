@@ -2062,7 +2062,7 @@ function player_meta.__index:run_to_input_mcycle_offset(
         function on_yield_automatic(yield_reason, output_data)
             if is_tx_output(yield_reason) then
                 if machine:read_reg("htif_tohost_data") > CMIO_TX_BUFFER_LENGTH then
-                    self:report_anomaly("oversized_output", "input " .. epoch_input_offset)
+                    self:report_anomaly("oversized_output", "at input %d", epoch_input_offset)
                 end
                 pending_output_hashes[#pending_output_hashes + 1] = keccak(output_data)
                 last_output_data = output_data
@@ -2093,7 +2093,7 @@ function player_meta.__index:run_to_input_mcycle_offset(
                     outputs_merkle_root
                 )
             then
-                self:report_anomaly("outputs_root_mismatch", "input " .. epoch_input_offset)
+                self:report_anomaly("outputs_root_mismatch", "at input %d", epoch_input_offset)
             end
         end
         if is_rx_accepted(yield_reason) then
@@ -2296,9 +2296,10 @@ function player_meta.__index:seal_epoch_state() end -- luacheck: ignore 212 self
 function player_meta.__index:store_uarch_claim() end -- luacheck: ignore 212 self
 
 -- Reports application behavior the player defends against but cannot vouch for, such as outputs that do
--- not hash to the root the machine holds. The position names where, such as "input 3". The default prints it.
-function player_meta.__index:report_anomaly(kind, position)
-    io.stderr:write(string.format("%s: %s at %s\n", self.label, kind, position))
+-- not hash to the root the machine holds. The message, formatted from fmt and its arguments, says where,
+-- such as "at input 3". The default prints it after the kind.
+function player_meta.__index:report_anomaly(kind, fmt, ...)
+    io.stderr:write(string.format("%s: %s %s\n", self.label, kind, string.format(fmt, ...)))
 end
 
 -- Proves the epoch's last output, the only one the player keeps. Other indices are no offer.
@@ -2311,7 +2312,7 @@ function player_meta.__index:prove_output(output_index)
     end
     -- An output proves only against the root the settled machine holds
     if last_output.output_proof.root_hash ~= self.outputs_merkle_root_proof.tx_buffer_data then
-        self:report_anomaly("unprovable_output", "output " .. output_index)
+        self:report_anomaly("unprovable_output", "at output %d", output_index)
         return "nothing"
     end
     return {
@@ -2575,7 +2576,7 @@ end
 local function store_checkpoint_files(self, directory)
     local outputs_root = self.outputs_merkle_root_proof.tx_buffer_data
     if outputs_root ~= hash_tree.frontier_get_root_hash(self.outputs_frontier) then
-        self:report_anomaly("outputs_root_mismatch", "the epoch's end")
+        self:report_anomaly("outputs_root_mismatch", "at the epoch's end")
     end
     hash_tree.frontier_store(self.outputs_frontier, directory .. "/outputs-frontier.json")
     fs.write_durable_file(cartesi.tojson({
@@ -2849,7 +2850,7 @@ local function reopen_epoch_directory(self)
             and self.epoch_pair.machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE)
                 ~= hash_tree.frontier_get_root_hash(self.outputs_frontier)
         then
-            self:report_anomaly("outputs_root_mismatch", "input " .. self.input_count)
+            self:report_anomaly("outputs_root_mismatch", "at input %d", self.input_count)
         end
         local builder = self:new_mcycle_computation_hash_builder()
         builder.frontier = hash_tree.frontier_forest_load(
@@ -2872,7 +2873,7 @@ local function reopen_epoch_directory(self)
     self.final_state_hash = root_hash
     self.outputs_merkle_root_proof = state.outputs_merkle_root_proof
     if self.outputs_merkle_root_proof.tx_buffer_data ~= hash_tree.frontier_get_root_hash(self.outputs_frontier) then
-        self:report_anomaly("outputs_root_mismatch", "the epoch's end")
+        self:report_anomaly("outputs_root_mismatch", "at the epoch's end")
     end
     self.mcycle_forest =
         hash_tree.frontier_forest_load(forests_directory .. "/mcycle", directory .. "/" .. state.mcycle_forest)
@@ -2925,7 +2926,7 @@ local function begin_epoch(self)
         machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE)
         ~= hash_tree.frontier_get_root_hash(self.previous_outputs_frontier)
     then
-        self:report_anomaly("outputs_root_mismatch", "the epoch's start")
+        self:report_anomaly("outputs_root_mismatch", "at the epoch's start")
     end
     self.outputs_frontier = hash_tree.frontier_copy(self.previous_outputs_frontier)
 end

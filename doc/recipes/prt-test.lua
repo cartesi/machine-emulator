@@ -919,8 +919,8 @@ end
 do
     local player = new_test_player(nil, prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial"))))
     local reports = {}
-    function player.report_anomaly(_, kind, position)
-        reports[#reports + 1] = kind .. " at " .. position
+    function player.report_anomaly(_, kind, fmt, ...)
+        reports[#reports + 1] = { kind = kind, message = string.format(fmt, ...) }
     end
     local machine = player.epoch_pair.machine
     local send = machine.send_cmio_response
@@ -931,7 +931,10 @@ do
     -- The fake machine takes the delivered input as its root hash
     player.event_handler.input_added(player, 0, fixture_input(keccak("input")))
     player.event_handler.epoch_sealed(player, 1)
-    assert(table.concat(reports, ",") == "outputs_root_mismatch at input 0", "the mismatch was not reported once")
+    assert(
+        #reports == 1 and reports[1].kind == "outputs_root_mismatch" and reports[1].message == "at input 0",
+        "the mismatch was not reported once"
+    )
     getmetatable(player).__close(player)
 end
 
@@ -939,8 +942,8 @@ end
 do
     local player = new_test_player(nil, prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial"))))
     local reports = {}
-    function player.report_anomaly(_, kind, position)
-        reports[#reports + 1] = kind .. " at " .. position
+    function player.report_anomaly(_, kind, fmt, ...)
+        reports[#reports + 1] = { kind = kind, message = string.format(fmt, ...) }
     end
     player.last_output = {
         output_data = "first",
@@ -950,7 +953,10 @@ do
     hash_tree.frontier_push_back(player.outputs_frontier, keccak("first"))
     player.event_handler.epoch_sealed(player, 0)
     assert(player:prove_output(0) == "nothing", "an unprovable output was offered")
-    assert(table.concat(reports, ",") == "unprovable_output at output 0", "the unprovable output was not reported")
+    assert(
+        #reports == 1 and reports[1].kind == "unprovable_output" and reports[1].message == "at output 0",
+        "the unprovable output was not reported"
+    )
     getmetatable(player).__close(player)
 end
 

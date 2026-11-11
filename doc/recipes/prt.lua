@@ -2295,9 +2295,10 @@ function player_meta.__index:seal_epoch_state() end -- luacheck: ignore 212 self
 
 function player_meta.__index:store_uarch_claim() end -- luacheck: ignore 212 self
 
--- Reports application behavior the player defends against but cannot vouch for, such as outputs that do
--- not hash to the root the machine holds. The message, formatted from fmt and its arguments, says where,
--- such as "at input 3". The default prints it after the kind.
+-- Reports anomalies the player observes, such as application behavior it defends against but cannot vouch
+-- for (outputs that do not hash to the root the machine holds) or a tournament it could not join. The
+-- message, formatted from fmt and its arguments, says where, such as "at input 3". The default prints it
+-- after the kind.
 function player_meta.__index:report_anomaly(kind, fmt, ...)
     io.stderr:write(string.format("%s: %s %s\n", self.label, kind, string.format(fmt, ...)))
 end

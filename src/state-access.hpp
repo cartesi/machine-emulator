@@ -125,16 +125,16 @@ private:
         m_s.shadow.registers.icycleinstret = val;
     }
 
-    uint64_t do_read_mvendorid() const { // NOLINT(readability-convert-member-functions-to-static)
-        return MVENDORID_INIT;
+    uint64_t do_read_mvendorid() const {
+        return m_s.shadow.registers.mvendorid;
     }
 
-    uint64_t do_read_marchid() const { // NOLINT(readability-convert-member-functions-to-static)
-        return MARCHID_INIT;
+    uint64_t do_read_marchid() const {
+        return m_s.shadow.registers.marchid;
     }
 
-    uint64_t do_read_mimpid() const { // NOLINT(readability-convert-member-functions-to-static)
-        return MIMPID_INIT;
+    uint64_t do_read_mimpid() const {
+        return m_s.shadow.registers.mimpid;
     }
 
     uint64_t do_read_mcycle() const {

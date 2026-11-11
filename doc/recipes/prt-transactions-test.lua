@@ -68,6 +68,7 @@ do
     local manager, args = fresh()
     local first = submit(manager, intent())
     assert(first.published and first.candidate.nonce == 0)
+    assert(first.candidate.gas == 2 * 21000, "a transfer was not signed with twice its estimate")
     assert(manager:pending(signer.address).hash == first.candidate.hash)
     assert(not manager:idle() and not manager:receipt("work"))
     assert(not submit(manager, intent()).published, "same-block retry published again")
@@ -251,6 +252,29 @@ do
     rpc("anvil_setCode", { destination, "0x" })
     local retried = submit(manager, intent()).candidate
     assert(retried.nonce == 1)
+    mine()
+    successful(manager, "work", retried.hash)
+end
+
+-- An out-of-gas revert doubles the job's next limit, even when its new estimate is low again. The contract
+-- stores two new words only while slot 0 is set, like the pairing branch a join or a win can switch to
+-- before inclusion.
+do
+    local manager = fresh()
+    rpc("anvil_setCode", { destination, "0x60005415601157600160015560016002555b00" })
+    local set, clear = string.format("0x%064x", 1), string.format("0x%064x", 0)
+    local exhausted = submit(manager, intent()).candidate
+    rpc("anvil_setStorageAt", { destination, "0x0", set })
+    mine()
+    local receipt = assert(manager:receipt("work"))
+    assert(
+        tonumber(receipt.status) == 0 and tonumber(receipt.gasUsed) == exhausted.gas,
+        "the switched branch did not run out of gas"
+    )
+    rpc("anvil_setStorageAt", { destination, "0x0", clear })
+    local retried = submit(manager, intent()).candidate
+    assert(retried.gas == 2 * exhausted.gas, "the exhausted limit was not doubled")
+    rpc("anvil_setStorageAt", { destination, "0x0", set })
     mine()
     successful(manager, "work", retried.hash)
 end

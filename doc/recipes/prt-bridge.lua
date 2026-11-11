@@ -261,17 +261,6 @@ local function can_join(self, context, snapshot)
         )
 end
 
--- Whether the bridge's signer joined a tournament, which binds the player's claim there after its
--- joining window closes, so a restarted bridge derives the same bindings from the chain.
-local function joined_by(self, context)
-    for _, joined in pairs(context.joined) do
-        if joined.submitter == self.signer.address then
-            return true
-        end
-    end
-    return false
-end
-
 -- Claims belong to computations; tournament addresses are only associations
 -- reconstructed from the current branch. Keep computation out of job queries.
 function methods:update_claims(snapshot)
@@ -286,11 +275,24 @@ function methods:update_claims(snapshot)
             bind_claim(self, context.address, nil)
             bound_child = nil
         end
-        local rejoined = holds_parent and not self.done and joined_by(self, context)
-        if bound_child or can_join(self, context, snapshot) or rejoined then
+        local joinable = can_join(self, context, snapshot)
+        local unbound = holds_parent and not self.done and not self.claims[context.address]
+        if bound_child or joinable or unbound then
             local claim, built = build_claim(self, context)
-            if claim then
+            -- After its joining window, the player holds its claim only if that commitment was joined, by
+            -- anyone, so a restarted bridge derives the same bindings from the chain
+            if claim and (bound_child or joinable or context.joined[claim.root]) then
                 bind_claim(self, context.address, claim)
+            elseif
+                claim
+                and not self.unjoined[context.address]
+                and snapshot.head + 1
+                    >= eth.small(context.descriptor.startInstant) + eth.small(context.descriptor.allowance)
+            then
+                -- The window closed by the observed head, so every join is visible, and none was the player's
+                -- commitment. The player cannot defend it there.
+                self.unjoined[context.address] = true
+                self.player:report_anomaly("unjoined_claim", "at tournament %s", context.address)
             end
             computed = computed or built
         end
@@ -761,6 +763,8 @@ local function new(args)
         signer = args.signer,
         label = args.label,
         claims = {},
+        -- Tournaments whose window closed without the player's commitment, reported once each.
+        unjoined = {},
         computations = {},
         cleanup = args.cleanup ~= false,
         epoch = args.epoch,

@@ -1042,7 +1042,7 @@ do
     local uarch_response = repeated_claim(cartesi.keccak256("period"), geometry.uarch_height)
     local root_claim = eth.claim(mcycle_response, geometry.mcycle_height)
     local child_claim = eth.claim(uarch_response, geometry.uarch_height)
-    local function new_view(submitter)
+    local function new_view(submitter, root_joined, child_joined)
         local parent = {
             address = "root",
             creation = creation,
@@ -1056,7 +1056,7 @@ do
                 startInstant = 0,
                 allowance = 1,
             },
-            joined = { [root_claim.root] = { submitter = submitter } },
+            joined = { [root_joined or root_claim.root] = { submitter = submitter } },
             standing = { matchCount = 1 },
         }
         local child = {
@@ -1080,7 +1080,7 @@ do
                 contestedFinalStateTwo = hash,
                 log = { blockHash = "child1", logIndex = "0x0" },
             },
-            joined = { [child_claim.root] = { submitter = submitter } },
+            joined = { [child_joined or child_claim.root] = { submitter = submitter } },
             standing = { matchCount = 1 },
         }
         return {
@@ -1095,7 +1095,10 @@ do
         }
     end
     local function new_client()
-        local player = { event_handler = {} }
+        local player = { event_handler = {}, reports = {} }
+        function player.report_anomaly(_, kind, fmt, ...)
+            player.reports[#player.reports + 1] = { kind = kind, message = string.format(fmt, ...) }
+        end
         function player.event_handler.commit_mcycle_claim()
             return mcycle_response
         end
@@ -1122,9 +1125,28 @@ do
         client.claims.child and client.claims.child.root == child_claim.root,
         "a restart lost the child claim it joined"
     )
+    -- The player holds its commitment whoever joined it, so another signer's join binds it too.
     local other = new_client()
     other:update_claims(new_view("bob"))
-    assert(not other.claims.root and not other.claims.child, "another signer's join bound a claim")
+    assert(
+        other.claims.root and other.claims.root.root == root_claim.root,
+        "a restart lost the root claim another signer joined"
+    )
+    assert(
+        other.claims.child and other.claims.child.root == child_claim.root,
+        "a restart lost the child claim another signer joined"
+    )
+    assert(#other.player.reports == 0, "a joined claim was reported")
+    -- Joins of other commitments bind nothing, and the closed window is reported once.
+    local absent = new_client()
+    absent:update_claims(new_view("bob", "other root", "other child"))
+    absent:update_claims(new_view("bob", "other root", "other child"))
+    assert(not absent.claims.root and not absent.claims.child, "a join of another commitment bound a claim")
+    local report = absent.player.reports[1]
+    assert(
+        #absent.player.reports == 1 and report.kind == "unjoined_claim" and report.message == "at tournament root",
+        "the unjoined claim was not reported once"
+    )
 end
 
 -- Pending actions are revalidated on every observation, including when no new

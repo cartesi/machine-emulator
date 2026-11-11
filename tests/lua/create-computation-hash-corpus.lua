@@ -9,7 +9,6 @@ local tests_util = require("cartesi.tests.util")
 
 local artifact_dir = assert(os.getenv("CARTESI_COMPUTATION_HASH_CORPUS_PATH"), "corpus path is not set")
 local machine_tests_dir = assert(os.getenv("CARTESI_TESTS_PATH"), "machine tests path is not set")
-local uarch_tests_dir = assert(os.getenv("CARTESI_TESTS_UARCH_PATH"), "uarch tests path is not set")
 
 local function shell_quote(value)
     return "'" .. value:gsub("'", "'\\''") .. "'"
@@ -25,47 +24,19 @@ for _, subdir in ipairs({ "templates", "inputs", "results" }) do
 end
 
 local guest_image = machine_tests_dir .. "/computation_hash.bin"
-local near_limit_uarch_image = uarch_tests_dir .. "/rv64ui-uarch-computation-hash-near-limit.bin"
-local overflow_uarch_image = uarch_tests_dir .. "/rv64ui-uarch-computation-hash-overflow.bin"
 local template_mcycles = {}
 
-local function make_machine_config(options)
-    options = options or {}
+local function make_machine_config()
     return {
         processor = { registers = { pc = 0x80000000 } },
         ram = { length = 1 << 20, backing_store = { data_filename = guest_image } },
         cmio = { rx_buffer = {}, tx_buffer = {} },
-        uarch = options.uarch_image and {
-            processor = { registers = { pc = options.uarch_pc } },
-            ram = { backing_store = { data_filename = options.uarch_image } },
-        } or nil,
     }
 end
 
 local function make_template(options)
-    local cleanup
-    if options.custom_uarch_image then
-        -- Keep the stock image at its normal entrypoint and place the boundary program elsewhere.
-        -- The template starts at the custom PC once. Collector reset returns the PC to the stock
-        -- entrypoint, while a later rejection reuses the separately captured custom tail.
-        local custom_offset = cartesi.UARCH_RAM_LENGTH // 2
-        local stock_machine <close> = cartesi.machine(make_machine_config())
-        local stock_uarch_ram = stock_machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, cartesi.UARCH_RAM_LENGTH)
-        local custom = filesystem.read_file(options.custom_uarch_image)
-        assert(custom_offset + #custom <= #stock_uarch_ram, "custom uarch program does not fit")
-        assert(
-            stock_uarch_ram:sub(custom_offset + 1, custom_offset + #custom) == string.rep("\0", #custom),
-            "custom uarch program overlaps nonzero stock uarch RAM"
-        )
-        cleanup, options.uarch_image = filesystem.write_scope_temp_file(
-            stock_uarch_ram:sub(1, custom_offset) .. custom .. stock_uarch_ram:sub(custom_offset + #custom + 1)
-        )
-        options.uarch_pc = cartesi.UARCH_RAM_START_ADDRESS + custom_offset
-    end
-    local _ <close> = cleanup
-
     io.stderr:write("Creating computation-hash template " .. options.name .. "\n")
-    local machine <close> = cartesi.machine(make_machine_config(options))
+    local machine <close> = cartesi.machine(make_machine_config())
     local break_reason = machine:run(math.maxinteger)
     assert(break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY, "guest did not reach its initial CMIO yield")
     assert(machine:read_reg("htif_tohost_reason") == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
@@ -93,38 +64,6 @@ make_template({
         machine:write_reg("mcycle", cartesi.MCYCLE_MAX - 255)
     end,
 })
-
--- Template: the CMIO guest is at its initial RX-accepted manual yield. A custom uarch program is
--- overlaid halfway through the zero-filled part of stock uarch RAM, and the uarch PC points to that
--- program. The program halts exactly at UARCH_CYCLE_MAX - 1 without reaching uarch-cycle overflow.
--- All other machine state matches the normal template.
--- Use: this verifies that revert-uarch-tail collection can reach the last valid uarch cycle, reset
--- to the stock uarch state, and reuse the captured near-limit tail for a later rejected input.
-assert(make_template({
-    name = "near-limit-uarch-tail",
-    custom_uarch_image = near_limit_uarch_image,
-}) == initial_mcycle)
-
--- Template: the CMIO guest is at its initial RX-accepted manual yield. An infinite loop is overlaid
--- halfway through the zero-filled part of stock uarch RAM, and the uarch PC points to that loop. All
--- other machine state matches the normal template.
--- Use: initial revert-uarch-tail collection runs the loop until uarch-cycle overflow, testing the
--- collector's exact overflow diagnostic before reset.
-assert(make_template({
-    name = "uarch-overflow-tail",
-    custom_uarch_image = overflow_uarch_image,
-}) == initial_mcycle)
-
-do
-    local machine <close> = cartesi.machine(artifact_dir .. "/templates/near-limit-uarch-tail")
-    local mcycle = machine:read_reg("mcycle")
-    assert(machine:run_uarch(cartesi.UARCH_CYCLE_MAX) == cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
-    assert(
-        machine:read_reg("uarch_cycle") == cartesi.UARCH_CYCLE_MAX - 1,
-        string.format("near-limit uarch calibration failed: reached %d", machine:read_reg("uarch_cycle"))
-    )
-    assert(machine:read_reg("mcycle") == mcycle, "near-limit uarch unexpectedly changed mcycle")
-end
 
 local actions = { accept = 0, reject = 1, exception = 2, halt = 3, ["manual-other"] = 4 }
 local function encode_command(command)
@@ -778,32 +717,6 @@ add_uarch_case({
     },
     category = "nonzero-hash",
     stderr_contains = "Unexpected manual yield reason",
-})
-add_uarch_case({
-    id = "uarch-near-limit-tail",
-    description = "Collector setup changes the custom uarch boundary and input delivery refuses it",
-    comment = expected_hash_structure(
-        "none. Capturing the custom tail resets the uarch PC and changes the expected input boundary.",
-        "A direct collector test checks tail capture and reuse on rejection separately."
-    ),
-    template = "near-limit-uarch-tail",
-    commands = { { action = "reject", terminal_mcycle = window_start + 4 } },
-    category = "error-no-hash",
-    stderr_contains = "revert root hash does not match the machine root hash",
-    oracle = "near-limit-uarch-tail",
-    remote = true,
-})
-add_uarch_case({
-    id = "uarch-overflow-tail",
-    description = "Exact overflow while collecting the boundary revert-uarch tail",
-    comment = expected_hash_structure(
-        "none. Collecting the initial revert uarch tail reaches uarch-cycle overflow before",
-        "the selected mcycle period can be determined."
-    ),
-    template = "uarch-overflow-tail",
-    commands = { { action = "accept", terminal_mcycle = window_start + 4 } },
-    category = "error-no-hash",
-    stderr_contains = "uarch reached its maximum cycle and cannot advance more uarch cycles",
 })
 add_uarch_case({
     id = "uarch-bundled",

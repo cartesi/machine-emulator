@@ -465,6 +465,16 @@ describe("collect hashes", function()
                 expect.fail(function()
                     machine:run(32)
                 end, "microarchitecture is not reset")
+                -- A reset uarch whose RAM differs from the pristine image is not pristine
+                machine:write_reg("uarch_halt", 0)
+                machine:write_memory(cartesi.UARCH_RAM_START_ADDRESS + cartesi.UARCH_RAM_LENGTH - 8, "\x01")
+                expect.fail(function()
+                    machine:collect_uarch_cycle_root_hashes(
+                        machine:read_reg("mcycle") + 1,
+                        0,
+                        pristine_revert_uarch_tail
+                    )
+                end, "microarchitecture is not pristine")
             end)
 
             it("should fail when collecting with an incompatible partial bundle", function()

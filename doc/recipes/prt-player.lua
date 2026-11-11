@@ -253,6 +253,16 @@ local function pass()
     return status
 end
 
+-- One step of work without a deadline for every player, sealed epochs first, and whether any has more.
+local function idle()
+    local more = false
+    for i = #listeners, 1, -1 do
+        local player = listeners[i].player
+        more = player.event_handler.idle(player) or more
+    end
+    return more
+end
+
 -- The status replaces the previous one whole, so a reader never sees a partial status.
 local function store_status(status)
     if options.status_file then
@@ -263,7 +273,8 @@ local function store_status(status)
 end
 
 -- A player passes again whenever the tip changes, and right away after a pass that published or
--- must retry. With --ws it waits for the node to push the next header, and reads the tip itself at
+-- must retry. Otherwise it does idle work, one step at a time, checking the tip between steps. With
+-- nothing to do, with --ws it waits for the node to push the next header, and reads the tip itself at
 -- least once per poll interval in case a header was missed. Otherwise it polls at that interval.
 local poll_interval = assert(tonumber(options.poll_interval or "1"), "invalid poll interval")
 local heads = options.ws and websocket.new_head_subscription(options.ws)
@@ -271,14 +282,22 @@ local last_hash, again = nil, true
 while true do
     local tip, tip_hash = chain:head()
     if again or tip_hash ~= last_hash then
+        -- A new block follows the idle time of the previous one
+        if last_hash and tip_hash ~= last_hash then
+            for _, listener in ipairs(listeners) do
+                listener.player:check_backlog()
+            end
+        end
         local status = pass()
         status.tip, status.tip_hash, status.profile = tip, tip_hash, profile
         store_status(status)
         assert(not status.terminal, status.terminal)
         last_hash, again = tip_hash, status.published or status.retry
-    elseif heads then
-        heads:wait(poll_interval)
-    else
-        socket.sleep(poll_interval)
+    elseif not idle() then
+        if heads then
+            heads:wait(poll_interval)
+        else
+            socket.sleep(poll_interval)
+        end
     end
 end

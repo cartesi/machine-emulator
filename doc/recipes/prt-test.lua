@@ -193,6 +193,13 @@ local function fixture_input(data)
     return path
 end
 
+-- Delivers an input and runs it, also on a player that defers inputs to idle time.
+local function add_input(player, epoch_input_offset, path)
+    player.event_handler.input_added(player, epoch_input_offset, path)
+    repeat
+    until not player.event_handler.idle(player)
+end
+
 local function seed_inputs(player, inputs)
     for i, data in ipairs(inputs) do
         player.inputs[i] = data
@@ -960,6 +967,63 @@ do
     getmetatable(player).__close(player)
 end
 
+-- A player with the stored player's handlers keeps inputs pending and runs them in idle time, one per call and
+-- in order. The seal runs any still pending, and the claim matches a player that runs each input at once. More
+-- pending inputs than the cache's gap are reported once each time it starts.
+do
+    local inputs = {}
+    for i = 1, 5 do
+        inputs[i] = keccak("deferred input " .. i)
+    end
+    local function new_player(defers)
+        local player = new_test_player(nil, prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial"))))
+        if defers then
+            player.event_handler = prt.stored_event_handler
+        end
+        return player
+    end
+    local deferring, immediate = new_player(true), new_player(false)
+    local reports = {}
+    function deferring.report_anomaly(_, kind, fmt, ...)
+        reports[#reports + 1] = { kind = kind, message = string.format(fmt, ...) }
+    end
+    local handlers = deferring.event_handler
+    local root = deferring.epoch_pair.machine:get_root_hash()
+    for i = 1, 3 do
+        handlers.input_added(deferring, i - 1, fixture_input(inputs[i]))
+    end
+    handlers.input_added(deferring, 0, fixture_input(keccak("repeated input")))
+    assert(deferring.input_count == 0 and deferring.pending_input_count == 3, "an input ran or was lost while pending")
+    assert(deferring.epoch_pair.machine:get_root_hash() == root, "a pending input changed the machine")
+    deferring:check_backlog()
+    deferring:check_backlog()
+    assert(
+        #reports == 1 and reports[1].kind == "falling_behind" and reports[1].message == "at input 0: 3 inputs pending",
+        "the backlog was not reported once"
+    )
+    assert(handlers.idle(deferring) and deferring.input_count == 1, "idle did not run one input")
+    assert(deferring.epoch_pair.machine:get_root_hash() == inputs[1], "idle ran the wrong input")
+    assert(handlers.idle(deferring) and deferring.input_count == 2, "idle stopped with inputs remaining")
+    deferring:check_backlog()
+    for i = 4, 5 do
+        handlers.input_added(deferring, i - 1, fixture_input(inputs[i]))
+    end
+    deferring:check_backlog()
+    assert(#reports == 2 and reports[2].message == "at input 2: 3 inputs pending", "a new backlog was not reported")
+    handlers.epoch_sealed(deferring, 5)
+    assert(deferring.input_count == 5 and not handlers.idle(deferring), "the seal left inputs unrun")
+    for i, input in ipairs(inputs) do
+        immediate.event_handler.input_added(immediate, i - 1, fixture_input(input))
+    end
+    immediate.event_handler.epoch_sealed(immediate, 5)
+    assert(
+        deferring:new_mcycle_tree():get_root_hash() == immediate:new_mcycle_tree():get_root_hash(),
+        "deferring inputs changed the claim"
+    )
+    getmetatable(deferring).__close(deferring)
+    getmetatable(immediate).__close(immediate)
+end
+
 -- Forward execution retains the working machine even when thinning discards every later base.
 do
     local accepted, rejected, terminal = keccak("accepted"), keccak("rejected"), keccak("terminal")
@@ -1005,16 +1069,22 @@ do
     assert(not pcall(player.event_handler.input_added, player, 6, fixture_input(accepted)))
 end
 
--- A missing file fails the input event and releases the open execution.
+-- A missing file fails the input event before the input is pending, and leaves the open execution as it was.
 do
     local initial = new_fake_machine(keccak("initial"))
     local cache <close> = prt.new_forked_machine_cache(initial)
     local player = new_test_player(prt.new_geometry(10), cache)
+    local root = player.epoch_pair.machine:get_root_hash()
     local path = temporary_directory .. "/missing-input"
     assert(not pcall(player.event_handler.input_added, player, 0, path), "missing input file was accepted")
     assert(
-        initial.counts.live == #cache.entries and not player.epoch_pair and not player.epoch_builder,
-        "failed input read leaked its execution"
+        initial.counts.live == #cache.entries + 1
+            and player.epoch_pair
+            and player.epoch_builder
+            and player.epoch_pair.machine:get_root_hash() == root
+            and player.pending_input_count == 0
+            and player.input_count == 0,
+        "failed input read changed the open execution"
     )
 end
 
@@ -2465,7 +2535,7 @@ if arg[1] then
             do
                 local stored <close> = prt.new_stored_player(dapp_contract, "stored", nil, epoch_directory)
                 inject(stored, case[1], case[2])
-                local completed, failure = pcall(stored.event_handler.input_added, stored, 0, input_path)
+                local completed, failure = pcall(add_input, stored, 0, input_path)
                 assert(
                     not completed and tostring(failure):find("injected " .. case[1] .. " failure", 1, true),
                     tostring(failure)
@@ -2507,6 +2577,42 @@ if arg[1] then
     for i, data in ipairs(inputs) do
         input_files[i] = fixture_input(data)
     end
+    -- A stored player runs its inputs in idle time and stores only the inputs it ran. Reopened with an input
+    -- still pending, it is at its last applied boundary without that input's file, and takes the input again
+    -- from the event a restarted bridge delivers.
+    do
+        local _ <close>, deferred_directory = new_scope_epoch_directory()
+        do
+            local deferring <close> = prt.new_stored_player(dapp_contract, "deferring", nil, deferred_directory)
+            deferring.event_handler.input_added(deferring, 0, input_files[1])
+            deferring.event_handler.input_added(deferring, 1, input_files[2])
+            assert(deferring.event_handler.idle(deferring), "idle ran past a pending input")
+        end
+        local _ <close>, immediate_directory = new_scope_epoch_directory()
+        local expected
+        do
+            local immediate <close> = prt.new_stored_player(dapp_contract, "immediate", nil, immediate_directory)
+            add_input(immediate, 0, input_files[1])
+            expected = { immediate.epoch_pair.machine:get_root_hash() }
+            add_input(immediate, 1, input_files[2])
+            expected[2] = immediate.epoch_pair.machine:get_root_hash()
+        end
+        local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, deferred_directory)
+        assert(
+            reopened.input_count == 1
+                and reopened.pending_input_count == 0
+                and reopened.epoch_pair.machine:get_root_hash() == expected[1],
+            "reopening did not restore the applied boundary"
+        )
+        assert(
+            table.concat(fs.list_directory(deferred_directory .. "/inputs"), ",") == "0.bin",
+            "reopening kept an input it had not run"
+        )
+        reopened.event_handler.input_added(reopened, 0, input_files[1])
+        reopened.event_handler.input_added(reopened, 1, input_files[2])
+        assert(not reopened.event_handler.idle(reopened), "idle left a redelivered input unrun")
+        assert(reopened.epoch_pair.machine:get_root_hash() == expected[2], "a redelivered input changed the epoch")
+    end
     do
         local _ <close>, epoch_directory = new_scope_epoch_directory()
         local sealed = {}
@@ -2514,7 +2620,7 @@ if arg[1] then
             local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
             assert(reopened.input_count == i - 1, "reopening lost or invented inputs")
             for j = 1, i do
-                reopened.event_handler.input_added(reopened, j - 1, input_files[j])
+                add_input(reopened, j - 1, input_files[j])
             end
         end
         -- The seal stores the checkpoint the next epoch loads before it commits. It replaces a
@@ -2841,7 +2947,7 @@ if arg[1] then
                 -- third input records the boundary a continuation after the second must reach.
                 for i = 1, 3 do
                     processing, cutting = i - 1, i < 3
-                    crashing.event_handler.input_added(crashing, i - 1, input_files[i])
+                    add_input(crashing, i - 1, input_files[i])
                     references[i] = describe_state(crashing)
                 end
                 -- The seal, and the store of a uarch claim built beforehand, are cut as well.
@@ -2988,7 +3094,7 @@ if arg[1] then
                     local kind = string.format("%d:%s:%d", crash.processing, crash.snapshot, boundary)
                     if not continued[kind] then
                         continued[kind] = true
-                        reopened.event_handler.input_added(reopened, boundary, input_files[boundary + 1])
+                        add_input(reopened, boundary, input_files[boundary + 1])
                         assert(
                             describe_state(reopened) == references[boundary + 1],
                             "continuing after a crash at " .. crash.step .. " reached a different state"

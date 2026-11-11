@@ -896,6 +896,9 @@ local LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE = 10 -- assume about 1024 uarch cyc
 local MAX_MCYCLES_PER_ADVANCE_STATE = 1 << LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 local DEFAULT_MACHINE_CACHE_CAPACITY = 8
 local DEFAULT_MACHINE_CACHE_INPUT_GAP = 1
+-- The stored player, which the bridge runs, keeps more input boundaries, so reaching a disputed input
+-- replays only a few inputs.
+local STORED_MACHINE_CACHE_CAPACITY = 32
 
 -- Cycle targets use the machine's unsigned 64-bit coordinate.
 local function umin(a, b)
@@ -1330,7 +1333,7 @@ end
 -- The epoch machine is loaded from machine_directory. Entry zero is cloned from it.
 local function new_stored_machine_cache(epoch_directory, machine_directory, machine)
     local cache <close> = setmetatable({
-        capacity = DEFAULT_MACHINE_CACHE_CAPACITY,
+        capacity = STORED_MACHINE_CACHE_CAPACITY,
         input_gap = DEFAULT_MACHINE_CACHE_INPUT_GAP,
         replace_cursor = 2,
         last_epoch_input_offset = 0,

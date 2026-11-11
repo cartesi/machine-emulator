@@ -2764,6 +2764,75 @@ if arg[1] then
         local layout, entries = list_epoch_directory(epoch_directory)
         assert(layout == sealed_layout(3, sealed.output_count), "reopening left unexpected files: " .. layout)
         assert(entries == "0,1,2,3", "stored machines kept unexpected entries: " .. entries)
+        -- A sealed stored player advances its agreed pair in idle time toward the start of the mcycle claim's
+        -- dispute interval, once the interval lies inside one gap between cache entries, and units start from
+        -- it. The pair is dropped when the interval moves before it or out of the gap, and a reopen removes it.
+        do
+            local mcycle_hash = honest_tree:get_root_hash()
+            local periods = dapp_contract.geometry.periods_per_input
+            local agreed_directory = epoch_directory .. "/agreed"
+            local boundaries = {}
+            -- Only entry zero remains in memory, so every input lies in one gap.
+            local function new_gapped_player()
+                local player = prt.new_stored_player(dapp_contract, "disputing", nil, epoch_directory)
+                for _, retained in ipairs(player.machine_cache.entries) do
+                    boundaries[retained.epoch_input_offset] = retained.root_hash
+                end
+                player.machine_cache.entries = { player.machine_cache.entries[1] }
+                return player
+            end
+            local function no_agreed_pair(player)
+                return not player.agreed_pair
+                    and not fs.exists(agreed_directory)
+                    and not fs.exists(agreed_directory .. ".revert")
+            end
+            do
+                local disputing <close> = new_gapped_player()
+                local handlers = disputing.event_handler
+                -- At the claim's root, the dispute interval spans the epoch and includes the gap's first entry.
+                local height = dapp_contract.geometry.mcycle_height
+                handlers.reveal_bisection(disputing, mcycle_hash, 0, height, keccak("other"))
+                assert(
+                    disputing.bisection.position == 0 and disputing.bisection.height == height,
+                    "the bisection was not recorded"
+                )
+                assert(not handlers.idle(disputing) and no_agreed_pair(disputing), "a pair started outside a gap")
+                disputing.bisection = { computation_hash = mcycle_hash, position = 2 * periods, height = 1 }
+                assert(handlers.idle(disputing) and disputing.agreed_entry.epoch_input_offset == 0)
+                assert(handlers.idle(disputing) and disputing.agreed_entry.epoch_input_offset == 1)
+                assert(not handlers.idle(disputing) and disputing.agreed_entry.epoch_input_offset == 2)
+                assert(not handlers.idle(disputing), "the pair advanced past the interval's start")
+                assert(disputing.agreed_entry.root_hash == boundaries[2], "the pair reached a different boundary")
+                local disputing_cache = disputing.machine_cache
+                local new_machine_pair_from_entry = disputing_cache.new_machine_pair_from_entry
+                local started
+                function disputing_cache.new_machine_pair_from_entry(receiver, start)
+                    started = start.directory
+                    return new_machine_pair_from_entry(receiver, start)
+                end
+                do
+                    local pair <close> = disputing:new_machine_pair_at_epoch_input_offset(2)
+                    assert(pair.machine:get_root_hash() == boundaries[2], "a unit started from the wrong boundary")
+                end
+                assert(started == agreed_directory .. ".revert", "a unit did not start from the pair")
+                disputing_cache.new_machine_pair_from_entry = nil
+                disputing.bisection = { computation_hash = mcycle_hash, position = periods, height = 1 }
+                assert(
+                    handlers.idle(disputing) and disputing.agreed_entry.epoch_input_offset == 0,
+                    "a pair past the interval's start was kept"
+                )
+                assert(
+                    not handlers.idle(disputing) and disputing.agreed_entry.epoch_input_offset == 1,
+                    "the pair did not restart from its gap"
+                )
+                disputing.bisection = { computation_hash = mcycle_hash, position = 0, height = height }
+                assert(not handlers.idle(disputing) and no_agreed_pair(disputing), "a pair outside one gap was kept")
+            end
+            do
+                local reopened <close> = new_gapped_player()
+                assert(no_agreed_pair(reopened), "reopening kept the agreed pair")
+            end
+        end
         -- Equal hashes in separate claim forests must not share expansions through their files.
         local bundle = hash_tree.frontier_forest(LOG2_BUNDLE_UARCH_CYCLE_COUNT, "keccak256")
         local isolated_leaf = keccak("isolated claim forest")

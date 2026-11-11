@@ -2734,7 +2734,14 @@ end
 local function clear_epoch_directory(directory)
     for _, name in ipairs(fs.list_directory(directory)) do
         local path = directory .. "/" .. name
-        if name == "machine" or name == "machine.revert" or name == "pair" or name == "pair.revert" then
+        if
+            name == "machine"
+            or name == "machine.revert"
+            or name == "pair"
+            or name == "pair.revert"
+            or name == "agreed"
+            or name == "agreed.revert"
+        then
             remove_leftover_stored_machine(path)
         elseif name == "entries" then
             for _, entry in ipairs(fs.list_directory(path)) do
@@ -2869,6 +2876,125 @@ local function remove_epoch_leftovers(directory, state, machine_cache)
     end
 end
 
+--------------------------------------------------------------------------------
+-- Agreed pair
+--
+-- While a sealed epoch is in dispute, a stored player advances a machine toward the start of the dispute
+-- interval in idle time, so a unit that needs a machine there starts next to it instead of at a distant
+-- cache entry. The bisection handlers record the step they answer, and idle time interprets it. The pair
+-- advances only while the mcycle claim's dispute interval lies inside one gap between consecutive cache
+-- entries, and it starts at the gap's first entry. It runs on agreed/, and its backup agreed.revert holds
+-- the input boundary it last committed, which units start from. The pair only saves replay, so a reopen
+-- removes it.
+--------------------------------------------------------------------------------
+
+local function remove_agreed_directories(directory)
+    for _, name in ipairs({ "/agreed", "/agreed.revert" }) do
+        if fs.exists(directory .. name) then
+            remove_leftover_stored_machine(directory .. name)
+        end
+    end
+end
+
+local function drop_agreed_pair(self)
+    if self.agreed_pair then
+        self.agreed_pair:close()
+        self.agreed_pair, self.agreed_entry = nil, nil
+    end
+    remove_agreed_directories(self.epoch_directory)
+end
+
+-- The pair's backup is the entry units start from.
+local function set_agreed_entry(self, epoch_input_offset)
+    self.agreed_entry = {
+        epoch_input_offset = epoch_input_offset,
+        directory = self.epoch_directory .. "/agreed.revert",
+        root_hash = self.agreed_pair.machine:get_root_hash(),
+    }
+end
+
+-- Advances the agreed pair by one input toward the start of the mcycle claim's dispute interval, and returns
+-- whether more remains. A pair past that start, or outside the gap the interval lies in, is dropped. A uarch
+-- claim's bisection stays inside the input of the mcycle claim's last interval and leaves the pair alone.
+function stored_player_methods:advance_agreed_pair()
+    local bisection = self.bisection
+    if self.trees[bisection.computation_hash].forest ~= self.mcycle_forest then
+        return false
+    end
+    local periods_per_input = self.geometry.periods_per_input
+    local first = math.min(bisection.position // periods_per_input, self.input_count)
+    local last = math.min((bisection.position + (1 << bisection.height) - 1) // periods_per_input, self.input_count)
+    local start = find_nearest_entry(self.machine_cache, first)
+    local inside = start == find_nearest_entry(self.machine_cache, last) and start.epoch_input_offset < first
+    local offset = self.agreed_entry and self.agreed_entry.epoch_input_offset
+    if offset and not (inside and start.epoch_input_offset <= offset and offset <= first) then
+        drop_agreed_pair(self)
+    end
+    if not inside then
+        return false
+    end
+    if not self.agreed_pair then
+        local agreed_directory = self.epoch_directory .. "/agreed"
+        remove_agreed_directories(self.epoch_directory)
+        cartesi.machine:clone_stored(start.directory, agreed_directory)
+        local pair <close> =
+            new_stored_machine_pair(new_stored_machine(start.root_hash, agreed_directory), agreed_directory)
+        self.agreed_pair = pair:move()
+        set_agreed_entry(self, start.epoch_input_offset)
+        return true
+    end
+    offset = self.agreed_entry.epoch_input_offset
+    if offset == first then
+        return false
+    end
+    self:run_to_epoch_input_offset(self.agreed_pair, offset, offset + 1)
+    set_agreed_entry(self, offset + 1)
+    return offset + 1 < first
+end
+
+-- Pending inputs come first. A sealed epoch has none, and advances its agreed pair once it bisects.
+function stored_event_handler.idle(self)
+    if self:has_pending_input() then
+        return event_handler.idle(self)
+    end
+    return self.bisection ~= nil and self:advance_agreed_pair()
+end
+
+-- The bisection handlers record the step they answer, which idle time interprets.
+function stored_event_handler.reveal_bisection(self, computation_hash, position, height, other_left_node)
+    self.bisection = { computation_hash = computation_hash, position = position, height = height }
+    return event_handler.reveal_bisection(self, computation_hash, position, height, other_left_node)
+end
+
+function stored_event_handler.seal_divergence(self, computation_hash, position, other_left_node)
+    self.bisection = { computation_hash = computation_hash, position = position, height = 1 }
+    return event_handler.seal_divergence(self, computation_hash, position, other_left_node)
+end
+
+-- A unit starts from the agreed pair's backup when it is nearer than the cache entry, without going past.
+function stored_player_methods:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
+    local entry = self.agreed_entry
+    if
+        entry
+        and entry.epoch_input_offset <= epoch_input_offset
+        and entry.epoch_input_offset > find_nearest_entry(self.machine_cache, epoch_input_offset).epoch_input_offset
+    then
+        local pair <close> = self.machine_cache:new_machine_pair_from_entry(entry)
+        self:run_to_epoch_input_offset(pair, entry.epoch_input_offset, epoch_input_offset)
+        return pair:move()
+    end
+    return player_meta.__index.new_machine_pair_at_epoch_input_offset(self, epoch_input_offset)
+end
+
+-- The agreed pair's machine is released with the player's.
+stored_player_meta.__close = function(self)
+    if self.agreed_pair then
+        self.agreed_pair:close()
+        self.agreed_pair = nil
+    end
+    player_meta.__close(self)
+end
+
 -- Reopens an epoch directory at the boundary or seal its state.json records. An open epoch gets
 -- its epoch pair and builder back. A sealed epoch gets its mcycle forest and uarch claim forests
 -- back, with no epoch pair.
@@ -2934,6 +3060,7 @@ local function reopen_epoch_directory(self)
     if fs.exists(machine_directory .. ".revert") then
         remove_leftover_stored_machine(machine_directory .. ".revert")
     end
+    remove_agreed_directories(directory)
     self.final_state_hash = root_hash
     self.outputs_merkle_root_proof = state.outputs_merkle_root_proof
     if self.outputs_merkle_root_proof.tx_buffer_data ~= hash_tree.frontier_get_root_hash(self.outputs_frontier) then

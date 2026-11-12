@@ -61,7 +61,7 @@ function methods:poll()
         end
         blocks[log.blockNumber] = log.blockHash
         if self.applied[i] then
-            assert(self.applied[i] == identity, "epoch history changed; restart from a matching checkpoint")
+            assert(self.applied[i] == identity, "epoch history changed, so restart from a matching checkpoint")
         end
     end
     for i = #self.applied + 1, #logs do

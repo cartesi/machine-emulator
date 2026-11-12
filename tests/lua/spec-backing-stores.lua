@@ -759,6 +759,44 @@ describe("backing stores", function()
         end
     end)
 
+    -- A guest store marks its page dirty only in its write TLB slot until the slot is flushed. A replacement must
+    -- flush the slots into the range it drops. Otherwise a later flush marks the page in the replacement, and the
+    -- hash tree of a shared range misses the store.
+    it("should keep the pending dirty marks of a replaced shared range", function()
+        local nvram_start = 0x0090000000000000
+        local word = 0x0123456789abcdef
+        local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
+        do
+            local machine <close> = cartesi.machine({
+                processor = { registers = { x10 = nvram_start, x11 = word } },
+                ram = {
+                    length = 0x10000,
+                    backing_store = { data_filename = tests_util.tests_path .. "store_yield.bin" },
+                },
+                nvram = { { start = nvram_start, length = 0x1000 } },
+            }, {})
+            machine:store(stored_dirname)
+        end
+        local _ <close> = tests_util.scope_exit(function()
+            cartesi.machine:remove_stored(stored_dirname)
+        end)
+        do
+            local machine <close> = cartesi.machine(stored_dirname, {}, cartesi.SHARING_ALL)
+            -- The stored dirty page tree is clean, so only the pending mark records the store
+            machine:get_root_hash()
+            expect.equal(machine:run(cartesi.MCYCLE_MAX), cartesi.BREAK_REASON_YIELDED_MANUALLY)
+            machine:replace_memory_range({ start = nvram_start, length = 0x1000 })
+            -- The guest flushes its TLB while the replacement holds the page
+            machine:write_reg("iflags_Y", 0)
+            expect.equal(machine:run(cartesi.MCYCLE_MAX), cartesi.BREAK_REASON_HALTED)
+        end
+        local machine <close> = cartesi.machine(stored_dirname, {}, cartesi.SHARING_NONE)
+        local rebuilt <close> = cartesi.machine(stored_dirname, { clear_hash_tree = true }, cartesi.SHARING_NONE)
+        expect.equal(machine:read_word(nvram_start), word)
+        expect.truthy(machine:verify_hash_tree())
+        expect.equal(machine:get_root_hash(), rebuilt:get_root_hash())
+    end)
+
     it("should replace memory ranges by label", function()
         local _ <close>, stored_dirname = tests_util.scope_temp_pathname()
         do

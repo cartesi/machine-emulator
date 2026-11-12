@@ -768,6 +768,8 @@ void machine::replace_memory_range(const memory_range_config &config) {
                 std::to_string(replacement.length) + ", got "s + std::to_string(config.length)};
         }
     }
+    // Write TLB slots may hold the only dirty marks of the range being dropped, so they go to it first
+    mark_write_tlb_dirty_pages();
     m_ars.replace(replacement);
     // The current configuration records the replacement, so store sees it.
     *existing_backing_store = std::move(replacement.backing_store);

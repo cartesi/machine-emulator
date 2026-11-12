@@ -422,6 +422,55 @@ end
 local receipt, failure = transport:send({ address = "alice" }, "root", "0x")
 assert(not receipt and failure.code == 3)
 
+-- Addresses fetched up to the same block share requests, at most 128 addresses each, and each log
+-- goes to its own address. An address first seen later is fetched apart from its first block. When a
+-- single block still fails, the addresses are split.
+do
+    local log_history = require("prt-log-history")
+    local requests, refused = {}, nil
+    local chain = {
+        is_canonical = function()
+            return true
+        end,
+        logs = function(_, addresses, last_block, first_block)
+            addresses = type(addresses) == "table" and addresses or { addresses }
+            requests[#requests + 1] = #addresses .. ":" .. first_block .. "-" .. last_block
+            assert(not refused or #addresses == 1 or refused < first_block or refused > last_block, "too many logs")
+            local result = {}
+            for _, address in ipairs(addresses) do
+                result[#result + 1] = {
+                    address = address,
+                    blockNumber = string.format("0x%x", last_block),
+                    blockHash = "b",
+                    logIndex = "0x0",
+                }
+            end
+            return result
+        end,
+    }
+    local history = log_history.new(chain)
+    history:observe(9, "h9")
+    local logs = history:get_logs_of({ "a", "b" })
+    assert(#logs.a == 1 and logs.a[1].address == "a" and #logs.b == 1 and logs.b[1].address == "b")
+    logs = history:get_logs_of({ "a", "b", "c" }, { c = 5 })
+    assert(#logs.a == 1 and #logs.c == 1, "an address fetched to the head was fetched again")
+    history:observe(12, "h12")
+    history:get_logs_of({ "a", "b", "c" })
+    assert(table.concat(requests, ",") == "2:0-9,1:5-9,3:10-12", "addresses at the same block did not share requests")
+    requests, refused = {}, 14
+    history:observe(14, "h14")
+    logs = history:get_logs_of({ "a", "b", "c" })
+    assert(#logs.a == 4 and #logs.b == 4 and #logs.c == 4, "a split lost or repeated logs")
+    assert(table.concat(requests, ",") == "3:13-14,3:13-13,3:14-14,3:14-14,1:14-14,2:14-14,1:14-14,1:14-14", "no split")
+    local many = {}
+    for i = 1, 130 do
+        many[i] = "x" .. i
+    end
+    requests, refused = {}, nil
+    history:get_logs_of(many)
+    assert(table.concat(requests, ",") == "128:0-14,2:0-14", "a request named more than 128 addresses")
+end
+
 -- Observation must be complete and pinned to one canonical head. An orphaned
 -- response or an epoch not bound to this root cannot produce usable jobs.
 local streams = { factory = {}, consensus = {}, root = {} }
@@ -457,12 +506,14 @@ local reader = bridge.new({
         head = function()
             return 3, "head", 7, "tip"
         end,
-        logs = function(_, address, last_block, first_block)
+        logs = function(_, addresses, last_block, first_block)
             local result = {}
-            for _, item in ipairs(streams[address]) do
-                local number = tonumber(item.blockNumber)
-                if number >= (first_block or 0) and number <= last_block then
-                    result[#result + 1] = item
+            for _, address in ipairs(type(addresses) == "table" and addresses or { addresses }) do
+                for _, item in ipairs(streams[address]) do
+                    local number = tonumber(item.blockNumber)
+                    if number >= (first_block or 0) and number <= last_block then
+                        result[#result + 1] = item
+                    end
                 end
             end
             return result
@@ -511,6 +562,124 @@ seal.removed = false
 streams.consensus = {}
 reader.history:reset()
 assert(not pcall(reader.observe, reader), "missing epoch seal was accepted")
+-- A child whose parent match was deleted is not fetched once the deletion is irreversible under the
+-- retirement policy, and neither is anything under it, unless the player holds one of the match's
+-- commitments. A child of a live match, or of a deletion that a reorg can still undo, is fetched. An
+-- observer has no retirement policy, so it fetches every child.
+do
+    local tournament_logs =
+        { factory = {}, consensus = {}, root = {}, finished = {}, live = {}, recent = {}, grandchild = {} }
+    local function add(address, block, index, value)
+        local item = {
+            address = address,
+            blockNumber = string.format("0x%x", block),
+            blockHash = "block" .. block,
+            logIndex = index,
+            removed = false,
+            event = value,
+        }
+        value.address, value.log = address, item
+        tournament_logs[address][#tournament_logs[address] + 1] = item
+    end
+    local function announce(parent, block, index, match, child)
+        add(parent, block, index, {
+            name = "NewInnerTournament",
+            matchIdHash = match,
+            childTournament = child,
+            one = match .. "-one",
+            two = match .. "-two",
+            descriptor = {},
+            bondValue = 1,
+        })
+    end
+    local function delete(block, index, match)
+        add(
+            "root",
+            block,
+            index,
+            { name = "MatchDeleted", matchIdHash = match, one = match .. "-one", two = match .. "-two" }
+        )
+    end
+    add("factory", 1, "0x0", {
+        name = "TournamentCreated",
+        tournament = "root",
+        bondValue = 1,
+        descriptor = { initialHash = hash, baseCycle = evmu.bint(0) },
+    })
+    add(
+        "consensus",
+        1,
+        "0x1",
+        { name = "EpochSealed", tournament = "root", initialMachineStateHash = hash, epochNumber = evmu.bint(0) }
+    )
+    announce("root", 2, "0x0", "deleted", "finished")
+    announce("finished", 2, "0x1", "inner", "grandchild")
+    announce("root", 2, "0x2", "open", "live")
+    delete(3, "0x0", "deleted")
+    announce("root", 4, "0x0", "undone", "recent")
+    delete(6, "0x0", "undone")
+    local requested = {}
+    local args = {
+        geometry = geometry,
+        transactions = {},
+        chain = {
+            -- The observation head is block 8, and the retirement policy's head is block 5
+            head = function(_, policy)
+                if policy == 3 then
+                    return 5
+                end
+                return 8, "head", 9, "tip"
+            end,
+            logs = function(_, addresses, last_block, first_block)
+                local result = {}
+                for _, address in ipairs(type(addresses) == "table" and addresses or { addresses }) do
+                    requested[address] = true
+                    for _, item in ipairs(tournament_logs[address]) do
+                        local number = tonumber(item.blockNumber)
+                        if number >= (first_block or 0) and number <= last_block then
+                            result[#result + 1] = item
+                        end
+                    end
+                end
+                return result
+            end,
+            is_canonical = function()
+                return true
+            end,
+        },
+        abi = {
+            event = function(_, item)
+                return item.event
+            end,
+        },
+        root = "root",
+        factory = "factory",
+        consensus = "consensus",
+        epoch = evmu.bint(0),
+        initial_hash = hash,
+        player = one.player,
+        signer = one.signer,
+        label = one.label,
+        retirement_policy = 3,
+    }
+    local pruning = bridge.new(args)
+    local view = assert(pruning:observe())
+    assert(not requested.finished and not requested.grandchild, "a finished child was fetched")
+    assert(requested.live and requested.recent, "a child that can still act was not fetched")
+    assert(view.contexts.finished.finished and not view.contexts.live.finished)
+    assert(not view.contexts.grandchild, "a tournament under a finished child was observed")
+    -- A finished child of a match the player was in is still fetched, for its bond.
+    pruning.claims.root = { root = "deleted-one" }
+    pruning.history:reset()
+    requested = {}
+    view = assert(pruning:observe())
+    assert(requested.finished and requested.grandchild and not view.contexts.finished.finished)
+    args.retirement_policy = nil
+    requested = {}
+    view = assert(bridge.new_observer(args):observe())
+    assert(requested.finished and requested.grandchild and view.contexts.grandchild, "an observer pruned")
+end
+
 -- Acceptance waits for the staging block plus the configured delay, including equality.
 for _, scheduler in ipairs(schedulers) do
     scheduler.claim_staging_period = 10

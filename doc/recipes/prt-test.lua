@@ -251,6 +251,24 @@ do
     assert(period_mcycle_offset == 1 and uarch_cycle == 0, "transition split missed the next mcycle")
 end
 
+-- The verdict narrates a proven output only when it decodes as a notice. Any other output, such
+-- as a voucher, is opaque to the referee and must not stop it.
+do
+    local evmu = require("cartesi.evmu")
+    local voucher = evmu.encode_calldata("Voucher(address destination,uint256 value,bytes payload)", {
+        destination = "0x" .. string.rep("11", 20),
+        value = 1,
+        payload = evmu.raw("transfer"),
+    })
+    local notice = evmu.encode_calldata("Notice(bytes payload)", { payload = evmu.raw("42") })
+    prtu.story.report_output({ output_index = 0, output_data = voucher })
+    prtu.story.report_output({ output_index = 1, output_data = notice })
+    assert(
+        fs.read_file("verdict") == "Result proved against the final state:\n42\n",
+        "the verdict did not narrate only the notice"
+    )
+end
+
 -- Collector results include a final padding root at a fixed point. It is not an extra
 -- ordinary bundle when the requested coverage is already full.
 for _, case in ipairs({

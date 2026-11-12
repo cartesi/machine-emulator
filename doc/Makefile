@@ -345,7 +345,7 @@ prt-demo-fixture: $(GAME_TEST_DIR)/initial-hash
 test-prt-protocol:
 	bash $(RECIPES_DIR)/game-runner-test.sh
 	@work=$$(mktemp -d); \
-	    trap 'cd "$$work" && rm -f claims.txt outputs.txt verdict.txt round_1.txt round_1_inputs.txt \
+	    trap 'cd "$$work" && rm -f claims.txt outputs.txt verdict verdict.txt round_1.txt round_1_inputs.txt \
 	        round_1_mcycles.txt round_1_proofs.txt round_1_timeouts.txt round_1_uarch_cycles.txt && \
 	        cd / && rmdir "$$work" || exit 1' EXIT; \
 	    cd "$$work" && lua5.4 $(RECIPES_DIR)/prt-test.lua && \

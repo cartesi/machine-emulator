@@ -40,6 +40,11 @@ local function decode(self, log)
     return event or nil
 end
 
+local function holds(self, address, root)
+    local claim = self.claims and self.claims[address]
+    return claim and claim.root == root and claim or nil
+end
+
 function methods:observe()
     local head, hash, tip, tip_hash = self.chain:head(self.observation_policy)
     if self.seal_block then
@@ -49,15 +54,22 @@ function methods:observe()
     -- observation resets it, so the next one fetches everything again.
     local history = self.history
     history:observe(head, hash)
-    local addresses, first_blocks = { self.factory, self.consensus, self.root }, {}
-    local fetched, logs, contexts, order = {}, {}, {}, {}
-    local index = 1
-    while addresses[index] do
-        local address = addresses[index]
-        index = index + 1
-        if not fetched[address] then
+    local addresses = { self.factory, self.consensus, self.root }
+    local first_blocks =
+        { [self.factory] = self.first_block, [self.consensus] = self.first_block, [self.root] = self.first_block }
+    -- A child whose parent match was deleted is finished, and so is every tournament under it. Once the
+    -- deletion is as irreversible as the inputs, a bridge stops fetching the child, unless the player holds
+    -- one of the match's commitments.
+    local irreversible = self.retirement_policy and self.chain:head(self.retirement_policy)
+    local fetched, finished, logs, contexts, order = {}, {}, {}, {}, {}
+    -- Each round fetches the tournaments the previous one announced, in one request
+    while #addresses > 0 do
+        local announced = {}
+        local fetched_logs = history:get_logs_of(addresses, first_blocks)
+        for _, address in ipairs(addresses) do
             fetched[address] = true
-            for _, log in ipairs(history:get_logs(address, first_blocks[address] or self.first_block)) do
+            local children, deletions = {}, {}
+            for _, log in ipairs(fetched_logs[address]) do
                 assert(log.address == address, "invalid log address")
                 assert(type(log.removed) == "boolean", "log lacks removed flag")
                 if log.removed then
@@ -68,11 +80,28 @@ function methods:observe()
                 logs[#logs + 1] = log
                 local event = decode(self, log)
                 if event and event.name == "NewInnerTournament" then
-                    addresses[#addresses + 1] = event.childTournament
-                    first_blocks[event.childTournament] = eth.small(log.blockNumber)
+                    children[#children + 1] = event
+                elseif event and event.name == "MatchDeleted" then
+                    deletions[event.matchIdHash] = eth.small(log.blockNumber)
+                end
+            end
+            for _, event in ipairs(children) do
+                local child, deleted = event.childTournament, deletions[event.matchIdHash]
+                if
+                    irreversible
+                    and deleted
+                    and deleted <= irreversible
+                    and not holds(self, address, event.one)
+                    and not holds(self, address, event.two)
+                then
+                    finished[child] = true
+                elseif not fetched[child] then
+                    announced[#announced + 1] = child
+                    first_blocks[child] = eth.small(event.log.blockNumber)
                 end
             end
         end
+        addresses = announced
     end
     if not self.chain:is_canonical(head, hash) then
         history:reset()
@@ -113,6 +142,8 @@ function methods:observe()
                         descriptor = event.descriptor,
                         bond = event.bondValue,
                         joined = {},
+                        -- Its logs were not fetched
+                        finished = finished[address],
                     }
                     if name == "NewInnerTournament" then
                         assert(contexts[event.address], "child has no observed parent")
@@ -183,11 +214,6 @@ local function payload(self, response)
     end
     assert(type(response) ~= "string", "a handler returned an unknown string")
     return response
-end
-
-local function holds(self, address, root)
-    local claim = self.claims and self.claims[address]
-    return claim and claim.root == root and claim or nil
 end
 
 local function build_claim(self, context)
@@ -270,31 +296,37 @@ function methods:update_claims(snapshot)
         local holds_parent = not context.parent
             or holds(self, context.parent, event.one)
             or holds(self, context.parent, event.two)
-        local bound_child = context.parent and self.claims[context.address]
-        if bound_child and not holds_parent then
-            bind_claim(self, context.address, nil)
-            bound_child = nil
-        end
-        local joinable = can_join(self, context, snapshot)
-        local unbound = holds_parent and not self.done and not self.claims[context.address]
-        if bound_child or joinable or unbound then
-            local claim, built = build_claim(self, context)
-            -- After its joining window, the player holds its claim only if that commitment was joined, by
-            -- anyone, so a restarted bridge derives the same bindings from the chain
-            if claim and (bound_child or joinable or context.joined[claim.root]) then
-                bind_claim(self, context.address, claim)
-            elseif
-                claim
-                and not self.unjoined[context.address]
-                and snapshot.head + 1
-                    >= eth.small(context.descriptor.startInstant) + eth.small(context.descriptor.allowance)
-            then
-                -- The window closed by the observed head, so every join is visible, and none was the player's
-                -- commitment. The player cannot defend it there.
-                self.unjoined[context.address] = true
-                self.player:report_anomaly("unjoined_claim", "at tournament %s", context.address)
+        if context.finished then
+            -- A restarted bridge observes before it holds its claims. A finished child it holds a commitment
+            -- of was not fetched then, so it is judged only after another observation.
+            computed = computed or holds_parent
+        else
+            local bound_child = context.parent and self.claims[context.address]
+            if bound_child and not holds_parent then
+                bind_claim(self, context.address, nil)
+                bound_child = nil
             end
-            computed = computed or built
+            local joinable = can_join(self, context, snapshot)
+            local unbound = holds_parent and not self.done and not self.claims[context.address]
+            if bound_child or joinable or unbound then
+                local claim, built = build_claim(self, context)
+                -- After its joining window, the player holds its claim only if that commitment was joined, by
+                -- anyone, so a restarted bridge derives the same bindings from the chain
+                if claim and (bound_child or joinable or context.joined[claim.root]) then
+                    bind_claim(self, context.address, claim)
+                elseif
+                    claim
+                    and not self.unjoined[context.address]
+                    and snapshot.head + 1
+                        >= eth.small(context.descriptor.startInstant) + eth.small(context.descriptor.allowance)
+                then
+                    -- The window closed by the observed head, so every join is visible, and none was the
+                    -- player's commitment. The player cannot defend it there.
+                    self.unjoined[context.address] = true
+                    self.player:report_anomaly("unjoined_claim", "at tournament %s", context.address)
+                end
+                computed = computed or built
+            end
         end
     end
     return computed

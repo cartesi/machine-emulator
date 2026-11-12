@@ -2631,6 +2631,33 @@ if arg[1] then
         assert(not reopened.event_handler.idle(reopened), "idle left a redelivered input unrun")
         assert(reopened.epoch_pair.machine:get_root_hash() == expected[2], "a redelivered input changed the epoch")
     end
+    -- After a reorg deeper than the input policy, the chain delivers an input that ran with other bytes. A reopened
+    -- stored player raises an error on it, whether its epoch is open or sealed, and a sealed one raises an error on
+    -- another input count.
+    do
+        local _ <close>, epoch_directory = new_scope_epoch_directory()
+        do
+            local stored <close> = prt.new_stored_player(dapp_contract, "replaced", nil, epoch_directory)
+            add_input(stored, 0, input_files[1])
+        end
+        do
+            local reopened <close> = prt.new_stored_player(dapp_contract, "replaced", nil, epoch_directory)
+            local kept, failure = pcall(reopened.event_handler.input_added, reopened, 0, input_files[2])
+            assert(not kept and failure:find("epoch history changed", 1, true), "an open epoch kept a replaced input")
+            reopened.event_handler.input_added(reopened, 0, input_files[1])
+            reopened.event_handler.epoch_sealed(reopened, 1)
+        end
+        local reopened <close> = prt.new_stored_player(dapp_contract, "replaced", nil, epoch_directory)
+        local kept, failure = pcall(reopened.event_handler.input_added, reopened, 0, input_files[2])
+        assert(not kept and failure:find("epoch history changed", 1, true), "a sealed epoch kept a replaced input")
+        kept, failure = pcall(reopened.event_handler.epoch_sealed, reopened, 2)
+        assert(
+            not kept and failure:find("sealed input count mismatch", 1, true),
+            "a sealed epoch accepted another count"
+        )
+        reopened.event_handler.input_added(reopened, 0, input_files[1])
+        reopened.event_handler.epoch_sealed(reopened, 1)
+    end
     do
         local _ <close>, epoch_directory = new_scope_epoch_directory()
         local sealed = {}

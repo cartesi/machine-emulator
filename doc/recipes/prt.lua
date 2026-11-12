@@ -2179,8 +2179,13 @@ end
 -- and pending_input_count the ones after them, whose bytes store_input keeps until they run.
 function player_meta.__index:add_pending_input(epoch_input_offset, path)
     local next_epoch_input_offset = self.input_count + self.pending_input_count
-    -- A restarted bridge delivers events for inputs already pending or run again.
+    -- A relaunched player's listener delivers inputs already pending or run again. An input that ran must be the
+    -- one delivered now, or the chain's history changed under the stored epoch.
     if epoch_input_offset < next_epoch_input_offset then
+        assert(
+            epoch_input_offset >= self.input_count or self:read_input(epoch_input_offset) == fs.read_file(path),
+            "epoch history changed, so restart from a matching checkpoint"
+        )
         return
     end
     assert(self.epoch_pair, "epoch is not open")
@@ -2251,8 +2256,9 @@ end
 -- Retain the final machine before closing execution so the next player can
 -- accumulate inputs while this player disputes the sealed epoch.
 function event_handler.epoch_sealed(self, input_count)
-    -- A restarted bridge may deliver the seal again.
+    -- A relaunched player's listener delivers the seal again, which must cover the inputs that ran.
     if self.mcycle_forest then
+        assert(input_count == nil or input_count == self.input_count, "sealed input count mismatch")
         return
     end
     -- The claim covers every input delivered

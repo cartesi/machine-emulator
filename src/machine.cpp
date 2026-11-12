@@ -133,6 +133,12 @@ void machine::init_processor(const processor_config &p, const machine_runtime_co
         // Initialize to default values first
         *m_s = processor_state{};
 
+        // The machine-ID registers are read-only to the host, so the configured values go straight into the shadow,
+        // where validate_processor_shadow checks them against the emulator version
+        m_s->shadow.registers.mvendorid = p.registers.mvendorid;
+        m_s->shadow.registers.marchid = p.registers.marchid;
+        m_s->shadow.registers.mimpid = p.registers.mimpid;
+
         // General purpose registers
         for (int i = 1; i < X_REG_COUNT; i++) {
             write_reg(machine_reg_enum(reg::x0, i), p.registers.x[i]);

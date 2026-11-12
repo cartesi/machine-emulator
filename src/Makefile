@@ -378,8 +378,7 @@ hash: cartesi-hash-tree-hash
 
 c-api: $(LIBCARTESI) $(LIBCARTESI_HASH_TREE) $(LIBCARTESI_JSONRPC) $(LIBCARTESI_FILESYSTEM)
 
-.PHONY: all generate use clean lint format format-lua check-format check-format-lua luacartesi hash c-api compile_flags.txt swap-uarch-pristine-coverage swap-uarch-pristine-stock \
-	custom-uarch-pristine-cartesi.so
+.PHONY: all generate use clean lint format format-lua check-format check-format-lua luacartesi hash c-api compile_flags.txt custom-uarch-pristine-cartesi.so
 
 LIBCARTESI_OBJS:= \
 	base64.o \
@@ -532,36 +531,21 @@ $(LIBCARTESI_FILESYSTEM): $(LIBCARTESI_FILESYSTEM_OBJS) $(LIBCARTESI)
 cartesi.so: $(LUACARTESI_OBJS) libcartesi.a
 	$(CXX) -o $@ $^ $(LUACARTESI_LIBS) $(LDFLAGS) $(LUACARTESI_LDFLAGS) $(SOLDFLAGS)
 
-# Relink cartesi.so with the coverage uarch embedded as the pristine state, so
-# reset_uarch restores the instrumented binary (the one PCs are resolved against)
-# for the whole run instead of reverting to the stock uarch after the first
-# instruction. Only the pristine ram/hash objects change; no instrumented object
-# is recompiled, so the collected gcov data set is unaffected. Used by the
-# coverage PC-collection test (tests/Makefile test-coverage-uarch-pcs).
-swap-uarch-pristine-coverage:
-	@rm -f uarch-pristine-ram.o uarch-pristine-hash.o
-	@$(MAKE) cartesi.so coverage=yes \
-		UARCH_PRISTINE_RAM_C=../uarch/uarch-pristine-ram-coverage.c \
-		UARCH_PRISTINE_HASH_C=../uarch/uarch-pristine-hash-coverage.c
-
-# Undo swap-uarch-pristine-coverage by relinking with the stock pristine, leaving
-# the build tree ready for the next run. Only the pristine ram/hash objects
-# change, so the collected gcov data set is unaffected.
-swap-uarch-pristine-stock:
-	@rm -f uarch-pristine-ram.o uarch-pristine-hash.o
-	@$(MAKE) cartesi.so coverage=yes
-
 # Link a separate cartesi.so that embeds another pristine uarch, leaving the build tree
-# untouched. CUSTOM_UARCH_PRISTINE_DIR holds the uarch-pristine-ram.c and
-# uarch-pristine-hash.c to embed and receives the objects and the module. As in
+# untouched. CUSTOM_UARCH_PRISTINE_DIR receives the objects and the module, and by
+# default also holds the uarch-pristine-ram.c and uarch-pristine-hash.c to embed. As in
 # cartesi.so, the pristine objects precede libcartesi.a, so the linker does not take the
-# stock ones from it. Used by the custom pristine uarch tests (tests/Makefile
-# test-custom-uarch-pristine).
+# stock ones from it. Only the pristine objects differ from cartesi.so, so under coverage
+# the module records into the same gcov data. Used by the custom pristine uarch tests
+# (tests/Makefile test-custom-uarch-pristine) and the uarch PC collection (tests/Makefile
+# test-coverage-uarch-pcs).
+CUSTOM_UARCH_PRISTINE_RAM_C ?= $(CUSTOM_UARCH_PRISTINE_DIR)/uarch-pristine-ram.c
+CUSTOM_UARCH_PRISTINE_HASH_C ?= $(CUSTOM_UARCH_PRISTINE_DIR)/uarch-pristine-hash.c
 CUSTOM_UARCH_PRISTINE_OBJS=$(addprefix $(CUSTOM_UARCH_PRISTINE_DIR)/,uarch-pristine-ram.o uarch-pristine-hash.o)
 
 custom-uarch-pristine-cartesi.so: $(filter-out uarch-pristine-%,$(LUACARTESI_OBJS)) libcartesi.a
-	$(CC) $(CFLAGS) -c -o $(CUSTOM_UARCH_PRISTINE_DIR)/uarch-pristine-ram.o $(CUSTOM_UARCH_PRISTINE_DIR)/uarch-pristine-ram.c
-	$(CC) $(CFLAGS) -c -o $(CUSTOM_UARCH_PRISTINE_DIR)/uarch-pristine-hash.o $(CUSTOM_UARCH_PRISTINE_DIR)/uarch-pristine-hash.c
+	$(CC) $(CFLAGS) -c -o $(CUSTOM_UARCH_PRISTINE_DIR)/uarch-pristine-ram.o $(CUSTOM_UARCH_PRISTINE_RAM_C)
+	$(CC) $(CFLAGS) -c -o $(CUSTOM_UARCH_PRISTINE_DIR)/uarch-pristine-hash.o $(CUSTOM_UARCH_PRISTINE_HASH_C)
 	$(CXX) -o $(CUSTOM_UARCH_PRISTINE_DIR)/cartesi.so $(filter-out libcartesi.a,$^) $(CUSTOM_UARCH_PRISTINE_OBJS) \
 		libcartesi.a $(LUACARTESI_LIBS) $(LDFLAGS) $(LUACARTESI_LDFLAGS) $(SOLDFLAGS)
 

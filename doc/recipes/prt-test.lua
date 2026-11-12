@@ -3637,6 +3637,46 @@ if arg[1] then
         assert(reopened.final_state_hash == forked.final_state_hash, terminal .. " reopening changed the final state")
     end
 
+    -- Removing a finished epoch's files takes its checkpoint and epoch directory. Calling it again completes a
+    -- removal that a crash interrupted after renaming the checkpoint and while clearing the epoch directory.
+    for _, interrupted in ipairs({ false, true }) do
+        local template = prt.new_machine(initial_state_hash)
+        force_terminal(template, "halt")
+        local template_directory = temporary_directory .. "/removed-template"
+        template:store(template_directory)
+        local _ <close> = setmetatable({}, {
+            __close = function()
+                cartesi.machine:remove_stored(template_directory)
+            end,
+        })
+        local contract = {
+            initial_state_hash = template:get_root_hash(),
+            machine_directory = template_directory,
+            geometry = dapp_contract.geometry,
+        }
+        local epoch_directory = temporary_directory .. "/removed-epoch"
+        local checkpoint_directory = temporary_directory .. "/removed-checkpoint"
+        fs.create_directory(epoch_directory)
+        do
+            local stored <close> =
+                prt.new_stored_player(contract, "removed", nil, epoch_directory, checkpoint_directory)
+            stored.event_handler.input_added(stored, 0, fixture_input(inputs[1]))
+            stored.event_handler.epoch_sealed(stored, 1)
+        end
+        assert(fs.exists(checkpoint_directory) and fs.exists(epoch_directory .. "/machine"), "no epoch files to remove")
+        if interrupted then
+            cartesi.machine:rename_stored(checkpoint_directory, checkpoint_directory .. ".removed")
+            cartesi.machine:remove_stored(epoch_directory .. "/machine", cartesi.REMOVE_FORCED)
+        end
+        prt.remove_epoch_files(checkpoint_directory, epoch_directory)
+        assert(
+            not fs.exists(checkpoint_directory)
+                and not fs.exists(checkpoint_directory .. ".removed")
+                and not fs.exists(epoch_directory),
+            "epoch files remain after their removal"
+        )
+    end
+
     -- A manual yield takes precedence over an exhausted input budget, including the saturated
     -- counter. Starting an epoch must not execute or mutate either boundary.
     for _, mcycle in ipairs({ 1 << 48, cartesi.MCYCLE_MAX }) do

@@ -2355,6 +2355,33 @@ describe("machine-ID registers", function()
         return machine
     end
 
+    it("should refuse configured IDs that differ from the emulator's", function()
+        for reg, value in pairs(ids) do
+            expect.fail(function()
+                cartesi.machine({ ram = { length = 4096 }, processor = { registers = { [reg] = value } } })
+            end, reg .. " mismatch, emulator version is incompatible")
+        end
+    end)
+
+    it("should accept configured IDs that match the emulator's", function()
+        local default <close> = cartesi.machine({ ram = { length = 4096 } })
+        local registers = { mvendorid = cartesi.MVENDORID, marchid = cartesi.MARCHID, mimpid = cartesi.MIMPID }
+        local explicit <close> = cartesi.machine({ ram = { length = 4096 }, processor = { registers = registers } })
+        expect.equal(explicit:get_root_hash(), default:get_root_hash())
+    end)
+
+    it("should create a machine with the configured IDs when the version check is skipped", function()
+        local machine <close> = cartesi.machine(
+            { ram = { length = 4096 }, processor = { registers = ids } },
+            { skip_version_check = true }
+        )
+        local registers = machine:get_initial_config().processor.registers
+        for reg, value in pairs(ids) do
+            expect.equal(machine:read_reg(reg), value)
+            expect.equal(registers[reg], value)
+        end
+    end)
+
     it("should read the shadow words natively, through the uarch, and while collecting hashes", function()
         local native <close> = create_machine()
         for reg, value in pairs(ids) do

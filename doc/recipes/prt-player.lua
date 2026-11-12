@@ -1,19 +1,23 @@
 -- A PRT player as its own process. From its application's address it discovers the consensus,
 -- the input box, the tournament factory and its geometry. It then follows every epoch from the
--- first one it plays. Each epoch starts from checkpoints/epoch-N/, whose machine the epoch's seal
--- must match. A listener delivers the epoch's inputs and seal, and the dispute bridge answers the
--- epoch's tournament. Its state lives in the state directory: the transaction journal and, for
--- the honest player, one epoch directory per epoch.
+-- first one it plays, which is --first-epoch or the oldest checkpoint present, whichever comes
+-- later. Each epoch starts from checkpoints/epoch-N/, whose machine the epoch's seal must match. A
+-- listener delivers the epoch's inputs and seal, and the dispute bridge answers the epoch's
+-- tournament. Its state lives in the state directory: the transaction journal and, for the honest
+-- player, one epoch directory per epoch. The honest player keeps the files of the newest
+-- --keep-epochs finished epochs (1 by default) and removes the checkpoint and epoch directory of
+-- older ones.
 --
 -- Usage: lua5.4 prt-player.lua --rpc=URL --application=ADDRESS --keystore=FILE --password-file=FILE
 --     --state=DIRECTORY --checkpoints=DIRECTORY --dave=DIRECTORY --kind=KIND [OPTION...]
 --
 -- KIND is honest, or one of the scripted adversaries quitter, tamperer:INPUT:BUNDLE,
 -- fabulist:INPUT:LEAF, and forger:INPUT:FILE. The options are --label=NAME, --first-epoch=N,
--- --cleanup=no, --input-policy=POLICY, --dispute-policy=POLICY, --status-file=FILE, --ws=URL (the
--- node's WebSocket endpoint, which pushes new block headers), --poll-interval=SECONDS, and the fee
--- limits --bump-blocks=N, --bump-percent=N, --max-fee=WEI, and --max-priority-fee=WEI. After every
--- pass the player writes its status to the status file, for a harness that mines the chain.
+-- --keep-epochs=N, --cleanup=no, --input-policy=POLICY, --dispute-policy=POLICY,
+-- --status-file=FILE, --ws=URL (the node's WebSocket endpoint, which pushes new block headers),
+-- --poll-interval=SECONDS, and the fee limits --bump-blocks=N, --bump-percent=N, --max-fee=WEI,
+-- and --max-priority-fee=WEI. After every pass the player writes its status to the status file,
+-- for a harness that mines the chain.
 local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")
 local fs = require("cartesi.filesystem")
@@ -38,7 +42,8 @@ for _, name in ipairs({ "rpc", "application", "keystore", "password_file", "stat
     assert(options[name], "missing --" .. name:gsub("_", "-"))
 end
 local label = options.label or options.kind:match("^[%w_]+")
-local first_epoch = assert(math.tointeger(tonumber(options.first_epoch or "0")), "invalid first epoch")
+local keep_epochs = math.tointeger(tonumber(options.keep_epochs or "1"))
+assert(keep_epochs and keep_epochs >= 0, "invalid number of kept epochs")
 local input_policy = cast.policy(options.input_policy or "finalized")
 local dispute_policy = cast.policy(options.dispute_policy or 4)
 
@@ -117,6 +122,25 @@ local signer = {
 if not fs.exists(options.state) then
     fs.create_directory(options.state)
 end
+
+-- The honest player completes the epoch removals a crash interrupted. No player starts before the
+-- oldest checkpoint.
+local oldest_checkpoint
+if fs.exists(options.checkpoints) then
+    for _, name in ipairs(fs.list_directory(options.checkpoints)) do
+        local removed = math.tointeger(tonumber(name:match("^epoch%-(%d+)%.removed$")))
+        local number = math.tointeger(tonumber(name:match("^epoch%-(%d+)$")))
+        if removed and options.kind == "honest" then
+            local suffix = "/epoch-" .. removed
+            prt.remove_epoch_files(options.checkpoints .. suffix, options.state .. suffix)
+        elseif number and (not oldest_checkpoint or number < oldest_checkpoint) then
+            oldest_checkpoint = number
+        end
+    end
+end
+local first_epoch = math.tointeger(tonumber(options.first_epoch or "0"))
+assert(first_epoch and first_epoch >= 0, "invalid first epoch")
+first_epoch = math.max(first_epoch, oldest_checkpoint or 0)
 local transactions = require("prt-transactions").new({
     chain = chain,
     path = options.state .. "/journal.json",
@@ -227,6 +251,25 @@ local function open_epochs()
     end
 end
 
+-- The honest player keeps the files of the newest keep_epochs finished epochs and removes those of
+-- older ones, oldest first, from the oldest checkpoint even when the first epoch it plays is later. It
+-- stops at an epoch still observed, which finishes later.
+local oldest_stored, newest_finished = oldest_checkpoint or first_epoch, -1
+local function remove_finished_epochs(epoch_number)
+    newest_finished = math.max(newest_finished, epoch_number)
+    while oldest_stored <= newest_finished - keep_epochs do
+        for _, listener in ipairs(listeners) do
+            if listener.epoch == oldest_stored then
+                return
+            end
+        end
+        local suffix = "/epoch-" .. oldest_stored
+        prt.remove_epoch_files(options.checkpoints .. suffix, options.state .. suffix)
+        io.stderr:write("Epoch ", oldest_stored, ": files removed.\n")
+        oldest_stored = oldest_stored + 1
+    end
+end
+
 -- One pass over every epoch: each listener polls and, once its epoch is sealed, its dispute bridge
 -- ticks. The status reports whether the pass published, the next block it needs, how many of each
 -- epoch's inputs it has received, whether each epoch is sealed, and why it stopped, if it did.
@@ -252,12 +295,18 @@ local function pass()
         end
         status.terminal = status.terminal or dispute.terminal
     end
-    -- A finished epoch has nothing left to do, so its listener and bridge are dropped
+    -- A finished epoch has nothing left to do, so its listener, bridge and player are dropped
     for i = #listeners, 1, -1 do
         local dispute = listeners[i].dispute
         if dispute and dispute.finished then
-            io.stderr:write("Epoch ", listeners[i].epoch, ": finished, no longer observed.\n")
-            table.remove(listeners, i)
+            local finished = table.remove(listeners, i)
+            io.stderr:write("Epoch ", finished.epoch, ": finished, no longer observed.\n")
+            do
+                local _ <close> = finished.player
+            end
+            if options.kind == "honest" then
+                remove_finished_epochs(finished.epoch)
+            end
         end
     end
     return status

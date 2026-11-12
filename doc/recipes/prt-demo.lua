@@ -501,6 +501,14 @@ local function play(session)
                 progressed = restart_honest("before staging") or progressed
             end
         end
+        -- Once the honest player removes epoch 0's files, epoch 2's dispute restarts it. Its relaunch starts
+        -- from the oldest checkpoint left.
+        if restarts["after a removal"] then
+            assert(not statuses[players[1].label].epochs["0"], "the relaunched honest player reopened a removed epoch")
+        elseif session.epoch == 2 and not fs.exists(get_checkpoint_directory(0)) then
+            assert(not fs.exists("players/honest/epoch-0"), "epoch 0's directory outlived its checkpoint")
+            progressed = restart_honest("after a removal") or progressed
+        end
         if reorg and not reorg.trigger_block then
             local tip_view = reorg.tip_observer:observe()
             reorg.trigger_block = tip_view and get_trigger_block(tip_view)
@@ -545,6 +553,10 @@ local function play(session)
                 }) do
                     assert(not test_restart or session.epoch ~= 1 or restarts[point], "never restarted " .. point)
                 end
+                assert(
+                    not test_restart or session.epoch ~= 2 or restarts["after a removal"],
+                    "never restarted after a removal"
+                )
                 local joined = standing and context.joined[standing.dangling]
                 assert(
                     joined and labels[joined.submitter] == "honest",

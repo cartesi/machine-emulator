@@ -2772,6 +2772,22 @@ local function remove_epoch_directory(directory)
     fs.remove_directory(directory)
 end
 
+-- Removes a retired epoch's checkpoint and epoch directory. The checkpoint is renamed to
+-- <checkpoint>.removed first, so a crash leaves a name that another call with the same arguments
+-- completes.
+local function remove_epoch_files(checkpoint_directory, epoch_directory)
+    local removed_directory = checkpoint_directory .. ".removed"
+    if fs.exists(checkpoint_directory) then
+        cartesi.machine:rename_stored(checkpoint_directory, removed_directory)
+    end
+    if fs.exists(epoch_directory) then
+        remove_epoch_directory(epoch_directory)
+    end
+    if fs.exists(removed_directory) then
+        remove_leftover_stored_machine(removed_directory)
+    end
+end
+
 -- Creates the layout of an epoch directory without a state.json.
 local function create_epoch_directory(directory)
     clear_epoch_directory(directory)
@@ -3191,6 +3207,7 @@ prt = {
     load_epoch_checkpoint = load_epoch_checkpoint,
     store_first_epoch_checkpoint = store_first_epoch_checkpoint,
     remove_epoch_directory = remove_epoch_directory,
+    remove_epoch_files = remove_epoch_files,
     LOG2_BUNDLE_MCYCLE_COUNT = LOG2_BUNDLE_MCYCLE_COUNT,
     LOG2_BUNDLE_UARCH_CYCLE_COUNT = LOG2_BUNDLE_UARCH_CYCLE_COUNT,
     new_forked_player = new_forked_player,

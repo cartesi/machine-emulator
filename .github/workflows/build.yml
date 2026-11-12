@@ -664,10 +664,9 @@ jobs:
 
       - name: Run coverage
         run: |
-          # coverage-all runs the parallel test group, then the pristine-swap uarch-pc
-          # collection, then the report, sequenced by order-only prerequisites in the
-          # Makefile (test-coverage-uarch-pcs relinks the emulator in place, so it must
-          # not overlap any test; coverage-report reads every .gcda last).
+          # coverage-all runs the parallel test group, the custom pristine uarch tests
+          # and the uarch-pc collection, then the report, sequenced by order-only
+          # prerequisites in the Makefile (coverage-report reads every .gcda last).
           docker run --name coverage-report -t -v ${{ github.workspace }}/computation-hash-corpus:/usr/src/emulator/tests/build/computation-hash-corpus ${{ github.repository_owner }}/machine-emulator:coverage make -j$(nproc) coverage-all coverage=yes
           docker cp coverage-report:/usr/src/emulator/tests/build/coverage .
           docker rm coverage-report

@@ -426,8 +426,8 @@ test-coverage-uarch:
 	$(LUA) ./lua/htif-yield.lua --uarch
 
 # Tests that may run concurrently under make -j. Under coverage they share only
-# the .gcda files, which libgcov merges under a lock. Excludes the two coverage
-# tail steps ordered below.
+# the .gcda files, which libgcov merges under a lock. Excludes the uarch PC
+# collection below, which needs a coverage build.
 PARALLEL_TESTS = test-save-and-load test-machine test-lua test-jsonrpc \
 	test-c-api test-c-api-remote test-c-jsonrpc-api test-lua-filesystem test-lua-exceptions test-coverage-machine \
 	test-uarch-rv64ui test-uarch-interpreter test-machine-with-log-step \
@@ -435,16 +435,22 @@ PARALLEL_TESTS = test-save-and-load test-machine test-lua test-jsonrpc \
 
 test-parallel: $(PARALLEL_TESTS)
 
-# Relink the emulator so reset_uarch restores the instrumented uarch for the
-# whole run, then collect the executed uarch PCs. This permanently swaps the
-# embedded pristine in the build tree, so it must not overlap any test that
-# executes the emulator. It is ordered after the whole parallel group and after
-# test-custom-uarch-pristine, whose links read the objects the swap replaces.
-test-coverage-uarch-pcs: | test-parallel test-custom-uarch-pristine
-	mkdir -p $(UARCH_PCS_DIR)
-	$(MAKE) -C ../src swap-uarch-pristine-coverage
-	$(LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
-	$(LUA) ./lua/cartesi-machine-tests.lua --test="thrash%-tlb.bin" --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
+# Collect the executed uarch PCs with a cartesi module that embeds the instrumented
+# uarch as its pristine, so reset_uarch restores the instrumented binary (the one PCs
+# are resolved against) for the whole run instead of reverting to the stock uarch
+# after the first instruction. The module is linked into its own directory, leaving
+# the build tree untouched, so this can run alongside the other tests.
+COVERAGE_UARCH_PRISTINE_DIR=$(BUILDDIR)/coverage-uarch-pristine
+COVERAGE_UARCH_PRISTINE_LUA=LUA_CPATH_5_4='$(COVERAGE_UARCH_PRISTINE_DIR)/?.so;$(LUA_CPATH_5_4)' $(LUA)
+
+test-coverage-uarch-pcs:
+	mkdir -p $(UARCH_PCS_DIR) $(COVERAGE_UARCH_PRISTINE_DIR)
+	$(MAKE) -C ../src custom-uarch-pristine-cartesi.so coverage=yes \
+		CUSTOM_UARCH_PRISTINE_DIR=$(COVERAGE_UARCH_PRISTINE_DIR) \
+		CUSTOM_UARCH_PRISTINE_RAM_C=$(abspath ../uarch/uarch-pristine-ram-coverage.c) \
+		CUSTOM_UARCH_PRISTINE_HASH_C=$(abspath ../uarch/uarch-pristine-hash-coverage.c)
+	$(COVERAGE_UARCH_PRISTINE_LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
+	$(COVERAGE_UARCH_PRISTINE_LUA) ./lua/cartesi-machine-tests.lua --test="thrash%-tlb.bin" --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
 
 ifeq ($(COVERAGE_TOOLCHAIN),clang)
 export LLVM_PROFILE_FILE=coverage-%p.profraw
@@ -484,14 +490,12 @@ clean-coverage:
 	@rm -f ../src/*.gcda ../src/*.gcov
 	@rm -rf $(LUACOV_DIR) $(UARCH_PCS_DIR) $(COVERAGE_OUTPUT_DIR)
 
-# Full coverage run. It runs the parallel test group, then the in-place pristine-swap
-# uarch collection (both sequenced by order-only prerequisites), then the report. Run with
-# -j. coverage-report itself carries no prerequisites so it can also be run alone to
-# regenerate the report from existing coverage data. Ends by relinking the stock
-# pristine so the build tree is ready for the next run.
-coverage-all: | test-coverage-uarch-pcs
+# Full coverage run. It runs the parallel test group, the custom pristine uarch tests
+# and the uarch PC collection, then the report, sequenced by order-only prerequisites.
+# Run with -j. coverage-report itself carries no prerequisites so it can also be run
+# alone to regenerate the report from existing coverage data.
+coverage-all: | test-parallel test-custom-uarch-pristine test-coverage-uarch-pcs
 	$(MAKE) coverage-report
-	$(MAKE) -C ../src swap-uarch-pristine-stock
 
 test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step create-computation-hash-corpus \
 	test-custom-uarch-pristine

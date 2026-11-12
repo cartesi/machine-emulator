@@ -59,8 +59,8 @@ eval "$(make env)"
 cd tests
 
 # Step 3: run the test suite and generate the report (same as CI). coverage-all
-# runs the parallel test group, then the in-place pristine-swap uarch collection,
-# then the report, sequenced by order-only prerequisites in the Makefile.
+# runs the parallel test group, the custom pristine uarch tests and the uarch PC
+# collection, then the report, sequenced by order-only prerequisites in the Makefile.
 if [ "$SKIP_TESTS" = false ]; then
     echo "=== Running tests and generating coverage report ==="
     make clean-coverage

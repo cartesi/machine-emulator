@@ -116,11 +116,11 @@ coverage?=no
 
 ifeq ($(coverage),yes)
 # Under coverage we also build the instrumented uarch and a matching pristine
-# ram/hash pair generated from it. The coverage PC-collection test relinks the
-# emulator with these so reset_uarch restores the instrumented binary (the one
-# addr2line resolves PCs against) for every machine instruction. They are
-# coverage-only and never used for proofs. The default pristine stays stock so
-# the functional uarch tests keep running the fast optimized binary.
+# ram/hash pair generated from it. The coverage PC-collection test links a
+# separate cartesi module with these so reset_uarch restores the instrumented
+# binary (the one addr2line resolves PCs against) for every machine instruction.
+# They are coverage-only and never used for proofs. The default pristine stays
+# stock so the functional uarch tests keep running the fast optimized binary.
 all: uarch-ram.bin uarch-ram-coverage.bin uarch-pristine-ram.c uarch-pristine-hash.c \
 	uarch-pristine-ram-coverage.c uarch-pristine-hash-coverage.c validate-instruction-set
 else

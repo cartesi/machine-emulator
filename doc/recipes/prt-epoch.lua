@@ -120,7 +120,10 @@ function methods:poll()
                 observation_policy = self.dispute_policy,
                 seal_block = self.seal_block,
                 seal_hash = self.seal_hash,
-                first_block = self.first_block,
+                -- The seal creates the root, and every later event of the dispute follows it
+                first_block = self.seal_block,
+                -- A settlement observed through the input policy is as irreversible as the inputs
+                retirement_policy = self.input_policy,
             })
         end
         self.applied[i] = key(log)

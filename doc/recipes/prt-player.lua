@@ -252,6 +252,14 @@ local function pass()
         end
         status.terminal = status.terminal or dispute.terminal
     end
+    -- A finished epoch has nothing left to do, so its listener and bridge are dropped
+    for i = #listeners, 1, -1 do
+        local dispute = listeners[i].dispute
+        if dispute and dispute.finished then
+            io.stderr:write("Epoch ", listeners[i].epoch, ": finished, no longer observed.\n")
+            table.remove(listeners, i)
+        end
+    end
     return status
 end
 

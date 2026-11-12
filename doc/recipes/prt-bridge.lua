@@ -661,6 +661,15 @@ function methods:tick()
         return snapshot, false, snapshot.tip + 1
     end
     local jobs = self:jobs(snapshot)
+    -- A settled epoch whose root bond is recovered and that has nothing left to do is finished once its
+    -- settlement is irreversible under the retirement policy, and its owner can drop the bridge.
+    if #jobs == 0 and self.retirement_policy and snapshot.settled and snapshot.recovered[self.root] then
+        local candidate = self.transactions:pending(self.signer.address)
+        if not (candidate and candidate.context and candidate.context.epoch == tostring(self.epoch)) then
+            local irreversible = self.chain:head(self.retirement_policy)
+            self.finished = eth.small(snapshot.settled.log.blockNumber) <= irreversible
+        end
+    end
     table.sort(jobs, job_less)
     local due, preferred, obsolete = {}, {}, false
     for _, job in ipairs(jobs) do
@@ -789,6 +798,8 @@ local function new(args)
         inputs = args.inputs,
         claim_staging_period = args.claim_staging_period,
         observation_policy = cast.policy(args.observation_policy or 4),
+        -- Without a retirement policy the bridge never reports itself finished.
+        retirement_policy = args.retirement_policy and cast.policy(args.retirement_policy),
         seal_block = args.seal_block,
         seal_hash = args.seal_hash,
         -- Logs are fetched from this block, except a child's, which start at its creation.

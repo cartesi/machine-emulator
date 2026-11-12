@@ -640,6 +640,7 @@ do
     append("inputbox", 3, input_event(5))
     append("consensus", 2, seal_event())
     assert(session:poll() and calls.sealed and #calls == 2 and calls[2] == "4")
+    assert(session.dispute.first_block == session.seal_block, "the dispute bridge does not start at its seal")
     session:poll()
     assert(#calls == 2)
     function session.chain.is_canonical()
@@ -665,6 +666,57 @@ do
     local session, calls, append, input_event = accumulating()
     append("inputbox", 0, input_event(4))
     assert(not pcall(session.poll, session) and #calls == 0, "missing input was accepted")
+end
+-- A settled epoch with its root bond recovered and nothing left to do is finished only once the block
+-- of the settling seal is irreversible under the retirement policy, and not while a transaction of the
+-- epoch is pending.
+do
+    local irreversible, pending = 4, nil
+    local retiring = bridge.new({
+        geometry = geometry,
+        transactions = {
+            pending = function()
+                return pending
+            end,
+        },
+        chain = {
+            head = function(_, policy)
+                assert(policy == "finalized", "retirement used another policy")
+                return irreversible
+            end,
+        },
+        abi = {},
+        root = "root",
+        factory = "factory",
+        consensus = "consensus",
+        player = {},
+        signer = { address = "alice" },
+        label = "retiring",
+        epoch = 2,
+        retirement_policy = "finalized",
+    })
+    local view = { ready = true, tip = 10, settled = { log = { blockNumber = "0x5" } }, recovered = {} }
+    function retiring.refresh()
+        return view
+    end
+    function retiring.jobs()
+        return {}
+    end
+    -- With no jobs, tick cancels a pending transaction of the epoch
+    function retiring.cancel()
+        return {}
+    end
+    retiring:tick()
+    assert(not retiring.finished, "an epoch whose root bond is not recovered finished")
+    view.recovered.root = true
+    retiring:tick()
+    assert(not retiring.finished, "a settlement that is not yet irreversible finished the epoch")
+    irreversible, pending = 5, { context = { epoch = "2" } }
+    retiring:tick()
+    assert(not retiring.finished, "an epoch with a pending transaction finished")
+    pending = nil
+    retiring:tick()
+    assert(retiring.finished, "an irreversible settlement did not finish the epoch")
 end
 -- The InputBox is shared by every application. The listener asks only for its own application's
 -- InputAdded logs, so inputs to other applications are neither downloaded nor kept.

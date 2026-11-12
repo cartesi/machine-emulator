@@ -65,18 +65,19 @@ local function is_quantity(value)
 end
 
 -- The logs of an address up to the observation head. An address seen for the first time is
--- fetched from first_block (block zero when omitted). Providers limit the block range or log
+-- fetched from first_block (block zero when omitted). When given, topics selects the logs, and an
+-- address must be fetched with the same topics every time. Providers limit the block range or log
 -- count of a request in different ways, so the first page is the whole range. A failed request
 -- halves the page and a successful one doubles it. A failure on a single block is raised. Each
 -- page is recorded as it arrives, so a failure keeps the pages already fetched.
-function methods:get_logs(address, first_block)
+function methods:get_logs(address, first_block, topics)
     local logs = self.logs[address] or {}
     local fetched = self.fetched[address] or (first_block or 0) - 1
     self.logs[address] = logs
     local page = self.head - fetched
     while fetched < self.head do
         local last_block = math.min(fetched + page, self.head)
-        local ok, result = pcall(self.chain.logs, self.chain, address, last_block, fetched + 1)
+        local ok, result = pcall(self.chain.logs, self.chain, address, last_block, fetched + 1, topics)
         if ok then
             for _, log in ipairs(result) do
                 assert(is_quantity(log.blockNumber) and is_quantity(log.logIndex), "log position is not a quantity")

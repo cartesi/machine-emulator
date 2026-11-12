@@ -34,7 +34,7 @@ function methods:poll()
     history:observe(head, hash)
     local logs = {}
     for _, address in ipairs({ self.input_box, self.consensus }) do
-        for _, log in ipairs(history:get_logs(address, self.first_block)) do
+        for _, log in ipairs(history:get_logs(address, self.first_input_block, self.topics[address])) do
             assert(log.address == address and type(log.removed) == "boolean", "invalid epoch log")
             if log.removed then
                 history:reset()
@@ -153,6 +153,10 @@ function M.new(args)
         cleanup = args.cleanup,
         claim_staging_period = args.claim_staging_period,
         first_block = args.first_block,
+        -- The InputBox is shared by every application, so only this application's inputs are fetched,
+        -- and only from the block that sealed the previous epoch on
+        first_input_block = args.first_input_block or args.first_block,
+        topics = { [args.input_box] = args.abi:topics("InputAdded", args.app) },
         input_policy = input_policy,
         dispute_policy = dispute_policy,
         inputs = {},

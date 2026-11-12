@@ -317,6 +317,24 @@ test-uarch-rv64ui:
 test-uarch-interpreter:
 	$(MAKE) -C ../third-party/riscv-arch-test verify XLEN=64 RISCV_TARGET=cartesi RISCV_ISA=rv64i RISCV_DEVICE=I WORK=$(BUILDDIR)/uarch-riscv-arch-test RUN_ARCH_TEST='$(RUN_ARCH_TEST)'
 
+# Uarch programs from uarch/ that the stock pristine uarch never runs. Each run links a
+# cartesi module that embeds one of them as its pristine uarch into its own directory,
+# leaving the build tree untouched, and runs the spec with that module first in the
+# Lua path. Each collection costs about 2^20 uarch cycle root hashes, so these runs
+# stay out of test-parallel and therefore out of the sanitizer job.
+CUSTOM_UARCH_PRISTINES = halt-before-limit halt-at-limit overflow
+CUSTOM_UARCH_PRISTINE_PATH = $(BUILDDIR)/custom-uarch-pristine
+
+test-custom-uarch-pristine: $(addprefix run-custom-uarch-pristine-,$(CUSTOM_UARCH_PRISTINES))
+
+run-custom-uarch-pristine-%:
+	mkdir -p $(CUSTOM_UARCH_PRISTINE_PATH)/$*
+	$(LUA) ./scripts/custom-uarch-pristine-sources.lua \
+		$(CARTESI_TESTS_UARCH_PATH)/rv64ui-uarch-custom-pristine-$*.bin $(CUSTOM_UARCH_PRISTINE_PATH)/$*
+	$(MAKE) -C ../src custom-uarch-pristine-cartesi.so CUSTOM_UARCH_PRISTINE_DIR=$(CUSTOM_UARCH_PRISTINE_PATH)/$*
+	LUA_CPATH_5_4='$(CUSTOM_UARCH_PRISTINE_PATH)/$*/?.so;$(LUA_CPATH_5_4)' CUSTOM_UARCH_PRISTINE=$* \
+		$(LUA) lua/test-custom-uarch-pristine.lua --filter='$(SPEC_FILTER)'
+
 test-jsonrpc:
 	./scripts/test-jsonrpc-server.sh ../src/cartesi-jsonrpc-machine '$(LUA) ../src/cartesi-machine.lua' '$(LUA) ./lua/cartesi-machine-tests.lua' '$(LUA)'
 
@@ -420,8 +438,9 @@ test-parallel: $(PARALLEL_TESTS)
 # Relink the emulator so reset_uarch restores the instrumented uarch for the
 # whole run, then collect the executed uarch PCs. This permanently swaps the
 # embedded pristine in the build tree, so it must not overlap any test that
-# executes the emulator. It is ordered after the whole parallel group.
-test-coverage-uarch-pcs: | test-parallel
+# executes the emulator. It is ordered after the whole parallel group and after
+# test-custom-uarch-pristine, whose links read the objects the swap replaces.
+test-coverage-uarch-pcs: | test-parallel test-custom-uarch-pristine
 	mkdir -p $(UARCH_PCS_DIR)
 	$(MAKE) -C ../src swap-uarch-pristine-coverage
 	$(LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
@@ -474,7 +493,8 @@ coverage-all: | test-coverage-uarch-pcs
 	$(MAKE) coverage-report
 	$(MAKE) -C ../src swap-uarch-pristine-stock
 
-test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step create-computation-hash-corpus
+test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step create-computation-hash-corpus \
+	test-custom-uarch-pristine
 
 lint format check-format:
 	@$(MAKE) -C misc $@
@@ -491,7 +511,8 @@ check-lua:
 .PHONY: machine uarch misc riscv-tests riscv-arch-test build-tests-fuzz build-tests-fuzz-seed-corpus test-fuzz
 .PHONY: test-cm-cli-parallel $(addprefix run-lua-spec-cm-cli-shard-,$(CM_CLI_SHARDS))
 .PHONY: $(PARALLEL_TESTS) test-parallel test test-misc test-lua test-lua-filesystem test-lua-exceptions test-cm-cli test-evmu run-lua-spec-cm-cli \
-	test-coverage-uarch-pcs coverage-report coverage-all clean-coverage
+	test-coverage-uarch-pcs coverage-report coverage-all clean-coverage \
+	test-custom-uarch-pristine
 .PHONY: build-tests-computation-hash-fixtures build-computation-hash-corpus \
 	build-computation-hash-corpus-with-toolchain create-computation-hash-corpus archive-computation-hash-corpus \
 	test-computation-hash verify-existing-computation-hash-corpus clean-computation-hash-corpus

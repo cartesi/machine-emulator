@@ -74,6 +74,28 @@ function M.abi(artifacts)
     return self
 end
 
+-- The topics that select an event's logs: its signature hash, then the given values of its first indexed
+-- inputs, in order.
+function abi_methods:topics(name, ...)
+    local values = table.pack(...)
+    local signature_topic, entry
+    for topic, candidate in pairs(self.events) do
+        if candidate.name == name then
+            assert(not entry, "overloaded event needs an explicit signature: " .. name)
+            signature_topic, entry = topic, candidate
+        end
+    end
+    assert(entry, "unknown event: " .. name)
+    local topics = { signature_topic }
+    for _, input in ipairs(entry.inputs) do
+        if input.indexed and #topics <= values.n then
+            topics[#topics + 1] = M.hex(evmu.encode_abi("(" .. type_spec(input, false) .. ")", { values[#topics] }))
+        end
+    end
+    assert(#topics == values.n + 1, "event has fewer indexed inputs than values: " .. name)
+    return topics
+end
+
 function abi_methods:calldata(name, arguments)
     return evmu.encode_calldata_hex(assert(self.functions[name], name), arguments)
 end

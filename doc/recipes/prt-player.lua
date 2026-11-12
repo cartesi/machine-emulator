@@ -220,6 +220,8 @@ local function open_epochs()
             input_policy = input_policy,
             dispute_policy = dispute_policy,
             first_block = first_block,
+            -- An input logged in the previous seal's block can still belong to this epoch
+            first_input_block = previous_seal and eth.small(previous_seal.log.blockNumber) or first_block,
         })
         next_epoch = next_epoch + 1
     end

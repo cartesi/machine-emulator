@@ -164,13 +164,15 @@ function methods:is_canonical(number, hash)
     return block ~= json.null and block.hash == hash
 end
 
--- The logs of an address from first_block, or the genesis, through last_block.
-function methods:logs(address, last_block, first_block)
+-- The logs of an address from first_block, or the genesis, through last_block. When given, topics
+-- selects logs by their leading topics, as eth_getLogs does.
+function methods:logs(address, last_block, first_block, topics)
     return assert(self:rpc("eth_getLogs", {
         {
             address = address,
             fromBlock = string.format("0x%x", first_block or 0),
             toBlock = string.format("0x%x", last_block),
+            topics = topics,
         },
     }))
 end

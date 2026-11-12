@@ -18,6 +18,33 @@ local input, period, offset =
 assert(input == 7 and period == 12345 and offset == 54321)
 assert(not pcall(eth.coordinates, evmu.bint(1) << 92, geometry))
 
+-- An event's topics match Foundry's: its signature hash, then each given indexed value padded to 32 bytes.
+do
+    local abi = eth.abi({
+        {
+            abi = {
+                {
+                    type = "event",
+                    name = "InputAdded",
+                    inputs = {
+                        { name = "appContract", type = "address", indexed = true },
+                        { name = "index", type = "uint256", indexed = true },
+                        { name = "input", type = "bytes", indexed = false },
+                    },
+                },
+            },
+        },
+    })
+    local app = "0x" .. string.rep("ab", 20)
+    local topics = abi:topics("InputAdded", app)
+    local function foundry(command)
+        return (cast.run(command):gsub("%s+$", ""))
+    end
+    assert(#topics == 2, "wrong number of InputAdded topics")
+    assert(topics[1] == foundry({ "cast", "sig-event", "InputAdded(address,uint256,bytes)" }), "wrong event topic")
+    assert(topics[2] == foundry({ "cast", "abi-encode", "f(address)", app }), "wrong application topic")
+end
+
 -- The geometry comes from the tournament factory's two levels: the mcycle claim strides one period
 -- of uarch cycles, and the uarch claim one uarch cycle.
 local function factory_chain(levels)
@@ -498,7 +525,7 @@ assert(ready_at(30) == "")
 -- the seal cannot enter this player's epoch, and replay cannot deliver twice.
 local epoch = require("prt-epoch")
 local fs = require("cartesi.filesystem")
-local function accumulating(policy)
+local function accumulating(policy, first_input_block)
     local history = { inputbox = {}, consensus = {} }
     local calls = {}
     local player = {
@@ -525,11 +552,16 @@ local function accumulating(policy)
         local n = args[1] == "latest" and self.tip or tonumber(args[1])
         return { number = string.format("0x%x", n), hash = "block" .. n }
     end
-    function source.logs(_, address, head, first_block)
+    -- Like eth_getLogs, a topic selects only the logs whose topic at the same position is equal
+    function source.logs(_, address, head, first_block, topics)
         local result = {}
         for _, item in ipairs(history[address]) do
             local number = tonumber(item.blockNumber)
-            if number >= (first_block or 0) and number <= head then
+            local selected = number >= (first_block or 0) and number <= head
+            for i, topic in ipairs(topics or {}) do
+                selected = selected and item.topics[i] == topic
+            end
+            if selected then
                 result[#result + 1] = item
             end
         end
@@ -544,6 +576,9 @@ local function accumulating(policy)
             event = function(_, item)
                 return item.event
             end,
+            topics = function(_, name, ...)
+                return { name, ... }
+            end,
         },
         app = "app",
         input_box = "inputbox",
@@ -556,6 +591,7 @@ local function accumulating(policy)
         player = player,
         signer = {},
         label = "fixture",
+        first_input_block = first_input_block,
     })
     -- Logs appended after a poll go into a new block, as the chain only grows past an observed head.
     -- Logs appended between two polls share a block, ordered by position.
@@ -571,6 +607,7 @@ local function accumulating(policy)
             blockHash = "block" .. block,
             logIndex = string.format("0x%x", position),
             removed = false,
+            topics = { observed.name, observed.appContract },
             event = observed,
         }
         observed.log = item
@@ -628,6 +665,33 @@ do
     local session, calls, append, input_event = accumulating()
     append("inputbox", 0, input_event(4))
     assert(not pcall(session.poll, session) and #calls == 0, "missing input was accepted")
+end
+-- The InputBox is shared by every application. The listener asks only for its own application's
+-- InputAdded logs, so inputs to other applications are neither downloaded nor kept.
+do
+    local session, calls, append, input_event = accumulating()
+    local foreign = input_event(3)
+    foreign.appContract = "other"
+    append("inputbox", 0, foreign)
+    append("inputbox", 1, input_event(3))
+    assert(not session:poll() and #calls == 1 and calls[1] == "3")
+    local kept = session.history.logs.inputbox
+    assert(#kept == 1 and kept[1].event.appContract == "app", "an input to another application was kept")
+end
+-- A listener starts at the block that sealed the previous epoch, so earlier blocks are never fetched.
+do
+    local session, calls, append, input_event = accumulating(nil, 2)
+    append("inputbox", 0, input_event(3))
+    assert(not session:poll() and #calls == 0)
+    assert(#session.history.logs.inputbox == 0, "a block before the previous seal was fetched")
+end
+-- That block can hold the previous epoch's last input and this epoch's first one. Only the latter is
+-- delivered.
+do
+    local session, calls, append, input_event = accumulating(nil, 1)
+    append("inputbox", 0, input_event(2))
+    append("inputbox", 1, input_event(3))
+    assert(not session:poll() and #calls == 1 and calls[1] == "3")
 end
 -- The consensus seals at most 2^24 pending inputs, so an input past that limit belongs to a later
 -- epoch and is not delivered, and a seal that takes it is refused. Delivering that many inputs is

@@ -378,7 +378,8 @@ hash: cartesi-hash-tree-hash
 
 c-api: $(LIBCARTESI) $(LIBCARTESI_HASH_TREE) $(LIBCARTESI_JSONRPC) $(LIBCARTESI_FILESYSTEM)
 
-.PHONY: all generate use clean lint format format-lua check-format check-format-lua luacartesi hash c-api compile_flags.txt swap-uarch-pristine-coverage swap-uarch-pristine-stock
+.PHONY: all generate use clean lint format format-lua check-format check-format-lua luacartesi hash c-api compile_flags.txt swap-uarch-pristine-coverage swap-uarch-pristine-stock \
+	custom-uarch-pristine-cartesi.so
 
 LIBCARTESI_OBJS:= \
 	base64.o \
@@ -549,6 +550,20 @@ swap-uarch-pristine-coverage:
 swap-uarch-pristine-stock:
 	@rm -f uarch-pristine-ram.o uarch-pristine-hash.o
 	@$(MAKE) cartesi.so coverage=yes
+
+# Link a separate cartesi.so that embeds another pristine uarch, leaving the build tree
+# untouched. CUSTOM_UARCH_PRISTINE_DIR holds the uarch-pristine-ram.c and
+# uarch-pristine-hash.c to embed and receives the objects and the module. As in
+# cartesi.so, the pristine objects precede libcartesi.a, so the linker does not take the
+# stock ones from it. Used by the custom pristine uarch tests (tests/Makefile
+# test-custom-uarch-pristine).
+CUSTOM_UARCH_PRISTINE_OBJS=$(addprefix $(CUSTOM_UARCH_PRISTINE_DIR)/,uarch-pristine-ram.o uarch-pristine-hash.o)
+
+custom-uarch-pristine-cartesi.so: $(filter-out uarch-pristine-%,$(LUACARTESI_OBJS)) libcartesi.a
+	$(CC) $(CFLAGS) -c -o $(CUSTOM_UARCH_PRISTINE_DIR)/uarch-pristine-ram.o $(CUSTOM_UARCH_PRISTINE_DIR)/uarch-pristine-ram.c
+	$(CC) $(CFLAGS) -c -o $(CUSTOM_UARCH_PRISTINE_DIR)/uarch-pristine-hash.o $(CUSTOM_UARCH_PRISTINE_DIR)/uarch-pristine-hash.c
+	$(CXX) -o $(CUSTOM_UARCH_PRISTINE_DIR)/cartesi.so $(filter-out libcartesi.a,$^) $(CUSTOM_UARCH_PRISTINE_OBJS) \
+		libcartesi.a $(LUACARTESI_LIBS) $(LDFLAGS) $(LUACARTESI_LDFLAGS) $(SOLDFLAGS)
 
 cartesi/jsonrpc.so: $(LUACARTESI_JSONRPC_OBJS) libcartesi_jsonrpc.a cartesi.so
 	$(CXX) -o $@ $^ $(LUACARTESI_JSONRPC_LIBS) $(LDFLAGS) $(LUACARTESI_JSONRPC_LDFLAGS) $(SOLDFLAGS)

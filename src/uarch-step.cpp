@@ -1087,14 +1087,13 @@ static inline void executeInsn(const UarchState a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 UArchStepStatus uarch_step(const UarchState a) {
-    // Report the derived overflow fixed point before all other break reasons.
+    // Report an existing halt fixed point, even at the cycle limit, then the derived overflow fixed point.
     uint64 cycle = readCycle(a);
-    if (cycle >= UARCH_CYCLE_MAX) {
-        return UArchStepStatus::UArchCycleOverflow;
-    }
-    // Report an existing ordinary halt fixed point.
     if (readHalt(a) != 0) {
         return UArchStepStatus::UArchHalted;
+    }
+    if (cycle >= UARCH_CYCLE_MAX) {
+        return UArchStepStatus::UArchCycleOverflow;
     }
     // Execute next instruction
     uint64 pc = readPc(a);
@@ -1102,15 +1101,14 @@ UArchStepStatus uarch_step(const UarchState a) {
     executeInsn(a, insn, pc);
     cycle = cycle + 1;
     writeCycle(a, cycle);
-    // Overflow has precedence when this step reaches the cycle limit.
-    if (cycle >= UARCH_CYCLE_MAX) {
-        return UArchStepStatus::UArchCycleOverflow;
-    }
-    // ECALL is the only instruction that can halt the uarch.
+    // ECALL is the only instruction that can halt the uarch, even on the step that reaches the cycle limit.
     if (insn == uint32(0x73)) {
         if (readHalt(a) != 0) {
             return UArchStepStatus::UArchHalted;
         }
+    }
+    if (cycle >= UARCH_CYCLE_MAX) {
+        return UArchStepStatus::UArchCycleOverflow;
     }
     return UArchStepStatus::Success;
 }

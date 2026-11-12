@@ -534,7 +534,10 @@ local function announce(self, connection, message)
         announce_phase_closer(self, connection, message.command)
     elseif message.role == "player" then
         connection.is_player = true
-        connection.label = message.label
+        -- A label only names the player in the story, so one that is not a string is ignored
+        if type(message.label) == "string" then
+            connection.label = message.label
+        end
     else
         close_connection(self, connection)
     end

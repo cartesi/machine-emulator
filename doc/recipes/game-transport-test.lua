@@ -251,6 +251,23 @@ for _, kind in ipairs({ "first", "all", "owner", "scheduled" }) do
     end)
 end
 
+-- A label only names a player in the story. One that is not a string is ignored, and the
+-- player is still admitted.
+run_with_server(protocol, function(server, run_client, wait_connections)
+    local client = { event_handler = {} }
+    function client.event_handler.move()
+        return hash
+    end
+    run_client({ role = "player", label = true }, function(_, line)
+        return transport.answer_event(client, line, protocol)
+    end, true)
+    wait_connections(1)
+    local connection = server:get_players()[1]
+    assert(connection.label == nil, "a label that is not a string was kept")
+    local future <close> = server:request_from_player(connection, event, {}, accept)
+    assert(future:wait_at_most(5) == hash, "a player with a label that is not a string was not admitted")
+end)
+
 -- A single collection enforces individual deadlines in its validator, preserves
 -- join order, and cannot accept an outsider merely because it copied a label or ID.
 run_with_server(protocol, function(server, run_client, wait_connections)

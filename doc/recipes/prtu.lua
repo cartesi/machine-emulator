@@ -4,6 +4,7 @@
 
 local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")
+local util = require("cartesi.util")
 
 -- A nil subscription audience broadcasts to every live player; an empty list reaches nobody.
 local EVERYONE = nil
@@ -55,6 +56,10 @@ end
 -- docs:begin story
 local story = {}
 local NOTICE = "Notice(bytes payload)"
+-- Outputs are opaque to the referee, so the story narrates only those that decode as notices
+local try_decode_notice = util.protect(function(output_data)
+    return evmu.decode_calldata(NOTICE, output_data, "raw")
+end)
 local tournament_streams = setmetatable({}, { __mode = "k" })
 local match_streams = setmetatable({}, { __mode = "k" })
 local match_counts = setmetatable({}, { __mode = "k" })
@@ -258,8 +263,10 @@ function story.report_winner(winner)
 end
 
 function story.report_output(output)
-    local payload = evmu.decode_calldata(NOTICE, output.output_data, "raw").payload
-    narrate("verdict", "Result proved against the final state:\n%s", payload)
+    local notice = try_decode_notice(output.output_data)
+    if notice then
+        narrate("verdict", "Result proved against the final state:\n%s", notice.payload)
+    end
 end
 -- docs:end story
 

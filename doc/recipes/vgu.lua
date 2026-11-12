@@ -2,6 +2,7 @@
 local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")
 local fs = require("cartesi.filesystem")
+local util = require("cartesi.util")
 local transport = require("game-transport")
 
 -- Enumerate player addresses in admission order.
@@ -154,15 +155,20 @@ end
 local ADVANCE = "EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, "
     .. "uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)"
 
+-- Outputs are opaque to the referee, so the story narrates only those that decode as notices
+local try_decode_notice = util.protect(function(output_data)
+    return evmu.decode_calldata("Notice(bytes payload)", output_data, "raw")
+end)
+
 function story.report_output(output)
-    local ok, decoded = pcall(evmu.decode_calldata, "Notice(bytes payload)", output.output_data, "raw")
-    if ok then
+    local notice = try_decode_notice(output.output_data)
+    if notice then
         local path = story.output_inputs and story.output_inputs[output.output_index]
         if path then
             local input = evmu.decode_calldata(ADVANCE, fs.read_file(path), "raw")
-            eventf("Output %d of input %q is %q.", output.output_index, input.payload:gsub("%s+$", ""), decoded.payload)
+            eventf("Output %d of input %q is %q.", output.output_index, input.payload:gsub("%s+$", ""), notice.payload)
         else
-            eventf("Output %d is %q.", output.output_index, decoded.payload)
+            eventf("Output %d is %q.", output.output_index, notice.payload)
         end
     end
 end

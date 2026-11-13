@@ -164,10 +164,15 @@ where options are:
             state of a machine loaded from <directory> with sharing:all or
             created with --create=<directory>.
             this mode cannot be combined with --replace-memory-range.
-            accepted state is synced and copied to <directory>.revert, and
-            rejected or inspected state is replaced by a copy of it.
-            after a crash, resume from <directory>.revert. a clean exit
-            removes it.
+            accepted state is synced and cloned to <directory>.revert.tmp. the
+            clone is synced, the old <directory>.revert is removed, and the
+            clone is renamed to <directory>.revert. rejected or inspected
+            state is replaced by a copy of <directory>.revert.
+            a clean exit syncs <directory> and removes <directory>.revert.
+            after a crash or kill, resume from <directory>.revert if it exists.
+            otherwise, if <directory>.revert.tmp exists, a commit was in
+            progress and <directory> holds the committed state. otherwise
+            nothing was committed. discard <directory>.revert.tmp in every case.
         none: disable snapshots. inspect states are not reverted. a rejected
             advance cannot be reverted and aborts the run.
     the default mode is "fork".
@@ -938,6 +943,8 @@ where options are:
             config: only configured "shared" backing stores operate on-disk and are modified.
             all: keeps state on-disk, modifying all backing stores.
         the default mode is "none", but if clone is present then the default mode is "all".
+        with "config" or "all", <directory> holds a valid machine only after a clean exit.
+        after a crash or kill, discard it.
         mode "config" MUST BE USED WITH --revert-mode=none.
         mode "all" MUST BE USED WITH --revert-mode=stored or none.
 
@@ -3878,21 +3885,34 @@ function revert_stored.__index:snapshot()
     self.snapshot_taken = true
 end
 
+local try_rename_stored = util.protect(function(m, from_dir, to_dir)
+    m:rename_stored(from_dir, to_dir)
+    return true
+end)
+
 function revert_stored.__index:commit()
     local m = self.machine
     local backup_directory = self.machine_directory .. ".revert"
+    local temporary_directory = backup_directory .. ".tmp"
     -- A machine using the stored files changes them, so it is destroyed for the sync and loaded again
     m:destroy()
     m:sync_stored(self.machine_directory)
-    -- While the backup is replaced, the synced machine directory holds the committed state
+    -- The backup only ever appears by renaming a synced clone, so <directory>.revert is always a synced copy.
+    -- While <directory>.revert.tmp exists, the synced machine directory holds the committed state.
+    m:clone_stored(self.machine_directory, temporary_directory)
+    m:sync_stored(temporary_directory)
     if self.backup_directory then
         m:remove_stored(self.backup_directory)
         self.backup_directory = nil
     end
-    m:clone_stored(self.machine_directory, backup_directory)
-    -- Take ownership only after cloning succeeds, so cleanup leaves pre-existing backups untouched.
+    -- Renaming fails without overwriting a pre-existing backup
+    local renamed, err = try_rename_stored(m, temporary_directory, backup_directory)
+    if not renamed then
+        m:remove_stored(temporary_directory)
+        error(err, 0)
+    end
+    -- Take ownership only after renaming succeeds, so cleanup leaves pre-existing backups untouched.
     self.backup_directory = backup_directory
-    m:sync_stored(backup_directory)
     m:load(self.machine_directory, self.runtime_config, cartesi.SHARING_ALL)
     self.snapshot_taken = false
 end
@@ -4900,16 +4920,21 @@ if saved_machine_hash then
 end
 if cmdline.assert_rolling_template then assert_rolling_template(machine, cmdline.assert_rolling_template) end
 if cmdline.store_dir then store_machine(machine, initial_config, cmdline.store_dir, cmdline.store_sharing) end
-if cmdline.load_sync then
-    stderr("Syncing machine: please wait\n")
-    -- A machine using the stored files changes them, so it is destroyed for the sync and loaded again
-    machine:destroy()
-    machine:sync_stored(cmdline.load_dir)
-    machine:load(cmdline.load_dir, runtime_config, cmdline.load_sharing)
-end
 if backup:has_snapshot() then backup:revert() end
 if not cmdline.remote_address or cmdline.remote_destroy then
     machine:destroy()
+    -- A stored directory is durable only after the machine using it is destroyed and the directory synced,
+    -- so the backup is removed only after that sync
+    if cmdline.load_sync then stderr("Syncing machine: please wait\n") end
+    if cmdline.load_sync or cmdline.revert_mode == "stored" then
+        machine:sync_stored(cmdline.load_dir or cmdline.create_dir)
+    end
     backup:remove_backup()
+elseif cmdline.load_sync then
+    stderr("Syncing machine: please wait\n")
+    -- The remote machine outlives the command, so it is destroyed for the sync and loaded again
+    machine:destroy()
+    machine:sync_stored(cmdline.load_dir)
+    machine:load(cmdline.load_dir, runtime_config, cmdline.load_sharing)
 end
 os.exit(exit_code, true)

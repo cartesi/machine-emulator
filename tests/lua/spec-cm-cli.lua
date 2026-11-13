@@ -1873,7 +1873,9 @@ dofile(%q)
             "--cmio-advance-state=input_file_index_end:0",
             "--max-mcycle=2000000000",
             "--quiet",
-        }, "unable to create directory")
+        }, "unable to rename directory")
+        -- The failed commit removes the synced clone it was renaming into place
+        expect.falsy(filesystem.exists(backup_dir .. ".tmp"))
         local current <close> = cartesi.machine(machine_dir)
         expect.equal(current:read_reg("mcycle"), 0)
         expect.equal(current:get_root_hash(), initial_hash)

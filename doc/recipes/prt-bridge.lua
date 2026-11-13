@@ -789,12 +789,34 @@ function methods:tick()
     return snapshot, false, next_block
 end
 
--- Reports an anomaly about a job once.
-function methods:report_job(job, kind, fmt, ...)
-    local key = job.key .. ":" .. kind
+-- Reports an anomaly about a subject, such as a job or a match, once.
+function methods:report_once(subject, kind, fmt, ...)
+    local key = subject .. ":" .. kind
     if not self.reported[key] then
         self.reported[key] = true
         self.player:report_anomaly(kind, fmt, ...)
+    end
+end
+
+-- Reports a match the honest commitment lost, because the other side won or both were eliminated. The
+-- deletion is reported whenever it is observed, even when the window the honest side missed closed
+-- between two observations.
+local function report_lost_matches(self, snapshot)
+    for _, event in ipairs(snapshot.events) do
+        if event.name == "MatchDeleted" then
+            local side = holds(self, event.address, event.one) and 1 or holds(self, event.address, event.two) and 2
+            local winner = eth.small(event.winnerCommitment)
+            if side and winner ~= side then
+                self:report_once(
+                    event_key(event),
+                    "lost_match",
+                    "at %s: the honest commitment %s %s",
+                    event.address,
+                    side == 1 and event.one or event.two,
+                    winner == 0 and "was eliminated with its opponent" or "lost to its opponent"
+                )
+            end
+        end
     end
 end
 
@@ -826,19 +848,20 @@ function methods:watch()
         local where = job.kind .. " at " .. job.context.address
         if job.last ~= math.maxinteger then
             if inclusion >= job.last then
-                self:report_job(job, "missed_deadline", "%s: its window closed at block %d", where, job.last)
+                self:report_once(job.key, "missed_deadline", "%s: its window closed at block %d", where, job.last)
             elseif inclusion >= job.first and inclusion + warning >= job.last then
-                self:report_job(job, "deadline_near", "%s: its window closes at block %d", where, job.last)
+                self:report_once(job.key, "deadline_near", "%s: its window closes at block %d", where, job.last)
             end
             wake(job.first)
             wake(job.last - warning)
             wake(job.last)
         elseif inclusion >= job.first + warning then
-            self:report_job(job, "stalled_action", "%s: due since block %d", where, job.first)
+            self:report_once(job.key, "stalled_action", "%s: due since block %d", where, job.first)
         else
             wake(job.first + warning)
         end
     end
+    report_lost_matches(self, snapshot)
     if snapshot.settled and self.retirement_policy then
         self.finished = eth.small(snapshot.settled.log.blockNumber) <= self.chain:head(self.retirement_policy)
     end

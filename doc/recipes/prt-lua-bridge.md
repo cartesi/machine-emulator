@@ -554,6 +554,7 @@ error, and continues.
 | `deadline_near` | A sentinel's expected action, such as the honest commitment's answer to a match, is still missing and its window ends within the warning blocks |
 | `missed_deadline` | A sentinel's expected action is still missing and its window closed |
 | `stalled_action` | A sentinel's expected action without a window, such as staging a won result, has been due for the warning blocks |
+| `lost_match` | A match of the honest commitment was deleted with its opponent as the winner, or with both eliminated |
 
 ## The demo harness
 

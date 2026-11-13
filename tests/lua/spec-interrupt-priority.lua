@@ -12,6 +12,7 @@ local MTVEC = RAM_START + 0x100
 local STVEC = RAM_START + 0x200
 local MSTATUS_SIE = 1 << 1
 local MSTATUS_MIE = 1 << 3
+local MIP_MTIP_MASK = 1 << 7
 local INTERRUPT_FLAG = 1 << 63
 
 -- Each context increments a different register, then loops without changing interrupt state.
@@ -37,6 +38,8 @@ local function create_machine(case, prv, hash_function, mcycle)
                 mideleg = case.deleg,
                 mip = case.pending,
                 mie = case.enabled or case.pending,
+                -- MTIP is pending exactly while the timer has expired, so the RTC tick at mcycle 0 keeps it
+                clint = { mtimecmp = (case.pending & MIP_MTIP_MASK) ~= 0 and 0 or nil },
             },
         },
     })

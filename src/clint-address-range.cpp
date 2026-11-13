@@ -112,6 +112,11 @@ execute_status clint_address_range::do_write_device(i_device_state_access *a, ui
         case clint_mtimecmp_rel_addr:
             if (log2_size == 3) {
                 a->write_clint_mtimecmp(val);
+                // The machine timer interrupt is pending exactly while mtime >= mtimecmp, as unsigned integers
+                if (rtc_cycle_to_time(a->read_mcycle()) >= val) {
+                    a->set_mip(MIP_MTIP_MASK);
+                    return execute_status::success_and_serve_interrupts;
+                }
                 a->reset_mip(MIP_MTIP_MASK);
                 return execute_status::success;
             }

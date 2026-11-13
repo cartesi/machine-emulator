@@ -465,7 +465,7 @@ enum CARTESI_init : uint64_t {
     IFLAGS_H_INIT = UINT64_C(0),                                              ///< Initial value for iflags_H
     IUNREP_INIT = UINT64_C(0),                                                ///< Initial value for iunrep
     IMCYCLEMAX_INIT = UINT64_MAX,                                             ///< Initial maximum mcycle
-    MTIMECMP_INIT = UINT64_C(0),                                              ///< Initial value for mtimecmp
+    MTIMECMP_INIT = UINT64_C(-1),                                             ///< Initial value for mtimecmp
     GIRQPEND_INIT = UINT64_C(0),                                              ///< Initial value for girqpend
     GIRQSRVD_INIT = UINT64_C(0),                                              ///< Initial value for girqsrvd
     FROMHOST_INIT = UINT64_C(0),                                              ///< Initial value for fromhost

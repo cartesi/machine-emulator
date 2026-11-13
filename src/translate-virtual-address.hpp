@@ -59,6 +59,12 @@ enum class translation_result {
     access_fault, ///< A page-table entry is outside RAM, the only range that supports page-table walks
 };
 
+/// \brief Whether a page-table walk sets the A and D bits of the leaf page-table entry.
+enum class pte_update_mode {
+    update,      ///< Set the A bit, and the D bit for a store, as the access requires
+    skip_update, ///< Leave the page-table entries unchanged
+};
+
 /// \brief Write an aligned word to RAM.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
@@ -95,7 +101,7 @@ static inline bool read_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t *pva
 
 /// \brief Walk the page table and translate a virtual address to the corresponding physical address
 /// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \tparam UPDATE_PTE Whether PTE entries can be modified during the translation.
+/// \tparam MODE Whether the walk sets the A and D bits of the leaf page-table entry.
 /// \param a Machine state accessor object.
 /// \param vaddr Virtual address
 /// \param ppaddr Pointer to physical address.
@@ -103,7 +109,7 @@ static inline bool read_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t *pva
 ///  PTE_XWR_R_SHIFT, or PTE_XWR_R_SHIFT)
 /// \details This function is outlined to minimize host CPU code cache pressure.
 /// \returns The result of the walk.
-template <typename STATE_ACCESS, bool UPDATE_PTE = true>
+template <typename STATE_ACCESS, pte_update_mode MODE = pte_update_mode::update>
 static NO_INLINE translation_result translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t vaddr,
     int xwr_shift) {
     auto prv = a.read_iprv();
@@ -230,7 +236,7 @@ static NO_INLINE translation_result translate_virtual_address(STATE_ACCESS a, ui
                 return translation_result::page_fault;
             }
             // Decide if we need to update access bits in pte
-            if constexpr (UPDATE_PTE) {
+            if constexpr (MODE == pte_update_mode::update) {
                 uint64_t update_pte = pte;
                 update_pte |= PTE_A_MASK; // Set access bit
                 if (xwr_shift == PTE_XWR_W_SHIFT) {

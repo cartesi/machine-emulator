@@ -25,7 +25,8 @@ namespace cartesi {
 
 /// \brief PMA constants.
 enum PMA_constants : uint64_t {
-    PMA_MAX = EXPAND_UINT64_C(PMA_MAX_DEF) ///< Maximum number of PMAs
+    PMA_MAX = EXPAND_UINT64_C(PMA_MAX_DEF), ///< Maximum number of PMAs
+    PMA_RAM_INDEX = 0,                      ///< Index of the RAM, the only PMA that supports page-table walks
 };
 
 /// \brief PMA istart shifts

@@ -1924,7 +1924,8 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
         const uint64_t vaddr = vaddr_start + chunk_offset;
         const uint64_t vaddr_page = vaddr & ~(AR_PAGE_SIZE - 1);
         uint64_t paddr_page = 0;
-        if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
+        if (cartesi::translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT) !=
+            translation_result::success) {
             throw std::domain_error{"page fault"};
         }
         const uint64_t offset = vaddr - vaddr_page;
@@ -1952,7 +1953,8 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
         uint64_t paddr_page = 0;
         // perform address translation using read access mode,
         // so we can write any reachable virtual memory range
-        if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
+        if (cartesi::translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT) !=
+            translation_result::success) {
             throw std::domain_error{"page fault"};
         }
         const uint64_t offset = vaddr - vaddr_page;
@@ -1966,7 +1968,8 @@ uint64_t machine::translate_virtual_address(uint64_t vaddr) {
     const state_access a(*this);
     // perform address translation using read access mode
     uint64_t paddr = 0;
-    if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) {
+    if (cartesi::translate_virtual_address<state_access, false>(a, &paddr, vaddr, PTE_XWR_R_SHIFT) !=
+        translation_result::success) {
         throw std::domain_error{"page fault"};
     }
     return paddr;

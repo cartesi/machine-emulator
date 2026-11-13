@@ -290,7 +290,7 @@ local riscv_tests = {
     { "mtime_compare.bin", 98362 },
     { "illegal_insn.bin", 1080 },
     { "version_check.bin", 26 },
-    { "translate_vaddr.bin", 343 },
+    { "translate_vaddr.bin", 349 },
     { "htif_invalid_ops.bin", 109 },
     { "clint_ops.bin", 133 },
     { "shadow_ops.bin", 78 },

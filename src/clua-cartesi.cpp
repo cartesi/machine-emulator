@@ -331,6 +331,12 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_AR_SHADOW_STATE_START, "AR_SHADOW_STATE_START", -1);
     clua_setintegerfield(L, CM_AR_SHADOW_STATE_LENGTH, "AR_SHADOW_STATE_LENGTH", -1);
     clua_setintegerfield(L, CM_AR_SHADOW_TLB_START, "AR_SHADOW_TLB_START", -1);
+    clua_setintegerfield(L, CM_TLB_CODE, "TLB_CODE", -1);
+    clua_setintegerfield(L, CM_TLB_READ, "TLB_READ", -1);
+    clua_setintegerfield(L, CM_TLB_WRITE, "TLB_WRITE", -1);
+    clua_setintegerfield(L, CM_TLB_NUM_SETS, "TLB_NUM_SETS", -1);
+    clua_setintegerfield(L, CM_TLB_SET_SIZE, "TLB_SET_SIZE", -1);
+    clua_setintegerfield(L, CM_SHADOW_TLB_SLOT_SIZE, "SHADOW_TLB_SLOT_SIZE", -1);
     clua_setintegerfield(L, CM_AR_PMAS_START, "AR_PMAS_START", -1);
     clua_setintegerfield(L, CM_AR_PMAS_LENGTH, "AR_PMAS_LENGTH", -1);
     clua_setintegerfield(L, CM_PMA_EMPTY_DID, "PMA_EMPTY_DID", -1);

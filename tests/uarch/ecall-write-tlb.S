@@ -17,13 +17,14 @@
 
 #include "riscv_test.h"
 #include "test_macros.h"
+#include "emulator-constants.h"
 
 RVTEST_RV64U
 RVTEST_CODE_BEGIN
 
   // Arguments passed to ecall/write_tlb
-  .equ set_index,   2    // TLB_WRITE
-  .equ slot_index,  255  // last slot in set
+  .equ set_index,   SHADOW_TLB_WRITE_SET
+  .equ slot_index,  SHADOW_TLB_SET_SIZE - 1  // last slot in set
   .equ vaddr_page,  AR_CMIO_RX_BUFFER_START_DEF
   .equ vp_offset,   7
   .equ pma_index,   3

@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed recipe game responses to carry JSON payload strings, decoded only when delivered
 - Changed the stored page hash-tree cache layout, making stored machines much faster to load
 - Changed `dependencies.lock` to define the kernel and rootfs download URLs
+- Bumped MARCHID version to 23
 - Bumped machine configuration archive version from 8 to 9
 - Bumped JSON-RPC protocol version to 0.9.0
 - Changed `--assert-rolling-template` to require a pristine uarch state in Keccak-256 machines

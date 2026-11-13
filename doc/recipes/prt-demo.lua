@@ -1,5 +1,6 @@
 -- Stream both calculator epochs through Dave, preserving normal empty epoch zero.
 local fs = require("cartesi.filesystem")
+local util = require("cartesi.util")
 local json = require("dkjson")
 local command = require("prt-command")
 local rpc_client = require("prt-rpc")
@@ -19,6 +20,16 @@ local input_policy = rpc_client.policy(os.getenv("PRT_INPUT_CONFIRMATIONS") or "
 local dispute_policy = rpc_client.policy(os.getenv("PRT_DISPUTE_CONFIRMATIONS") or "4")
 local test_reorg = os.getenv("PRT_TEST_REORG") == "yes"
 local test_restart = os.getenv("PRT_TEST_RESTART") == "yes"
+-- With PRT_TEST_SENTINEL set to a drill, the honest side fails on purpose, and the run succeeds once the
+-- sentinel reports the drill's anomaly kinds.
+local test_sentinel = os.getenv("PRT_TEST_SENTINEL") or "no"
+local sentinel_drills = {
+    no = {},
+    ["stop-honest"] = { "deadline_near", "missed_deadline" },
+    ["stop-cleanup"] = { "stalled_action" },
+}
+local expected_reports = assert(sentinel_drills[test_sentinel], "unknown sentinel drill: " .. test_sentinel)
+assert(test_sentinel ~= "stop-honest" or mode ~= "smoke", "stop-honest needs an opponent, so it needs the story")
 
 local prt_deploy = require("prt-deploy")
 local deployment = prt_deploy.deploy(chain, initial_hash)
@@ -83,6 +94,10 @@ if mode ~= "smoke" then
 end
 -- A sentinel signs nothing. It watches every epoch, and a normal story leaves it nothing to report.
 players[#players + 1] = { label = "sentinel", mode = "sentinel", first_epoch = 0 }
+-- Without the honest player's cleanup, nobody accepts a staged result
+if test_sentinel == "stop-cleanup" then
+    players[1].cleanup = "no"
+end
 
 -- Each player keeps its state in players/<label>/ and runs under a supervisor that relaunches it
 -- when it exits. Stopping the supervisors stops the players.
@@ -170,12 +185,15 @@ end
 -- statuses and the earliest block any of them needs. It reads only the statuses until they agree
 -- on a tip, then asks the node whether that tip is still current. A player is relaunched only if
 -- it exits, which fails the run.
-local pids, killed = {}, {}
+local pids, killed, stopped = {}, {}, {}
 local function await_players()
     while true do
         local tip_hash
         local statuses, next_block = {}, nil
         for _, player in ipairs(players) do
+            if stopped[player.label] then
+                goto continue
+            end
             local pid = read_pid(player)
             -- A player killed on purpose counts as absent until its supervisor relaunches it.
             if pid == killed[player.label] then
@@ -197,6 +215,7 @@ local function await_players()
             if status.next_block then
                 next_block = math.min(next_block or status.next_block, status.next_block)
             end
+            ::continue::
         end
         if statuses and select(2, chain:head()) == tip_hash then
             return statuses, next_block
@@ -223,12 +242,48 @@ local function restart_honest(point)
     return true
 end
 
+-- With PRT_TEST_SENTINEL=stop-honest, the honest player and its supervisor are stopped for good, and the
+-- orchestrator no longer waits for it.
+-- A process may already be gone when it is killed
+local try_kill = util.protect(function(...)
+    return command.run({ "kill", ... })
+end)
+local function stop_honest()
+    local honest = players[1]
+    if test_sentinel ~= "stop-honest" or stopped[honest.label] then
+        return
+    end
+    try_kill(supervisors[1])
+    local pid = read_pid(honest)
+    if pid then
+        try_kill("-9", pid)
+    end
+    stopped[honest.label] = true
+    io.stderr:write("Stopped the honest player for good.\n")
+    return true
+end
+
+-- Whether the sentinel has reported every anomaly kind its drill expects. The default anomaly handler
+-- prints each anomaly as a line starting with the player's label and the kind.
+local function sentinel_drilled()
+    if #expected_reports == 0 then
+        return false
+    end
+    local log = fs.read_file("players/sentinel/log.txt")
+    for _, kind in ipairs(expected_reports) do
+        if not log:find("\nsentinel: " .. kind .. " ", 1, true) and not log:find("^sentinel: " .. kind .. " ") then
+            return false
+        end
+    end
+    return true
+end
+
 -- How far the players of an epoch are: the fewest of its inputs any of them received, and whether
 -- every one of them has seen its seal.
 local function get_progress(statuses, number)
     local inputs, sealed = math.huge, true
     for _, player in ipairs(players) do
-        if player.first_epoch <= number then
+        if player.first_epoch <= number and not stopped[player.label] then
             local progress = statuses[player.label].epochs[tostring(number)]
             inputs = math.min(inputs, progress and progress.inputs or 0)
             sealed = sealed and progress ~= nil and progress.sealed
@@ -487,6 +542,9 @@ local function play(session)
     local reorganized = false
     for observation = 1, 10000 do
         local statuses, next_block = await_players()
+        if sentinel_drilled() then
+            return true
+        end
         local snapshot = observer:observe()
         if snapshot and snapshot.ready then
             narrate(session, snapshot)
@@ -498,6 +556,7 @@ local function play(session)
             for _, event in ipairs(snapshot.events) do
                 if event.name == "MatchAdvanced" and event.address == root then
                     progressed = restart_honest("during a bisection") or progressed
+                    progressed = stop_honest() or progressed
                 elseif
                     event.name == "CommitmentJoined"
                     and event.address ~= root
@@ -628,17 +687,34 @@ local function post_inputs(session, expressions)
     end
 end
 
+-- A drill ends as soon as the sentinel has reported what it expects
+local function drill_done()
+    print(
+        "PRT_TEST_SENTINEL="
+            .. test_sentinel
+            .. ": the sentinel reported "
+            .. table.concat(expected_reports, " and ")
+            .. "."
+    )
+end
 local bootstrap = new_session(0)
 await_seal(bootstrap)
 local first = new_session(1)
 post_inputs(first, { "6*2^1024 + 3*2^512", "invalid input", "2^2048" })
-play(bootstrap)
+if play(bootstrap) then
+    return drill_done()
+end
 await_seal(first)
 local second = new_session(2)
 post_inputs(second, { "(2^256 - 1) * (2^256 - 1)", "scale=80; sqrt(2)", "scale=100; 355/113" })
-play(first)
+if play(first) then
+    return drill_done()
+end
 await_seal(second)
-play(second)
+if play(second) then
+    return drill_done()
+end
+assert(test_sentinel == "no", "the sentinel never reported " .. table.concat(expected_reports, " and "))
 
 local _, _, manifest = prt.load_epoch_checkpoint(get_checkpoint_directory(second.epoch + 1))
 assert(manifest.output_count == 5, "calculator output history did not continue")

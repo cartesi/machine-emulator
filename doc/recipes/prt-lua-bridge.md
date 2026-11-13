@@ -62,6 +62,7 @@ The run targets accept these variables.
 | `PRT_MAX_PRIORITY_FEE_PER_GAS` | 10 gwei | Tip ceiling |
 | `PRT_TEST_REORG` | `no` | Reorganize epoch one's dispute (see [The demo harness](#the-demo-harness)) |
 | `PRT_TEST_RESTART` | `no` | Kill the honest player during epoch one (see [The demo harness](#the-demo-harness)) |
+| `PRT_TEST_SENTINEL` | `no` | Make the honest side fail, and check that the sentinel reports it (see [The demo harness](#the-demo-harness)) |
 | `PRT_PROFILE` | `no` | Time each player's RPC calls, decoding, handlers, and passes, reported in its status |
 
 These values are demo settings, not a guarantee of timely inclusion or of safety
@@ -579,6 +580,14 @@ The harness also runs a sentinel next to the players. It has no account, and it
 computes its own checkpoints in `players/sentinel/checkpoints/` from the
 template on. A run succeeds only if the sentinel reported no anomaly and its
 last checkpoint has the honest player's final state and outputs root.
+
+With `PRT_TEST_SENTINEL` set to a drill, the honest side fails on purpose, and
+the run succeeds as soon as the sentinel reports the drill's anomalies. With
+`stop-honest`, the harness stops the honest player and its supervisor for good
+at epoch one's first bisection, and the sentinel must report `deadline_near` and
+`missed_deadline`. This drill needs the opponents of the story. With
+`stop-cleanup`, the honest player runs without cleanup, so nobody accepts a
+staged result, and the sentinel must report `stalled_action`.
 
 With `PRT_TEST_REORG=yes`, the harness snapshots the chain before each pass of
 epoch one. Once a child tournament (a root join in smoke mode) is mined, it

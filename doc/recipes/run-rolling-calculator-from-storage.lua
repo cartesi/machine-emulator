@@ -54,12 +54,14 @@ end
 local function commit(m)
     m:destroy()
     m:sync_stored("machine")
+    -- The backup only ever appears by renaming a synced clone
+    m:clone_stored("machine", "machine.revert.tmp")
+    m:sync_stored("machine.revert.tmp")
     if backup_directory then
         m:remove_stored(backup_directory)
     end
-    m:clone_stored("machine", "machine.revert")
+    m:rename_stored("machine.revert.tmp", "machine.revert")
     backup_directory = "machine.revert"
-    m:sync_stored(backup_directory)
     m:load("machine", nil, cartesi.SHARING_ALL)
 end
 
@@ -112,6 +114,8 @@ repeat
     end
 until break_reason == cartesi.BREAK_REASON_HALTED
 -- Make the final on-disk state durable, remove its copy, and print its hash
-commit(machine)
+local final_hash = machine:get_root_hash()
+machine:destroy()
+machine:sync_stored("machine")
 machine:remove_stored(backup_directory)
-stderr("final state hash: %s\n", cartesi.tohex(machine:get_root_hash()))
+stderr("final state hash: %s\n", cartesi.tohex(final_hash))

@@ -15,9 +15,11 @@
 -- fabulist:INPUT:LEAF, and forger:INPUT:FILE. The options are --label=NAME, --first-epoch=N,
 -- --keep-epochs=N, --cleanup=no, --input-policy=POLICY, --dispute-policy=POLICY,
 -- --status-file=FILE, --ws=URL (the node's WebSocket endpoint, which pushes new block headers),
--- --poll-interval=SECONDS, and the fee limits --bump-blocks=N, --bump-percent=N, --max-fee=WEI,
--- and --max-priority-fee=WEI. After every pass the player writes its status to the status file,
--- for a harness that mines the chain.
+-- --poll-interval=SECONDS, the fee limits --bump-blocks=N, --bump-percent=N, --max-fee=WEI, and
+-- --max-priority-fee=WEI, and --anomaly-handler=MODULE. After every pass the player writes its status to
+-- the status file, for a harness that mines the chain. MODULE is a Lua module, found through LUA_PATH,
+-- that returns a function the player calls with each anomaly's kind and message. It must return quickly,
+-- since it runs inside a pass. Without it, the player prints each anomaly to stderr.
 local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")
 local fs = require("cartesi.filesystem")
@@ -43,6 +45,11 @@ for _, name in ipairs({ "rpc", "application", "keystore", "password_file", "stat
     assert(options[name], "missing --" .. name:gsub("_", "-"))
 end
 local label = options.label or options.kind:match("^[%w_]+")
+local anomaly_handler = options.anomaly_handler and require(options.anomaly_handler)
+assert(
+    anomaly_handler == nil or type(anomaly_handler) == "function",
+    "the anomaly handler module must return a function"
+)
 local keep_epochs = math.tointeger(tonumber(options.keep_epochs or "1"))
 assert(keep_epochs and keep_epochs >= 0, "invalid number of kept epochs")
 local input_policy = rpc_client.policy(options.input_policy or "finalized")
@@ -163,6 +170,7 @@ local function new_player(dapp, outputs_frontier, epoch_directory, checkpoint_di
     else
         error("unknown player kind: " .. options.kind)
     end
+    player.anomaly_handler = anomaly_handler
     if profile then
         local handlers = player.event_handler
         player.event_handler = setmetatable({}, {

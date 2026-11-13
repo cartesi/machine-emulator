@@ -550,6 +550,9 @@ error, and continues.
 | `unjoined_claim` | A tournament's joining window closed without the player's commitment |
 | `fee_ceiling` | A pending transaction reached the fee ceiling, and keeps its nonce |
 | `insufficient_funds` | The account cannot pay a transaction's gas at its fee cap |
+| `deadline_near` | A sentinel's expected action, such as the honest commitment's answer to a match, is still missing and its window ends within the warning blocks |
+| `missed_deadline` | A sentinel's expected action is still missing and its window closed |
+| `stalled_action` | A sentinel's expected action without a window, such as staging a won result, has been due for the warning blocks |
 
 ## The demo harness
 

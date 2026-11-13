@@ -101,7 +101,9 @@ function methods:poll()
             player.event_handler.epoch_sealed(player, #self.inputs)
             self.seal = event
             self.seal_block, self.seal_hash = eth.small(log.blockNumber), log.blockHash
-            self.dispute = bridge.new({
+            -- A sentinel watches the dispute instead of playing it
+            local new_bridge = self.sentinel and bridge.new_sentinel or bridge.new
+            self.dispute = new_bridge({
                 chain = self.chain,
                 transactions = self.transactions,
                 abi = self.abi,
@@ -124,6 +126,7 @@ function methods:poll()
                 first_block = self.seal_block,
                 -- A settlement observed through the input policy is as irreversible as the inputs
                 retirement_policy = self.input_policy,
+                warning_blocks = self.warning_blocks,
             })
         end
         self.applied[i] = key(log)
@@ -133,7 +136,8 @@ end
 
 function M.new(args)
     assert(args.chain and args.abi and args.app and args.input_box and args.consensus)
-    assert(args.player and args.signer and args.label and args.initial_hash)
+    assert(args.player and args.label and args.initial_hash)
+    assert(args.signer or args.sentinel, "a listener that is not a sentinel needs a signer")
     assert(args.geometry, "missing factory geometry")
     local input_policy = rpc_client.policy(args.input_policy or "finalized")
     local dispute_policy = rpc_client.policy(args.dispute_policy or 4)
@@ -152,6 +156,8 @@ function M.new(args)
         geometry = args.geometry,
         player = args.player,
         signer = args.signer,
+        sentinel = args.sentinel,
+        warning_blocks = args.warning_blocks,
         label = args.label,
         cleanup = args.cleanup,
         claim_staging_period = args.claim_staging_period,

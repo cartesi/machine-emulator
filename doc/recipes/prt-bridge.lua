@@ -432,7 +432,13 @@ function methods:jobs(snapshot)
                     add("stageTournamentResult", context, event, result_at, nil, candidate)
                 end
                 local joined = context.joined[candidate]
-                if joined and joined.submitter == self.signer.address and not snapshot.recovered[context.address] then
+                -- A sentinel has no signer, so it expects no recovery, which only pays the claimer
+                if
+                    self.signer
+                    and joined
+                    and joined.submitter == self.signer.address
+                    and not snapshot.recovered[context.address]
+                then
                     add("tryRecoveringBond", context, event, result_at, nil, candidate)
                 end
             end
@@ -783,6 +789,48 @@ function methods:tick()
     return snapshot, false, next_block
 end
 
+-- Reports an anomaly about a job once.
+function methods:report_job(job, kind, fmt, ...)
+    local key = job.key .. ":" .. kind
+    if not self.reported[key] then
+        self.reported[key] = true
+        self.player:report_anomaly(kind, fmt, ...)
+    end
+end
+
+-- A sentinel's pass. The jobs a validator would publish become expectations, since the honest commitment
+-- must be defended and the epoch settled even when the sentinel signs nothing. A job with a window is
+-- reported as deadline_near once the next block is within warning_blocks of its end, and as
+-- missed_deadline once its window closed, while the events still call for it. A job without an end is
+-- reported as stalled_action once it has been due for warning_blocks. Each job is reported once per kind.
+-- The epoch is finished once its settlement is irreversible under the retirement policy.
+function methods:watch()
+    local snapshot = self:refresh()
+    if not snapshot then
+        return nil, false
+    end
+    if not snapshot.ready then
+        return snapshot, false, snapshot.tip + 1
+    end
+    local inclusion = snapshot.tip + 1
+    for _, job in ipairs(self:jobs(snapshot)) do
+        local where = job.kind .. " at " .. job.context.address
+        if job.last ~= math.maxinteger then
+            if inclusion >= job.last then
+                self:report_job(job, "missed_deadline", "%s: its window closed at block %d", where, job.last)
+            elseif inclusion >= job.first and inclusion + self.warning_blocks >= job.last then
+                self:report_job(job, "deadline_near", "%s: its window closes at block %d", where, job.last)
+            end
+        elseif inclusion >= job.first + self.warning_blocks then
+            self:report_job(job, "stalled_action", "%s: due since block %d", where, job.first)
+        end
+    end
+    if snapshot.settled and self.retirement_policy then
+        self.finished = eth.small(snapshot.settled.log.blockNumber) <= self.chain:head(self.retirement_policy)
+    end
+    return snapshot, false
+end
+
 -- Reads the claim geometry from the tournament factory. Level 0 is the mcycle claim, whose stride
 -- is one period of uarch cycles, and level 1 the uarch claim, whose stride is one uarch cycle.
 function M.read_geometry(chain, abi, factory)
@@ -851,6 +899,19 @@ function M.new(args)
     assert(args.transactions, "missing transaction journal")
     assert(args.player and args.signer and args.label, "missing player, signer, or label")
     return new(args)
+end
+
+-- A sentinel's bridge, with a player but no signer or journal. It computes the honest claims and
+-- watches instead of ticking, and reports what a validator should have done but has not.
+function M.new_sentinel(args)
+    assert(args.geometry, "missing factory geometry")
+    assert(args.player and args.label, "missing player or label")
+    local sentinel = new(args)
+    sentinel.sentinel = true
+    sentinel.reported = {}
+    sentinel.warning_blocks = args.warning_blocks or 10
+    assert(math.type(sentinel.warning_blocks) == "integer" and sentinel.warning_blocks >= 0, "invalid warning blocks")
+    return sentinel
 end
 
 -- A bridge with no player, signer, or journal. It only observes, so it is never ticked.

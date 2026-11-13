@@ -897,6 +897,75 @@ do
     retiring:tick()
     assert(retiring.finished, "an irreversible settlement did not finish the epoch")
 end
+-- A sentinel reports a job whose window is about to close or has closed, and a job without a window that
+-- stays due, once each.
+do
+    local reports = {}
+    local sentinel = bridge.new_sentinel({
+        geometry = geometry,
+        chain = {},
+        abi = {},
+        root = "root",
+        factory = "factory",
+        consensus = "consensus",
+        player = {
+            report_anomaly = function(_, kind, fmt, ...)
+                reports[#reports + 1] = kind .. " " .. string.format(fmt, ...)
+            end,
+        },
+        label = "sentinel",
+        warning_blocks = 3,
+    })
+    -- The sentinel holds the honest commitment, which must answer the match before block 10
+    sentinel.claims = { root = { root = "one" } }
+    local root = {
+        address = "root",
+        creation = { log = { blockHash = "block0", logIndex = "0x0" } },
+        descriptor = { height = geometry.mcycle_height, kind = 1, startInstant = 0, allowance = 1 },
+        joined = {},
+        standing = { matchCount = 1 },
+    }
+    local match = {
+        name = "MatchCreated",
+        address = "root",
+        matchIdHash = "match",
+        one = "one",
+        two = "two",
+        responderDeadline = 10,
+        eliminableAt = 15,
+        log = { blockHash = "block1", logIndex = "0x0" },
+    }
+    local view = {
+        ready = true,
+        order = { root },
+        contexts = { root = root },
+        events = { match },
+        matches = { ["root:match"] = match },
+        deleted = {},
+        recovered = {},
+    }
+    function sentinel.refresh()
+        return view
+    end
+    local expected_reports = {
+        [5] = {},
+        [6] = { "deadline_near advanceMatch at root: its window closes at block 10" },
+        [7] = {},
+        [9] = { "missed_deadline advanceMatch at root: its window closed at block 10" },
+        [16] = {},
+        [17] = { "stalled_action eliminateMatchByTimeout at root: due since block 15" },
+    }
+    for _, tip in ipairs({ 5, 6, 7, 9, 16, 17 }) do
+        view.tip = tip
+        local first = #reports + 1
+        local _, published = sentinel:watch()
+        assert(not published, "a sentinel published")
+        assert(
+            table.concat(reports, "\n", first) == table.concat(expected_reports[tip], "\n"),
+            "unexpected sentinel reports at tip " .. tip
+        )
+    end
+end
 -- The InputBox is shared by every application. The listener asks only for its own application's
 -- InputAdded logs, so inputs to other applications are neither downloaded nor kept.
 do

@@ -8,11 +8,19 @@
 -- --keep-epochs finished epochs (1 by default) and removes the checkpoint and epoch directory of
 -- older ones.
 --
--- Usage: lua5.4 crisium.lua --rpc=URL --application=ADDRESS --keystore=FILE --password-file=FILE
---     --state=DIRECTORY --checkpoints=DIRECTORY --dave=DIRECTORY --kind=KIND [OPTION...]
+-- crisium runs as a sentinel by default, or as a validator with --mode=validator. A sentinel signs
+-- nothing and needs no keystore. It computes the honest claims and reports, as anomalies, what a
+-- validator should have done and has not: deadline_near and missed_deadline for an action whose window
+-- closes within --warning-blocks=N blocks (10 by default) or has closed, and stalled_action for an
+-- action without a window that has been due for that many blocks. A validator plays the dispute.
+--
+-- Usage: lua5.4 crisium.lua --rpc=URL --application=ADDRESS --state=DIRECTORY --checkpoints=DIRECTORY
+--     --dave=DIRECTORY [OPTION...]
+-- A validator also takes --mode=validator --keystore=FILE --password-file=FILE --kind=KIND.
 --
 -- KIND is honest, or one of the scripted adversaries quitter, tamperer:INPUT:BUNDLE,
--- fabulist:INPUT:LEAF, and forger:INPUT:FILE. The options are --label=NAME, --first-epoch=N,
+-- fabulist:INPUT:LEAF, and forger:INPUT:FILE. A sentinel computes honest claims and takes no KIND.
+-- The options are --label=NAME, --first-epoch=N,
 -- --keep-epochs=N, --cleanup=no, --input-policy=POLICY, --dispute-policy=POLICY,
 -- --status-file=FILE, --ws=URL (the node's WebSocket endpoint, which pushes new block headers),
 -- --poll-interval=SECONDS, the fee limits --bump-blocks=N, --bump-percent=N, --max-fee=WEI, and
@@ -26,7 +34,6 @@ local fs = require("cartesi.filesystem")
 local json = require("dkjson")
 local socket = require("socket")
 local rpc_client = require("prt-rpc")
-local signing = require("prt-signer")
 local eth = require("prt-ethereum")
 local prt = require("prt")
 local dishonest = require("prt-dishonest")
@@ -41,10 +48,24 @@ for _, argument in ipairs(arg) do
     assert(name, "invalid argument: " .. argument)
     options[name:gsub("-", "_")] = value
 end
-for _, name in ipairs({ "rpc", "application", "keystore", "password_file", "state", "checkpoints", "dave", "kind" }) do
+local mode = options.mode or "sentinel"
+assert(mode == "sentinel" or mode == "validator", "invalid mode: " .. mode)
+local validator = mode == "validator"
+local required = { "rpc", "application", "state", "checkpoints", "dave" }
+if validator then
+    table.move({ "keystore", "password_file", "kind" }, 1, 3, #required + 1, required)
+else
+    assert(options.kind == nil or options.kind == "honest", "a sentinel computes only honest claims")
+    options.kind = "honest"
+end
+for _, name in ipairs(required) do
     assert(options[name], "missing --" .. name:gsub("_", "-"))
 end
-local label = options.label or options.kind:match("^[%w_]+")
+-- Only a validator signs, so only it loads the signer
+local signing = validator and require("prt-signer")
+local label = options.label or (validator and options.kind:match("^[%w_]+") or "sentinel")
+local warning_blocks = math.tointeger(tonumber(options.warning_blocks or "10"))
+assert(warning_blocks and warning_blocks >= 0, "invalid number of warning blocks")
 local anomaly_handler = options.anomaly_handler and require(options.anomaly_handler)
 assert(
     anomaly_handler == nil or type(anomaly_handler) == "function",
@@ -71,7 +92,10 @@ local function measure(name, f, ...)
     return table.unpack(results, 1, results.n)
 end
 
-local chain = signing.install(rpc_client.new(options.rpc))
+local chain = rpc_client.new(options.rpc)
+if validator then
+    signing.install(chain)
+end
 local function artifact(directory, name)
     return (eth.artifact(options.dave .. "/" .. directory .. "/contracts/out", name))
 end
@@ -112,11 +136,12 @@ assert(
 local template_hash = assert(chain:call(app, abi:calldata("getTemplateHash", {}))):lower()
 local geometry = bridge.read_geometry(chain, abi, factory)
 
-local signer = {
-    address = signing.address(options.keystore, options.password_file),
-    keystore = options.keystore,
-    password_file = options.password_file,
-}
+local signer = validator
+    and {
+        address = signing.address(options.keystore, options.password_file),
+        keystore = options.keystore,
+        password_file = options.password_file,
+    }
 if not fs.exists(options.state) then
     fs.create_directory(options.state)
 end
@@ -139,14 +164,15 @@ end
 local first_epoch = math.tointeger(tonumber(options.first_epoch or "0"))
 assert(first_epoch and first_epoch >= 0, "invalid first epoch")
 first_epoch = math.max(first_epoch, oldest_checkpoint or 0)
-local transactions = require("prt-transactions").new({
-    chain = chain,
-    path = options.state .. "/journal.json",
-    bump_blocks = assert(math.tointeger(tonumber(options.bump_blocks or "3")), "invalid fee bump interval"),
-    bump_percent = assert(math.tointeger(tonumber(options.bump_percent or "15")), "invalid fee bump percent"),
-    max_fee = options.max_fee,
-    max_priority_fee = options.max_priority_fee,
-})
+local transactions = validator
+    and require("prt-transactions").new({
+        chain = chain,
+        path = options.state .. "/journal.json",
+        bump_blocks = assert(math.tointeger(tonumber(options.bump_blocks or "3")), "invalid fee bump interval"),
+        bump_percent = assert(math.tointeger(tonumber(options.bump_percent or "15")), "invalid fee bump percent"),
+        max_fee = options.max_fee,
+        max_priority_fee = options.max_priority_fee,
+    })
 
 -- The honest player stores each epoch in its own epoch directory and reopens it after a relaunch.
 -- Its epoch seal stores the next epoch's checkpoint. The scripted adversaries keep their epochs in
@@ -237,6 +263,8 @@ local function open_epochs()
                 options.checkpoints .. "/epoch-" .. (next_epoch + 1)
             ),
             signer = signer,
+            sentinel = not validator,
+            warning_blocks = warning_blocks,
             label = label,
             cleanup = options.cleanup ~= "no",
             claim_staging_period = staging_period,
@@ -285,7 +313,8 @@ local function pass()
     -- ticks first and takes the signer's next nonce before them.
     for i = #disputes, 1, -1 do
         local dispute = disputes[i]
-        local snapshot, published, next_block = measure("tick", dispute.tick, dispute)
+        local step = dispute.sentinel and dispute.watch or dispute.tick
+        local snapshot, published, next_block = measure("tick", step, dispute)
         -- A rejected observation leaves the bridge to try again at the same tip.
         status.retry = status.retry or snapshot == nil
         status.published = status.published or published

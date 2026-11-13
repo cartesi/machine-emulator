@@ -108,6 +108,7 @@ for _, player in ipairs(players) do
     local account = assert(signers[player.label], "player has no account")
     fs.create_directory(directory)
     local arguments = {
+        "--mode=validator",
         "--rpc=" .. rpc_url,
         "--application=" .. app,
         "--keystore=" .. account.keystore,

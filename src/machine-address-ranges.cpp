@@ -433,6 +433,12 @@ void machine_address_ranges::push_back_ram(const ram_config &ram) {
     }
     push_back(std::make_unique<memory_address_range>("RAM"s, AR_RAM_START, ram.length, ram_flags, ram.backing_store),
         register_where{.hash_tree = true, .pmas = true});
+    // Page tables live only in RAM, the only PMA that supports page-table walks. read_ram_uint64 and
+    // write_ram_uint64 in translate-virtual-address.hpp, which the page-table walk uses, read the RAM's PMA
+    // directly at PMA_RAM_INDEX instead of searching the PMAs, so the RAM must be registered there.
+    if (m_pmas.size() != PMA_RAM_INDEX + 1) {
+        throw std::logic_error{"RAM must be the first PMA"};
+    }
 }
 
 /// \brief Validates a user-supplied memory range label (may be empty) and checks for duplicates

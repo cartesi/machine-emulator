@@ -98,6 +98,16 @@ typedef enum cm_pmas_constant {
     CM_UARCH_STATE_LENGTH = 0x400000,
 } cm_pmas_constant;
 
+/// \brief Shadow TLB constants.
+typedef enum cm_tlb_constant {
+    CM_TLB_CODE = 0,              ///< Index of the TLB set for instruction fetches
+    CM_TLB_READ = 1,              ///< Index of the TLB set for loads
+    CM_TLB_WRITE = 2,             ///< Index of the TLB set for stores
+    CM_TLB_NUM_SETS = 3,          ///< Number of TLB sets
+    CM_TLB_SET_SIZE = 256,        ///< Number of slots in each TLB set
+    CM_SHADOW_TLB_SLOT_SIZE = 32, ///< Size in bytes of each slot of the shadow TLB
+} cm_tlb_constant;
+
 /// \brief Driver IDs for PMA entries.
 typedef enum cm_pma_did {
     CM_PMA_EMPTY_DID = 0,              ///< Driver ID for empty range

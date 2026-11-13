@@ -11,8 +11,8 @@ local tests_util = require("cartesi.tests.util")
 local RAM_START = cartesi.AR_RAM_START
 local DRIVE_START = 0x90000000
 local MTVEC = RAM_START + 0x100
-local TLB_CODE, TLB_READ, TLB_WRITE = 0, 1, 2
-local TLB_SET_SIZE, TLB_SLOT_BYTES = 256, 32
+local TLB_CODE, TLB_READ, TLB_WRITE = cartesi.TLB_CODE, cartesi.TLB_READ, cartesi.TLB_WRITE
+local TLB_SET_SIZE, TLB_SLOT_BYTES = cartesi.TLB_SET_SIZE, cartesi.SHADOW_TLB_SLOT_SIZE
 local VALUE = 0x0102030405060708
 local STORE_VALUE = 0x123456789abcdef
 

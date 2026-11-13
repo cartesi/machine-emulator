@@ -64,6 +64,7 @@
 #include "rtc-defines.h"
 #include "send-cmio-response.hpp"
 #include "sha-256-hasher.hpp"
+#include "shadow-tlb.hpp"
 #include "uarch-constants.hpp"
 #include "uarch-defines.h"
 
@@ -114,6 +115,12 @@ static_assert((UINT64_C(1) << AR_CMIO_RX_BUFFER_LOG2_SIZE_DEF) == CM_AR_CMIO_RX_
 static_assert((UINT64_C(1) << AR_CMIO_TX_BUFFER_LOG2_SIZE_DEF) == CM_AR_CMIO_TX_BUFFER_LENGTH);
 static_assert(AR_DTB_START_DEF == CM_AR_DTB_START);
 static_assert(AR_DTB_LENGTH_DEF == CM_AR_DTB_LENGTH);
+static_assert(static_cast<uint64_t>(cartesi::TLB_CODE) == CM_TLB_CODE);
+static_assert(static_cast<uint64_t>(cartesi::TLB_READ) == CM_TLB_READ);
+static_assert(static_cast<uint64_t>(cartesi::TLB_WRITE) == CM_TLB_WRITE);
+static_assert(static_cast<uint64_t>(cartesi::TLB_NUM_SETS) == CM_TLB_NUM_SETS);
+static_assert(static_cast<uint64_t>(cartesi::TLB_SET_SIZE) == CM_TLB_SET_SIZE);
+static_assert(cartesi::SHADOW_TLB_SLOT_SIZE == CM_SHADOW_TLB_SLOT_SIZE);
 static_assert(std::string_view{DTB_BOOTARGS_CONSOLE_PART} == std::string_view{CM_DTB_BOOTARGS_CONSOLE_PART});
 static_assert(std::string_view{DTB_BOOTARGS_UIO_PART} == std::string_view{CM_DTB_BOOTARGS_UIO_PART});
 static_assert(std::string_view{DTB_BOOTARGS_ROOT_PART} == std::string_view{CM_DTB_BOOTARGS_ROOT_PART});

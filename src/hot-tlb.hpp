@@ -39,7 +39,7 @@ struct hot_tlb_slot final {
 };
 
 using hot_tlb_set = std::array<hot_tlb_slot, TLB_SET_SIZE>;
-using hot_tlb_state = std::array<hot_tlb_set, TLB_NUM_SETS_>;
+using hot_tlb_state = std::array<hot_tlb_set, TLB_NUM_SETS>;
 
 static_assert(sizeof(uint64_t) >= sizeof(uintptr_t), "TLB expects host pointer fit in 64 bits");
 

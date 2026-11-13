@@ -8,7 +8,7 @@
 #include <htif-defines.h>
 
 #include "riscv_test.h"
-#include "shadow-register-addresses.h"
+#include "emulator-constants.h"
 
 /* Instructions that custom_pristine_halt executes outside its padding and countdown loop, counting the
  * halting ecall */

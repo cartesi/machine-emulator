@@ -78,7 +78,7 @@ TARGETS =  \
 	$(TARGET_TEST_BINS) \
 	$(TARGET_TEST_DUMPS)
 
-all: $(TARGETS) catalog check-shadow-register-addresses
+all: $(TARGETS) catalog check-emulator-constants
 
 clean:
 	@rm -rf $(TARGETS) $(BUILDDIR)
@@ -109,8 +109,8 @@ $(TARGET_TESTS): $(TESTS_SOURCES) $(wildcard $(SRC_DIR)/*.h) | $(BUILDDIR)
 $(BUILDDIR):
 	mkdir -p $@
 
-# Fails to compile when the shadow register addresses copied for assembly no longer match the emulator
-check-shadow-register-addresses: check-shadow-register-addresses.cpp shadow-register-addresses.h
+# Fails to compile when the emulator constants copied for assembly no longer match the emulator
+check-emulator-constants: check-emulator-constants.cpp emulator-constants.h
 	$(HOST_CXX) -std=c++23 -fsyntax-only -I$(EMULATOR_SRC_DIR) $<
 
-.PHONY: check-shadow-register-addresses
+.PHONY: check-emulator-constants

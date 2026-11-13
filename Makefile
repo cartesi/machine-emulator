@@ -275,7 +275,10 @@ clean-coverage:
 
 build-tests-misc-with-builder-image: build-emulator-builder-image
 
-lint check-format format:
+lint:
+	@$(MAKE) $@-src $@-tests $@-uarch
+
+check-format format:
 	@$(MAKE) $@-src $@-tests
 
 check-format-lua check-lua format-lua:
@@ -283,7 +286,7 @@ check-format-lua check-lua format-lua:
 
 # One pattern rule per target name. A pattern rule with several target patterns is a
 # grouped rule, so make would run the recipe once per stem and skip the remaining targets.
-PER_DIR_RECIPE = @eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(if $(findstring -doc,$@),doc,$(if $(findstring -src,$@),src,tests)) $(subst -doc,,$(subst -src,,$(subst -tests,,$@)))
+PER_DIR_RECIPE = @eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(if $(findstring -doc,$@),doc,$(if $(findstring -src,$@),src,$(if $(findstring -uarch,$@),uarch,tests))) $(subst -doc,,$(subst -src,,$(subst -tests,,$(subst -uarch,,$@))))
 
 lint-%:
 	$(PER_DIR_RECIPE)

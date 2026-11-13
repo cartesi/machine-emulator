@@ -968,6 +968,30 @@ do
             "unexpected sentinel reports at tip " .. tip
         )
     end
+    -- A deleted match the honest commitment lost is reported once, and one it won is not
+    view.events[#view.events + 1] = {
+        name = "MatchDeleted",
+        address = "root",
+        matchIdHash = "won",
+        one = "one",
+        two = "three",
+        winnerCommitment = 1,
+        log = { blockHash = "block2", logIndex = "0x0" },
+    }
+    view.events[#view.events + 1] = {
+        name = "MatchDeleted",
+        address = "root",
+        matchIdHash = "lost",
+        one = "four",
+        two = "one",
+        winnerCommitment = 1,
+        log = { blockHash = "block3", logIndex = "0x0" },
+    }
+    for _, lost in ipairs({ "lost_match at root: the honest commitment one lost to its opponent", "" }) do
+        local first = #reports + 1
+        sentinel:watch()
+        assert(table.concat(reports, "\n", first) == lost, "unexpected lost match reports")
+    end
 end
 -- The InputBox is shared by every application. The listener asks only for its own application's
 -- InputAdded logs, so inputs to other applications are neither downloaded nor kept.

@@ -87,10 +87,18 @@ static execute_status plic_write_claim_complete(i_device_state_access *a, uint32
     std::ignore = fprintf(stderr, "plic: claim complete irq_id=%d\n", val);
 #endif
     if (val >= 1 && val <= PLIC_MAX_IRQ) {
-        // On completing, we need to clear its corresponding girqsrvd mask
         const uint32_t girqpend = a->read_plic_girqpend();
         uint32_t girqsrvd = a->read_plic_girqsrvd();
         const uint32_t irq_mask = UINT32_C(1) << val;
+        // Completing an id that is not being served leaves the PLIC unchanged, so it must not touch mip.
+        // The PLIC drives the same mip.SEIP bit that M-mode writes, where the privileged spec keeps them separate.
+        // Only VirtIO devices raise PLIC sources, and they need an unreproducible machine. There, when the PLIC
+        // signal falls, it also clears a SEIP bit set by M-mode, and CSRRS or CSRRC on mip can copy the signal into
+        // that bit. Nothing sets SEIP from M-mode, so neither can be observed.
+        if ((girqsrvd & irq_mask) == 0) {
+            return execute_status::success;
+        }
+        // On completing, we need to clear its corresponding girqsrvd mask
         girqsrvd &= ~irq_mask;
         a->write_plic_girqsrvd(girqsrvd);
         // If all pending interrupts have been served, reset mip. Otherwise, set mip.

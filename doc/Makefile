@@ -52,11 +52,15 @@ check-format-lua:
 check-lua:
 	luacheck . --exclude-files '$(REPLACE_CACHE_DIR)/**'
 
+# A machine-solidity-step checkout whose sources replace the ones Dave pins. Empty keeps Dave's.
+PRT_MACHINE_STEP_DIR ?=
+
 .PHONY: build-prt-image run-prt-bridge
 build-prt-image:
 	$(MAKE) -C .. uarch-with-toolchain
 	$(MAKE) build-docs-image
 	docker build $(DOCKER_PLATFORM) --build-context emulator=.. \
+		$(if $(PRT_MACHINE_STEP_DIR),--build-context machine-step=$(abspath $(PRT_MACHINE_STEP_DIR))/src) \
 		--build-arg TOOLS_BASE=$(DOCS_IMAGE):$(TAG) --target runtime \
 		-t $(PRT_IMAGE):$(TAG) -f Dockerfile.prt .
 

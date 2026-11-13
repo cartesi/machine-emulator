@@ -1,6 +1,8 @@
 ARG TOOLS_BASE=cartesi/machine-emulator-docs:devel
 FROM ghcr.io/foundry-rs/foundry:v1.5.1 AS foundry
 
+FROM scratch AS machine-step
+
 FROM ${TOOLS_BASE} AS tools
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -20,9 +22,16 @@ ENTRYPOINT []
 
 FROM tools AS contracts
 ARG DAVE_REF=v3.0.0-alpha.7
+# Empty unless the build context machine-step replaces it with the src directory of a machine-solidity-step
+# checkout, to build Dave against that step instead of the one it pins
+COPY --from=machine-step / /tmp/machine-step/
 RUN git init . && git remote add origin https://github.com/cartesi/dave.git && \
     git fetch --depth 1 origin "$DAVE_REF" && git checkout --detach FETCH_HEAD && \
     git submodule update --init machine/step && \
+    if [ -n "$(ls -A /tmp/machine-step)" ]; then \
+        rm -rf machine/step/src && cp -R /tmp/machine-step machine/step/src; \
+    fi && \
+    rm -rf /tmp/machine-step && \
     just prt-contracts::install-deps && just rollups-contracts::install-deps
 COPY recipes/prt-contracts.patch /tmp/prt-contracts.patch
 RUN git apply --check /tmp/prt-contracts.patch && git apply /tmp/prt-contracts.patch && \

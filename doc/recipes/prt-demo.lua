@@ -135,7 +135,7 @@ for _, player in ipairs(players) do
         recipes_directory .. "/prt-supervise.sh",
         directory .. "/pid",
         "lua5.4",
-        recipes_directory .. "/prt-player.lua",
+        recipes_directory .. "/crisium.lua",
         table.unpack(arguments),
     })
     supervisors[#supervisors + 1] = supervisor:gsub("%s+$", "")

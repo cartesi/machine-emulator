@@ -121,7 +121,7 @@ of players, mining, and narration, and exists only in the demo.
 | [prt-demo.sh](prt-demo.sh) | Prepare the run directory and keystores, and start and stop Anvil |
 | [prt-deploy.lua](prt-deploy.lua) | Deploy Dave's contracts and the application, for the demo and the proof tests |
 | [prt-demo.lua](prt-demo.lua) | The harness. Launch the players, post inputs, mine, and narrate |
-| [prt-player.lua](prt-player.lua) | One player process. Discover the deployment from the application and follow its epochs |
+| [crisium.lua](crisium.lua) | One player process. Discover the deployment from the application and follow its epochs |
 | [prt-supervise.sh](prt-supervise.sh) | Relaunch a player whenever it exits |
 | [prt-epoch.lua](prt-epoch.lua) | The epoch listener. Deliver the inputs and the seal, then start the dispute bridge |
 | [prt-bridge.lua](prt-bridge.lua) | The dispute bridge. Observe the dispute, derive calls, ask the player, and submit |
@@ -138,14 +138,14 @@ of players, mining, and narration, and exists only in the demo.
 
 ### One process per player
 
-Each player runs as its own process, `prt-player.lua`, under `prt-supervise.sh`,
+Each player runs as its own process, `crisium.lua`, under `prt-supervise.sh`,
 which relaunches it when it exits. Each run of the process leads its own process
 group, and the supervisor ends the group with the process, so no machine server
 outlives it. From the application's address alone, the process discovers the
 consensus, the input box, the tournament factory and its geometry, the
 deployment block, and the claim staging period. It checks the template hash and
 the verifier's pristine uarch hash before playing. Its other settings are
-arguments, listed at the top of `prt-player.lua`. With a WebSocket endpoint, it
+arguments, listed at the top of `crisium.lua`. With a WebSocket endpoint, it
 waits for the node to push each new block header, and still reads the tip once
 per poll interval in case it missed one. Otherwise it reads the tip once per
 poll interval. A player refuses to start if its account already has pending

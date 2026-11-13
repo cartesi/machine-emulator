@@ -833,30 +833,34 @@ describe("uarch TLB writes with an out-of-range slot index", function()
             [cartesi.machine:get_reg_address("uarch_pc")] = "uarch_pc",
             [cartesi.machine:get_reg_address("uarch_cycle")] = "uarch_cycle",
         }
+        -- Every access is proven at the hash-tree word that holds it
+        local word_log2_size = cartesi.HASH_TREE_LOG2_WORD_SIZE
+        local word_size = 1 << word_log2_size
         local before = machine:get_root_hash()
         local log = { log_type = genuine_log.log_type, accesses = {} }
         for i, genuine in ipairs(genuine_log.accesses) do
             local access = { type = genuine.type, log2_size = genuine.log2_size, address = genuine.address }
-            if genuine.address == cartesi.AR_SHADOW_TLB_START and genuine.log2_size == 5 then
+            local is_slot_write = genuine.address == cartesi.AR_SHADOW_TLB_START and genuine.log2_size == word_log2_size
+            if is_slot_write then
                 expect.equal(cartesi.keccak256(slot_image), genuine.written_hash)
                 access.address = tlb_address
             end
-            local leaf = access.address & ~31
-            access.read_hash = machine:get_node_hash(leaf, 5)
-            access.sibling_hashes = machine:get_proof(leaf, 5).sibling_hashes
+            local word = access.address & ~(word_size - 1)
+            access.read_hash = machine:get_node_hash(word, word_log2_size)
+            access.sibling_hashes = machine:get_proof(word, word_log2_size).sibling_hashes
             if genuine.read then
-                access.read = machine:read_memory(leaf, 32)
+                access.read = machine:read_memory(word, word_size)
             end
             if genuine.written_hash then
-                if access.log2_size == 5 then
+                if is_slot_write then
                     machine:write_memory(access.address, slot_image)
                 else
-                    local value = string.unpack("<I8", genuine.written, (genuine.address & 31) + 1)
+                    local value = string.unpack("<I8", genuine.written, (genuine.address & (word_size - 1)) + 1)
                     machine:write_reg(assert(word_registers[access.address]), value)
                 end
-                access.written_hash = machine:get_node_hash(leaf, 5)
+                access.written_hash = machine:get_node_hash(word, word_log2_size)
                 if genuine.written then
-                    access.written = machine:read_memory(leaf, 32)
+                    access.written = machine:read_memory(word, word_size)
                 end
             end
             log.accesses[i] = access

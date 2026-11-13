@@ -251,6 +251,11 @@ static NO_INLINE translation_result translate_virtual_address(STATE_ACCESS a, ui
             return translation_result::success;
             // xwr == 0 means we have a pointer to the start of the next page table
         }
+        // For non-leaf PTEs, the D, A, and U bits are reserved for future standard use.
+        // If any of these bits are set, a page-fault exception is raised.
+        if ((pte & (PTE_D_MASK | PTE_A_MASK | PTE_U_MASK)) != 0) [[unlikely]] {
+            return translation_result::page_fault;
+        }
         pte_addr = ppn;
     }
     return translation_result::page_fault;

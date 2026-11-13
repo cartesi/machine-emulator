@@ -108,7 +108,7 @@ test7: // U-mode is not allowed to access privileged memory
 test8: // A PTE outside RAM, the only range that supports page-table walks, raises an access fault
     la t0, skip_fetch_access_fault_trap;
     csrw mtvec, t0;
-    li t0, (PTE_V | PTE_U)
+    li t0, PTE_V
     li t1, (1 << 38)
     srli t1, t1, 2
     or t0, t0, t1

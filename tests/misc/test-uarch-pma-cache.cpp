@@ -21,7 +21,7 @@
 #include <stdexcept>
 
 #include "find-pma.hpp"
-#include "selected-address-ranges.hpp"
+#include "lazy-address-ranges.hpp"
 #include "uarch-pma-cache.hpp"
 
 using namespace cartesi;
@@ -41,12 +41,11 @@ void require(bool condition) {
 // Reads PMA entries the way the machine replayer does.
 struct shared_access {
     const pmas_state &entries;
-    selected_address_ranges ranges{};
-    address_range sentinel{};
+    lazy_address_ranges ranges{};
 
     pmas_entry read_pma_entry(uint64_t index) {
         require(index < PMA_MAX);
-        if (const auto *ar = ranges.find(index)) {
+        if (const auto *ar = ranges.get(index)) {
             return {.istart = ar->get_istart(), .ilength = ar->get_length()};
         }
         return entries[index];
@@ -55,9 +54,9 @@ struct shared_access {
     address_range &read_pma(uint64_t index) {
         require(index <= PMA_MAX);
         if (index == PMA_MAX) {
-            return sentinel;
+            return ranges.get_sentinel();
         }
-        return ranges.select(index, entries[index].istart, entries[index].ilength, fail);
+        return ranges.get_or_create(index, entries[index].istart, entries[index].ilength, fail);
     }
 };
 

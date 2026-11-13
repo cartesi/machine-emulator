@@ -116,7 +116,7 @@ $(BUILDDIR)/test-machine-c-jsonrpc-api: test-machine-c-jsonrpc-api.o ../../src/l
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 test-uarch-pma-cache.o: CXXFLAGS += -I../../uarch
-test-uarch-pma-cache.o: ../../uarch/uarch-pma-cache.hpp ../../src/selected-address-ranges.hpp ../../src/find-pma.hpp
+test-uarch-pma-cache.o: ../../uarch/uarch-pma-cache.hpp ../../src/lazy-address-ranges.hpp ../../src/find-pma.hpp
 
 $(BUILDDIR)/test-uarch-pma-cache: test-uarch-pma-cache.o ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)

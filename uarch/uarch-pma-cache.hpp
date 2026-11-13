@@ -22,7 +22,7 @@
 #include <cstdint>
 
 #include "address-range-constants.hpp"
-#include "selected-address-ranges.hpp"
+#include "lazy-address-ranges.hpp"
 
 namespace cartesi {
 
@@ -37,15 +37,14 @@ class uarch_pma_cache {
 
     // The cache, including its ranges, must fit one witness page (see uarch-run.cpp).
     static constexpr size_t HIT_CAPACITY = 16;
-    selected_address_ranges m_ranges;
-    address_range m_sentinel;
+    lazy_address_ranges m_ranges;
     std::array<range_hit, HIT_CAPACITY> m_hits{};
     size_t m_hit_count{};
 
     template <typename READ_ENTRY>
     pmas_entry probe(uint64_t index, READ_ENTRY read_entry) const {
-        // Cached entries selected earlier remain authoritative.
-        if (const auto *ar = m_ranges.find(index)) {
+        // Entries whose range was created earlier remain authoritative.
+        if (const auto *ar = m_ranges.get(index)) {
             return {.istart = ar->get_istart(), .ilength = ar->get_length()};
         }
         return read_entry(index);
@@ -55,10 +54,10 @@ public:
     template <typename READ_ENTRY, typename ABRT>
     address_range &read(uint64_t index, READ_ENTRY read_entry, ABRT abrt) {
         if (index >= PMA_MAX) [[unlikely]] {
-            return m_sentinel;
+            return m_ranges.get_sentinel();
         }
         const auto entry = read_entry(index);
-        return m_ranges.select(index, entry.istart, entry.ilength, abrt);
+        return m_ranges.get_or_create(index, entry.istart, entry.ilength, abrt);
     }
 
     template <typename T, typename READ_ENTRY, typename ABRT>
@@ -70,7 +69,7 @@ public:
             for (size_t i = 0; i < m_hit_count; ++i) {
                 if (paddr >= m_hits[i].start && paddr < m_hits[i].end) {
                     index = m_hits[i].index;
-                    return *m_ranges.find(index);
+                    return *m_ranges.get(index);
                 }
             }
         }
@@ -84,7 +83,7 @@ public:
         }
         if (paddr >= ram_start && ram_entry.ilength >= sizeof(T) &&
             paddr - ram_start <= ram_entry.ilength - sizeof(T)) {
-            auto &ram = m_ranges.select(index, ram_entry.istart, ram_entry.ilength, abrt);
+            auto &ram = m_ranges.get_or_create(index, ram_entry.istart, ram_entry.ilength, abrt);
             if (within_page && m_hit_count < m_hits.size()) {
                 m_hits[m_hit_count++] = {.start = ram.get_start(),
                     .end = ram.get_start() + ram.get_length(),
@@ -102,7 +101,7 @@ public:
             if (entry.ilength == 0 || paddr < start) {
                 upper = index;
             } else if (entry.ilength >= sizeof(T) && paddr - start <= entry.ilength - sizeof(T)) {
-                auto &ar = m_ranges.select(index, entry.istart, entry.ilength, abrt);
+                auto &ar = m_ranges.get_or_create(index, entry.istart, entry.ilength, abrt);
                 if (within_page && m_hit_count < m_hits.size()) {
                     m_hits[m_hit_count++] = {.start = ar.get_start(),
                         .end = ar.get_start() + ar.get_length(),

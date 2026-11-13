@@ -35,6 +35,7 @@
 #include "i-accept-scoped-notes.hpp"
 #include "i-prefer-shadow-state.hpp"
 #include "i-state-access.hpp"
+#include "lazy-address-ranges.hpp"
 #include "machine-hash.hpp"
 #include "machine-reg.hpp"
 #include "no-step-log-dumper.hpp"
@@ -43,7 +44,6 @@
 #include "rejected-manual-yield.hpp"
 #include "riscv-constants.hpp"
 #include "scoped-note.hpp"
-#include "selected-address-ranges.hpp"
 #include "shadow-registers.hpp"
 #include "shadow-tlb.hpp"
 #include "step-log-hash.hpp"
@@ -73,11 +73,10 @@ class replay_step_state_access :
     public i_prefer_shadow_state<replay_step_state_access<Dumper>> {
 public:
     struct context {
-        step_log log;                ///< Parsed step log (witnessed tree)
-        selected_address_ranges ars; ///< Address ranges built from the PMA entries read so far
-        address_range sentinel;      ///< Empty address range returned when no PMA entry matches
-        hot_tlb_state tlb{};         ///< Hot TLB cache for validated entries
-        Dumper dumper{};             ///< Receives the dump
+        step_log log;            ///< Parsed step log (witnessed tree)
+        lazy_address_ranges ars; ///< Address ranges created from the PMA entries read so far
+        hot_tlb_state tlb{};     ///< Hot TLB cache for validated entries
+        Dumper dumper{};         ///< Receives the dump
     };
 
 private:
@@ -225,7 +224,7 @@ private:
     pmas_entry do_read_pma_entry(uint64_t index) const {
         assert(index < PMA_MAX);
         // An entry read_pma already built has these fields; otherwise read them from the log.
-        if (const auto *ar = m_context.ars.find(index)) {
+        if (const auto *ar = m_context.ars.get(index)) {
             return {.istart = ar->get_istart(), .ilength = ar->get_length()};
         }
         return {.istart = read_pmas_istart(index), .ilength = read_pmas_ilength(index)};
@@ -233,13 +232,14 @@ private:
 
     address_range &do_read_pma(uint64_t index) const {
         if (index >= PMA_MAX) [[unlikely]] {
-            return m_context.sentinel;
+            return m_context.ars.get_sentinel();
         }
         // record_step_state_access will have recorded the access to istart and
         // ilength in its implementation of read_pma.
         const uint64_t istart = read_pmas_istart(index);
         const uint64_t ilength = read_pmas_ilength(index);
-        return m_context.ars.select(index, istart, ilength, [](const char *err) { THROW(std::runtime_error, err); });
+        return m_context.ars.get_or_create(index, istart, ilength,
+            [](const char *err) { THROW(std::runtime_error, err); });
     }
 
     template <typename T, typename A>

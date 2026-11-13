@@ -9,8 +9,8 @@
 -- Run with the matching uarch ELF and riscv64-unknown-elf-nm from the toolchain image.
 -- Toolchain: cartesi/machine-emulator:toolchain (Dockerfile target toolchain).
 return {
-    ["ordinary-alu"] = { pages = 11, cycles = 282, slice_bytes = 15360, log_bytes = 20208 },
-    ["tlb-miss-load"] = { pages = 19, cycles = 723, slice_bytes = 18944, log_bytes = 25680 },
-    ["amo-both-misses"] = { pages = 22, cycles = 1098, slice_bytes = 24064, log_bytes = 31128 },
-    ["trap-tlb-flush"] = { pages = 19, cycles = 510, slice_bytes = 39424, log_bytes = 44816 },
+    ["ordinary-alu"] = { pages = 11, cycles = 281, slice_bytes = 15360, log_bytes = 20208 },
+    ["tlb-miss-load"] = { pages = 19, cycles = 721, slice_bytes = 18944, log_bytes = 25680 },
+    ["amo-both-misses"] = { pages = 22, cycles = 1096, slice_bytes = 24064, log_bytes = 31128 },
+    ["trap-tlb-flush"] = { pages = 19, cycles = 509, slice_bytes = 39424, log_bytes = 44816 },
 }

@@ -162,7 +162,7 @@ library EmulatorConstants {
 
     // Root hash of the pristine uarch state (cartesi.UARCH_PRISTINE_STATE_HASH).
     bytes32 internal constant UARCH_PRISTINE_STATE_HASH =
-        0xd6accd77407ca4bdaed4479293ae991fe2b560b0f64346757849e30ac815ddef;
+        0x45c20f040ca0059a0f6fa683f991cf5461aead77ac872cccd49e53ac7563cf11;
 
     // Page geometry (derived).
     uint256 internal constant PAGE_SIZE = 1 << HASH_TREE_LOG2_PAGE_SIZE;

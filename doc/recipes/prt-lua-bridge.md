@@ -28,7 +28,10 @@ make -C doc run-prt-bridge
 `build-prt-image` builds the runtime image `cartesi/machine-emulator-prt:devel`,
 which holds the emulator, the calculator snapshot, the compiled Dave contracts,
 Foundry, and the Lua scripts. With `EMULATOR_IMAGE_READY=yes`, it reuses an
-emulator image that is already built. `run-prt-bridge` runs everything inside
+emulator image that is already built. With `PRT_MACHINE_STEP_DIR` set to a
+`machine-solidity-step` checkout, it builds Dave's contracts against that
+checkout's sources instead of the step Dave pins, as an emulator whose uarch
+changed requires. `run-prt-bridge` runs everything inside
 the container. Smoke mode uses one honest player. The default story uses eight
 players per calculator epoch.
 

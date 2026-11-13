@@ -955,11 +955,14 @@ do
         [16] = {},
         [17] = { "stalled_action eliminateMatchByTimeout at root: due since block 15" },
     }
+    -- The sentinel asks to observe the next block at which a report could first apply
+    local next_blocks = { [5] = 6, [6] = 9, [7] = 9, [9] = 17, [16] = 17, [17] = nil }
     for _, tip in ipairs({ 5, 6, 7, 9, 16, 17 }) do
         view.tip = tip
         local first = #reports + 1
-        local _, published = sentinel:watch()
+        local _, published, next_block = sentinel:watch()
         assert(not published, "a sentinel published")
+        assert(next_block == next_blocks[tip], "unexpected sentinel next block at tip " .. tip)
         assert(
             table.concat(reports, "\n", first) == table.concat(expected_reports[tip], "\n"),
             "unexpected sentinel reports at tip " .. tip

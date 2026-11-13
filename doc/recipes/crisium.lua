@@ -8,7 +8,7 @@
 -- --keep-epochs finished epochs (1 by default) and removes the checkpoint and epoch directory of
 -- older ones.
 --
--- Usage: lua5.4 prt-player.lua --rpc=URL --application=ADDRESS --keystore=FILE --password-file=FILE
+-- Usage: lua5.4 crisium.lua --rpc=URL --application=ADDRESS --keystore=FILE --password-file=FILE
 --     --state=DIRECTORY --checkpoints=DIRECTORY --dave=DIRECTORY --kind=KIND [OPTION...]
 --
 -- KIND is honest, or one of the scripted adversaries quitter, tamperer:INPUT:BUNDLE,

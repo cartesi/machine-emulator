@@ -280,6 +280,7 @@ local riscv_tests = {
     { "dont_write_x0.bin", 92 },
     { "mcycle_write.bin", 14 },
     { "lrsc_semantics.bin", 31 },
+    { "sc_checks.bin", 95 },
     { "csr_counters.bin", 737 },
     { "csr_semantics.bin", 378 },
     { "amo.bin", 162 },

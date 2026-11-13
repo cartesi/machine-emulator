@@ -201,6 +201,7 @@ uarch-ram-entry.o: uarch-ram-entry.S
 
 %.clang-tidy: %.cpp
 	$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- $(CLANG_TIDY_CXXFLAGS) $(CFLAGS) $(CXXFLAGS) $(CLANG_TIDY_WARNS)
+	@$(CXX) $(CFLAGS) $(CXXFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
 lint: $(CLANG_TIDY_TARGETS)
@@ -243,5 +244,5 @@ clean: clean-executables clean-auto-generated
 
 # Objects live next to their sources, some in other directories, so their
 # dependency files are listed by name rather than found with a wildcard
-DEPS = $(patsubst %.o,%.d,$(ALL_OBJS))
+DEPS = $(patsubst %.o,%.d,$(ALL_OBJS)) $(patsubst %,%.d,$(CLANG_TIDY_TARGETS))
 -include $(DEPS)

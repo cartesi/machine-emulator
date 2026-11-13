@@ -1914,6 +1914,12 @@ function event_handler.seal_divergence(self, computation_hash, position, other_l
     return response
 end
 
+-- Building a uarch claim fails when the uarch run of some mcycle in the period does not end in a halt it
+-- can be reset from, because it trapped or reached its maximum cycle.
+local try_new_uarch_tree = util.protect(function(self, epoch_input_offset, input_period_offset)
+    return self:new_uarch_tree(epoch_input_offset, input_period_offset)
+end)
+
 -- Returns a uarch claim over the disputed mcycle period (its final state hash is one of the two
 -- contested values) and keeps its hash tree by computation hash.
 function event_handler.commit_uarch_claim(self, epoch_input_offset, input_period_offset)
@@ -1923,7 +1929,18 @@ function event_handler.commit_uarch_claim(self, epoch_input_offset, input_period
             return new_claim(claim.tree)
         end
     end
-    local tree = self:new_uarch_tree(epoch_input_offset, input_period_offset)
+    -- A period whose uarch claim cannot be built has none, and is reported once
+    self.failed_uarch_periods = self.failed_uarch_periods or {}
+    local period_key = string.format("%d:%d", epoch_input_offset, input_period_offset)
+    if self.failed_uarch_periods[period_key] then
+        return "nothing"
+    end
+    local tree, err = try_new_uarch_tree(self, epoch_input_offset, input_period_offset)
+    if not tree then
+        self.failed_uarch_periods[period_key] = true
+        self:report_anomaly("uarch_error", "at input %d, period %d: %s", epoch_input_offset, input_period_offset, err)
+        return "nothing"
+    end
     local claim = { epoch_input_offset = epoch_input_offset, input_period_offset = input_period_offset, tree = tree }
     self.uarch_claims[#self.uarch_claims + 1] = claim
     self:store_uarch_claim(claim)

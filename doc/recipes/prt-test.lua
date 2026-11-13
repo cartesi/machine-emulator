@@ -3960,4 +3960,24 @@ do
     getmetatable(player).__close(player)
 end
 
+-- A period whose uarch run does not end in a halt it can be reset from has no uarch claim, and the
+-- failure is reported once.
+do
+    local player = new_test_player(nil, prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial"))))
+    local received = {}
+    function player.anomaly_handler(kind, message)
+        received[#received + 1] = kind .. " " .. message
+    end
+    function player.new_uarch_tree()
+        error("uarch reached its maximum cycle and cannot advance more uarch cycles", 0)
+    end
+    for _ = 1, 2 do
+        assert(player.event_handler.commit_uarch_claim(player, 0, 1) == "nothing", "a uarch claim was built")
+    end
+    local expected = "uarch_error at input 0, period 1: "
+        .. "uarch reached its maximum cycle and cannot advance more uarch cycles"
+    assert(#received == 1 and received[1] == expected, "the uarch failure was not reported once")
+    getmetatable(player).__close(player)
+end
+
 print("prt-test: ok")

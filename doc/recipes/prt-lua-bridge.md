@@ -545,6 +545,7 @@ error, and continues.
 | `outputs_merkle_root_mismatch` | The outputs Merkle root the machine wrote when it accepted an input differs from the root built from the outputs it emitted, or a checkpoint's root differs from its outputs frontier |
 | `oversized_output` | An output declared a length larger than the TX buffer |
 | `unprovable_output` | An output does not prove against the root the settled machine holds |
+| `uarch_error` | The uarch run of some mcycle in a disputed period did not end in a halt it can be reset from, because it trapped or reached its maximum cycle, so the player has no uarch claim for that period |
 | `falling_behind` | More inputs are pending than the gap between the machine cache's boundaries |
 | `unjoined_claim` | A tournament's joining window closed without the player's commitment |
 | `fee_ceiling` | A pending transaction reached the fee ceiling, and keeps its nonce |

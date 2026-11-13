@@ -1,7 +1,9 @@
 -- Stream both calculator epochs through Dave, preserving normal empty epoch zero.
 local fs = require("cartesi.filesystem")
 local json = require("dkjson")
-local cast = require("prt-cast")
+local command = require("prt-command")
+local rpc_client = require("prt-rpc")
+local signing = require("prt-signer")
 local eth = require("prt-ethereum")
 local socket = require("socket")
 local prt = require("prt")
@@ -10,11 +12,11 @@ local initial_hash = assert(arg[1], "missing template hash")
 assert(#assert(eth.raw(initial_hash)) == 32, "invalid template hash")
 local mode = arg[2] or "story"
 local rpc_url = os.getenv("PRT_RPC_URL") or "http://127.0.0.1:8545"
-local chain = cast.new(rpc_url)
+local chain = signing.install(rpc_client.new(rpc_url))
 -- Mining is the orchestrator's own request and may take as long as the node needs.
-local miner = cast.new(rpc_url, false)
-local input_policy = cast.policy(os.getenv("PRT_INPUT_CONFIRMATIONS") or "8")
-local dispute_policy = cast.policy(os.getenv("PRT_DISPUTE_CONFIRMATIONS") or "4")
+local miner = rpc_client.new(rpc_url, false)
+local input_policy = rpc_client.policy(os.getenv("PRT_INPUT_CONFIRMATIONS") or "8")
+local dispute_policy = rpc_client.policy(os.getenv("PRT_DISPUTE_CONFIRMATIONS") or "4")
 local test_reorg = os.getenv("PRT_TEST_REORG") == "yes"
 local test_restart = os.getenv("PRT_TEST_RESTART") == "yes"
 
@@ -86,7 +88,7 @@ local recipes_directory = assert(os.getenv("RECIPES_DIR"), "missing RECIPES_DIR"
 local supervisors = {}
 local function stop_players()
     for _, pid in ipairs(supervisors) do
-        pcall(cast.run, { "kill", pid })
+        pcall(command.run, { "kill", pid })
     end
 end
 local _ <close> = setmetatable({}, { __close = stop_players })
@@ -126,7 +128,7 @@ for _, player in ipairs(players) do
         "--max-fee=" .. (os.getenv("PRT_MAX_FEE_PER_GAS") or "100000000000"),
         "--max-priority-fee=" .. (os.getenv("PRT_MAX_PRIORITY_FEE_PER_GAS") or "10000000000"),
     }
-    local supervisor = cast.run({
+    local supervisor = command.run({
         "sh",
         "-c",
         '"$@" > "$0" 2>&1 < /dev/null & echo $!',
@@ -198,7 +200,7 @@ local function restart_honest(point)
     end
     local honest = players[1]
     local pid = assert(read_pid(honest), "the honest player has no process")
-    cast.run({ "kill", "-9", pid })
+    command.run({ "kill", "-9", pid })
     killed[honest.label], pids[honest.label], restarts[point] = pid, nil, true
     if fs.exists(get_status_path(honest)) then
         fs.remove_file(get_status_path(honest))

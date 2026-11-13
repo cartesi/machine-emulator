@@ -8,7 +8,8 @@ local eth = require("prt-ethereum")
 local hash_tree = require("cartesi.hash-tree")
 local fs = require("cartesi.filesystem")
 local json = require("dkjson")
-local cast = require("prt-cast")
+local rpc_client = require("prt-rpc")
+local signing = require("prt-signer")
 local prt = require("prt")
 local prt_deploy = require("prt-deploy")
 
@@ -72,7 +73,7 @@ local function check(chain, transition, provider, player, paths, directory)
 end
 
 local initial_hash = assert(arg[1], "missing template hash")
-local chain = cast.new(os.getenv("PRT_RPC_URL") or "http://127.0.0.1:8545")
+local chain = signing.install(rpc_client.new(os.getenv("PRT_RPC_URL") or "http://127.0.0.1:8545"))
 local deployment = prt_deploy.deploy(chain, initial_hash)
 local abi, geometry, consensus = deployment.abi, deployment.geometry, deployment.consensus
 local claimant = prt_deploy.signer(1)

@@ -4,7 +4,7 @@
 local cartesi = require("cartesi")
 local fs = require("cartesi.filesystem")
 local eth = require("prt-ethereum")
-local cast = require("prt-cast")
+local rpc_client = require("prt-rpc")
 local bridge = require("prt-bridge")
 local log_history = require("prt-log-history")
 local M = {}
@@ -135,8 +135,8 @@ function M.new(args)
     assert(args.chain and args.abi and args.app and args.input_box and args.consensus)
     assert(args.player and args.signer and args.label and args.initial_hash)
     assert(args.geometry, "missing factory geometry")
-    local input_policy = cast.policy(args.input_policy or "finalized")
-    local dispute_policy = cast.policy(args.dispute_policy or 4)
+    local input_policy = rpc_client.policy(args.input_policy or "finalized")
+    local dispute_policy = rpc_client.policy(args.dispute_policy or 4)
     return setmetatable({
         chain = args.chain,
         transactions = args.transactions,

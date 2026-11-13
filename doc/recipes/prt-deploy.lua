@@ -3,7 +3,7 @@
 local evmu = require("cartesi.evmu")
 local cartesi = require("cartesi")
 local json = require("dkjson")
-local cast = require("prt-cast")
+local signing = require("prt-signer")
 local eth = require("prt-ethereum")
 local bridge = require("prt-bridge")
 local M = {}
@@ -17,9 +17,7 @@ local rollups_out = M.dave_directory .. "/cartesi-rollups/contracts/out"
 -- The account of the local wallet with this index. Index 0 is the deployer.
 function M.signer(index)
     local key = "wallets/player-" .. index
-    local address = cast.run({ "cast", "wallet", "address", "--keystore", key, "--password-file", "wallets/password" })
-        :gsub("%s+$", "")
-        :lower()
+    local address = signing.address(key, "wallets/password")
     return { address = address, keystore = key, password_file = "wallets/password" }
 end
 

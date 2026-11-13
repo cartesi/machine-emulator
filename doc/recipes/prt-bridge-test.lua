@@ -1,6 +1,8 @@
 local eth = require("prt-ethereum")
 local evmu = require("cartesi.evmu")
-local cast = require("prt-cast")
+local command = require("prt-command")
+local rpc_client = require("prt-rpc")
+local signing = require("prt-signer")
 local bridge = require("prt-bridge")
 local prt = require("prt")
 local geometry = prt.new_geometry(10)
@@ -9,7 +11,8 @@ local geometry = prt.new_geometry(10)
 local signature = "eventData(uint256,(uint64,bytes),bytes32[])"
 local coordinate = evmu.bint(1) << 91
 local hash = "0x" .. string.rep("ab", 32)
-local expected = cast.run({ "cast", "abi-encode", signature, tostring(coordinate), "(62,0x1234)", "[" .. hash .. "]" })
+local expected =
+    command.run({ "cast", "abi-encode", signature, tostring(coordinate), "(62,0x1234)", "[" .. hash .. "]" })
 local actual =
     eth.hex(evmu.encode_abi("(uint256,(uint64,bytes),bytes32[])", { coordinate, { 62, "0x1234" }, { hash } }))
 assert(actual == expected:gsub("%s+$", ""), "ABI encoding differs from Foundry")
@@ -37,8 +40,8 @@ do
     })
     local app = "0x" .. string.rep("ab", 20)
     local topics = abi:topics("InputAdded", app)
-    local function foundry(command)
-        return (cast.run(command):gsub("%s+$", ""))
+    local function foundry(arguments)
+        return (command.run(arguments):gsub("%s+$", ""))
     end
     assert(#topics == 2, "wrong number of InputAdded topics")
     assert(topics[1] == foundry({ "cast", "sig-event", "InputAdded(address,uint256,bytes)" }), "wrong event topic")
@@ -263,18 +266,25 @@ do
         }
     end
     local status, data, closing =
-        cast.exchange(fake('HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\n{"a":1}'), "node", "/", "{}")
+        rpc_client.exchange(fake('HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\n{"a":1}'), "node", "/", "{}")
     assert(status == 200 and data == '{"a":1}' and not closing, "a body given by length was misread")
-    status, data = cast.exchange(
+    status, data = rpc_client.exchange(
         fake('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\n{"a\r\n4\r\n":1}\r\n0\r\n\r\n'),
         "node",
         "/",
         "{}"
     )
     assert(status == 200 and data == '{"a":1}', "a chunked body was misread")
-    assert(not pcall(cast.exchange, fake(""), "node", "/", "{}"), "a connection closed before answering succeeded")
-    status, data, closing =
-        cast.exchange(fake("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 2\r\n\r\n{}"), "node", "/", "{}")
+    assert(
+        not pcall(rpc_client.exchange, fake(""), "node", "/", "{}"),
+        "a connection closed before answering succeeded"
+    )
+    status, data, closing = rpc_client.exchange(
+        fake("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 2\r\n\r\n{}"),
+        "node",
+        "/",
+        "{}"
+    )
     assert(status == 200 and data == "{}" and closing, "a closing connection was not noticed")
 end
 
@@ -297,8 +307,8 @@ assert(not pcall(eth.transition_proof, { step_log = step }, 1))
 
 -- Shell arguments are data even when they contain substitutions or quotes.
 local argument = "dollar $HOME ; quote ' and $(exit 42)"
-assert(cast.run({ "sh", "-c", 'printf "%s" "$1"', "--", argument }) == argument)
-assert(not pcall(cast.run, { "sh", "-c", "exit 23" }))
+assert(command.run({ "sh", "-c", 'printf "%s" "$1"', "--", argument }) == argument)
+assert(not pcall(command.run, { "sh", "-c", "exit 23" }))
 
 -- Cleanup has no machine, local commitment, or claim ownership requirement.
 local captured
@@ -411,7 +421,7 @@ snapshot.matches["root:match"] = nil
 assert(ready_at(15) == "", "deleted match left a scheduled action")
 
 -- A provider error must never be classified as a losing proof.
-local transport = cast.new("http://unused")
+local transport = signing.install(rpc_client.new("http://unused"))
 function transport.rpc()
     return nil, { code = -32603, message = "unavailable" }
 end
@@ -711,7 +721,7 @@ local function accumulating(policy, first_input_block)
             end,
         },
     }
-    local source = cast.new("http://unused")
+    local source = rpc_client.new("http://unused")
     source.tip = 3
     function source:rpc(method, args)
         assert(method == "eth_getBlockByNumber")
@@ -958,7 +968,7 @@ end
 -- Depths count successors. Consensus tags use the node's block, and an
 -- unavailable tag must never silently fall back to latest.
 do
-    local source = cast.new("http://unused")
+    local source = rpc_client.new("http://unused")
     function source.rpc(_, method, args)
         assert(method == "eth_getBlockByNumber")
         local n = ({ latest = 40, safe = 30, finalized = 20 })[args[1]] or tonumber(args[1])
@@ -969,9 +979,9 @@ do
     assert(source:head(64) == 0)
     assert(source:head(0) == 40)
     assert(source:head("safe") == 30 and source:head("finalized") == 20)
-    assert(cast.policy("12") == 12)
+    assert(rpc_client.policy("12") == 12)
     for _, invalid in ipairs({ -1, 1.5, "latest", "-1", "1.5", "4foo", false }) do
-        assert(not pcall(cast.policy, invalid), "invalid observation policy accepted")
+        assert(not pcall(rpc_client.policy, invalid), "invalid observation policy accepted")
     end
     local rpc = source.rpc
     function source:rpc(method, args)

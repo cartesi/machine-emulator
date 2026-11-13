@@ -3,7 +3,7 @@
 -- observations; the player's transaction journal owns its account's nonces and fees.
 local evmu = require("cartesi.evmu")
 local eth = require("prt-ethereum")
-local cast = require("prt-cast")
+local rpc_client = require("prt-rpc")
 local log_history = require("prt-log-history")
 local cartesi = require("cartesi")
 local prt = require("prt")
@@ -829,9 +829,9 @@ local function new(args)
         geometry = args.geometry,
         inputs = args.inputs,
         claim_staging_period = args.claim_staging_period,
-        observation_policy = cast.policy(args.observation_policy or 4),
+        observation_policy = rpc_client.policy(args.observation_policy or 4),
         -- Without a retirement policy the bridge never reports itself finished.
-        retirement_policy = args.retirement_policy and cast.policy(args.retirement_policy),
+        retirement_policy = args.retirement_policy and rpc_client.policy(args.retirement_policy),
         seal_block = args.seal_block,
         seal_hash = args.seal_hash,
         -- Logs are fetched from this block, except a child's, which start at its creation.

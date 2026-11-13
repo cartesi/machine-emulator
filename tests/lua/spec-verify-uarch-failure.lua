@@ -762,7 +762,7 @@ describe("uarch TLB writes with an invalid set index", function()
                     function(machine)
                         machine:run_uarch(16)
                     end,
-                    "TLB set index out of bounds",
+                    "invalid TLB index",
                 },
                 {
                     function(machine)
@@ -770,7 +770,7 @@ describe("uarch TLB writes with an invalid set index", function()
                             machine:log_step_uarch()
                         end
                     end,
-                    "TLB set index out of bounds",
+                    "invalid TLB index",
                 },
                 -- The collector refuses the custom uarch program before running it
                 {
@@ -786,6 +786,111 @@ describe("uarch TLB writes with an invalid set index", function()
                     step[1](machine)
                 end, step[2])
             end
+        end)
+    end
+end)
+
+describe("uarch TLB writes with an out-of-range slot index", function()
+    -- A uarch program that issues the WRITE_TLB ecall for set 0, slot 0, with vaddr_page 0x1000
+    local program = {
+        0x00000513, -- li a0,0
+        0x00000593, -- li a1,0
+        0x00001637, -- lui a2,0x1
+        (cartesi.UARCH_ECALL_FN_WRITE_TLB << 20) | 0x00893, -- li a7,write_tlb
+        0x00000073, -- ecall
+    }
+    local ECALL_CYCLE = 4
+    -- The slot index whose slot address lands on the start of guest RAM
+    local slot_index = (cartesi.AR_RAM_START - cartesi.AR_SHADOW_TLB_START) // cartesi.SHADOW_TLB_SLOT_SIZE
+    -- Machines stopped at the ecall, with the given TLB set and slot indices in a0 and a1
+    local function build_machine(set_index, slot)
+        local data_filename = create_test_uarch_program(program)
+        local machine = cartesi.machine({
+            ram = { length = 0x20000 },
+            uarch = { ram = { length = 0x1000, backing_store = { data_filename = data_filename } } },
+        }, {})
+        os.remove(data_filename)
+        machine:run_uarch(ECALL_CYCLE)
+        machine:write_reg("uarch_x10", set_index)
+        machine:write_reg("uarch_x11", slot)
+        return machine
+    end
+    -- Rebuilds the accesses of the genuine in-range log against the given machine, with the TLB slot write
+    -- moved to the address the indices in its a0 and a1 select, wrapped to 64 bits as an unchecked verifier
+    -- would compute it. Returns the log and the root hashes before and after it.
+    local function rebuild_log(machine, genuine_log)
+        local set_index, slot = machine:read_reg("uarch_x10"), machine:read_reg("uarch_x11")
+        local slot_size = cartesi.SHADOW_TLB_SLOT_SIZE
+        local tlb_address = cartesi.AR_SHADOW_TLB_START + (set_index * cartesi.TLB_SET_SIZE + slot) * slot_size
+        local slot_image = string.pack(
+            "<I8I8I8I8",
+            machine:read_reg("uarch_x12"),
+            machine:read_reg("uarch_x13"),
+            machine:read_reg("uarch_x14"),
+            0
+        )
+        local word_registers = {
+            [cartesi.machine:get_reg_address("uarch_pc")] = "uarch_pc",
+            [cartesi.machine:get_reg_address("uarch_cycle")] = "uarch_cycle",
+        }
+        local before = machine:get_root_hash()
+        local log = { log_type = genuine_log.log_type, accesses = {} }
+        for i, genuine in ipairs(genuine_log.accesses) do
+            local access = { type = genuine.type, log2_size = genuine.log2_size, address = genuine.address }
+            if genuine.address == cartesi.AR_SHADOW_TLB_START and genuine.log2_size == 5 then
+                expect.equal(cartesi.keccak256(slot_image), genuine.written_hash)
+                access.address = tlb_address
+            end
+            local leaf = access.address & ~31
+            access.read_hash = machine:get_node_hash(leaf, 5)
+            access.sibling_hashes = machine:get_proof(leaf, 5).sibling_hashes
+            if genuine.read then
+                access.read = machine:read_memory(leaf, 32)
+            end
+            if genuine.written_hash then
+                if access.log2_size == 5 then
+                    machine:write_memory(access.address, slot_image)
+                else
+                    local value = string.unpack("<I8", genuine.written, (genuine.address & 31) + 1)
+                    machine:write_reg(assert(word_registers[access.address]), value)
+                end
+                access.written_hash = machine:get_node_hash(leaf, 5)
+                if genuine.written then
+                    access.written = machine:read_memory(leaf, 32)
+                end
+            end
+            log.accesses[i] = access
+        end
+        return log, before, machine:get_root_hash()
+    end
+
+    local genuine_log
+    do
+        local machine <close> = build_machine(0, 0)
+        genuine_log = machine:log_step_uarch()
+    end
+
+    for _, set_index in ipairs({ 0, 1 << 51 }) do
+        local name = string.format("set index 0x%x", set_index)
+        it("should fail cleanly when running and logging slot index " .. slot_index .. " with " .. name, function()
+            for _, step in ipairs({ "run_uarch", "log_step_uarch" }) do
+                local machine <close> = build_machine(set_index, slot_index)
+                expect.fail(function()
+                    if step == "run_uarch" then
+                        machine:run_uarch(ECALL_CYCLE + 1)
+                    else
+                        machine:log_step_uarch()
+                    end
+                end, "invalid TLB index")
+            end
+        end)
+        it("should reject a log that writes the slot to guest RAM with " .. name, function()
+            local machine <close> = build_machine(set_index, slot_index)
+            local log, before, after = rebuild_log(machine, genuine_log)
+            expect.equal(log.accesses[find_tlb_access(genuine_log)].address, cartesi.AR_RAM_START)
+            expect.fail(function()
+                cartesi.machine:verify_step_uarch(before, log, after)
+            end, "invalid TLB index")
         end)
     end
 end)

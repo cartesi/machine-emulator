@@ -2709,6 +2709,7 @@ local function store_first_epoch_checkpoint(template_directory, geometry, direct
         remove_leftover_stored_machine(temporary_directory)
     end
     cartesi.machine:clone_stored(template_directory, temporary_directory)
+    cartesi.machine:sync_stored(temporary_directory)
     local outputs_frontier = new_outputs_frontier()
     local outputs_root = hash_tree.frontier_get_root_hash(outputs_frontier)
     local template_hash
@@ -2803,12 +2804,14 @@ local function create_epoch_directory(directory)
     fs.sync_directory(directory)
 end
 
--- The root hash of a stored machine, or nil when there is none or it cannot be loaded.
+-- The root hash of a stored machine, rehashed from its contents, or nil when there is none or it cannot
+-- be loaded. A clone is durable only after its sync, so after a power loss its cached hash tree may not
+-- match its contents.
 local function get_stored_root_hash(directory)
     if not fs.exists(directory) then
         return nil
     end
-    local loaded, machine = pcall(cartesi.machine, directory)
+    local loaded, machine = pcall(cartesi.machine, directory, { clear_hash_tree = true })
     if not loaded then
         return nil
     end

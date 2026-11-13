@@ -2336,6 +2336,55 @@ if arg[1] then
         )
     end
 
+    -- A clone is durable only after its sync, so the template checkpoint is synced before its rename. A copy
+    -- of prt whose cartesi.machine records its stored-machine calls checks the order.
+    do
+        local checkpoint_directory = temporary_directory .. "/synced-checkpoint"
+        local temporary_checkpoint = checkpoint_directory .. ".tmp"
+        local _ <close> = setmetatable({}, {
+            __close = function()
+                if fs.exists(checkpoint_directory) then
+                    fs.remove_file(checkpoint_directory .. "/epoch.json")
+                    fs.remove_file(checkpoint_directory .. "/outputs-frontier.json")
+                    cartesi.machine:remove_stored(checkpoint_directory)
+                end
+            end,
+        })
+        local calls = {}
+        local recording_machine = setmetatable({}, {
+            __call = function(_, ...)
+                return cartesi.machine(...)
+            end,
+            __index = function(_, name)
+                return function(_, ...)
+                    calls[#calls + 1] = table.concat({ name, ... }, " ")
+                    return cartesi.machine[name](cartesi.machine, ...)
+                end
+            end,
+        })
+        local loaded_prt, loaded_cartesi = package.loaded.prt, package.loaded.cartesi
+        package.loaded.prt = nil
+        package.loaded.cartesi = setmetatable({ machine = recording_machine }, { __index = cartesi })
+        local loaded, recording_prt = pcall(require, "prt")
+        package.loaded.prt, package.loaded.cartesi = loaded_prt, loaded_cartesi
+        assert(loaded, recording_prt)
+        recording_prt.store_first_epoch_checkpoint(
+            cartesi.tohex(initial_state_hash),
+            dapp_contract.geometry,
+            checkpoint_directory
+        )
+        local synced, renamed
+        for i, call in ipairs(calls) do
+            if call == "sync_stored " .. temporary_checkpoint then
+                synced = synced or i
+            elseif call == "rename_stored " .. temporary_checkpoint .. " " .. checkpoint_directory then
+                renamed = i
+            end
+        end
+        assert(renamed, "the template checkpoint was not renamed into place")
+        assert(synced and synced < renamed, "the template checkpoint was renamed before its clone was synced")
+    end
+
     -- Positioning at offset zero keeps the input undelivered; the first uarch
     -- transition starts it once, using the same pair as mcycle proof positioning.
     do
@@ -2576,6 +2625,39 @@ if arg[1] then
             local layout, entries = list_epoch_directory(epoch_directory)
             assert(layout == stored_layout(recorded, state.output_count), "reopening left " .. layout)
             assert(entries == (recorded > 0 and "0,1" or "0"), "reopening left entries " .. entries)
+        end
+        -- A backup whose sync failed is not durable, so after a power loss its cached hash tree can match the
+        -- recorded boundary while its contents do not. Corrupting its RAM simulates that. Reopening rehashes it
+        -- and restores the epoch machine, which was synced at the boundary.
+        do
+            local _ <close>, epoch_directory = new_scope_epoch_directory()
+            do
+                local stored <close> = prt.new_stored_player(dapp_contract, "stored", nil, epoch_directory)
+                inject(stored, "sync_stored", function(directory)
+                    return directory:find("%.revert$")
+                end)
+                assert(not pcall(add_input, stored, 0, input_path), "the injected backup sync failure was lost")
+            end
+            local ram_filename
+            do
+                local backup <close> = cartesi.machine(epoch_directory .. "/machine.revert")
+                ram_filename = backup:get_initial_config().ram.backing_store.data_filename
+            end
+            local ram = assert(io.open(ram_filename, "r+b"))
+            local byte = assert(ram:read(1), "backup RAM is empty")
+            assert(ram:seek("set", 0))
+            assert(ram:write(string.char(~string.byte(byte) & 0xff)))
+            assert(ram:close())
+            local state = cartesi.fromjson(fs.read_file(epoch_directory .. "/state.json"))
+            do
+                local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
+                assert(reopened.input_count == 1, "reopening did not keep the recorded input")
+            end
+            local epoch_machine <close> = cartesi.machine(epoch_directory .. "/machine", { clear_hash_tree = true })
+            assert(
+                epoch_machine:get_root_hash() == cartesi.fromhex(state.root_hash),
+                "reopening restored the epoch machine from a torn backup"
+            )
         end
         -- A temporary pair that fails to load removes its clone.
         local _ <close>, epoch_directory = new_scope_epoch_directory()

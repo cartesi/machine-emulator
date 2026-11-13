@@ -1158,21 +1158,25 @@ modifications reflect on the loaded directory. Mode `none` is the
 in-memory default: nothing is changed in disk storage. Mode `config`
 operates on-disk only for the memory ranges configured as `shared`. Mode
 `all` keeps every backing store up to date with changes made while the
-machine runs. When `cartesi-machine` exits, the directory already holds
-the machine as it was left, ready to be loaded again, obviating the need
-for the store step. When `clone:` is present, the default mode changes
-from `none` to `all`, since experimenting on a disposable copy is the
-most common reason to clone. Mode `config` requires
-`--revert-mode=none`. Mode `all` supports `--revert-mode=stored` and
-`--revert-mode=none`.
+machine runs. When `cartesi-machine` exits cleanly, the directory
+already holds the machine as it was left, ready to be loaded again,
+obviating the need for the store step. When `clone:` is present, the
+default mode changes from `none` to `all`, since experimenting on a
+disposable copy is the most common reason to clone. Mode `config`
+requires `--revert-mode=none`. Mode `all` supports
+`--revert-mode=stored` and `--revert-mode=none`.
 
-One caveat remains. Process exit does not guarantee that the
-modifications have reached permanent storage. They may still be sitting
-in the host page cache, and a badly timed host crash could leave a
-partial directory on disk. The `sync` key closes this gap. It flushes
-every backing store file, the directory, and its parent to permanent
-storage right before `cartesi-machine` exits. Syncing requires a sharing
-mode other than `none`, since otherwise there is nothing to sync.
+Two caveats remain. The directory holds a valid machine only if
+`cartesi-machine` exits cleanly. A crash or kill can stop the machine
+partway through an instruction and leave the directory in a state no
+execution reaches, so such a directory must be discarded. Even a clean
+exit does not guarantee that the modifications have reached permanent
+storage. They may still be sitting in the host page cache, and a host
+crash or power loss could leave a partial directory on disk. The `sync`
+key closes this second gap. It flushes every backing store file, the
+directory, and its parent to permanent storage right before
+`cartesi-machine` exits. Syncing requires a sharing mode other than
+`none`, since otherwise there is nothing to sync.
 
 For example, the command
 
@@ -2517,14 +2521,23 @@ cartesi-machine \
 
 `machine.revert` always holds a synced copy of the last committed state.
 At the start, and after each accepted input, the command destroys the
-loaded machine, syncs the `machine` directory, replaces `machine.revert`
-with a synced clone of it, and loads `machine` again. A rejected input
-or inspect-state query removes `machine`, clones `machine.revert` back
-to it, and loads it again, leaving `machine.revert` in place. If the
-command stops before exiting cleanly, `machine.revert` holds the state
-to resume from. A clean exit removes it. Stored-machine operations never
-overwrite an existing directory, so the initial clone check fails
-without touching `machine.revert` if it already exists.
+loaded machine, syncs the `machine` directory, clones it to
+`machine.revert.tmp`, syncs the clone, removes the old `machine.revert`,
+renames the clone to `machine.revert`, and loads `machine` again. A
+rejected input or inspect-state query removes `machine`, clones
+`machine.revert` back to it, and loads it again, leaving
+`machine.revert` in place. A clean exit syncs `machine` and then removes
+`machine.revert`. After a crash or kill, the names left on disk tell
+where the last committed state is. If `machine.revert` exists, it holds
+that state, so discard `machine` and `machine.revert.tmp` and clone
+`machine.revert` back to `machine`. If `machine.revert` is missing but
+`machine.revert.tmp` exists, the command stopped inside a commit after
+syncing `machine`, so `machine` holds that state and
+`machine.revert.tmp` can be discarded. If neither exists, the command
+stopped before its first commit, and the run starts over. Stored-machine
+operations never overwrite an existing directory, so the first commit
+fails without touching `machine.revert` or `machine.revert.tmp` if
+either already exists.
 
 The output files, rejected output, and outputs Merkle roots are
 byte-for-byte identical to those of the server-backed epoch runs. So is
@@ -5491,7 +5504,10 @@ and syncs the affected parent directories before returning.
 storage. A machine loaded from the directory with shared backing stores
 changes its files on any call, including `get_root_hash` and
 `get_proof`, and when it is destroyed, so sync only after destroying
-that machine. Where file locks are available, `sync_stored` fails while
+that machine. A directory used by a machine with sharing holds a valid
+machine only after that machine was destroyed without a crash and the
+directory was synced. If the process stops earlier, discard the
+directory. Where file locks are available, `sync_stored` fails while
 such a machine still uses the directory.
 `machine:remove_stored(<directory>)` removes a stored machine from disk
 and makes the removal durable. All four are also available on
@@ -5504,9 +5520,9 @@ Machine [example](#rolling-cartesi-machines-1), with the fork-based
 `snapshot`, `commit`, and `revert` reimplemented over stored machines,
 feeding the same expressions the command-line example processed so the
 resulting state hashes can be compared. The helpers and the main loop
-are unchanged, and the script ends by committing the final state,
-removing its backup, and printing its hash, so the excerpt below shows
-only the reimplemented part
+are unchanged, and the script ends by destroying the machine, syncing
+its directory, removing the backup, and printing the final state hash,
+so the excerpt below shows only the reimplemented part
 
 ``` lua
 -- Load a fresh clone of the rolling-calculator template, operating directly on its backing stores
@@ -5522,12 +5538,14 @@ end
 local function commit(m)
     m:destroy()
     m:sync_stored("machine")
+    -- The backup only ever appears by renaming a synced clone
+    m:clone_stored("machine", "machine.revert.tmp")
+    m:sync_stored("machine.revert.tmp")
     if backup_directory then
         m:remove_stored(backup_directory)
     end
-    m:clone_stored("machine", "machine.revert")
+    m:rename_stored("machine.revert.tmp", "machine.revert")
     backup_directory = "machine.revert"
-    m:sync_stored(backup_directory)
     m:load("machine", nil, cartesi.SHARING_ALL)
 end
 
@@ -5543,18 +5561,23 @@ end
 The live machine is loaded from a clone of the template with
 `cartesi.SHARING_ALL` (the third argument of the `cartesi.machine`
 constructor), so every modification lands directly on the backing stores
-of `machine` and there is no store step. `commit` destroys the loaded
-machine, syncs the `machine` directory, replaces `machine.revert` with a
-synced clone of it, and loads `machine` again, at every accepted
-boundary including the initial one. `machine.revert` therefore always
-holds a synced copy of the last committed state. A loaded directory is
-locked, so the machine is destroyed around the clone and loaded again
-afterward, a cheap operation that copies nothing. `revert` removes the
-rejected state with `remove_stored`, clones `machine.revert` back as
-`machine`, and loads it again, leaving the backup in place until the
-next commit. The script still records `revert_root_hash` when feeding
-each input, as every advance-state request requires, even though a
-rejection here is undone at the filesystem level.
+of `machine` and there is no store step. `commit` follows the
+command-line stored mode at every accepted boundary, including the
+initial one. It destroys the loaded machine, syncs the `machine`
+directory, clones it to `machine.revert.tmp`, syncs the clone, removes
+the old `machine.revert`, renames the clone to `machine.revert`, and
+loads `machine` again. `machine.revert` therefore always holds a synced
+copy of the last committed state. After a crash or kill, the names left
+on disk tell where that state is, as described under [Rolling Cartesi
+Machines directly from
+storage](#rolling-cartesi-machines-directly-from-storage). A loaded
+directory is locked, so the machine is destroyed around the clone and
+loaded again afterward, a cheap operation that copies nothing. `revert`
+removes the rejected state with `remove_stored`, clones `machine.revert`
+back as `machine`, and loads it again, leaving the backup in place until
+the next commit. The script still records `revert_root_hash` when
+feeding each input, as every advance-state request requires, even though
+a rejection here is undone at the filesystem level.
 
 Run the script with the expressions and the stored template in the
 working directory

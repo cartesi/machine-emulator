@@ -1204,3 +1204,31 @@ jobs:
             solidity-step/coverage-summary.txt
             solidity-step/lcov.info
           if-no-files-found: warn
+
+  # TEMPORARY: remove before merge, together with tests/scripts/tmp-bench-against-main.*
+  tmp-bench-against-main:
+    name: Temporary benchmark against main
+    runs-on: ubuntu-latest-8-cores
+    container: debian:trixie-20250811
+    timeout-minutes: 180
+    env:
+      DEV_ENV_HAS_TOOLCHAIN: "yes"
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+            build-essential wget git ca-certificates pkg-config xxd procps util-linux binutils valgrind \
+            libboost1.83-dev libssl-dev libslirp-dev lua5.4 liblua5.4-dev \
+            g++-14-riscv64-linux-gnu=14.2.0-19cross1 gcc-riscv64-unknown-elf=14.2.0+19
+
+      - name: Checkout machine emulator source code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Benchmark against main
+        run: |
+          install -D tools/rv64i-lp64-stubs/gnu/stubs-lp64.h /usr/riscv64-linux-gnu/include/gnu/stubs-lp64.h
+          git config --global --add safe.directory '*'
+          tests/scripts/tmp-bench-against-main.sh

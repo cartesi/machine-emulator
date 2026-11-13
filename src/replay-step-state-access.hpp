@@ -25,8 +25,6 @@
 #include <optional>
 #include <ranges>
 #include <type_traits>
-#include <utility>
-#include <variant>
 
 #include "address-range-constants.hpp"
 #include "assert-printf.hpp"
@@ -39,13 +37,13 @@
 #include "i-state-access.hpp"
 #include "machine-hash.hpp"
 #include "machine-reg.hpp"
-#include "mock-address-range.hpp"
 #include "no-step-log-dumper.hpp"
 #include "pmas-constants.hpp"
 #include "pmas.hpp"
 #include "rejected-manual-yield.hpp"
 #include "riscv-constants.hpp"
 #include "scoped-note.hpp"
+#include "selected-address-ranges.hpp"
 #include "shadow-registers.hpp"
 #include "shadow-tlb.hpp"
 #include "step-log-hash.hpp"
@@ -75,10 +73,11 @@ class replay_step_state_access :
     public i_prefer_shadow_state<replay_step_state_access<Dumper>> {
 public:
     struct context {
-        step_log log;              ///< Parsed step log (witnessed tree)
-        mock_address_ranges ars{}; ///< Array of address ranges
-        hot_tlb_state tlb{};       ///< Hot TLB cache for validated entries
-        Dumper dumper{};           ///< Receives the dump
+        step_log log;                ///< Parsed step log (witnessed tree)
+        selected_address_ranges ars; ///< Address ranges built from the PMA entries read so far
+        address_range sentinel;      ///< Empty address range returned when no PMA entry matches
+        hot_tlb_state tlb{};         ///< Hot TLB cache for validated entries
+        Dumper dumper{};             ///< Receives the dump
     };
 
 private:
@@ -223,33 +222,24 @@ private:
     }
     // LCOV_EXCL_STOP
 
-    std::pair<uint64_t, uint64_t> do_read_pma_bounds(uint64_t index) const {
+    pmas_entry do_read_pma_entry(uint64_t index) const {
         assert(index < PMA_MAX);
-        // An entry read_pma already built has these bounds; otherwise read them from the log.
-        auto &mock = m_context.ars[index];
-        if (!std::holds_alternative<std::monostate>(mock)) {
-            const auto &ar = get_mock_address_range(mock, [](const char *err) { THROW(std::runtime_error, err); });
-            return {ar.get_start(), ar.get_length()};
+        // An entry read_pma already built has these fields; otherwise read them from the log.
+        if (const auto *ar = m_context.ars.find(index)) {
+            return {.istart = ar->get_istart(), .ilength = ar->get_length()};
         }
-        return {read_pmas_istart(index) & PMA_ISTART_START_MASK, read_pmas_ilength(index)};
+        return {.istart = read_pmas_istart(index), .ilength = read_pmas_ilength(index)};
     }
 
     address_range &do_read_pma(uint64_t index) const {
         if (index >= PMA_MAX) [[unlikely]] {
-            static address_range sentinel{"sentinel"};
-            return sentinel;
+            return m_context.sentinel;
         }
         // record_step_state_access will have recorded the access to istart and
         // ilength in its implementation of read_pma.
         const uint64_t istart = read_pmas_istart(index);
         const uint64_t ilength = read_pmas_ilength(index);
-        const auto i = static_cast<size_t>(index);
-        const auto abrt = [](const char *err) { THROW(std::runtime_error, err); };
-        if (std::holds_alternative<std::monostate>(m_context.ars[i])) {
-            m_context.ars[i] = make_mock_address_range(istart, ilength, abrt);
-        }
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        return get_mock_address_range(m_context.ars[index], abrt);
+        return m_context.ars.select(index, istart, ilength, [](const char *err) { THROW(std::runtime_error, err); });
     }
 
     template <typename T, typename A>

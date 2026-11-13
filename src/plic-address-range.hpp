@@ -54,7 +54,7 @@ class plic_address_range final : public address_range {
 
 public:
     template <typename ABRT>
-    explicit plic_address_range(ABRT abrt) :
+    explicit constexpr plic_address_range(ABRT abrt) :
         address_range("PLIC device", AR_PLIC_START, AR_PLIC_LENGTH, m_plic_flags, abrt) {
         ;
     }
@@ -63,9 +63,13 @@ public:
     plic_address_range &operator=(const plic_address_range &other) = default;
     plic_address_range(plic_address_range &&other) = default;
     plic_address_range &operator=(plic_address_range &&other) = default;
-    ~plic_address_range() override = default;
+    constexpr ~plic_address_range() override = default;
 
 private:
+    const char *do_get_description() const noexcept override {
+        return "PLIC device";
+    }
+
     bool do_read_device(i_device_state_access *a, uint64_t offset, int log2_size,
         uint64_t *pval) const noexcept override;
     execute_status do_write_device(i_device_state_access *a, uint64_t offset, int log2_size,

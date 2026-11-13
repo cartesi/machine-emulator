@@ -19,7 +19,6 @@
 
 #include <cstdint>
 
-#include "address-range.hpp"
 #include "pmas-constants.hpp"
 #include "pmas.hpp"
 
@@ -55,44 +54,6 @@ uint64_t find_pma_index(uint64_t paddr, ENTRY entry) {
     return PMA_MAX;
 }
 
-/// \brief Returns address range associated to the PMA entry where a word falls.
-/// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param paddr Target physical address of word.
-/// \param index Receives index where PMA entry was found.
-/// \returns Address range where word falls, or empty sentinel.
-template <typename T, typename STATE_ACCESS>
-auto &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
-    [[maybe_unused]] auto note = a.make_scoped_note("find_pma");
-    if constexpr (requires { a.template find_pma<T>(paddr, index); }) {
-        return a.template find_pma<T>(paddr, index);
-    } else {
-        index = find_pma_index<T>(paddr, [a](uint64_t i) {
-            if constexpr (requires { a.read_pma_bounds(i); }) {
-                const auto [start, length] = a.read_pma_bounds(i);
-                return pmas_entry{.istart = start, .ilength = length};
-            } else {
-                const auto &ar = a.read_pma(i);
-                return pmas_entry{.istart = ar.get_istart(), .ilength = ar.get_length()};
-            }
-        });
-        return a.read_pma(index);
-    }
-}
-
-/// \brief Returns address range associated to the PMA entry where a word falls.
-/// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param paddr Target physical address of word.
-/// \returns Address range where word falls, or empty sentinel.
-template <typename T, typename STATE_ACCESS>
-FORCE_INLINE auto &find_pma(const STATE_ACCESS a, uint64_t paddr) {
-    uint64_t index = 0;
-    return find_pma<T>(a, paddr, index);
-}
-
 } // namespace cartesi
 
-#endif // FIND_PMA_ENTRY_H
+#endif

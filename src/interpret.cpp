@@ -107,7 +107,6 @@
 #include "assert-printf.hpp"
 #include "compiler-defines.hpp"
 #include "device-state-access.hpp"
-#include "find-pma.hpp"
 #include "i-accept-counters.hpp" // IWYU pragma: keep
 #include "i-interactive-state-access.hpp"
 #include "i-state-access.hpp"
@@ -1003,7 +1002,7 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(const STATE_
         return {false, pc};
     }
     uint64_t pma_index = 0;
-    const auto &ar = find_pma<T>(a, paddr, pma_index);
+    const auto &ar = a.template find_pma<T>(paddr, pma_index);
     if (ar.is_readable()) [[likely]] {
         if (ar.is_memory()) [[likely]] {
             [[maybe_unused]] auto note = a.make_scoped_note("read memory");
@@ -1122,7 +1121,7 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(c
         return {execute_status::failure, pc};
     }
     uint64_t pma_index = 0;
-    auto &ar = find_pma<T>(a, paddr, pma_index);
+    auto &ar = a.template find_pma<T>(paddr, pma_index);
     if (ar.is_writeable()) [[likely]] {
         if (ar.is_memory()) [[likely]] {
             const auto faddr = replace_tlb_entry<TLB_WRITE>(a, vaddr, paddr, pma_index);
@@ -5572,7 +5571,7 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(const STATE_ACCESS a, u
         return fetch_status::exception;
     }
     // Walk memory map to find the range that contains the physical address
-    const auto &ar = find_pma<uint16_t>(a, paddr, pma_index);
+    const auto &ar = a.template find_pma<uint16_t>(paddr, pma_index);
     // We only execute directly from RAM (as in "random access memory")
     // If the range is not memory or not executable, this as a PMA violation
     if (!ar.is_memory() || !ar.is_executable()) [[unlikely]] {

@@ -46,7 +46,7 @@ class htif_address_range final : public address_range {
 
 public:
     template <typename ABRT>
-    explicit htif_address_range(ABRT abrt) :
+    explicit constexpr htif_address_range(ABRT abrt) :
         address_range("HTIF device", AR_HTIF_START, AR_HTIF_LENGTH, m_htif_flags, abrt) {
         ;
     }
@@ -55,9 +55,13 @@ public:
     htif_address_range &operator=(const htif_address_range &other) = default;
     htif_address_range(htif_address_range &&other) = default;
     htif_address_range &operator=(htif_address_range &&other) = default;
-    ~htif_address_range() override = default;
+    constexpr ~htif_address_range() override = default;
 
 private:
+    const char *do_get_description() const noexcept override {
+        return "HTIF device";
+    }
+
     bool do_read_device(i_device_state_access *a, uint64_t offset, int log2_size,
         uint64_t *pval) const noexcept override;
     execute_status do_write_device(i_device_state_access *a, uint64_t offset, int log2_size,

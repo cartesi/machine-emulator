@@ -130,15 +130,20 @@ private:
 
     address_range &do_read_pma(uint64_t index) const {
         if (index >= PMA_MAX) [[unlikely]] {
-            static address_range sentinel{"sentinel"};
+            static address_range sentinel{};
             return sentinel;
         }
-        // replay_step_state_access reconstructs a mock_address_range from the
+        // replay_step_state_access builds its address range from the
         // corresponding istart and ilength fields in the shadow pmas
         // so we mark the page where they live here
         m_recorder.touch_range(pmas_get_abs_addr(index, pmas_what::istart), sizeof(uint64_t));
         m_recorder.touch_range(pmas_get_abs_addr(index, pmas_what::ilength), sizeof(uint64_t));
         return m_m.read_pma(index);
+    }
+
+    pmas_entry do_read_pma_entry(uint64_t index) const {
+        const auto &ar = do_read_pma(index);
+        return {.istart = ar.get_istart(), .ilength = ar.get_length()};
     }
 
     template <typename T, typename A>

@@ -34,13 +34,17 @@ extern template interpreter_break_reason interpret(uarch_bridge_state_access a, 
 
 } // namespace cartesi
 
+// PMA lookups of the mcycle being advanced. Guest RAM returns to its pristine contents before every
+// mcycle, so the cache starts empty each time. Each guest instruction and each page touched is paid for
+// in the proof: page-aligned, the cache occupies one page, and constant-initialized at namespace scope,
+// it needs no initialization or destructor registration at run time.
+static_assert(sizeof(uarch_pma_cache) <= AR_PAGE_SIZE);
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+alignas(AR_PAGE_SIZE) static constinit uarch_pma_cache pmas;
+
 /// \brief  Advances one mcycle by executing the "big machine interpreter" compiled to the uarch
 /// \return This function never returns
 extern "C" NO_RETURN void interpret_next_mcycle_with_uarch() {
-    // Let the state accessor be on static memory storage to speed up uarch initialization
-    // The cache fits one witness page.
-    static_assert(sizeof(uarch_pma_cache) <= AR_PAGE_SIZE);
-    alignas(AR_PAGE_SIZE) static uarch_pma_cache pmas;
     const uarch_bridge_state_access a(pmas);
     const uint64_t mcycle_end = a.read_mcycle() + 1;
     interpret(a, mcycle_end);

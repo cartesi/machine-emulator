@@ -50,7 +50,7 @@ class machine_address_ranges {
     address_range_descriptions m_descrs;               ///< Address range descriptions for users
     int m_shadow_state_index;                          ///< Index of shadow state address range
     int m_shadow_uarch_state_index;                    ///< Index of shadow uarch state address range
-    address_range m_sentinel{"sentinel"};
+    address_range m_sentinel;
 
 public:
     /// \brief Constructor

@@ -46,6 +46,7 @@ struct memory_address_range_config {
 /// \brief An address range occupied by memory
 
 class memory_address_range final : public address_range {
+    std::string m_description;            ///< Description for use in error messages
     os::mapped_memory m_mapped;           ///< Pointer to mapped memory
     memory_address_range_config m_config; ///< Memory configuration passed to constructor.
     backing_store_config m_backing_store; ///< Backing store configuration passed to constructor.
@@ -88,6 +89,10 @@ public:
     }
 
 private:
+    const char *do_get_description() const noexcept override {
+        return m_description.c_str();
+    }
+
     unsigned char *do_get_host_memory() noexcept override {
         return m_mapped.get_ptr();
     }

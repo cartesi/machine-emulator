@@ -24,13 +24,14 @@
 #include <cstdarg>
 #include <cstdint>
 #include <type_traits>
-#include <utility>
 
 #include "address-range.hpp"
 #include "assert-printf.hpp"
+#include "find-pma.hpp"
 #include "i-prefer-shadow-state.hpp"
 #include "machine-hash.hpp"
 #include "meta.hpp"
+#include "pmas.hpp"
 #include "poor-type-name.hpp"
 #include "riscv-warl.hpp"
 #include "shadow-registers.hpp"
@@ -311,11 +312,21 @@ public:
         return ar;
     }
 
-    /// \brief Reads PMA bounds without constructing a replay descriptor.
-    std::pair<uint64_t, uint64_t> read_pma_bounds(uint64_t index) const
-        requires requires { derived().do_read_pma_bounds(index); }
-    {
-        return derived().do_read_pma_bounds(index);
+    /// \brief Reads the raw PMA entry at a given index, without constructing its address range.
+    /// \param index Index of PMA, below PMA_MAX
+    pmas_entry read_pma_entry(uint64_t index) const {
+        return derived().do_read_pma_entry(index);
+    }
+
+    /// \brief Returns address range associated to the PMA entry where a word falls.
+    /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
+    /// \param paddr Target physical address of word.
+    /// \param index Receives index where PMA entry was found.
+    /// \returns Address range where word falls, or empty sentinel.
+    template <typename T>
+    auto &find_pma(uint64_t paddr, uint64_t &index) const {
+        [[maybe_unused]] auto note = derived().make_scoped_note("find_pma");
+        return derived().template do_find_pma<T>(paddr, index);
     }
 
     /// \brief Converts a target physical address to the implementation-defined fast address
@@ -488,6 +499,14 @@ public:
 
     constexpr const char *get_name() const {
         return derived().do_get_name();
+    }
+
+protected:
+    // Default implementation. The uarch bridge overrides it with a cache of recent hits.
+    template <typename T>
+    auto &do_find_pma(uint64_t paddr, uint64_t &index) const {
+        index = find_pma_index<T>(paddr, [this](uint64_t i) { return read_pma_entry(i); });
+        return read_pma(index);
     }
 };
 

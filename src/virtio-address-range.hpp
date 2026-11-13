@@ -252,6 +252,7 @@ struct virtq {
 
 /// \brief VirtIO device common interface
 class virtio_address_range : public address_range {
+    const char *m_description;        ///< Description for use in error messages
     uint32_t virtio_idx = 0;          ///< VirtIO device index
     uint32_t int_status = 0;          ///< Interrupt status mask (see virtio_status)
     uint32_t device_id = 0;           ///< Device id (see virtio_devices)
@@ -439,6 +440,10 @@ public:
 
 private:
     // Address range interface
+    const char *do_get_description() const noexcept override {
+        return m_description;
+    }
+
     bool do_read_device(i_device_state_access *a, uint64_t offset, int log2_size,
         uint64_t *pval) const noexcept override;
 

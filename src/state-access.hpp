@@ -447,6 +447,11 @@ private:
         return m_m.read_pma(index);
     }
 
+    pmas_entry do_read_pma_entry(uint64_t index) const {
+        const auto &ar = m_m.read_pma(index);
+        return {.istart = ar.get_istart(), .ilength = ar.get_length()};
+    }
+
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
         int write_length_log2_size) const {
         if (data == nullptr) {

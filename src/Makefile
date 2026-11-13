@@ -247,6 +247,8 @@ INTERPRET_CXXFLAGS+=-fno-gcse
 INTERPRET_CXXFLAGS+=-fno-crossjumping
 # The interpreter dispatch loop performs better as a big inlined function
 INTERPRET_CXXFLAGS+=-finline-limit=1024
+# All interpreter instantiations share one inlining growth budget, the default is too small to inline the hot loop
+INTERPRET_CXXFLAGS+=--param inline-unit-growth=200
 # The interpreter hot loop is big and puts pressure on register allocation, this improves register use
 INTERPRET_CXXFLAGS+=-frename-registers -fweb
 # The interpreter instruction dispatch is big, the following reduces its size minimizing CPU cache pressure

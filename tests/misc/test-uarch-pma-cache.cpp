@@ -21,7 +21,7 @@
 #include <stdexcept>
 
 #include "find-pma.hpp"
-#include "mock-address-range.hpp"
+#include "selected-address-ranges.hpp"
 #include "uarch-pma-cache.hpp"
 
 using namespace cartesi;
@@ -38,25 +38,18 @@ void require(bool condition) {
     }
 }
 
-// Use the polymorphic replay factory for the shared lookup; the guest uses its
-// compact ranges. The raw-bounds accessor validates only selected entries;
-// the address range accessor below validates every probe.
+// Reads PMA entries the way the machine replayer does.
 struct shared_access {
     const pmas_state &entries;
-    mock_address_ranges ranges{};
-    address_range sentinel{"sentinel"};
+    selected_address_ranges ranges{};
+    address_range sentinel{};
 
-    int make_scoped_note(const char *) const {
-        return 0;
-    }
-
-    std::pair<uint64_t, uint64_t> read_pma_bounds(uint64_t index) {
+    pmas_entry read_pma_entry(uint64_t index) {
         require(index < PMA_MAX);
-        if (!std::holds_alternative<std::monostate>(ranges[index])) {
-            const auto &ar = get_mock_address_range(ranges[index], fail);
-            return {ar.get_start(), ar.get_length()};
+        if (const auto *ar = ranges.find(index)) {
+            return {.istart = ar->get_istart(), .ilength = ar->get_length()};
         }
-        return {entries[index].istart & PMA_ISTART_START_MASK, entries[index].ilength};
+        return entries[index];
     }
 
     address_range &read_pma(uint64_t index) {
@@ -64,38 +57,16 @@ struct shared_access {
         if (index == PMA_MAX) {
             return sentinel;
         }
-        auto &mock = ranges[index];
-        if (std::holds_alternative<std::monostate>(mock)) {
-            mock = make_mock_address_range(entries[index].istart, entries[index].ilength, fail);
-        }
-        return get_mock_address_range(mock, fail);
+        return ranges.select(index, entries[index].istart, entries[index].ilength, fail);
     }
 };
 
-// find_pma takes its accessor by value, just like the production accessors.
-struct shared_access_ref {
-    shared_access &state;
-    int make_scoped_note(const char *) const {
-        return 0;
-    }
-    std::pair<uint64_t, uint64_t> read_pma_bounds(uint64_t index) const {
-        return state.read_pma_bounds(index);
-    }
-    address_range &read_pma(uint64_t index) const {
-        return state.read_pma(index);
-    }
-};
-
-// No read_pma_bounds: exercise the address range search body with an independent cache.
-struct range_access_ref {
-    shared_access &state;
-    int make_scoped_note(const char *) const {
-        return 0;
-    }
-    address_range &read_pma(uint64_t index) const {
-        return state.read_pma(index);
-    }
-};
+// The lookup every host accessor runs by default (i_state_access::do_find_pma).
+template <typename T>
+address_range &shared_find(shared_access &access, uint64_t paddr, uint64_t &index) {
+    index = find_pma_index<T>(paddr, [&](uint64_t i) { return access.read_pma_entry(i); });
+    return access.read_pma(index);
+}
 
 uint64_t comparisons = 0;
 
@@ -117,16 +88,11 @@ uint64_t reference_index(const pmas_state &entries, uint64_t paddr) {
 }
 
 template <typename T>
-void compare(uint64_t paddr, const pmas_state &entries, shared_access &access, shared_access &ranges,
-    uarch_pma_cache &cache) {
+void compare(uint64_t paddr, const pmas_state &entries, shared_access &access, uarch_pma_cache &cache) {
     const auto expected = reference_index<T>(entries, paddr);
     uint64_t shared_index = UINT64_MAX;
     uint64_t guest_index = UINT64_MAX;
-    const auto &a = find_pma<T>(shared_access_ref{access}, paddr, shared_index);
-    uint64_t range_index = UINT64_MAX;
-    const auto &range = find_pma<T>(range_access_ref{ranges}, paddr, range_index);
-    require(range_index == shared_index);
-    require(range.get_start() == a.get_start() && range.get_length() == a.get_length());
+    const auto &a = shared_find<T>(access, paddr, shared_index);
     const auto &b = cache.find<T>(
         paddr, guest_index,
         [&](uint64_t i) {
@@ -169,13 +135,12 @@ void differential_cases() {
                 entries[0] = ram;
             }
             shared_access access{entries};
-            shared_access ranges{entries};
             uarch_pma_cache cache;
             auto query = [&](uint64_t paddr) {
-                compare<uint8_t>(paddr, entries, access, ranges, cache);
-                compare<uint16_t>(paddr, entries, access, ranges, cache);
-                compare<uint32_t>(paddr, entries, access, ranges, cache);
-                compare<uint64_t>(paddr, entries, access, ranges, cache);
+                compare<uint8_t>(paddr, entries, access, cache);
+                compare<uint16_t>(paddr, entries, access, cache);
+                compare<uint32_t>(paddr, entries, access, cache);
+                compare<uint64_t>(paddr, entries, access, cache);
             };
             for (unsigned pass = 0; pass < 2; ++pass) {
                 for (uint64_t i = 0; i < count; ++i) {
@@ -225,34 +190,22 @@ void cache_cases() {
 }
 
 void malformed_cases() {
-    // A RAM hit never probes index 1. All three lookup implementations deliberately
+    // A RAM hit never probes index 1. Both lookup implementations deliberately
     // accept its malformed length; whole-table validation is not the contract.
     for (bool corrupt_ram : {false, true}) {
         pmas_state entries{};
         entries[0] = {.istart = 0x8000 | 0xfd, .ilength = corrupt_ram ? 4095U : 4096U};
         entries[1] = {.istart = 0x2000 | 0xfd, .ilength = 4095};
         shared_access access{entries};
-        shared_access ranges{entries};
         uarch_pma_cache cache;
         bool shared_rejected = false;
-        bool range_rejected = false;
         bool guest_rejected = false;
         uint64_t index = UINT64_MAX;
         try {
-            require(find_pma<uint64_t>(shared_access_ref{access}, 0x8000, index).get_start() == 0x8000);
+            require(shared_find<uint64_t>(access, 0x8000, index).get_start() == 0x8000);
             require(index == 0);
         } catch (const std::runtime_error &) {
             shared_rejected = true;
-        }
-        try {
-            uint64_t range_index = UINT64_MAX;
-            const auto &range = find_pma<uint64_t>(range_access_ref{ranges}, 0x8000, range_index);
-            require(!shared_rejected);
-            require(range_index == index);
-            const auto &selected = access.read_pma(index);
-            require(range.get_start() == selected.get_start() && range.get_length() == selected.get_length());
-        } catch (const std::runtime_error &) {
-            range_rejected = true;
         }
         try {
             require(cache.find<uint64_t>(
@@ -262,7 +215,7 @@ void malformed_cases() {
         } catch (const std::runtime_error &) {
             guest_rejected = true;
         }
-        require(shared_rejected == corrupt_ram && range_rejected == corrupt_ram && guest_rejected == corrupt_ram);
+        require(shared_rejected == corrupt_ram && guest_rejected == corrupt_ram);
     }
 }
 
@@ -272,27 +225,15 @@ void nonmatching_malformed_cases() {
         entries[0] = {.istart = 0x8000 | 0xfd, .ilength = 4095};
         entries[1] = {.istart = 0x2000 | 0xfd, .ilength = 4096};
         shared_access access{entries};
-        shared_access ranges{entries};
         uarch_pma_cache cache;
         const uint64_t address = match_invalid ? 0x8000 : 0x2000;
         uint64_t shared_index = UINT64_MAX, guest_index = UINT64_MAX;
         bool shared_rejected = false, guest_rejected = false;
         try {
-            find_pma<uint64_t>(shared_access_ref{access}, address, shared_index);
+            shared_find<uint64_t>(access, address, shared_index);
         } catch (const std::runtime_error &) {
             shared_rejected = true;
         }
-        // The only permitted disagreement is rejection of a malformed nonselected
-        // probe: the address range path rejects RAM even when the raw path selects index 1.
-        bool range_rejected = false;
-        uint64_t range_index = UINT64_MAX;
-        try {
-            find_pma<uint64_t>(range_access_ref{ranges}, address, range_index);
-        } catch (const std::runtime_error &) {
-            range_rejected = true;
-        }
-        require(range_rejected);
-        require(shared_rejected == range_rejected || (!match_invalid && shared_index == 1));
         try {
             cache.find<uint64_t>(address, guest_index, [&](uint64_t i) { return entries[i]; }, fail);
         } catch (const std::runtime_error &) {
@@ -312,7 +253,7 @@ void cached_entry_cases() {
     uarch_pma_cache cache;
     auto query = [&](uint64_t address, uint64_t expected) {
         uint64_t shared_index = UINT64_MAX, guest_index = UINT64_MAX;
-        const auto &a = find_pma<uint64_t>(shared_access_ref{access}, address, shared_index);
+        const auto &a = shared_find<uint64_t>(access, address, shared_index);
         const auto &b = cache.find<uint64_t>(address, guest_index, [&](uint64_t i) { return entries[i]; }, fail);
         require(shared_index == expected && guest_index == expected);
         require(a.get_start() == b.get_start() && a.get_length() == b.get_length());
@@ -336,7 +277,7 @@ int main() {
     malformed_cases();
     nonmatching_malformed_cases();
     cached_entry_cases();
-    std::printf("%llu raw/address range/cache index and bounds comparisons passed; malformed rejection policy and "
+    std::printf("%llu shared/cache index and bounds comparisons passed; malformed rejection policy and "
                 "cached entries checked\n",
         static_cast<unsigned long long>(comparisons));
 }

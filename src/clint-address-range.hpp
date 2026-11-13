@@ -46,7 +46,7 @@ class clint_address_range final : public address_range {
 
 public:
     template <typename ABRT>
-    explicit clint_address_range(ABRT abrt) :
+    explicit constexpr clint_address_range(ABRT abrt) :
         address_range("CLINT device", AR_CLINT_START, AR_CLINT_LENGTH, m_clint_flags, abrt) {
         ;
     }
@@ -55,9 +55,13 @@ public:
     clint_address_range &operator=(const clint_address_range &other) = default;
     clint_address_range(clint_address_range &&other) = default;
     clint_address_range &operator=(clint_address_range &&other) = default;
-    ~clint_address_range() override = default;
+    constexpr ~clint_address_range() override = default;
 
 private:
+    const char *do_get_description() const noexcept override {
+        return "CLINT device";
+    }
+
     bool do_read_device(i_device_state_access *a, uint64_t offset, int log2_size,
         uint64_t *pval) const noexcept override;
     execute_status do_write_device(i_device_state_access *a, uint64_t offset, int log2_size,

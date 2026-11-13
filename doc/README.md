@@ -7817,10 +7817,10 @@ tracking used for other writes.
 Lookup probes index 0 first, then binary-searches the sorted tail,
 treating empty entries as having an infinite start address. A miss
 returns the synthetic empty PMA entry at PMA_MAX, outside the serialized
-array. Replay compares raw bounds before constructing and validating the
-selected address range. A malformed entry rejected by the search is not
-validated, even if its raw bounds were probed. Previously cached PMA
-entries remain authoritative for later lookups.
+array. Lookup compares raw PMA entries and constructs and validates only
+the selected address range. A malformed entry rejected by the search is
+not validated, even if it was probed. Previously cached PMA entries
+remain authoritative for later lookups.
 
 ### Linux setup
 

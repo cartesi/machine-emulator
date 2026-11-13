@@ -18,7 +18,7 @@ SECTIONS
     *(.text.interpret_next_mcycle_with_uarch*)
     *(.text._ZN7cartesiL25translate_virtual_address*)
     *(.text._ZN7cartesiL13assert_no_brk*)
-    *(.text._ZN7cartesi19uarch_address_range10initialize*)
+    *(.text._ZN7cartesi23selected_address_ranges6select*)
     *(.text._ZN7cartesiL24read_virtual_memory_slowI[lm]*)
     *(.text._ZN7cartesiL25write_virtual_memory_slowI[lm]*)
     *(.text._ZN7cartesiL24read_virtual_memory_slowI[ij]*)

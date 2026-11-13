@@ -454,6 +454,12 @@ private:
         return m_m.read_pma(index);
     }
 
+    pmas_entry do_read_pma_entry(uint64_t index) const {
+        assert(index < PMA_MAX);
+        const auto &ar = m_m.read_pma(index);
+        return {.istart = ar.get_istart(), .ilength = ar.get_length()};
+    }
+
     template <typename T, typename A>
     void do_read_memory_word(host_addr haddr, uint64_t pma_index, T *pval) const {
         (void) pma_index;

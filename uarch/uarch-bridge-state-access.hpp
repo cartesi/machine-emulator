@@ -68,11 +68,6 @@ public:
         }
     }
 
-    template <typename T>
-    uarch_address_range &find_pma(uint64_t paddr, uint64_t &index) const {
-        return m_pmas.find<T>(paddr, index, bridge_read_pma_entry, abort_pma);
-    }
-
 private:
     static uint64_t bridge_read_reg(machine_reg reg) {
         return ua_aliased_aligned_read<uint64_t>(machine_reg_address(reg));
@@ -143,8 +138,18 @@ private:
         return false;
     }
 
-    uarch_address_range &do_read_pma(uint64_t index) const {
+    address_range &do_read_pma(uint64_t index) const {
         return m_pmas.read(index, bridge_read_pma_entry, abort_pma);
+    }
+
+    template <typename T>
+    address_range &do_find_pma(uint64_t paddr, uint64_t &index) const {
+        return m_pmas.find<T>(paddr, index, bridge_read_pma_entry, abort_pma);
+    }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    pmas_entry do_read_pma_entry(uint64_t index) const {
+        return bridge_read_pma_entry(index);
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

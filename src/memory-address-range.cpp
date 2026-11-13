@@ -64,6 +64,7 @@ memory_address_range::memory_address_range(const std::string &description, uint6
     const pmas_flags &flags, const backing_store_config &backing_store,
     const memory_address_range_config &memory_config) try :
     address_range(description.c_str(), start, length, flags, throw_invalid_argument),
+    m_description{description},
     m_mapped{std::max(memory_config.host_length, length), check_mmap_flags(flags, backing_store, memory_config),
         backing_store.data_filename, length},
     m_config{memory_config},

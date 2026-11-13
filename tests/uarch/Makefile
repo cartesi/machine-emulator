@@ -27,7 +27,7 @@ RISCV_OBJCOPY ?= $(RISCV_PREFIX)objcopy -S -O binary
 HOST_CXX ?= c++
 
 # Tests provided by us
-TESTS = fence ebreak ecall-putchar ecall-unsupported ecall-removed-mark-page-dirty ecall-write-tlb \
+TESTS = fence ebreak ecall-putchar ecall-unsupported ecall-removed-mark-page-dirty ecall-write-tlb ecall-write-tlb-invalid \
 	custom-pristine-halt-before-limit custom-pristine-halt-at-limit custom-pristine-overflow
 SRC_DIR = $(abspath .)
 BUILDDIR ?= $(abspath ./build)

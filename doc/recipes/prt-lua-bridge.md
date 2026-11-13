@@ -575,6 +575,11 @@ one the honest player's account joined, the accepted machine and outputs root
 match `checkpoints/epoch-N+1/`, no account has anything pending, and the root
 bond has been recovered.
 
+The harness also runs a sentinel next to the players. It has no account, and it
+computes its own checkpoints in `players/sentinel/checkpoints/` from the
+template on. A run succeeds only if the sentinel reported no anomaly and its
+last checkpoint has the honest player's final state and outputs root.
+
 With `PRT_TEST_REORG=yes`, the harness snapshots the chain before each pass of
 epoch one. Once a child tournament (a root join in smoke mode) is mined, it
 mines one block at a time until the players have observed it at their dispute

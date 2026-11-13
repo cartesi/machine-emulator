@@ -81,6 +81,8 @@ if mode ~= "smoke" then
         players[#players + 1] = player
     end
 end
+-- A sentinel signs nothing. It watches every epoch, and a normal story leaves it nothing to report.
+players[#players + 1] = { label = "sentinel", mode = "sentinel", first_epoch = 0 }
 
 -- Each player keeps its state in players/<label>/ and runs under a supervisor that relaunches it
 -- when it exits. Stopping the supervisors stops the players.
@@ -105,18 +107,21 @@ end
 fs.create_directory("players")
 for _, player in ipairs(players) do
     local directory = "players/" .. player.label
-    local account = assert(signers[player.label], "player has no account")
     fs.create_directory(directory)
+    -- A sentinel computes its own checkpoints, from the template on, as one without a validator would
+    local checkpoints = "checkpoints"
+    if player.mode == "sentinel" then
+        checkpoints = directory .. "/checkpoints"
+        fs.create_directory(checkpoints)
+        prt.store_first_epoch_checkpoint(initial_hash, geometry, checkpoints .. "/epoch-0")
+    end
     local arguments = {
-        "--mode=validator",
+        "--mode=" .. (player.mode or "validator"),
         "--rpc=" .. rpc_url,
         "--application=" .. app,
-        "--keystore=" .. account.keystore,
-        "--password-file=" .. account.password_file,
         "--state=" .. directory,
-        "--checkpoints=checkpoints",
+        "--checkpoints=" .. checkpoints,
         "--dave=" .. prt_deploy.dave_directory,
-        "--kind=" .. player.kind,
         "--label=" .. player.label,
         "--first-epoch=" .. player.first_epoch,
         "--cleanup=" .. (player.cleanup or "yes"),
@@ -124,11 +129,19 @@ for _, player in ipairs(players) do
         "--dispute-policy=" .. tostring(dispute_policy),
         "--status-file=" .. get_status_path(player),
         "--ws=" .. rpc_url:gsub("^http", "ws"),
-        "--bump-blocks=" .. (os.getenv("PRT_FEE_BUMP_BLOCKS") or "3"),
-        "--bump-percent=" .. (os.getenv("PRT_FEE_BUMP_PERCENT") or "15"),
-        "--max-fee=" .. (os.getenv("PRT_MAX_FEE_PER_GAS") or "100000000000"),
-        "--max-priority-fee=" .. (os.getenv("PRT_MAX_PRIORITY_FEE_PER_GAS") or "10000000000"),
     }
+    if player.mode ~= "sentinel" then
+        local account = assert(signers[player.label], "player has no account")
+        table.move({
+            "--keystore=" .. account.keystore,
+            "--password-file=" .. account.password_file,
+            "--kind=" .. player.kind,
+            "--bump-blocks=" .. (os.getenv("PRT_FEE_BUMP_BLOCKS") or "3"),
+            "--bump-percent=" .. (os.getenv("PRT_FEE_BUMP_PERCENT") or "15"),
+            "--max-fee=" .. (os.getenv("PRT_MAX_FEE_PER_GAS") or "100000000000"),
+            "--max-priority-fee=" .. (os.getenv("PRT_MAX_PRIORITY_FEE_PER_GAS") or "10000000000"),
+        }, 1, 7, #arguments + 1, arguments)
+    end
     local supervisor = command.run({
         "sh",
         "-c",
@@ -629,6 +642,15 @@ play(second)
 
 local _, _, manifest = prt.load_epoch_checkpoint(get_checkpoint_directory(second.epoch + 1))
 assert(manifest.output_count == 5, "calculator output history did not continue")
+local _, _, watched = prt.load_epoch_checkpoint("players/sentinel/checkpoints/epoch-" .. (second.epoch + 1))
+assert(
+    watched.final_state_hash == manifest.final_state_hash and watched.outputs_root == manifest.outputs_root,
+    "the sentinel computed another final state"
+)
+-- The default anomaly handler prints each anomaly as a line starting with the player's label
+for line in fs.read_file("players/sentinel/log.txt"):gmatch("[^\n]+") do
+    assert(not line:find("^sentinel: "), "the sentinel reported an anomaly: " .. line)
+end
 local stories = { "Two calculator epochs on Anvil, using the normal empty epoch zero.\n\n" }
 for _, session in ipairs(sessions) do
     stories[#stories + 1] = session.story .. "\n"

@@ -2217,7 +2217,8 @@ static execute_status write_csr_stval(const STATE_ACCESS a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_sip(const STATE_ACCESS a, uint64_t val) {
-    const uint64_t mask = a.read_mideleg();
+    // Only SSIP is writable in sip. STIP and SEIP are read-only there, set and cleared by the execution environment.
+    const uint64_t mask = a.read_mideleg() & MIP_SSIP_MASK;
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);

@@ -1217,7 +1217,8 @@ static auto dump_insn([[maybe_unused]] const STATE_ACCESS a, [[maybe_unused]] ui
 #ifdef DUMP_INSN
     [[maybe_unused]] auto note = a.make_scoped_note("dump_insn");
     uint64_t ppc = pc;
-    if (translate_virtual_address<STATE_ACCESS, false>(a, &ppc, pc, PTE_XWR_X_SHIFT) != translation_result::success) {
+    if (translate_virtual_address<STATE_ACCESS, pte_update_mode::skip_update>(a, &ppc, pc, PTE_XWR_X_SHIFT) !=
+        translation_result::success) {
         d_printf("v    %08" PRIx64, ppc);
     } else {
         d_printf("p    %08" PRIx64, ppc);

@@ -587,15 +587,16 @@ static inline uint32_t get_highest_priority_irq_num(uint32_t v) {
     return ilog2(v); // LCOV_EXCL_LINE
 }
 
-/// \brief At every tick, set interrupt as pending if the timer is expired
+/// \brief At every tick, makes the timer interrupt pending exactly when the timer has expired
 /// \param a Machine state accessor object.
 /// \param mcycle Machine current cycle.
 template <typename STATE_ACCESS>
-static inline void set_rtc_interrupt(const STATE_ACCESS a, uint64_t mcycle) {
-    const uint64_t timecmp_cycle = rtc_time_to_cycle(a.read_clint_mtimecmp());
-    if (timecmp_cycle <= mcycle && timecmp_cycle != 0) {
-        const uint64_t mip = a.read_mip();
-        a.write_mip(mip | MIP_MTIP_MASK);
+static inline void update_rtc_interrupt(const STATE_ACCESS a, uint64_t mcycle) {
+    // The machine timer interrupt is pending exactly while mtime >= mtimecmp, as unsigned integers
+    const bool pending = rtc_cycle_to_time(mcycle) >= a.read_clint_mtimecmp();
+    const uint64_t mip = a.read_mip();
+    if (pending != ((mip & MIP_MTIP_MASK) != 0)) {
+        a.write_mip(mip ^ MIP_MTIP_MASK);
     }
 }
 
@@ -5782,7 +5783,7 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
 
         if (rtc_is_tick(mcycle)) {
             // Set interrupt flag for RTC
-            set_rtc_interrupt(a, mcycle);
+            update_rtc_interrupt(a, mcycle);
 
             // Polling external interrupts only in WFI instructions is not enough
             // because Linux won't execute WFI instructions while under heavy load,

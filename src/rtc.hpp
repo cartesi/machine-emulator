@@ -42,8 +42,11 @@ static inline uint64_t rtc_cycle_to_time(uint64_t cycle) {
 
 /// \brief Converts from time count to cycle count
 /// \param time Time count
-/// \returns Cycle count
+/// \returns Cycle count, or UINT64_MAX when the time is past the last cycle
 static inline uint64_t rtc_time_to_cycle(uint64_t time) {
+    if (time > UINT64_MAX / RTC_FREQ_DIV) {
+        return UINT64_MAX;
+    }
     return time * RTC_FREQ_DIV;
 }
 

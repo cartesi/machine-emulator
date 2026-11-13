@@ -803,7 +803,9 @@ end
 -- reported as deadline_near once the next block is within warning_blocks of its end, and as
 -- missed_deadline once its window closed, while the events still call for it. A job without an end is
 -- reported as stalled_action once it has been due for warning_blocks. Each job is reported once per kind.
--- The epoch is finished once its settlement is irreversible under the retirement policy.
+-- The sentinel also returns the next block at which one of these could first apply, so a harness that
+-- mines ahead stops there. The epoch is finished once its settlement is irreversible under the retirement
+-- policy.
 function methods:watch()
     local snapshot = self:refresh()
     if not snapshot then
@@ -812,23 +814,35 @@ function methods:watch()
     if not snapshot.ready then
         return snapshot, false, snapshot.tip + 1
     end
-    local inclusion = snapshot.tip + 1
+    local inclusion, warning = snapshot.tip + 1, self.warning_blocks
+    local next_block
+    -- The tip at which the next block is the given one
+    local function wake(block)
+        if block > inclusion then
+            next_block = math.min(next_block or block - 1, block - 1)
+        end
+    end
     for _, job in ipairs(self:jobs(snapshot)) do
         local where = job.kind .. " at " .. job.context.address
         if job.last ~= math.maxinteger then
             if inclusion >= job.last then
                 self:report_job(job, "missed_deadline", "%s: its window closed at block %d", where, job.last)
-            elseif inclusion >= job.first and inclusion + self.warning_blocks >= job.last then
+            elseif inclusion >= job.first and inclusion + warning >= job.last then
                 self:report_job(job, "deadline_near", "%s: its window closes at block %d", where, job.last)
             end
-        elseif inclusion >= job.first + self.warning_blocks then
+            wake(job.first)
+            wake(job.last - warning)
+            wake(job.last)
+        elseif inclusion >= job.first + warning then
             self:report_job(job, "stalled_action", "%s: due since block %d", where, job.first)
+        else
+            wake(job.first + warning)
         end
     end
     if snapshot.settled and self.retirement_policy then
         self.finished = eth.small(snapshot.settled.log.blockNumber) <= self.chain:head(self.retirement_policy)
     end
-    return snapshot, false
+    return snapshot, false, next_block
 end
 
 -- Reads the claim geometry from the tournament factory. Level 0 is the mcycle claim, whose stride

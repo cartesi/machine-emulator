@@ -1,46 +1,12 @@
--- Chain transport for the PRT recipe. The signer owns an exclusive account.
+-- JSON-RPC client for the PRT recipe. Signing lives in prt-signer.lua.
 local json = require("dkjson")
 local socket = require("socket")
-local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")
-local fs = require("cartesi.filesystem")
-local eth = require("prt-ethereum")
 
 local M = {}
 local methods = {}
 
-local function quote(value)
-    return "'" .. tostring(value):gsub("'", "'\\''") .. "'"
-end
-
--- A temporary file holding a command's input, if it has one.
-local function new_input_file(input)
-    if input then
-        return fs.write_scope_temp_file(input)
-    end
-end
-
--- Runs a command and returns its output. An input, if given, is read from a temporary file, since the
--- size of a single command argument is limited.
-function M.run(arguments, input)
-    local command = {}
-    for i, value in ipairs(arguments) do
-        assert(not tostring(value):find("\0", 1, true), "NUL in command argument")
-        command[i] = quote(value)
-    end
-    local input_file <close>, input_path = new_input_file(input) -- luacheck: ignore 211
-    if input_path then
-        command[#command + 1] = "< " .. quote(input_path)
-    end
-    local pipe = assert(io.popen(table.concat(command, " ") .. " 2>/dev/null", "r"))
-    local output = pipe:read("a")
-    local ok, why, status = pipe:close()
-    -- Tool diagnostics may contain endpoints, signer paths, or credentials.
-    assert(ok, string.format("%s failed (%s %s)", arguments[1], why, status))
-    return output
-end
-
-local function decode_json(data)
+function M.decode_json(data)
     local result, position, err = json.decode(data, 1, json.null)
     assert(not err and result ~= nil and not data:sub(position):find("%S"), err or "invalid JSON response")
     return result
@@ -123,7 +89,7 @@ function methods:rpc(method, params)
     local body = json.encode({ jsonrpc = "2.0", id = 1, method = method, params = params or {} })
     local status, data = post(self, body)
     assert(status == 200, "RPC HTTP failure: " .. tostring(status))
-    local response = decode_json(data)
+    local response = M.decode_json(data)
     assert(response.jsonrpc == "2.0" and response.id == 1, "unexpected RPC response")
     if response.error then
         return nil, response.error
@@ -189,91 +155,8 @@ function methods:simulate(signer, to, data, value, block)
     })
 end
 
--- All fields are explicit: signing must not choose a nonce or estimate fees.
--- cast signs only the transaction's digest, since the calldata of a proof can exceed the size of a
--- command argument.
-function methods:sign(signer, transaction)
-    local signature = M.run({
-        "cast",
-        "wallet",
-        "sign",
-        "--no-hash",
-        "--keystore",
-        signer.keystore,
-        "--password-file",
-        signer.password_file,
-        cartesi.tohex(eth.transaction_digest(transaction)),
-    }):gsub("%s+$", "")
-    local raw = eth.signed_transaction(transaction, cartesi.fromhex(signature))
-    return raw, self:verify_signed(signer, transaction, raw)
-end
-
-function methods.verify_signed(_, signer, transaction, raw)
-    assert(raw:match("^0x02%x+$") and #raw % 2 == 0, "invalid signed EIP-1559 transaction")
-    local decoded = decode_json(M.run({ "cast", "decode-transaction" }, raw))
-    assert(decoded.signer:lower() == signer.address:lower(), "transaction used the wrong signer")
-    assert(decoded.to:lower() == transaction.to:lower(), "transaction has the wrong destination")
-    assert(decoded.input:lower() == transaction.data:lower(), "transaction calldata differs from the prepared action")
-    for field, expected in pairs({
-        type = 2,
-        chainId = transaction.chain_id,
-        nonce = transaction.nonce,
-        gas = transaction.gas,
-        value = transaction.value,
-        maxFeePerGas = transaction.max_fee,
-        maxPriorityFeePerGas = transaction.priority_fee,
-    }) do
-        assert(evmu.bint(decoded[field]) == evmu.bint(expected), "signed transaction field mismatch: " .. field)
-    end
-    assert(#decoded.accessList == 0, "unexpected transaction access list")
-    assert(type(decoded.hash) == "string" and #decoded.hash == 66, "invalid signed transaction hash")
-    return decoded.hash:lower()
-end
-
 function methods:publish(raw)
     return self:rpc("eth_sendRawTransaction", { raw })
-end
-
-function methods:send(signer, to, data, value)
-    value = value or "0"
-    local _, failure = self:simulate(signer, to, data, value)
-    if failure then
-        -- Anvil reports EVM reverts with code 3. Provider failures must stop the
-        -- run instead of permanently suppressing a potentially legal action.
-        assert(failure.code == 3, "transaction preflight RPC failure: " .. json.encode(failure))
-        return nil, failure
-    end
-    local arguments = {
-        "cast",
-        "send",
-        "--rpc-url",
-        self.url,
-        "--keystore",
-        signer.keystore,
-        "--password-file",
-        signer.password_file,
-        "--json",
-        "--value",
-        tostring(value),
-        to or "--create",
-        data,
-    }
-    local output = M.run(arguments)
-    local receipt = decode_json(output)
-    assert(tonumber(receipt.status) == 1, "mined transaction reverted: " .. receipt.transactionHash)
-    assert(
-        type(receipt.transactionHash) == "string" and #receipt.transactionHash == 66,
-        "receipt lacks transaction hash"
-    )
-    local transaction = assert(self:rpc("eth_getTransactionByHash", { receipt.transactionHash }))
-    assert(transaction.from:lower() == signer.address:lower(), "transaction used the wrong signer")
-    assert(transaction.input:lower() == data:lower(), "transaction calldata differs from the prepared action")
-    assert(
-        (not to and transaction.to == json.null) or (to and transaction.to:lower() == to:lower()),
-        "transaction has the wrong destination"
-    )
-    assert(evmu.bint(transaction.value) == evmu.bint(value), "transaction has the wrong value")
-    return receipt
 end
 
 -- A chain at an http:// URL. Each request waits for its answer up to the timeout in seconds, 60 by

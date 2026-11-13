@@ -23,7 +23,8 @@ local evmu = require("cartesi.evmu")
 local fs = require("cartesi.filesystem")
 local json = require("dkjson")
 local socket = require("socket")
-local cast = require("prt-cast")
+local rpc_client = require("prt-rpc")
+local signing = require("prt-signer")
 local eth = require("prt-ethereum")
 local prt = require("prt")
 local dishonest = require("prt-dishonest")
@@ -44,8 +45,8 @@ end
 local label = options.label or options.kind:match("^[%w_]+")
 local keep_epochs = math.tointeger(tonumber(options.keep_epochs or "1"))
 assert(keep_epochs and keep_epochs >= 0, "invalid number of kept epochs")
-local input_policy = cast.policy(options.input_policy or "finalized")
-local dispute_policy = cast.policy(options.dispute_policy or 4)
+local input_policy = rpc_client.policy(options.input_policy or "finalized")
+local dispute_policy = rpc_client.policy(options.dispute_policy or 4)
 
 -- With PRT_PROFILE=yes, the player times its RPC calls by method, log decoding, each player
 -- handler, and its listener polls and bridge ticks. Its status carries the totals.
@@ -63,7 +64,7 @@ local function measure(name, f, ...)
     return table.unpack(results, 1, results.n)
 end
 
-local chain = cast.new(options.rpc)
+local chain = signing.install(rpc_client.new(options.rpc))
 local function artifact(directory, name)
     return (eth.artifact(options.dave .. "/" .. directory .. "/contracts/out", name))
 end
@@ -105,17 +106,7 @@ local template_hash = assert(chain:call(app, abi:calldata("getTemplateHash", {})
 local geometry = bridge.read_geometry(chain, abi, factory)
 
 local signer = {
-    address = cast.run({
-        "cast",
-        "wallet",
-        "address",
-        "--keystore",
-        options.keystore,
-        "--password-file",
-        options.password_file,
-    })
-        :gsub("%s+$", "")
-        :lower(),
+    address = signing.address(options.keystore, options.password_file),
     keystore = options.keystore,
     password_file = options.password_file,
 }

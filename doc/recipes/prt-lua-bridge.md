@@ -131,7 +131,9 @@ of players, mining, and narration, and exists only in the demo.
 | [prt-log-history.lua](prt-log-history.lua) | Fetch logs incrementally, in pages, and drop the ones a reorg replaced |
 | [prt-transactions.lua](prt-transactions.lua) | Journal signed transactions, reconcile nonces, and replace pending ones within fee limits |
 | [prt-ethereum.lua](prt-ethereum.lua) | Decode events, encode calls, translate coordinates, and serialize proofs |
-| [prt-cast.lua](prt-cast.lua) | JSON-RPC over a persistent HTTP connection, and `cast` for signing |
+| [prt-rpc.lua](prt-rpc.lua) | JSON-RPC over a persistent HTTP connection |
+| [prt-signer.lua](prt-signer.lua) | Sign and check transactions with `cast`, for a player that publishes them |
+| [prt-command.lua](prt-command.lua) | Run external commands such as `cast` |
 | [prt-websocket.lua](prt-websocket.lua) | Subscribe to new block headers over WebSocket |
 | [prt.lua](prt.lua) | The player. Execute inputs, build claims and proofs, and store epochs and checkpoints |
 | [prt-dishonest.lua](prt-dishonest.lua) | The scripted adversaries, built on the same player |

@@ -1,15 +1,14 @@
 -- Real signing, mempool, fee changes, mining, and reorgs on disposable Anvil.
-local cast = require("prt-cast")
+local command = require("prt-command")
+local rpc_client = require("prt-rpc")
+local signing = require("prt-signer")
 local transactions = require("prt-transactions")
 local json = require("dkjson")
 local fs = require("cartesi.filesystem")
 local evmu = require("cartesi.evmu")
-local chain = cast.new(os.getenv("PRT_RPC_URL") or "http://127.0.0.1:8545")
+local chain = signing.install(rpc_client.new(os.getenv("PRT_RPC_URL") or "http://127.0.0.1:8545"))
 local signer = { keystore = "wallets/player-0", password_file = "wallets/password" }
-signer.address =
-    cast.run({ "cast", "wallet", "address", "--keystore", signer.keystore, "--password-file", signer.password_file })
-        :gsub("%s+$", "")
-        :lower()
+signer.address = signing.address(signer.keystore, signer.password_file)
 local destination = "0x0000000000000000000000000000000000000001"
 local function rpc(method, args)
     return assert(chain:rpc(method, args))
@@ -67,28 +66,30 @@ end
 do
     local manager = fresh()
     local small = submit(manager, intent()).candidate
-    local built = cast.run({
-        "cast",
-        "mktx",
-        "--keystore",
-        signer.keystore,
-        "--password-file",
-        signer.password_file,
-        "--chain",
-        tostring(evmu.bint(small.chain_id)),
-        "--nonce",
-        tostring(small.nonce),
-        "--gas-limit",
-        tostring(small.gas),
-        "--gas-price",
-        small.max_fee,
-        "--priority-gas-price",
-        small.priority_fee,
-        "--value",
-        small.value,
-        small.to,
-        small.data,
-    }):gsub("%s+$", "")
+    local built = command
+        .run({
+            "cast",
+            "mktx",
+            "--keystore",
+            signer.keystore,
+            "--password-file",
+            signer.password_file,
+            "--chain",
+            tostring(evmu.bint(small.chain_id)),
+            "--nonce",
+            tostring(small.nonce),
+            "--gas-limit",
+            tostring(small.gas),
+            "--gas-price",
+            small.max_fee,
+            "--priority-gas-price",
+            small.priority_fee,
+            "--value",
+            small.value,
+            small.to,
+            small.data,
+        })
+        :gsub("%s+$", "")
     assert(small.raw == built:lower(), "the encoded transaction differs from cast's")
     mine()
     successful(manager, "work", small.hash)

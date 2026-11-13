@@ -4174,7 +4174,9 @@ io.write(cartesi.RTC_FREQ_DIV)
 ```
 The Core Local Interruptor (or CLINT) controls the timer interrupt.
 The active addresses are&nbsp;`0x0200bff8`&nbsp;(`mtime`) and&nbsp;`0x02004000`&nbsp;(`mtimecmp`).
-The CLINT issues a hardware interrupt whenever&nbsp;`mtime` equals&nbsp;`mtimecmp`.
+The machine timer interrupt is pending while&nbsp;`mtime` is greater than or equal to&nbsp;`mtimecmp`, compared as unsigned integers.
+The CLINT updates it whenever&nbsp;`mtimecmp` is written and whenever&nbsp;`mtime` is incremented.
+A new machine starts with&nbsp;`mtimecmp` at the largest 64-bit value, so no timer interrupt is pending until software programs one.
 Since Cartesi Machines must ensure reproducibility, the processor's clock and the timer are locked by a constant frequency divisor of&nbsp;[]{replace=clint_rtc_freq_div}.
 In other words, `mtime` is incremented once for every []{replace=clint_rtc_freq_div} increments of&nbsp;`mcycle`.
 There is no notion of wall-clock time.

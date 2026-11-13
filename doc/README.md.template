@@ -2327,6 +2327,8 @@ In production code, they should be hard-coded.
 Most CSRs are defined in volumes [1 and 2](https://riscv.org/technical/specifications/) of the ISA specification.
 The Cartesi-specific registers (`iprv`, `iunrep`, `iflags`, the HTIF and CMIO interfaces) are described under the [architecture section](#system-architecture) from the guest perspective.
 The `processor.registers.htif` sub-table holds the initial values of HTIF state.
+Field `ihalt` is a bitmask declaring the available halt commands.
+Its only command, `HTIF_HALT_CMD_HALT`, is mandatory, so the emulator honors it whatever the value of `ihalt`.
 Field `iconsole` is a bitmask declaring whether the emulator honors console-putchar and console-getchar commands.
 Defaults to putchar-only.
 The `cartesi-machine` command-line option `-i`/`--htif-console-getchar` enables getchar.
@@ -3964,6 +3966,8 @@ The letters after RV specify the extension set.
 This selection corresponds to a 64-bit machine, integer arithmetic with multiplication and division, atomic operations, single- and double-precision floating-point arithmetic, and compressed instructions, as well as the optional supervisor and user privilege levels.
 In addition, Cartesi Machines support the Sv39 mode of address translation and memory protection.
 Sv39 provides a 39-bit protected virtual address space, divided into 4KiB pages, organized by a three-level page table.
+Page tables must reside in RAM, the only memory range that supports page-table walks.
+A page-table entry anywhere else raises the access fault of the original access type.
 This set of features creates a balanced compromise between the simplicity demanded by a blockchain implementation and the flexibility expected from off-chain computations.
 
 Even so, the instruction set remains compact.
@@ -4235,6 +4239,8 @@ end
 
 Registers `ihalt`, `iconsole`, and `iyield` are bit masks specifying the commands that are available for the respective devices.
 Unavailable commands are silently ignored by the machine.
+The only exception is command `HTIF_HALT_CMD_HALT` of the Halt device, which is mandatory, so the machine can always halt.
+The machine honors it whatever the value of `ihalt`.
 
 ##### Halt
 

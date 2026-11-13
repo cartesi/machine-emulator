@@ -2364,10 +2364,25 @@ function player_meta.__index:store_uarch_claim() end -- luacheck: ignore 212 sel
 
 -- Reports anomalies the player observes, such as application behavior it defends against but cannot vouch
 -- for (outputs that do not hash to the root the machine holds) or a tournament it could not join. The
--- message, formatted from fmt and its arguments, says where, such as "at input 3". The default prints it
--- after the kind.
+-- message, formatted from fmt and its arguments, says where, such as "at input 3". The player's
+-- anomaly_handler, if set, receives the kind and the message. Without one, or when it raises an error, the
+-- player prints the message after the kind, with the handler's error, and continues.
+local try_handle_anomaly = util.protect(function(handler, kind, message)
+    handler(kind, message)
+    return true
+end)
+
 function player_meta.__index:report_anomaly(kind, fmt, ...)
-    io.stderr:write(string.format("%s: %s %s\n", self.label, kind, string.format(fmt, ...)))
+    local message = string.format(fmt, ...)
+    local handler = self.anomaly_handler
+    if handler then
+        local handled, err = try_handle_anomaly(handler, kind, message)
+        if handled then
+            return
+        end
+        message = message .. " (anomaly handler failed: " .. tostring(err) .. ")"
+    end
+    io.stderr:write(string.format("%s: %s %s\n", self.label, kind, message))
 end
 
 -- Proves the epoch's last output, the only one the player keeps. Other indices are no offer.

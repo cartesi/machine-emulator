@@ -529,6 +529,27 @@ like any others. If the joining window is still open, it joins again with the
 correct claim, which costs another bond. Otherwise it reports that the correct
 claim can no longer enter the epoch.
 
+## Anomalies
+
+A player reports what it observes but cannot fix. Each anomaly has a kind and a
+message that says where, such as `at input 3`. By default the player prints
+`<label>: <kind> <message>` to stderr. With `--anomaly-handler=MODULE`, crisium
+loads the Lua module `MODULE` through `LUA_PATH`. The module returns a function,
+and the player calls it with the kind and the message instead of printing. The
+handler runs inside a pass, so it must return quickly and hand slow work to
+another process. If it raises an error, the player prints the anomaly with the
+error, and continues.
+
+| Kind | Meaning |
+| --- | --- |
+| `outputs_merkle_root_mismatch` | The outputs Merkle root the machine wrote when it accepted an input differs from the root built from the outputs it emitted, or a checkpoint's root differs from its outputs frontier |
+| `oversized_output` | An output declared a length larger than the TX buffer |
+| `unprovable_output` | An output does not prove against the root the settled machine holds |
+| `falling_behind` | More inputs are pending than the gap between the machine cache's boundaries |
+| `unjoined_claim` | A tournament's joining window closed without the player's commitment |
+| `fee_ceiling` | A pending transaction reached the fee ceiling, and keeps its nonce |
+| `insufficient_funds` | The account cannot pay a transaction's gas at its fee cap |
+
 ## The demo harness
 
 Anvil mines submitted transactions immediately, and the harness mines the rest.

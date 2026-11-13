@@ -3940,4 +3940,24 @@ if arg[1] then
     end
 end
 
+-- The anomaly handler receives each anomaly's kind and message, and one that raises an error does not stop
+-- the player, which prints the anomaly instead.
+do
+    local player = new_test_player(nil, prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial"))))
+    local received = {}
+    function player.anomaly_handler(kind, message)
+        received[#received + 1] = kind .. " " .. message
+    end
+    player:report_anomaly("outputs_merkle_root_mismatch", "at input %d", 3)
+    assert(
+        #received == 1 and received[1] == "outputs_merkle_root_mismatch at input 3",
+        "the handler did not receive the anomaly"
+    )
+    function player.anomaly_handler()
+        error("the handler failed")
+    end
+    player:report_anomaly("falling_behind", "at input %d: %d inputs pending", 4, 9)
+    getmetatable(player).__close(player)
+end
+
 print("prt-test: ok")

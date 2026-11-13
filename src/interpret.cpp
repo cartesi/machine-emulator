@@ -126,6 +126,11 @@ enum class rd_kind {
     xN, // rd is a positive natural number (1, 2, 3 ... 31)
 };
 
+enum class write_mode {
+    write,      // write memory
+    skip_write, // raise the exceptions of the write and update the TLB, but do not write
+};
+
 template <typename STATE_ACCESS>
 static inline void DUMP_STATS_INCR([[maybe_unused]] const STATE_ACCESS a, [[maybe_unused]] const char *name) {
 #ifdef DUMP_STATS
@@ -1096,7 +1101,7 @@ static FORCE_INLINE bool read_virtual_memory(const STATE_ACCESS a, uint64_t &pc,
 /// instead it returns a new PC in case an exception is raised. This is because the function
 /// is outlined, and taking PC by reference would cause the compiler to store it in a stack variable
 /// instead of always storing it in register (this is an optimization).
-template <typename T, typename STATE_ACCESS>
+template <typename T, write_mode MODE = write_mode::write, typename STATE_ACCESS>
 static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(const STATE_ACCESS a, uint64_t pc,
     uint64_t mcycle, uint64_t vaddr, uint64_t val64) {
     [[maybe_unused]] auto note = a.make_scoped_note("write_virtual_memory_slow");
@@ -1117,10 +1122,16 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(c
     if (ar.is_writeable()) [[likely]] {
         if (ar.is_memory()) [[likely]] {
             const auto faddr = replace_tlb_entry<TLB_WRITE>(a, vaddr, paddr, pma_index);
-            a.write_memory_word(faddr, pma_index, static_cast<T>(val64));
+            if constexpr (MODE == write_mode::write) {
+                a.write_memory_word(faddr, pma_index, static_cast<T>(val64));
+            }
             return {execute_status::success, pc};
         }
         if (ar.is_device()) [[likely]] {
+            // Only a write tells whether the device accepts it, so a writable device passes the check
+            if constexpr (MODE == write_mode::skip_write) {
+                return {execute_status::success, pc};
+            }
             const uint64_t offset = paddr - ar.get_start();
             device_state_access da(a, mcycle);
             auto status = ar.write_device(&da, offset, log2_size_v<U>, static_cast<U>(static_cast<T>(val64)));
@@ -1136,13 +1147,14 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(c
 
 /// \brief Writes an aligned word to virtual memory.
 /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
+/// \tparam MODE write_mode::skip_write raises the exceptions of the write and updates the TLB without writing.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param pc Interpreter loop program counter (will be overwritten).
 /// \param vaddr Virtual address for word.
 /// \param val64 Value to write.
 /// \returns True if succeeded, false if exception raised.
-template <typename T, typename STATE_ACCESS>
+template <typename T, write_mode MODE = write_mode::write, typename STATE_ACCESS>
 static FORCE_INLINE execute_status write_virtual_memory(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle,
     uint64_t vaddr, uint64_t val64) {
     [[maybe_unused]] auto note = a.make_scoped_note("write_virtual_memory");
@@ -1160,7 +1172,7 @@ static FORCE_INLINE execute_status write_virtual_memory(const STATE_ACCESS a, ui
             // If we still have a miss after that, we replace the entry.
             // Outline the slow path into a function call to minimize host CPU code cache pressure
             DUMP_STATS_INCR(a, "tlb.wmiss");
-            auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, mcycle, vaddr, val64);
+            auto [status, new_pc] = write_virtual_memory_slow<T, MODE>(a, pc, mcycle, vaddr, val64);
             pc = new_pc;
             return status;
         }
@@ -1172,14 +1184,16 @@ static FORCE_INLINE execute_status write_virtual_memory(const STATE_ACCESS a, ui
     if (!a.template verify_cold_tlb_slot<TLB_WRITE>(slot_index)) [[unlikely]] {
         // Outline the slow path into a function call to minimize host CPU code cache pressure
         DUMP_STATS_INCR(a, "tlb.wmiss");
-        auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, mcycle, vaddr, val64);
+        auto [status, new_pc] = write_virtual_memory_slow<T, MODE>(a, pc, mcycle, vaddr, val64);
         pc = new_pc;
         return status;
     }
-    const auto pma_index = a.template read_tlb_pma_index<TLB_WRITE>(slot_index);
-    const auto vf_offset = a.template read_tlb_vf_offset<TLB_WRITE>(slot_index);
-    const auto faddr = vaddr + vf_offset;
-    a.template write_memory_word<T>(faddr, pma_index, static_cast<T>(val64));
+    if constexpr (MODE == write_mode::write) {
+        const auto pma_index = a.template read_tlb_pma_index<TLB_WRITE>(slot_index);
+        const auto vf_offset = a.template read_tlb_vf_offset<TLB_WRITE>(slot_index);
+        const auto faddr = vaddr + vf_offset;
+        a.template write_memory_word<T>(faddr, pma_index, static_cast<T>(val64));
+    }
     DUMP_STATS_INCR(a, "tlb.whit");
     return execute_status::success;
 }
@@ -1293,6 +1307,11 @@ static FORCE_INLINE execute_status execute_SC(const STATE_ACCESS a, uint64_t &pc
             return advance_to_raised_exception(a, pc);
         }
     } else {
+        // A failed SC must still pass the alignment and permission checks of a store
+        status = write_virtual_memory<T, write_mode::skip_write>(a, pc, mcycle, vaddr, 0);
+        if (status == execute_status::failure) [[unlikely]] {
+            return advance_to_raised_exception(a, pc);
+        }
         val = 1;
     }
     a.write_ilrsc(-1); // Must clear reservation, regardless of failure

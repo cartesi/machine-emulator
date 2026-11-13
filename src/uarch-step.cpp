@@ -886,6 +886,10 @@ static inline void executeECALL(const UarchState a, uint32 insn, uint64 pc) {
         uint64 vaddr_page = readX(a, 12); // a2 contains vaddr_page to write
         uint64 vp_offset = readX(a, 13);  // a3 contains vp_offset to write
         uint64 pma_index = readX(a, 14);  // a4 contains index of PMA where page falls
+        // Every implementation refuses an index outside the shadow TLB before computing the slot address
+        if (set_index >= TLB_NUM_SETS || slot_index >= TLB_SET_SIZE) {
+            throwRuntimeError(a, "invalid TLB index");
+        }
         writeTlbECALL(a, set_index, slot_index, vaddr_page, vp_offset,
             pma_index); // WARNING: This CANNOT be a NOOP in Solidity
         return advancePc(a, pc);

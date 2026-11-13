@@ -454,8 +454,12 @@ static NO_INLINE uint64_t raise_exception(const STATE_ACCESS a, uint64_t pc, uin
         }
     }
 
-    // Every raised exception increases the exception counter, so we can compute minstret later
-    a.write_icycleinstret(a.read_icycleinstret() + 1);
+    // An instruction that raises an exception consumes an mcycle without retiring, so icycleinstret counts it,
+    // and minstret = mcycle - icycleinstret stays exact. An interrupt is taken between instructions without
+    // consuming an mcycle, so it is not counted.
+    if ((cause & MCAUSE_INTERRUPT_FLAG) == 0) {
+        a.write_icycleinstret(a.read_icycleinstret() + 1);
+    }
 
     uint64_t new_pc = 0;
     if (deleg) {

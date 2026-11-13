@@ -870,7 +870,7 @@ do
         assert(started, player)
         getmetatable(player).__close(player)
         assert(
-            table.concat(reports) == "mismatched continuation: outputs_root_mismatch at the epoch's start\n",
+            table.concat(reports) == "mismatched continuation: outputs_merkle_root_mismatch at the epoch's start\n",
             "a mismatched continuation was not reported"
         )
     end
@@ -957,7 +957,7 @@ do
     player.event_handler.input_added(player, 0, fixture_input(keccak("input")))
     player.event_handler.epoch_sealed(player, 1)
     assert(
-        #reports == 1 and reports[1].kind == "outputs_root_mismatch" and reports[1].message == "at input 0",
+        #reports == 1 and reports[1].kind == "outputs_merkle_root_mismatch" and reports[1].message == "at input 0",
         "the mismatch was not reported once"
     )
     getmetatable(player).__close(player)

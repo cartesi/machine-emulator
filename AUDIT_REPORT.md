@@ -1,6 +1,6 @@
 # PRT Audit Report (`audit/prt2`)
 
-Status: **in progress**. Phase: Prepare (step 1 of `AUDIT.md`).
+Status: **in progress**. Phase: round 1, Hunt.
 
 This file is the campaign state of the audit that `AUDIT.md` defines. The orchestrator rewrites it after every step so
 that it can resume after a compaction or a container restart. Confirmed issues are in `BUGS.md`, with their tests under
@@ -11,7 +11,7 @@ that it can resume after a compaction or a container restart. Confirmed issues a
 | Item | Value |
 |---|---|
 | Branch audited | `audit/prt2` at `20a788c` (docs: prepare PRT audit) |
-| Current phase | Prepare (workflow run `wf_1ad3b14b-a88`) |
+| Current phase | Round 1 Hunt (workflow run `wf_df71eb4e-501`, hunter reports in the scratchpad `campaign/r1/`) |
 | Rounds completed | 0 |
 | Stop count (consecutive clean all-Fable rounds, different strategies) | 0 of 3 |
 | Withheld-findings round done | no |
@@ -38,7 +38,23 @@ that it can resume after a compaction or a container restart. Confirmed issues a
 
 ## Setup and harnesses
 
-Pending (Prepare).
+Prepare ran as one agent on `claude-opus-5-5` at high effort (451,832 tokens, 80 minutes). The orchestrator re-ran
+`bugs/harness/check-all.sh`: 11 quick checks PASS, the two long ones (PRT demo, player restart) were run by the agent
+only. `bugs/harness/README.md` documents every harness; `bugs/harness/setup.sh` rebuilds all of them (artifacts live in
+the untracked `bugs/harness/work/`).
+
+| Harness | Status | Notes |
+|---|---|---|
+| `bugs/run.sh`, `bugs/env.sh` | ok | Exit 0 fixed, 1 bug present, 2 harness error |
+| Emulator in-tree build, guest images of `dependencies.lock` | ok | Checksums verified |
+| Bare-metal guest builder, machine configurations | ok | Pinned `riscv64-unknown-elf-gcc` in Docker; five configurations, including a Linux valid template |
+| ASan and UBSan build | ok | `HARNESS_SANITIZE=1` |
+| Independent uarch rebuild | ok | Pristine hash `0x89ae34ba1dc65a8a3668b484bcedf897665c803c41dc9ef9f1faf147b9d443d7` agrees between the rebuild, the in-tree build, the Lua constant and the regenerated `EmulatorConstants.sol` |
+| `machine-solidity-step` `v0.17.0-test1` (`6f91eb9b`) regenerated | **partial** | The pure regeneration does not compile: `UArchStep.sol` uses `TLB_NUM_SETS`, which nothing defines. A labelled variant (`regenerated-patched`, adds `TLB_NUM_SETS = 3`) builds: replay 56/56, prod 14/15 (`marchid` 23 against the expected 22), mock 3/5 (the tests expect overflow to win over halt). Seeded into round 1 triage as R1-PREPARE-1 |
+| EVM harness for the step | ok | anvil (Foundry 1.5.1) with a `StepVerifier` contract over the patched variant, and a Lua client |
+| Local chain with Dave `v3.0.0-alpha.7` (`7eb6c6be`) and `cartesi-rollups-contracts` 3.0.0-alpha.10 | ok | Built with and without `prt-contracts.patch`, with the patched regenerated step. Patched: the PRT demo settles end to end. Released: Dave's own suites pass 427/447 and 17/19 (fixtures recorded against the previous step) |
+| PRT player stop and restart runner | ok | Needs a reflink file system; the scripts loop-mount an XFS image |
+| `machine-guest-tools` `v0.18.1-test1` | fetched | rootfs, deb and tarball match `dependencies.lock` |
 
 ## Rounds
 

@@ -352,28 +352,30 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
         pages_done += block_pages;
         ++blocks_done;
     }
-    // Use scalar reductions: Clang can lower a struct reduction to a critical section whose libomp lock becomes
-    // stale after the hard pause before fork (https://github.com/llvm/llvm-project/issues/154201).
-    auto &word_hits = batch_stats.word_hits;
-    auto &word_misses = batch_stats.word_misses;
-    auto &page_changes = batch_stats.page_changes;
-    auto &inner_page_hashes = batch_stats.inner_page_hashes;
-    auto &pristine_pages = batch_stats.pristine_pages;
-    auto &non_pristine_pages = batch_stats.non_pristine_pages;
+    if (blocks_done < block_count) {
+        // Use scalar reductions: Clang can lower a struct reduction to a critical section whose libomp lock becomes
+        // stale after the hard pause before fork (https://github.com/llvm/llvm-project/issues/154201).
+        auto &word_hits = batch_stats.word_hits;
+        auto &word_misses = batch_stats.word_misses;
+        auto &page_changes = batch_stats.page_changes;
+        auto &inner_page_hashes = batch_stats.inner_page_hashes;
+        auto &pristine_pages = batch_stats.pristine_pages;
+        auto &non_pristine_pages = batch_stats.non_pristine_pages;
 #pragma omp parallel if (threads > 1) num_threads(threads) reduction(+ : update_failures, word_hits, word_misses,      \
         page_changes, inner_page_hashes, pristine_pages, non_pristine_pages)
-    {
-        page_hash_tree_cache_stats thread_stats;
+        {
+            page_hash_tree_cache_stats thread_stats;
 #pragma omp for schedule(dynamic)
-        for (const int i : block_starts | std::views::drop(blocks_done)) {
-            update_block(i, thread_stats, update_failures);
+            for (const int i : block_starts | std::views::drop(blocks_done)) {
+                update_block(i, thread_stats, update_failures);
+            }
+            word_hits += thread_stats.word_hits;
+            word_misses += thread_stats.word_misses;
+            page_changes += thread_stats.page_changes;
+            inner_page_hashes += thread_stats.inner_page_hashes;
+            pristine_pages += thread_stats.pristine_pages;
+            non_pristine_pages += thread_stats.non_pristine_pages;
         }
-        word_hits += thread_stats.word_hits;
-        word_misses += thread_stats.word_misses;
-        page_changes += thread_stats.page_changes;
-        inner_page_hashes += thread_stats.inner_page_hashes;
-        pristine_pages += thread_stats.pristine_pages;
-        non_pristine_pages += thread_stats.non_pristine_pages;
     }
     m_page_cache.get_stats_ref() += batch_stats;
 

@@ -2101,4 +2101,206 @@ do
     assert(table.concat(calls, ",") == "join", "the live epoch stopped working on its own transaction")
 end
 
+-- Missing sentry claims use the registry and epoch bitmap at the observed block,
+-- including votes made before address rotation. Nothing is reported from partial reads.
+do
+    local monitored_epoch = evmu.bint(1) << 80
+    local addresses = { "0x" .. string.rep("11", 20), "0x" .. string.rep("22", 20) }
+    local replacement = "0x" .. string.rep("33", 20)
+    local state = { head = 12, tip = 16, branch = "", votes = {}, addresses = { table.unpack(addresses) }, calls = 0 }
+    local function new_monitor(policy, warning)
+        local anomalies = {}
+        local chain = {
+            head = function()
+                return state.head, "block" .. state.head .. state.branch, state.tip, "tip"
+            end,
+            is_canonical = function(_, number, block_hash)
+                return not (state.reorg_during_read and state.calls > 0)
+                    and block_hash == "block" .. number .. state.branch
+            end,
+            logs = function(_, requested, last, first)
+                local result = {}
+                local function add(address, number, index, decoded)
+                    if number < first or number > last then
+                        return
+                    end
+                    local item = {
+                        address = address,
+                        blockNumber = string.format("0x%x", number),
+                        blockHash = "block" .. number .. state.branch,
+                        logIndex = string.format("0x%x", index),
+                        removed = false,
+                        event = decoded,
+                    }
+                    decoded.address, decoded.log = address, item
+                    result[#result + 1] = item
+                end
+                for _, address in ipairs(type(requested) == "table" and requested or { requested }) do
+                    if address == "factory" then
+                        add(address, 1, 0, {
+                            name = "TournamentCreated",
+                            tournament = "root",
+                            bondValue = 1,
+                            descriptor = { initialHash = hash, baseCycle = evmu.bint(0) },
+                        })
+                    elseif address == "consensus" then
+                        add(address, 1, 1, {
+                            name = "EpochSealed",
+                            tournament = "root",
+                            initialMachineStateHash = hash,
+                            epochNumber = monitored_epoch,
+                        })
+                        if not state.unstaged then
+                            add(address, 10, 0, { name = "EpochStaged", epochNumber = monitored_epoch })
+                        end
+                        if state.settled then
+                            add(
+                                address,
+                                14,
+                                0,
+                                { name = "EpochSealed", tournament = "next", epochNumber = monitored_epoch + 1 }
+                            )
+                        end
+                    end
+                end
+                return result
+            end,
+            call = function(_, address, data, block)
+                assert(address == "consensus")
+                assert(block.blockHash == "block" .. state.head .. state.branch and block.requireCanonical)
+                state.calls = state.calls + 1
+                local name, arguments = data.name, data.arguments
+                if name == "getNumberOfSentries" then
+                    assert(#arguments == 0)
+                    return eth.hex(evmu.encode_abi("(uint256)", { #state.addresses }))
+                elseif name == "hasSentryClaimedInEpoch" then
+                    assert(arguments[1] == monitored_epoch, "epoch was narrowed to a Lua integer")
+                    local id = arguments[2]
+                    assert(id >= 1 and id <= #state.addresses)
+                    if state.fail and id == 2 then
+                        return nil, "sentry read failed"
+                    end
+                    return eth.hex(evmu.encode_abi("(bool)", { state.votes[id] or false }))
+                end
+                assert(name == "getSentryById")
+                return eth.hex(evmu.encode_abi("(address)", { assert(state.addresses[arguments[1]]) }))
+            end,
+        }
+        local monitor = bridge.new_sentinel({
+            geometry = geometry,
+            chain = chain,
+            abi = {
+                event = function(_, item)
+                    return item.event
+                end,
+                calldata = function(_, name, arguments)
+                    return { name = name, arguments = arguments }
+                end,
+            },
+            root = "root",
+            factory = "factory",
+            consensus = "consensus",
+            epoch = monitored_epoch,
+            initial_hash = hash,
+            observation_policy = policy or 4,
+            warning_blocks = warning or 3,
+            label = "sentinel",
+            player = {
+                report_anomaly = function(_, kind, fmt, ...)
+                    anomalies[#anomalies + 1] = { kind = kind, message = string.format(fmt, ...) }
+                end,
+            },
+        })
+        -- Isolate monitoring from local computation and the validator's transaction jobs.
+        function monitor.update_claims()
+            return false
+        end
+        function monitor.jobs()
+            return {}
+        end
+        return monitor, anomalies
+    end
+    local monitor, anomalies = new_monitor()
+    local _, _, next_block = monitor:watch()
+    assert(
+        next_block == 17 and #anomalies == 0 and state.calls == 0,
+        "the tip triggered a warning before the observed head reached the threshold"
+    )
+    state.head, state.tip = 13, 17
+    monitor:watch()
+    assert(#anomalies == 2, "missing claims were not reported at the threshold")
+    for id, anomaly in ipairs(anomalies) do
+        assert(anomaly.kind == "sentry_claim_missing")
+        assert(
+            anomaly.message:find(tostring(monitored_epoch), 1, true) and anomaly.message:find(addresses[id], 1, true)
+        )
+    end
+    monitor:watch()
+    state.addresses[1] = replacement
+    monitor:watch()
+    assert(#anomalies == 2, "a repeat observation or rotation repeated a missing claim")
+    local restarted, restarted_reports = new_monitor()
+    restarted:watch()
+    assert(
+        #restarted_reports == 2 and restarted_reports[1].message:find(replacement, 1, true),
+        "restart did not report the current sentry address"
+    )
+    state.votes[1] = true
+    local partial = assert(monitor:watch())
+    assert(
+        #partial.missing_sentry_claims == 1 and partial.missing_sentry_claims[1].id == 2,
+        "one sentry's vote hid another sentry's missing claim"
+    )
+    state.votes[2] = true
+    local late = assert(monitor:watch())
+    assert(#late.missing_sentry_claims == 0 and #anomalies == 2, "late votes remained missing")
+    state.addresses[2] = addresses[1]
+    local rotated, rotated_reports = new_monitor()
+    rotated:watch()
+    assert(#rotated_reports == 0, "rotation discarded a vote made under the old address")
+    state.votes, state.branch = {}, "replacement"
+    monitor:watch()
+    assert(#anomalies == 4, "a replacement staging log did not report again")
+    state.head, state.tip, state.settled = 14, 18, true
+    state.calls = 0
+    local settled, settled_reports = new_monitor()
+    settled:watch()
+    assert(#settled_reports == 0 and state.calls == 0, "settled epochs still expected sentry claims")
+    state.settled, state.unstaged = false, true
+    new_monitor():watch()
+    assert(state.calls == 0, "an unstaged epoch expected sentry claims")
+    state.unstaged, state.addresses = false, {}
+    local empty, empty_reports = new_monitor()
+    empty:watch()
+    assert(#empty_reports == 0 and state.calls == 1, "an empty registry produced missing claims")
+    state.addresses, state.fail = addresses, true
+    local failing, failed_reports = new_monitor()
+    local ok, err = pcall(failing.watch, failing)
+    assert(not ok and tostring(err):find("sentry read failed", 1, true))
+    assert(#failed_reports == 0, "a failed read reported a partial set of missing claims")
+    state.fail = false
+    failing:watch()
+    assert(#failed_reports == 2, "a failed read prevented reporting after recovery")
+    state.calls, state.reorg_during_read = 0, true
+    local reorganized, reorg_reports = new_monitor()
+    assert(
+        reorganized:watch() == nil and #reorg_reports == 0,
+        "an observation reorganized during sentry reads produced reports"
+    )
+    state.reorg_during_read = false
+    reorganized:watch()
+    assert(#reorg_reports == 2, "a rejected observation prevented reporting after recovery")
+    state.head, state.tip = 12, 40
+    local tagged = new_monitor("finalized")
+    local _, _, tagged_next = tagged:watch()
+    assert(tagged_next == 41, "a finalized observation did not wait for the next tip")
+    local delayed = new_monitor()
+    local _, _, delayed_next = delayed:watch()
+    assert(delayed_next == 41, "a delayed observation scheduled a past tip")
+    state.head, state.tip = 10, 14
+    local immediate, immediate_reports = new_monitor(4, 0)
+    immediate:watch()
+    assert(#immediate_reports == 2, "zero warning blocks did not report at staging")
+end
+
 print("PRT bridge encoding, scheduling, input streaming, and process-boundary tests passed.")

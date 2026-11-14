@@ -564,6 +564,7 @@ error, and continues.
 | `unjoined_claim` | A tournament's joining window closed without the player's commitment |
 | `conflicting_claim` | An observed `CommitmentJoined` differs from the locally computed commitment. Validators and sentinels report the tournament and both commitments, even if the local claim can no longer join. Reported once per join log per process; a replacement log after a reorg or a restart can report again |
 | `sentry_claim_mismatch` | A registered sentry's `SentryClaim` for this consensus and epoch differs from the locally computed final machine state. Validators and sentinels report the epoch, sentry address, and both hashes once per claim log per process, even if the local claim did not join. A replacement log after a reorg or a restart can report again |
+| `sentry_claim_missing` | A Lua sentinel observes an unsettled epoch staged for at least `--warning-blocks` blocks and a registered sentry has not claimed. Reports the epoch, sentry ID and current address once per staging log and sentry ID per process. A replacement staging log after a reorg or a restart can report again |
 | `staged_tournament_result_mismatch` | An observed `EpochStaged` has a machine-state hash or outputs root that differs from local execution. Reports the epoch and compared hashes once per staging log per process, including after restart, even if the local claim did not join. A replacement staging log after a reorg can report again |
 | `fee_ceiling` | A pending transaction reached the fee ceiling, and keeps its nonce |
 | `insufficient_funds` | The account cannot pay a transaction's value or its value plus gas at the fee cap |
@@ -581,8 +582,14 @@ A sentinel likewise does not expect acceptance of a result it disagrees with.
 
 Dave's registered sentries submit on-chain state claims that can shorten the
 staging period when they all agree with the staged result. They are distinct from
-the Lua sentinel, which monitors without signing transactions. Sentry mismatch
-reporting does not submit sentry claims or report missing sentry votes.
+the Lua sentinel, which monitors without signing transactions. Missing-claim
+reporting uses the sentry registry and epoch voting bitmap at the observation's
+block hash, after the configured confirmation policy. Address rotation preserves
+the sentry ID and any vote already submitted under it. A late claim stops being
+missing, and settled epochs or deployments without sentries produce no missing
+claim reports. `--warning-blocks` is a monitoring threshold starting at
+`EpochStaged`, not a contract deadline for sentry claims. These reports do not
+submit sentry claims.
 
 ## The demo harness
 

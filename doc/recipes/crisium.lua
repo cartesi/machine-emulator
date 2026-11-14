@@ -12,7 +12,9 @@
 -- nothing and needs no keystore. It computes the honest claims and reports, as anomalies, what a
 -- validator should have done and has not: deadline_near and missed_deadline for an action whose window
 -- closes within --warning-blocks=N blocks (10 by default) or has closed, and stalled_action for an
--- action without a window that has been due for that many blocks. A validator plays the dispute.
+-- action without a window that has been due for that many blocks. It also reports sentry_claim_missing
+-- when an unsettled epoch has been staged for that many observed blocks and a registered sentry has
+-- not submitted a claim. A validator plays the dispute.
 --
 -- Usage: lua5.4 crisium.lua --rpc=URL --application=ADDRESS --state=DIRECTORY --checkpoints=DIRECTORY
 --     --dave=DIRECTORY [OPTION...]

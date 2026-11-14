@@ -45,6 +45,23 @@ local function holds(self, address, root)
     return claim and claim.root == root and claim or nil
 end
 
+-- Sentry IDs retain their epoch votes across address rotations. Read both the
+-- bitmap and current registry at the same head as the observation's logs.
+local function missing_sentry_claims(self, hash)
+    local block = { blockHash = hash, requireCanonical = true }
+    local function view(name, arguments, types)
+        local result = assert(self.chain:call(self.consensus, self.abi:calldata(name, arguments), block))
+        return evmu.decode_abi(types, assert(eth.raw(result)))[1]
+    end
+    local missing = {}
+    for id = 1, eth.small(view("getNumberOfSentries", {}, "(uint256)")) do
+        if not view("hasSentryClaimedInEpoch", { self.epoch, id }, "(bool)") then
+            missing[#missing + 1] = { id = id, address = view("getSentryById", { id }, "(address)") }
+        end
+    end
+    return missing
+end
+
 function methods:observe()
     local head, hash, tip, tip_hash = self.chain:head(self.observation_policy)
     if self.seal_block then
@@ -177,6 +194,15 @@ function methods:observe()
             end
         end
     end
+    local sentry_warning_block, missing
+    if self.sentinel and staged and not settled then
+        sentry_warning_block = eth.small(staged.log.blockNumber) + self.warning_blocks
+        if head >= sentry_warning_block then
+            missing = missing_sentry_claims(self, hash)
+        end
+    end
+    -- This check also covers the contract reads. Failed or orphaned reads never
+    -- produce a partial set of missing-claim reports.
     if not self.chain:is_canonical(head, hash) then
         history:reset()
         return nil
@@ -200,6 +226,8 @@ function methods:observe()
         logs = logs,
         staged = staged,
         settled = settled,
+        sentry_warning_block = sentry_warning_block,
+        missing_sentry_claims = missing,
     }
 end
 
@@ -874,6 +902,8 @@ end
 -- reported as deadline_near once the next block is within warning_blocks of its end, and as
 -- missed_deadline once its window closed, while the events still call for it. A job without an end is
 -- reported as stalled_action once it has been due for warning_blocks. Each job is reported once per kind.
+-- Missing sentry claims are reported after warning_blocks observed blocks since staging, once per
+-- staging log and sentry ID, while the epoch remains unsettled.
 -- The sentinel also returns the next block at which one of these could first apply, so a harness that
 -- mines ahead stops there. The epoch is finished once its settlement is irreversible under the retirement
 -- policy.
@@ -909,6 +939,25 @@ function methods:watch()
         else
             wake(job.first + warning)
         end
+    end
+    for _, sentry in ipairs(snapshot.missing_sentry_claims or {}) do
+        self:report_once(
+            event_key(snapshot.staged) .. ":sentry:" .. sentry.id,
+            "sentry_claim_missing",
+            "at epoch %s: sentry %s (ID %d) has not submitted a claim",
+            tostring(self.epoch),
+            sentry.address,
+            sentry.id
+        )
+    end
+    if snapshot.sentry_warning_block and snapshot.head < snapshot.sentry_warning_block then
+        -- Unlike job deadlines, this threshold is measured at the observed head.
+        -- Confirmation tags have no fixed depth, so revisit them at the next tip.
+        local tip = type(self.observation_policy) == "number"
+                and snapshot.sentry_warning_block + self.observation_policy
+            or snapshot.tip + 1
+        tip = math.max(tip, snapshot.tip + 1)
+        next_block = math.min(next_block or tip, tip)
     end
     report_lost_matches(self, snapshot)
     if snapshot.settled and self.retirement_policy then

@@ -263,7 +263,7 @@ function methods:submit(signer, intent, observation)
             available = tostring(available),
         }
     end
-    candidate.raw, candidate.hash = self.chain:sign(signer, candidate)
+    candidate.raw, candidate.hash = signer:sign(candidate)
     local _, current_hash = self.chain:head()
     if current_hash ~= block.hash or not self.chain:is_canonical(observation.head, observation.hash) then
         return { waiting = true }

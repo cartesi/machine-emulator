@@ -10,20 +10,10 @@ local eth = require("prt-ethereum")
 local M = {}
 local methods = {}
 
--- The address of the account in a keystore.
-function M.address(keystore, password_file)
-    return (
-        command
-            .run({ "cast", "wallet", "address", "--keystore", keystore, "--password-file", password_file })
-            :gsub("%s+$", "")
-            :lower()
-    )
-end
-
 -- All fields are explicit: signing must not choose a nonce or estimate fees.
 -- cast signs only the transaction's digest, since the calldata of a proof can exceed the size of a
 -- command argument.
-function methods:sign(signer, transaction)
+function methods:sign(transaction)
     local signature = command
         .run({
             "cast",
@@ -31,20 +21,20 @@ function methods:sign(signer, transaction)
             "sign",
             "--no-hash",
             "--keystore",
-            signer.keystore,
+            self.keystore,
             "--password-file",
-            signer.password_file,
+            self.password_file,
             cartesi.tohex(eth.transaction_digest(transaction)),
         })
         :gsub("%s+$", "")
     local raw = eth.signed_transaction(transaction, cartesi.fromhex(signature))
-    return raw, self:verify_signed(signer, transaction, raw)
+    return raw, self:verify_signed(transaction, raw)
 end
 
-function methods.verify_signed(_, signer, transaction, raw)
+function methods:verify_signed(transaction, raw)
     assert(raw:match("^0x02%x+$") and #raw % 2 == 0, "invalid signed EIP-1559 transaction")
     local decoded = rpc_client.decode_json(command.run({ "cast", "decode-transaction" }, raw))
-    assert(decoded.signer:lower() == signer.address:lower(), "transaction used the wrong signer")
+    assert(decoded.signer:lower() == self.address, "transaction used the wrong signer")
     assert(decoded.to:lower() == transaction.to:lower(), "transaction has the wrong destination")
     assert(decoded.input:lower() == transaction.data:lower(), "transaction calldata differs from the prepared action")
     for field, expected in pairs({
@@ -63,9 +53,10 @@ function methods.verify_signed(_, signer, transaction, raw)
     return decoded.hash:lower()
 end
 
-function methods:send(signer, to, data, value)
+-- Sends a deployment or demo transaction directly, outside the player's transaction journal.
+function M.send(chain, signer, to, data, value)
     value = value or "0"
-    local _, failure = self:simulate(signer, to, data, value)
+    local _, failure = chain:simulate(signer, to, data, value)
     if failure then
         -- Anvil reports EVM reverts with code 3. Provider failures must stop the
         -- run instead of permanently suppressing a potentially legal action.
@@ -76,7 +67,7 @@ function methods:send(signer, to, data, value)
         "cast",
         "send",
         "--rpc-url",
-        self.url,
+        chain.url,
         "--keystore",
         signer.keystore,
         "--password-file",
@@ -94,7 +85,7 @@ function methods:send(signer, to, data, value)
         type(receipt.transactionHash) == "string" and #receipt.transactionHash == 66,
         "receipt lacks transaction hash"
     )
-    local transaction = assert(self:rpc("eth_getTransactionByHash", { receipt.transactionHash }))
+    local transaction = assert(chain:rpc("eth_getTransactionByHash", { receipt.transactionHash }))
     assert(transaction.from:lower() == signer.address:lower(), "transaction used the wrong signer")
     assert(transaction.input:lower() == data:lower(), "transaction calldata differs from the prepared action")
     assert(
@@ -105,12 +96,17 @@ function methods:send(signer, to, data, value)
     return receipt
 end
 
--- Adds the signing methods to a chain from prt-rpc.lua, and returns it.
-function M.install(chain)
-    for name, method in pairs(methods) do
-        chain[name] = method
-    end
-    return chain
+-- Opens the signer for the account in a keystore.
+function M.new(keystore, password_file)
+    local address = command
+        .run({ "cast", "wallet", "address", "--keystore", keystore, "--password-file", password_file })
+        :gsub("%s+$", "")
+        :lower()
+    return setmetatable({
+        address = address,
+        keystore = keystore,
+        password_file = password_file,
+    }, { __index = methods })
 end
 
 return M

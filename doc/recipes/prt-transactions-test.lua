@@ -6,9 +6,8 @@ local transactions = require("prt-transactions")
 local json = require("dkjson")
 local fs = require("cartesi.filesystem")
 local evmu = require("cartesi.evmu")
-local chain = signing.install(rpc_client.new(os.getenv("PRT_RPC_URL") or "http://127.0.0.1:8545"))
-local signer = { keystore = "wallets/player-0", password_file = "wallets/password" }
-signer.address = signing.address(signer.keystore, signer.password_file)
+local chain = rpc_client.new(os.getenv("PRT_RPC_URL") or "http://127.0.0.1:8545")
+local signer = signing.new("wallets/player-0", "wallets/password")
 local destination = "0x0000000000000000000000000000000000000001"
 local function rpc(method, args)
     return assert(chain:rpc(method, args))
@@ -91,6 +90,12 @@ do
         })
         :gsub("%s+$", "")
     assert(small.raw == built:lower(), "the encoded transaction differs from cast's")
+    -- Each signer uses its own key and rejects a transaction signed by the other account.
+    local other = signing.new("wallets/player-1", "wallets/password")
+    local other_raw, other_hash = other:sign(small)
+    assert(other_hash ~= small.hash, "different signers produced the same transaction")
+    assert(not pcall(signer.verify_signed, signer, small, other_raw), "accepted another account's signature")
+    assert(not pcall(other.verify_signed, other, small, small.raw), "accepted another account's signature")
     mine()
     successful(manager, "work", small.hash)
     local large = intent("large")
@@ -361,14 +366,14 @@ end
 -- may be published based on the earlier eligibility/deadline calculation.
 do
     local manager = fresh()
-    local sign = chain.sign
-    function chain:sign(account, transaction)
-        local raw, hash = sign(self, account, transaction)
+    local sign = signer.sign
+    function signer:sign(transaction)
+        local raw, hash = sign(self, transaction)
         mine()
         return raw, hash
     end
     assert(not submit(manager, intent()).published)
-    chain.sign = sign
+    signer.sign = nil
     assert(manager:idle() and not io.open(manager.path, "r"))
 end
 -- All nonce consumers enforce exclusive ownership, including idle queries.

@@ -24,8 +24,10 @@ number of outputs".
 * Control: 1000 outputs; test: 100000 outputs; both inputs run exactly the same mcycles (3,200,186), so only the
   number of outputs differs. Setup checks (exit 2 otherwise): both accepted, `player.output_count` equals the
   emitted count, no `outputs_merkle_root_mismatch`, equal mcycles.
-* Asserts: peak live heap (test) minus peak live heap (control) < 1 MiB. With the frontier updated incrementally
-  (a copy for discard-on-reject plus the frontier before the last push for its proof) the difference is a few KiB.
+* Asserts: peak live heap (test) minus peak live heap (control) < 1 MiB. Checked against a scratch copy of
+  `prt.lua` that updates a copy of the outputs frontier on each output (discarded on reject; the frontier before
+  the last push kept for its proof) instead of the list of hashes: the difference is then -28 KiB, the roots still
+  match, and the test exits 0.
 * Informational only, not asserted: the number of `oversized_output` anomalies for an input with 1 and with 4
   outputs that declare a length larger than the tx buffer (one anomaly per output today). Anomaly logs are not
   memory "needed to defend its claims" and R12 allows a bounded cost per yield, so this is reported, not tested.

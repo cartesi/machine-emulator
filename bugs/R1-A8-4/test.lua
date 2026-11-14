@@ -225,6 +225,14 @@ harness.main(function()
             end
             tip = tip + 1
         end
+        -- Block at which the honest advanceMatch lands: the mock chain includes the newest candidate of a
+        -- nonce `inclusion_delay` blocks after the nonce's first publication (nil: never included).
+        local landed
+        for nonce, list in pairs(published) do
+            if list[#list].action == "advanceMatch" and inclusion_delay then
+                landed = first_publication[nonce] + inclusion_delay
+            end
+        end
         io.stderr:write(name, ":\n")
         for _, line in ipairs(log) do
             io.stderr:write("  ", line, "\n")
@@ -236,38 +244,38 @@ harness.main(function()
             DEADLINE,
             ": ",
             advanced_at and ("first published at tip " .. advanced_at) or "NEVER published within its window",
+            landed and (", lands in block " .. landed) or "",
             "\n"
         )
-        return advanced_at, DUE
+        return advanced_at, DUE, landed, DEADLINE
     end
 
-    local control, due = scenario("control (no pending cleanup)", false, 6)
-    if control ~= due then
+    -- Every transaction lands 6 blocks after its publication, well within one inclusion budget; the honest
+    -- claim gets the turn at tip 9 with 11 blocks on its clock (deadline block 20, expiry at equality), more
+    -- than one inclusion and less than two (the margin left after the adversary has spent its censorship).
+    local control, due, control_landed, deadline = scenario("control (no pending cleanup)", false, 6)
+    if control ~= due or not control_landed or control_landed >= deadline then
         os.execute("rm -rf '" .. dir .. "'")
-        harness.setup_error("control: the bridge did not publish the honest move as soon as it was due")
+        harness.setup_error("control: the bridge did not land the honest move within its window")
     end
-    local congested = scenario("pending cleanup, included 6 blocks after publication", true, 6)
-    local stuck = scenario("pending cleanup, not included before the honest deadline", true, nil)
+    local congested, _, congested_landed = scenario("pending cleanup, included 6 blocks after publication", true, 6)
+    -- Informational only: a chain that includes none of the honest transactions is outside the goal.
+    scenario("informational: pending cleanup never included", true, nil)
 
-    local fine = true
-    fine = harness.expect(
-        congested == control,
+    local fine = harness.expect(
+        congested_landed ~= nil and congested_landed < deadline,
         string.format(
-            "A8/R4: a pending cleanup of another match must not delay the honest advanceMatch "
-                .. "(control published at tip %d, with the pending cleanup at tip %s)",
+            "R4: with every transaction included 6 blocks after publication, the honest advanceMatch must land "
+                .. "before its deadline (block %d) although a cleanup of another match is pending "
+                .. "(control: published at tip %d, lands in block %d; with the pending cleanup: published at "
+                .. "tip %s, lands in block %s)",
+            deadline,
             control,
-            tostring(congested)
+            control_landed,
+            tostring(congested),
+            tostring(congested_landed)
         )
-    ) and fine
-    fine = harness.expect(
-        stuck == control,
-        string.format(
-            "R4: the honest advanceMatch must be published within its window although a cleanup is pending "
-                .. "(control at tip %d, with a stuck cleanup: %s)",
-            control,
-            stuck and ("tip " .. stuck) or "never"
-        )
-    ) and fine
+    )
     os.execute("rm -rf '" .. dir .. "'")
     return fine
 end)

@@ -12,6 +12,7 @@ component instead of running it):
 - R1-R4-1: the first reviewer refuted it on a reading of the threat model; the second opinion overturned that. Both readings are in its entry.
 - R2-DFSTORED-2: the first reviewer refuted it on a reading of the threat model; the second opinion overturned that. Both readings are in its entry.
 - R3-VARREFMODEL-1: the first reviewer refuted it on a reading of the threat model; the second opinion overturned that. Both readings are in its entry.
+- R1-R7-4: triage dropped it on a reading of the threat model; the second opinion overturned that, and it was then proved and reviewed.
 
 Where the threat model can be read two ways, the severity column gives the reviewer's preferred reading first.
 
@@ -47,6 +48,7 @@ Where the threat model can be read two ways, the severity column gives the revie
 | [R1-R2-1](#r1-r2-1) | write_reg("iunrep") changes the hashed unreproducible-mode register while every guard reads the config copy, so store writes a directory its own load refuses | machine::write_reg case reg::iunrep (src/machine.cpp ~1444); machine::is_unreproducible reading m_c config copy (src/mac | Rest of the machine API, off the honest operator's path (wri | R2, R14, R9 (section 8 Medium API-operation case), manual "creation-time mode" | Medium (preferred); Low under the trusted-caller-misuse reading; Out of scope if the deliberate-change exclusion is read to cover every consequence |
 | [R1-R3-3](#r1-r3-3) | prt.lua validate_state_transition_response accepts state-transition proofs with superfluous send_cmio/reset_uarch logs, ignoring them; Dave rejects them as trailing data | doc/recipes/prt.lua validate_state_transition_response (same code in doc/README.md lines 9465, 10874) | Referee model | R3 (log validity: trailing/duplicate data), section 3 referee-model clause, sect | Medium / Low (if unused named response fields are not part of the proof) |
 | [R1-R6-1](#r1-r6-1) | cartesi-machine --print-uarch-cycle-root-hashes passes a fake revert uarch tail {revert_root_hash, revert_root_hash}, printing wrong uarch hashes for the mcycle after a rejection | cartesi-machine CLI, src/cartesi-machine.lua uarch_cycle_root_hashes_runner_run | Support | R6, R4 (via section 3 support-Medium clause) | Medium (preferred: CLI printer counts as a tool that computes claims); Low (if read as a tool's diagnostics) |
+| [R1-R7-4](#r1-r7-4) | The PLIC claim register returns the highest pending source ID (ilog2), while the PLIC spec gives equal-priority ties to the lowest ID. The deviation is undocumented and is the same natively and through the uarch. | PLIC device, plic_read_claim_complete in src/plic-address-range.cpp | Honest operator (AUDIT.md: Interpreter, ... devices, uarch p | R7, R13 (device behavior) | Medium (alternative reading: Critical) |
 | [R1-R8-1](#r1-r8-1) | PRT player keeps one keccak per guest output for the whole input in the claim-computing run (pending_output_hashes), so claim-computation memory grows with the number of outputs | PRT player, doc/recipes/prt.lua run_to_input_mcycle_offset / flush_pending_outputs / run_next_input | Support (AUDIT.md: PRT player), standing in for the honest o | R12, section 8 outputs exclusion, section 3 support rule | Medium (preferred reading); Low (alternative reading) |
 | [R1-R8-2](#r1-r8-2) | vg.lua honest player asserts the tx-buffer outputs root equals its output frontier; a guest accepting with a mismatched root makes input_added raise, so no claim is computed | doc/recipes/vg.lua honest player (flush_pending_outputs line 429, via run_to_input_mcycle_offset and event_handler:input | Support (not named in the AUDIT.md table, falls under sectio | R4, section 8 (not-correctly-designed exclusion: 'must never stop the honest ope | Medium; Out of scope if vg.lua's player counts as a development tool |
 | [R2-DFGUESTSTATE-1](#r2-dfgueststate-1) | Manual and generated DTB declare Sv39 only, but every path accepts satp MODE=9 and performs four-level Sv48 walks | Interpreter (src/interpret.cpp write_csr_satp, src/riscv-warl.hpp WARL_satp, src/translate-virtual-address.hpp), src/dtb | Honest operator | R7, section 8 Medium deviation case, section 8 manual-contradiction clause, R13  | Medium / Critical (literal R7) / Low (manual read as non-exhaustive) |
@@ -4636,6 +4638,133 @@ compute, compare or debug uarch-level claims after a rejected input get a wrong 
 hashes, and could build or trust a wrong uarch-level commitment, or misdiagnose a correct implementation. Mitigation
 outside the code: do not use the printer across a rejection; compute the period after it with
 `collect_uarch_cycle_root_hashes` on the pre-delivery machine.
+
+## R1-R7-4
+
+**Title.** A PLIC claim returns the highest pending source ID, but the RISC-V PLIC specification breaks ties between
+equal-priority sources in favor of the lowest ID.
+
+**Severity.** Medium
+
+### Problem
+
+The emulator hardwires every PLIC source priority to the same value: reads of `priority1` to `priority31` return
+`PLIC_LOWEST_IRQ_PRIORITY` (1). The RISC-V PLIC specification says a claim returns "the ID of the highest-priority
+pending interrupt for the target". It also says "Ties between global interrupts of the same priority are broken by
+the Interrupt ID; interrupts with the lowest ID have the highest effective priority." Since all priorities are equal,
+a claim must return the lowest pending source ID. The emulator computes `irq_id = ilog2(ipmask)` (`31 - clz`), which
+returns the highest one. With sources 1 and 2 pending, two claims return 2 then 1, not 1 then 2.
+
+The manual lists the device as the "Platform-Level Interrupt Controller (PLIC)" at `0x40100000-0x404fffff`, and its
+device tree declares it `compatible = "riscv,plic0"`. The manual documents no claim order and no deviation from the
+PLIC specification. So this is an undocumented departure from the device as documented, which R7 forbids. The
+behavior is deterministic, and native interpretation and the uarch agree on it.
+
+The security goal of section 1 is not affected. Only VirtIO devices raise PLIC sources, and VirtIO needs an
+unreproducible machine. No correct guest relies on the order of equal-priority claims for isolation or data
+integrity. The Linux PLIC driver claims in a loop until the claim register returns 0, so it serves every pending
+source in either order. The defect is a rule violation without effect on the goal.
+
+### Component, role and area
+
+The PLIC device of the interpreter. AUDIT.md table: "Interpreter, state-access layers, devices, uarch program, ...":
+Honest operator. Area: device semantics (R7, R13 "The device behavior"), the PLIC claim/complete register.
+
+### Location
+
+`src/plic-address-range.cpp`, `plic_read_claim_complete()`: `const uint32_t irq_id = ilog2(ipmask);`, with
+`ilog2(v) = 31 - __builtin_clz(v)`. The same source compiles into the uarch interpreter, so the uarch and the
+regenerated on-chain step share the behavior.
+
+### Evidence and test
+
+`bugs/R1-R7-4/` contains `test.lua` (the test), `README.md` (how it works) and this entry. There are no other support
+files: the guest is a 7-instruction M-mode program that the test assembles inline.
+
+The test creates a reproducible machine (`iunrep = 0`) with 4 KiB of RAM and
+`processor.registers.plic = { girqpend = 0x6, girqsrvd = 0 }` in its config, so sources 1 and 2 are pending. Setting
+`girqpend` from the config stands in for two VirtIO devices raising interrupts at the same time. The guest reads
+`priority1` and `priority2`, makes two 32-bit loads from the claim register at `0x40300004`, and spins. The test runs
+the program natively, then runs it again one mcycle at a time through the uarch (`run_uarch` plus `reset_uarch`). It
+checks that both paths agree and that both priorities are equal and nonzero, or it exits 2 as a setup error. It
+exits 0 if the claims return 1 then 2, and 1 if they don't.
+
+Run `bugs/run.sh R1-R7-4`. On audit/prt2 it prints the following and exits 1. The reviewer re-ran it three times with
+the same result each time, in well under a second.
+
+```
+native: priority1=1 priority2=1 claim#1=2 claim#2=1
+uarch:  priority1=1 priority2=1 claim#1=2 claim#2=1
+VIOLATED: R7 / PLIC spec: with sources 1 and 2 pending at equal priority, claims must return 1 then 2 (lowest ID first); the emulator returned 2 then 1
+run.sh: R1-R7-4: exit 1 (bug present)
+```
+
+With the fix suggested below, the first claim takes `ctz(0x6) = 1` and marks it served. The second claim sees
+`ipmask = 0x4` and returns 2, so the test exits 0. The test asserts what the PLIC specification requires, not an
+artifact of the harness. Opus 5.5 found, proved and reviewed it; no fallback model was used.
+
+### Trigger and reachability
+
+The trigger is two or more PLIC sources pending at once when the guest claims. In the code, only the VirtIO devices
+set PLIC pending bits (`plic_set_pending_irq` in `src/virtio-address-range.cpp`). VirtIO needs an unreproducible
+machine, and the manual says: "(in unreproducible machines only) one or more VirtIO devices". A guest cannot write
+`girqpend`: PLIC writes other than claim/complete are ignored, and R8 keeps the processor shadow read-only. In a
+reproducible machine, the only way to get pending bits is the configuration itself (`processor.registers.plic.girqpend`),
+which the emulator accepts, as the test shows. Whether that configuration counts as a valid template depends on
+whether the RISC-V specification and the manual "allow" a pending source that no device can raise. Neither
+explicitly forbids it. The rating below doesn't rely on that.
+
+### Rating
+
+1. Out of scope: not excluded. The relevant exclusion is "Nondeterminism in unreproducible machines (R14)". It covers
+   only nondeterminism, and this deviation is deterministic and identical natively and through the uarch. The
+   settled reading applies: "a deterministic deviation in a feature that only unreproducible machines reach (VirtIO,
+   PLIC sources) is not out of scope". No other exclusion applies. The trigger doesn't need an untrusted caller of the
+   machine API, a non-valid snapshot, or a deployment that breaks A1 to A8. "The effect of a deliberate state change
+   made through the machine API" doesn't cover it either: the defect is in the claim semantics, not in the config
+   write.
+2. Role: the PLIC device. The AUDIT.md row "Interpreter, state-access layers, devices, uarch program, ..." gives it
+   the Honest operator role, and that clause covers this component. Section 3: "The transition function ... play[s]
+   this role in every deployment." The uarch program and the regenerated step share the behavior. They agree with the
+   native interpreter, so there is no divergence between paths (R2).
+3. High and Medium cases: the Medium case "An undocumented deterministic deviation, consistent across all paths, in
+   behavior that no correct guest relies on for isolation or data integrity (R7)" fits. It is undocumented: the
+   manual describes the device only as a PLIC (`riscv,plic0`) and states no claim order. It is deterministic and
+   consistent: native and uarch both return 2 then 1. And no correct guest relies on it: PLIC priority ties only
+   decide the order in which pending sources are claimed, and a correct driver claims until 0. This case has no
+   reachability condition (settled reading), so it applies even though only an unreproducible machine, or a
+   config-set `girqpend`, reaches the state. The rule violated is R7: "The emulator implements the RISC-V
+   specification and the devices as the manual documents them, departing only where the manual documents a
+   deviation."
+4. Critical: not reached, because step 3 matched.
+
+Two readings give different classes. Under the reading preferred here, Medium: the PLIC claim order is device
+behavior that falls outside R7's listed areas. Under the alternative reading, Critical: PLIC claim order counts as
+part of R7's area "Traps and interrupts", where "any deviation lets an input subvert a correct guest", so the Medium
+case would not apply. This reading also needs a reachable state, which means a reproducible configuration with
+`girqpend != 0` must count as a valid template (its registers holding "only values that the RISC-V specification and
+the manual allow"). Two facts decide between them. First, does R7's "Traps and interrupts" cover the external
+interrupt controller's choice among equal-priority sources, or only the processor's trap and interrupt architecture
+(`mip`/`mie`, delegation, trap entry)? Second, do the manual or the specification allow a reproducible template with
+PLIC sources pending? Neither the manual nor the threat model says.
+
+### Possible solution and risks
+
+Select the lowest pending source: `const uint32_t irq_id = __builtin_ctz(ipmask);` (`ipmask != 0` is already checked).
+This changes the device behavior, so it is part of the state transition function (R13): the uarch binary, its pristine
+hash and the regenerated `machine-solidity-step` must be rebuilt. If it ships as a new protocol version, the
+machine-identification registers should change too (R13, A6). Reproducible machines with `girqpend = 0` see no change
+in any hash, because the claim register then returns 0 either way. The behavior of unreproducible machines with
+VirtIO changes in the order interrupts are served, which the Linux driver tolerates. Alternatively, the manual could
+document the highest-ID-first order as a deviation, which would also resolve the R7 violation.
+
+### Risk of not fixing it
+
+No risk to the security goal. Reproducible machines in deployments have no PLIC source that can become pending
+through execution, and the guest cannot set one. In unreproducible development machines, a guest that relied on the
+specified lowest-ID-first order would serve VirtIO interrupts in a different order than on standard hardware. That is
+a fidelity and portability issue, not a safety issue. The only remaining problem is that the emulator departs,
+without saying so, from the device the manual names.
 
 ## R1-R8-1
 

@@ -8,7 +8,8 @@
 #
 # Two tournaments over the same epoch (bare-metal emit-output template, three inputs), with the
 # honest player (a stored player on an epoch directory, as `prt.lua honest ... <epoch-directory>`)
-# joining first and a fabulist (prt-dishonest.lua, lies about the first leaf of input 1) second:
+# joining first and a tamperer (prt-dishonest.lua tamperer 1 0: corrupts its execution of input 1, so
+# its claim ends in a different final state) second:
 #   run "control": the honest player runs unchanged. Required for the setup: the honest claim wins.
 #   run "restart": at its claim's first reveal_bisection request, the honest player stops. While its
 #     reply is outstanding (the referee's logical clock cannot advance, so no block passes), it is
@@ -90,7 +91,7 @@ wait_for() {
     done
 }
 
-# setup_run <mode>: prepares the run directory, starts the referee and joins honest, then fabulist.
+# setup_run <mode>: prepares the run directory, starts the referee and joins honest, then tamperer.
 setup_run() {
     local mode=$1 dir="$WORK/$1" n=0
     mkdir -p "$dir/state" "$dir/epoch-honest" || setup_error "mkdir"
@@ -116,7 +117,7 @@ setup_run() {
     }
     join honest lua5.4 "$HERE/honest-first.lua" "$ADDR" "$initial_hash" honest "$dir/epoch-honest" "$dir/state" "$mode"
     HONEST_PID=$LAST
-    join fabulist lua5.4 "$RECIPES_DIR/prt-dishonest.lua" fabulist "$ADDR" "$initial_hash" 1 0 fabulist
+    join tamperer lua5.4 "$RECIPES_DIR/prt-dishonest.lua" tamperer "$ADDR" "$initial_hash" 1 0 tamperer
     start "$dir" phase_closer lua5.4 "$RECIPES_DIR/prt.lua" phase_closer "$ADDR"
     RUN_DIR=$dir
 }
@@ -142,7 +143,9 @@ sed 's/^/  /' "$RUN_DIR/tournament"
     echo "control run: the honest claim $(honest_claim) did not win (winner $(winner_hash))" >&2
     exit 2
 }
-echo "control: the honest claim $(honest_claim) wins (no restart)"
+final_state() { sed -n 's/^Winner final state hash: //p' "$RUN_DIR/verdict" 2> /dev/null; }
+honest_final=$(final_state)
+echo "control: the honest claim $(honest_claim) wins (no restart), final state $honest_final"
 kill_all
 
 # ---- run "restart": the honest player stops at its claim's first turn and restarts -------------------
@@ -150,7 +153,9 @@ setup_run restart
 wait_for 300 bash -c '[ -f "'"$RUN_DIR"'/state/stopping" ] || ! kill -0 '"$REFEREE_PID"' 2>/dev/null' ||
     setup_error "restart run: the honest claim was never asked to open a node"
 [ -f "$RUN_DIR/state/stopping" ] || setup_error "restart run: referee exited before the honest turn"$'\n'"$(tail -n 20 "$RUN_DIR"/referee.stderr)"
-echo "restart: first incarnation stops at $(cut -d' ' -f1,3,4 "$RUN_DIR/state/stopping" | sed 's/ / position=/; s/ / height=/') of claim $(honest_claim) (reply outstanding, logical clock frozen)"
+read -r _ stop_hash stop_position stop_height < "$RUN_DIR/state/stopping"
+echo "restart: first incarnation stops at reveal_bisection(position=$stop_position, height=$stop_height) of claim $stop_hash"
+echo "  (its reply is outstanding, so the referee's logical clock cannot advance)"
 start "$RUN_DIR" restarted lua5.4 "$HERE/honest-restarted.lua" "$ADDR" "$initial_hash" "honest (restarted)" \
     "$RUN_DIR/epoch-honest" "$RUN_DIR/state"
 # The restarted player has reopened its epoch directory and holds its claim's tree, and the referee
@@ -172,18 +177,22 @@ has_winner || no_survivor || setup_error "restart run: no decision"
 echo "restart: tournament:"
 sed 's/^/  /' "$RUN_DIR/tournament"
 sed 's/^/  /' "$RUN_DIR"/match_1 2> /dev/null | tail -n 4
-claim_requests=$(grep -E 'received (reveal_bisection|seal_divergence|win_match_by_timeout|commit_uarch_claim|prove_state_transition)' "$RUN_DIR/restarted.stderr" | wc -l)
+claim=$(honest_claim)
+claim_requests=$(grep -cE "received ((reveal_bisection|seal_divergence|win_match_by_timeout) $claim|commit_uarch_claim|prove_state_transition)" "$RUN_DIR/restarted.stderr")
 echo "restart: requests about the claim received by the restarted player: $claim_requests"
-grep 'received' "$RUN_DIR/restarted.stderr" | sed 's/^/  /' | head -n 10
+grep 'received' "$RUN_DIR/restarted.stderr" | sort | uniq -c | sed 's/^ */  /' | head -n 8
 
 winner=$(winner_hash)
-claim=$(honest_claim)
 if [ -n "$winner" ] && [ "$winner" = "$claim" ]; then
     echo "PASS: the honest claim $claim wins after its player restarted"
     exit 0
 fi
 echo "FAIL (A7/R4): the honest claim $claim lost after its player restarted within its clock"
-echo "  winner: ${winner:-none} ($(grep -h 'Tournament winner' "$RUN_DIR/verdict" 2> /dev/null || echo 'no claim survives'))"
+if [ -n "$winner" ]; then
+    echo "  winner: the tamperer's claim $winner, final state $(final_state) (honest final state $honest_final)"
+else
+    echo "  no claim survives"
+fi
 echo "  A7: \"No rule of the referee may make the honest claim lose by timeout while it acts within its own clock.\""
 echo "  R4: \"After a stop, it restarts from a directory that O2 guarantees and keeps defending its claim.\""
 exit 1

@@ -32,6 +32,9 @@ Where the threat model can be read two ways, the severity column gives the revie
 | [R5-INVSTORE-1](#r5-invstore-1) | After sync_stored fails on a host write error, a retried sync_stored of the same directory reports success though the pages were lost; the reload's cached root is wrong | machine::sync_stored (src/machine.cpp 712-721), os::sync_file/sync_fd (src/os-filesystem.cpp 628-644, 726+); cm.h cm_syn | Honest operator (AUDIT row 1: storing, loading, cloning and  | Section 4 host-fault clause, O2, R9, R4 (restart from O2 directory), section 8 m | Critical (preferred) / Low or Out of scope (if a failed sync_stored permanently voids the directory, so retrying is misuse) |
 | [R8-GOALEPOCH-2](#r8-goalepoch-2) | DaveConsensus never registers the valid template's outputs Merkle root, so Application refuses valid proofs of template-committed outputs until epoch 0 is accepted. | Dave v3.0.0-alpha.7 DaveConsensus with rollups-contracts 3.0.0-alpha.10 Application (output validation); the manual's PR | Referee model, as the deployed referee | A5, A1, section 2 valid template, section 3 referee model, section 8 Critical de | Critical (preferred: literal A5, valid template is a settled state) / Low (alternative: settled state means last leaf of a winning claim, delay only) |
 | [R8-GOALESCAPE-1](#r8-goalescape-1) | execute_AMO translates twice (read TLB/walk, then write TLB/walk): an AMO can load P1 and store P2, and an AMO on its own PTE clears D | Interpreter execute_AMO with read_virtual_memory/write_virtual_memory and translate_virtual_address (native and uarch pr | Honest operator (AUDIT.md: "Interpreter, ... uarch program,  | R7 (Atomics and fences; Address translation and memory permissions), section 8 C | Critical (R7 read as written) / Medium (narrower reading of the Medium case) |
+| [R9-SUBREFSTATE-1](#r9-subrefstate-1) | PRT referee model freezes output acceptance once the fixed audience of the latest prove_output request has answered. A later valid proof of a committed output is never accepted. | doc/recipes/prt.lua wait_for_outputs (l.774-802) over doc/recipes/game-transport.lua dispatch_request, accept_scheduled_ | Referee model (AUDIT.md: The PRT referee model in doc/recipe | A5 (converse clause), section 3 referee-model and support clauses, section 8 Cri | Critical (preferred: what the referee model accepts, A5) / Medium (alternative: read as a stall of the model, so rated as support) |
+| [R9-SUBREFSTATE-2](#r9-subrefstate-2) | The PRT referee model binds a claim to the connections that posted it, so a restarted honest player is never asked about its claim again and the claim loses by timeout. | PRT referee model, doc/recipes/prt.lua partition_claims and the claim-holder requests; doc/recipes/game-transport.lua su | Referee model (AUDIT.md: The PRT referee model in doc/recipe | A7, R4 (restart clause), section 1 completeness, section 3 referee-model clause | Critical (preferred, referee model rated as deployed referee, A7/R4) / Medium (if read as a support stall) |
+| [R9-SUBTLB-1](#r9-subtlb-1) | SRET from S to S clears mstatus.MPRV without flushing the read/write TLB, so S-mode with SUM=0 keeps accessing U pages through stale entries filled at effective privilege U | Interpreter execute_SRET (src/interpret.cpp ~2802-2828), shared by native, uarch, log producers and the regenerated step | Honest operator (AUDIT.md row 1: Interpreter, uarch program) | R7 (Address translation and memory permissions); section 2 valid template; secti | Critical (per-register reading of the valid-template register condition) / Medium (if S-mode with MPRV=1 cannot be a valid template) |
 | [R1-R10-1](#r1-r10-1) | Regenerated Solidity StepVerifier and C++ verify_step_uarch accept uarch stores to the PMA array, shadow TLB, HTIF and uarch_x0, which the native uarch refuses as traps | machine-solidity-step regenerated (EmulatorCompat.writeWord/AccessLogs.writeWord via UArchStep store helpers); C++ uarch | Referee verifier (regenerated machine-solidity-step); C++ ve | R3, R2, R10; section 8 High (verifier misbehaving on unreachable before-states) | High |
 | [R1-R10-2](#r1-r10-2) | Off-by-one in Memory.validateStrideLength makes the on-chain step verifier revert on uarch accesses to the top 32-byte leaf, which native uarch and C++ verifier accept | machine-solidity-step src/Memory.sol validateStrideLength (identical in released, regenerated and Dave machine/step) | Referee verifier | R2, R3, section 8 High (divergence at unreachable states) | High (preferred: divergence between paths at an unreachable state) / Low (if rejecting at an unreachable state is not a divergence) |
 | [R1-R12-2](#r1-r12-2) | The uarch issues a TLB flush's 768 write_tlb ecalls through an out-of-line 14-instruction wrapper: 17,492 uarch cycles (22 per slot) even with a full TLB, about 5-6x what is needed | uarch program TLB-flush path: src/interpret.cpp flush_tlb_slot/flush_tlb_set/flush_all_tlb/set_prv compiled into the uar | Honest operator (AUDIT.md: 'Interpreter, ..., uarch program, | R12, A7, section 8 High constant-factor case; fix implies R13/A6 version change | High (preferred reading); Low under the alternative reading that 'defect' excludes code-generation efficiency of a correct implementation |
@@ -40,6 +43,7 @@ Where the threat model can be read two ways, the severity column gives the revie
 | [R1-R8-3](#r1-r8-3) | Each collect_mcycle_root_hashes call re-marks and word-compares all 256 write-TLB pages even when nothing changed. A guest that yields every 1-2 mcycles makes each yield cost about 6x more. | collect_mcycle_root_hashes / hash tree (src/machine.cpp update_hash_tree, mark_write_tlb_dirty_pages) | Honest operator | R12, A7, section 8 High (constant-factor cost) | High (preferred: guest-induced constant-factor increase of R12 'a part of a claim', sizing unknown) / Out of scope (literal reading of the yield-count exclusion |
 | [R10-PERGUEST-2](#r10-perguest-2) | collect_mcycle_root_hashes updates the hash tree over always-dirty shadow pages twice per non-sampling automatic yield, raising worst-case per-mcycle claim cost about 5x | src/machine.cpp machine::collect_mcycle_root_hashes (entry update_hash_tree, unconditional in-loop m_ht.update); src/col | Honest operator | R12, A7, section 8 High constant-factor case | High (preferred) / Out of scope (literal reading of the outputs-or-yields exclusion) |
 | [R3-VARSHADOW-1](#r3-varshadow-1) | The HTIF getchar guard runs only at create/load. After write_reg or a full-shadow write_memory sets iconsole GETCHAR, native diverges from uarch/collectors (5 vs 0) and store writes an unloadable directory | machine::init_console (create/load only), write_reg htif_iconsole, validate_processor_shadow (full-shadow write_memory), | Diverging paths: Honest operator (interpreter, state access, | R2, R1, R14, R9; section 8 High (divergence at unreachable states), Medium (off- | High (preferred: divergence between paths only at demonstrably unreachable states) / Medium (R1-R2-1 off-path API reading) / Out of scope or Low (broad delibera |
+| [R9-SUBCMIO-1](#r9-subcmio-1) | Creation accepts a reproducible Keccak config already at an rx-rejected manual yield with a zero revert root hash. Later canonical hashes are 0x00..00, so no uarch-level claim or step proof can follow. | Machine creation (machine::init_processor, validate_processor_shadow) with the rejection exception in collect_mcycle_roo | Honest operator (AUDIT rows 1 and 2) | R4 (configuration clause), R5, R6, A4, R8 (unreachability), section 8 High 'dive | High (preferred) / Critical / Low |
 | [R1-A3-1](#r1-a3-1) | PRT player opens epoch N+1's listener from epoch N's seal block, so it misses the inputs DaveConsensus defers past the 2^24 limit and crash-loops | doc/recipes/crisium.lua open_epochs (line 267) + doc/recipes/prt-epoch.lua poll (lines 37, 73, 96) | Support (PRT player, AUDIT.md table), standing in for the ho | R4 (last bullet), A3, section 8 Critical 'crash ... data the honest operator mus | Medium |
 | [R1-A6-2](#r1-a6-2) | PRT player and deployer check deployments only by pristine uarch hash, never CM_MARCHID, so they accept another version's verifier with an unchanged uarch image | doc/recipes/crisium.lua (start-up check, lines 128-132), doc/recipes/prt-deploy.lua (lines 44-48), doc/recipes/prt-lua-b | Support (PRT player/deployer in doc/recipes), standing in fo | R13, A6 | Medium (preferred: R13 check must hold against later releases); Low (if only versions already released count) |
 | [R1-A7-3](#r1-a7-3) | The stored PRT player runs a later epoch's whole input in one crisium idle step, so the sealed epoch's dispute is not observed or answered until that input finishes | PRT stored player and crisium main loop (doc/recipes/prt.lua, doc/recipes/crisium.lua) | Support, standing in for the honest operator | R4, A7, section 3 support rule, section 8 Medium case | Medium (reading A: Critical in the stood-in honest role, so Medium for support; reading B: High as a constant factor, still Medium for support) |
@@ -2122,6 +2126,477 @@ tracking misses, and then lose data. Only S-mode or M-mode (MPRV) code can produ
 software can avoid them by executing `sfence.vma` after every PTE change before any AMO to the page, and by not
 running AMOs on self-mapped page-table entries.
 
+## R9-SUBREFSTATE-1
+
+**Title.** The PRT referee model in `doc/recipes` stops accepting output proofs for good once every player connected at the latest `prove_output` request has answered without a new valid output. A valid proof of another committed output is then never heard.
+
+**Severity.** Critical (preferred: a defect in what the referee model accepts, rated as a deployed referee under A5). Medium under the alternative reading that this "only ... stalls the model" and is rated as support. See Rating.
+
+### Problem
+
+After the tournament, `wait_for_outputs` (`doc/recipes/prt.lua`) settles the outputs Merkle root. It then loops: it
+issues `request_first_valid(EVERYONE, EVENTS.prove_output, ...)` and waits `FOREVER` for one valid output that it has
+not accepted yet. The transport (`doc/recipes/game-transport.lua`) fixes each request's audience to the player
+connections that are live when the request is dispatched (`dispatch_request`). Each audience member answers that
+request once. `accept_scheduled_response` drops any response from a connection outside `future.audience`. Once every
+audience member has answered, `step_time` finds no logical-time boundary: there is no deadline, no target block and no
+pending scheduled block. So the clock never advances, no `advance_time` is sent (the only channel that carries pushed
+responses), and no new request is issued. A line from a connection with no current request is read and discarded
+(the reader matches `message.id` against `expected_id`, l.586). The comment of the transport states the design: "Only
+an accepted response resolves a first-valid future, even when all its holders answer "nothing" or leave."
+
+This freeze happens in the model's normal flow. The honest player's `event_handler.prove_output` always offers the
+epoch's last output (`prt.lua` l.2010-2011). Its first offer is accepted. The loop then asks it again, it offers the
+same output again, the validator refuses it as already accepted, and the model freezes. From then on, no valid proof
+of any other output that the settled state commits to can be presented. That holds for a party that connects later
+(the `EVERYONE` audience would include it, but no request is ever issued again), for an honest player that restarts on
+a new connection, and for an audience member that would offer another output later. The manual's PRT section says
+"The referee then accepts output proofs against that root, and the player chooses which output to offer ... The
+referee waits for output proofs indefinitely". The `prt.lua` comment says "Anyone may answer, since every offer is
+validated against the settled hash". The deployed referee (rollups-contracts output validation) accepts a valid proof
+from anyone at any time.
+
+This violates A5: "Conversely, the referee accepts every output that the settled state commits to, whenever its valid
+proof is presented. No party can make it stop accepting them." A deployed referee with this behavior would make every
+output of an epoch other than those offered in the first request rounds permanently unprovable. A party could also
+cause the freeze before an output it wants suppressed is offered.
+
+### Component, role and area
+
+The PRT referee model in `doc/recipes`. Its AUDIT.md role is "Referee model". The area is output acceptance after
+settlement (`wait_for_outputs`) and the referee transport's request audience, response acceptance and logical clock.
+Section 3 says: "What it authenticates or derives under A1 to A5 is its own, whichever library does the work". So
+`game-transport.lua`'s server is part of the referee model here.
+
+### Location
+
+- `doc/recipes/prt.lua`: `wait_for_outputs` (l.774-802: `request_first_valid(EVERYONE, EVENTS.prove_output, ...)` and
+  `output_proof:wait_at_most(FOREVER)` at l.786-796); `run_referee` (l.816-824); `event_handler.prove_output`
+  (l.2010-2011, always the last output).
+- `doc/recipes/game-transport.lua`: `dispatch_request` (l.826-838, fixed `future.audience`), `get_players` (l.659),
+  `accept_scheduled_response` (l.925-978, `not future.audience[response.connection]` drops the response),
+  `step_time` (l.1011-1140: boundaries only from deadlines, target blocks and integer pending blocks; `next_block` at
+  l.1126 returns nothing, so no `advance_time` is sent), the adopt reader (l.586-598, a line without the current
+  request id is discarded).
+
+### Evidence and test
+
+`bugs/R9-SUBREFSTATE-1/` contains `test.lua` (the test), `README.md` (the prover's notes) and this entry. Run it with
+`bugs/run.sh R9-SUBREFSTATE-1`. It takes about 3 s and needs the in-tree build and
+`bugs/harness/work/configs/baremetal-template`.
+
+The test builds a settled state from the harness's `baremetal-template` (a valid template running `emit-output.bin`)
+after two accepted advance inputs. That state commits to outputs 0 and 1. It builds the outputs-root proof (iflags_Y,
+htif_tohost, tx-buffer word) and both output proofs with the emulator. It checks them first with the model's own
+validators (`game-output.lua`). It then runs the shipped `wait_for_outputs`, taken from the `prt.lua` closures, on the
+shipped referee server (`prtu.new_server`, i.e. `game-transport.lua`). It drives the same loop as `server:run`
+(`step_time` and dispatcher steps) and stops when nothing can happen (no runnable coroutine, no clock progress, no
+socket readiness for 1 s), or after a step budget. Players are coroutines on the same dispatcher that talk over real
+loopback sockets and encode their answers with `prtu.answer_event`. The honest player answers as
+`event_handler.prove_output` does, with output 1. A control scenario connects a presenter of output 0 before
+settlement and requires output 0 to be accepted, and the test exits 2 if the control fails. The tested scenario
+connects the presenter after the honest player's repeated offer has been refused. The presenter answers any
+`prove_output` with output 0 and pushes it under every open request id on `advance_time`. The test requires output 0 to
+be accepted.
+
+On audit/prt2 (61ac211) it prints the following and exits 1 (three runs by the reviewer, all identical):
+
+```
+settled state 0x73bee34a60c13ad2519d6551a3d89318e1ca60fe1eb612f815c6c54a97b1f37f commits to outputs 0 and 1 (outputs root 0xda25fcdcfa2cc35ac633e3f33345f7616fdcf832a7101f6f91dc15f85e47c2c4)
+referee accepted output 1
+referee accepted output 0
+[control] phase 1: condition at block 3; honest asked prove_output 2 times; accepted {1,0}
+[control] presenter got 6 events (prove_output 2, advance_time 3); accepted {1,0}
+referee accepted output 1
+[late] phase 1: quiescent at block 3; honest asked prove_output 2 times; accepted {1}
+[late] phase 2: quiescent; block 3 -> 3; presenter connected=true
+[late] presenter got 0 events (prove_output 0, advance_time 0); accepted {1}
+VIOLATED: A5: the referee accepts every output that the settled state commits to, whenever its valid proof is presented; no party can make it stop accepting them (valid proof of output 0 presented after the honest player's repeated offer of output 1)
+run.sh: R9-SUBREFSTATE-1: exit 1 (bug present)
+```
+
+The presenter is connected and announced as a player, but the clock stays at block 3 and it receives no event. Output
+0 is never accepted. The control shows that the proofs, players and driver work. A fix that keeps output acceptance
+open (for example, one that re-issues requests to the current players in later blocks) makes the test pass. The
+reviewer did not modify the test. Opus 5.5 hunted, proved and reviewed it, with no fallback.
+
+### Trigger and reachability
+
+No adversary is needed. Once the tournament has a winner, the shipped honest player's second offer of its last output
+causes the freeze. Any set of players causes it once each has answered without a new valid output. The state is the
+model's ordinary end state for every epoch whose winner exists, from any valid template. Any party, including an
+honest party restarting (R4: "After a stop, it restarts ... and keeps defending its claim") or a user who wants to
+prove another output, is then refused. An adversary connected before settlement can also cause the freeze early by
+answering with invalid offers alongside the honest player.
+
+### Rating
+
+1. Out of scope: no. The exclusion "Defects that need the deployment to violate one of A1 to A8" carves out "unless an
+   implementation of the referee model is what violates it (section 3)", and here the referee model itself violates
+   A5. It is not "The stall of an application that halts, yields manually with a reason other than accepted or
+   rejected, or never yields". The settled state yields with the accepted reason and commits to both outputs. It does
+   not need an untrusted party to call the machine API. The simplifications the manual lists for the model ("The model
+   simplifies the PRT contracts in a few ways ...") do not include this, and section 5 makes them non-normative anyway.
+2. Role: the PRT referee model in `doc/recipes`, role "Referee model" (AUDIT.md table). Section 3: "A defect in what
+   it accepts or derives is rated as if a deployed referee had it", and "What it authenticates or derives under A1 to
+   A5 is its own, whichever library does the work". This clause covers the component, since the request audience and
+   response acceptance of `game-transport.lua` decide which output proofs the model accepts. Counter-clause: "A defect
+   that only changes how long a claim may take to respond, or only crashes or stalls the model, even when that stops
+   other matches (A8), is rated as support."
+3. High and Medium cases: under the preferred reading none applies. It is not a verifier on unreachable states, not a
+   trailing-data case, and not a persistence or hash-integrity case. Under the stall reading, the Medium case applies:
+   "A defect that only a support component shows, when section 3 rates it Medium". Section 3 then gives "Medium when
+   it would rate High or Critical in the role the component stands in for", and a deployed referee that stops
+   accepting outputs would be Critical.
+4. Critical: A5 is violated at a reachable state: "Conversely, the referee accepts every output that the settled
+   state commits to, whenever its valid proof is presented. No party can make it stop accepting them." The settled
+   state commits to output 0, a valid proof is presented by a connected player, and the model never accepts it.
+
+Two readings. The preferred one is Critical. The model does not stop working (it keeps adopting connections and
+reading lines). Its acceptance rules, a fixed one-shot audience, dropped responses from outside the audience and no
+re-request, decide that a valid proof is never accepted. That is "what it accepts". The alternative is Medium (support).
+Here the permanent `FOREVER` wait with no clock boundary is read as "only ... stalls the model", consistent with how
+R1-A8-3 rated the model's `advance_time` barrier stall. The decisive fact is whether a freeze that the model's own
+acceptance logic produces in its normal flow, with no party misbehaving, counts as "what it accepts" or as a stall.
+The threat model does not say. Both readings give Medium or above.
+
+### Possible solution and risks
+
+Keep output acceptance open for every current and future player. For example, `wait_for_outputs` could re-issue
+`prove_output` to `EVERYONE` in each later block (a `wait_until(get_time() + 1)` between rounds), so that late
+connections join the audience and members can offer other outputs. Alternatively, the transport could accept
+unsolicited `prove_output` responses from any player at any block, validated against the settled root. Another option
+is to have the honest player offer each not-yet-accepted output in turn. That alone does not fix late presenters.
+Risks: a referee that keeps advancing time never quiesces, so the demonstration needs its existing phase-closer stop
+to end (the manual already says the script stops the server). The recipe's narration and transcript determinism checks
+(the tournament is run twice and must narrate identically) must stay stable. The extra blocks change block numbers in
+the story only after the tournament.
+
+### Risk of not fixing it
+
+The model is the manual's normative description of what the referee accepts. A deployed referee built to match it
+would leave every output of an epoch except the first one each early player offers permanently unprovable. Anyone
+could cause that by answering the first requests. Today the deployed Dave/rollups output validation accepts proofs at
+any time, so the exposure is to implementations and reviews that follow the model, and to the demonstration's claim
+that it models the PRT contracts. There is no mitigation outside the code other than not relying on the model for
+output acceptance.
+
+## R9-SUBREFSTATE-2
+
+**Title.** The PRT referee model in `doc/recipes` binds a claim to the TCP connections that posted it. An honest player that stops and restarts comes back on a new connection, is never again asked about its claim, and the claim loses by timeout.
+
+**Severity.** Critical (preferred: a defect in which claim a timeout decides, rated as a deployed referee, A7 with R4's restart clause). Medium under the alternative reading that this "only ... stalls the model" and is rated as support. See Rating.
+
+### Problem
+
+In the referee model, the holders of a claim are the connection objects whose claim responses were accepted.
+`partition_claims` (`doc/recipes/prt.lua`) calls
+`subscribe_connection(subscription_hash(tournament_id, claim), response.connection)` for each accepted claim
+response. The only other subscription is `accept_subscribers` (`doc/recipes/game-transport.lua`), which subscribes
+the players announced before admission closes to the initial state hash. No code path ever adds a connection to a
+claim's subscription later. A player that announces after admission (`announce`) gets only `is_player`.
+
+Every request about a claim goes to that fixed set of connections. These are `reveal_bisection` (`reveal_divergence`),
+`seal_divergence`, `win_match_by_timeout` (`emit_win_match_by_timeout`), `commit_uarch_claim` (`open_uarch_tournament`),
+`prove_state_transition` (`settle_uarch_state_hash`) and `propagate_uarch_result`. `dispatch_request` fixes the
+request's audience to those connections. `accept_scheduled_response` drops any response from a connection outside
+`future.audience`.
+
+A stored honest player that stops and restarts from its epoch directory necessarily reconnects on a new connection.
+It holds the claim's tree and can answer every request about it, but it is not a holder. It is not asked, and its
+answers would be dropped. It cannot post the claim again, because claim collection is closed. When the claim comes on
+turn, nobody answers. The opponent wins by timeout and the honest claim is eliminated. With one dishonest opponent, a
+fabricated final state settles.
+
+The manual describes the opposite. "a claim does not belong to the player that posted it. Every request concerns a
+claim, and any holder of that claim may answer it. The answer must verify against the claim's own commitment, so the
+sender does not matter. Every honest player computes the same claim, and that claim survives as long as anyone defends
+it." It also says that "A stored player keeps its machines, inputs, and outputs in an epoch directory, and reopens it
+after a crash". The deployed referee does not bind moves to a sender either. In the pinned Dave `Tournament.sol`,
+`advanceMatch` checks only the nodes against the match state, not `msg.sender`, and an honest node that restarts
+keeps its keys anyway.
+
+This breaks the goal's completeness side. Section 1 says "If the honest claim is eliminated, a dishonest claim can
+win." The test shows exactly that: the tamperer's claim, with a different final state, settles.
+
+Today a crash (an EOF without a `done` reply) crashes the referee model first. That is the confirmed issue
+R3-VARREFMODEL-2. This issue is separate. It is reached with an announced departure today, and it becomes the outcome
+of every restart once R3-VARREFMODEL-2 is fixed by dropping the dead connection.
+
+### Component, role and area
+
+The PRT referee model in `doc/recipes` (`prt.lua referee` over `game-transport.lua`). AUDIT.md table: "The PRT referee
+model in `doc/recipes` | Referee model". Area: claim holders and request audiences (who may answer for a claim).
+
+### Location
+
+- `doc/recipes/prt.lua`: `partition_claims` (230-258, the only claim subscription, l.245); requests addressed to
+  claim holders in `emit_win_match_by_timeout` (368-381), `settle_uarch_state_hash` (409-), `open_uarch_tournament`
+  (461-, l.476-480), `propagate_uarch_result` (514-, l.523-525), `reveal_divergence` (602-, l.608-611) and
+  `seal_divergence` (633-, l.638-641).
+- `doc/recipes/game-transport.lua`: `announce` (530-545, a late player gets no subscription),
+  `subscribe_connection` (623-630), `get_subscribers` (634-656), `dispatch_request` (826-837, fixed audience),
+  `accept_subscribers` (900-917), `accept_scheduled_response` (925-939, the audience check at l.933).
+
+### Evidence and test
+
+`bugs/R9-SUBREFSTATE-2/` contains the following.
+
+- `test.sh`: the test, run by `bugs/run.sh R9-SUBREFSTATE-2` (about 30 s). It runs two real tournaments with the
+  in-tree `prt.lua referee` over the same epoch: the harness's `baremetal-template` with three inputs. Each has two
+  claimants, joined in this order: the honest stored player (`honest-first.lua`) and
+  `prt-dishonest.lua tamperer 1 0`, which corrupts its own execution of input 1. It uses free loopback ports, starts
+  no chain and kills every process it starts.
+  - Control: the honest player runs unchanged. The test requires the honest claim to win (otherwise exit 2).
+  - Restart: at its claim's first `reveal_bisection`, the first incarnation stops with its reply outstanding, so the
+    referee's logical clock cannot advance. A second incarnation (`honest-restarted.lua`) is started on the same
+    epoch directory. It reopens the sealed epoch and checks that it holds the claim's tree and can open its root. The
+    test waits until the referee's trace (`PRT_GAME_TRACE`) shows it read the new connection's announcement. Only
+    then does the first incarnation leave with an announced `done` reply, so the referee does not crash on an EOF
+    (R3-VARREFMODEL-2). The restarted player is connected before any block passes.
+  - Required (A7, R4): the honest claim still wins. Exit 0 if it does, 1 if it loses, 2 on a setup error.
+- `honest-first.lua`: `prt.lua honest ... <epoch-directory>` as a stored player, plus two hooks. It records the claim
+  it posts and, in restart mode, stops at the first `reveal_bisection`.
+- `honest-restarted.lua`: the same stored player on the same epoch directory. It checks that it holds the claim and
+  logs every request it receives.
+- `fix-check.sh` (not run by `run.sh`; run after `. bugs/env.sh`). It patches a copy of `doc/recipes` so that a
+  player announcing after admission joins the audience of open and later claim requests, and so that the honest
+  handlers answer `nothing` for a claim they do not hold. It then runs `test.sh` against the copy.
+
+The reviewer re-ran `bugs/run.sh R9-SUBREFSTATE-2` twice on audit/prt2. Both runs exit 1 with identical output:
+
+```
+control: tournament:
+  Round 1, match 1, at the mcycle level: claim 0x84cc13c6... against claim 0x29040379....
+  Match 1: claim 0x84cc13c6... wins.
+control: the honest claim 0x84cc13c66a48e339ff1e479d07dab73c60d8a2fe4af36ffa7611e61a3eb128f9 wins (no restart), final state 0xbab85ef1f80cc29c18685068c952c603813b2f2df1055fbb88cbcec4a2872f0d
+restart: first incarnation stops at reveal_bisection(position=0, height=62) of claim 0x84cc13c66a48e339ff1e479d07dab73c60d8a2fe4af36ffa7611e61a3eb128f9
+  (its reply is outstanding, so the referee's logical clock cannot advance)
+restart: second incarnation reopened the epoch directory, holds claim 0x84cc13c66a48e339ff1e479d07dab73c60d8a2fe4af36ffa7611e61a3eb128f9, and is connected
+restart: first incarnation left with an announced departure (done)
+restart: tournament:
+  Round 1, match 1, at the mcycle level: claim 0x84cc13c6... against claim 0x29040379....
+  Match 1: claim 0x29040379... wins.
+  Nobody opened claim 0x84cc13c6.... Claim 0x29040379... claims a timeout win.
+restart: requests about the claim received by the restarted player: 0
+  2 honest (restarted): received prove_output 0x54685bd0492489f7f4d741b9a7bb0a67a57e393cb6ff7a1692d01eef300a57b4
+  1 honest (restarted): received prove_outputs_merkle_root 0x540b26c794ae6ebb12d76d49225eb27dbf3cb69329fdcbc84772cb48de29a407
+FAIL (A7/R4): the honest claim 0x84cc13c66a48e339ff1e479d07dab73c60d8a2fe4af36ffa7611e61a3eb128f9 lost after its player restarted within its clock
+  winner: the tamperer's claim 0x2904037976d7749c28b8b96a66dcd08adc5f47fe329589e26d142c1236d66953, final state 0x540b26c794ae6ebb12d76d49225eb27dbf3cb69329fdcbc84772cb48de29a407 (honest final state 0xbab85ef1f80cc29c18685068c952c603813b2f2df1055fbb88cbcec4a2872f0d)
+  A7: "No rule of the referee may make the honest claim lose by timeout while it acts within its own clock."
+  R4: "After a stop, it restarts from a directory that O2 guarantees and keeps defending its claim."
+run.sh: R9-SUBREFSTATE-2: exit 1 (bug present)
+```
+
+The restarted player receives only `EVERYONE` requests, the output proofs for the tamperer's settled state. The
+tamperer's fabricated final state settles. The reviewer also ran `fix-check.sh`, which exits 0. Against the patched
+copy, the restarted player receives 33 requests about its claim. It opens the pending nodes, builds its uarch claim and
+proves the disputed transition, and the honest claim wins with final state `0xbab85ef1...`. So the test fails for this
+defect and passes once it is fixed. The test asserts only the outcome that A7 requires, and no wall-clock threshold
+decides it.
+
+### Trigger and reachability
+
+No adversary action beyond posting a dishonest claim is needed. The trigger is the honest operator's own stop and
+restart, which is on the honest operator's path ("Restarting after a stop (O2)", section 2) and which the manual's
+stored player is documented to support ("reopens it after a crash"). Any match in which the honest claim comes on turn
+after the restart reaches it. That holds for every epoch with at least one claim that disagrees with the honest one.
+The restarted player reloads a sealed epoch directory that the first incarnation finished writing, so O2 does not
+exclude it. Today the stop must be an announced departure (`done`), since an unannounced EOF crashes the referee model
+(R3-VARREFMODEL-2). Once that crash is fixed by dropping dead connections, a crash or kill reaches this issue too.
+
+### Rating
+
+1. Out of scope: no. The exclusion "Defects that need the deployment to violate one of A1 to A8, unless ... an
+   implementation of the referee model is what violates it (section 3)" does not apply, because the referee model is
+   what violates A7. The O2 exclusion ("Defects that need the honest operator to reload a stored directory that O2
+   does not guarantee") does not apply. The restarted player reopens a sealed epoch directory, and the defect does
+   not depend on its contents: the referee never asks the new connection anything about the claim. No other exclusion
+   concerns restarts or the referee's choice of senders.
+2. Role: the PRT referee model in `doc/recipes`, role "Referee model" (AUDIT.md table). Section 3 covers this
+   component: "A defect in what it accepts or derives is rated as if a deployed referee had it. Which claim a timeout
+   or an elimination decides is part of what it derives." The defect is in what it accepts (answers only from the
+   posting connections) and in which claim a timeout decides (the honest one). The support clause, "A defect that
+   only changes how long a claim may take to respond, or only crashes or stalls the model, even when that stops other
+   matches (A8), is rated as support", does not fit. The model neither crashes nor stalls. It runs to a verdict and
+   settles the wrong claim. If the manual's model is read as binding a claim to its posters ("every player that posted
+   one becomes a holder of it"), section 3 still applies: "unless the manual's model itself violates one of A1 to A8;
+   then the manual is the defect, rated as a defect of the referee model". The binding is not among the
+   simplifications the manual lists ("The model simplifies the PRT contracts in a few ways ..."), so it is not
+   excused as non-normative.
+3. High and Medium cases: none fits. It is not a verifier on unreachable states, a constant-factor cost, or a
+   persistence failure. Section 8's Medium "A defect that only a support component shows, when section 3 rates it
+   Medium" does not apply, because the component is the referee model and section 3 rates this defect as a deployed
+   referee's.
+4. Critical: it violates A7 at a reachable state on the honest operator's path. A7 says "No rule of the referee may
+   make the honest claim lose by timeout while it acts within its own clock." The restarted honest player is connected
+   and holds the claim before any block of the claim's clock passes, and the claim loses by timeout. R4 requires the
+   operator to be able to do exactly this: "After a stop, it restarts from a directory that O2 guarantees and keeps
+   defending its claim." A referee with this acceptance makes that impossible. Section 8: "violating any rule or
+   obligation at a reachable state, or anywhere on the honest operator's path, is critical." It also produces the
+   section 1 completeness failure: "If the honest claim is eliminated, a dishonest claim can win."
+
+Alternative reading: if the timeout loss is read as the model "only ... stall[ing]" for want of an answer, it is rated
+as support. That gives Medium under section 3's stand-in rule, since a deployed referee would rate Critical. The fact
+that decides is whether the honest operator "acts within its own clock" when it is ready and connected but the
+referee gives it no channel. The test shows the referee reaching a verdict against the honest claim, not a stall,
+which supports the Critical reading. A Low reading would need per-connection holders to be a non-normative
+simplification of the manual, and the manual's list of simplifications does not include it.
+
+### Possible solution and risks
+
+Stop binding claims to connections. One option is to address claim requests to every live player, or to every player
+that declares the claim, and to accept the first response that validates against the claim's commitment, whoever sent
+it, as the manual and Dave do. Another is to let a connection that announces after admission subscribe to a claim's
+hash once it shows that it holds the claim, for example by opening its root. The audience of requests already
+outstanding must also grow, so that a player that reconnects mid-request can still answer it. `fix-check.sh` sketches
+the first option. The honest handlers must then answer `nothing` for a claim whose tree they do not hold. Risks: the
+narration and the transcript order must stay deterministic when the audience grows, and late joiners must not be able
+to delay the block barrier indefinitely (A8). Fixing R3-VARREFMODEL-2 by dropping dead connections is needed for a
+crash restart to reach the fix.
+
+### Risk of not fixing it
+
+A deployment that implemented the model's acceptance rule would let any dishonest claim win against an honest
+operator that restarts during a dispute (an upgrade, a crash, a host reboot). The adversary only needs to post a
+disagreeing claim and wait. Running several independent honest operators on the same claim mitigates it while at
+least one of them never restarts. The manual's model, which Dave and the Lua bridge are checked against, also stays in
+contradiction with its own statement that "the sender does not matter".
+
+## R9-SUBTLB-1
+
+**Title.** SRET from S-mode to S-mode clears `mstatus.MPRV` without flushing the read/write TLB, so S-mode with SUM=0
+keeps accessing U pages through translations filled at effective privilege MPP=U.
+
+**Severity.** Critical (preferred: per-register reading of the valid-template register condition) / Medium (if a
+template in S-mode with MPRV=1 is not a valid template).
+
+### Problem
+
+`execute_SRET` follows the privileged specification and clears `mstatus.MPRV` when SPP < M ("An MRET or SRET
+instruction that changes the privilege mode to a mode less privileged than M also sets MPRV=0"). It flushes the TLB
+only through `set_prv`, which it calls only when the privilege changes (`prv != spp`). When the hart is in S-mode with
+MPRV=1 and MPP=U, and SRET returns to S (SPP=S), the effective privilege of loads and stores changes from U to S, but
+the read and write TLB sets keep entries that were filled and permission-checked at effective privilege U. A later
+S-mode load or store with SUM=0 to a U page then hits the stale entry and completes, where the specification requires
+a page fault ("When SUM=0, S-mode memory accesses to pages that are accessible by U-mode will fault"). The emulator
+handles the analogous cases elsewhere: `execute_MRET` flushes the read/write TLB when it returns to M with MPRV still
+set, `raise_exception` does the same for a trap taken in M with MPRV set, and the `mstatus` CSR write flushes on MPRV,
+MPP, SUM and MXR changes. SRET is the one path that changes the effective data privilege without a flush.
+
+The deviation is deterministic and consistent across paths (native run and uarch run agree), so it does not produce
+a hash disagreement. It is a deviation of the state transition function itself from the RISC-V specification, in
+"Address translation and memory permissions", an area where R7 says "any deviation lets an input subvert a correct
+guest, even a deviation that is consistent across all paths". A guest that relies on SUM=0 to keep S-mode code from
+touching U memory after returning from such an SRET is not protected.
+
+### Component, role and area
+
+The interpreter (`execute_SRET`), shared by native execution, the uarch program (which runs the same interpreter),
+the log producers, and the referee verifier regenerated from it. Role: Honest operator (AUDIT.md: "Interpreter,
+state-access layers, devices, uarch program, ..."). Area: address translation and memory permissions (TLB
+maintenance on a change of the effective data privilege). Machine creation (accepting `iprv=S` with MPRV=1) is the
+other component involved; it has the same role.
+
+### Location
+
+- `src/interpret.cpp`, `execute_SRET` (lines ~2802-2828): clears MPRV, calls `set_prv` only when `prv != spp`, no TLB
+  flush otherwise.
+- For comparison: `execute_MRET` (~2832-2866, `else if (mstatus & MSTATUS_MPRV_MASK)` flush branch),
+  `raise_exception` (~496-504), the `mstatus` write (~2331-2337).
+- `src/translate-virtual-address.hpp` (~118-122): data accesses use MPP when MPRV=1, in any privilege mode.
+
+### Evidence and test
+
+`bugs/R9-SUBTLB-1/` contains:
+
+- `test.lua` (run by `bugs/run.sh R9-SUBTLB-1`): creates a machine from a configuration with `iprv=1` (S), `mstatus`
+  MPRV=1, MPP=U, SPP=S, SUM=0, Sv39 `satp`, `medeleg` delegating page faults to an S handler, and a hand-encoded guest
+  (no toolchain). The guest loads from a U page at VA 0xC0002000 (succeeds at effective privilege U and fills the
+  read TLB), executes `sret` (sepc = next instruction, stays in S, MPRV becomes 0), then loads the same VA again. The
+  test requires the second load to raise a load page fault (scause 13, sepc = the load, stval = the VA). A control
+  variant with `sfence.vma` before the second load faults as required, which shows a page walk refuses the access and
+  the stale TLB entry is what lets it through. The bug variant is also run through `run_uarch` + `reset_uarch` per
+  mcycle and compared (informational). The test also exits 0 under the alternative fixes "creation refuses iprv != M
+  with MPRV=1" and "MPRV ignored outside M-mode".
+- `reach-from-template.lua` (informational, not run by `run.sh`): the same guest first loads the U page, then yields
+  manually with the accepted reason through HTIF while still in S-mode with MPRV=1. The machine is stored, reloaded,
+  an advance-state input is delivered with `send_cmio_response` (revert root hash = the root hash), and the guest
+  runs `sret` and the second load. It prints `stage=3 trap=0 scause=0 t2=0x1122334455667788 MPRV=0 iprv=1`: the stale
+  entry survives store/load and the delivery, and the second load completes.
+- `README.md`: description of the test.
+
+`bugs/run.sh R9-SUBTLB-1` on audit/prt2 (three runs by the reviewer, identical, exit 1, about 0.1 s):
+
+```
+native, no flush:            stage=3 trap=0 scause=0 sepc=0x0 stval=0x0 t0(1st ld)=0x1122334455667788 t2(2nd ld)=0x1122334455667788 MPRV=0 iprv=1
+native, sfence.vma (control): stage=2 trap=1 scause=13 sepc=0x80000014 stval=0xc0002000 t0(1st ld)=0x1122334455667788 t2(2nd ld)=0x0 MPRV=0 iprv=1
+uarch, no flush:             stage=3 trap=0 scause=0 sepc=0x0 stval=0x0 t0(1st ld)=0x1122334455667788 t2(2nd ld)=0x1122334455667788 MPRV=0 iprv=1
+uarch and native agree on the bug variant
+the second load completed in S-mode with SUM=0 on a U page (stale read-TLB entry filled at effective privilege U before SRET cleared MPRV); with sfence.vma it faults
+VIOLATED: R7 (address translation and memory permissions): after SRET clears MPRV, an S-mode load with SUM=0 from a U page must raise a load page fault (scause 13, stval = VA)
+run.sh: R9-SUBTLB-1: exit 1 (bug present)
+```
+
+Reviewed on Opus 5.5; the reviewer used no fallback model.
+
+### Trigger and reachability
+
+Guest instructions cannot produce S-mode with MPRV=1 from an M-mode start: only M-mode writes `mstatus`, MRET and
+SRET to a mode below M clear MPRV, and traps never lower the privilege. The state is produced by the template's
+configuration: machine creation accepts `iprv=1` together with `mstatus.MPRV=1`, each a value the specification
+defines (the privileged specification defines MPRV=1 as "translated and protected ... as though the current privilege
+mode were set to MPP" without restricting it to M-mode, and in v1.10, which the manual links, MRET/SRET do not clear
+MPRV, so S-mode with MPRV=1 is an ordinary state there). From such a template, which can wait at a manual yield with
+the accepted reason with the stale entry already in its TLB (`reach-from-template.lua`), the delivery of any input
+leads to the deviation. No input content is needed; the guest's own code triggers it.
+
+### Rating
+
+1. Out of scope: no exclusion applies. The trigger is a machine created from a configuration and then run and fed
+   inputs, not "a snapshot that the emulator did not write", not "an untrusted party [calling] the machine API", and
+   not "The effect of a deliberate state change made through the machine API" (the state change is the guest's SRET).
+   "Guest software that an input can subvert, as long as R7 and R8 hold" does not apply, because R7 is what fails.
+2. Role: the interpreter and the uarch program are Honest operator (AUDIT.md row 1); section 3: "The transition
+   function, its log producers, ... play this role in every deployment." The regenerated referee verifier implements
+   the same transition function, so no verifier-only defect is involved.
+3. High and Medium cases: no High case fits (no divergence between paths, no crash, no verifier misbehaviour). The
+   Medium case "An undocumented deterministic deviation, consistent across all paths, in behavior that no correct guest
+   relies on for isolation or data integrity (R7)" fits only if no correct guest can be in this state; the behaviour
+   (permission checks under "Address translation and memory permissions") is one R7 lists as relied on.
+4. Critical: R7, "The emulator implements the RISC-V specification ... departing only where the manual documents a
+   deviation. ... In these areas, any deviation lets an input subvert a correct guest, even a deviation that is
+   consistent across all paths. ... Address translation and memory permissions." The manual documents no TLB or MPRV
+   deviation. The state is reachable if a template in S-mode with MPRV=1 is a valid template: section 2, "Its
+   registers hold only values that the RISC-V specification and the manual allow for them."
+
+Two readings. (a) Per-register reading (preferred): `iprv=1` and `mstatus` with MPRV=1, MPP=U, SPP=S are each values
+the specification allows, so a configuration-made template that yields in that state is valid, the state is reachable
+(shown by `reach-from-template.lua`), the Medium case does not fit (correct guests rely on memory permissions), and
+step 4 gives Critical by R7. (b) Combination reading: the specification never lets a hart reach S-mode with MPRV=1
+(1.11+), so no valid template holds it, the state is unreachable, and the Medium deviation case applies, which per the
+settled readings "has no reachability condition", giving Medium. What decides: whether "values that the RISC-V
+specification and the manual allow for them" constrains combinations of register values reachable from reset, or
+only each register's legal values.
+
+### Possible solution and risks
+
+In `execute_SRET`, when SRET clears MPRV that was set and MPP differs from the new privilege (`spp`), flush
+`TLB_READ` and `TLB_WRITE` even when `prv == spp`, mirroring the `execute_MRET` branch (the simplest form flushes
+whenever MPRV was set and `prv == spp`). Alternatively, refuse at machine creation any configuration with `iprv != M`
+and MPRV=1. The flush changes the state transition function (the shadow TLB is hashed state), so it needs a new
+protocol version, a regenerated `machine-solidity-step` and a new uarch pristine hash (R13, A6). The creation check
+could reject configurations that some tool produces today.
+
+### Risk of not fixing it
+
+A deployment whose template starts the guest in S-mode with MPRV=1 (only possible through a hand-written
+configuration; Linux images boot in M-mode and never reach the state) runs a transition function in which S-mode code
+can read and write U pages with SUM=0 after such an SRET, until the next TLB flush. An input that reaches that code
+path subverts the guest's S/U isolation. All honest operators and verifiers agree on the wrong semantics, so claims
+and proofs are unaffected. Mitigation outside the code: do not create templates outside M-mode with MPRV set, or
+execute `sfence.vma` after such an SRET.
+
 ## R1-R10-1
 
 **Title.** The uarch-step verifiers (the regenerated machine-solidity-step and the C++ replay) accept uarch stores to
@@ -3418,6 +3893,110 @@ logs from the first getchar on, and whose stored directory cannot be loaded. A c
 machine could not be proved. Guests, input senders and dishonest claimants cannot trigger it, and the honest
 operator's path never writes `htif_iconsole`, so the security goal is not exposed. Mitigation outside the code: never
 write `htif_iconsole` or the processor shadow on a reproducible machine.
+
+## R9-SUBCMIO-1
+
+**Title.** Machine creation accepts a reproducible Keccak-256 configuration that starts at a manual yield with the rx-rejected reason. Its revert root hash is 32 zero bytes, so the canonical hash at every later mcycle boundary is 0x00..00, the hash of no state, and no uarch-level claim or step proof can follow.
+
+**Severity.** High (preferred: R4's configuration clause binds creation, and the effect is a divergence between paths only at demonstrably unreachable states, as for R1-R4-1). Critical under the reading that accepting the configuration is itself an R4 violation on the honest operator's path that no High case absorbs. Low under the reading that step 4 requires a reachable state or an honest-path operation, and that no honest operator ever creates a machine at a rejected yield.
+
+### Problem
+
+`cartesi.machine(config)` writes `processor.registers.iflags.Y` and `processor.registers.htif.tohost` from the configuration without checking them. A reproducible Keccak-256 configuration with `iflags.Y = 1` and `htif.tohost = (HTIF_DEV_YIELD << 56) | (HTIF_YIELD_CMD_MANUAL << 48) | (HTIF_YIELD_MANUAL_REASON_RX_REJECTED << 32)` is accepted. No configuration field sets the revert root hash, so it stays 32 zero bytes.
+
+The rejection exception then applies to the new machine. The manual says of `collect_mcycle_root_hashes`: "When the manual yield rejected an input, the recorded revert root hash takes its place". The uarch reset and its log producer and verifier do the same. So the canonical hash at the next mcycle boundary, and at every later one, is 0x00..00. The rejecting machine is stuck: deliveries at a rejected yield are no-ops (R5). There is no "state to which the rejected input was delivered" for later mcycles to start from. The honest operator therefore cannot do the following.
+
+- Compute the uarch-level claim of any later mcycle. `collect_uarch_cycle_root_hashes` refuses without a revert uarch tail ("revert uarch tail is required"). It also accepts any made-up tail whose last entry is 0x00..00, because it checks only that entry.
+- Log a uarch step whose before-hash is the agreed leaf 0x00..00. Running the uarch on the machine it holds starts each later mcycle at the rejecting machine's root hash, not at 0x00..00.
+
+So R4 fails on this machine, and in a dispute that reached those positions the honest claim could not respond (section 1, completeness failure). R4 says creation must reject such a configuration.
+
+### Component, role and area
+
+- Machine creation from a configuration. AUDIT.md row 2 ("Honest operator where a production validator node plausibly calls it on the honest operator's path") covers it as part of "Obtaining its valid template".
+- The paths that then commit to 0x00..00 or cannot proceed. These are `collect_mcycle_root_hashes`, `collect_uarch_cycle_root_hashes`, and the uarch reset with its log producer and verifier. AUDIT.md row 1 makes them Honest operator.
+- Area: creation-time consistency checks of the rollup registers (`iflags_Y`, `htif_tohost`) against the revert root hash.
+
+### Location
+
+- `src/machine.cpp` `machine::init_processor`. It writes `iflags_Y` and `htif_tohost` from the configuration and leaves the shadow's `revert_root_hash` zero.
+- `src/machine.cpp` `machine::validate_processor_shadow`. It checks only `marchid`, `mvendorid`, `mimpid`, `x0`, `iunrep` and padding.
+- `src/rejected-manual-yield.hpp` `is_rejected_manual_yield`. This is the predicate the substitution uses.
+- `src/machine.cpp` `collect_mcycle_root_hashes` (around line 2538), `collect_uarch_cycle_root_hashes` (around lines 2803-2835 and 2944), and the reset-log path (around line 2305). Each substitutes `read_revert_root_hash()`. `src/uarch-reset-state.cpp` does the same.
+
+### Evidence and test
+
+`bugs/R9-SUBCMIO-1/` holds `test.lua` and `README.md`. Run the test with `bugs/run.sh R9-SUBCMIO-1`. It takes under a second.
+
+The test creates two machines from reproducible Keccak-256 configurations with 1 MiB RAM, `iflags.Y = 1` and `tohost` set to a manual yield:
+
+- A control with the rx-accepted reason. It must give a leaf and a reset after-hash equal to the root hash, or the test exits 2.
+- The rx-rejected reason.
+
+For the rejected case, the requirement holds if creation raises, or if both of the following are nonzero:
+
+- the next-boundary leaf from `collect_mcycle_root_hashes`;
+- the after-hash of `log_reset_uarch`/`verify_reset_uarch`.
+
+The reviewer re-ran it three times on audit/prt2. Each run exited 1 with this output:
+
+```
+control (manual yield, accepted): accepted; root 26419c7c81fa7c26; revert root hash 0000000000000000; collect_mcycle_root_hashes leaf 26419c7c81fa7c26 (1 leaves); verify_reset_uarch after-hash 26419c7c81fa7c26; collect_uarch_cycle_root_hashes with made-up tail: n/a
+VIOLATED: R4 configuration clause: iflags.Y=1, tohost = manual yield rx-rejected: accepted; root 4f44a2c7533d14f6; revert root hash 0000000000000000; collect_mcycle_root_hashes leaf 0000000000000000 (1 leaves); verify_reset_uarch after-hash 0000000000000000; collect_uarch_cycle_root_hashes with made-up tail: accepted; the canonical hash at the next mcycle boundary is 32 zero bytes, the hash of no state
+VIOLATED: R4: a configuration whose machine cannot satisfy R4 must be rejected at creation
+run.sh: R9-SUBCMIO-1: exit 1 (bug present)
+```
+
+The reviewer also checked the following with a separate script, which has since been deleted:
+
+- On the rejected machine, `collect_uarch_cycle_root_hashes(mcycle + 1, 0, {})` fails with "revert uarch tail is required".
+- A delivery leaves the machine unchanged (`iflags_Y` stays 1, same root hash).
+- In each of two consecutive mcycles, running the uarch starts at root `4f44a2c7...` and its reset verifies to 0x00..00. So the uarch path never starts at the mcycle-level leaf.
+
+Either fix makes the test exit 0: rejecting the configuration at creation, or never substituting a hash that is not a state's content hash. Found, proved and reviewed on Opus 5.5. No fallback model was used.
+
+### Trigger and reachability
+
+The trusted creator of a machine writes a configuration that sets `iflags.Y = 1` and `htif.tohost` to a manual yield with the rx-rejected reason. The manual documents both registers as configurable ("Each register field is a number that sets its value"), and the reason value is one it specifies.
+
+No input sequence from any valid template produces a rejected yield whose revert root hash is not the content hash of the state the input was delivered to:
+
+- A valid template waits at a manual yield with the accepted reason.
+- The guest cannot run until a delivery clears `iflags_Y`. Only a delivery that changes the state does that (R5).
+- That delivery writes the revert root hash with the referee-supplied before-hash (A4, R6). The emulator checks that this hash equals the current root hash, and no state's content hash is 0x00..00 without a break of the hash primitive.
+- The guest cannot write the revert root hash (R8).
+
+So the state is demonstrably unreachable. The defect is that creation lets a trusted configuration start there, which R4's configuration clause forbids.
+
+### Rating
+
+1. Out of scope: no.
+   - Not "The effect of a deliberate state change made through the machine API, when the API performs it as documented". The settled reading applies: "Do not let the general 'deliberate state change ... performed as documented' exclusion excuse accepting a configuration the clause says must be rejected."
+   - R4's exemptions are the full list, and this configuration meets all of them. It is reproducible, uses Keccak-256, and holds "only register values that the RISC-V specification and the manual allow".
+   - The snapshot exclusions do not apply, because this is creation, not loading.
+   - No application is involved.
+2. Role: machine creation is "Honest operator where a production validator node plausibly calls it on the honest operator's path" (AUDIT.md row 2). The collectors and the uarch reset are Honest operator (row 1). Section 3: the honest operator role covers "the transition function, its log producers, the computation-hash builders".
+3. High and Medium cases: "A divergence between paths only at demonstrably unreachable states." The mcycle-level builder commits to 0x00..00 at every later boundary. The uarch path run on the machine starts each later mcycle at the rejecting machine's root hash. The uarch-level builder cannot produce that mcycle's trajectory without a fabricated tail. This happens at a state no valid template reaches (argument above). High. The match is not literal: every collector agrees on 0x00..00, and the failure is the absence of any state behind that hash. This mirrors the confirmed R1-R4-1.
+4. Critical: not reached under the preferred reading. Under the alternative reading, step 3 does not fit literally. Accepting the configuration then violates R4 at creation, an operation on the honest operator's path ("Obtaining its valid template"). The clause is "Every reproducible configuration that the emulator accepts, using the deployment's hash function and holding only register values that the RISC-V specification and the manual allow, yields a machine on which this rule holds. A configuration that would not is rejected when the machine is created." Section 8 makes that Critical: "violating any rule or obligation at a reachable state, or anywhere on the honest operator's path, is critical".
+
+Readings:
+
+- High (preferred).
+- Critical, if the creation-time acceptance is itself an R4 violation on the honest operator's path that no High case absorbs.
+- Low, if step 4 is read to need a reachable state or an honest-path operation, and creating a machine at a rejected yield is held to be off that path. Such a machine is not a valid template and can never become one by running or delivering inputs.
+
+The deciding facts:
+
+- whether R4's configuration clause binds every creation, as readings.md settles, or only creations that can lead to a valid template;
+- whether a completeness failure confined to a machine created in an unreachable state counts as the High "divergence between paths" case.
+
+### Possible solution and risks
+
+At creation of a reproducible machine, reject a configuration whose registers put it at a manual yield with the rx-rejected reason. `is_rejected_manual_yield` is true at creation, and no configuration field can supply a matching revert root hash. A narrower check would reject a rejected yield whose revert root hash is zero. An alternative is to make the rejection exception refuse, rather than substitute, a revert root hash of zero. Risk: tests or tools that create machines directly at a rejected yield would need another setup, such as reaching the yield by running a guest. The check is one predicate at creation.
+
+### Risk of not fixing it
+
+Only the trusted creator of a machine can trigger it. A deployment template must wait at an accepted yield, and a machine created at a rejected yield can never become one, because its deliveries are no-ops. So no deployed template is exposed. The machine and its hashes look normal at the mcycle level until a dispute needs uarch-level claims or step proofs after the first boundary. At that point the honest operator cannot produce them. Mitigation outside the code: check that every template waits at a manual yield with the accepted reason before committing its hash, as `cartesi-machine --assert-rolling-template` does.
 
 ## R1-A3-1
 

@@ -44,16 +44,16 @@ model". Area: connection lifecycle and error propagation in the referee's transp
 
 ### Location
 
-- `doc/recipes/game-transport.lua`, `server_meta.__index.adopt` (lines 546-606). The reader coroutine asserts at line
+- `doc/recipes/game-transport.lua`, `server_meta.__index.adopt` (lines 548-605). The reader coroutine asserts at line
   567: `assert(line, "unexpected connection loss: " .. tostring(err))`. The writer coroutine has
   `assert(send_line(...))` at line 557, which fails in the same way when a write to a closed peer fails.
 - `doc/recipes/game-transport.lua`, `receive_line` (lines 174-187). It returns `nil, err` on `closed` or any error
   other than `timeout`.
 - `doc/recipes/game-transport.lua`, `dispatcher_meta.__index.step` (lines 121-142). It rethrows a coroutine error with
   `error(debug.traceback(turn[1], err))`.
-- `doc/recipes/game-transport.lua`, `server_meta.__index.run` (lines 1182-1211) and `run_server` (1215-1220). Only
+- `doc/recipes/game-transport.lua`, `server_meta.__index.run` (lines 1182-1211) and `run_server` (1217-1222). Only
   `<close>` cleanup runs, and the error propagates out of `prtu.run_server` and `prt.lua` line 3313 (`run_role`).
-- In the same family: `accept_connections` (line 616), `assert(self.listener:accept())`. A failed accept, for example
+- In the same family: `accept_connections` (lines 610-620, the assert at line 616), `assert(self.listener:accept())`. A failed accept, for example
   a connection reset before accept, would also be fatal. The test does not exercise this.
 - For contrast, `close_connection` (lines 419-426) already exists and is used for every other bad-peer case.
 

@@ -20,11 +20,13 @@ Where the threat model can be read two ways, the severity column gives the revie
 | [R1-O1-2](#r1-o1-2) | Unhashed config.json hash_tree.phtc_size survives clear_hash_tree, so a template's distributor sets the honest operator's adoption memory without bound (12 kB/entry) | Emulator core: loading stored machines (machine_config::load, hash_tree / page_hash_tree_cache sized from stored phtc_si | Honest operator | Section 8 OOS snapshot clause, R12, R4, O1 (section 5), section 2 honest operato | Critical / Low (if the whole template directory, unhashed config included, is trusted input) |
 | [R1-O2-3](#r1-o2-3) | Failed collect_mcycle_root_hashes (non-console exception, e.g. bad_alloc) drops context-only dirty marks; hash tree, later roots and stored snapshots mismatch contents | collect_mcycle_root_hashes / collect_mcycle_hashes_state_access / hash tree dirty tracking | Honest operator | R9, section 4 (host faults), section 1 completeness | Critical (preferred: host fault turned into a wrong hash, R9 failed update) / Low (if memory exhaustion is not a covered host fault or continuing after an error |
 | [R1-R7-1](#r1-r7-1) | The LR/SC reservation is keyed by virtual address and survives satp writes and sfence.vma, so after a remap an SC succeeds on another physical page and writes it. | Interpreter (src/interpret.cpp execute_LR/execute_SC; ilrsc not cleared by write_csr_satp or execute_SFENCE_VMA), shared | Honest operator | R7 | Critical / Medium |
+| [R3-VARDIRTY-1](#r3-vardirty-1) | An exception in hash_tree::update after page hashes are stored leaves m_bubble_up_unchanged_pages false, so ancestors are never recomputed: wrong roots, proofs and snapshots, while verify_hash_tree still passes | Hash tree: src/hash-tree.cpp hash_tree::update (758-771), update_dense_trees (503-535), return_updated_dirty_pages (380- | Honest operator | R9, section 4 host-fault clause, section 1 completeness | Critical (preferred: host fault turned into wrong hash, R9 failed update) / Low (if allocation failure is not a covered host fault or continuing after an error  |
 | [R1-R10-1](#r1-r10-1) | Regenerated Solidity StepVerifier and C++ verify_step_uarch accept uarch stores to the PMA array, shadow TLB, HTIF and uarch_x0, which the native uarch refuses as traps | machine-solidity-step regenerated (EmulatorCompat.writeWord/AccessLogs.writeWord via UArchStep store helpers); C++ uarch | Referee verifier (regenerated machine-solidity-step); C++ ve | R3, R2, R10; section 8 High (verifier misbehaving on unreachable before-states) | High |
 | [R1-R10-2](#r1-r10-2) | Off-by-one in Memory.validateStrideLength makes the on-chain step verifier revert on uarch accesses to the top 32-byte leaf, which native uarch and C++ verifier accept | machine-solidity-step src/Memory.sol validateStrideLength (identical in released, regenerated and Dave machine/step) | Referee verifier | R2, R3, section 8 High (divergence at unreachable states) | High (preferred: divergence between paths at an unreachable state) / Low (if rejecting at an unreachable state is not a divergence) |
 | [R1-R12-2](#r1-r12-2) | The uarch issues a TLB flush's 768 write_tlb ecalls through an out-of-line 14-instruction wrapper: 17,492 uarch cycles (22 per slot) even with a full TLB, about 5-6x what is needed | uarch program TLB-flush path: src/interpret.cpp flush_tlb_slot/flush_tlb_set/flush_all_tlb/set_prv compiled into the uar | Honest operator (AUDIT.md: 'Interpreter, ..., uarch program, | R12, A7, section 8 High constant-factor case; fix implies R13/A6 version change | High (preferred reading); Low under the alternative reading that 'defect' excludes code-generation efficiency of a correct implementation |
 | [R1-R13-1](#r1-r13-1) | Regenerating machine-solidity-step v0.17.0-test1 from audit/prt2 fails to compile: UArchStep.sol uses undeclared TLB_NUM_SETS (added by afd5f9d), so the referee verifier cannot be rebuilt from audited source | machine-solidity-step v0.17.0-test1 regenerated from audit/prt2 (generate_UArchStep.sh, EmulatorConstants template/lua); | Referee verifier (AUDIT.md table); root cause in uarch progr | R13, A6 | High; Critical under the reading that every deployment must ship hand-edited or stale verifier code |
 | [R1-R8-3](#r1-r8-3) | Each collect_mcycle_root_hashes call re-marks and word-compares all 256 write-TLB pages even when nothing changed. A guest that yields every 1-2 mcycles makes each yield cost about 6x more. | collect_mcycle_root_hashes / hash tree (src/machine.cpp update_hash_tree, mark_write_tlb_dirty_pages) | Honest operator | R12, A7, section 8 High (constant-factor cost) | High (preferred: guest-induced constant-factor increase of R12 'a part of a claim', sizing unknown) / Out of scope (literal reading of the yield-count exclusion |
+| [R3-VARSHADOW-1](#r3-varshadow-1) | The HTIF getchar guard runs only at create/load. After write_reg or a full-shadow write_memory sets iconsole GETCHAR, native diverges from uarch/collectors (5 vs 0) and store writes an unloadable directory | machine::init_console (create/load only), write_reg htif_iconsole, validate_processor_shadow (full-shadow write_memory), | Diverging paths: Honest operator (interpreter, state access, | R2, R1, R14, R9; section 8 High (divergence at unreachable states), Medium (off- | High (preferred: divergence between paths only at demonstrably unreachable states) / Medium (R1-R2-1 off-path API reading) / Out of scope or Low (broad delibera |
 | [R1-A3-1](#r1-a3-1) | PRT player opens epoch N+1's listener from epoch N's seal block, so it misses the inputs DaveConsensus defers past the 2^24 limit and crash-loops | doc/recipes/crisium.lua open_epochs (line 267) + doc/recipes/prt-epoch.lua poll (lines 37, 73, 96) | Support (PRT player, AUDIT.md table), standing in for the ho | R4 (last bullet), A3, section 8 Critical 'crash ... data the honest operator mus | Medium |
 | [R1-A6-2](#r1-a6-2) | PRT player and deployer check deployments only by pristine uarch hash, never CM_MARCHID, so they accept another version's verifier with an unchanged uarch image | doc/recipes/crisium.lua (start-up check, lines 128-132), doc/recipes/prt-deploy.lua (lines 44-48), doc/recipes/prt-lua-b | Support (PRT player/deployer in doc/recipes), standing in fo | R13, A6 | Medium (preferred: R13 check must hold against later releases); Low (if only versions already released count) |
 | [R1-A7-3](#r1-a7-3) | The stored PRT player runs a later epoch's whole input in one crisium idle step, so the sealed epoch's dispute is not observed or answered until that input finishes | PRT stored player and crisium main loop (doc/recipes/prt.lua, doc/recipes/crisium.lua) | Support, standing in for the honest operator | R4, A7, section 3 support rule, section 8 Medium case | Medium (reading A: Critical in the stood-in honest role, so Medium for support; reading B: High as a constant factor, still Medium for support) |
@@ -47,6 +49,7 @@ Where the threat model can be read two ways, the severity column gives the revie
 | [R2-DFOUTPUT-1](#r2-dfoutput-1) | PRT stored player refuses every valid non-genesis template: store_first_epoch_checkpoint asserts the tx buffer holds the empty outputs root, so epoch 0 never starts | doc/recipes/prt.lua store_first_epoch_checkpoint (2741-2777), required by crisium.lua open_epochs and prt-demo.lua | Support (PRT player), standing in for the honest operator | R4, section 2 valid template and honest operator's path, section 3 support claus | Medium / Low |
 | [R2-DFSTORED-1](#r2-dfstored-1) | After an O1 adoption with clear_hash_tree, store with sharing none/config copies the template's stale .dht/.dpt files, so the synced snapshot reloads with the stale root | Emulator core: machine::store (src/machine.cpp, unshared branch) with hash_tree::clear (src/hash-tree.cpp:744) | Honest operator (AUDIT.md: 'storing, loading, cloning and sy | R9, R1, O1, O2, section 5 'O1 and O2 bind the emulator too' | Medium (preferred: store with sharing none/config is off the honest operator's path) / Critical (if a production node stores an adopted template with none/confi |
 | [R2-DFYIELD-1](#r2-dfyield-1) | PRT player's claim pass copies (and for TX_OUTPUT keccak-hashes) the guest-declared tx-buffer payload, up to 2 MiB, at every automatic yield, multiplying per-yield claim cost ~75-100x | PRT player, doc/recipes/prt.lua (run_next_input -> run_to_input_mcycle_offset on_yield_automatic -> run_to_stop/receive_ | Support (stands in for the honest operator computing claims) | R12 ('a part of a claim'), section 8 High constant-factor case, section 3 suppor | Medium (preferred: support stand-in for High constant-factor R12 case) / Out of scope (broad reading of outputs/yields exclusion) |
+| [R3-VARCACHE-1](#r3-varcache-1) | replace_memory_range on a SHARING_ALL machine is not recorded in its directory; after destroy and sync_stored the O2-guaranteed directory reloads to a spliced, unreachable state | machine::replace_memory_range / machine_address_ranges::replace (src/machine.cpp ~723-764, src/machine-address-ranges.cp | Rest of the machine API (AUDIT row 2), off the honest operat | R9, R2, section 4 (O2-guaranteed directory loads as different state), O2, sectio | Medium (preferred: off-path API operation) / Critical (if a production node replaces ranges of a shared machine on the honest path) |
 | [R3-VARSPEC-1](#r3-varspec-1) | Manual's first-word PMA layout (E bit, DID 11-8, R/W/X/IR/IW at 3-7) contradicts the emulator's guest-readable encoding (M0 IO1 R2 W3 X4 IR5 IW6 DID 11-7, no E) | PMA array state layout: src/pmas-constants.hpp PMA_ISTART_shifts/masks, src/pmas.hpp pmas_pack_istart, vs doc/README.md  | Honest operator | R7, R13, section 8 manual-contradiction clause, Medium case 1 | Medium (preferred) / Critical (literal R7 'any deviation' in 'memory permissions') |
 | [R3-VARSPEC-2](#r3-varspec-2) | M-mode write to mcycle raises illegal-instruction (required by R8), but doc/README.md never documents this departure from the spec's MRW mcycle | Interpreter CSR file, src/interpret.cpp write_csr_mcycle (~2406), and doc/README.md "The main processor" | Honest operator (AUDIT.md: "Interpreter, state-access layers | R7, R8, section 8 Medium (undocumented deterministic deviation) | Medium (preferred) / Critical (if counter writability falls in R7's "Traps and interrupts" area) / Low (if implicit manual wording or R8 counts as documentation |
 | [R3-VARSPEC-3](#r3-varspec-3) | The CLINT implements an active msip register at 0x02000000 that sets mip.MSIP, but the manual says only mtime and mtimecmp are active. | CLINT device, src/clint-address-range.cpp, against doc/README.md '#### CLINT' | Honest operator (devices) | R7, R8, section 8 Medium case and manual-contradiction clause | Medium / Critical (literal R7 'Traps and interrupts') |
@@ -1097,6 +1100,168 @@ read-modify-write. Only code running in S-mode or M-mode that changes the mappin
 trigger it. Guest software can mitigate it by issuing an SC to a scratch word after every remap, as the spec
 recommends.
 
+## R3-VARDIRTY-1
+
+**Title.** An exception inside `hash_tree::update`, after new page hashes are stored, leaves `m_bubble_up_unchanged_pages` false, so the ancestors of those pages are never recomputed and later root hashes, proofs and snapshots are wrong
+
+**Severity.** Critical (preferred reading: a host fault turned into a wrong hash, which R9 covers for failed updates). Low under the alternative reading that an allocation failure is not a host fault the model covers, or that continuing after an API error is misuse.
+
+### Problem
+
+`hash_tree::update` runs three phases: `update_dirty_pages`, `update_dense_trees` and `update_sparse_tree`.
+`update_dirty_pages` hashes every dirty page and writes the new page hash into the page node of the address
+range's dense tree. The dense-tree ancestors and the sparse tree are recomputed only in the two later phases. Only
+after all three phases return does `update` assign `m_bubble_up_unchanged_pages = !update_succeeded`. The flag exists
+for exactly this situation. Its declaration in `hash-tree.hpp` says "Stored dense trees left by an interrupted update,
+or a failed one, may hold the new hashes of dirty pages without those of their ancestors", and the comment at the
+assignment says "a failed update may already have stored their new hashes". A failure reported by return value is
+handled. A C++ exception that escapes a later phase skips the assignment and leaves the flag false. In practice this
+is `std::bad_alloc` from the `pmr` batch reservation in `update_dense_trees`, which requests up to 256 KiB from the
+upstream allocator on every update with a changed range, or from the allocations in `update_sparse_tree`.
+
+The pages stay marked dirty, because `clean()` runs only on success. On the next update, their stored page hashes
+already equal their contents, so `changed` is false. With the flag false, `return_updated_dirty_pages` calls
+`mark_clean_page_and_up` for each of them instead of adding the range to `changed_ars`. Their ancestors in the dense
+tree and the sparse tree are never recomputed. The cached root then stays wrong until `clear_hash_tree()`.
+`verify_hash_tree()` still returns true, because it compares pages only with their page nodes. Every later
+`get_root_hash`, `get_node_hash`, `get_proof`, `collect_mcycle_root_hashes` and `collect_uarch_cycle_root_hashes`
+on that machine reads the stale tree, and so does a snapshot stored from it. This is a completeness failure of section
+1: "The honest operator computes a wrong hash".
+
+### Component, role and area
+
+The hash tree (`src/hash-tree.cpp`, `src/hash-tree.hpp`), reached through `machine::update_hash_tree` from
+`get_root_hash`, `get_node_hash`, `get_proof` and the computation-hash collectors. AUDIT.md table: "Interpreter,
+state-access layers, devices, uarch program, hash tree, log producers, `collect_mcycle_root_hashes` and
+`collect_uarch_cycle_root_hashes`, input delivery, and storing, loading, cloning and syncing machines | Honest
+operator". Area: exception safety of the incremental hash-tree update.
+
+### Location
+
+- `src/hash-tree.cpp`, `hash_tree::update` (lines 758-771). The flag is assigned only on normal return (line 769).
+- `src/hash-tree.cpp`, `hash_tree::update_dense_trees` (lines 503-535). The batch reservation
+  `batch.reserve(batch_size)` with `batch_size = min(m_concurrency << 10, 16384)` (lines 508-510) is an upstream
+  allocation of 16-byte entries, 16384 bytes at concurrency 1.
+- `src/hash-tree.cpp`, `hash_tree::update_sparse_tree` (from line 537): further allocations (`changed_backing`,
+  `marked`) after the page hashes are stored.
+- `src/hash-tree.cpp`, `hash_tree::return_updated_dirty_pages` (lines 380-398). `if (changed ||
+  m_bubble_up_unchanged_pages)` decides whether to bubble up or call `mark_clean_page_and_up` (line 393).
+- `src/hash-tree.hpp` lines 252-255: declaration and documented purpose of `m_bubble_up_unchanged_pages`.
+- `src/machine.cpp`: `machine::update_hash_tree` (line 1645), called by `get_root_hash` (1652), `get_node_hash`
+  (1710), `get_proof` (1723), `collect_mcycle_root_hashes` (2451, 2520) and `collect_uarch_cycle_root_hashes` (2780).
+
+### Evidence and test
+
+`bugs/R3-VARDIRTY-1/` contains:
+
+- `test.sh`: builds `fail-new.cpp` with `g++` into a temporary directory and runs `check.lua` under `LD_PRELOAD`.
+  It maps any status other than 0 and 1 to 2.
+- `fail-new.cpp`: an LD_PRELOAD fault injector that replaces the global `operator new`. While an arm file exists,
+  it throws `std::bad_alloc` for the first request of exactly `FAIL_NEW_EXACT` (16384) bytes, as an allocator under
+  a memory limit would, and counts each injected failure in a file.
+- `check.lua`: a machine with 64 MiB of RAM and runtime `concurrency.update_hash_tree = 1`, so the dense-tree batch
+  is 16384 bytes on any host. The control runs the same operations without a fault and requires the cached root to
+  equal the root rebuilt by `clear_hash_tree()` (else exit 2). The faulty run calls `get_root_hash`, writes to 64
+  distinct pages, and arms the injector. `pcall(get_root_hash)` must then fail with exactly one injected failure
+  (else exit 2). The test disarms the injector and makes one more `write_memory`, so the process keeps using the
+  machine. It then asserts that `get_root_hash()` equals the root after `clear_hash_tree()`. If the later call fails
+  loudly instead, the test passes.
+- `README.md`: description and expected output.
+
+Run with `bugs/run.sh R3-VARDIRTY-1` (about 2 s). The prover ran it twice and the reviewer three more times. It exits 1
+on audit/prt2 every time, with identical output:
+
+```
+control: no fault, cached root == rebuilt root 0xb6640061f50463f54f05c6429f157bf4dbc257bc0042689161b4d929483c4690
+get_root_hash failed as injected (16384-byte dense-tree batch reservation): std::bad_alloc
+get_root_hash() after the failure  0x14b95ed6e4817e645550c788100cbb8a56f2f4907f80b6370f60cdecf54a972e
+root rebuilt by clear_hash_tree()  0xb6640061f50463f54f05c6429f157bf4dbc257bc0042689161b4d929483c4690
+verify_hash_tree() after the failure true
+VIOLATED: R9: after hash_tree::update fails inside a running process (host allocation failure), get_root_hash() must equal the root of the actual contents
+run.sh: R3-VARDIRTY-1: exit 1 (bug present)
+```
+
+The reviewer made two further checks with scratch builds and scripts that are not part of `bugs/R3-VARDIRTY-1/`:
+
+- **Fix check.** The reviewer recompiled only `hash-tree.cpp` with `m_bubble_up_unchanged_pages = true;` inserted
+  before the three phases of `hash_tree::update`, and relinked `cartesi.so` from the in-tree objects. Against that
+  module the same `test.sh` prints `get_root_hash() after the failure 0xb664...` and exits 0. Relinking without the
+  change still exits 1.
+- **Snapshot check.** In a variant of `check.lua`, `m:store(dir)` runs after the failure. Loading that snapshot gives
+  root `0x14b9...`, and after `clear_hash_tree()` it gives `0xb664...`, so the stored cached hash-tree data is
+  stale too.
+
+Found, proved and reviewed on Opus 5.5. No fallback model was used.
+
+### Trigger and reachability
+
+Two things are needed. First, a hash-tree update with at least one changed range. This happens on every
+`get_root_hash`, proof or computation-hash collection after the guest or a delivery writes memory, which is the
+normal case on the honest operator's path. Second, an exception escapes `update_dense_trees` or
+`update_sparse_tree`. On that path this is a host allocation failure. `update_dense_trees` requests its batch, up to
+256 KiB, from the upstream allocator on every such update: the test injects the failure after an earlier successful
+update and still hits it. The request can throw `std::bad_alloc` under `RLIMIT_AS`, a container memory limit or a
+memory-capped host. The error reaches the caller. `cm_get_root_hash` and the other C API calls return an error code.
+The Lua binding raises an error, and the JSON-RPC server reports it and keeps serving the same machine. A node that
+then retries, keeps using the machine or stores it gets wrong hashes from then on. The guest can raise the number of
+dirty pages per update, but the fault itself comes from the host. No unreachable state is involved, and any guest
+that writes memory sets up the precondition.
+
+### Rating
+
+1. Out of scope: not excluded. The relevant exclusion is "Host faults, such as a full disk, as long as the emulator
+   does not turn them into a wrong hash, a wrong proof, or a directory that O2 guarantees but that later loads as a
+   different state (section 4)". Here the emulator turns the fault into a wrong hash and a stale stored snapshot, so
+   the exclusion does not apply. Section 4 says the same: "A host fault ... may stop the honest operator, but the
+   emulator must never turn one into a wrong hash, a wrong proof, or a directory that O2 guarantees but that later
+   loads as a different state." No other exclusion applies. The machine is created in-process, so no directory that
+   O2 does not guarantee is reloaded. No untrusted party calls the API, and every call is a documented one.
+2. Role: the hash tree, reached through `get_root_hash` and the computation-hash collectors. AUDIT.md lists "hash
+   tree, ... `collect_mcycle_root_hashes` and `collect_uarch_cycle_root_hashes`" as "Honest operator". Section 3:
+   "The transition function, its log producers, the computation-hash builders, the hash tree and its node proofs ...
+   play this role in every deployment." The clause covers this component directly.
+3. High and Medium cases: none fits. The only candidate is "A machine API operation off the honest operator's path
+   that, used as documented, leaves the hash tree, the cached state of the machine or a stored directory inconsistent
+   with the machine's contents (R9)". It does not fit: `get_root_hash`, proofs and the collectors are on the honest
+   operator's path ("Computing claims", "Producing proofs", "Storing and reloading the machine"). No High case
+   fits, because the state is reachable and no data from other parties is involved.
+4. Critical: R9 is violated on the honest operator's path. "R9. Hash integrity. The content hash must equal the root
+   of the actual contents. This applies to every cached, incremental, or persisted hash, after any sequence of
+   documented operations. It includes interrupted or failed updates, and every snapshot the emulator itself writes."
+   and "'Interrupted or failed updates' means updates that fail inside a running process, which then keeps using the
+   machine." A failed incremental hash-tree update in a running process is the literal case. Section 8: "violating
+   any rule or obligation at a reachable state, or anywhere on the honest operator's path, is critical."
+
+Two readings, as for R1-O2-3. Critical (preferred): an allocation failure is a host resource fault like the full disk
+named in section 4, and R9 explicitly covers a process that keeps using the machine after a failed update. The code
+itself also intends failed updates to be recoverable: the flag's documented purpose is this case. Low: an allocation
+failure could be read as outside "host faults", or as impossible on a host provisioned "on the resources the
+deployment was sized for". Continuing after an API error could also count as "a failure that needs misuse of an API
+by its trusted caller". Two facts would decide it: whether the host-fault clause covers memory exhaustion (it says
+"such as a full disk", which suggests resource faults in general), and whether the manual or `cm.h` documents that a
+machine must be discarded after a failed call. Neither currently does, and R9's definition says the opposite.
+
+### Possible solution and risks
+
+In `hash_tree::update`, set `m_bubble_up_unchanged_pages = true` before the three phases and set it to
+`!update_succeeded` only after they return. A scope guard that leaves it true on any exit works too. With this
+change, the next update bubbles up every page still marked dirty, as it already does after a failure reported by
+return value. The reviewer's scratch build confirms that the test then exits 0. Check `update_words` and
+`update_page` for the same pattern, where a page node is written before its ancestors. The update could also avoid
+upstream allocations after the first page hash is stored, for example by reserving all batches up front. Risks: the
+first update after any failure rehashes the ancestors of all dirty pages, which matters for performance only after
+an error. Setting the flag on entry has no cost on success.
+
+### Risk of not fixing it
+
+Suppose a validator node's host hits a memory limit while it updates the hash tree, and the node retries or keeps the
+machine, for example a long-running JSON-RPC machine server or a Lua or C node that reports the error and goes on. It
+then silently computes wrong root hashes, computation hashes and proofs, and `verify_hash_tree()` does not detect
+it. A snapshot it stores afterwards reloads with the wrong root. Its honest claim can then be wrong or unprovable,
+and a dishonest claim can win. Mitigations outside the code: treat any failed `get_root_hash`, proof or collection
+call as fatal for the machine and reload from the last guaranteed snapshot, or call `clear_hash_tree()` before using
+the machine again.
+
 ## R1-R10-1
 
 **Title.** The uarch-step verifiers (the regenerated machine-solidity-step and the C++ replay) accept uarch stores to
@@ -1943,6 +2108,227 @@ A guest, controlled by any input that subverts it, can make the honest operator'
 allows. A deployment whose clocks and hardware were sized on measurements of the cost without the defect loses that
 margin (A7). If the margin is thin, the honest claim could time out. Mitigation outside the code: size A7 against
 this measured worst case, a guest yielding every one or two mcycles with a full write TLB.
+
+## R3-VARSHADOW-1
+
+**Title.** The guard that keeps HTIF getchar out of reproducible machines runs only at create and load. After `write_reg("htif_iconsole", ...)` or a full-shadow `write_memory`, native interpretation diverges from the uarch and `collect_mcycle_root_hashes`, and `store` writes a directory that `load` refuses
+
+**Severity.** High (preferred reading). Medium under the reading of the confirmed precedent R1-R2-1. Out of scope or Low under a broad reading of the deliberate-change exclusion (see Rating).
+
+### Problem
+
+`machine::init_console` refuses a reproducible machine whose hashed `htif_iconsole` register has the GETCHAR bit set,
+or whose runtime console input source is not `from_null` ("TTY stdin is only supported in unreproducible machines").
+It runs only when a machine is created or loaded. Three later API operations bypass it, and the emulator accepts all
+three on a reproducible machine:
+
+- `write_reg("htif_iconsole", v)` with no check;
+- `write_memory` of the full processor shadow, where `validate_processor_shadow` does not look at `iconsole`;
+- `set_runtime_config{console={input_source=...}}`, which reconfigures the console with no reproducibility check (on
+  its own it has no effect on the state, because no getchar is served while the GETCHAR bit is clear).
+
+Once the bit is set, a guest GETCHAR request (`tohost` = console, cmd 0) is answered differently by the
+implementations of the transition function:
+
+- Native interpretation (`state_access::do_getchar`) always asks the host console. With the default `from_null`
+  source the input is closed, so it returns EOT (4) and writes `fromhost` DATA = 5. With `from_buffer` it returns the
+  host's bytes ('A' gives 0x42, 'Z' gives 0x5b).
+- The uarch and the non-interactive state accesses used by `collect_mcycle_root_hashes` and the log producers
+  (`device_state_access::do_getchar` with a non-interactive access) return -1, so they write DATA = 0.
+
+The native run and the uarch + reset therefore reach different root hashes at the same mcycle, from the same state,
+with the default runtime configuration and no host input at all. This violates R2: "Wherever two of the following
+reach the same position, they must agree on its canonical hash", for "Native interpretation", "The uarch running the
+interpreter, plus the uarch reset" and "The computation-hash builders, whole or in parts". It also shows a runtime
+option outside the hashed state changing a transition natively (R1: "No configuration, runtime option, or file
+outside the hashed state, other than the referee parameters, may change any transition"; R2: "Every register and
+every configuration value that affects a transition has one source of truth in the hashed state, and every path
+reads it from there"), and the native interpreter reading host console input on a reproducible machine (R14).
+
+`store` succeeds on such a machine (it checks only the config copy of `iunrep`), and the directory it writes holds the
+GETCHAR bit in its shadow state, so loading it fails in `init_console`. A snapshot the emulator itself wrote does not
+load.
+
+The state is unreachable from any valid template (see Trigger and reachability), so the goal of section 1 is not
+broken. The defect removes a margin the goal relies on: the transition function, which "The manual's documented
+semantics define ... on every state", has two implementations that disagree on a state that a trusted API call can
+produce, and the source code itself says (htif-address-range.cpp) that reaching this branch "in the blockchain"
+would be "some serious bug".
+
+### Component, role and area
+
+- Diverging components: the interpreter and the state-access layers (native `state_access` vs the uarch and the
+  non-interactive accesses of `collect_mcycle_root_hashes` and the log producers), and storing and loading machines.
+  AUDIT.md table: "Interpreter, state-access layers, devices, uarch program, hash tree, log producers,
+  `collect_mcycle_root_hashes` and `collect_uarch_cycle_root_hashes`, input delivery, and storing, loading, cloning
+  and syncing machines" | "Honest operator".
+- Triggering calls: `write_reg`, `write_memory` (full shadow) and `set_runtime_config`, which are "The rest of the
+  machine API (C, Lua and JSON-RPC)" | "Honest operator where a production validator node plausibly calls it on the
+  honest operator's path". No node writes `htif_iconsole` or the processor shadow on that path, so these uses are
+  off it. A node may call `set_runtime_config` (for example for hash-tree concurrency), but a non-null input source
+  has no effect without the GETCHAR bit.
+- Area: HTIF console device semantics on reproducible machines; the source of truth for "console input enabled".
+
+### Location
+
+- `src/machine.cpp`, `machine::init_console` (around lines 351-358): the only check, called from the constructor
+  (around line 325), so only at create and load.
+- `src/machine.cpp`, `machine::write_reg`, `case reg::htif_iconsole:` (around line 1468): writes the shadow register
+  with no check.
+- `src/machine.cpp`, `machine::validate_processor_shadow` (from around line 205), used by the full-shadow
+  `write_memory`: does not check `iconsole` against `iunrep`.
+- `src/machine.cpp`, `machine::set_runtime_config` (around lines 415-424): reconfigures the console with no check.
+- `src/state-access.hpp`, `state_access::do_getchar` (around line 541): native path, always calls
+  `machine::getchar()` whatever the mode.
+- `src/device-state-access.hpp`, `device_state_access::do_getchar` (around lines 153-158): returns `{-1, false}` for
+  non-interactive accesses (uarch, collectors, log producers).
+- `src/htif-address-range.cpp`, `htif_console` (around lines 93-117): writes `fromhost` DATA = c + 1.
+- `src/machine-console.cpp`, `machine_console::getchars` (around line 82): returns EOT when input is closed
+  (`from_null`).
+- `src/machine.cpp`, `machine::store` (around line 430): checks only `is_unreproducible()` (config copy).
+
+### Evidence and test
+
+`bugs/R3-VARSHADOW-1/` contains `test.lua`, `README.md`, `getchar.S` (the source of the 32-byte bare-metal guest,
+which the test embeds as hex: `tohost` <- console GETCHAR, `a0` <- `fromhost`, `tohost` <- halt, spin) and this entry.
+The test builds a reproducible machine with 4 MiB of RAM holding the guest. Controls (printed, the second one
+enforced as a setup check): creating a reproducible machine with the GETCHAR bit is refused, and without any trigger
+native `run`, `run_uarch` + `reset_uarch` and `collect_mcycle_root_hashes` reach the same root hash at the halt.
+
+For each of the triggers `write_reg('htif_iconsole', iconsole|GETCHAR)` and full-shadow `write_memory` with that bit,
+it exits 0 if the trigger is refused, or if (a) the three paths reach the same root hash at the halt and (c) `store`
+refuses or writes a directory that loads back with the same root hash. For `set_runtime_config` with
+`input_source = "from_buffer"` it exits 0 if refused, or if (b) the root hash at the halt does not depend on the byte
+given to `write_console_input` ('A' vs 'Z'); this part also tries the `write_reg` trigger and tolerates its refusal.
+
+Run with `bugs/run.sh R3-VARSHADOW-1` (about 4 seconds). On audit/prt2 it prints (paths shortened) and exits 1:
+
+```
+create reproducible machine with GETCHAR enabled: refused: .../test.lua:84: TTY stdin is only supported in unreproducible machines
+control (no trigger): native == uarch == collect at the halt
+write_reg('htif_iconsole', iconsole|GETCHAR): accepted on a reproducible machine
+  fromhost at halt: native 0x0100000000000005, uarch 0x0100000000000000, collect 0x0100000000000000
+VIOLATION: write_reg('htif_iconsole', iconsole|GETCHAR): native and uarch+reset root hashes differ at the halt (R2)
+VIOLATION: write_reg('htif_iconsole', iconsole|GETCHAR): native and collect_mcycle_root_hashes differ at the halt (R2)
+  store succeeded; load refused: .../test.lua:124: TTY stdin is only supported in unreproducible machines
+VIOLATION: write_reg('htif_iconsole', iconsole|GETCHAR): store wrote a directory that load refuses (R9)
+write_memory(full shadow with iconsole|GETCHAR): accepted on a reproducible machine
+  fromhost at halt: native 0x0100000000000005, uarch 0x0100000000000000, collect 0x0100000000000000
+VIOLATION: write_memory(full shadow with iconsole|GETCHAR): native and uarch+reset root hashes differ at the halt (R2)
+VIOLATION: write_memory(full shadow with iconsole|GETCHAR): native and collect_mcycle_root_hashes differ at the halt (R2)
+  store succeeded; load refused: .../test.lua:124: TTY stdin is only supported in unreproducible machines
+VIOLATION: write_memory(full shadow with iconsole|GETCHAR): store wrote a directory that load refuses (R9)
+set_runtime_config{console={input_source='from_buffer'}}: accepted on a reproducible machine
+  fromhost after host input 'A': 0x0100000000000042 (H=1); after 'Z': 0x010000000000005b (H=1)
+VIOLATION: host console input reaches the hashed state of a reproducible machine (R14)
+7 violation(s)
+run.sh: R3-VARSHADOW-1: exit 1 (bug present)
+```
+
+The prover ran it four times and the reviewer three more, with exit 1 every time. The reviewer checked the facts in
+the code listed under Location and did not modify the test. The test exits 0 under either fix in "Possible solution"
+(refusing the triggers, or making every path ignore console input on a reproducible machine together with a
+consistent store/load). No fallback model was used.
+
+### Trigger and reachability
+
+Only a trusted caller of the machine API triggers it, locally or over JSON-RPC, by setting the GETCHAR bit of
+`htif_iconsole` with `write_reg` or a full-shadow `write_memory` on a reproducible machine. No guest or input
+triggers it, and no input sequence from any valid template produces a state with the bit set:
+
+- A valid template is "created from a configuration, without disabling any of the emulator's consistency checks, and
+  changed only by running it and delivering inputs". `init_console` refuses the bit at creation and at load, so no
+  valid template has it.
+- Running cannot set it. The guest cannot address the shadow registers (R8), and the HTIF device accepts 64-bit
+  writes only at `tohost` and `fromhost`; a write to the `iconsole` offset returns failure
+  (`htif_address_range::do_write_device`). No instruction or device semantics writes `iconsole`.
+- Delivery writes the rx buffer, `imcyclemax`, the revert root hash and the yield registers, not `iconsole`.
+
+The runtime input source alone changes nothing on a reproducible machine without the bit (no getchar is served and
+console input is not polled), so a node that only calls `set_runtime_config` is not affected.
+
+### Rating
+
+1. Out of scope. Exclusions checked:
+   - "The effect of a deliberate state change made through the machine API, when the API performs it as documented
+     (section 4)." This clause covers the trigger (`write_reg`/`write_memory` are machine API operations performing
+     the write as documented: "The value of any register can be changed with the `machine:write_reg` ... method").
+     On the preferred reading it covers only the effect of the change: the hashed register now has the GETCHAR bit
+     and the guest's getchar requests are honored. It does not cover two implementations of the transition function
+     then answering the same request on the same state differently (DATA = 5 natively, 0 in the uarch and the
+     collectors, with no host input at all), nor `store` writing a directory its own `load` refuses. Those are
+     emulator behaviors, not documented effects of the write. Reading the clause as covering every consequence would
+     empty the Medium case "A machine API operation off the honest operator's path that, used as documented, leaves
+     ..." quoted below. The part of the finding where host bytes from `write_console_input` reach the state is
+     closer to the documented effect (the caller enabled console input and supplied the bytes through the API), so
+     the rating does not rest on it.
+   - "Defects that need an untrusted party to call the machine API directly": does not apply, the caller is trusted.
+   - "Defects triggered only by loading a snapshot that the emulator did not write ...": does not apply, the emulator
+     wrote the directory.
+   - "Nondeterminism in unreproducible machines (R14)": does not apply, the machine is reproducible (`iunrep` = 0 in
+     both copies).
+   - O1/O2 exclusions: no adoption, no stop, no sharing.
+2. Role. The diverging components are the interpreter, the state-access layers, `collect_mcycle_root_hashes`, the
+   uarch, and storing and loading, which AUDIT.md lists as "Honest operator". Section 3: "The transition function,
+   its log producers, the computation-hash builders, ... and storing, loading, cloning and syncing machines ... play
+   this role in every deployment." This clause covers them. The triggering calls are "the rest of the machine API",
+   off the honest operator's path for this use.
+3. High and Medium cases.
+   - Section 8 High: "A divergence between paths only at demonstrably unreachable states." This clause covers the
+     honest-operator components above. Native interpretation and the uarch + reset (and the computation-hash builder)
+     reach different hashes at the same mcycle from the same state, and that state is unreachable (argued under
+     Trigger and reachability). The section 2 definition says the state transition function is defined by "The
+     manual's documented semantics ... on every state", and "The uarch program and the verifier code that a
+     deployment fixes on-chain must implement it"; the native interpreter departs from it here.
+   - Section 8 Medium: "A machine API operation off the honest operator's path that, used as documented, leaves the
+     hash tree, the cached state of the machine or a stored directory inconsistent with the machine's contents
+     (R9)." It also matches in part: the guard reads only the creation-time state, and `store` writes a directory
+     that `load` refuses. Strictly, the directory faithfully holds the contents (the refusal comes from `load`
+     re-applying the guard), so this case fits less exactly than the High one.
+   - Since the High case matches, the preferred class is High.
+4. Critical. Not reached. R1, R2 and R14 are violated, but only at a state that no input sequence from a valid
+   template produces and only after an off-path API write, never at a reachable state or on the honest operator's
+   path.
+
+Other readings, and the facts that decide:
+
+- **Medium.** The campaign rated the analogous R1-R2-1 (`write_reg("iunrep")`, guards reading a creation-time copy,
+  `store` writing an unloadable directory) Medium under the off-path API case. If the reader treats this finding as
+  that same pattern and does not count the native-vs-uarch disagreement on an API-written state as a "divergence
+  between paths", it is Medium. The deciding fact is whether the High case "divergence between paths only at
+  demonstrably unreachable states" is meant to include states that only a machine API write produces. Native vs
+  uarch divergence can only ever be exercised on such states (or on snapshots, which are excluded), which supports
+  including them.
+- **Out of scope / Low.** If "The effect of a deliberate state change" covers everything the machine does after the
+  write, or if enabling getchar on a reproducible machine counts as "a failure that needs misuse of an API by its
+  trusted caller" (the manual says "Verifiable computations must always be run in non-interactive sessions" and
+  "external modifications to the state break the reproducibility of Cartesi Machines"), the finding is out of scope
+  or Low. The manual does not list `htif_iconsole` as read-only, and the emulator refuses the same configuration at
+  creation, so the write is documented use that bypasses a consistency check; that reading is not preferred.
+
+### Possible solution and risks
+
+Preferred: enforce the invariant wherever the state or the runtime configuration can change, not only at creation.
+`write_reg(reg::htif_iconsole, v)` and the full-shadow `write_memory` (in `validate_processor_shadow`) refuse the
+GETCHAR bit on a reproducible machine, and `set_runtime_config` refuses a non-null input source on one (or factor
+`init_console` into a check called from all four places). Risk: tools or tests that enable getchar after creation on a
+reproducible machine break; that use cannot be stored and reloaded today anyway.
+
+Additionally or alternatively, make native `do_getchar` return `{-1, false}` on reproducible machines, matching the
+uarch and the non-interactive accesses, so that the transition function has one definition on every state. Risk: if
+done alone, `store` still writes a directory that `load` refuses; the load-time guard would also need to accept the
+bit on reproducible machines (with getchar then answered "no character"), which changes documented behavior and
+should be reflected in the manual. Either fix should keep reading the mode from a single source of truth (see
+R1-R2-1).
+
+### Risk of not fixing it
+
+A trusted caller (a debugger, a development tool, a test script or a careless integration) that enables HTIF getchar
+on a reproducible machine gets a machine whose native run disagrees with its uarch, its computation hashes and its
+logs from the first getchar on, and whose stored directory cannot be loaded. A claim computed natively on such a
+machine could not be proved. Guests, input senders and dishonest claimants cannot trigger it, and the honest
+operator's path never writes `htif_iconsole`, so the security goal is not exposed. Mitigation outside the code: never
+write `htif_iconsole` or the processor shadow on a reproducible machine.
 
 ## R1-A3-1
 
@@ -5136,6 +5522,175 @@ sender whose input reaches guest code that loops on automatic yields can impose 
 mcycle bound. That can push claim computation for an epoch, and processing of later epochs, past clocks sized for the
 emulator's own costs. Mitigations outside the code: disable automatic yields where outputs are not needed, or size
 the clocks for 2 MiB of copying and hashing per few mcycles.
+
+## R3-VARCACHE-1
+
+**Title.** `replace_memory_range` on a machine loaded with sharing swaps the range only in memory, so after destroy and `sync_stored` the O2-guaranteed directory reloads to a spliced state (post-run registers, pre-replacement memory) that no execution reaches.
+
+**Severity.** Medium (preferred reading: `replace_memory_range` is off the honest operator's path). Critical under the reading that a production validator node replaces memory ranges of a machine that shares its stored directory (see Rating).
+
+### Problem
+
+`machine::replace_memory_range` swaps a memory range's backing store in the live machine (`m_ars.replace`, and the
+current configuration `m_c`, which only a later `store` reads). It neither refuses a machine whose ranges are mapped
+shared onto a stored directory D (loaded with `SHARING_ALL`, or `SHARING_CONFIG` for a shared range), nor records the
+replacement in D (D's `config.json` and D's backing file of that range are left untouched). Every other range of the
+machine, the registers included, stays mapped onto D's files and keeps changing them.
+
+So after the documented sequence load D with sharing, replace `.ram`, deliver an input, run to the yield, destroy
+the machine without a crash, and `sync_stored(D)`, D is a directory that O2 guarantees ("synced after the last change
+to its contents and, if a machine used it with shared backing storage, that machine was destroyed without a crash
+before that sync"). It reloads to a state that differs from the one the machine had when it was destroyed: the
+registers, mcycle and rx/tx buffers after the run, but the RAM contents from before the replacement. The reload
+passes an O1 rebuild and `verify_hash_tree`, because D's cached hash-tree data is consistent with D's spliced contents;
+nothing detects that the directory does not hold the machine.
+
+This contradicts the manual. For the CLI it says "Mode `all` keeps every backing store up to date with changes made
+while the machine runs. When `cartesi-machine` exits cleanly, the directory already holds the machine as it was left,
+ready to be loaded again", and for the API "A directory used by a machine with sharing holds a valid machine only after
+that machine was destroyed without a crash and the directory was synced". `cm.h` documents only "A later cm_store()
+uses the new backing store" for the replacement, and nothing forbids replacing a range of a shared machine. The CLI
+refuses `--replace-memory-range` only together with `--revert-mode=stored` (`src/cartesi-machine.lua:2955`); it accepts
+it with `--load=D,sharing:all,sync` and `--revert-mode=none`.
+
+It violates R9 ("This applies to every cached, incremental, or persisted hash, after any sequence of documented
+operations. It includes ... every snapshot the emulator itself writes", where the latter "means a directory that O2
+guarantees") and section 4's requirement that the emulator never produce "a directory that O2 guarantees but that
+later loads as a different state". It does not threaten the goal of section 1 while no node on the honest operator's
+path replaces memory ranges of a machine that shares its directory (see Rating).
+
+### Component, role and area
+
+- `machine::replace_memory_range` (and `machine_address_ranges::replace`): the rest of the machine API (C `cm_replace_memory_range`, Lua `machine:replace_memory_range`, JSON-RPC `machine.replace_memory_range`). AUDIT.md role: "Honest operator where a production validator node plausibly calls it on the honest operator's path. When unsure, give both ratings."
+- Loading with sharing, destroying and `sync_stored`: "storing, loading, cloning and syncing machines", role Honest operator; they behave as designed on their own and show the defect only after the replacement.
+- The `cartesi-machine` CLI (`--load=...,sharing:all,sync` with `--replace-memory-range`): Support; it reaches the defect through the API.
+
+Area: persistence of a machine that shares its stored directory.
+
+### Location
+
+- `src/machine.cpp`, `machine::replace_memory_range` (around lines 723-764): no check of the machine's sharing of D; updates only `m_ars` and `m_c`.
+- `src/machine-address-ranges.cpp`, `machine_address_ranges::replace` (around lines 662-686): builds a new `memory_address_range` from the replacement backing store, dropping the mapping onto D's file.
+- `src/machine.cpp`, `machine::sync_stored` (around line 712): syncs D's files as listed by D's own `config.json`; nothing records that one range now lives elsewhere.
+- `src/cm.h`, `cm_load` and `cm_replace_memory_range` documentation; `doc/README.md`, the `sharing:<mode>` paragraph of the CLI section and the `sync_stored` paragraph of the stored-machines section.
+- `src/cartesi-machine.lua:2945-2956` (CLI accepts the combination with `--revert-mode=none`), `3268-3271` (calls `replace_memory_range` after `load`).
+
+### Evidence and test
+
+`bugs/R3-VARCACHE-1/` contains `test.lua` (the test) and `README.md`. The test uses the harness configuration
+`baremetal-template` (a valid template built by `bugs/harness/configs/make-configs.sh`, a bare-metal guest waiting at
+its first accepted manual yield) and needs nothing else; it works in a temporary directory that it removes.
+
+For each of two scenarios it clones the template to a temporary D, syncs it, loads it with `cartesi.SHARING_ALL` and
+`clear_hash_tree = true`, delivers one advance input (`payload = "hello"`), runs to the next manual yield, records the
+root hash, destroys the machine, runs `sync_stored(D)` and reloads D with `clear_hash_tree = true` (O1 rebuild). The
+control does no replacement and must round-trip (else exit 2). The test scenario first replaces `.ram` with an image
+that differs from D's RAM file in one byte at `0x83000000` (48 MiB into RAM, a byte the guest never touches). Exit 0 if
+`replace_memory_range` or `sync_stored` refuses, or if D reloads to the machine's final root hash; exit 1 if it reloads
+to another root hash.
+
+Run: `bugs/run.sh R3-VARCACHE-1` (about 7 s). On audit/prt2 it exits 1 on every run (reviewer: 2 runs; prover: 3
+runs) and prints:
+
+```
+control (no replacement): final 0x0ccbd06ae4441af3e34307d7951666d81bfb54b00f8dd54bb8d8fc5312880b5d mcycle 8588695
+control reloaded:         root  0x0ccbd06ae4441af3e34307d7951666d81bfb54b00f8dd54bb8d8fc5312880b5d mcycle 8588695
+template root:            0x428a6bb85a7c345472540be79f09a3406f4a8539ac1bac32d90cea6aec92ac75
+after replace .ram:       0xa1cc5cd82204856e49d35eb12d4b4952e77ae076b3e908e445a7927fb7a99751
+machine after input:      0x0c035851e11785d4379b2c3309561753e607efe2cbed21cfbfb81cd8dbed97fb mcycle 8588695, RAM byte at probe 0x5a
+D reloaded (O1 rebuild):  0xe07b2ec9e31508be9d2a40b730dc009815a2cb48494a796fd17656e12348918e mcycle 8588695, RAM byte at probe 0x00
+D's reloaded root equals: none of the machine's root hashes
+VIOLATED: a directory shared by a machine, destroyed without a crash and synced (O2-guaranteed) must reload to the machine's state (R2, R9, section 8 step 1)
+run.sh: R3-VARCACHE-1: exit 1 (bug present)
+```
+
+The reloaded D has the machine's final mcycle but the pre-replacement RAM byte: a state the machine never had.
+
+Reviewer checks outside the test (not part of `bugs/R3-VARCACHE-1/`): reloading the same D without
+`clear_hash_tree` gives the same `0xe07b...` root and `verify_hash_tree()` returns true, so D's cached hash-tree data is
+consistent with D's spliced contents and nothing flags the directory. The CLI reproduces it too:
+`cartesi-machine --revert-mode=none --load="D,clone:<baremetal-template>/machine,sharing:all,sync"
+--replace-memory-range="label:.ram,data_filename:img" --final-hash` prints final hash `0xa1cc5cd8...b7a99751`, exits
+cleanly and syncs, and D then reloads (O1 rebuild) to the template root `0x428a6bb8...ec92ac75`, contradicting the
+manual's "the directory already holds the machine as it was left".
+
+Found, proved and reviewed by Opus 5.5 (no fallback).
+
+### Trigger and reachability
+
+The trusted caller of the machine API (or the `cartesi-machine` CLI) loads a stored directory with `SHARING_ALL` (or
+`SHARING_CONFIG` with the range shared), replaces a memory range, uses the machine, destroys it and syncs the
+directory. No input sender, guest or claimant can trigger it: it needs the caller to call `replace_memory_range`.
+
+Reachability on the honest operator's path: the honest operator's path (section 2) is obtaining the valid template,
+observing the chain, advancing, delivering inputs, storing and reloading, computing claims, producing proofs,
+submitting transactions and restarting. None of these replaces a memory range, and a valid template is a machine
+"created from a configuration ... and changed only by running it and delivering inputs", so a machine whose range was
+replaced after creation is not one the honest operator defends. The PRT player and the referee model in `doc/recipes`
+never call `replace_memory_range` (only the `run-calculator-with-new-drives.lua` example does, on a machine loaded
+without sharing). The state is not a guest-reachable state at all: it is created by the replacement plus the
+persistence path, whatever the inputs.
+
+### Rating
+
+1. Out of scope: no. The trigger is documented operations followed by destroying the machine and a sync. Step 1 says
+   "A wrong hash after documented operations, destroying the machine, and a sync is not" out of scope. The directory is
+   one O2 guarantees ("synced after the last change to its contents and, if a machine used it with shared backing
+   storage, that machine was destroyed without a crash before that sync"), so the exclusion for "a stored directory
+   that O2 does not guarantee, such as one being written or shared when its process stopped, or one that a machine used
+   with sharing after its last sync" does not apply. The exclusion "The effect of a deliberate state change made through
+   the machine API, when the API performs it as documented" covers the new RAM contents of the live machine, which the
+   API does produce; it does not cover the directory losing that change while keeping the later register changes,
+   which the manual contradicts ("the directory already holds the machine as it was left"). It needs no snapshot the
+   emulator did not write and no skipped O1 rebuild.
+2. Role: the component that shows the defect is `replace_memory_range`, "The rest of the machine API (C, Lua and
+   JSON-RPC)", whose role is "Honest operator where a production validator node plausibly calls it on the honest
+   operator's path. When unsure, give both ratings." (AUDIT.md). A production PRT validator node does not plausibly call
+   it on the honest operator's path (see Trigger and reachability), so the preferred role is a machine API operation
+   off that path; the Critical reading below treats it as on the path. The CLI (Support) also shows it, but only
+   through the API.
+3. High and Medium cases: Medium, "A machine API operation off the honest operator's path that, used as documented,
+   leaves the hash tree, the cached state of the machine or a stored directory inconsistent with the machine's contents
+   (R9)." This clause covers the component: `replace_memory_range` is a machine API operation, used as documented (no
+   document forbids it on a shared machine, and the CLI accepts the combination), and it leaves the stored directory D
+   inconsistent with the machine's contents at destroy (RAM byte `0x00` in D against `0x5a` in the machine; root
+   `0xe07b...` against `0x0c03...`). The manual contradiction rates the same: "It takes the severity it would have if the
+   manual were right."
+4. Critical: does not apply under the preferred reading, since step 3 matched. Under the alternative reading, in which
+   a production node replaces a memory range of a machine that shares its directory on the honest operator's path
+   ("Storing and reloading the machine. Reloading means loading a directory that O2 guarantees"), it violates R2
+   ("Every way of copying, persisting, restoring, or sharing a machine" must agree on the canonical hash), R9 and
+   section 4 ("a directory that O2 guarantees but that later loads as a different state") on that path, which is
+   Critical: a node restarting from D (R4, "After a stop, it restarts from a directory that O2 guarantees") would compute
+   wrong hashes.
+
+Two readings: Medium if no production node calls `replace_memory_range` on a shared machine on the honest operator's
+path (the facts above: the valid-template definition excludes post-creation replacement, and the shipped PRT player
+does not do it); Critical if some deployment's node does. A Low reading ("a failure that needs misuse of an API by its
+trusted caller") is not supported: nothing in `cm.h`, the manual or the API marks the combination as misuse, the API
+does not refuse it, and the CLI deliberately allows it except with `--revert-mode=stored`.
+
+### Possible solution and risks
+
+Simplest: make `replace_memory_range` refuse a range that is mapped shared onto a stored directory the machine was
+loaded from (or refuse any replacement on a machine loaded with `SHARING_ALL`/`SHARING_CONFIG` for a shared range), and
+have the CLI reject `--replace-memory-range` with any `sharing` mode other than `none`, as it already does with
+`--revert-mode=stored`. Alternatively, record the replacement in D: copy the new contents into D's backing file of the
+range and keep it mapped shared (so D stays self-contained), which makes the replacement cost linear in the range size
+and must itself be atomic with respect to O2 (a crash partway leaves D unguaranteed, which O2 already allows while the
+machine is live). Rewriting D's `config.json` to point at the external file would make D depend on a file outside it
+and break `clone_stored`/`remove_stored`, so it is not recommended. Risks: refusing breaks callers that today replace
+ranges of shared machines and never reload the directory (for example a CLI run with `sharing:all` and an NVRAM
+replacement); document the restriction in `cm.h` and the manual.
+
+### Risk of not fixing it
+
+A caller or operator that combines sharing with a range replacement (for example instantiating a template's drives on
+a `clone:`-loaded directory with the CLI, whose `clone:` defaults to `sharing:all`) gets a synced directory that loads
+silently to a state no execution reaches, with a consistent hash tree, and may later defend, store or publish it as
+the machine it ran. No adversary can trigger it; it takes the trusted caller's own sequence of calls. Mitigation
+outside the code: do not call `replace_memory_range` on a machine loaded with sharing; load with `SHARING_NONE`,
+replace, run, and `store` to a new directory instead.
 
 ## R3-VARSPEC-1
 

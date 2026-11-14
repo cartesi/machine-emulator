@@ -1062,7 +1062,13 @@ do
     end
     local initial = configure(new_fake_machine(keccak("initial")))
     local cache <close> = prt.new_forked_machine_cache(initial, 1)
-    local player = new_test_player(prt.new_geometry(10), cache)
+    local stopped = {}
+    local function handler(kind, message)
+        if kind == "execution_stopped" then
+            stopped[#stopped + 1] = message
+        end
+    end
+    local player = new_test_player(prt.new_geometry(10), cache, nil, nil, handler)
     local offers = 0
     local consider = cache.consider
     function cache:consider(index, machine)
@@ -1075,16 +1081,19 @@ do
     local working = player.epoch_pair.machine
     for index, data in ipairs({ accepted, rejected, rejected, accepted, terminal, accepted }) do
         player.event_handler.input_added(player, index - 1, fixture_input(data))
+        assert(#stopped == (index >= 5 and 1 or 0), "terminal report repeated or acceptance/rejection reported")
         assert(player.epoch_pair.machine == working, "forward execution replaced its machine")
         assert(not player.epoch_builder.machine, "builder retained a machine")
         assert(#cache.entries == 1 and initial.counts.live == 2, "forward execution exceeded its machine bound")
         assert(cache.entries[1].epoch_input_offset == 0)
     end
+    assert(stopped[1] == "at input 4: application exception")
     assert(offers == 6 and working:get_root_hash() == terminal, "terminal input bypassed consideration")
     player.event_handler.epoch_sealed(player, 6)
     assert(initial.counts.live == 1 and not player.epoch_pair, "sealing retained the epoch machine")
     assert(player.event_handler.prove_outputs_merkle_root(player), "sealed output root acquired a machine")
     assert(not pcall(player.event_handler.input_added, player, 6, fixture_input(accepted)))
+    assert(#stopped == 1, "sealing or proving outputs repeated the terminal report")
 end
 
 -- A missing file fails the input event before the input is pending, and leaves the open execution as it was.
@@ -3767,6 +3776,14 @@ if arg[1] then
     -- An epoch may start from a machine whose application stopped. Its first input stops the epoch.
     -- The stored player seals it with a checkpoint directory and reopens it at the forked player's
     -- final state.
+    local terminal_causes = {
+        halt = "machine halted",
+        halt_with_yield = "machine halted",
+        exception = "application exception",
+        unexpected = "unexpected manual yield reason 65535",
+        overflow = "machine cycle limit reached",
+        counter_overflow = "machine cycle limit reached",
+    }
     for _, terminal in ipairs({ "halt", "halt_with_yield", "exception", "unexpected", "overflow" }) do
         local template = prt.new_machine(initial_state_hash)
         force_terminal(template, terminal)
@@ -3784,10 +3801,19 @@ if arg[1] then
             geometry = dapp_contract.geometry,
         }
         local template_cache <close> = prt.new_forked_machine_cache(template)
-        local forked = new_test_player(contract.geometry, template_cache)
+        local stopped = {}
+        local function handler(kind, message)
+            if kind == "execution_stopped" then
+                stopped[#stopped + 1] = message
+            end
+        end
+        local forked = new_test_player(contract.geometry, template_cache, nil, nil, handler)
+        assert(#stopped == 0, "construction reported a stop before processing an input")
         forked.event_handler.input_added(forked, 0, fixture_input(inputs[1]))
         assert(forked.epoch_stopped, terminal .. " template did not stop the epoch")
+        assert(#stopped == 1 and stopped[1] == "at input 0: " .. terminal_causes[terminal])
         forked.event_handler.epoch_sealed(forked, 1)
+        assert(#stopped == 1, "sealing repeated the terminal report")
         local checkpoint_directory = temporary_directory .. "/stopped-checkpoint"
         local _ <close> = setmetatable({}, {
             __close = function()
@@ -3799,17 +3825,31 @@ if arg[1] then
             end,
         })
         local _ <close>, epoch_directory = new_scope_epoch_directory()
+        stopped = {}
         do
             local stored <close> =
-                prt.new_stored_player(contract, "stopped", nil, epoch_directory, checkpoint_directory)
+                prt.new_stored_player(contract, "stopped", nil, epoch_directory, checkpoint_directory, handler)
+            stored.event_handler.input_added(stored, 0, fixture_input(inputs[1]))
+            assert(#stopped == 0, "queueing an input reported before execution")
+            stored:run_pending_inputs()
+            assert(#stopped == 1 and stopped[1] == "at input 0: " .. terminal_causes[terminal])
+        end
+        stopped = {}
+        do
+            local stored <close> =
+                prt.new_stored_player(contract, "reopened", nil, epoch_directory, checkpoint_directory, handler)
+            assert(#stopped == 1 and stopped[1] == "when reopening an already stopped epoch")
             stored.event_handler.input_added(stored, 0, fixture_input(inputs[1]))
             stored.event_handler.epoch_sealed(stored, 1)
             assert(stored.final_state_hash == forked.final_state_hash, terminal .. " stored seal differs from forked")
+            assert(#stopped == 1, "redelivery or sealing repeated the restart report")
         end
         assert(fs.exists(checkpoint_directory), terminal .. " seal did not store the next checkpoint")
-        local reopened <close> = prt.new_stored_player(contract, "reopened", nil, epoch_directory)
+        stopped = {}
+        local reopened <close> = prt.new_stored_player(contract, "reopened", nil, epoch_directory, nil, handler)
         assert(reopened.mcycle_forest and reopened.epoch_stopped, terminal .. " reopening lost the seal")
         assert(reopened.final_state_hash == forked.final_state_hash, terminal .. " reopening changed the final state")
+        assert(#stopped == 1 and stopped[1] == "when reopening an already stopped epoch")
     end
 
     -- Removing a finished epoch's files takes its checkpoint and epoch directory. Calling it again completes a
@@ -3884,7 +3924,13 @@ if arg[1] then
         local counts = { outer = 0, bundles = 0, uarch = 0 }
         local terminal_inputs = { table.unpack(contract.inputs) }
         local terminal_cache <close> = prt.new_forked_machine_cache(new_terminal_template())
-        local player = new_test_player(contract.geometry, terminal_cache)
+        local stopped = {}
+        local function handler(kind, message)
+            if kind == "execution_stopped" then
+                stopped[#stopped + 1] = message
+            end
+        end
+        local player = new_test_player(contract.geometry, terminal_cache, nil, nil, handler)
         seed_inputs(player, terminal_inputs)
         -- Force the stop at delivery itself, including native bundle collection
         -- that does not execute a preliminary zero-length builder run.
@@ -3950,6 +3996,10 @@ if arg[1] then
             expected = keccak(expected, expected)
         end
         local tree = new_mcycle_tree(player)
+        assert(#stopped == (terminal == "empty" and 0 or 1), "terminal report repeated across later inputs")
+        if terminal ~= "empty" then
+            assert(stopped[1] == "at input 0: " .. terminal_causes[terminal])
+        end
         assert(tree:get_root_hash() == expected, terminal .. " has the wrong fixed-point tail")
         local mcycle_last = (1 << contract.geometry.mcycle_height) - 1
         tree:get_proof(player, mcycle_last)
@@ -4005,6 +4055,7 @@ if arg[1] then
                 == boundary:get_node_hash(player, 0, 0),
             "terminal input-boundary proof does not authenticate against the claim"
         )
+        assert(#stopped == (terminal == "empty" and 0 or 1), "proof replay repeated the terminal report")
     end
 end
 

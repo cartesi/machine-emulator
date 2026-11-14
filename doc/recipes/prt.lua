@@ -2264,6 +2264,17 @@ function player_meta.__index:run_next_input()
         if not is_rx_accepted(yield_reason) and not is_rx_rejected(yield_reason) then
             assert(is_at_fixed_point(break_reason), "input stopped outside a fixed point")
             self.epoch_stopped = true
+            local cause
+            if is_halted(break_reason) then
+                cause = "machine halted"
+            elseif is_mcycle_overflow(break_reason) then
+                cause = "machine cycle limit reached"
+            elseif yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION then
+                cause = "application exception"
+            else
+                cause = string.format("unexpected manual yield reason %d", yield_reason)
+            end
+            self:report_anomaly("execution_stopped", "at input %d: %s", epoch_input_offset, cause)
         end
     end
     self.machine_cache:consider(epoch_input_offset + 1, pair.machine)
@@ -3087,6 +3098,10 @@ local function reopen_epoch_directory(self)
     -- Pending inputs are not stored. A restarted bridge delivers them again.
     self.pending_input_count = 0
     self.epoch_stopped = state.epoch_stopped
+    if self.epoch_stopped then
+        -- The stored flag does not identify the original stopping input or cause.
+        self:report_anomaly("execution_stopped", "when reopening an already stopped epoch")
+    end
     self.outputs_frontier = load_outputs_frontier(directory .. "/" .. state.outputs_frontier)
     assert(
         hash_tree.frontier_get_leaf_count(self.outputs_frontier)

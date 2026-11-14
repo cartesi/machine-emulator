@@ -27,6 +27,7 @@ Where the threat model can be read two ways, the severity column gives the revie
 | [R1-R7-1](#r1-r7-1) | The LR/SC reservation is keyed by virtual address and survives satp writes and sfence.vma, so after a remap an SC succeeds on another physical page and writes it. | Interpreter (src/interpret.cpp execute_LR/execute_SC; ilrsc not cleared by write_csr_satp or execute_SFENCE_VMA), shared | Honest operator | R7 | Critical / Medium |
 | [R3-VARDIRTY-1](#r3-vardirty-1) | An exception in hash_tree::update after page hashes are stored leaves m_bubble_up_unchanged_pages false, so ancestors are never recomputed: wrong roots, proofs and snapshots, while verify_hash_tree still passes | Hash tree: src/hash-tree.cpp hash_tree::update (758-771), update_dense_trees (503-535), return_updated_dirty_pages (380- | Honest operator | R9, section 4 host-fault clause, section 1 completeness | Critical (preferred: host fault turned into wrong hash, R9 failed update) / Low (if allocation failure is not a covered host fault or continuing after an error  |
 | [R3-VARREFMODEL-1](#r3-varrefmodel-1) | Referee model takes the unauthenticated phase-closer role (close admission, stop) from any TCP connection; real, but it is demo orchestration with no deployed-referee counterpart | PRT referee model: doc/recipes/game-transport.lua (announce/announce_phase_closer 501-544, deliver 473-497, close_phase  | Referee model (AUDIT.md: "The PRT referee model in doc/recip | Section 1 goal, A7, A5, A8, section 3 referee-model clauses, section 7, section  | Critical (close effect, as a deployed referee); stop effect alone support Medium; Low only if the closer counts as the trusted referee process |
+| [R5-INVSTORE-1](#r5-invstore-1) | After sync_stored fails on a host write error, a retried sync_stored of the same directory reports success though the pages were lost; the reload's cached root is wrong | machine::sync_stored (src/machine.cpp 712-721), os::sync_file/sync_fd (src/os-filesystem.cpp 628-644, 726+); cm.h cm_syn | Honest operator (AUDIT row 1: storing, loading, cloning and  | Section 4 host-fault clause, O2, R9, R4 (restart from O2 directory), section 8 m | Critical (preferred) / Low or Out of scope (if a failed sync_stored permanently voids the directory, so retrying is misuse) |
 | [R1-R10-1](#r1-r10-1) | Regenerated Solidity StepVerifier and C++ verify_step_uarch accept uarch stores to the PMA array, shadow TLB, HTIF and uarch_x0, which the native uarch refuses as traps | machine-solidity-step regenerated (EmulatorCompat.writeWord/AccessLogs.writeWord via UArchStep store helpers); C++ uarch | Referee verifier (regenerated machine-solidity-step); C++ ve | R3, R2, R10; section 8 High (verifier misbehaving on unreachable before-states) | High |
 | [R1-R10-2](#r1-r10-2) | Off-by-one in Memory.validateStrideLength makes the on-chain step verifier revert on uarch accesses to the top 32-byte leaf, which native uarch and C++ verifier accept | machine-solidity-step src/Memory.sol validateStrideLength (identical in released, regenerated and Dave machine/step) | Referee verifier | R2, R3, section 8 High (divergence at unreachable states) | High (preferred: divergence between paths at an unreachable state) / Low (if rejecting at an unreachable state is not a divergence) |
 | [R1-R12-2](#r1-r12-2) | The uarch issues a TLB flush's 768 write_tlb ecalls through an out-of-line 14-instruction wrapper: 17,492 uarch cycles (22 per slot) even with a full TLB, about 5-6x what is needed | uarch program TLB-flush path: src/interpret.cpp flush_tlb_slot/flush_tlb_set/flush_all_tlb/set_prv compiled into the uar | Honest operator (AUDIT.md: 'Interpreter, ..., uarch program, | R12, A7, section 8 High constant-factor case; fix implies R13/A6 version change | High (preferred reading); Low under the alternative reading that 'defect' excludes code-generation efficiency of a correct implementation |
@@ -67,6 +68,7 @@ Where the threat model can be read two ways, the severity column gives the revie
 | [R3-VARSPEC-2](#r3-varspec-2) | M-mode write to mcycle raises illegal-instruction (required by R8), but doc/README.md never documents this departure from the spec's MRW mcycle | Interpreter CSR file, src/interpret.cpp write_csr_mcycle (~2406), and doc/README.md "The main processor" | Honest operator (AUDIT.md: "Interpreter, state-access layers | R7, R8, section 8 Medium (undocumented deterministic deviation) | Medium (preferred) / Critical (if counter writability falls in R7's "Traps and interrupts" area) / Low (if implicit manual wording or R8 counts as documentation |
 | [R3-VARSPEC-3](#r3-varspec-3) | The CLINT implements an active msip register at 0x02000000 that sets mip.MSIP, but the manual says only mtime and mtimecmp are active. | CLINT device, src/clint-address-range.cpp, against doc/README.md '#### CLINT' | Honest operator (devices) | R7, R8, section 8 Medium case and manual-contradiction clause | Medium / Critical (literal R7 'Traps and interrupts') |
 | [R4-RGPLAYERGUEST-1](#r4-rgplayerguest-1) | cartesi-machine CLI aborts --mcycle-computation-hash (no claim) when a guest accepts with outputs-root length != 32, or by default with a root that differs from the host's frontier | cartesi-machine CLI, src/cartesi-machine.lua flush_pending_outputs (assert line 3689; root check 3691-3696), called from | Support (AUDIT.md: 'the cartesi-machine CLI ... Support'), s | R4, section 8 (not-correctly-designed exclusion), section 3 Support stand-in cla | Medium (preferred: CLI computation-hash run is a support tool that computes claims) / Out of scope (if the CLI is a development tool that may 'stop and report t |
+| [R5-INVHASH-1](#r5-invhash-1) | replace_memory_range after a hash-tree update keeps supplied .dht inner nodes despite mark_pages_dirty or missing .dpt; root, node hashes and synced snapshot disagree with contents | machine::replace_memory_range (src/machine.cpp 723-779), hash_tree::update / return_updated_dirty_pages (src/hash-tree.c | Rest of the machine API, off the honest path (preferred). Th | R9, manual backing_store (mark_pages_dirty), section 8 Medium off-path R9 case | Medium / Low |
 
 <!--
 Template for each issue. Copy it below the index, in the same order as the index.
@@ -1548,6 +1550,183 @@ Any code derived from the model inherits a referee whose claim set and lifetime 
 reach the referee's port can keep the honest claim out and make a fabricated claim win, or stop all matches and
 output acceptance. Mitigation outside the code: run the model only on a host where every peer is trusted. That
 abandons the model's adversarial setting.
+
+## R5-INVSTORE-1
+
+**Title.** After a `sync_stored` that failed on a host write error, a second `sync_stored` of the same directory reports success although the failed pages never reached the disk, and the directory then reloads with a wrong root hash
+
+**Severity.** Critical (preferred reading: a host fault turned into a directory that O2 guarantees but that later loads as a different state). Low or Out of scope under the alternative reading that a failed `sync_stored` ends the directory's guarantee for good, so syncing it again is misuse.
+
+### Problem
+
+`machine::sync_stored` keeps no state. Each call reopens every stored file, calls `fsync` on the new descriptor,
+closes it, and then syncs the directory entries. When writeback of a file fails, for example because the storage
+under the filesystem is full or returns an I/O error, Linux reports the error once, to the first `fsync` that
+checks it, and does not keep the failed pages dirty. The first `sync_stored` therefore fails loudly, as it should.
+A later `sync_stored` of the same directory opens new descriptors, has nothing left to write for the failed pages,
+and returns success, although those pages never reached the disk.
+
+The documented contract says the opposite. `cm_sync_stored` (src/cm.h) states "On success, all previous changes to
+the stored machine files are durable on disk". `cm_load` states "The directory holds a valid machine again only
+after cm_destroy() succeeds and cm_sync_stored() then succeeds". The manual states "A directory used by a machine
+with sharing holds a valid machine only after that machine was destroyed without a crash and the directory was
+synced". After the second sync, the directory meets each of these conditions and O2's definition of a guaranteed
+directory. Nothing in the API documentation, the manual or the threat model says that an earlier failed sync voids
+a later successful one.
+
+In the test, the lost pages belong to the RAM range's cached hash-tree file (`000000007ff00000-100000.dht`). After
+a remount, which is a clean analog of the restart that O2 protects, loading the directory without a rebuild gives the
+cached root `9a790f63...`. The machine that was destroyed had root `e15f3d65...`, and rebuilding from the contents
+also gives `e15f3d65...`. The honest operator reloads its own directory without a rebuild, because O1 asks for a
+rebuild only on adoption. Every claim it then computes from that machine starts from a wrong root hash. That is
+the completeness failure of section 1: "The honest operator computes a wrong hash". If a content file loses its pages
+instead, the reloaded contents themselves differ from the machine's.
+
+### Component, role and area
+
+Storing and syncing machines: `machine::sync_stored` and the file sync helpers it calls. AUDIT.md table, first row:
+"Interpreter, ..., input delivery, and storing, loading, cloning and syncing machines | Honest operator".
+
+### Location
+
+- `src/machine.cpp`, `machine::sync_stored` (lines 712-721): calls `os::sync_file` on every stored file, then
+  `os::sync_directory` on the directory and its parent. It records nothing about a failure.
+- `src/os-filesystem.cpp`, `os::sync_file` (from line 726) opens a new read-only descriptor and calls `sync_fd`.
+  `sync_fd` (lines 628-644) throws on an `fsync` error. That failure is not recorded anywhere and leaves no mark in
+  the directory.
+- `src/cm.h`, `cm_sync_stored` (lines 643-652) and `cm_load` (lines 573-575): the durability and validity promises
+  quoted above. `doc/README.md`, the paragraph on `machine:sync_stored` (around line 5506) says the same.
+
+### Evidence and test
+
+`bugs/R5-INVSTORE-1/` contains `test.sh` (mounts, fault injection, verdict), `phase.lua` (clone, dirty and sync with
+an in-process retry, and check phases, using the Lua API), and `README.md`. Run `bugs/run.sh R5-INVSTORE-1`. It
+needs root, tmpfs, a free loop device and `mkfs.xfs`, and exits 2 without them. It uses the harness config
+`baremetal-template`.
+
+The test creates a 320 MiB XFS filesystem (`reflink=1`) on a loop device. The loop device is backed by a fully
+allocated file in a 330 MiB tmpfs. The test clones and syncs the template twice: once as the test directory and once
+as a control. It loads the control with `SHARING_ALL`, writes 2048 RAM pages, records the root hash, destroys the
+machine, and syncs while space is available. Then it runs `fstrim`, which turns the free blocks into holes in the
+backing file, and fills the tmpfs. The storage under the filesystem is now full, as on a full thin-provisioned disk.
+The test does the same with the test directory: load with `SHARING_ALL`, write 2048 RAM pages, record the root,
+destroy, and sync. The first `sync_stored` fails with `ENOSPC`. The same process then frees the space and calls
+`sync_stored` again, with no stop in between. Finally the test remounts the filesystem and reloads both directories
+without a rebuild. It also reloads each with `clear_hash_tree` to show the root of the contents.
+
+On audit/prt2 it prints (temporary path shortened):
+
+```
+first sync_stored (storage full):        FAILED: .../phase.lua:21: unable to sync file '/tmp/r5-invstore-1.XXXXXX/mnt/machine/000000007ff00000-100000.dht': fsync() failed: No space left on device
+second sync_stored (space freed):        SUCCESS
+control (synced without a fault):
+expected (machine before destroy):  e15f3d658459f7775700fcfd97618de6c0a41464ac06e12dbc429a8e3749e36a
+root after reload (cached tree):    e15f3d658459f7775700fcfd97618de6c0a41464ac06e12dbc429a8e3749e36a
+root rebuilt from the contents:     e15f3d658459f7775700fcfd97618de6c0a41464ac06e12dbc429a8e3749e36a
+test (sync failed, then succeeded):
+expected (machine before destroy):  e15f3d658459f7775700fcfd97618de6c0a41464ac06e12dbc429a8e3749e36a
+root after reload (cached tree):    9a790f637b582ca43ad1e120bf7062d6e99a89e46a0f674d96db0ef1be7d60bf
+root rebuilt from the contents:     e15f3d658459f7775700fcfd97618de6c0a41464ac06e12dbc429a8e3749e36a
+FAIL: sync_stored reported success, the directory meets O2, and it reloads as a different state (R9, section 4)
+run.sh: R5-INVSTORE-1: exit 1 (bug present)
+```
+
+It exits 1 on every run (the prover's 5 runs, and 7 by the reviewer). Each run takes about 1 second. The test exits
+0 when any of these holds:
+
+- the second `sync_stored` fails;
+- the reload of the test directory is refused loudly while the control directory loads;
+- the reload has the recorded root, both cached and rebuilt.
+
+The test exits 2 if the first sync does not fail, which means the fault was not produced, or if the control directory
+does not reload with its root.
+
+The reviewer changed the test in two ways:
+
+- The retry used to run in a second process. It now runs in the same process, so no stop happens between the failed
+  sync and the successful one.
+- A loud refusal to load the test directory used to give exit 2. It now counts as a pass (phase status 4).
+
+On ext4 the same fault aborts the journal, and the second sync then fails with `EROFS`. The manual requires "a
+filesystem with reflinks" for stored machines without naming one. XFS is a common choice. The defect was found,
+proved and reviewed on Opus 5.5 without a fallback.
+
+### Trigger and reachability
+
+There is no adversary. The trigger is a host fault that makes file writeback fail at `fsync` time rather than at
+write time. Examples are a thin-provisioned volume or pool that runs out of space under a filesystem that still has
+free blocks, and a transient I/O error from the storage. The honest operator must then sync the same directory again
+after the fault clears. This is a natural response to a transient fault, and nothing documents it as misuse. The
+directory is the operator's own, written by documented operations: load with sharing, run or deliver, destroy, sync.
+After the fault, the operator stores and reloads it on the honest operator's path, for example the epoch or revert
+snapshot it resumes from after a restart. No guest or input is involved, so no reachability argument is needed.
+
+### Rating
+
+1. Out of scope: no. The host-fault exclusion holds only "as long as the emulator does not turn them into a wrong
+   hash, a wrong proof, or a directory that O2 guarantees but that later loads as a different state (section 4)".
+   Here the directory meets O2's definition ("The emulator guarantees a stored directory only when it was synced
+   after the last change to its contents and, if a machine used it with shared backing storage, that machine was
+   destroyed without a crash before that sync") and loads with a different root. The O2 reload exclusion ("a stored
+   directory that O2 does not guarantee, such as one being written or shared when its process stopped, or one that a
+   machine used with sharing after its last sync") does not apply. No process stopped, and the last sync came after
+   the last use. The snapshot and O1 exclusions do not apply, because the operator's own process wrote the directory.
+   Section 8, "How to rate", step 1: "A wrong hash after documented operations, destroying the machine, and a sync is
+   not [out of scope]".
+2. Role: honest operator. Section 3: "storing, loading, cloning and syncing machines (within the limits of O1 and
+   O2) play this role in every deployment". The AUDIT.md table puts syncing machines in the honest-operator row.
+3. High and Medium cases: none fits. The Medium persistence case needs "A persistence operation that fails loudly,
+   without a wrong hash or damage to a directory that O2 guarantees". Here the second operation succeeds silently and
+   the result is a wrong hash. The Medium case for "A machine API operation off the honest operator's path" does not
+   fit, because syncing is on the path ("Storing and reloading the machine").
+4. Critical, on the honest operator's path. Section 4: "A host fault, such as a full disk ..., may stop the honest
+   operator, but the emulator must never turn one into a wrong hash, a wrong proof, or a directory that O2 guarantees
+   but that later loads as a different state". R9: "The content hash must equal the root of the actual contents. This
+   applies to every cached, incremental, or persisted hash, ... and every snapshot the emulator itself writes". R4:
+   "After a stop, it restarts from a directory that O2 guarantees and keeps defending its claim". The documented
+   promise of `cm_sync_stored` ("On success, all previous changes ... are durable on disk") is contradicted. Section 8
+   says such a contradiction "takes the severity it would have if the manual were right".
+
+Alternative reading: a failed `sync_stored` leaves the directory unspecified for good, so syncing it again and
+relying on it is "a failure that needs misuse of an API by its trusted caller" (Low), or a reload of a directory that
+O2 does not guarantee (Out of scope). Two facts decide between the readings:
+
+- whether the model or the documentation makes a failed sync permanently disqualify a directory. Neither does. O2
+  ties discarding to a process stop ("crash, kill, or power loss"), and R9 expects the process to keep going after
+  failed updates.
+- whether a production node plausibly retries a sync after a transient storage fault.
+
+The preferred reading is Critical.
+
+### Possible solution and risks
+
+Make a sync failure sticky in the directory itself, so that it survives into later calls and other processes. When
+`sync_stored` sees any `fsync` failure, it can invalidate the directory before it throws. For example, it can remove
+or rename `config.json` and sync the parent, so that later syncs and loads fail loudly, or it can write a durable
+"sync failed" marker that `sync_stored` and `load` refuse. The operator then has to fall back to its previous
+guaranteed snapshot, which O2 already provides for. Retrying `fsync` inside the same call does not help, because the
+error has already been consumed.
+
+Risks:
+
+- The invalidation can itself fail on a faulty disk. The call must then still fail, and the documentation must say
+  that a directory whose sync failed must be discarded.
+- Operators that currently retry would now see hard failures.
+- The fix could optionally add a rebuild-and-compare on reload. That catches lost cached hash-tree pages but not lost
+  content pages, so it is not a full fix.
+
+### Risk of not fixing it
+
+An honest operator whose storage hits a transient write failure, and that retries the sync after the fault clears,
+holds a directory it is entitled to trust that, after a restart, gives a wrong root hash, or wrong contents. Its
+claims from that point are wrong, and a dishonest claim can then win the epoch. Nobody can trigger the fault
+deliberately without access to the operator's host, but thin-provisioned and network storage make it plausible.
+Mitigations outside the code:
+
+- treat any failed `sync_stored` as fatal and discard the directory;
+- use storage that reports space exhaustion at write time;
+- rebuild the hash tree on every reload (`--clear-hash-tree`) and compare it with the cached root. This covers only
+  lost cached hash-tree pages.
 
 ## R1-R10-1
 
@@ -7620,3 +7799,157 @@ accepted input, by taking over the application or by targeting a misbehaving one
 would leave the epoch undefended, and a dishonest claim could settle unopposed. As mitigations outside the code, use
 the PRT player or the emulator's `collect_mcycle_root_hashes` API, which compute the claim. The manual could also state
 that the CLI stops on such guests.
+
+## R5-INVHASH-1
+
+**Title.** `replace_memory_range` on a machine whose hash tree was already updated keeps the inner nodes of the
+supplied `.dht` even with `mark_pages_dirty = true` or no `.dpt`, so the root hash, node hashes and stored
+snapshots disagree with the contents.
+
+**Severity.** Medium (preferred reading: an operation of the machine API off the honest operator's path that, used as
+documented, leaves the hash tree and a stored directory inconsistent with the contents, R9). Under the reading that a
+`.dht` whose inner nodes do not match its leaves is misuse by the trusted caller, it is Low.
+
+### Problem
+
+The manual (doc/README.md, `backing_store`) says: "When both tree filenames are supplied and both files already exist,
+the emulator reuses the dirty-page flags to avoid recomputing unchanged page hashes. Otherwise, it marks all pages
+dirty. Setting `backing_store.mark_pages_dirty` to `true` forces all pages to be marked dirty even when both tree
+files exist, so their hashes are recomputed on the next hash-tree update." The constructor of the replaced range does
+mark the whole dirty-page tree dirty (its comment says "Rebuild the entire dense tree when requested or when its
+backing files cannot be reused"). When the machine is created with those files, the dense tree is rebuilt and the
+root is the content hash.
+
+`replace_memory_range` uses the same constructor, but on a machine that has already completed one hash-tree update
+`hash_tree::m_bubble_up_unchanged_pages` is `false`. The next update recomputes each page hash, finds that it equals
+the leaf stored in the `.dht`, and marks the page clean "because its contents already matched its hash" without
+adding the range to the changed list. The inner nodes of the supplied `.dht`, and its root, which ends up in the
+sparse tree, are then kept as they are. The machine's root hash, `get_node_hash`, proofs built from those nodes, and a
+snapshot written by `store()` all report a hash that is not the root of the contents. `verify_hash_tree()` still
+returns `true`, so the emulator's own check does not catch it.
+
+This violates R9 ("The content hash must equal the root of the actual contents. This applies to every cached,
+incremental, or persisted hash, after any sequence of documented operations. It includes interrupted or failed
+updates, and every snapshot the emulator itself writes.") and contradicts the manual's promise for
+`mark_pages_dirty` and for a missing `.dpt`. It does not threaten the goal of section 1 on the honest operator's path
+as known (see Rating): the production paths that obtain a template (load with `clear_hash_tree`) and deliver inputs
+(`send_cmio_response`) do not go through `replace_memory_range`. It weakens the recovery tool the manual offers for
+tree files that cannot be trusted: a user who replaces a range with tree files left by a crashed process and asks for
+all pages to be recomputed gets a wrong root, and then a wrong snapshot.
+
+### Component, role and area
+
+- `machine::replace_memory_range` and `machine_address_ranges::replace`: "The rest of the machine API (C, Lua and
+  JSON-RPC)", Honest operator only "where a production validator node plausibly calls it on the honest operator's
+  path". No such caller is known for PRT (inputs are delivered with `send_cmio_response`, templates are loaded), so
+  the preferred rating treats it as off the honest path.
+- The hash tree (`hash_tree::update`, `return_updated_dirty_pages`): Honest operator, but it shows the defect only
+  for a range that appears after the first update, which only `replace_memory_range` produces.
+- `memory_address_range` (the constructor that honours `mark_pages_dirty`): part of the same path.
+
+### Location
+
+- `src/hash-tree.cpp`, `hash_tree::update` (line 758): `m_bubble_up_unchanged_pages = !update_succeeded;` is the only
+  write after construction (`src/hash-tree.hpp:255`, default `true`).
+- `src/hash-tree.cpp`, `hash_tree::return_updated_dirty_pages` (from line 278, branch at 386-393): an unchanged page
+  hash with the flag `false` calls `mark_clean_page_and_up` instead of adding the range to `changed_ars`.
+- `src/memory-address-range.cpp`, constructor (lines 76-79): `mark_pages_dirty` or an empty tree filename only calls
+  `m_dpt.mark_dirty()`.
+- `src/machine-address-ranges.cpp`, `machine_address_ranges::replace` (662-686), comment "This will automatically
+  start with all pages dirty."; `src/machine.cpp`, `machine::replace_memory_range` (723-779) does not tell the hash
+  tree that a range was replaced.
+
+### Evidence and test
+
+`bugs/R5-INVHASH-1/` contains `test.lua` (the test), `README.md` (what it asserts) and this entry. Run it with
+`bugs/run.sh R5-INVHASH-1`; it takes about a second and works in a `mktemp -d` directory that it removes.
+
+The test builds an 8-page flash drive. Image B's emulator-written `.dht` and `.dpt` come from storing a fresh machine
+that holds B; a copy of the `.dht` keeps the 8 true leaves (page hashes) and overwrites the 7 inner nodes with `0xEE`.
+A machine with image A computes its root once, then replaces the drive with B and the crafted `.dht`, (1) with the
+`.dpt` and `mark_pages_dirty = true`, and (2) without `dpt_filename`. It asserts that `get_root_hash()` equals the root
+of a fresh machine holding B, that `get_node_hash(start, 15)` equals the range's content hash, and, for (2), that a
+snapshot written by `store()` and synced with `sync_stored()` has a cached root equal to the root rebuilt with
+`clear_hash_tree = true`. Control (exit 2 if it fails): the same backing stores at machine creation give the content
+hash. On audit/prt2 (d7e126c) it prints, three runs identical:
+
+```
+content hash (fresh machine, image B):     ff90e966f0c00e09d6858ae8a617a083d8341e6c3b35286869104489a43101dc
+creation with mark_pages_dirty tree files: ff90e966f0c00e09d6858ae8a617a083d8341e6c3b35286869104489a43101dc
+creation with .dht but no .dpt:            ff90e966f0c00e09d6858ae8a617a083d8341e6c3b35286869104489a43101dc
+[mark_pages_dirty=true] root after replace:         3822f18da58ae052f14d1444b62b7fe02150fcd784706bcb424a0d71a504a2dc
+[mark_pages_dirty=true] range node after replace:   eeeeeeee...eeee (content: 0d674deb903a1e2b70b4576a4c97fcc8e42b3072906d2007f869d2899047e966)
+[mark_pages_dirty=true] verify_hash_tree():         true
+VIOLATED: [mark_pages_dirty=true] root hash after replace_memory_range equals the content hash (R9, manual)
+VIOLATED: [mark_pages_dirty=true] node hash of the replaced range equals its content hash (R9)
+[no dpt_filename] (same three lines and two violations)
+[no dpt_filename] stored snapshot cached root: 3822f18d... rebuilt: ff90e966...
+VIOLATED: [no dpt_filename] snapshot written by store() has a cached root equal to its rebuilt root (R9)
+run.sh: R5-INVHASH-1: exit 1 (bug present)
+```
+
+The reviewer added the `sync_stored()` call to the prover's test so the snapshot is one that O2 guarantees; the
+result is unchanged. A separate reviewer check isolated the cause: the same replace done before any hash-tree update
+gives the content hash; done after one update it does not; an emulator-written, internally consistent `.dht` and no
+`.dht` at all both give the content hash. Found, proved and reviewed on Opus 5.5; no fallback model.
+
+### Trigger and reachability
+
+A trusted caller of the machine API calls `replace_memory_range` with a `backing_store` that names a `.dht` whose inner
+nodes do not match its leaves, together with `mark_pages_dirty = true` or without a `.dpt`, on a machine that has
+already computed a root hash, a proof, a log or a computation hash. All fields used are documented. A `.dht` of that
+kind is not written by a clean `store()`; it is what a process that stopped while updating a shared tree file can
+leave (O2), or a file from another party, which are exactly the cases where a user asks for all pages to be
+recomputed. Guests and input senders cannot trigger it. It is not a guest-reachable state question: the state
+(contents) is correct; only the cached hash is wrong.
+
+### Rating
+
+1. Out of scope: not excluded. "The effect of a deliberate state change made through the machine API, when the API
+   performs it as documented" does not apply: the contents are replaced as asked, but the API does not recompute the
+   hashes the manual says it recomputes. "Defects triggered only by loading a snapshot that the emulator did not write
+   and that does not meet the conditions of a valid template" and "Defects that need the cached hash-tree data of a
+   stored machine the operator did not produce to survive its adoption without a rebuild (O1)" are about adopting a
+   stored machine; here no snapshot is loaded, and the caller asked for the range's pages to be recomputed, which the
+   same files honour at creation. The snapshot that comes out wrong is one the emulator writes itself and syncs.
+2. Role: the operation is `replace_memory_range`, "The rest of the machine API (C, Lua and JSON-RPC)", which is
+   Honest operator only "where a production validator node plausibly calls it on the honest operator's path". The
+   PRT honest path (section 2: obtaining the template with the O1 rebuild, delivering inputs, storing, reloading)
+   does not call it. The hash tree is Honest operator, but no honest-path operation adds a range after the first
+   update. Preferred: off the honest path.
+3. High and Medium cases: Medium, "A machine API operation off the honest operator's path that, used as documented,
+   leaves the hash tree, the cached state of the machine or a stored directory inconsistent with the machine's
+   contents (R9)." It covers this component and this symptom: root, node hashes and a synced stored directory
+   disagree with the contents after documented calls. Also "A contradiction between the manual and the behavior on a
+   security-relevant point ... takes the severity it would have if the manual were right."
+4. Critical: would apply only on the honest operator's path (R9 "after any sequence of documented operations ... every
+   snapshot the emulator itself writes"). If a production node replaced ranges with tree files it had not written and
+   relied on `mark_pages_dirty` instead of `clear_hash_tree`, this would be Critical; no such node is known.
+
+Readings: Medium (preferred) treats supplying any `.dht` with `mark_pages_dirty = true` or without a `.dpt` as
+documented use, because the manual says all pages are then marked dirty and recomputed and the code's own comment and
+creation path rebuild the whole dense tree. Low applies if a `.dht` whose inner nodes do not match its leaves counts as
+"a failure that needs misuse of an API by its trusted caller" (section 4: callers are "trusted in intent, not in
+data", but tree files are cached hash-tree data, not data from other parties). Critical applies only if a production
+validator node calls `replace_memory_range` with such files on the honest path. The deciding facts are whether the
+manual's `mark_pages_dirty` promise extends to the inner nodes (the code comment says it does) and whether any
+production node uses `replace_memory_range` on its path.
+
+### Possible solution and risks
+
+When a range is replaced, make the next update rebuild it: set `m_bubble_up_unchanged_pages = true` (or a per-range
+"rebuild" flag) from `machine::replace_memory_range`, or have `return_updated_dirty_pages` add a range to
+`changed_ars` whenever its dirty-page tree was marked dirty by construction (`mark_pages_dirty` or a missing tree
+file). A per-range flag avoids rehashing every other range's unchanged pages; a global flag costs one extra
+bubble-up pass over all dirty pages once. Either should also make `verify_hash_tree()` compare inner nodes with their
+children for replaced ranges. Risk: low; the change only adds work for ranges that the emulator already treats as
+fully dirty.
+
+### Risk of not fixing it
+
+A user who replaces a range with tree files it cannot trust (left by a crashed process, or received from another
+party) and relies on the documented `mark_pages_dirty` or on omitting the `.dpt` gets a root hash, proofs and a stored
+snapshot that do not match the contents, and `verify_hash_tree()` does not detect it. If such a hash were committed,
+the claim would lose. Only a trusted caller can trigger it. Mitigation outside the code: after `replace_memory_range`
+with supplied tree files, call `clear_hash_tree()` (or omit `dht_filename`, which uses a zeroed tree that is always
+rebuilt), or load with `clear_hash_tree = true` before computing hashes.

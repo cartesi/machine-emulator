@@ -1631,9 +1631,10 @@ describe("backing stores", function()
         local _ <close> = tests_util.scope_exit(function()
             cartesi.machine:remove_stored(directory)
         end)
-        -- Model a failed update saved at clean destruction, with stale ancestors and nonzero padding.
-        -- The padding once held a queued-for-update mark. Each 64-byte node holds its left child, right child and
-        -- parent indices (8 bytes each), its log2 size (4 bytes), 4 bytes that once held that mark, and its hash.
+        -- Model a failed update saved at clean destruction, with stale ancestors and nonzero reserved bytes.
+        -- Each 64-byte node holds its left child, right child and parent indices (8 bytes each), its log2 size
+        -- (4 bytes), its hash (32 bytes), and reserved bytes (4 bytes). Lua cannot inspect the C++ layout;
+        -- static assertions in hash-tree.hpp pin these offsets and size for this test.
         local filename = directory .. "/hash_tree.sht"
         local data = filesystem.read_file(filename)
         local node_size = 64
@@ -1657,9 +1658,13 @@ describe("backing stores", function()
             parent = string.unpack("<i8", nodes[parent + 1], 17)
         end
         for index, node in ipairs(nodes) do
-            node = node:sub(1, 28) .. string.pack("<I4", 1) .. node:sub(33)
+            local original_hash = node:sub(29, 60)
+            node = node:sub(1, 60) .. string.pack("<I4", 1)
             if stale[index] then
-                node = node:sub(1, 32) .. string.rep("\0", 32)
+                node = node:sub(1, 28) .. string.rep("\0", 32) .. node:sub(61)
+            else
+                -- Corrupting other hashes could trigger extra repairs and conceal broken ancestor propagation.
+                expect.equal(node:sub(29, 60), original_hash)
             end
             nodes[index] = node
         end

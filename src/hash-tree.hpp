@@ -19,6 +19,7 @@
 
 #include <array>
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <iosfwd>
 #include <iterator>
@@ -75,7 +76,18 @@ class hash_tree {
         index_type parent{};
         uint32_t log2_size{};
         machine_hash hash{};
+        uint32_t reserved{};
     };
+
+    // The stale-ancestor regression in tests/lua/spec-backing-stores.lua edits stored nodes directly.
+    // Lua cannot inspect this C++ layout, so pin the offsets and size that the test relies on.
+    static_assert(offsetof(node_type, left) == 0);
+    static_assert(offsetof(node_type, right) == 8);
+    static_assert(offsetof(node_type, parent) == 16);
+    static_assert(offsetof(node_type, log2_size) == 24);
+    static_assert(offsetof(node_type, hash) == 28);
+    static_assert(offsetof(node_type, reserved) == 60);
+    static_assert(sizeof(node_type) == 64);
 
     static bool is_ar_node(const node_type &node) {
         return node.left == AR_NODE_TAG;

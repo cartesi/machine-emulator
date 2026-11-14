@@ -40,7 +40,7 @@ region validation of the access-log replay.
   `validateStrideLength` (lines 98-104, `assert(Stride.unwrap(stride) * s < MAX_STRIDE);`), called by
   `regionFromStride` (line 36).
 - Callers: `src/AccessLogs.sol` (`readLeaf` line 83, `writeLeaf` line 110, `readWord` line 128, `writeWord` line
-  154, line 216). Harness copies: `bugs/harness/work/solidity-step/{released,regenerated,regenerated-patched}/src/`
+  154, and a write at line 216). Harness copies: `bugs/harness/work/solidity-step/{released,regenerated,regenerated-patched}/src/`
   and `bugs/harness/work/dave/{released,patched}/machine/step/src/Memory.sol`, md5 `cde00923a8c6954c1d4addc67d1f6ba1`
   for all.
 

@@ -1,6 +1,6 @@
 # PRT Audit Report (`audit/prt2`)
 
-Status: **in progress**. Phase: round 1, Hunt.
+Status: **in progress**. Phase: round 1 triage, round 2 hunt (running in parallel).
 
 This file is the campaign state of the audit that `AUDIT.md` defines. The orchestrator rewrites it after every step so
 that it can resume after a compaction or a container restart. Confirmed issues are in `BUGS.md`, with their tests under
@@ -11,7 +11,7 @@ that it can resume after a compaction or a container restart. Confirmed issues a
 | Item | Value |
 |---|---|
 | Branch audited | `audit/prt2` at `20a788c` (docs: prepare PRT audit) |
-| Current phase | Round 1 Hunt (workflow run `wf_df71eb4e-501`, hunter reports in the scratchpad `campaign/r1/`) |
+| Current phase | Round 1: hunt done (26 hunters, 70 raw candidates plus R1-PREPARE-1; reports in scratchpad `campaign/r1/hunt-*.json`), triage running (`wf_92ba6e41-beb`, writes `campaign/r1/triage.json`). Round 2 (data flow): 10 hunters running in five workflows, reports in `campaign/r2/` |
 | Rounds completed | 0 |
 | Stop count (consecutive clean all-Fable rounds, different strategies) | 0 of 3 |
 | Withheld-findings round done | no |
@@ -33,6 +33,10 @@ that it can resume after a compaction or a container restart. Confirmed issues a
   - The orchestrator derives every angle from `THREAT_MODEL.md` and the strategies `AUDIT.md` prescribes, not from what
     it read. It only orchestrates, so it proposes no candidates itself.
   - The requester should treat the orchestrator, not the hunters, as non-blind.
+- **Round order and overlap.** The requester asked for at least 10 rounds in two days. To keep that pace, round 2
+  (data flow) hunts while round 1 is still in triage and proof, so its hunters got round 1's candidates with the outcome
+  "pending". The variant search for confirmed bugs, which `AUDIT.md` lists second, runs as round 3, once round 1 has
+  confirmations. Hunts run as several workflows side by side to reach 10 concurrent hunters. No hunter was blocked in round 1.
 - **Concurrency.** The workflow runtime caps concurrent agents at the CPU count minus two, which is 2 on this 4-CPU
   container, below the 10 hunters `AUDIT.md` allows.
 
@@ -60,6 +64,8 @@ the untracked `bugs/harness/work/`).
 
 | Round | Strategy | Hunter models | Agents | Tokens | Raw candidates | Kept by triage | Confirmed | Clean |
 |---|---|---|---|---|---|---|---|---|
+| 1 | One angle per rule or obligation (R1-R14, O1, O2, A1-A8, GUEST, BOUNDARY) | `claude-opus-5-5` | 26 hunters so far | 6.6M for 23 hunters (R1-R3 ran in a stopped workflow, not counted) | 70, plus 1 from Prepare | pending | pending | pending |
+| 2 | Data flow from each untrusted source (DFINPUT, DFINPUTCOUNT, DFLOG, DFPROOFSOL, DFCLAIM, DFCHAIN, DFYIELD, DFGUESTSTATE, DFSTORED, DFOUTPUT) | `claude-opus-5-5` | running | | | | | |
 
 ## Candidates
 

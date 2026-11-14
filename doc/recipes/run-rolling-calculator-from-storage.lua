@@ -117,5 +117,7 @@ until break_reason == cartesi.BREAK_REASON_HALTED
 local final_hash = machine:get_root_hash()
 machine:destroy()
 machine:sync_stored("machine")
-machine:remove_stored(backup_directory)
+if backup_directory then
+    machine:remove_stored(backup_directory)
+end
 stderr("final state hash: %s\n", cartesi.tohex(final_hash))

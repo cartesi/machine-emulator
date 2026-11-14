@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`
 
 ### Fixed
+- Fixed the rolling-calculator storage recipe failing during cleanup when it exits before its first commit
 - Fixed stored revert mode leaving a stale backup and skipping the final sync with `--no-remote-destroy`
 - Fixed storing a forest in a shared directory losing descendants merged below already durable subtrees
 - Fixed the sparse-tree stale-ancestor regression test corrupting unrelated hashes through outdated node offsets

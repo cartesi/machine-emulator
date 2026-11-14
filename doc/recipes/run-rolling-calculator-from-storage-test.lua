@@ -37,10 +37,18 @@ local function new_recorder(target)
     end
 end
 
+local halt_before_commit = false
+local halted_hash
 local recording_machine = setmetatable({}, {
     __call = function(_, directory, ...)
         record("new", directory, ...)
-        return setmetatable({}, { __index = new_recorder(cartesi.machine(directory, ...)) })
+        local machine = cartesi.machine(directory, ...)
+        if halt_before_commit then
+            machine:write_reg("iflags_Y", 0)
+            machine:write_reg("iflags_H", 1)
+            halted_hash = machine:get_root_hash()
+        end
+        return setmetatable({}, { __index = new_recorder(machine) })
     end,
     __index = new_recorder(cartesi.machine),
 })
@@ -72,3 +80,18 @@ for _, operation in ipairs(operations) do
 end
 assert(not in_use and last == "sync_stored", "the script did not end by syncing its destroyed machine")
 print("stored-machine operations follow the persistence guarantee")
+
+-- A halt before the first accepted yield creates no backup. Cleanup must still destroy
+-- and sync the machine, without attempting to remove a nonexistent backup.
+cartesi.machine:remove_stored("machine")
+operations = {}
+halt_before_commit = true
+dofile(script)
+assert(#operations == 4, "unexpected storage operation before the first commit")
+assert(operations[1].name == "clone_stored" and operations[1][2] == "machine")
+assert(operations[2].name == "new" and operations[2][1] == "machine")
+assert(operations[3].name == "destroy")
+assert(operations[4].name == "sync_stored" and operations[4][1] == "machine")
+local stored <close> = cartesi.machine("machine")
+assert(stored:get_root_hash() == halted_hash, "early exit did not preserve the final state")
+print("exit before the first commit syncs the machine without removing a backup")

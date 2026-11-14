@@ -271,7 +271,7 @@ error:` in its stderr. Smoke: `sanitizer/smoke.sh`.
 
 ## Disk note: anvil state dumps
 
-`anvil-wrap.sh` (run by `setup.sh`) wraps `work/foundry/bin/anvil` so that it passes `--max-persisted-states 256` unless the
+`anvil-wrap.sh` (run by `setup.sh`) wraps `work/foundry/bin/anvil` so that it passes `--max-persisted-states 16` unless the
 caller sets `--max-persisted-states` or `--prune-history`. Plain anvil dumps every block state under
 `~/.foundry/anvil/tmp` and filled the disk during round 1. Tests that query state at old blocks must raise the bound
 with `ANVIL_MAX_PERSISTED_STATES`. Always stop the anvil you start; stale dumps can be removed from that directory.

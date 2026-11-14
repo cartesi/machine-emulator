@@ -10,7 +10,7 @@ cat > "$B/anvil" <<'W'
 real="$(dirname "$(readlink -f "$0")")/anvil.real"
 case " $* " in
   *" --max-persisted-states"*|*" --prune-history"*) exec "$real" "$@" ;;
-  *) exec "$real" --max-persisted-states "${ANVIL_MAX_PERSISTED_STATES:-256}" "$@" ;;
+  *) exec "$real" --max-persisted-states "${ANVIL_MAX_PERSISTED_STATES:-16}" "$@" ;;
 esac
 W
 chmod +x "$B/anvil"

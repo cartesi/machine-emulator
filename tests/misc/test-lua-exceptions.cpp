@@ -34,6 +34,7 @@
 #include <string>
 #include <string_view>
 
+#include "clua.hpp"
 #include "cm.h"
 
 extern "C" {
@@ -48,6 +49,10 @@ int luaopen_cartesi(lua_State *L);
 #pragma clang diagnostic ignored "-Wc2y-extensions"
 #endif
 
+static int raise_unknown_exception(lua_State *L) {
+    return cartesi::clua_protect(L, "test: ", []() -> int { throw 42; });
+}
+
 // A Lua longjmp must never leave a C++ catch active after pcall returns.
 BOOST_AUTO_TEST_CASE(lua_errors_destroy_cpp_exceptions) {
     const std::unique_ptr<lua_State, decltype(&lua_close)> state(luaL_newstate(), &lua_close);
@@ -57,12 +62,14 @@ BOOST_AUTO_TEST_CASE(lua_errors_destroy_cpp_exceptions) {
     // Use the linked Lua module so these C API calls and the bindings share the same library instance.
     luaL_requiref(L, "cartesi", luaopen_cartesi, 1);
     lua_pop(L, 1);
+    lua_register(L, "raise_unknown_exception", raise_unknown_exception);
     BOOST_REQUIRE_EQUAL(luaL_dostring(L, "cartesi = require('cartesi'); machine = cartesi.new()"), LUA_OK);
     BOOST_REQUIRE(!std::current_exception());
     const struct {
         const char *call;
         const char *message;
     } cases[] = {
+        {"return pcall(raise_unknown_exception)", "test: unknown error"},
         {"return pcall(cartesi.fromhex, '0xzz')", "invalid hex"},
         {"return pcall(cartesi.frombase64, '!!!!')", "base64"},
         {"return pcall(cartesi.fromjson, '{bad')", "failed to parse JSON from a string"},
@@ -78,6 +85,9 @@ BOOST_AUTO_TEST_CASE(lua_errors_destroy_cpp_exceptions) {
         {"return pcall(function() local s = {}; s.x = s; return cartesi.fromjson('{}', 'X', s) end)",
             "JSON nesting depth exceeds 256"},
         {"return pcall(machine.read_reg, machine, 'not_a_register')", "unknown register"},
+        {"return pcall(machine.read_memory, machine, 0, -1)", "failed to allocate memory for buffer"},
+        {"return pcall(machine.read_virtual_memory, machine, 0, -1)", "failed to allocate memory for buffer"},
+        {"return pcall(machine.read_console_output, machine, -1)", "failed to allocate memory for buffer"},
     };
     for (const auto &test : cases) {
         BOOST_TEST_CONTEXT(test.call) {

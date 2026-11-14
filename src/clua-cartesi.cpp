@@ -15,11 +15,8 @@
 //
 
 #include <cstddef>
-#include <cstdio>
-#include <exception>
 #include <string>
 #include <string_view>
-#include <tuple>
 
 #include <boost/config.hpp>
 
@@ -119,107 +116,71 @@ static int cartesi_mod_sha256(lua_State *L) {
 static int cartesi_mod_tobase64(lua_State *L) {
     size_t size = 0;
     const char *data = luaL_checklstring(L, 1, &size);
-    char message[1024]{};
-    try {
-        std::string &value = *clua_push_new_managed_toclose_ptr(L, std::string());
+    return clua_protect(L, "", [&]() {
+        std::string &value = *clua_push_new_managed_toclose_ptr<std::string>(L);
         value = encode_base64(std::string_view(data, size));
         lua_pushlstring(L, value.data(), value.size());
         value.clear();
         return 1;
-    } catch (const std::exception &e) {
-        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
-    } catch (...) {
-        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
-    }
-    return luaL_error(L, "%s", message);
+    });
 }
 
 static int cartesi_mod_frombase64(lua_State *L) {
     size_t size = 0;
     const char *data = luaL_checklstring(L, 1, &size);
-    char message[1024]{};
-    try {
-        std::string &value = *clua_push_new_managed_toclose_ptr(L, std::string());
+    return clua_protect(L, "", [&]() {
+        std::string &value = *clua_push_new_managed_toclose_ptr<std::string>(L);
         value = decode_base64(std::string_view(data, size));
         lua_pushlstring(L, value.data(), value.size());
         value.clear();
         return 1;
-    } catch (const std::exception &e) {
-        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
-    } catch (...) {
-        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
-    }
-    return luaL_error(L, "%s", message);
+    });
 }
 
 static int cartesi_mod_tohex(lua_State *L) {
     size_t size = 0;
     const char *data = luaL_checklstring(L, 1, &size);
-    char message[1024]{};
-    try {
-        std::string &value = *clua_push_new_managed_toclose_ptr(L, std::string());
+    return clua_protect(L, "", [&]() {
+        std::string &value = *clua_push_new_managed_toclose_ptr<std::string>(L);
         value = encode_hex(std::string_view(data, size));
         lua_pushlstring(L, value.data(), value.size());
         value.clear();
         return 1;
-    } catch (const std::exception &e) {
-        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
-    } catch (...) {
-        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
-    }
-    return luaL_error(L, "%s", message);
+    });
 }
 
 static int cartesi_mod_fromhex(lua_State *L) {
     size_t size = 0;
     const char *data = luaL_checklstring(L, 1, &size);
-    char message[1024]{};
-    try {
-        std::string &value = *clua_push_new_managed_toclose_ptr(L, std::string());
+    return clua_protect(L, "", [&]() {
+        std::string &value = *clua_push_new_managed_toclose_ptr<std::string>(L);
         value = decode_hex(std::string_view(data, size));
         lua_pushlstring(L, value.data(), value.size());
         value.clear();
         return 1;
-    } catch (const std::exception &e) {
-        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
-    } catch (...) {
-        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
-    }
-    return luaL_error(L, "%s", message);
+    });
 }
 
 static int cartesi_mod_tojson(lua_State *L) {
     lua_settop(L, 4);
-    char message[1024]{};
-    try {
+    return clua_protect(L, "", [&]() {
         const int indent = clua_opt_integer<int>(L, 2, -1);
         const char *schema_name = luaL_optstring(L, 3, nullptr);
         clua_tojson(L, 1, indent, schema_name, clua_tojsonschemadict(L, 4));
         lua_settop(L, 1);
         return 1;
-    } catch (const std::exception &e) {
-        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
-    } catch (...) {
-        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
-    }
-    return luaL_error(L, "%s", message);
+    });
 }
 
 static int cartesi_mod_fromjson(lua_State *L) {
     lua_settop(L, 3);
-    char message[1024]{};
-    try {
+    return clua_protect(L, "", [&]() {
         const char *schema_name = luaL_optstring(L, 2, nullptr);
         size_t len = 0;
         const char *data = luaL_checklstring(L, 1, &len);
         clua_fromjson(L, std::string_view(data, len), schema_name, clua_tojsonschemadict(L, 3));
         return 1;
-    } catch (const std::exception &e) {
-        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
-    } catch (...) {
-        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
-    }
-    return luaL_error(L, "%s", message);
+    });
 }
 
 static int cartesi_mod_new(lua_State *L) {

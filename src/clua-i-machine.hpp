@@ -116,18 +116,17 @@ private:
 };
 // LCOV_EXCL_STOP
 
-/// \brief Allocates a new type, pushes its reference into the Lua stack and returns its pointer.
+/// \brief Allocates a value-initialized type, pushes its reference into the Lua stack and returns its pointer.
 /// \param L Lua state
-/// \param value Initial value
 /// \param ctxidx Index (or pseudo-index) of clua context
 /// \returns The value pointer, valid until its reference is removed from the Lua stack.
 /// \details The value is marked to-be-closed when popped from the Lua stack.
 /// This follow lua_toclose semantics (check Lua 5.4 manual),
 /// therefore the stack index can only be removed via lua_pop (e.g. don't use lua_remove).
 template <typename T>
-T *clua_push_new_managed_toclose_ptr(lua_State *L, T &&value, int ctxidx = lua_upvalueindex(1)) {
+T *clua_push_new_managed_toclose_ptr(lua_State *L, int ctxidx = lua_upvalueindex(1)) {
     auto &managed_value = clua_push_to(L, clua_managed_cm_ptr<T>(nullptr), ctxidx);
-    managed_value.get() = new T(std::forward<T>(value));
+    managed_value.get() = new T{};
     // ??(edubart): Unfortunately Lua 5.4.4 (default on Ubuntu 22.04) has a bug that causes a crash
     // when using lua_settop with lua_toclose, it was fixed only in Lua 5.4.5 in
     // https://github.com/lua/lua/commit/196bb94d66e727e0aec053a0276c3ad701500762 .

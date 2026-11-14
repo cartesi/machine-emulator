@@ -20,14 +20,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
-#include <exception>
 #include <new>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <tuple>
 #include <unordered_map>
 #include <utility>
 
@@ -64,8 +61,7 @@ void clua_delete(nlohmann::json *ptr) {
 
 cm_reg clua_check_cm_proc_reg(lua_State *L, int idx) {
     const char *name = luaL_checkstring(L, idx);
-    char message[1024]{};
-    try {
+    return clua_protect(L, "", [&]() {
         /// \brief Mapping between register names and C API constants
         const static std::unordered_map<std::string, cm_reg> g_cm_proc_reg_name = {
             // clang-format off
@@ -231,13 +227,7 @@ cm_reg clua_check_cm_proc_reg(lua_State *L, int idx) {
             luaL_argerror(L, idx, "unknown register");
         }
         return got->second;
-    } catch (const std::exception &e) {
-        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
-    } catch (...) {
-        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error with register type conversion");
-    }
-    luaL_error(L, "%s", message);
-    return CM_REG_UNKNOWN_; // will not be reached
+    });
 }
 
 void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash) {
@@ -387,7 +377,7 @@ static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx,
     if (depth > 256) {
         throw std::runtime_error{"JSON nesting depth exceeds 256"};
     }
-    nlohmann::json &j = *clua_push_new_managed_toclose_ptr(L, nlohmann::json(), ctxidx);
+    nlohmann::json &j = *clua_push_new_managed_toclose_ptr<nlohmann::json>(L, ctxidx);
     idx -= idx < 0 ? 1 : 0; // adjust offset after pushing j reference
     switch (lua_type(L, idx)) {
         case LUA_TTABLE: {
@@ -508,14 +498,14 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nl
             const std::string_view &data = j.template get<std::string_view>();
             if (schema.is_string() && schema.template get<std::string_view>() == "Base64") {
                 lua_pushnil(L); // reserve a slot in the stack (needed because of lua_toclose semantics)
-                std::string &binary_data = *clua_push_new_managed_toclose_ptr(L, std::string(), ctxidx);
+                std::string &binary_data = *clua_push_new_managed_toclose_ptr<std::string>(L, ctxidx);
                 binary_data = decode_base64(data);
                 lua_pushlstring(L, binary_data.data(), binary_data.length());
                 lua_replace(L, -3); // move into the placeholder slot
                 lua_pop(L, 1);      // pop binary_data reference
             } else if (schema.is_string() && schema.template get<std::string_view>() == "Hex") {
                 lua_pushnil(L); // reserve a slot in the stack (needed because of lua_toclose semantics)
-                std::string &binary_data = *clua_push_new_managed_toclose_ptr(L, std::string(), ctxidx);
+                std::string &binary_data = *clua_push_new_managed_toclose_ptr<std::string>(L, ctxidx);
                 binary_data = decode_hex(data);
                 lua_pushlstring(L, binary_data.data(), binary_data.length());
                 lua_replace(L, -3); // move into the placeholder slot
@@ -567,8 +557,7 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nl
 }
 
 static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) {
-    char message[1024]{};
-    try {
+    return clua_protect(L, "failed to create machine schema dictionary: ", [&]() -> const nlohmann::json & {
         // In order to convert Lua tables <-> JSON objects we define schemas for:
         // - Container types (distinguish empty objects from empty arrays)
         // - Binary strings (translate Base64 or Hex strings in JSON to binary strings in Lua)
@@ -680,14 +669,7 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) {
                 }},
         };
         return machine_schema_dict;
-    } catch (const std::exception &e) {
-        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
-    } catch (...) {
-        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
-    }
-    luaL_error(L, "failed to create machine schema dictionary: %s", message);
-    static const nlohmann::json dummy;
-    return dummy; // will not be reached
+    });
 }
 
 const nlohmann::json &clua_tojsonschemadict(lua_State *L, int idx, int ctxidx) {
@@ -701,7 +683,7 @@ const nlohmann::json &clua_tojsonschemadict(lua_State *L, int idx, int ctxidx) {
     // The returned reference stays valid while its managed slot remains on the stack.
     static const nlohmann::json empty_schema;
     static const nlohmann::json items_schema = {{"items", "Default"}};
-    auto &schema_dict = *clua_push_new_managed_toclose_ptr(L, nlohmann::json(), ctxidx);
+    auto &schema_dict = *clua_push_new_managed_toclose_ptr<nlohmann::json>(L, ctxidx);
     schema_dict = nlohmann::json::object();
     lua_pushnil(L);
     while (lua_next(L, idx) != 0) {
@@ -713,7 +695,7 @@ const nlohmann::json &clua_tojsonschemadict(lua_State *L, int idx, int ctxidx) {
         const std::string_view type_name(ptr, len);
         if (lua_istable(L, -1)) {
             const int definition_idx = lua_gettop(L);
-            auto &definition = *clua_push_new_managed_toclose_ptr(L, nlohmann::json(), ctxidx);
+            auto &definition = *clua_push_new_managed_toclose_ptr<nlohmann::json>(L, ctxidx);
             definition = nlohmann::json::object();
             lua_pushnil(L);
             while (lua_next(L, definition_idx) != 0) {
@@ -740,33 +722,25 @@ const char *clua_tojson(lua_State *L, int idx, int indent, const char *schema_na
     const nlohmann::json &user_schema_dict, int ctxidx) {
     idx = lua_absindex(L, idx);
     ctxidx = lua_absindex(L, ctxidx);
-    char message[1024]{};
-    try {
+    return clua_protect(L, "failed to convert a Lua value to JSON: ", [&]() {
         const nlohmann::json &schema = clua_get_type_schema(L, schema_name, user_schema_dict);
         const nlohmann::json &j = clua_push_managed_toclose_json_ref(L, idx, schema, user_schema_dict, ctxidx);
-        std::string &s = *clua_push_new_managed_toclose_ptr(L, std::string(), ctxidx);
+        std::string &s = *clua_push_new_managed_toclose_ptr<std::string>(L, ctxidx);
         s = j.dump(indent);
         lua_pushlstring(L, s.data(), s.size());
         lua_replace(L, idx); // replace the Lua value with its JSON string representation
         lua_pop(L, 2);       // pop s, j references
         return luaL_checkstring(L, idx);
-    } catch (const std::exception &e) {
-        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
-    } catch (...) {
-        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
-    }
-    luaL_error(L, "failed to convert a Lua value to JSON: %s", message);
-    return nullptr; // will not be reached
+    });
 }
 
 void clua_fromjson(lua_State *L, std::string_view s, const char *schema_name, const nlohmann::json &user_schema_dict,
     int ctxidx) {
     ctxidx = lua_absindex(L, ctxidx);
-    char message[1024]{};
-    try {
+    clua_protect(L, "failed to parse JSON from a string: ", [&]() {
         const nlohmann::json &schema = clua_get_type_schema(L, schema_name, user_schema_dict);
         lua_pushnil(L); // reserve the result slot below the to-be-closed JSON object
-        nlohmann::json &j = *clua_push_new_managed_toclose_ptr(L, nlohmann::json(), ctxidx);
+        nlohmann::json &j = *clua_push_new_managed_toclose_ptr<nlohmann::json>(L, ctxidx);
         // The JSON lexer treats a raw NUL as end-of-input even with an explicit length.
         if (s.contains('\0')) {
             throw std::runtime_error{"unexpected NUL byte in JSON input"};
@@ -775,13 +749,7 @@ void clua_fromjson(lua_State *L, std::string_view s, const char *schema_name, co
         clua_push_json_value(L, j, schema, user_schema_dict, ctxidx);
         lua_replace(L, -3); // move into the result slot
         lua_pop(L, 1);      // pop j reference
-        return;
-    } catch (const std::exception &e) {
-        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
-    } catch (...) {
-        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
-    }
-    luaL_error(L, "failed to parse JSON from a string: %s", message);
+    });
 }
 
 /// \brief This is the machine:get_proof() method implementation.
@@ -917,12 +885,7 @@ static int machine_obj_index_read_memory(lua_State *L) {
     const uint64_t address = luaL_checkinteger(L, 2);
     const uint64_t length = luaL_checkinteger(L, 3);
     auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(nullptr));
-    try {
-        managed_data.get() = new unsigned char[length];
-    } catch (const std::bad_alloc &) {
-        // Report allocation failure after the exception has been destroyed.
-        managed_data.get() = nullptr;
-    }
+    managed_data.get() = new (std::nothrow) unsigned char[length];
     if (managed_data.get() == nullptr) {
         return luaL_error(L, "failed to allocate memory for buffer");
     }
@@ -943,12 +906,7 @@ static int machine_obj_index_read_virtual_memory(lua_State *L) {
     const uint64_t address = luaL_checkinteger(L, 2);
     const uint64_t length = luaL_checkinteger(L, 3);
     auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(nullptr));
-    try {
-        managed_data.get() = new unsigned char[length];
-    } catch (const std::bad_alloc &) {
-        // Report allocation failure after the exception has been destroyed.
-        managed_data.get() = nullptr;
-    }
+    managed_data.get() = new (std::nothrow) unsigned char[length];
     if (managed_data.get() == nullptr) {
         return luaL_error(L, "failed to allocate memory for buffer");
     }
@@ -1224,12 +1182,7 @@ static int machine_obj_index_read_console_output(lua_State *L) {
     // Read the console output data
     if (max_length > 0) {
         auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(nullptr));
-        try {
-            managed_data.get() = new unsigned char[max_length];
-        } catch (const std::bad_alloc &) {
-            // Report allocation failure after the exception has been destroyed.
-            managed_data.get() = nullptr;
-        }
+        managed_data.get() = new (std::nothrow) unsigned char[max_length];
         if (managed_data.get() == nullptr) {
             return luaL_error(L, "failed to allocate memory for buffer");
         }
@@ -1298,8 +1251,7 @@ static int machine_obj_index_destroy(lua_State *L) {
 /// \brief This is the machine:receive_cmio_request() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_receive_cmio_request(lua_State *L) {
-    char message[1024]{};
-    try {
+    return clua_protect(L, "", [&]() {
         auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
         bool remote{};
         auto error = cm_is_jsonrpc_machine(m.get(), &remote);
@@ -1314,7 +1266,7 @@ static int machine_obj_index_receive_cmio_request(lua_State *L) {
                 return luaL_error(L, "%s", cm_get_last_error_message());
             }
         }
-        std::string &data = *clua_push_new_managed_toclose_ptr(L, std::string());
+        std::string &data = *clua_push_new_managed_toclose_ptr<std::string>(L);
         uint8_t cmd{};
         uint16_t reason{};
         data.resize_and_overwrite(length, [&](char *buf, size_t n) -> size_t {
@@ -1332,12 +1284,7 @@ static int machine_obj_index_receive_cmio_request(lua_State *L) {
         lua_pushlstring(L, data.data(), data.size());
         data.clear();
         return 3;
-    } catch (const std::exception &e) {
-        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
-    } catch (...) {
-        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
-    }
-    return luaL_error(L, "%s", message);
+    });
 }
 
 /// \brief This is the machine:send_cmio_response() method implementation.

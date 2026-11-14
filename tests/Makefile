@@ -390,7 +390,8 @@ test-lua-filesystem:
 	./build/misc/test-lua-filesystem
 
 test-lua-exceptions:
-	./build/misc/test-lua-exceptions
+	# These tests deliberately request impossible allocations to exercise allocation failure handling.
+	ASAN_OPTIONS="$${ASAN_OPTIONS:+$${ASAN_OPTIONS}:}allocator_may_return_null=1" ./build/misc/test-lua-exceptions
 
 test-save-and-load: | $(CARTESI_IMAGES)
 	./scripts/test-save-and-load.sh '$(LUA) ../src/cartesi-machine.lua'

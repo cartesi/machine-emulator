@@ -50,6 +50,10 @@ Where the threat model can be read two ways, the severity column gives the revie
 | [R2-DFSTORED-1](#r2-dfstored-1) | After an O1 adoption with clear_hash_tree, store with sharing none/config copies the template's stale .dht/.dpt files, so the synced snapshot reloads with the stale root | Emulator core: machine::store (src/machine.cpp, unshared branch) with hash_tree::clear (src/hash-tree.cpp:744) | Honest operator (AUDIT.md: 'storing, loading, cloning and sy | R9, R1, O1, O2, section 5 'O1 and O2 bind the emulator too' | Medium (preferred: store with sharing none/config is off the honest operator's path) / Critical (if a production node stores an adopted template with none/confi |
 | [R2-DFYIELD-1](#r2-dfyield-1) | PRT player's claim pass copies (and for TX_OUTPUT keccak-hashes) the guest-declared tx-buffer payload, up to 2 MiB, at every automatic yield, multiplying per-yield claim cost ~75-100x | PRT player, doc/recipes/prt.lua (run_next_input -> run_to_input_mcycle_offset on_yield_automatic -> run_to_stop/receive_ | Support (stands in for the honest operator computing claims) | R12 ('a part of a claim'), section 8 High constant-factor case, section 3 suppor | Medium (preferred: support stand-in for High constant-factor R12 case) / Out of scope (broad reading of outputs/yields exclusion) |
 | [R3-VARCACHE-1](#r3-varcache-1) | replace_memory_range on a SHARING_ALL machine is not recorded in its directory; after destroy and sync_stored the O2-guaranteed directory reloads to a spliced, unreachable state | machine::replace_memory_range / machine_address_ranges::replace (src/machine.cpp ~723-764, src/machine-address-ranges.cp | Rest of the machine API (AUDIT row 2), off the honest operat | R9, R2, section 4 (O2-guaranteed directory loads as different state), O2, sectio | Medium (preferred: off-path API operation) / Critical (if a production node replaces ranges of a shared machine on the honest path) |
+| [R3-VARGROWTH-1](#r3-vargrowth-1) | PRT forked player (prt.lua honest role without epoch directory) retains only 8 input boundaries, so per-match replay grows about n/5 with the epoch's input count | doc/recipes/prt.lua forked player: DEFAULT_MACHINE_CACHE_CAPACITY=8 (897-898), machine_cache_methods:consider (1217-1245 | Support (AUDIT.md: 'The PRT player and bridge in doc/recipes | R12, A7, section 3 support clause, section 8 Medium case 3 | Medium (preferred: support standing in for a Critical R12 honest-operator violation) / Low (if R12's 'nearest retained input boundary' leaves retention to the o |
+| [R3-VARREFMODEL-2](#r3-varrefmodel-2) | PRT referee model exits on any connection EOF without a "done" reply (game-transport.lua:567 assert rethrown by dispatcher), so one stray close or claimant crash stops all matches and output acceptance | doc/recipes/game-transport.lua (server adopt reader coroutine line 567, writer 557, accept 616, dispatcher step 121-142) | Referee model (AUDIT.md table); crash rated as support per s | A8, A5; section 3 Referee model and Support clauses; section 8 Medium case "A de | Medium (support rating of a referee-model crash that violates A8/A5) / Low (if the run_client comment's fail-stop on unannounced EOF is read as documented desig |
+| [R3-VARSCHED-1](#r3-varsched-1) | PRT bridge preflights jobs at the tip's block (block.number = tip) though they are due at tip+1, so a timeout or inner win valid from block `first` lands late, or never in a one-block window | doc/recipes/prt-transactions.lua methods:submit (window check at tip+1, eth_call at latest blockHash, eth_estimateGas at | Support (PRT bridge), standing in for the honest operator's  | R4, section 1 completeness, section 3 support rating, section 8 Medium support c | Medium (preferred reading) / Low (if one block of submission latency counts as slack the clocks absorb) |
+| [R3-VARSCHED-2](#r3-varsched-2) | PRT transaction journal stops re-pricing a pending move at --max-priority-fee, freezing its max fee below the base fee while --max-fee has room | doc/recipes/prt-transactions.lua methods:fees (140-154), methods:submit (192-211) | Support (PRT player/bridge in doc/recipes), standing in for  | R4, section 1 completeness, section 3 Support, section 7 chain activity | Medium (support standing in for Critical R4) / Low (if the operator's priority cap counts as a fee budget under the goal's inclusion premise) |
 | [R3-VARSPEC-1](#r3-varspec-1) | Manual's first-word PMA layout (E bit, DID 11-8, R/W/X/IR/IW at 3-7) contradicts the emulator's guest-readable encoding (M0 IO1 R2 W3 X4 IR5 IW6 DID 11-7, no E) | PMA array state layout: src/pmas-constants.hpp PMA_ISTART_shifts/masks, src/pmas.hpp pmas_pack_istart, vs doc/README.md  | Honest operator | R7, R13, section 8 manual-contradiction clause, Medium case 1 | Medium (preferred) / Critical (literal R7 'any deviation' in 'memory permissions') |
 | [R3-VARSPEC-2](#r3-varspec-2) | M-mode write to mcycle raises illegal-instruction (required by R8), but doc/README.md never documents this departure from the spec's MRW mcycle | Interpreter CSR file, src/interpret.cpp write_csr_mcycle (~2406), and doc/README.md "The main processor" | Honest operator (AUDIT.md: "Interpreter, state-access layers | R7, R8, section 8 Medium (undocumented deterministic deviation) | Medium (preferred) / Critical (if counter writability falls in R7's "Traps and interrupts" area) / Low (if implicit manual wording or R8 counts as documentation |
 | [R3-VARSPEC-3](#r3-varspec-3) | The CLINT implements an active msip register at 0x02000000 that sets mip.MSIP, but the manual says only mtime and mtimecmp are active. | CLINT device, src/clint-address-range.cpp, against doc/README.md '#### CLINT' | Honest operator (devices) | R7, R8, section 8 Medium case and manual-contradiction clause | Medium / Critical (literal R7 'Traps and interrupts') |
@@ -5691,6 +5695,717 @@ silently to a state no execution reaches, with a consistent hash tree, and may l
 the machine it ran. No adversary can trigger it; it takes the trusted caller's own sequence of calls. Mitigation
 outside the code: do not call `replace_memory_range` on a machine loaded with sharing; load with `SHARING_NONE`,
 replace, run, and `store` to a new directory instead.
+
+## R3-VARGROWTH-1
+
+**Title.** The PRT forked player (prt.lua `honest` role run without an epoch directory) keeps only 8 input boundaries per epoch, so every per-match unit replays a number of inputs that grows linearly with the epoch's input count (about n/5).
+
+**Severity.** Medium
+
+### Problem
+
+The forked player in `doc/recipes/prt.lua` is the player that prt.lua's `honest` role runs when it gets no epoch
+directory. It is also the mode the manual's PRT walk-through runs (`lua5.4 prt.lua honest 127.0.0.1:8094 "0x..."`,
+`doc/README.md` around line 11093). It keeps machines at input boundaries in a cache from `new_forked_machine_cache`.
+That cache has `DEFAULT_MACHINE_CACHE_CAPACITY = 8` entries and starts with `DEFAULT_MACHINE_CACHE_INPUT_GAP = 1`.
+When the cache is full, `machine_cache_methods:consider` evicts an entry that is closer than `input_gap` to its
+predecessor. If it finds none, it doubles `input_gap`. Entry zero is always kept. So with `n` inputs in the epoch, the 8
+retained boundaries end up about `n/8` to `n/4` apart.
+
+Every unit of work the player does for a match starts from a machine at an exact input boundary. It gets that machine
+from `new_machine_pair_at_epoch_input_offset`. The units are:
+
+- the leaf proof, `event_handler.prove_state_transition`;
+- opening an mcycle bundle during a bisection, `collect_mcycle_bundle`;
+- building a uarch claim, `build_uarch_cycle_computation_hash`;
+- opening a uarch bundle, `collect_uarch_cycle_bundle`.
+
+`new_machine_pair_at_epoch_input_offset` forks the nearest retained entry that is not past the target
+(`find_nearest_entry`). `run_to_epoch_input_offset` then replays every input between that entry and the target. Each
+replayed input is delivered and run to its fixed point, which can take up to the mcycle limit per input. The forked
+player has no agreed pair or other shortcut. The worst replay is therefore about `n/5` complete inputs per unit.
+
+In the role the player stands in for, this breaks R12. The cost of reaching the position of a per-match operation is
+no longer bounded by the application's per-input usage. It is bounded by about `n/5` times that usage. An adversary can
+send many inputs and steer each of the logarithmic number of matches to a position just before a retained boundary.
+That multiplies the honest operator's per-match work by a factor that grows with the input count. If the deployment
+sized its clocks for the R12 bound (A7), the honest claim can run out of time. That is a completeness failure.
+Section 1 says the honest operator "cannot respond in time. If the honest claim is eliminated, a dishonest claim can
+win".
+
+This has the same root cause as R2-DFINPUTCOUNT-1: a fixed cache capacity plus doubling of `input_gap` in the shared
+`consider`. The site and constant differ. R2-DFINPUTCOUNT-1 covers the stored player and
+`STORED_MACHINE_CACHE_CAPACITY = 32`, and the fix BUGS.md gives for it changes only the stored player. The forked
+player's constant `DEFAULT_MACHINE_CACHE_CAPACITY = 8` makes the replay about three times longer, and a fix to the
+stored cache leaves it in place. `vg.lua`'s player has the same policy (`DEFAULT_MACHINE_CACHE_CAPACITY = 8`,
+`vg.lua:27`, `new_machine_cache` at 237-295). That is a secondary site, which this test does not exercise.
+
+### Component, role and area
+
+The component is the PRT player in `doc/recipes` (`prt.lua`), in forked mode. The AUDIT.md component table says: "The
+PRT player and bridge in `doc/recipes`, the `cartesi-machine` CLI, and the Lua helper libraries ... | Support. No
+production deployment runs the player, the bridge or the CLI." The player stands in for the honest operator. The area
+is the forked machine cache of input boundaries and the replay that every per-match unit starts with.
+
+### Location
+
+- `doc/recipes/prt.lua:897-898`: `DEFAULT_MACHINE_CACHE_CAPACITY = 8`, `DEFAULT_MACHINE_CACHE_INPUT_GAP = 1`.
+  Lines 899-901 hold the comment "The stored player, which the bridge runs, keeps more input boundaries, so reaching a
+  disputed input replays only a few inputs."
+- `doc/recipes/prt.lua:1177-1190`: `new_forked_machine_cache`.
+- `doc/recipes/prt.lua:1217-1245`: `machine_cache_methods:consider`, which evicts entries and doubles `input_gap`.
+- `doc/recipes/prt.lua:1247-1265`: `find_nearest_entry` and `nearest_not_past_epoch_input_offset`.
+- `doc/recipes/prt.lua:2055-2060`: `player_meta.__index:new_machine_pair_at_epoch_input_offset`.
+- `doc/recipes/prt.lua:2150-2172`: `run_to_epoch_input_offset`, the replay loop.
+- Callers: `event_handler.prove_state_transition` (1956-1977), `collect_mcycle_bundle` (2296-2297),
+  `build_uarch_cycle_computation_hash` (2315-2316) and `collect_uarch_cycle_bundle` (2334-2335).
+- `doc/recipes/prt.lua:3185-3193`: `new_forked_player`.
+- `doc/recipes/prt.lua:3315-3321`: role dispatch. `honest` without an epoch directory calls `new_forked_player`.
+- The manual (`doc/README.md`, "The player" under PRT) says the PRT player "offers each completed input boundary to
+  the same machine cache the verification game uses". It describes that cache as one that "maintains at most a fixed
+  number of machines spread throughout the epoch" and says "It uses bounded memory". It states no bound on the replay.
+- Secondary site, not exercised by the test: `doc/recipes/vg.lua:27-28` and `237-295`.
+
+### Evidence and test
+
+`bugs/R3-VARGROWTH-1/` contains `test.lua` and `README.md`. The test uses the emulator's Lua API and the real `prt.lua`
+module (`require("prt")`). It needs no chain. It does the following:
+
+1. It builds a small rolling template in a temporary directory: the harness bare-metal guest `accept.bin`, which
+   accepts every request with the empty outputs root, with 4 MiB of RAM, stored at its first rx-accepted manual yield.
+2. It opens `prt.new_forked_player(dapp_contract, "honest")` with `prt.new_geometry(10)`. This is the constructor that
+   the `honest` role uses without an epoch directory. It spawns a JSON-RPC machine server and forks it for each cache
+   entry.
+3. It delivers N1 = 128 empty-payload inputs through `event_handler.input_added` and `idle`.
+4. It calls `player:new_machine_pair_at_epoch_input_offset(k)` for the input just before each retained boundary and for
+   the last input. It counts the completed inputs replayed by wrapping `run_to_input_mcycle_offset` on the player
+   instance.
+5. It grows the epoch to N2 = 512 inputs and seals it with `epoch_sealed(512)`.
+6. It repeats the measurement with the leaf proof of a match, `event_handler.prove_state_transition(player, k, 0, 0)`.
+   That is a delivery and a step at input `k`. That path does not call `run_to_input_mcycle_offset` for the target
+   input, so every counted call is a replayed input.
+7. It requires `worst_replay(N2) <= max(worst_replay(N1), 1)`: the replay to reach a disputed input must not grow with
+   the epoch's input count. It measures counts, not time.
+
+Run it with `bugs/run.sh R3-VARGROWTH-1`. It takes about 6 s. On audit/prt2 it prints the following, identically on
+every run (the prover ran it 3 times and the reviewer 2 times, exit 1 each time):
+
+```
+N=128 inputs: 8 retained boundaries {0,19,39,55,79,95,111,127} (input_gap 16); worst replay 23 inputs (k=78)
+N=512 inputs: 8 retained boundaries {0,79,159,223,319,383,447,511} (input_gap 64); worst replay 95 inputs (k=318)
+VIOLATED: R12: reaching a disputed input must replay a number of inputs bounded independently of the epoch's input count (per-match cost bounded by the application's per-input usage); the forked player replayed 23 inputs at 128 inputs and 95 at 512 inputs
+run.sh: R3-VARGROWTH-1: exit 1 (bug present)
+```
+
+Control, run by the reviewer: the same unmodified test against an out-of-tree copy of `prt.lua` whose only change is
+`DEFAULT_MACHINE_CACHE_CAPACITY = 1 << 20`, so every boundary is retained. It reports 129 and 513 retained boundaries,
+0 replayed inputs at both sizes, and exits 0. So the test fails because of the cache policy, and it passes once the
+replay is bounded. A fix that caps `input_gap` at a constant `c` would give a worst replay of `c - 1` at both sizes, so
+it would also pass.
+
+Hunter: VARGROWTH. Prover and reviewer: Opus 5.5. No fallback was used.
+
+### Trigger and reachability
+
+Any input sender triggers it by sending inputs. The replay grows with the number of inputs in the disputed epoch,
+whatever their payloads. The test uses empty payloads on an application that accepts everything, which is a correctly
+designed application. Section 7 lets the adversary "Send any number of inputs the deployment accepts" and "Steer the
+dispute to any position of the honest computation, and force the honest claim through a logarithmic number of
+matches". So in each match it can choose a disputed input just before a retained boundary. No unreachable state is
+involved: the state is an ordinary epoch of a valid template with many inputs.
+
+### Rating
+
+1. Out of scope: no. The trigger is the number of inputs and the dispute position, and both are adversary capabilities
+   in section 7. The exclusion "An application that tries to exhaust the honest operator through the number of its
+   outputs or yields" covers outputs and yields, not inputs. "Average-case performance that does not change the
+   worst-case cost of any operation listed in R12" does not apply, because the worst-case cost of reaching a disputed
+   position grows. No obligation A1 to A8 has to be violated, and the application is correctly designed.
+2. Role: the component is the PRT forked player. It is Support by the AUDIT.md table ("The PRT player and bridge in
+   `doc/recipes` ... | Support"). Section 3 says: "Examples are ... implementations of an operator that no deployment
+   runs ... A defect that only a support component shows is Medium when it would rate High or Critical in the role the
+   component stands in for, such as ... the honest operator for an implementation of an operator". The forked player
+   implements the honest operator, since it is the `honest` role. It is rated as the honest operator would be, capped
+   at Medium. The clause covers this component. Being the demonstration mode does not change the role: the clause
+   exists for operator implementations that no deployment runs.
+3. High and Medium cases, in the honest-operator role: the High case "A defect that lets the guest, or host load that
+   the deployment was sized for, multiply the worst-case cost of an operation listed in R12 by a constant factor" does
+   not fit. The trigger is the input count, not the guest or host load, and the factor grows with `n`. For the
+   component itself, the section 8 Medium case "A defect that only a support component shows, when section 3 rates it
+   Medium" applies.
+4. Critical, in the honest-operator role: R12 says "Each is measured from a machine at its starting position. Reaching
+   that position costs at most the mcycles from the nearest retained input boundary, which the application's per-input
+   usage bounds. A7 must cover that cost a bounded number of times for every match, at either level, that the
+   tournaments force on the honest claim." Here, reaching the position costs up to about `n/5` inputs' worth of
+   mcycles, which the per-input usage does not bound. Section 8: "violating any rule or obligation at a reachable
+   state, or anywhere on the honest operator's path, is critical." That is Critical for an honest operator, so the
+   support player is Medium.
+
+Second reading. R12 says "the nearest retained input boundary" without saying which boundaries an operator must keep.
+The manual also documents the bounded cache, and the code comment at 899-901 says only the stored player aims for a
+short replay. If "retained" leaves the choice to the operator, with the deployment sizing its clocks for whatever gap
+the operator keeps, then the sparse cache is a sizing matter, not a rule violation, and the rating is Low. The first
+reading is preferred, and it is the reading under which this campaign confirmed R2-DFINPUTCOUNT-1. Two facts support
+it. The relative clause "which the application's per-input usage bounds" limits the distance to the nearest retained
+boundary to one input's usage. And R12's last paragraph lets the operator's records grow with the inputs of open
+epochs. The deciding fact is whether the maintainers mean "retained input boundary" to be every input boundary of an
+open epoch, or at most a constant number of inputs apart. If they accept the forked player and `vg.lua` as bounded-memory
+demonstrations whose replay R12 does not govern, the rating is Low.
+
+### Possible solution and risks
+
+Make the replay to a disputed input independent of `n` in the forked player. One way is to cap `input_gap` at a small
+constant in `machine_cache_methods:consider` and let the cache grow with the inputs of the open epoch. That would also
+cover the stored player, as R2-DFINPUTCOUNT-1 needs. Another way is to give the forked player the stored player's
+capacity policy when it is meant to defend a claim. If the bounded cache is kept on purpose for the demonstration, the
+manual and the code comment should say that the forked player's per-match replay grows with the input count and that
+it is not a model of an honest operator's cost.
+
+Risks: each forked entry is a separate machine server process with copy-on-write memory, so one entry per few inputs
+means process count and memory that grow with the input count. At the pinned 2^24 inputs per epoch that is not
+feasible with forks. The forked mode may then have to switch to stored entries, which need reflinks, or document its
+limit. Changing the shared `consider` also changes the stored cache's eviction pattern and the cache file it persists,
+which the stored player reloads after a restart (O2).
+
+### Risk of not fixing it
+
+The player is support, so no production deployment is exposed directly. But the forked player is what the manual runs
+to show how an honest player defends a claim, and its cache understates the cost of doing so. A node that copies its
+cache policy would let any input sender, by filling an epoch with inputs, make each match's replay grow linearly with
+the epoch's input count, up to about 2^24/5 inputs per unit at the pinned limit. Under clocks sized for R12, it would
+then lose by timeout. Mitigation outside the code: run the forked player only on epochs with few inputs, or use the
+stored player once R2-DFINPUTCOUNT-1 is fixed.
+
+## R3-VARREFMODEL-2
+
+**Title.** In the PRT referee model, any connection that reaches EOF without a `done` reply makes the referee process exit. One stray TCP close stops every match and all acceptance of outputs.
+
+**Severity.** Medium (support rating of a referee-model crash that violates A8 and A5). Under a second reading it is Low; see Rating.
+
+### Problem
+
+The referee in `doc/recipes/prt.lua referee` runs over the `game-transport.lua` server. For every connection it
+accepts, the server spawns a reader coroutine. When `receive_line` returns `nil` (the peer closed, or the socket
+failed), that coroutine runs `assert(line, "unexpected connection loss: " .. tostring(err))`. The dispatcher turns any
+error inside a coroutine into `error(debug.traceback(...))`. Its comment reads "Errors inside a coroutine are fatal:
+the referee has no business surviving its own bugs". Nothing above `server:run` catches the error, so the referee
+process exits. Other bad peer behavior, such as invalid JSON, a second announcement or a reply without an id, makes
+the same coroutine call `close_connection` and carry on. Only an unannounced EOF is fatal.
+
+So a peer's EOF, which is the peer's action and not a bug of the referee, stops everything the referee does.
+
+- During a tournament, a claimant whose process dies or is killed after it posts its claim stops every other match,
+  the honest claim's included. A8 forbids this: "Failing to process one match's data, for any reason, must not stop,
+  delay or decide any other match."
+- After the verdict, the referee waits forever in `wait_for_outputs` for output proofs. Any party that opens a TCP
+  connection and closes it ends that wait, and no output of the settled state can be accepted any more. A5 forbids
+  this: "the referee accepts every output that the settled state commits to, whenever its valid proof is presented.
+  No party can make it stop accepting them."
+
+The model stands in for the referee. A deployed referee with this behavior would let anyone with network access halt
+every dispute and all output validation at no cost. A crashing or restarting honest player would do the same.
+
+The manual (doc/README.md) describes the quitter's announced departure. In "Clocks and logical time" it documents
+the stall of a player that "connects and never answers". It says nothing about a crash on an unannounced EOF. Only a
+code comment on the client side (`run_client`) calls "an unannounced EOF or failed I/O ... a transport bug on either
+side".
+
+This is a different mechanism from R1-A8-3, and it needs a different fix. R1-A8-3 is the logical-time barrier, which
+waits for a silent player that keeps its socket open. Here a closed socket is enough, and the referee exits within
+a second. The R1-A8-3 entry mentions this crash as a problem its test does not cover.
+
+### Component, role and area
+
+The PRT referee model in `doc/recipes`: `doc/recipes/prt.lua` (referee) over `doc/recipes/game-transport.lua` (server
+connection handling and coroutine dispatcher). AUDIT.md role: "The PRT referee model in `doc/recipes` | Referee
+model". Area: connection lifecycle and error propagation in the referee's transport.
+
+### Location
+
+- `doc/recipes/game-transport.lua`, `server_meta.__index.adopt` (lines 548-605). The reader coroutine asserts at line
+  567: `assert(line, "unexpected connection loss: " .. tostring(err))`. The writer coroutine has
+  `assert(send_line(...))` at line 557, which fails in the same way when a write to a closed peer fails.
+- `doc/recipes/game-transport.lua`, `receive_line` (lines 174-187). It returns `nil, err` on `closed` or any error
+  other than `timeout`.
+- `doc/recipes/game-transport.lua`, `dispatcher_meta.__index.step` (lines 121-142). It rethrows a coroutine error with
+  `error(debug.traceback(turn[1], err))`.
+- `doc/recipes/game-transport.lua`, `server_meta.__index.run` (lines 1182-1211) and `run_server` (1217-1222). Only
+  `<close>` cleanup runs, and the error propagates out of `prtu.run_server` and `prt.lua` line 3313 (`run_role`).
+- In the same family: `accept_connections` (lines 610-620, the assert at line 616), `assert(self.listener:accept())`. A failed accept, for example
+  a connection reset before accept, would also be fatal. The test does not exercise this.
+- For contrast, `close_connection` (lines 419-426) already exists and is used for every other bad-peer case.
+
+### Evidence and test
+
+`bugs/R3-VARREFMODEL-2/` contains the following.
+
+- `test.sh` is adapted from `bugs/R1-A8-3/test.sh`. It runs two real referee tournaments with `prt.lua referee` on
+  free loopback ports. Both use the harness's bare-metal `bugs/harness/work/configs/baremetal-template` and three
+  inputs. Four player processes and the `phase_closer` join in the order that makes the referee pair
+  `match 1 = P1 vs quitter` and `match 2 = honest vs "quitter 1"`.
+  - Run "stray": P1 is a third `prt-dishonest.lua quitter`, which leaves with a `done` reply. The tournament settles,
+    and the honest claim `0x84cc13c6...` wins. The test checks that the referee is still running 3 s after the
+    verdict, while it waits for output proofs (control). It then opens one TCP connection to the referee port and
+    closes it without sending a byte. It requires the referee to keep running for 15 s afterwards (A5).
+  - Run "crash": P1 is `crashing-quitter.lua`. It requires match 2, which does not involve P1, to settle and the
+    referee to stay up (A8).
+- `crashing-quitter.lua` wraps `prt-dishonest.lua`'s quitter and posts the same kind of fabricated claim. At the
+  first request after its claim, where the quitter would reply `done`, its process exits instead, so the kernel
+  closes the socket with no reply.
+- `README.md` describes the test.
+
+The test exits 0 when both requirements hold, 1 when the referee dies of the connection loss or match 2 does not
+settle, and 2 on setup errors. It starts no chain and kills every process it starts. No wall-clock threshold decides
+the result: the referee exits within a second of the EOF, and the waits only bound the observation.
+
+Run with `bugs/run.sh R3-VARREFMODEL-2` (about 15 s). The reviewer re-ran it twice on audit/prt2, and both runs
+exited 1. The output of the first run, with the referee traceback lines trimmed:
+
+```
+stray: tournament:
+  Round 1, match 1, at the mcycle level: claim 0x87f38778... against claim 0x1a22b0c7....
+  Round 1, match 2, at the mcycle level: claim 0x84cc13c6... against claim 0x0e6cdf5f....
+  Match 1: no claim survives.
+  Match 2: claim 0x84cc13c6... wins.
+stray: Tournament winner is claim 0x84cc13c6....
+stray: referee alive 3s after the verdict, waiting for output proofs (1 connections open)
+stray: a TCP client connected and closed without sending anything
+stray: referee EXITED after the stray connection closed: unexpected connection loss: closed
+FAIL (A5): one stray connection made the referee stop accepting outputs of the settled state
+crash: claims:
+  Claim 0x037210df..., with final state 0x58904e74..., joined (posted by crasher).
+  Claim 0x1a22b0c7..., with final state 0xdd2e60cd..., joined (posted by quitter).
+  Claim 0x84cc13c6..., with final state 0xbab85ef1..., joined (posted by honest).
+  Claim 0x0e6cdf5f..., with final state 0x2743a118..., joined (posted by quitter 1).
+crash: tournament:
+  Round 1, match 1, at the mcycle level: claim 0x037210df... against claim 0x1a22b0c7....
+  Round 1, match 2, at the mcycle level: claim 0x84cc13c6... against claim 0x0e6cdf5f....
+crash: crasher: process dies at reveal_bisection (no reply, socket closed by exit)
+crash: referee EXITED: unexpected connection loss: closed
+FAIL (A8): match 2 (honest vs quitter 1) did not settle because the claimant of match 1 crashed
+run.sh: R3-VARREFMODEL-2: exit 1 (bug present)
+```
+
+As a check that the test fails only for this defect, the reviewer ran it against an untracked copy of the recipes
+in scratch space, with the same `test.sh`, `RECIPES_DIR` and `LUA_PATH_5_4` pointed at the copy. In the copy, line
+567 was replaced by `if not line then close_connection(self, connection) return end`. The test then exited 0. The
+referee was still running 15 s after the stray connection. In the crash run, `Match 1: no claim survives.` and
+`Match 2: claim 0x84cc13c6... wins.` were printed, followed by `PASS`. The reviewer did not change the test. Found,
+proved and reviewed on Opus 5.5, with no fallback.
+
+### Trigger and reachability
+
+Two kinds of party trigger it.
+
+- Any party that can open a TCP connection to the referee and close it. It needs no claim, no role announcement and
+  no bytes. This works at any time, including after the verdict, while the referee accepts outputs.
+- A claimant whose player process exits, crashes or is killed before it replies `done`. Threat model section 4 lists
+  "dishonest claimants (any number, any logs, any proofs, any timing)" as untrusted. Section 7 lets the adversary
+  "abandon or defend [claims] at will". An honest player that crashes and restarts, as R4 expects ("After a stop, it
+  restarts ... and keeps defending its claim"), also closes its old connection without `done`, and that kills the
+  referee.
+
+No property of the template or the inputs is involved. Any epoch reaches the state, with any valid template.
+
+### Rating
+
+1. Out of scope: no. The exclusion "Defects that need the deployment to violate one of A1 to A8" makes an exception
+   for the case where "an implementation of the referee model is what violates it (section 3)", and that is this
+   case. The trigger is a peer closing a TCP connection to the referee. It is not a call to the machine API by an
+   untrusted party ("the C, Lua and JSON-RPC interface to a machine"). It is not a snapshot, an O1/O2 situation, a
+   host fault, an application stall or a reorganization. `prt-dishonest.lua` and the test harnesses are out of scope
+   as components, but the defect is in the referee's transport, not in them.
+2. Role: the component is "The PRT referee model in `doc/recipes` | Referee model" (AUDIT.md). Section 3, "Referee
+   model": "A defect that only changes how long a claim may take to respond, or only crashes or stalls the model,
+   even when that stops other matches (A8), is rated as support." This clause covers this component and this defect
+   exactly. The defect only crashes the model. It changes nothing the model accepts or derives. So it is rated as
+   support. Section 3, "Support": "A defect that only a support component shows is Medium when it would rate High or
+   Critical in the role the component stands in for". The model stands in for the deployed referee. Section 8 step 2:
+   "A defect that only a support component shows is never above Medium."
+3. High and Medium cases: "A defect that only a support component shows, when section 3 rates it Medium." Section 3
+   rates it Medium if a deployed referee with the defect would be High or Critical. It would be Critical (step 4), so
+   this case fits and the class is Medium.
+4. Critical, in the stood-in role (used only to apply the support rule): a deployed referee that halts when any peer
+   disconnects violates A8 ("Failing to process one match's data, for any reason, must not stop, delay or decide any
+   other match") and A5 ("No party can make it stop accepting them") at a reachable state. The state is reached from
+   any valid template with any inputs. The honest claim could never win, and no output could be validated.
+
+Second reading (Low): the `run_client` comment calls an unannounced EOF "a transport bug on either side". Read
+together with the dispatcher's "Errors inside a coroutine are fatal" policy, it suggests the crash is a deliberate
+fail-stop design of a demonstration that trusts its peers. Under that reading this is a documented limitation that
+violates no rule, and it is Low. This reviewer judges the Medium reading better supported, for three reasons.
+- The comment is in the code, not in the manual, which is the normative reference for the referee model.
+- Section 3 covers even the manual: if "the manual's model itself violates one of A1 to A8; then the manual is the
+  defect, rated as a defect of the referee model", and the support clause then rates that crash Medium.
+- The same reader coroutine already closes the connection, and does not crash, on every other peer misbehavior. A
+  peer's EOF is not "the referee['s] own bug".
+
+The fact that would decide: whether a fail-stop transport that a code comment documents counts as a defect of the
+referee model. The threat model rates crashes of the model "as support" without excepting documented ones.
+
+### Possible solution and risks
+
+In the reader coroutine of `adopt`, treat EOF or a receive error like any other forfeit:
+`if not line then close_connection(self, connection) return end`. In the writer coroutine, do the same when
+`send_line` fails, and in `accept_connections`, skip a failed `accept` instead of asserting. `close_connection` already
+calls `forget_connection`, which drops the connection from pending requests and barriers. Matches then go on by
+timeout or elimination, as in the quitter case. This is what the reviewer's patched copy shows.
+
+Risks:
+- `close_connection` asserts that the phase closer is not lost before admission closes ("the phase closer went
+  away"). An EOF from the phase-closer connection would still be fatal unless that case is handled too.
+- A writer coroutine parked on a dead connection must not be resumed against the closed socket.
+- Transcripts that the recipe compares between its two runs must not depend on when a connection drops.
+- The client-side comment in `run_client` should be updated to match.
+
+### Risk of not fixing it
+
+The referee model is a demonstration, and no deployment runs it. Still, in any run of it, anyone who can reach its
+port can end the tournament and all output acceptance with a single connect and close. Any player crash does the
+same. A deployed referee that copied this transport design would let any party halt every dispute and the
+validation of every output, which breaks A5 and A8. The model would then teach a referee design that the threat
+model forbids. Outside the code, the only mitigation is to firewall the referee port to trusted players and to
+never restart a player, which contradicts the permissionless model.
+
+## R3-VARSCHED-1
+
+**Title.** The PRT bridge preflights a job at the tip's block, though it treats the job as due for the next block, so a timeout or inner-tournament win that becomes valid at block `first` reverts, lands one block late, and is never sent when its window is one block long.
+
+**Severity.** Medium
+
+### Problem
+
+`methods:submit` of the PRT transaction journal treats a job as includable when the next block can include it
+(`tip + 1 >= intent.first`), and `methods:tick` of the bridge wakes up at `tip = first - 1` for the same reason. The
+preflight runs at a different block, though. `eth_call` (`chain:simulate`) runs at `{ blockHash = latest.hash }` and
+`eth_estimateGas` runs at `latest.number`. A node executes both calls with `block.number = tip`, not `tip + 1`. The
+part of the test that runs on anvil shows this.
+
+Some actions only become valid at a block. Two examples are `winMatchByTimeout`, which becomes valid at the
+opponent's `responderDeadline` (Dave's `Clock.deadline` is "the first inclusive instant at which a running clock has
+timed out"), and `winInnerTournament`, which becomes valid at `resultAt`. These actions revert in the preflight at
+`tip = first - 1`. `attempt` then marks the job rejected for that tip, and the bridge sends it at `tip = first` at
+the earliest. It lands in block `first + 1`, one block late.
+
+The honest timeout winner's window is `[responderDeadline, responderDeadline + A)`, where `A` is the winner's paused
+allowance. Dave's `_classifySoleSurvivorAt` needs `remaining > overdue`, and `eliminableAt` is
+`responderDeadline + allowance`. When `A = 1`, the window is `[D, D + 1)` and the bridge never sends the win. At
+`tip = D` the win is no longer due, and the bridge's next transaction is its own cleanup, `eliminateMatchByTimeout`,
+of the honest match. Block `D + 1`, which includes it, is the match's `eliminableAt`. The honest claim is then
+eliminated, even though a transaction sent at `tip = D - 1` would have been included in block `D` and would have won.
+This is the completeness failure of section 1: "The honest operator ... cannot respond in time. If the honest claim
+is eliminated, a dishonest claim can win."
+
+### Component, role and area
+
+The PRT bridge and transaction journal in `doc/recipes`. AUDIT.md assigns them this role: "The PRT player and bridge
+in `doc/recipes` ... | Support. No production deployment runs the player, the bridge or the CLI." They stand in for
+the honest operator's "Submitting transactions" (section 2, honest operator's path). The area is transaction
+scheduling and preflight.
+
+### Location
+
+- `doc/recipes/prt-transactions.lua`, `methods:submit`:
+  - the window check at `tip + 1` (`if intent and (tip + 1 < intent.first or tip + 1 >= intent.last)`);
+  - the preflight `self.chain:simulate(signer, to, data, value, { blockHash = block.hash, requireCanonical = true })`;
+  - `eth_estimateGas` at `block.number`.
+- `doc/recipes/prt-bridge.lua`:
+  - `methods:jobs` sets `first = first_timeout` for `winMatchByTimeout` and `first = result_at` for
+    `winInnerTournament` and `stageTournamentResult`;
+  - `methods:attempt` records `self.rejected[job.key] = snapshot.tip_hash` when the preflight reverts;
+  - `methods:tick` treats a job as due at `snapshot.tip + 1 >= job.first`, and schedules the wake-up at
+    `job.first - 1`.
+- Pinned Dave v3.0.0-alpha.7, `prt/contracts/src/tournament/libs/MatchClocks.sol` (`bisectionSchedule`,
+  `_classifySoleSurvivorAt`), `libs/Clock.sol` (`deadline`, `overdueByAt`), `Time.currentTime() = block.number`.
+
+### Evidence and test
+
+`bugs/R3-VARSCHED-1/` contains `test.lua` and `README.md`. Run it with `bugs/run.sh R3-VARSCHED-1`. It takes about
+1 s. Set `VARSCHED_PORT=<port>` if 28631 is taken. The test checks that the port is free and stops its anvil at the
+end.
+
+1. **Real node.** A private anvil runs a 13-byte contract whose call reverts while `block.number < 10`, with the tip
+   at block 9. The real journal (`prt-transactions.lua`), RPC client (`prt-rpc.lua`) and signer (`prt-signer.lua`,
+   with a cast keystore) submit a job with window `[10, 11)`. **Required:** a transaction is published, and block 10
+   includes it with status 1. **Control** (exit 2 if it fails): at the same tip, another account sends the same call
+   as a transaction, and block 10 includes it with status 1.
+2. **Bridge.** The real `tick`, `attempt` and `jobs` and the real journal run over a mock chain. The mock evaluates
+   `eth_call` and `eth_estimateGas` at the requested block's number (`"pending"` is `tip + 1`), the semantics that
+   part 1 shows on anvil, and it includes every published nonce in the next block. Only `refresh` and `prepare` are
+   stubbed. The honest claim is commitment two, and the opponent is on turn with `responderDeadline` 20.
+   **Required (B):** with the one-block window `[20, 21)`, the honest `winMatchByTimeout` lands in block 20.
+   Scenario A, with window `[20, 26)`, is printed for information only.
+
+On audit/prt2 it exits 1 deterministically. The reviewer ran it twice and got exit 1 both times. It prints:
+
+```
+part 1 (anvil): gated call valid from block 10; journal submit at tip 9 for window [10, 11):
+  journal returned rejected (preflight revert code 3: execution reverted), nothing sent
+  control: the same call sent as a transaction at tip 9 is included in block 10 with status 1
+part 2 (bridge over mock chain):
+A (informational): next-block inclusion, window [20, 26):
+  tip 19: winMatchByTimeout preflight reverted
+  tip 20: published winMatchByTimeout at nonce 0
+  honest winMatchByTimeout valid in blocks [20, 26): lands in block 21
+B: next-block inclusion, one-block window [20, 21):
+  tip 19: winMatchByTimeout preflight reverted
+  tip 20: published eliminateMatchByTimeout at nonce 0
+  honest winMatchByTimeout valid in blocks [20, 21): NEVER lands
+VIOLATED: R4 (...): a job valid from the next block must be sent so that the next block includes it (part 1 journal on anvil: not sent; part 2 one-block window: never lands, informational window [20, 26): lands in 21)
+run.sh: R3-VARSCHED-1: exit 1 (bug present)
+```
+
+The reviewer also tested a scratch copy of `prt-transactions.lua` whose two preflight calls run at `"pending"`. It
+was placed first on `LUA_PATH`, and the audited file was not changed. With that copy the test exits 0: part 1
+publishes and block 10 includes the call, and A and B both land in block 20. `doc/recipes/prt-bridge-test.lua`
+still passes with it. Opus 5.5 found, proved and reviewed the issue, with no fallback.
+
+### Trigger and reachability
+
+An adversary holds the claim opposite the honest one and stops answering when it is on turn (section 7: "Post any
+number of claims ... and abandon or defend them at will"). The honest operator then needs `winMatchByTimeout` from
+block `responderDeadline` on. A window of one block needs the honest claim's paused allowance to be one block. That
+state is reachable. `joinTournament` initializes the clock with `initialAllowance - (current - startInstant)`, and
+joining is open until `startInstant + allowance`. An honest claim that joins in the last block of the join window,
+for example after computing its claim for most of that window, therefore gets an allowance of 1. A claim also reaches
+a small allowance by spending its clock on responses (`pauseAfterResponseAt` charges `elapsed - responseBudget`).
+No valid template or input sequence rules out these clock values, because they depend on timing, not on the machine
+state. The same one-block lateness hits `winInnerTournament` at `resultAt`, and `stageTournamentResult`.
+With a wider window, the win lands one block late but in time. The resulting overdue of 1 is a deferred charge that
+`pauseWinnerAt` offsets by `responseBudget`.
+
+### Rating
+
+1. Out of scope: no. The trigger is an adversary that abandons a match (section 7), not one of the exclusions of
+   section 8. It needs no deep reorganization ("Reorganizations of the chain deeper than the operator's input
+   policy"), and no deployment that violates A1 to A8. The validator nodes listed as not in scope in AUDIT.md are not
+   the component. The bridge is listed in the component table.
+2. Role: the bridge and journal are Support (AUDIT.md: "The PRT player and bridge in `doc/recipes` ... | Support"). That
+   clause covers this component. Section 3: "A defect that only a support component shows is Medium when it would
+   rate High or Critical in the role the component stands in for, such as ... the honest operator for an
+   implementation of an operator". The bridge implements the honest operator's "Submitting transactions" (section 2).
+   Section 8, step 2: "A defect that only a support component shows is never above Medium."
+3. High and Medium cases: section 8, Medium: "A defect that only a support component shows, when section 3 rates it
+   Medium." This applies, because in the role the bridge stands in for the defect is Critical (step 4).
+4. Critical (in the stood-in honest-operator role): R4, "The honest operator observes the chain and submits its
+   transactions within the dispute clocks." It is violated at a reachable clock state on the honest operator's path
+   ("Submitting transactions"), and section 1 names it a completeness failure: "cannot respond in time. If the honest
+   claim is eliminated, a dishonest claim can win." Section 8, Critical: "violating any rule or obligation ...
+   anywhere on the honest operator's path, is critical." Stood-in Critical makes Support Medium.
+
+Second reading: **Low**. Under this reading, one block of submission latency is slack that the clocks absorb. The
+section 1 premise "the chain includes its transactions within the dispute clocks" and A7 "Sized clocks" leave room for
+the honest claim, so an honest claim with a single block left would fall outside what the deployment is sized for.
+Two facts decide between the readings. The first is whether a deployment's sizing (A7) promises the honest claim more
+than one block of paused allowance at every timeout opportunity, including a join in the last block of the join
+window. The second is whether "within the dispute clocks" means every block the contract's window allows. The text
+supports the first reading better. The window is a hard on-chain interval, the bridge itself schedules the job for
+block `first`, and a correct operator lands it in that block, as the control shows. This finding is distinct from
+R1-A8-4, which is about the choice between pending jobs and not about preflight block context. A fix for one does not
+fix the other.
+
+### Possible solution and risks
+
+Run the preflight in the context of the block that the transaction targets. One option is `eth_call` and
+`eth_estimateGas` at the canonical `latest` hash with a block override of `number = tip + 1` (and `time` if a
+contract reads it). Another is to run them at `"pending"`. The `"pending"` variant drops `requireCanonical` and
+includes the signer's own pending transaction, which the journal's comment says it means to exclude, so the override
+keeps the intended state better. Block overrides are a geth/anvil extension, not standard JSON-RPC, so a node without
+them needs the `"pending"` fallback or a separate check. Alternatively, on a preflight revert at `tip = first - 1`,
+the bridge could publish anyway when the job's `first` is exactly `tip + 1`, accepting a possible revert at inclusion.
+That costs gas and can burn the nonce on a transaction that reverts, if the window was computed wrongly. Re-run
+`doc/recipes/prt-bridge-test.lua` and `bugs/R1-A8-4` with any fix.
+
+### Risk of not fixing it
+
+Every timeout win, inner-tournament win and staging that the bridge sends lands at least one block after it becomes
+valid. When the honest claim has a single block of allowance at that point, the bridge loses a match that a correct
+operator wins, and its own cleanup eliminates the honest match. Any claimant can trigger it by abandoning a match
+against such a claim. No production deployment runs the bridge, but a node built on this code would inherit the
+defect. A mitigation outside the code is to join early and keep clocks well above one block, which makes the window
+longer than one block.
+
+## R3-VARSCHED-2
+
+**Title.** The PRT transaction journal stops re-pricing a pending move once its priority fee reaches
+`--max-priority-fee`, so the move's max fee stays frozen even when `--max-fee` has room.
+
+**Severity.** Medium (a support component standing in for a Critical R4 failure of the honest operator). On the
+alternative reading given under Rating, it is Low.
+
+### Problem
+
+`methods:fees` in the PRT transaction journal prices a replacement at the same nonce by raising both the priority fee
+and the max fee by `bump_percent` (default 15%). It then returns nil whenever the raised priority exceeds
+`max_priority_fee` (default 10 gwei). It does this even when the max fee that inclusion needs is far below `max_fee`
+(default 100 gwei). `methods:submit` then outbids only a candidate the node no longer holds. Otherwise it returns
+`{ blocked = "fee_ceiling" }`.
+
+A replacement must raise the priority fee, so the priority cap also caps the number of replacements. A candidate signed
+at the cap can never be replaced. The node suggests a tip of 10 gwei or more, so the first candidate takes the cap. One
+signed at 1 gwei can be replaced about 16 times. Once the cap is reached, the candidate's max fee stays at its value
+when it was signed, about twice the base fee then plus the priority. If the base fee later rises above max fee minus
+priority, the honest move cannot be included or replaced. It also holds the account's nonce, which blocks every later
+move of that signer. The operator's configured `--max-fee` budget would have covered inclusion.
+
+The move stays stuck while the base fee stays high. That draws on the censorship allowance of the dispute clocks. A
+journal that re-priced within `--max-fee` would lose about one inclusion. A surge that lasts longer than the allowance
+makes the honest claim lose by timeout. A dishonest claim can then win, which is the completeness failure of section 1:
+the honest operator "cannot respond in time".
+
+### Component, role and area
+
+`doc/recipes/prt-transactions.lua`, the transaction journal that `doc/recipes/prt-bridge.lua` and
+`doc/recipes/crisium.lua` use to submit every PRT move. The AUDIT.md row for "The PRT player and bridge in
+`doc/recipes`" gives it the role Support ("No production deployment runs the player, the bridge or the CLI"). It stands
+in for the honest operator's "Submitting transactions" (section 2, honest operator's path). Area: fee pricing and
+same-nonce replacement.
+
+### Location
+
+- `doc/recipes/prt-transactions.lua`, `methods:fees` (lines 140-154). The check at line 150 is
+  `if priority > self.max_priority_fee or fee > self.max_fee or fee < base + priority then return nil end`, and it
+  runs after the 15% bump of `previous.priority_fee` at line 147.
+- `doc/recipes/prt-transactions.lua`, `methods:submit` (lines 192-211). The fallback re-prices only when the
+  newest candidate the node holds differs from `previous`. Otherwise it returns `blocked = "fee_ceiling"`.
+- Defaults are set in `M.new` (about line 305-321): `bump_blocks` 3, `bump_percent` 15, `min_priority_fee` 1 gwei,
+  `max_priority_fee` 10 gwei, `max_fee` 100 gwei. `crisium.lua` passes `--max-fee` and `--max-priority-fee` through.
+
+### Evidence and test
+
+`bugs/R3-VARSCHED-2/` contains `test.lua` and `README.md`. The test needs no emulator, chain or network. It loads the
+real `prt-transactions` module and drives it over a mock node. The mock never includes the account's transactions,
+keeps every published candidate in its pool, and lets the test set the base fee and `eth_maxPriorityFeePerGas`. The
+journal runs with its defaults.
+
+- **A.** The move is first signed at a 10 gwei base fee with a 10 gwei suggested tip. It gets max fee 30 gwei and
+  priority 10 gwei, which is the cap.
+- **B.** The move is first signed at a 1 gwei base fee with a 1 gwei tip. The journal re-prices it 16 times, one bump
+  every 3 blocks, which brings it to priority 9.358 gwei and max fee 28.07 gwei.
+
+In both scenarios the base fee then rises to 40 gwei. The test asserts that the next `submit` publishes a nonce-0
+replacement that meets three conditions:
+
+- max fee >= base + priority;
+- max fee <= `--max-fee`;
+- both fees at least 10% above the old candidate's, the pool's replacement bump.
+
+It deliberately does not assert the priority cap, because no same-nonce replacement can keep a candidate already at
+the cap under it.
+
+Run it with `bugs/run.sh R3-VARSCHED-2`. On audit/prt2 it exits 1 on every run (the reviewer ran it twice) and prints:
+
+```
+A: pending candidate at nonce 0: max fee 30.000 gwei, priority 10.000 gwei
+A: tip 13, base fee 40 gwei (candidate unincludable; --max-fee 100 gwei leaves room): not re-priced: fee_ceiling -> VIOLATION
+B: 16 bumps raised the priority to within 15% of the cap
+B: pending candidate at nonce 0: max fee 28.073 gwei, priority 9.358 gwei
+B: tip 61, base fee 40 gwei (candidate unincludable; --max-fee 100 gwei leaves room): not re-priced: fee_ceiling -> VIOLATION
+VIOLATED: R4 'The honest operator observes the chain and submits its transactions within the dispute clocks': ...
+run.sh: R3-VARSCHED-2: exit 1 (bug present)
+```
+
+The reviewer patched a scratch copy of the journal so that it applies the priority cap only to a first candidate and
+raises a replacement's max fee to at least `min(2*base + priority, max_fee)`. The copy was loaded ahead of the tracked
+file through `LUA_PATH_5_4`. With it the test exits 0:
+
+- A re-prices to max fee 91.5 gwei, priority 11.5 gwei.
+- B re-prices to max fee 90.76 gwei, priority 10.76 gwei.
+
+Found, proved and reviewed on the campaign's primary models. No fallback was used.
+
+### Trigger and reachability
+
+Inputs from any valid template are irrelevant here. The trigger is the fee market during a dispute.
+
+- **Scenario A.** The node suggests a tip of at least `--max-priority-fee` when a move is first signed. With the
+  defaults, that is 10 gwei or more, which is common on some chains and during congestion. Every re-pricing of that
+  move then fails. The move is stuck once the base fee exceeds max fee minus priority, about twice the base fee at
+  signing. Under EIP-1559 the base fee can rise 12.5% per block, so a run of full blocks gets there in about 6 blocks.
+- **Scenario B.** A move stays unmined for about 16 bump intervals, for example because it is out-tipped. After that,
+  any later base-fee rise has the same effect.
+
+Section 7 lets the adversary cause both: "Raise activity on the chain that does not belong to the application" and
+"Race and reorder transactions within the chain's rules". Organic congestion does too. The mock compresses the
+base-fee rise into one step. The state it creates, a pending candidate at the priority cap with its max fee below the
+base fee, is the one that gradual rises reach. The stall ends only when the base fee falls back or the operator
+restarts the player with a higher `--max-priority-fee`. Until then, the journal reports a `fee_ceiling` anomaly and
+the signer's nonce blocks every later move.
+
+### Rating
+
+1. **Out of scope:** not excluded. The trigger is fee-market activity, which section 7 grants the adversary ("Raise
+   activity on the chain that does not belong to the application"). No entry of the list covers it:
+   - it is not a reorganization deeper than the input policy;
+   - it is not a host fault;
+   - it does not violate A1 to A8;
+   - it is not the stall of an application.
+
+   The goal assumes "the chain includes its transactions within the dispute clocks". A chain whose base fee is 40
+   gwei includes a transaction that pays 90 gwei. Here the transaction stays out because the journal will not price it
+   within the operator's own `--max-fee`, not because the chain censors it. Section 7's exclusion, "to censor the
+   chain beyond the dispute clocks", is likewise about the chain.
+2. **Role:** Support. AUDIT.md: "The PRT player and bridge in `doc/recipes` ... Support. No production deployment runs
+   the player, the bridge or the CLI." Section 3 covers it: "A defect that only a support component shows is Medium
+   when it would rate High or Critical in the role the component stands in for, such as ... the honest operator for an
+   implementation of an operator." Step 2 of "How to rate": "A defect that only a support component shows is never
+   above Medium." No production component in this campaign shares the code. The validator nodes are not in scope.
+3. **High and Medium cases:** "A defect that only a support component shows, when section 3 rates it Medium." That
+   holds if the stood-in defect would be High or Critical (step 4).
+4. **Critical (stood-in role):** R4: "The honest operator observes the chain and submits its transactions within the
+   dispute clocks." This is on the honest operator's path ("Submitting transactions"). Section 8: "violating any rule
+   or obligation ... anywhere on the honest operator's path, is critical". Section 1, completeness failure: the
+   honest operator "cannot respond in time". In the honest-operator role this is Critical, so the support component
+   rates Medium.
+
+**Alternative reading (Low).** One could read `--max-priority-fee` as part of the operator's own budget. Under that
+reading, every fee-driven non-inclusion falls under the goal's premise that "the chain includes its transactions
+within the dispute clocks". The stall would then be the operator's own configuration, reported loudly as
+`fee_ceiling` and fixable by restarting with a higher cap. It would violate no rule, and so would be Low.
+
+The threat model never mentions transaction fees or fee budgets. Its resources clause lists "CPU, memory and storage".
+Three facts decide between the readings:
+
+- whether the goal's inclusion premise covers only chain behaviour (censorship, liveness) or also how the operator
+  prices its transactions;
+- whether a priority-fee limit counts as a budget the deployment sizes, or as a tip policy below the max-fee budget;
+- whether the operator's manual intervention after a reported anomaly counts as the honest operator responding.
+
+This reviewer judges the Medium reading better supported. The pinned Dave clock model (`ClockBudgets.sol`) assumes
+"Every honest action lands within `inclusion` seconds". This defect makes the operator's software, not the chain, miss
+that bound while its configured `--max-fee` would meet it.
+
+### Possible solution and risks
+
+Apply `max_priority_fee` only to the tip a first candidate takes from the node's suggestion. Let a replacement raise
+its priority by the bump even past that value, while `max_fee` stays the hard limit on what the transaction can cost.
+When re-pricing, also raise the max fee to at least `min(2*base + priority, max_fee)`, so that it tracks the current
+base fee and does not grow by only 15% per interval. This is the patch the reviewer checked in scratch. Another option
+is a separate, larger replacement cap on the priority.
+
+Risks:
+
+- A replacement may pay a higher tip than `--max-priority-fee` documents. The limit's meaning changes, and
+  `crisium.lua`'s option text should say so.
+- The balance check at publication must still cover gas times the new max fee. It already does (`insufficient_funds`).
+- The existing ceiling test in `prt-transactions-test.lua` exercises the max-fee ceiling, not the priority cap, and
+  should still pass.
+
+### Risk of not fixing it
+
+An operator running the PRT player or bridge with the default limits can have its honest move stuck at a nonce whenever
+the base fee climbs past about twice the base fee at signing. This happens immediately if the node suggests a tip of 10
+gwei or more. The move stays stuck while the configured `--max-fee` still has room. Every later move of the same signer
+waits behind it, across all its matches.
+
+A competing claimant can push the base fee up by filling blocks, or the fee surge can be organic. Either way the stall
+consumes the clocks' censorship allowance and can end in a timeout loss of the honest claim. The only mitigations are
+outside the code:
+
+- setting `--max-priority-fee` equal to `--max-fee`;
+- reacting to the `fee_ceiling` anomaly by restarting with a higher cap before the clock runs out.
+
+No production deployment runs this journal.
 
 ## R3-VARSPEC-1
 

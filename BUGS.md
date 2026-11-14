@@ -8,7 +8,10 @@ candidate's number within that angle.
 Flags required by `AUDIT.md` (fallback-only confirmations, issues without a proof of concept, tests that model a
 component instead of running it):
 
-- None yet.
+- R1-O1-1: the first reviewer refuted it on a reading of the threat model; the second opinion overturned that. Both readings are in its entry.
+- R1-R4-1: the first reviewer refuted it on a reading of the threat model; the second opinion overturned that. Both readings are in its entry.
+- R2-DFSTORED-2: the first reviewer refuted it on a reading of the threat model; the second opinion overturned that. Both readings are in its entry.
+- R3-VARREFMODEL-1: the first reviewer refuted it on a reading of the threat model; the second opinion overturned that. Both readings are in its entry.
 
 Where the threat model can be read two ways, the severity column gives the reviewer's preferred reading first.
 
@@ -17,14 +20,17 @@ Where the threat model can be read two ways, the severity column gives the revie
 | [R1-A2-1](#r1-a2-1) | PRT referee model (prt.lua new_dapp_contract/run_epoch) seals an epoch with its whole input record, no 2^24 cap, unlike DaveConsensus and vg.lua | doc/recipes/prt.lua new_dapp_contract, run_epoch (PRT referee model) | Referee model | A3, R4, section 3 (Referee model), section 5 (unlisted model/deployed disagreeme | Critical / Low |
 | [R1-A7-1](#r1-a7-1) | Released Dave COMMITMENT_BUDGET (120 min, 2^18-mcycle leaf) is sized for average uarch density; sfence.vma/fdiv.d-dense leaves need about 11-12 h and 3 h to build | Dave v3.0.0-alpha.7 ArbitrationConstants/ClockBudgets/Deployment.s.sol vs collect_uarch_cycle_root_hashes cost | Referee model (deployed referee); overrunning operation is H | A7, R12, R4, section 8 Critical (R12 cost beyond sizing), section 1 completeness | Critical (preferred) / Medium (if section 3's 'only changes how long a claim may take to respond' covers Dave's clock sizing) |
 | [R1-GUEST-2](#r1-guest-2) | rollup --utf8-payload accept/reject/finish consumes a non-UTF-8 input, then exits 1 with no request printed: the app halts or accepts an input it never saw | machine-guest-tools v0.18.1-test1 sys-utils/rollup/rollup.cpp (encode_payload, write_advance_state, finish_request_and_g | Guest software | Section 2 correctly designed application; section 3 Guest software (R7 rx buffer | Critical (reading A: --utf8-payload documented for rollup apps facing arbitrary senders) / Low (reading B: option scoped to UTF-8 text payloads) |
+| [R1-O1-1](#r1-o1-1) | clear_hash_tree load refuses intact-content directories with malformed or missing cached hash-tree files: a loud error, no wrong hash, and the rebuild is still possible another way | Loading stored machines in the emulator core: the machine::machine, hash_tree, page_hash_tree_cache and memory_address_r | Honest operator (AUDIT.md: "storing, loading, cloning and sy | O1, section 5 "must make them possible to follow", section 2 honest operator's p | Critical (preferred) / Low (if an undocumented config-edit workaround makes O1 'possible to follow') |
 | [R1-O1-2](#r1-o1-2) | Unhashed config.json hash_tree.phtc_size survives clear_hash_tree, so a template's distributor sets the honest operator's adoption memory without bound (12 kB/entry) | Emulator core: loading stored machines (machine_config::load, hash_tree / page_hash_tree_cache sized from stored phtc_si | Honest operator | Section 8 OOS snapshot clause, R12, R4, O1 (section 5), section 2 honest operato | Critical / Low (if the whole template directory, unhashed config included, is trusted input) |
 | [R1-O2-3](#r1-o2-3) | Failed collect_mcycle_root_hashes (non-console exception, e.g. bad_alloc) drops context-only dirty marks; hash tree, later roots and stored snapshots mismatch contents | collect_mcycle_root_hashes / collect_mcycle_hashes_state_access / hash tree dirty tracking | Honest operator | R9, section 4 (host faults), section 1 completeness | Critical (preferred: host fault turned into a wrong hash, R9 failed update) / Low (if memory exhaustion is not a covered host fault or continuing after an error |
 | [R1-R7-1](#r1-r7-1) | The LR/SC reservation is keyed by virtual address and survives satp writes and sfence.vma, so after a remap an SC succeeds on another physical page and writes it. | Interpreter (src/interpret.cpp execute_LR/execute_SC; ilrsc not cleared by write_csr_satp or execute_SFENCE_VMA), shared | Honest operator | R7 | Critical / Medium |
 | [R3-VARDIRTY-1](#r3-vardirty-1) | An exception in hash_tree::update after page hashes are stored leaves m_bubble_up_unchanged_pages false, so ancestors are never recomputed: wrong roots, proofs and snapshots, while verify_hash_tree still passes | Hash tree: src/hash-tree.cpp hash_tree::update (758-771), update_dense_trees (503-535), return_updated_dirty_pages (380- | Honest operator | R9, section 4 host-fault clause, section 1 completeness | Critical (preferred: host fault turned into wrong hash, R9 failed update) / Low (if allocation failure is not a covered host fault or continuing after an error  |
+| [R3-VARREFMODEL-1](#r3-varrefmodel-1) | Referee model takes the unauthenticated phase-closer role (close admission, stop) from any TCP connection; real, but it is demo orchestration with no deployed-referee counterpart | PRT referee model: doc/recipes/game-transport.lua (announce/announce_phase_closer 501-544, deliver 473-497, close_phase  | Referee model (AUDIT.md: "The PRT referee model in doc/recip | Section 1 goal, A7, A5, A8, section 3 referee-model clauses, section 7, section  | Critical (close effect, as a deployed referee); stop effect alone support Medium; Low only if the closer counts as the trusted referee process |
 | [R1-R10-1](#r1-r10-1) | Regenerated Solidity StepVerifier and C++ verify_step_uarch accept uarch stores to the PMA array, shadow TLB, HTIF and uarch_x0, which the native uarch refuses as traps | machine-solidity-step regenerated (EmulatorCompat.writeWord/AccessLogs.writeWord via UArchStep store helpers); C++ uarch | Referee verifier (regenerated machine-solidity-step); C++ ve | R3, R2, R10; section 8 High (verifier misbehaving on unreachable before-states) | High |
 | [R1-R10-2](#r1-r10-2) | Off-by-one in Memory.validateStrideLength makes the on-chain step verifier revert on uarch accesses to the top 32-byte leaf, which native uarch and C++ verifier accept | machine-solidity-step src/Memory.sol validateStrideLength (identical in released, regenerated and Dave machine/step) | Referee verifier | R2, R3, section 8 High (divergence at unreachable states) | High (preferred: divergence between paths at an unreachable state) / Low (if rejecting at an unreachable state is not a divergence) |
 | [R1-R12-2](#r1-r12-2) | The uarch issues a TLB flush's 768 write_tlb ecalls through an out-of-line 14-instruction wrapper: 17,492 uarch cycles (22 per slot) even with a full TLB, about 5-6x what is needed | uarch program TLB-flush path: src/interpret.cpp flush_tlb_slot/flush_tlb_set/flush_all_tlb/set_prv compiled into the uar | Honest operator (AUDIT.md: 'Interpreter, ..., uarch program, | R12, A7, section 8 High constant-factor case; fix implies R13/A6 version change | High (preferred reading); Low under the alternative reading that 'defect' excludes code-generation efficiency of a correct implementation |
 | [R1-R13-1](#r1-r13-1) | Regenerating machine-solidity-step v0.17.0-test1 from audit/prt2 fails to compile: UArchStep.sol uses undeclared TLB_NUM_SETS (added by afd5f9d), so the referee verifier cannot be rebuilt from audited source | machine-solidity-step v0.17.0-test1 regenerated from audit/prt2 (generate_UArchStep.sh, EmulatorConstants template/lua); | Referee verifier (AUDIT.md table); root cause in uarch progr | R13, A6 | High; Critical under the reading that every deployment must ship hand-edited or stale verifier code |
+| [R1-R4-1](#r1-r4-1) | Creation accepts a non-pristine uarch (custom uarch RAM image or uarch registers) in Keccak configs; uarch path then refuses or traps while native run proceeds | Machine creation from configuration (machine_address_ranges::push_back_uarch_ram, machine::init_uarch_processor); collec | Rest of the machine API (creation): honest operator only whe | R4 (configuration clause), R3, R13, section 2 valid template and reachable state | High (preferred: divergence only at demonstrably unreachable states) / Critical (creation-time acceptance as an R4 violation on the honest path) / Out of scope- |
 | [R1-R8-3](#r1-r8-3) | Each collect_mcycle_root_hashes call re-marks and word-compares all 256 write-TLB pages even when nothing changed. A guest that yields every 1-2 mcycles makes each yield cost about 6x more. | collect_mcycle_root_hashes / hash tree (src/machine.cpp update_hash_tree, mark_write_tlb_dirty_pages) | Honest operator | R12, A7, section 8 High (constant-factor cost) | High (preferred: guest-induced constant-factor increase of R12 'a part of a claim', sizing unknown) / Out of scope (literal reading of the yield-count exclusion |
 | [R3-VARSHADOW-1](#r3-varshadow-1) | The HTIF getchar guard runs only at create/load. After write_reg or a full-shadow write_memory sets iconsole GETCHAR, native diverges from uarch/collectors (5 vs 0) and store writes an unloadable directory | machine::init_console (create/load only), write_reg htif_iconsole, validate_processor_shadow (full-shadow write_memory), | Diverging paths: Honest operator (interpreter, state access, | R2, R1, R14, R9; section 8 High (divergence at unreachable states), Medium (off- | High (preferred: divergence between paths only at demonstrably unreachable states) / Medium (R1-R2-1 off-path API reading) / Out of scope or Low (broad delibera |
 | [R1-A3-1](#r1-a3-1) | PRT player opens epoch N+1's listener from epoch N's seal block, so it misses the inputs DaveConsensus defers past the 2^24 limit and crash-loops | doc/recipes/crisium.lua open_epochs (line 267) + doc/recipes/prt-epoch.lua poll (lines 37, 73, 96) | Support (PRT player, AUDIT.md table), standing in for the ho | R4 (last bullet), A3, section 8 Critical 'crash ... data the honest operator mus | Medium |
@@ -48,6 +54,7 @@ Where the threat model can be read two ways, the severity column gives the revie
 | [R2-DFINPUTCOUNT-2](#r2-dfinputcount-2) | PRT player fetches epoch 0's InputAdded logs only from the DaveConsensus deployment block, but the constructor seals prior inputs into epoch 0, so crisium crash-loops | doc/recipes/crisium.lua (first_block line 125, open_epochs first_input_block line 267) with prt-epoch.lua poll (line 37, | Support (PRT player), standing in for the honest operator | R4, section 1 completeness, section 8 Critical (crash on data the operator must  | Medium / Low (if apps created before and apart from their DaveConsensus are unsupported) |
 | [R2-DFOUTPUT-1](#r2-dfoutput-1) | PRT stored player refuses every valid non-genesis template: store_first_epoch_checkpoint asserts the tx buffer holds the empty outputs root, so epoch 0 never starts | doc/recipes/prt.lua store_first_epoch_checkpoint (2741-2777), required by crisium.lua open_epochs and prt-demo.lua | Support (PRT player), standing in for the honest operator | R4, section 2 valid template and honest operator's path, section 3 support claus | Medium / Low |
 | [R2-DFSTORED-1](#r2-dfstored-1) | After an O1 adoption with clear_hash_tree, store with sharing none/config copies the template's stale .dht/.dpt files, so the synced snapshot reloads with the stale root | Emulator core: machine::store (src/machine.cpp, unshared branch) with hash_tree::clear (src/hash-tree.cpp:744) | Honest operator (AUDIT.md: 'storing, loading, cloning and sy | R9, R1, O1, O2, section 5 'O1 and O2 bind the emulator too' | Medium (preferred: store with sharing none/config is off the honest operator's path) / Critical (if a production node stores an adopted template with none/confi |
+| [R2-DFSTORED-2](#r2-dfstored-2) | clone_stored + SHARING_ALL load refuses a read-only or trimmed template loudly, as the manual documents; O1 unshared load works, so no rule is violated | machine::clone_stored / os::clone_file (src/machine.cpp 526-577, src/os-filesystem.cpp 577-622) and the shared-write che | Honest operator (AUDIT.md table: "storing, loading, cloning  | THREAT_MODEL s4 (snapshots trusted; report errors without terminating), s8 out-o | Medium (preferred: Support player standing in for the operator) / Critical (if production nodes adopt by clone plus shared load) / Low (variant B alone, or if h |
 | [R2-DFYIELD-1](#r2-dfyield-1) | PRT player's claim pass copies (and for TX_OUTPUT keccak-hashes) the guest-declared tx-buffer payload, up to 2 MiB, at every automatic yield, multiplying per-yield claim cost ~75-100x | PRT player, doc/recipes/prt.lua (run_next_input -> run_to_input_mcycle_offset on_yield_automatic -> run_to_stop/receive_ | Support (stands in for the honest operator computing claims) | R12 ('a part of a claim'), section 8 High constant-factor case, section 3 suppor | Medium (preferred: support stand-in for High constant-factor R12 case) / Out of scope (broad reading of outputs/yields exclusion) |
 | [R3-VARCACHE-1](#r3-varcache-1) | replace_memory_range on a SHARING_ALL machine is not recorded in its directory; after destroy and sync_stored the O2-guaranteed directory reloads to a spliced, unreachable state | machine::replace_memory_range / machine_address_ranges::replace (src/machine.cpp ~723-764, src/machine-address-ranges.cp | Rest of the machine API (AUDIT row 2), off the honest operat | R9, R2, section 4 (O2-guaranteed directory loads as different state), O2, sectio | Medium (preferred: off-path API operation) / Critical (if a production node replaces ranges of a shared machine on the honest path) |
 | [R3-VARGROWTH-1](#r3-vargrowth-1) | PRT forked player (prt.lua honest role without epoch directory) retains only 8 input boundaries, so per-match replay grows about n/5 with the epoch's input count | doc/recipes/prt.lua forked player: DEFAULT_MACHINE_CACHE_CAPACITY=8 (897-898), machine_cache_methods:consider (1217-1245 | Support (AUDIT.md: 'The PRT player and bridge in doc/recipes | R12, A7, section 3 support clause, section 8 Medium case 3 | Medium (preferred: support standing in for a Critical R12 honest-operator violation) / Low (if R12's 'nearest retained input boundary' leaves retention to the o |
@@ -618,6 +625,158 @@ when the tool fails. All later inputs are then lost and the outputs become unpro
 retries instead accepts an input it never processed. Applications that, like `calc.sh`, carry on with `rollup
 reject` only lose the input. Outside the code, the mitigation is to use the default hex or `--base64-payload`
 encoding in the guest, or to treat every failure of `rollup accept/reject/finish` as "input consumed, reject it".
+
+## R1-O1-1
+
+**Title.** The documented O1 rebuild (`clear_hash_tree`) cannot adopt a valid template whose cached hash-tree files are malformed or missing: the loader parses and validates the cached data it is about to discard, and throws before the rebuild runs.
+
+**Severity.** Critical
+
+### Problem
+
+O1 requires an operator that adopts a stored machine it did not produce to rebuild the cached hash-tree data from
+the contents when it loads the machine. The manual names the mechanism: "Besides the machine state, the directory
+holds cached hash-tree data, which is outside the state hash and is not checked on load. Load a directory you did not
+produce with `--clear-hash-tree`, which rebuilds that data from the machine state, before trusting its state hash."
+The same runtime option is `cartesi.machine(dir, {clear_hash_tree = true})`, `cm_load` and JSON-RPC `machine.load`.
+
+`machine::machine` builds the address ranges and the hash tree from the cached files first. It validates their
+structure and length, and only then calls `clear_hash_tree()`. So a directory whose hashed contents (every `.bin` and
+`config.json`) are intact, but whose cached `hash_tree.sht`, `hash_tree.phtc`, `.dht` or `.dpt` files are malformed,
+truncated or missing, fails to load with `clear_hash_tree`:
+
+- `hash_tree::hash_tree` raises "inconsistent sparse hash tree nodes" for a bad sparse node index;
+- `os::mapped_memory` requires the exact length of the `.sht`, `.dpt` and `.dht` files;
+- the `page_hash_tree_cache` constructor raises "file tag mismatch";
+- a missing `.dht` without sharing raises "unable to open backing file". The manual says instead that the emulator
+  enables `mark_pages_dirty` "automatically when either tree backing file is omitted or missing", and
+  `prepare_ar_backing_store` does set the flag, but the unshared mapping of the missing file still fails.
+
+The cached data is exactly what the threat model treats as untrusted ("A snapshot's cached hash-tree data is not part
+of any valid-template condition, so a snapshot the operator did not write is defended only after that data is
+rebuilt (O1)"). A template whose cache was damaged in transit, relayed by another party or truncated is still a
+valid template, but the honest operator cannot obtain it through the documented rebuild. It then cannot compute its
+claim or respond, which is a completeness failure under section 1 ("cannot produce a proof that verifies, or cannot
+respond in time. If the honest claim is eliminated, a dishonest claim can win").
+
+**Second opinion.** The first reviewer refuted this candidate as Low. Its reasons were that every failure is a clean
+exception, that the section 8 sentence "nothing it carries outside the hashed state may affect any transition (R1),
+crash the honest operator, or corrupt its memory" lists no loud refusal, and that O1 is "possible to follow" because
+a machine created from an edited `config.json` with blank cache filenames rebuilds to the same root. The second
+opinion overturned that refusal on two steps that contradict the text:
+
+1. The reviewer treated that out-of-scope sentence as the full list of what the emulator owes. "How to rate" step 4
+   still applies: "violating any rule or obligation at a reachable state, or anywhere on the honest operator's path,
+   is critical". The honest operator's path includes "Obtaining its valid template. For a template the operator did
+   not produce, this includes rebuilding its cached hash-tree data (O1)". Section 8 also lists, as Medium, "A
+   persistence operation that fails loudly ... in an uncommon host setup that the manual documents". That case would
+   not be needed if a loud failure of a persistence operation were never a defect.
+2. The workaround (edit `config.json`, clear the cache filenames, create a new machine from it) is not the rebuild
+   the manual documents. Section 5 says "A defect that defeats the rebuild itself ... is not excused by them". The
+   defect here defeats that rebuild itself.
+
+### Component, role and area
+
+Loading stored machines in the emulator core: the constructors of the address ranges, the hash tree and the page
+hash-tree cache, run from `machine::machine`. AUDIT.md lists "storing, loading, cloning and syncing machines" as
+Honest operator. The area is the O1 adoption of a template that the operator did not produce.
+
+### Location
+
+- `src/machine.cpp`, `machine::machine` (lines ~306-328). `m_ars` and `m_ht` are built from the cached files before
+  `if (m_r.clear_hash_tree) clear_hash_tree();` at line ~326.
+- `src/hash-tree.cpp`, `hash_tree::hash_tree`, line ~1001 ("inconsistent sparse hash tree nodes").
+- `src/page-hash-tree-cache.hpp`, line ~443 ("corrupted page hash-tree cache: file tag mismatch").
+- `src/os-mapped-memory.cpp`: exact-length checks (lines ~173, ~343, ~510) and "unable to open backing file".
+- `src/memory-address-range.cpp`, `memory_address_range::memory_address_range` (the `m_dpt`/`m_dht` mappings);
+  `src/machine-address-ranges.cpp`, `prepare_ar_backing_store` (lines ~158-187), which marks pages dirty for a
+  missing tree file but creates the file only when the range is shared.
+- Manual: `doc/README.md` lines ~1089-1094 (`--clear-hash-tree`) and ~3299-3306 (missing tree files).
+
+### Evidence and test
+
+`bugs/R1-O1-1/` contains `test.lua` and `README.md`. Run `bugs/run.sh R1-O1-1` (about 1 s). The test stores the
+harness `baremetal-template` with sharing and records the content hash rebuilt from the untouched directory. It then
+damages only cached hash-tree data on copies and requires that `cartesi.machine(dir, {clear_hash_tree = true})`,
+with `SHARING_NONE` and with `SHARING_ALL`, succeeds with the reference root. Two controls (garbage hashes in the
+`.sht` root and in the RAM `.dht`) must be rebuilt, or the test exits 2. On audit/prt2 the second-opinion re-run
+printed:
+
+```
+reference root hash (rebuilt from contents): 0x428a6bb8...ac75
+... 4 control lines: rebuilt, root matches
+[SHARING_NONE] hash_tree.sht: left index of sparse node 2 changed: load with clear_hash_tree FAILS: ... inconsistent sparse hash tree nodes
+[SHARING_ALL]  (same)
+[*] hash_tree.sht truncated to 64 bytes: ... FAILS: ... length (64) does not match desired backing length (6144)
+[*] hash_tree.phtc: unknown file tag: ... FAILS: corrupted page hash-tree cache: file tag mismatch
+[*] RAM .dpt truncated to 10 bytes: ... FAILS: ... length (10) does not match desired backing length (32768) when initializing RAM
+[SHARING_NONE] RAM .dht missing: ... FAILS: unable to open backing file '...dht': No such file or directory when initializing RAM
+[SHARING_ALL]  RAM .dht missing: rebuilt, root matches
+VIOLATED: ... 9 of 10 load(s) failed
+run.sh: R1-O1-1: exit 1 (bug present)
+```
+
+All agents ran on Opus 5.5 (`claude-opus-5-5`): the hunter, the prover, the first reviewer and the second-opinion
+reviewer. No fallback model was used.
+
+### Trigger and reachability
+
+The trigger is any party that distributes or relays the template directory, or any damage in transit, that leaves
+the cached hash-tree files malformed, truncated or missing while the hashed contents stay intact. No guest action is
+involved. The template is a valid template: every condition in section 2 concerns its contents and state, and
+section 4 says its cached data "is not part of any valid-template condition". The honest operator meets the defect
+on its own path when it adopts the template as O1 and the manual require.
+
+### Rating
+
+1. Out of scope: no. The snapshot exclusion needs "a snapshot that the emulator did not write and that does not meet
+   the conditions of a valid template". This one meets them. The O1 exclusion covers "Defects that need the cached
+   hash-tree data of a stored machine the operator did not produce to survive its adoption without a rebuild (O1)".
+   Here the rebuild is requested and fails. Section 5 adds "A defect that defeats the rebuild itself ... is not
+   excused by them". This is not misuse by a trusted caller either, because the caller uses the option the manual
+   prescribes.
+2. Role: loading stored machines is Honest operator (AUDIT.md: "... and storing, loading, cloning and syncing
+   machines | Honest operator"). Section 3: these "play this role in every deployment".
+3. High and Medium cases: none fits. "A persistence operation that fails loudly ... in an uncommon host setup that
+   the manual documents, or while cleaning up after a stop" does not fit: the trigger is template data, not a host
+   setup, and nothing is being cleaned up. "A crash, hang, memory-safety defect or unbounded allocation in a component
+   in the honest-operator role, caused by data from other parties that the honest operator may decline" does not fit
+   either. The failure is not a crash, and the operator cannot decline the template it defends.
+4. Critical: the defect violates O1 as it binds the emulator ("O1 and O2 bind the emulator too. ... the emulator must
+   make them possible to follow") on the honest operator's path ("Obtaining its valid template. For a template the
+   operator did not produce, this includes rebuilding its cached hash-tree data (O1)"). It also violates R4 ("From
+   any reachable state ... the honest operator can always compute the claim"). The valid template is a reachable
+   state that the documented adoption cannot load. The manual contradiction about missing tree files ("enables it
+   automatically when either tree backing file is omitted or missing") takes "the severity it would have if the
+   manual were right", which is the same.
+
+Alternative reading: Low. It holds if an undocumented workaround (creating a machine from an edited `config.json`)
+counts as making O1 "possible to follow", and if a loud refusal of a valid template on the adoption path is not a
+defect because section 8's snapshot sentence mentions only transitions, crashes and memory corruption. Two facts
+would decide between the readings. The first is whether the maintainers intend `--clear-hash-tree` to be the single
+documented O1 path, as the manual says. The second is whether section 2's "Obtaining its valid template" requires
+that path to accept every directory with intact contents.
+
+### Possible solution and risks
+
+When `clear_hash_tree` is set, do not open or validate the cached tree files of the source directory. Instead,
+create fresh in-memory (unshared) or freshly truncated (shared) tree storage for the `.sht`, `.phtc`, `.dht` and
+`.dpt` files, sized from the configuration, and mark every page dirty. Equivalently, treat these files as absent
+before the hash tree and address ranges are built. With sharing, the rebuilt files must replace the damaged ones in
+the directory, and the replacement must keep the O2 rules (no partial file presented as guaranteed). Risks: a shared
+load would rewrite the cache files of a directory that the caller may share with other processes. Sizing the fresh
+`.phtc` must not come from an untrusted `phtc_size` (see R1-O1-2). Unshared loads also need anonymous storage for the
+`.dht` and `.dpt` instead of mapping a missing file.
+
+### Risk of not fixing it
+
+An operator that receives a template with a damaged or tampered cache cannot adopt it with the documented command.
+It has to obtain another copy, or edit `config.json` by hand, while its dispute clocks run. Anyone who relays
+templates (a mirror, a package, a peer) can cause this refusal without touching the hashed contents, so the template
+still matches the on-chain commitment and nothing points to tampering. Mitigation outside the code: on a copy, delete the
+damaged per-range `.dht`/`.dpt` files and load with sharing (the shared path recreates missing per-range tree files;
+the `.sht` and `.phtc` cases were not checked this way), or recreate the machine from its configuration with blank
+cache filenames.
 
 ## R1-O1-2
 
@@ -1265,6 +1424,127 @@ it. A snapshot it stores afterwards reloads with the wrong root. Its honest clai
 and a dishonest claim can win. Mitigations outside the code: treat any failed `get_root_hash`, proof or collection
 call as fatal for the machine and reload from the last guaranteed snapshot, or call `clear_hash_tree()` before using
 the machine again.
+
+## R3-VARREFMODEL-1
+
+**Title.** The PRT referee model takes the phase-closer role from any connection, so any party can close claim admission before the honest player joins (a fabricated claim then settles), or stop the referee at any time.
+
+**Severity.** Critical (preferred reading: the close effect is rated "as if a deployed referee had it", per section 3). The stop effect alone is support Medium. Low under the alternative reading in which the phase closer's announcement is a trusted channel of the referee process itself.
+
+The first reviewer refuted this candidate as Low. It read the closer as "trusted orchestration" with no deployed counterpart, and so outside section 3's "as if a deployed referee had it". A second-opinion reviewer overturned that. Section 3 says "A defect in what it accepts or derives is rated as if a deployed referee had it", with no limit to channels that have a deployed counterpart. The closer's trust came from a code comment (`game-transport.lua`: "The phase closer is trusted orchestration. Its announced role is not authenticated."), not from section 4 or the manual. The manual's simplification "The referee is one trusted process" covers the referee, not a separate connection. Section 5 makes that simplification non-normative. The closer's `done` also answers a referee request (`close_phase`). The manual says such wire responses "represent blockchain events and transactions" (verification-game section; "The referee uses the verification game's transport").
+
+### Problem
+
+In the PRT referee model, claimants are admitted through a wall-clock admission phase. `close_phase` fixes
+`phase.players = self:get_players()` when the phase closer answers `close_phase`. Only those connections are
+subscribed to the epoch's initial state hash, and only they ever receive `commit_mcycle_claim`
+(`prt.lua open_mcycle_tournament`). A player that connects later is never subscribed and cannot post a claim.
+
+The server decides which connection is the phase closer from that connection's first line. The first connection that
+sends `{"role":"phase_closer"}` becomes `self.phase_closer`. When it answers `done`, admission closes at once, and the
+real closer is refused later (`if self.phase_closer then close_connection`). Any connection that sends
+`{"role":"phase_closer","command":"stop"}` at any time sets `self.stopping`. `server:run` then closes the referee
+coroutine and ends the referee, even mid-match or while it waits for output proofs. There is no secret and no
+authentication.
+
+An adversary that closes admission before the honest player connects keeps the honest claim out of the tournament.
+The test shows the result: the quitter's fabricated claim wins. A deployed referee with this behavior would let any
+party settle a state that the state transition function does not define, which breaks the goal of section 1. The
+manual's model says "The mcycle tournament opens to every player subscribed to the epoch's initial state hash" and
+never mentions a phase closer. Dave has no such gate: joins stay open until the tournament's clock-based closure.
+
+### Component, role and area
+
+The PRT referee model in `doc/recipes` (`prt.lua referee` over `game-transport.lua`). AUDIT.md role: "The PRT referee
+model in `doc/recipes` | Referee model". Area: claim admission and server lifecycle (the phase-closer role).
+
+### Location
+
+- `doc/recipes/game-transport.lua`: `announce` and `announce_phase_closer` (the role is taken from the first line,
+  unauthenticated); `deliver` (`done` closes the phase or sets `self.stopping`); `close_phase` (fixes
+  `phase.players`); `server_meta.__index.run` (`self.stopping` leads to `close_referee`); the comment "The phase
+  closer is trusted orchestration. Its announced role is not authenticated."
+- `doc/recipes/prt.lua`: `new_referee` (admission, then `run_epoch`), `open_mcycle_tournament` (`commit_mcycle_claim`
+  goes only to subscribed connections), `wait_for_outputs`.
+
+### Evidence and test
+
+`bugs/R3-VARREFMODEL-1/` holds `test.sh` (the orchestration) and `closer-client.lua`, an arbitrary TCP client that
+sends the same lines as `prt.lua phase_closer <address> [stop]`. The runs use the harness's bare-metal
+`baremetal-template` with one input, free loopback ports, and no chain:
+
+- control: a quitter joins, then the honest player, then the orchestration's closer closes admission. The honest
+  claim wins (setup check).
+- stop: the settled control referee waits for output proofs, and the arbitrary client sends the `stop`
+  announcement. Required: the referee does not end.
+- attack: after the quitter joins, the arbitrary client announces the closer role and answers `close_phase`. Then
+  the honest player joins. Required: the honest claim still enters and wins.
+
+Run with `bugs/run.sh R3-VARREFMODEL-1` (about 15 s). Output on audit/prt2 (second-opinion re-run, exit 1):
+
+```
+control: winner computation hash 0x0178c769...; honest got commit_mcycle_claim 1 time(s)
+stop: the referee ended (exit status 0) while waiting for output proofs
+attack: claims:
+  Claim 0x1a22b0c7..., with final state 0xdd2e60cd..., joined (posted by quitter).
+attack: winner computation hash 0x1a22b0c7...; honest got commit_mcycle_claim 0 time(s)
+FAIL (section 1 goal, A7): an unauthenticated connection closed claim admission before the honest player joined
+FAIL (A5): an unauthenticated connection stopped the settled referee; it no longer accepts output proofs.
+run.sh: R3-VARREFMODEL-1: exit 1 (bug present)
+```
+
+Found by the round-3 VARREFMODEL hunter, proved by the prover, refuted by the first reviewer, and overturned by a
+second-opinion reviewer (Opus 5.5). No fallback model was used.
+
+### Trigger and reachability
+
+Any party that can open a TCP connection to the referee, such as a dishonest claimant (section 4: "dishonest
+claimants (any number, any logs, any proofs, any timing)"). To close admission, it connects before the honest player
+and sends `{"role":"phase_closer"}`, then `{"value":"done"}`. That is a race, which section 7 grants ("Race and
+reorder transactions within the chain's rules"). To stop the referee, it sends
+`{"role":"phase_closer","command":"stop"}`, then `done`, at any time, with no race. No machine state is involved.
+
+### Rating
+
+1. Out of scope: no. The trigger is not a machine API call, so "Defects that need an untrusted party to call the
+   machine API directly" does not apply. The A1-A8 exclusion does not apply either: it holds "unless an implementation
+   of the referee model is what violates it (section 3)". No exclusion makes the referee model's peers trusted.
+   Section 4's trusted column lists no referee orchestrator.
+2. Role: referee model (AUDIT.md table). Section 3: "A defect in what it accepts or derives is rated as if a deployed
+   referee had it." The model accepts an unauthenticated close, and that close decides which claims can enter, which
+   is part of what the model derives. Section 3: "A defect that ... only crashes or stalls the model, even when that
+   stops other matches (A8), is rated as support." That clause covers the stop effect alone.
+3. High and Medium cases: for the close effect, none fits. For the stop effect, support Medium: "A defect that only
+   a support component shows is Medium when it would rate High or Critical in the role the component stands in for".
+   A deployed referee that any party could stop would break A5 ("No party can make it stop accepting them").
+4. Critical: the close effect, rated as a deployed referee, breaks the goal of section 1 ("no adversary can make a
+   correctly designed application settle a state that differs from the one the state transition function
+   defines"). It also violates A7: "No rule of the referee may make the honest claim lose by timeout while it acts
+   within its own clock". The honest claim is shut out although it acts in time.
+
+Alternative reading: Low. This holds if the phase closer counts as part of the manual's "The referee is one trusted
+process", so that an announcement from another connection is the referee operator's own control and not an untrusted
+transaction. Two facts would decide it. First, whether the maintainers mean the closer channel to be trusted. If so,
+the model should authenticate it or bind it to the referee process, and the manual should say so. Second, whether the
+manual's simplification "gathers a tournament's claims first" was meant to include an externally closed admission
+phase.
+
+### Possible solution and risks
+
+Close initial admission by logical time, as tournament claim collection already does ("Tournament claim collection
+closes at a supplied logical block"). The other option is to authenticate the closer: a secret passed to the referee
+at launch, or a closer that only the referee process can reach. Remove the network `stop` command, or authenticate it
+the same way. Risks: the deterministic narration relies on the fixed set of admitted players. A logical-time admission
+must keep the transcript reproducible ("The recipe runs the tournament twice and requires identical narration"). The
+recipe tests that drive `phase_closer` (`prt-test.lua`, `prt-deadline-test.lua`, `game-transport-test.lua`) need
+updating.
+
+### Risk of not fixing it
+
+Any code derived from the model inherits a referee whose claim set and lifetime any peer controls. Anyone who can
+reach the referee's port can keep the honest claim out and make a fabricated claim win, or stop all matches and
+output acceptance. Mitigation outside the code: run the model only on a host where every peer is trusted. That
+abandons the model's adversarial setting.
 
 ## R1-R10-1
 
@@ -1979,6 +2259,69 @@ released step. The stale step implements a different state transition function, 
 pristine hash, which mixes versions (A6) and makes the honest operator's proofs fail on-chain. Nobody needs to
 trigger it: every regeneration fails. The mitigation outside the code is to release a fixed machine-solidity-step
 together with this emulator version and audit it.
+
+## R1-R4-1
+
+**Title.** Machine creation accepts a reproducible Keccak-256 configuration with a non-pristine uarch (uarch RAM image, uarch registers), so native interpretation runs while the uarch traps and the uarch-level claim builder refuses the machine.
+
+**Severity.** High (preferred reading: R4's configuration clause binds creation, and the effect is a divergence between paths only at demonstrably unreachable states). Critical under the reading that accepting the configuration is itself an R4 violation on the honest operator's path that the High case does not absorb. Out of scope or Low under the first reviewer's reading (a deliberate, documented use of a unit-test facility by the trusted caller).
+
+The first reviewer refuted this candidate as Out of scope. It applied the exclusion "The effect of a deliberate state change made through the machine API, when the API performs it as documented", because the manual documents `uarch.ram.backing_store.data_filename` ("typically left blank (other than in unit tests)"). It also read "this rule" in R4's configuration clause as met vacuously, since a non-pristine uarch is not a valid template. A second-opinion reviewer overturned that. R4 says "Every reproducible configuration that the emulator accepts, using the deployment's hash function and holding only register values that the RISC-V specification and the manual allow, yields a machine on which this rule holds. A configuration that would not is rejected when the machine is created." The clause names its own exemptions (unreproducible, another hash function, disallowed register values), and a uarch RAM image is not among them. Those three exemptions restate valid-template conditions; under the vacuous reading they would be redundant and the clause would have no content. The deliberate-change exclusion cannot excuse accepting a configuration that a specific rule says creation must reject, or "Every ... configuration that the emulator accepts" would never bind a documented configuration field. The valid-template definition also relies on creation-time checks ("created from a configuration, without disabling any of the emulator's consistency checks").
+
+### Problem
+
+`cartesi.machine(config)` accepts reproducible Keccak-256 configurations whose uarch is not pristine:
+
+- `uarch.ram.backing_store.data_filename` pointing to any file is loaded into uarch RAM unchecked;
+- `uarch.processor.registers` (`pc`, `cycle`, `halt`, `x1`..`x31`) are written unchecked.
+
+On such a machine, native `run(1)` reaches mcycle 1, but with a junk uarch image `log_step_uarch` fails ("illegal instruction"), and with either change `collect_uarch_cycle_root_hashes` refuses ("microarchitecture is not pristine"). The honest operator then cannot compute uarch-level claims or log uarch steps from the template it created, while its mcycle-level claims (native) proceed. In a dispute that descends to the uarch level, the honest claim cannot be defended (section 1, completeness failure). Only `cartesi-machine --assert-rolling-template` checks the uarch node; creation does not.
+
+R4 requires that every reproducible configuration the emulator accepts, with the deployment's hash function and allowed register values, yields a machine on which honest completeness holds, and that any other such configuration is rejected at creation.
+
+### Component, role and area
+
+Machine creation from a configuration (machine API, AUDIT.md row 2: "Honest operator where a production validator node plausibly calls it on the honest operator's path", here "Obtaining its valid template" for a template the operator produces). The paths that then fail are the uarch program and `collect_uarch_cycle_root_hashes` (AUDIT.md row 1: Honest operator). Area: creation-time consistency checks of the uarch state.
+
+### Location
+
+- `src/machine-address-ranges.cpp` `machine_address_ranges::push_back_uarch_ram`: copies the embedded pristine image only when the backing store is newly created; a configured `data_filename` is used as is.
+- `src/machine.cpp` `machine::init_uarch_processor`: writes `uarch.processor.registers` from the configuration without checking them against the pristine reset state.
+- `src/machine.cpp` (`collect_uarch_cycle_root_hashes`, `log_step_uarch`): refuse or trap later, after creation has accepted the machine.
+
+### Evidence and test
+
+`bugs/R1-R4-1/test.lua` (run with `bugs/run.sh R1-R4-1`, under a second) creates machines from reproducible Keccak-256 configurations whose RAM is the harness bare-metal guest `accept.bin`: a control with the default uarch, a uarch RAM image of 4 KiB of `0xff` bytes, and `uarch.processor.registers.pc = 0x600004`. For each, the requirement holds if creation raises, or if `collect_uarch_cycle_root_hashes(1)` and `log_step_uarch()` succeed and the uarch-path hash at mcycle 1 equals the native `run(1)` root hash. Re-run by the second-opinion reviewer on audit/prt2:
+
+```
+control (default uarch): accepted (uarch node pristine=true); native run(1): ok (mcycle 1); collect_uarch_cycle_root_hashes(1): ok; log_step_uarch: ok; uarch path agrees with native at mcycle 1
+VIOLATED: R4 configuration clause: uarch.ram.backing_store.data_filename = 4 KiB of 0xff: accepted (uarch node pristine=false); native run(1): ok (mcycle 1); collect_uarch_cycle_root_hashes(1): error: microarchitecture is not pristine; log_step_uarch: error: illegal instruction
+VIOLATED: R4 configuration clause: uarch.processor.registers.pc = 0x600004 (aligned, inside uarch RAM): accepted (uarch node pristine=false); native run(1): ok (mcycle 1); collect_uarch_cycle_root_hashes(1): error: microarchitecture is not pristine; log_step_uarch: ok
+run.sh: R1-R4-1: exit 1 (bug present)
+```
+
+The uarch RAM image case alone is enough. The register case counts only if a uarch `pc` of that value is a register value "that the RISC-V specification and the manual allow"; the manual places no constraint on uarch register values. Found, proved and reviewed on Opus 5.5; no fallback model was used.
+
+### Trigger and reachability
+
+The trusted creator of a template writes a configuration that sets the uarch RAM image or uarch registers, a field the manual documents. No guest can produce the state: a valid template has a pristine uarch ("at an mcycle boundary, with the uarch in its pristine reset state"), the guest cannot address uarch state or uarch memory (R8), native interpretation never writes uarch state, and every mcycle of the uarch path ends with the uarch reset, which restores the pristine uarch. So no input sequence from any valid template reaches a non-pristine uarch at an mcycle boundary, and the divergence occurs only at demonstrably unreachable states. The defect is that creation lets a trusted configuration start there, which R4's configuration clause forbids.
+
+### Rating
+
+1. Out of scope: no, under the preferred reading. "The effect of a deliberate state change made through the machine API, when the API performs it as documented" does not cover what R4's configuration clause regulates: "Every reproducible configuration that the emulator accepts, using the deployment's hash function and holding only register values that the RISC-V specification and the manual allow, yields a machine on which this rule holds. A configuration that would not is rejected when the machine is created." The clause lists its exemptions, and a uarch image is not one. The snapshot exclusions do not apply (creation, not loading).
+2. Role: machine creation, "Honest operator where a production validator node plausibly calls it on the honest operator's path" (AUDIT.md row 2), and the uarch program and `collect_uarch_cycle_root_hashes`, Honest operator (row 1). Section 3: the honest operator role covers "the transition function, its log producers, the computation-hash builders".
+3. High and Medium cases: "A divergence between paths only at demonstrably unreachable states." Native interpretation reaches mcycle 1 while the uarch path traps or is refused, at a state no valid template reaches (argument above). High.
+4. Critical: not reached under the preferred reading, since step 3 fits first. Under the alternative reading, accepting the configuration violates R4's configuration clause while "Obtaining its valid template" on the honest operator's path, which section 8 makes Critical.
+
+Readings: High (preferred) / Critical (if the creation-time acceptance is itself rated as an R4 violation on the honest operator's path) / Out of scope or Low (if R4's clause is vacuous for configurations that are not valid templates, or if configuring a documented unit-test field is "misuse of an API by its trusted caller"). The deciding facts are whether R4's configuration clause lists all exemptions creation may rely on (then a non-pristine uarch must be rejected), and whether production template builders ever pass uarch fields in a configuration.
+
+### Possible solution and risks
+
+At creation of a reproducible machine (and, for consistency, on load without `clear_hash_tree` where the config is trusted), reject a configuration whose uarch RAM image or uarch registers differ from the pristine reset state, for example by checking that the uarch state node hash equals `UARCH_PRISTINE_STATE_HASH` after construction. Keep the unit-test facility behind an explicit opt-in flag, and refuse that flag for reproducible machines intended as templates, or record it in the hashed state so the template cannot be mistaken for a valid one. Risk: unit tests that load custom uarch programs into reproducible machines need the opt-in; the check adds one node-hash comparison at creation.
+
+### Risk of not fixing it
+
+A template whose configuration carries a stale or custom uarch image, or uarch registers copied from another machine, is accepted and committed on-chain. Its mcycle-level claims compute normally, so the problem shows only when a dispute descends to the uarch level, where the honest operator cannot build uarch-level claims or step logs and loses by timeout. Only the trusted template creator can trigger it. Mitigation outside the code: run `cartesi-machine --assert-rolling-template` (which checks the uarch node) on every template before committing its hash.
 
 ## R1-R8-3
 
@@ -5372,6 +5715,162 @@ Mitigations outside the code:
 - Alternatively, reload every snapshot derived from a foreign template with `clear_hash_tree`.
 - Document in `cm_store` and the manual that `none` and `config` copy the source directory's cached hash-tree data
   unchanged.
+
+## R2-DFSTORED-2
+
+**Title.** `clone_stored` hard-links a template's read-only files, so the documented clone-then-shared-load adoption, which the PRT stored player uses, refuses a valid template whose files are read-only (and one whose RAM backing file is trimmed).
+
+**Severity.** Medium
+
+### Problem
+
+The PRT stored player adopts the application's template in `new_stored_player`. It calls
+`cartesi.machine:clone_stored(template, epoch/machine)`, then loads the clone with `{ clear_hash_tree = true }` and
+`SHARING_ALL`. The manual documents the same scheme. "Rolling Cartesi Machines directly from storage" loads "a fresh
+clone of the rolling-calculator template" with `cartesi.SHARING_ALL`. `--load=<dir>,clone:<src>` switches the
+default sharing to `all`, and the manual promises "Experiments run on the clone while the source directory stays
+untouched."
+
+`os::clone_file` hard-links every file that has no write permission bit ("Read-only backing files are hard-linked").
+The shared-write mapping then refuses each such file ("is read-only and cannot be shared for writing", and for a
+multiply-linked file "has multiple hard links"). So when a valid template's files are read-only, as a tar or OCI
+layer, a package install or a protected store can leave them, the clone can never be loaded with sharing. The player
+then cannot adopt the template and stops before it computes any claim. The same template loads unshared with
+`clear_hash_tree` to the committed hash. File permission bits lie outside the hashed state and are not part of any
+valid-template condition.
+
+A second variant has the same effect. If the RAM backing file is trimmed after its last non-zero page, the contents
+and the hash stay the same, and the unshared loader accepts the short file through `backing_gap`. `clone_stored`
+keeps the short length, and the shared load refuses it ("does not match desired backing length"). The manual says,
+however, that a mapped image's "size on disk must exactly match the length of the memory range", so this variant is
+weaker (see Rating).
+
+In the role the player stands in for, this is a completeness failure under section 1. The honest operator cannot
+obtain its valid template, so it cannot respond, and a dishonest claim can win by default.
+
+**Second opinion.** The first reviewer refuted this candidate as Low. Its reasons were that the manual documents both
+refusals, that the template is left untouched, that the unshared `clear_hash_tree` load (O1) works, and that a
+reported load error is not a "crash", so "no rule is violated". The second opinion overturned that refusal on the
+following steps, which contradict the text:
+
+1. The reviewer rated only the emulator's clone and load, in their Honest operator role, and never rated the
+   component that shows the failure on an adoption path: the PRT stored player. "How to rate" step 2 says "Defects in
+   the referee model, in guest software and in support components are rated as section 3 says". Section 3 rates a
+   defect "that only a support component shows" as "Medium when it would rate High or Critical in the role the
+   component stands in for, such as ... the honest operator for an implementation of an operator". A player that
+   cannot obtain its valid template would violate R4 and the honest operator's path ("Obtaining its valid template")
+   in the role it stands in for, which is Critical, so the support defect is Medium. Section 3 adds that "A defect is
+   rated by the most critical role among the components that show it".
+2. The reviewer read section 8's snapshot sentence ("affect any transition (R1), crash the honest operator, or
+   corrupt its memory") as the full list of what is owed. Step 4 still covers "violating any rule or obligation ...
+   anywhere on the honest operator's path", and section 8 lists a loud persistence failure as Medium only "in an
+   uncommon host setup that the manual documents".
+3. The manual documents hard-linking. It does not document that a clone of a read-only template cannot then be loaded
+   with the sharing that `clone:` selects by default. Its promise that experiments run on the clone contradicts the
+   behavior for variant A.
+
+### Component, role and area
+
+- The PRT stored player, `doc/recipes/prt.lua` `new_stored_player`. AUDIT.md: "The PRT player and bridge in
+  `doc/recipes` ... | Support. No production deployment runs the player". It stands in for the honest operator's
+  "Obtaining its valid template". This is the role the severity comes from.
+- `machine::clone_stored`, `os::clone_file` and the shared-write checks of `os::mapped_memory`, in the emulator core.
+  AUDIT.md: "storing, loading, cloning and syncing machines | Honest operator". The `cartesi-machine` CLI's
+  `--load=<dir>,clone:<src>` (Support) shows the same failure.
+- Area: adopting a template by clone plus shared load.
+
+### Location
+
+- `doc/recipes/prt.lua`, `new_stored_player` (lines ~3197-3219): `cartesi.machine:clone_stored(...)`, then
+  `new_stored_machine(..., { clear_hash_tree = true })` with sharing.
+- `src/os-filesystem.cpp`, `os::clone_file` (lines ~577-622): `read_only = (st.st_mode & S_WRITE_ALL) == 0` selects
+  `hardlink_file`.
+- `src/machine.cpp`, `machine::clone_stored` (lines ~526-576): clones every data, `.dht`, `.dpt`, `.sht`, `.phtc`
+  and config file as is, at its length.
+- `src/os-mapped-memory.cpp`: `check_shared_write_backing_file` (lines ~59-69) and the length check
+  (`flags.shared || !flags.backing_gap`, lines ~164-175 and the corresponding checks of the other mappers).
+- Manual: `doc/README.md` lines ~1147-1166 (`clone:`, default `sharing:all`), ~5498-5501 and ~5531-5533
+  (`clone_stored` plus `SHARING_ALL` load of a template), and ~3285-3287 (exact image length).
+
+### Evidence and test
+
+`bugs/R2-DFSTORED-2/` contains `test.lua` and `README.md`. Run `bugs/run.sh R2-DFSTORED-2` (about 1 s, with a
+temporary directory under `/tmp`). The test copies the harness `baremetal-template` and makes variant A (`chmod a-w`
+on every file) and variant B (RAM `.bin` trimmed after its last non-zero page). For each, it checks the precondition
+that the unshared `clear_hash_tree` load gives the reference hash (else exit 2). It then requires that
+`clone_stored` followed by `load(clone, {clear_hash_tree=true}, SHARING_ALL)` succeeds with the reference hash, can
+deliver an input and run, and leaves the template untouched. A control (the unmodified template) must pass. On
+audit/prt2 the second-opinion re-run printed:
+
+```
+reference content hash: 0x428a6bb8...ac75
+control: unmodified template
+  clone_stored + SHARING_ALL load + run: OK, template untouched
+A: template files read-only (chmod a-w, ...)
+  unshared load with clear_hash_tree: hash equals reference
+  clone_stored + SHARING_ALL load + run FAILED: ... backing file '.../clone2/0000000000000000-8000.bin' is read-only and cannot be shared for writing when initializing shadow state
+  (info) unshared load + store(SHARING_ALL) + shared load instead: works
+B: RAM backing file trimmed after its last non-zero page (same contents, same hash)
+  clone_stored + SHARING_ALL load + run FAILED: ... length (2367488) does not match desired backing length (67108864) when initializing RAM
+VIOLATED: section 8 / R4: ...
+run.sh: R2-DFSTORED-2: exit 1 (bug present)
+```
+
+The test exits 1 if either variant fails. A fix limited to variant A therefore still leaves it at 1 until variant B
+is fixed or the maintainers decide that B is not required and split the test (see Rating). All agents ran on Opus 5.5
+(`claude-opus-5-5`): the hunter, the prover, the first reviewer and the second-opinion reviewer. No fallback model was
+used.
+
+### Trigger and reachability
+
+No adversary is needed. The trigger is a valid template whose files lack write permission bits, as distribution and
+packaging commonly leave them. An operator that adopts it through the documented clone-and-share scheme triggers the
+failure, and the PRT stored player always does. For variant B, the trigger is anyone who trims a backing file of the
+template without changing its contents. Guest state plays no part. The template meets every valid-template condition
+in section 2, and the content hash recomputed from its contents matches.
+
+### Rating
+
+1. Out of scope: no. The snapshot exclusion needs a snapshot "that the emulator did not write and that does not meet
+   the conditions of a valid template". Variant A was written by the emulator and only had its mode bits changed, and
+   both variants meet the conditions. The O1 exclusion does not apply, because the load fails before the rebuild. O2
+   does not apply, because there was no stop. A host fault is not involved either: read-only files are a normal
+   distribution state, not a fault.
+2. Role: the PRT stored player is Support, standing in for an implementation of the honest operator (AUDIT.md;
+   section 3). The emulator's clone and load are Honest operator. Within that role, the documented O1 path (an
+   unshared `clear_hash_tree` load followed by a store) still works, so the emulator's own share of the defect rates
+   lower. Section 3: "A defect is rated by the most critical role among the components that show it".
+3. High and Medium cases: "A defect that only a support component shows, when section 3 rates it Medium". In the
+   stood-in role, an operator that cannot obtain its valid template violates R4 ("the honest operator can always
+   compute the claim") on the honest operator's path ("Obtaining its valid template"). That is Critical, so the
+   support defect is Medium.
+4. Critical: applies only under the alternative reading below.
+
+Alternative readings. Critical, if a production node plausibly adopts templates by clone plus shared load, as the
+manual's own "directly from storage" recipe does. Then the defect sits in the emulator's Honest operator role on the
+honest operator's path (R4, "Obtaining its valid template"). Low, if the manual's "Read-only backing files are
+hard-linked" is taken to document the refusal, and an operator is expected to make its template writable or adopt it
+unshared. For variant B alone, Low or out of scope: the manual requires a mapped image's "size on disk [to] exactly
+match the length of the memory range", so a trimmed file does not follow the documented format. Deciding facts: the
+maintainers' intent for `clone:` and `clone_stored` on read-only sources, and whether production nodes adopt
+templates this way.
+
+### Possible solution and risks
+
+In `clone_stored`, hard-link a read-only source only when the destination will stay read-only. Otherwise reflink or
+copy it into a writable file of the full range length. Alternatively, give `clone_stored` a writable-clone mode and
+use it in `clone:` and in the player. Pad a short backing file to the range length in the clone (sparse). In the
+player, an independent fix is to adopt the template with an unshared `clear_hash_tree` load followed by
+`store(dir, SHARING_ALL)`. Risks: copying instead of linking costs disk space and time for large read-only images
+(the reason for the hard link). Silently making a hard-linked file writable would let a shared machine write through
+to the template, which the shared-write check exists to prevent and which the test also guards against.
+
+### Risk of not fixing it
+
+An operator built like the PRT stored player cannot start defending an application whose template arrived with
+read-only files. It needs manual intervention (chmod, or a different adoption path) while its clocks run. The failure
+is loud, and no wrong hash results. Mitigation outside the code: make the template files writable by the operator
+before cloning, or adopt the template unshared with `clear_hash_tree` and store it with sharing.
 
 ## R2-DFYIELD-1
 

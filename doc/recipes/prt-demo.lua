@@ -92,7 +92,7 @@ if mode ~= "smoke" then
         players[#players + 1] = player
     end
 end
--- A sentinel signs nothing. It watches every epoch, and a normal story leaves it nothing to report.
+-- A sentinel signs nothing. It watches every epoch and reports the story's conflicting claims.
 players[#players + 1] = { label = "sentinel", mode = "sentinel", first_epoch = 0 }
 -- Without the honest player's cleanup, nobody accepts a staged result
 if test_sentinel == "stop-cleanup" then
@@ -724,9 +724,15 @@ assert(
     "the sentinel computed another final state"
 )
 -- The default anomaly handler prints each anomaly as a line starting with the player's label
+local conflicts = 0
 for line in fs.read_file("players/sentinel/log.txt"):gmatch("[^\n]+") do
-    assert(not line:find("^sentinel: "), "the sentinel reported an anomaly: " .. line)
+    if line:find("^sentinel: conflicting_claim ") and mode ~= "smoke" then
+        conflicts = conflicts + 1
+    else
+        assert(not line:find("^sentinel: "), "the sentinel reported an unexpected anomaly: " .. line)
+    end
 end
+assert(mode == "smoke" or conflicts > 0, "the sentinel did not report the story's conflicting claims")
 local stories = { "Two calculator epochs on Anvil, using the normal empty epoch zero.\n\n" }
 for _, session in ipairs(sessions) do
     stories[#stories + 1] = session.story .. "\n"

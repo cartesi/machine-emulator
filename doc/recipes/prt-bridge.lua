@@ -284,6 +284,7 @@ end
 -- keeping computation out of job queries. Cached computations survive changes to these bindings.
 function methods:update_claims(snapshot)
     local computed = false
+    local local_claims = {}
     self.claims = {}
     for _, context in ipairs(snapshot.order) do
         local event = context.creation
@@ -301,6 +302,7 @@ function methods:update_claims(snapshot)
                 -- The head must include the last eligible join block before an absent join is conclusive.
                 -- Scheduling still uses the live tip, which can already be past the joining window.
                 if claim then
+                    local_claims[context.address] = claim
                     if snapshot.head + 1 < deadline or context.joined[claim.root] then
                         self.claims[context.address] = claim
                     else
@@ -309,6 +311,21 @@ function methods:update_claims(snapshot)
                 end
                 computed = computed or built
             end
+        end
+    end
+    -- Compare in log order, including computations whose joining window closed without our claim.
+    -- The report belongs to the observed join, so a replacement log after a reorg can report again.
+    for _, event in ipairs(snapshot.events) do
+        local claim = local_claims[event.address]
+        if event.name == "CommitmentJoined" and claim and event.commitment ~= claim.root then
+            self:report_once(
+                event_key(event),
+                "conflicting_claim",
+                "at %s: observed %s, locally computed %s",
+                event.address,
+                event.commitment,
+                claim.root
+            )
         end
     end
     return computed

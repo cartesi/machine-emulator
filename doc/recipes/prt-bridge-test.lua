@@ -1170,7 +1170,7 @@ end
 -- permanently suppressed across replacement branches.
 do
     local sends = 0
-    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true, order = {} }
+    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true, order = {}, events = {} }
     local signer = { address = "alice" }
     local job = {
         key = "job",
@@ -1243,7 +1243,7 @@ end
 
 -- A tick attempts the due job that expires first, whatever order the jobs were derived in.
 do
-    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true, order = {} }
+    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true, order = {}, events = {} }
     local signer = { address = "alice" }
     local function new_job(key, last)
         return {
@@ -1641,6 +1641,84 @@ do
         assert(observations == 3 and resumed.player.builds == 2, "a pruned child was not refreshed and built")
         assert(resumed.claims.root and resumed.claims.child, "a refreshed child lost its binding")
     end
+
+    -- Compare every observed join with the local computation, including when the local claim can no
+    -- longer join. Reports identify log occurrences, so a reorg's replacement join is a new report.
+    local function join(view, address, commitment, block_hash, index)
+        local joined = {
+            name = "CommitmentJoined",
+            address = address,
+            commitment = commitment,
+            submitter = "bob",
+            log = { blockHash = block_hash, logIndex = index },
+        }
+        view.events[#view.events + 1] = joined
+        view.contexts[address].joined[commitment] = joined
+    end
+    for _, sentinel in ipairs({ false, true }) do
+        local view = new_view("bob")
+        join(view, "root", root_claim.root, "branch-a", "0x0")
+        join(view, "child", child_claim.root, "branch-a", "0x1")
+        local running = new_client(sentinel)
+        running:update_claims(view)
+        assert(#running.player.reports == 0, "matching commitments were reported as conflicts")
+
+        join(view, "root", "other root", "branch-a", "0x2")
+        join(view, "child", "other child", "branch-a", "0x3")
+        for _ = 1, 2 do
+            running:update_claims(view)
+        end
+        local reports = running.player.reports
+        assert(#reports == 2, "conflicts were missed or reported more than once")
+        for index, address in ipairs({ "root", "child" }) do
+            local root = address == "root" and root_claim.root or child_claim.root
+            assert(reports[index].kind == "conflicting_claim")
+            assert(
+                reports[index].message
+                    == "at " .. address .. ": observed other " .. address .. ", locally computed " .. root
+            )
+        end
+        assert(running.claims.root and running.claims.child, "reporting a conflict lost the local claims")
+        assert(running.player.builds == 2, "reporting conflicts rebuilt cached computations")
+
+        -- The replacement branch has no conflicting join. A new bridge must report nothing from the
+        -- removed branch. The running bridge retains only the memory of reports it already delivered.
+        local replacement = new_view("bob")
+        running:update_claims(replacement)
+        local restarted = new_client(sentinel)
+        restarted:update_claims(replacement)
+        assert(#reports == 2 and #restarted.player.reports == 0, "a removed join produced a report")
+        join(replacement, "root", "other root", "branch-b", "0x2")
+        for _ = 1, 2 do
+            running:update_claims(replacement)
+            restarted:update_claims(replacement)
+        end
+        assert(#reports == 3 and #restarted.player.reports == 1, "replacement join was not reported once")
+        assert(reports[3].message == reports[1].message)
+        local after_join = new_client(sentinel)
+        after_join:update_claims(replacement)
+        assert(#after_join.player.reports == 1, "restart missed an already observed conflict")
+
+        local late = new_view("bob", "other root", "other child")
+        join(late, "root", "other root", "late", "0x0")
+        local unjoined = new_client(sentinel)
+        for _ = 1, 2 do
+            unjoined:update_claims(late)
+        end
+        assert(not unjoined.claims.root, "a closed window bound an absent local claim")
+        local kinds = {}
+        for _, anomaly in ipairs(unjoined.player.reports) do
+            kinds[anomaly.kind] = (kinds[anomaly.kind] or 0) + 1
+        end
+        assert(kinds.unjoined_claim == 1 and kinds.conflicting_claim == 1, "unbound computation missed its conflict")
+
+        local unavailable = new_client(sentinel)
+        unavailable.player.event_handler.commit_mcycle_claim = function()
+            return "nothing"
+        end
+        unavailable:update_claims(late)
+        assert(#unavailable.player.reports == 0, "an unavailable computation was compared with a join")
+    end
 end
 
 -- A transaction the player cannot publish is reported once each time the reason changes.
@@ -1683,7 +1761,7 @@ end
 -- action can be prepared. A failed replacement cannot strand obsolete work.
 do
     local signer = { address = "alice" }
-    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true, order = {} }
+    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true, order = {}, events = {} }
     local pending = { job = "live" }
     local calls = {}
     local jobs = {}
@@ -1760,7 +1838,7 @@ do
     calls = {}
     jobs = { job("other") }
     function client.prepare()
-        observed = { head = 5, hash = "block5", tip = 9, tip_hash = "block9", ready = true, order = {} }
+        observed = { head = 5, hash = "block5", tip = 9, tip_hash = "block9", ready = true, order = {}, events = {} }
         return { signer = signer, to = "root", data = "0x" }
     end
     client.prepared, client.rejected = {}, {}
@@ -1777,7 +1855,7 @@ end
 -- due, leaves the live epoch's pending transaction alone, and the live epoch keeps working on it.
 do
     local signer = { address = "alice" }
-    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true, order = {} }
+    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true, order = {}, events = {} }
     local pending = { job = "join", context = { epoch = "1" } }
     local calls = {}
     local publisher = {

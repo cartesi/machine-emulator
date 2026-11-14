@@ -562,6 +562,7 @@ error, and continues.
 | `uarch_claim_failed` | Building a uarch claim failed during replay, storage, RPC operations or uarch execution. The player reports the failure once per period and retries on subsequent requests. A successful construction clears the reporting state |
 | `falling_behind` | More inputs are pending than the gap between the machine cache's boundaries |
 | `unjoined_claim` | A tournament's joining window closed without the player's commitment |
+| `conflicting_claim` | An observed `CommitmentJoined` differs from the locally computed commitment. Validators and sentinels report the tournament and both commitments, even if the local claim can no longer join. Reported once per join log per process; a replacement log after a reorg or a restart can report again |
 | `fee_ceiling` | A pending transaction reached the fee ceiling, and keeps its nonce |
 | `insufficient_funds` | The account cannot pay a transaction's value or its value plus gas at the fee cap |
 | `deadline_near` | A sentinel's expected action, such as the honest commitment's answer to a match, is still missing and its window ends within the warning blocks |
@@ -592,8 +593,9 @@ bond has been recovered.
 
 The harness also runs a sentinel next to the players. It has no account, and it
 computes its own checkpoints in `players/sentinel/checkpoints/` from the
-template on. A run succeeds only if the sentinel reported no anomaly and its
-last checkpoint has the honest player's final state and outputs root.
+template on. A story run requires the sentinel to report conflicting claims and
+no other anomalies; a smoke run, which has no opponents, requires no anomalies.
+Its last checkpoint must have the honest player's final state and outputs root.
 
 With `PRT_TEST_SENTINEL` set to a drill, the honest side fails on purpose, and
 the run succeeds as soon as the sentinel reports the drill's anomalies. With

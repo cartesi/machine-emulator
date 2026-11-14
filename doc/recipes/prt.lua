@@ -1776,18 +1776,18 @@ end
 local tree_meta = { __index = {} }
 
 -- Called only after a forest query reports an opaque path at a valid position.
-local function open_bundle(tree, position)
+local function open_bundle(tree, player, position)
     local bundle_index = position >> tree.bundle_height
-    local bundle = tree:collect_bundle(bundle_index)
+    local bundle = tree:collect_bundle(player, bundle_index)
     hash_tree.frontier_forest_expand_leaf(tree.forest, bundle_index << tree.bundle_height, bundle)
 end
 
--- Node hash queries open their bundle only when its contents are needed.
+-- Node hash queries use the given player to open a bundle only when its contents are needed.
 -- docs:begin get_tree_node_hash
-function tree_meta.__index:get_node_hash(position, height)
+function tree_meta.__index:get_node_hash(player, position, height)
     local hash = hash_tree.frontier_forest_get_node_hash(self.forest, position, height)
     if not hash then
-        open_bundle(self, position)
+        open_bundle(self, player, position)
         hash = assert(hash_tree.frontier_forest_get_node_hash(self.forest, position, height))
     end
     return hash
@@ -1801,17 +1801,17 @@ end
 -- Opens a bundle only when the sibling path reaches an opaque hash. The forest authenticates the
 -- reconstructed subtree, and later queries reuse it (including in implicit padding).
 -- docs:begin get_proof
-function tree_meta.__index:get_proof(position, height)
+function tree_meta.__index:get_proof(player, position, height)
     height = height or 0
     local siblings = hash_tree.frontier_forest_get_siblings(self.forest, position, height)
     if not siblings then
-        open_bundle(self, position)
+        open_bundle(self, player, position)
         siblings = assert(hash_tree.frontier_forest_get_siblings(self.forest, position, height))
     end
     return {
         target_address = position,
         log2_target_size = height,
-        target_hash = self:get_node_hash(position, height),
+        target_hash = self:get_node_hash(player, position, height),
         log2_root_size = self.height,
         root_hash = self:get_root_hash(),
         sibling_hashes = siblings,
@@ -1820,9 +1820,10 @@ end
 -- docs:end get_proof
 
 -- The two child hashes, opening a bundle only if a node query needs it.
-function tree_meta.__index:get_child_hashes(position, height)
+function tree_meta.__index:get_child_hashes(player, position, height)
     local child_height = height - 1
-    return self:get_node_hash(position, child_height), self:get_node_hash(position + (1 << child_height), child_height)
+    return self:get_node_hash(player, position, child_height),
+        self:get_node_hash(player, position + (1 << child_height), child_height)
 end
 
 -- The hash tree of 2^height state hashes, with collect_bundle reconstructing one bundle on demand.
@@ -1849,7 +1850,7 @@ local event_handler = {}
 
 function event_handler.win_match_by_timeout(self, computation_hash)
     local tree = self.trees[computation_hash]
-    local left, right = tree:get_child_hashes(0, tree.height)
+    local left, right = tree:get_child_hashes(self, 0, tree.height)
     return { computation_hash_left = left, computation_hash_right = right }
 end
 
@@ -1859,10 +1860,10 @@ function event_handler.eliminate_match(self) -- luacheck: ignore 212 self
 end
 
 -- Returns the computation hash's two children and the proof of the final state hash at the last leaf.
-local function new_claim(tree)
+local function new_claim(player, tree)
     local final_leaf_index = (1 << tree.height) - 1
-    local computation_hash_left, computation_hash_right = tree:get_child_hashes(0, tree.height)
-    local final_state_hash_proof = tree:get_proof(final_leaf_index)
+    local computation_hash_left, computation_hash_right = tree:get_child_hashes(player, 0, tree.height)
+    local final_state_hash_proof = tree:get_proof(player, final_leaf_index)
     return {
         computation_hash_left = computation_hash_left,
         computation_hash_right = computation_hash_right,
@@ -1874,7 +1875,7 @@ end
 function event_handler.commit_mcycle_claim(self)
     local tree = self:new_mcycle_tree()
     self.trees[tree:get_root_hash()] = tree
-    return new_claim(tree)
+    return new_claim(self, tree)
 end
 
 -- Returns the children of the node at (position, height) and of the child the bisection descends
@@ -1882,10 +1883,10 @@ end
 -- docs:begin reveal_bisection
 function event_handler.reveal_bisection(self, computation_hash, position, height, other_left_node)
     local tree = self.trees[computation_hash]
-    local turn_left_node, turn_right_node = tree:get_child_hashes(position, height)
+    local turn_left_node, turn_right_node = tree:get_child_hashes(self, position, height)
     local descend_left = turn_left_node ~= other_left_node
     local child_position = descend_left and position or position + (1 << (height - 1))
-    local turn_next_left_node, turn_next_right_node = tree:get_child_hashes(child_position, height - 1)
+    local turn_next_left_node, turn_next_right_node = tree:get_child_hashes(self, child_position, height - 1)
     return {
         turn_left_node = turn_left_node,
         turn_right_node = turn_right_node,
@@ -1899,13 +1900,13 @@ end
 -- before them. At the first leaf of a bundle, the proof opens the preceding bundle.
 function event_handler.seal_divergence(self, computation_hash, position, other_left_node)
     local tree = self.trees[computation_hash]
-    local turn_left_node, turn_right_node = tree:get_child_hashes(position, 1)
+    local turn_left_node, turn_right_node = tree:get_child_hashes(self, position, 1)
     local response = { turn_left_node = turn_left_node, turn_right_node = turn_right_node }
     local descend_left = turn_left_node ~= other_left_node
     local leaf_index = position + (descend_left and 0 or 1)
     if leaf_index ~= 0 then
         local agreed_leaf_index = leaf_index - 1
-        response.agreed_state_hash_proof = tree:get_proof(agreed_leaf_index)
+        response.agreed_state_hash_proof = tree:get_proof(self, agreed_leaf_index)
         assert(
             descend_left or response.agreed_state_hash_proof.target_hash == turn_left_node,
             "right divergence has the wrong agreed state"
@@ -1926,7 +1927,7 @@ function event_handler.commit_uarch_claim(self, epoch_input_offset, input_period
     -- A restarted bridge may deliver this event again for a claim a reopened player already stored.
     for _, claim in ipairs(self.uarch_claims) do
         if claim.epoch_input_offset == epoch_input_offset and claim.input_period_offset == input_period_offset then
-            return new_claim(claim.tree)
+            return new_claim(self, claim.tree)
         end
     end
     -- A period whose uarch claim cannot be built has none, and is reported once
@@ -1945,7 +1946,7 @@ function event_handler.commit_uarch_claim(self, epoch_input_offset, input_period
     self.uarch_claims[#self.uarch_claims + 1] = claim
     self:store_uarch_claim(claim)
     self.trees[tree:get_root_hash()] = tree
-    return new_claim(tree)
+    return new_claim(self, tree)
 end
 
 -- Returns the access logs of the disputed transition, recorded on a fresh fork. The transition out
@@ -2423,30 +2424,37 @@ function player_meta.__index:prove_output(output_index)
 end
 
 -- Bundle indices span the epoch, so the collector splits each into an input and a bundle offset in it.
+local function collect_mcycle_tree_bundle(_, player, epoch_bundle_offset)
+    local bundles_per_input = player.geometry.periods_per_input >> LOG2_BUNDLE_MCYCLE_COUNT
+    local epoch_input_offset = epoch_bundle_offset // bundles_per_input
+    local input_bundle_offset = epoch_bundle_offset % bundles_per_input
+    return player:collect_mcycle_bundle(epoch_input_offset, input_bundle_offset)
+end
+
 function player_meta.__index:new_mcycle_tree()
     return new_tree(
         self.geometry.mcycle_height,
         LOG2_BUNDLE_MCYCLE_COUNT,
         self.mcycle_forest,
-        function(_, epoch_bundle_offset)
-            local bundles_per_input = self.geometry.periods_per_input >> LOG2_BUNDLE_MCYCLE_COUNT
-            local epoch_input_offset = epoch_bundle_offset // bundles_per_input
-            local input_bundle_offset = epoch_bundle_offset % bundles_per_input
-            return self:collect_mcycle_bundle(epoch_input_offset, input_bundle_offset)
-        end
+        collect_mcycle_tree_bundle
     )
 end
--- Bundles are the mcycles of one period, so a bundle index is an mcycle offset in that period. A
--- stored claim supplies its forest.
+
+-- Bundles are the mcycles of one period, so a bundle index is an mcycle offset in that period.
+local function collect_uarch_tree_bundle(tree, player, period_mcycle_offset)
+    return player:collect_uarch_cycle_bundle(tree.epoch_input_offset, tree.input_period_offset, period_mcycle_offset)
+end
+
+-- A stored claim supplies its forest.
 function player_meta.__index:new_uarch_tree(epoch_input_offset, input_period_offset, forest)
-    return new_tree(
+    local tree = new_tree(
         self.geometry.uarch_height,
         LOG2_BUNDLE_UARCH_CYCLE_COUNT,
         forest or self:build_uarch_cycle_computation_hash(epoch_input_offset, input_period_offset),
-        function(_, period_mcycle_offset)
-            return self:collect_uarch_cycle_bundle(epoch_input_offset, input_period_offset, period_mcycle_offset)
-        end
+        collect_uarch_tree_bundle
     )
+    tree.epoch_input_offset, tree.input_period_offset = epoch_input_offset, input_period_offset
+    return tree
 end
 
 local prt
@@ -3053,8 +3061,8 @@ stored_player_meta.__close = function(self)
 end
 
 -- Reopens an epoch directory at the boundary or seal its state.json records. An open epoch gets
--- its epoch pair and builder back. A sealed epoch gets its mcycle forest and uarch claim forests
--- back, with no epoch pair.
+-- its epoch pair and builder back. A sealed epoch restores and registers its mcycle and uarch
+-- trees, with no epoch pair.
 local function reopen_epoch_directory(self)
     local directory = self.epoch_directory
     local state = cartesi.fromjson(fs.read_file(directory .. "/state.json"), "EpochState", EPOCH_STATE_SCHEMAS)
@@ -3125,27 +3133,20 @@ local function reopen_epoch_directory(self)
     end
     self.mcycle_forest =
         hash_tree.frontier_forest_load(forests_directory .. "/mcycle", directory .. "/" .. state.mcycle_forest)
+    local mcycle_tree = self:new_mcycle_tree()
+    self.trees[mcycle_tree:get_root_hash()] = mcycle_tree
     for _, stored in ipairs(state.uarch_claims) do
+        local forest = hash_tree.frontier_forest_load(
+            forests_directory .. "/" .. get_uarch_claim_name(stored.epoch_input_offset, stored.input_period_offset),
+            directory .. "/" .. stored.forest
+        )
+        local tree = self:new_uarch_tree(stored.epoch_input_offset, stored.input_period_offset, forest)
         self.uarch_claims[#self.uarch_claims + 1] = {
             epoch_input_offset = stored.epoch_input_offset,
             input_period_offset = stored.input_period_offset,
-            forest = hash_tree.frontier_forest_load(
-                forests_directory .. "/" .. get_uarch_claim_name(stored.epoch_input_offset, stored.input_period_offset),
-                directory .. "/" .. stored.forest
-            ),
+            tree = tree,
         }
-    end
-end
-
--- Registers the trees of a reopened sealed epoch. Trees collect bundles through the player, so they
--- are made once the player has its final table.
-local function register_stored_trees(self)
-    local mcycle_tree = self:new_mcycle_tree()
-    self.trees[mcycle_tree:get_root_hash()] = mcycle_tree
-    for _, claim in ipairs(self.uarch_claims) do
-        claim.tree = self:new_uarch_tree(claim.epoch_input_offset, claim.input_period_offset, claim.forest)
-        claim.forest = nil
-        self.trees[claim.tree:get_root_hash()] = claim.tree
+        self.trees[tree:get_root_hash()] = tree
     end
 end
 
@@ -3200,11 +3201,7 @@ local function new_stored_player(dapp_contract, label, previous_outputs_frontier
     self.checkpoint_directory = checkpoint_directory
     if fs.exists(epoch_directory .. "/state.json") then
         reopen_epoch_directory(self)
-        local player = self:move()
-        if player.mcycle_forest then
-            register_stored_trees(player)
-        end
-        return player
+        return self:move()
     end
     local initial_state_hash = dapp_contract.initial_state_hash
     create_epoch_directory(epoch_directory)

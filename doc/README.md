@@ -10475,26 +10475,27 @@ repeated state inside padding bundles. The three inputs of our epoch fit
 in about nine thousand mcycle bundles, and one uarch period in at most
 2<sup>10</sup>.
 
-When a query reaches an unknown node inside a bundle, the player opens
-it. It replays a machine from the nearest retained input boundary
-through the bundle’s transitions and hands the leaves to the forest. The
-forest checks the rebuilt subtree against the committed bundle root
-before installing it, so a faulty replay cannot change a claim. Later
-queries in that bundle read the installed subtree, and so do the other
-occurrences of a repeated bundle:
+Tree queries receive the current player explicitly. When a query reaches
+an unknown node inside a bundle, that player opens it. It replays a
+machine from the nearest retained input boundary through the bundle’s
+transitions and hands the leaves to the forest. The forest checks the
+rebuilt subtree against the committed bundle root before installing it,
+so a faulty replay cannot change a claim. Later queries in that bundle
+read the installed subtree, and so do the other occurrences of a
+repeated bundle:
 
 ``` lua
-function tree_meta.__index:get_proof(position, height)
+function tree_meta.__index:get_proof(player, position, height)
     height = height or 0
     local siblings = hash_tree.frontier_forest_get_siblings(self.forest, position, height)
     if not siblings then
-        open_bundle(self, position)
+        open_bundle(self, player, position)
         siblings = assert(hash_tree.frontier_forest_get_siblings(self.forest, position, height))
     end
     return {
         target_address = position,
         log2_target_size = height,
-        target_hash = self:get_node_hash(position, height),
+        target_hash = self:get_node_hash(player, position, height),
         log2_root_size = self.height,
         root_hash = self:get_root_hash(),
         sibling_hashes = siblings,
@@ -10531,10 +10532,10 @@ answers a bisection by reading nodes from its tree:
 ``` lua
 function event_handler.reveal_bisection(self, computation_hash, position, height, other_left_node)
     local tree = self.trees[computation_hash]
-    local turn_left_node, turn_right_node = tree:get_child_hashes(position, height)
+    local turn_left_node, turn_right_node = tree:get_child_hashes(self, position, height)
     local descend_left = turn_left_node ~= other_left_node
     local child_position = descend_left and position or position + (1 << (height - 1))
-    local turn_next_left_node, turn_next_right_node = tree:get_child_hashes(child_position, height - 1)
+    local turn_next_left_node, turn_next_right_node = tree:get_child_hashes(self, child_position, height - 1)
     return {
         turn_left_node = turn_left_node,
         turn_right_node = turn_right_node,

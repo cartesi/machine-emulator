@@ -421,19 +421,19 @@ for _, ending in ipairs({ "target", "halt", "rejected", "invalid" }) do
         assert(ok, err)
         builder:end_input()
         local openings = 0
-        local tree = prt.new_tree(height, LOG2_BUNDLE_MCYCLE_COUNT, builder:end_epoch(), function(_, index)
+        local tree = prt.new_tree(height, LOG2_BUNDLE_MCYCLE_COUNT, builder:end_epoch(), function(_, _, index)
             openings = openings + 1
             return bundles[index + 1]
         end)
-        local proof = tree:get_proof(#leaves - 1)
+        local proof = tree:get_proof(nil, #leaves - 1)
         assert(openings == 0, "the final-leaf proof replayed the last execution bundle")
         assert(proof.root_hash == hash_tree.frontier_forest_get_root_hash(reference))
         assert(proof.target_hash == leaves[#leaves])
         hash_tree.verify_slice(proof)
-        proof = tree:get_proof(1 << LOG2_BUNDLE_MCYCLE_COUNT)
+        proof = tree:get_proof(nil, 1 << LOG2_BUNDLE_MCYCLE_COUNT)
         assert(openings == 1, "an opaque sibling did not open its bundle")
         hash_tree.verify_slice(proof)
-        assert(tree:get_proof(#leaves - 1).target_hash == leaves[#leaves])
+        assert(tree:get_proof(nil, #leaves - 1).target_hash == leaves[#leaves])
         assert(openings == 1, "opening an opaque sibling lost the final-leaf path")
     end
 end
@@ -1537,11 +1537,11 @@ local function new_synthetic_claim(base_state_hash, lie, fake_state_hash, bundle
         tree = build_leaf_forest(0, HEIGHT)
     end
     local bundle_height = bundled and 2 or 0
-    tree = prt.new_tree(HEIGHT, bundle_height, tree, function(_, bundle_index)
+    tree = prt.new_tree(HEIGHT, bundle_height, tree, function(_, _, bundle_index)
         return build_leaf_forest(bundle_index << bundle_height, bundle_height)
     end)
-    local computation_hash_left, computation_hash_right = tree:get_child_hashes(0, HEIGHT)
-    local proof = tree:get_proof(LEAVES - 1)
+    local computation_hash_left, computation_hash_right = tree:get_child_hashes(nil, 0, HEIGHT)
+    local proof = tree:get_proof(nil, LEAVES - 1)
     hash_tree.verify_slice(proof)
     assert(
         proof.target_address == LEAVES - 1
@@ -1609,6 +1609,44 @@ local function walk(claim1, claim2)
     return prt.validate_seal_response(tournament, match, response)
 end
 
+-- Trees made before a player moves collect through the player passed to each query.
+do
+    local function repeated_forest(height, value, value_height)
+        local forest = hash_tree.frontier_forest(height, "keccak256")
+        hash_tree.frontier_forest_pad_back(forest, value, 1 << (height - value_height), value_height)
+        return forest
+    end
+    local mcycle_bundle = repeated_forest(LOG2_BUNDLE_MCYCLE_COUNT, keccak("mcycle leaf"), 0)
+    local uarch_bundle = repeated_forest(LOG2_BUNDLE_UARCH_CYCLE_COUNT, keccak("uarch leaf"), 0)
+    local player = new_test_player({ mcycle_height = 8, uarch_height = 22, periods_per_input = 64 })
+    -- Keep only roots so the queries must collect their bundles.
+    player.mcycle_forest =
+        repeated_forest(8, hash_tree.frontier_forest_get_root_hash(mcycle_bundle), LOG2_BUNDLE_MCYCLE_COUNT)
+    local uarch_forest =
+        repeated_forest(22, hash_tree.frontier_forest_get_root_hash(uarch_bundle), LOG2_BUNDLE_UARCH_CYCLE_COUNT)
+    local mcycle = player:new_mcycle_tree()
+    local uarch = player:new_uarch_tree(3, 5, uarch_forest)
+    local moved <close> = player:move()
+    assert(next(player) == nil, "the original player still owns construction state")
+    local mcycle_calls, uarch_calls = 0, 0
+    function moved:collect_mcycle_bundle(input, bundle)
+        assert(self == moved and input == 2 and bundle == 0, "wrong mcycle collector context")
+        mcycle_calls = mcycle_calls + 1
+        return mcycle_bundle
+    end
+    function moved:collect_uarch_cycle_bundle(input, period, mcycle_offset)
+        assert(self == moved and input == 3 and period == 5 and mcycle_offset == 2, "wrong uarch collector context")
+        uarch_calls = uarch_calls + 1
+        return uarch_bundle
+    end
+    hash_tree.verify_slice(mcycle:get_proof(moved, 128))
+    local position = 2 << LOG2_BUNDLE_UARCH_CYCLE_COUNT
+    local left, right = uarch:get_child_hashes(moved, position, 1)
+    assert(left == keccak("uarch leaf") and right == left, "wrong uarch children")
+    hash_tree.verify_slice(uarch:get_proof(moved, position))
+    assert(mcycle_calls == 1 and uarch_calls == 1, "a query recollected an opened bundle")
+end
+
 local base_state_hash, fake_state_hash = keccak("base"), keccak("fake")
 do
     local claim = new_synthetic_claim(base_state_hash, nil, nil, true)
@@ -1617,24 +1655,24 @@ do
     assert(hash == nil and err == "the node is below an opaque hash", "the bundle was already open")
     local calls = 0
     local collect = claim.tree.collect_bundle
-    claim.tree.collect_bundle = function(self, index)
+    claim.tree.collect_bundle = function(self, player, index)
         calls = calls + 1
-        return collect(self, index)
+        return collect(self, player, index)
     end
     local get_proof = claim.tree.get_proof
     claim.tree.get_proof = function()
         error("a child query assembled a proof")
     end
-    local left, right = claim.tree:get_child_hashes(0, 1)
+    local left, right = claim.tree:get_child_hashes(nil, 0, 1)
     assert(left == base_state_hash and right == base_state_hash, "child query returned the wrong hashes")
-    left, right = claim.tree:get_child_hashes(2, 1)
+    left, right = claim.tree:get_child_hashes(nil, 2, 1)
     assert(left == base_state_hash and right == base_state_hash, "a repeated child query changed the hashes")
     claim.tree.get_proof = get_proof
     for i = 0, 3 do
-        hash_tree.verify_slice(claim.tree:get_proof(i))
+        hash_tree.verify_slice(claim.tree:get_proof(nil, i))
     end
     assert(calls == 1, "node and proof queries in the same bundle replayed more than once")
-    assert(claim.tree:get_node_hash(unopened_index, 0) == base_state_hash)
+    assert(claim.tree:get_node_hash(nil, unopened_index, 0) == base_state_hash)
 end
 -- Expanded padding serves all repeated bundles without replaying them separately.
 do
@@ -1648,9 +1686,9 @@ do
         return bundle
     end)
     local root = tree:get_root_hash()
-    hash_tree.verify_slice(tree:get_proof(LEAVES - 1))
+    hash_tree.verify_slice(tree:get_proof(nil, LEAVES - 1))
     for i = 0, LEAVES - 1 do
-        local proof = tree:get_proof(i)
+        local proof = tree:get_proof(nil, i)
         assert(proof.target_hash == base_state_hash, "expanded padding has the wrong leaf")
         assert(proof.root_hash == root, "opening a bundle changed the commitment")
         hash_tree.verify_slice(proof)
@@ -1666,22 +1704,22 @@ do
         calls = calls + 1
         error("invalid query reached the bundle collector")
     end)
-    assert(not pcall(tree.get_proof, tree, 0), "an incomplete forest accepted a proof query")
-    assert(not pcall(tree.get_node_hash, tree, 0, 0), "an incomplete forest accepted a node query")
+    assert(not pcall(tree.get_proof, tree, nil, 0), "an incomplete forest accepted a proof query")
+    assert(not pcall(tree.get_node_hash, tree, nil, 0, 0), "an incomplete forest accepted a node query")
     assert(calls == 0, "an incomplete forest invoked the bundle collector")
     local bundle_root = keccak(keccak(base_state_hash, base_state_hash), keccak(base_state_hash, base_state_hash))
     hash_tree.frontier_forest_pad_back(tree.forest, bundle_root, LEAVES >> 2, 2)
     for _, index in ipairs({ -1, LEAVES, 1 << 62, 0.5, "0" }) do
-        assert(not pcall(tree.get_proof, tree, index), "an invalid leaf index accepted a proof query")
-        assert(not pcall(tree.get_node_hash, tree, index, 0), "an invalid leaf index accepted a node query")
+        assert(not pcall(tree.get_proof, tree, nil, index), "an invalid leaf index accepted a proof query")
+        assert(not pcall(tree.get_node_hash, tree, nil, index, 0), "an invalid leaf index accepted a node query")
         assert(calls == 0, "an invalid leaf index invoked the bundle collector")
     end
     for _, height in ipairs({ -1, HEIGHT + 1 }) do
-        assert(not pcall(tree.get_proof, tree, 0, height), "an invalid height accepted a proof query")
-        assert(not pcall(tree.get_node_hash, tree, 0, height), "an invalid height accepted a node query")
+        assert(not pcall(tree.get_proof, tree, nil, 0, height), "an invalid height accepted a proof query")
+        assert(not pcall(tree.get_node_hash, tree, nil, 0, height), "an invalid height accepted a node query")
     end
-    assert(not pcall(tree.get_proof, tree, 1, 2), "an unaligned position accepted a proof query")
-    assert(not pcall(tree.get_node_hash, tree, 1, 2), "an unaligned position accepted a node query")
+    assert(not pcall(tree.get_proof, tree, nil, 1, 2), "an unaligned position accepted a proof query")
+    assert(not pcall(tree.get_node_hash, tree, nil, 1, 2), "an unaligned position accepted a node query")
     assert(calls == 0, "an invalid node invoked the bundle collector")
 end
 
@@ -1697,13 +1735,13 @@ do
         return replacement
     end)
     local root = tree:get_root_hash()
-    assert(not pcall(tree.get_proof, tree, 0), "a mismatched bundle was installed")
+    assert(not pcall(tree.get_proof, tree, nil, 0), "a mismatched bundle was installed")
     local hash, err = hash_tree.frontier_forest_get_node_hash(tree.forest, 0, 0)
     assert(hash == nil and err == "the node is below an opaque hash", "a failed expansion exposed a leaf")
-    assert(not pcall(tree.get_node_hash, tree, 0, 0), "a node query installed a mismatched bundle")
+    assert(not pcall(tree.get_node_hash, tree, nil, 0, 0), "a node query installed a mismatched bundle")
     assert(tree:get_root_hash() == root, "a failed expansion changed the commitment")
     replacement = bundle
-    hash_tree.verify_slice(tree:get_proof(0))
+    hash_tree.verify_slice(tree:get_proof(nil, 0))
 end
 
 for _, lie in ipairs({ 0, 1, 4, 6, 13, LEAVES - 1 }) do
@@ -2405,18 +2443,19 @@ if arg[1] then
     local tamperer = dishonest.new_tamperer(dapp_contract.geometry, tamperer_cache, 0, 100)
     seed_inputs(tamperer, tamperer_inputs)
     local tampered_tree = new_mcycle_tree(tamperer)
-    tampered_tree:get_proof(99 << tampered_tree.bundle_height)
-    tampered_tree:get_proof(100 << tampered_tree.bundle_height)
+    tampered_tree:get_proof(tamperer, 99 << tampered_tree.bundle_height)
+    tampered_tree:get_proof(tamperer, 100 << tampered_tree.bundle_height)
     local uncached_tamperer_inputs, uncached_tamperer_cache <close> = new_test_cache(dapp_contract, 1)
     local uncached_tamperer = dishonest.new_tamperer(dapp_contract.geometry, uncached_tamperer_cache, 0, 100)
     seed_inputs(uncached_tamperer, uncached_tamperer_inputs)
     local uncached_tampered_tree = new_mcycle_tree(uncached_tamperer)
     assert(uncached_tampered_tree:get_root_hash() == tampered_tree:get_root_hash(), "cache changed the tampered claim")
-    uncached_tampered_tree:get_proof(100 << uncached_tampered_tree.bundle_height)
+    uncached_tampered_tree:get_proof(uncached_tamperer, 100 << uncached_tampered_tree.bundle_height)
     local tampered_first_leaf = 100 << LOG2_BUNDLE_MCYCLE_COUNT
     for leaf = tampered_first_leaf, tampered_first_leaf + (1 << LOG2_BUNDLE_MCYCLE_COUNT) - 1 do
         assert(
-            uncached_tampered_tree:get_node_hash(leaf, 0) == tampered_tree:get_node_hash(leaf, 0),
+            uncached_tampered_tree:get_node_hash(uncached_tamperer, leaf, 0)
+                == tampered_tree:get_node_hash(tamperer, leaf, 0),
             "cache changed replay out of the tamper point"
         )
     end
@@ -2436,8 +2475,8 @@ if arg[1] then
         end
         local tree = new_mcycle_tree(fabulist)
         assert(nested > 0, "fabulist did not collect a nested bundle")
-        tree:get_proof(1 << tree.bundle_height)
-        assert(tree:get_node_hash(16, 0) == keccak("fabulist"), "nested collection lost the fabricated leaf")
+        tree:get_proof(fabulist, 1 << tree.bundle_height)
+        assert(tree:get_node_hash(fabulist, 16, 0) == keccak("fabulist"), "nested collection lost the fabricated leaf")
         assert(not fabulist.epoch_pair, "nested collection retained the epoch pair")
     end
 
@@ -2469,7 +2508,7 @@ if arg[1] then
 
     local honest_tree = new_mcycle_tree(honest)
     local entry = assert(cache.entries[1], "claim build retained no machine cache entry").epoch_input_offset
-    honest_tree:get_proof(dapp_contract.geometry.periods_per_input)
+    honest_tree:get_proof(honest, dapp_contract.geometry.periods_per_input)
     assert(cache.entries[1].epoch_input_offset == entry, "mcycle bundle collection changed the machine cache")
     local cached_inputs, cached_cache <close> = new_test_cache(dapp_contract, 2, 1)
     local cached = new_test_player(dapp_contract.geometry, cached_cache)
@@ -2817,13 +2856,13 @@ if arg[1] then
             sealed.claim = encode_response(reopened.event_handler.commit_mcycle_claim(reopened), "Claim")
             reopened.collect_mcycle_bundle = collect
             sealed.opened_proof =
-                encode_response(stored_tree:get_proof(dapp_contract.geometry.periods_per_input), "Proof")
+                encode_response(stored_tree:get_proof(reopened, dapp_contract.geometry.periods_per_input), "Proof")
             sealed.outputs_merkle_root_proof =
                 encode_response(reopened.event_handler.prove_outputs_merkle_root(reopened), "OutputsMerkleRootProof")
             local final_leaf = (1 << stored_tree.height) - 1
-            local final_state_hash = stored_tree:get_node_hash(final_leaf, 0)
+            local final_state_hash = stored_tree:get_node_hash(reopened, final_leaf, 0)
             assert(
-                final_state_hash == honest_tree:get_node_hash(final_leaf, 0),
+                final_state_hash == honest_tree:get_node_hash(honest, final_leaf, 0),
                 "stored machines changed the final state"
             )
             local machine <close> = cartesi.machine(epoch_directory .. "/machine")
@@ -2860,8 +2899,10 @@ if arg[1] then
                 "reopening changed the claim"
             )
             assert(
-                encode_response(reopened:new_mcycle_tree():get_proof(dapp_contract.geometry.periods_per_input), "Proof")
-                    == sealed.opened_proof,
+                encode_response(
+                    reopened:new_mcycle_tree():get_proof(reopened, dapp_contract.geometry.periods_per_input),
+                    "Proof"
+                ) == sealed.opened_proof,
                 "reopening changed an opened bundle"
             )
             assert(
@@ -2873,6 +2914,27 @@ if arg[1] then
                 encode_response(reopened.event_handler.prove_output(reopened), "OutputProof") == sealed.output,
                 "reopening changed the output proof"
             )
+        end
+        -- A failed tree registration must still close the resources acquired during reopening.
+        do
+            local methods = getmetatable(honest).__index
+            local original = methods.new_mcycle_tree
+            local failed_player, failed_cache
+            local closes = 0
+            function methods:new_mcycle_tree()
+                failed_player, failed_cache = self, self.machine_cache
+                local close = failed_cache.close
+                function failed_cache.close(closing_cache)
+                    closes = closes + 1
+                    return close(closing_cache)
+                end
+                error("injected tree registration failure")
+            end
+            local opened, failure = pcall(prt.new_stored_player, dapp_contract, "failed", nil, epoch_directory)
+            methods.new_mcycle_tree = original
+            assert(not opened and tostring(failure):find("injected tree registration failure", 1, true))
+            assert(closes == 1 and not failed_cache.entries, "failed registration did not close its cache exactly once")
+            assert(not failed_player.machine_cache, "failed registration retained its cache")
         end
         -- The stored player answers as the honest fork-mode player sealed on the same inputs.
         assert(
@@ -3161,7 +3223,7 @@ if arg[1] then
                 -- The opening of a uarch bundle is cut too. A bundle opened before a crash is not collected again.
                 local uarch_tree = crashing.uarch_claims[1].tree
                 processing, cut_forests = "opening", true
-                references.opened = encode_response(uarch_tree:get_proof(0), "Proof")
+                references.opened = encode_response(uarch_tree:get_proof(crashing, 0), "Proof")
                 cut_forests = false
                 references.bisection = encode_response(
                     crashing.event_handler.reveal_bisection(
@@ -3208,7 +3270,8 @@ if arg[1] then
                     if crash.processing == "opening" then
                         -- An interrupted opening may collect its bundle again.
                         assert(
-                            encode_response(reopened.uarch_claims[1].tree:get_proof(0), "Proof") == references.opened,
+                            encode_response(reopened.uarch_claims[1].tree:get_proof(reopened, 0), "Proof")
+                                == references.opened,
                             where .. " changed an opened uarch bundle"
                         )
                         kind = "opening"
@@ -3244,7 +3307,7 @@ if arg[1] then
                 end
                 local uarch_tree = reopened.uarch_claims[1].tree
                 assert(
-                    encode_response(uarch_tree:get_proof(0), "Proof") == references.opened,
+                    encode_response(uarch_tree:get_proof(reopened, 0), "Proof") == references.opened,
                     "reopening changed an opened uarch bundle"
                 )
                 assert(
@@ -3321,11 +3384,11 @@ if arg[1] then
         local tree = new_mcycle_tree(fabulist)
         local leaf = #inputs * dapp_contract.geometry.periods_per_input + 16
         local bundle = leaf >> LOG2_BUNDLE_MCYCLE_COUNT
-        tree:get_proof(bundle << tree.bundle_height)
-        honest_tree:get_proof(bundle << honest_tree.bundle_height)
-        assert(tree:get_node_hash(leaf, 0) == keccak("fabulist"), "epoch padding lost the fabricated leaf")
+        tree:get_proof(fabulist, bundle << tree.bundle_height)
+        honest_tree:get_proof(honest, bundle << honest_tree.bundle_height)
+        assert(tree:get_node_hash(fabulist, leaf, 0) == keccak("fabulist"), "epoch padding lost the fabricated leaf")
         assert(
-            tree:get_node_hash(leaf + 1, 0) == honest_tree:get_node_hash(leaf + 1, 0),
+            tree:get_node_hash(fabulist, leaf + 1, 0) == honest_tree:get_node_hash(honest, leaf + 1, 0),
             "epoch padding changed a neighboring leaf"
         )
     end
@@ -3336,25 +3399,27 @@ if arg[1] then
         2 * (dapp_contract.geometry.periods_per_input >> LOG2_BUNDLE_MCYCLE_COUNT),
         (1 << (dapp_contract.geometry.mcycle_height - LOG2_BUNDLE_MCYCLE_COUNT)) - 1,
     }) do
-        honest_tree:get_proof(bundle_index << honest_tree.bundle_height)
-        cached_tree:get_proof(bundle_index << cached_tree.bundle_height)
+        honest_tree:get_proof(honest, bundle_index << honest_tree.bundle_height)
+        cached_tree:get_proof(cached, bundle_index << cached_tree.bundle_height)
         local first_leaf = bundle_index << LOG2_BUNDLE_MCYCLE_COUNT
         for leaf = first_leaf, first_leaf + (1 << LOG2_BUNDLE_MCYCLE_COUNT) - 1 do
             assert(
-                honest_tree:get_node_hash(leaf, 0) == cached_tree:get_node_hash(leaf, 0),
+                honest_tree:get_node_hash(honest, leaf, 0) == cached_tree:get_node_hash(cached, leaf, 0),
                 "cache changed bundle collection"
             )
         end
     end
     local first_uarch = honest:new_uarch_tree(0, 0)
     assert(first_uarch:get_root_hash() == fs.read_file(assert(arg[6])), "uarch root differs from CLI")
-    first_uarch:get_proof(0)
+    first_uarch:get_proof(honest, 0)
     first_uarch:get_proof(
+        honest,
         ((1 << (dapp_contract.geometry.uarch_height - LOG2_BUNDLE_UARCH_CYCLE_COUNT)) - 1) << first_uarch.bundle_height
     )
     local rejected_uarch = honest:new_uarch_tree(1, 60000)
-    rejected_uarch:get_proof(0)
+    rejected_uarch:get_proof(honest, 0)
     rejected_uarch:get_proof(
+        honest,
         ((1 << (dapp_contract.geometry.uarch_height - LOG2_BUNDLE_UARCH_CYCLE_COUNT)) - 1)
             << rejected_uarch.bundle_height
     )
@@ -3385,12 +3450,12 @@ if arg[1] then
         local bundle_index = (
             rejected_epoch_input_offset * dapp_contract.geometry.periods_per_input + input_period_offset
         ) >> LOG2_BUNDLE_MCYCLE_COUNT
-        honest_tree:get_proof(bundle_index << honest_tree.bundle_height)
-        dense_tree:get_proof(bundle_index << dense_tree.bundle_height)
+        honest_tree:get_proof(honest, bundle_index << honest_tree.bundle_height)
+        dense_tree:get_proof(dense, bundle_index << dense_tree.bundle_height)
         local first_leaf = bundle_index << LOG2_BUNDLE_MCYCLE_COUNT
         for leaf = first_leaf, first_leaf + (1 << LOG2_BUNDLE_MCYCLE_COUNT) - 1 do
             assert(
-                honest_tree:get_node_hash(leaf, 0) == dense_tree:get_node_hash(leaf, 0),
+                honest_tree:get_node_hash(honest, leaf, 0) == dense_tree:get_node_hash(dense, leaf, 0),
                 "dense cache changed bundle collection inside the rejected input"
             )
         end
@@ -3409,23 +3474,23 @@ if arg[1] then
     -- before and after its rejection, and their logs authenticate against the claims.
     for _, period in ipairs({ 16, 60000 }) do
         local uarch = dense:new_uarch_tree(1, period)
-        uarch:get_proof(0)
+        uarch:get_proof(dense, 0)
         local logs = dense.event_handler.prove_state_transition(dense, 1, period, 0)
         local preceding_leaf = dapp_contract.geometry.periods_per_input + period - 1
-        dense_tree:get_proof(preceding_leaf)
+        dense_tree:get_proof(dense, preceding_leaf)
         assert(
-            cartesi.machine:verify_step_uarch(dense_tree:get_node_hash(preceding_leaf, 0), logs.step_log)
-                == uarch:get_node_hash(0, 0),
+            cartesi.machine:verify_step_uarch(dense_tree:get_node_hash(dense, preceding_leaf, 0), logs.step_log)
+                == uarch:get_node_hash(dense, 0, 0),
             "cached transition does not match the uarch claim"
         )
         local reset_offset = cartesi.UARCH_CYCLE_MAX
-        uarch:get_proof(reset_offset)
+        uarch:get_proof(dense, reset_offset)
         local reset_logs = dense.event_handler.prove_state_transition(dense, 1, period, reset_offset)
         local after_step =
-            cartesi.machine:verify_step_uarch(uarch:get_node_hash(reset_offset - 1, 0), reset_logs.step_log)
+            cartesi.machine:verify_step_uarch(uarch:get_node_hash(dense, reset_offset - 1, 0), reset_logs.step_log)
         assert(
             cartesi.machine:verify_reset_uarch(after_step, reset_logs.reset_uarch_log)
-                == uarch:get_node_hash(reset_offset, 0),
+                == uarch:get_node_hash(dense, reset_offset, 0),
             "cached reset does not match the uarch claim"
         )
     end
@@ -3495,13 +3560,14 @@ if arg[1] then
     end
     local last_period = dapp_contract.geometry.periods_per_input - 1
     local chain_bundle_index = (2 * dapp_contract.geometry.periods_per_input + last_period) >> LOG2_BUNDLE_MCYCLE_COUNT
+    local chain_bundle_position = chain_bundle_index << chain_tree.bundle_height
     local tail_bundle = chain:collect_mcycle_bundle(2, last_period >> LOG2_BUNDLE_MCYCLE_COUNT)
     assert(
         hash_tree.frontier_forest_get_root_hash(tail_bundle)
-            == chain_tree:get_node_hash(chain_bundle_index << chain_tree.bundle_height, chain_tree.bundle_height),
+            == chain_tree:get_node_hash(chain, chain_bundle_position, chain_tree.bundle_height),
         "replayed rejection tail differs from its retained bundle"
     )
-    chain_tree:get_proof(chain_bundle_index << chain_tree.bundle_height)
+    chain_tree:get_proof(chain, chain_bundle_position)
     assert(lookups == 1, "reverted-tail bundle collection performed multiple lookups")
     assert(replay_begins == 1 and replay_ends == 1, "cache replay bypassed the epoch driver's builder lifecycle")
     assert(
@@ -3510,8 +3576,8 @@ if arg[1] then
     )
     local reference_leaf = 2 * dapp_contract.geometry.periods_per_input - 1
     assert(
-        chain_tree:get_node_hash(3 * dapp_contract.geometry.periods_per_input - 1, 0)
-            == honest_tree:get_node_hash(reference_leaf, 0),
+        chain_tree:get_node_hash(chain, 3 * dapp_contract.geometry.periods_per_input - 1, 0)
+            == honest_tree:get_node_hash(honest, reference_leaf, 0),
         "rejection-chain tail differs from the reference"
     )
     lookups, input_runs = 0, {}
@@ -3525,9 +3591,9 @@ if arg[1] then
 
     -- The actual input-inclusion and first-step logs must authenticate against the state that
     -- the chain resolves to, not merely produce a matching computation root.
-    after_chain:get_proof(0)
+    after_chain:get_proof(chain, 0)
     local logs = chain.event_handler.prove_state_transition(chain, 3, 0, 0)
-    local before = honest_tree:get_node_hash(reference_leaf, 0)
+    local before = honest_tree:get_node_hash(honest, reference_leaf, 0)
     local after_send = cartesi.machine:verify_send_cmio_response(
         cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
         chain_inputs[4],
@@ -3536,7 +3602,7 @@ if arg[1] then
         before
     )
     assert(
-        cartesi.machine:verify_step_uarch(after_send, logs.step_log) == after_chain:get_node_hash(0, 0),
+        cartesi.machine:verify_step_uarch(after_send, logs.step_log) == after_chain:get_node_hash(chain, 0, 0),
         "post-chain transition does not authenticate against the claim"
     )
 
@@ -3570,7 +3636,7 @@ if arg[1] then
     honest.run_to_input_mcycle_offset = run_input
     local final_leaf = (1 << dapp_contract.geometry.mcycle_height) - 1
     assert(
-        result.iflags_y_proof.root_hash == honest_tree:get_node_hash(final_leaf, 0),
+        result.iflags_y_proof.root_hash == honest_tree:get_node_hash(honest, final_leaf, 0),
         "result replay differs from the claim's final state"
     )
     local latest = honest.event_handler.prove_output(honest)
@@ -3661,9 +3727,9 @@ if arg[1] then
         local player = new_test_player(dapp_contract.geometry, payload_cache)
         seed_inputs(player, { inputs[1] })
         local mcycle_tree = new_mcycle_tree(player)
-        mcycle_tree:get_proof(0)
+        mcycle_tree:get_proof(player, 0)
         local uarch_tree = player:new_uarch_tree(0, 0)
-        uarch_tree:get_proof(0)
+        uarch_tree:get_proof(player, 0)
         local payload_logs = player.event_handler.prove_state_transition(player, 0, 0, 0)
         local payload_after_send = cartesi.machine:verify_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
@@ -3674,7 +3740,7 @@ if arg[1] then
         )
         assert(
             cartesi.machine:verify_step_uarch(payload_after_send, payload_logs.step_log)
-                == uarch_tree:get_node_hash(0, 0),
+                == uarch_tree:get_node_hash(player, 0, 0),
             "outgoing length changed the reconstructed input transition"
         )
     end
@@ -3886,17 +3952,17 @@ if arg[1] then
         local tree = new_mcycle_tree(player)
         assert(tree:get_root_hash() == expected, terminal .. " has the wrong fixed-point tail")
         local mcycle_last = (1 << contract.geometry.mcycle_height) - 1
-        tree:get_proof(mcycle_last)
-        assert(tree:get_node_hash(mcycle_last, 0) == terminal_root, "last mcycle bundle has the wrong state")
+        tree:get_proof(player, mcycle_last)
+        assert(tree:get_node_hash(player, mcycle_last, 0) == terminal_root, "last mcycle bundle has the wrong state")
         assert(counts.bundles == 0, "the final-leaf proof replayed a fixed-point bundle")
-        tree:get_proof(0)
+        tree:get_proof(player, 0)
         local expected_openings = terminal == "empty" and 0 or 1
         assert(counts.bundles == expected_openings, "first mcycle opening called the wrong number of collectors")
         local uarch = player:new_uarch_tree(2, 60000)
-        uarch:get_proof(0)
+        uarch:get_proof(player, 0)
         assert(counts.uarch == 2, "uarch build or first opening bypassed the selected builder or collector")
         local uarch_last = (1 << contract.geometry.uarch_height) - 1
-        uarch:get_proof(uarch_last)
+        uarch:get_proof(player, uarch_last)
         assert(counts.outer == 1, "mcycle build bypassed the selected builder factory")
         assert(counts.bundles == expected_openings, terminal .. " opening replayed an already expanded mcycle bundle")
         -- A uarch bundle is a whole mcycle, so the first opening holds the reset as well. Every
@@ -3904,21 +3970,22 @@ if arg[1] then
         assert(counts.uarch == 2, terminal .. " opening called the wrong number of uarch builders")
         local terminal_logs = player.event_handler.prove_state_transition(player, 2, 60000, 0)
         assert(
-            cartesi.machine:verify_step_uarch(terminal_root, terminal_logs.step_log) == uarch:get_node_hash(0, 0),
+            cartesi.machine:verify_step_uarch(terminal_root, terminal_logs.step_log)
+                == uarch:get_node_hash(player, 0, 0),
             "terminal step does not authenticate against the claim"
         )
         local reset_offset = cartesi.UARCH_CYCLE_MAX
-        uarch:get_proof(reset_offset)
+        uarch:get_proof(player, reset_offset)
         local reset_logs = player.event_handler.prove_state_transition(player, 2, 60000, reset_offset)
         local after_step =
-            cartesi.machine:verify_step_uarch(uarch:get_node_hash(reset_offset - 1, 0), reset_logs.step_log)
+            cartesi.machine:verify_step_uarch(uarch:get_node_hash(player, reset_offset - 1, 0), reset_logs.step_log)
         assert(
             cartesi.machine:verify_reset_uarch(after_step, reset_logs.reset_uarch_log)
-                == uarch:get_node_hash(reset_offset, 0),
+                == uarch:get_node_hash(player, reset_offset, 0),
             "terminal reset does not authenticate against the claim"
         )
         local boundary = player:new_uarch_tree(2, 0)
-        boundary:get_proof(0)
+        boundary:get_proof(player, 0)
         local boundary_logs = player.event_handler.prove_state_transition(player, 2, 0, 0)
         local boundary_root = terminal_root
         if terminal ~= "empty" then
@@ -3934,7 +4001,8 @@ if arg[1] then
             assert(not boundary_logs.send_cmio_log, "empty epoch invented an input-inclusion log")
         end
         assert(
-            cartesi.machine:verify_step_uarch(boundary_root, boundary_logs.step_log) == boundary:get_node_hash(0, 0),
+            cartesi.machine:verify_step_uarch(boundary_root, boundary_logs.step_log)
+                == boundary:get_node_hash(player, 0, 0),
             "terminal input-boundary proof does not authenticate against the claim"
         )
     end

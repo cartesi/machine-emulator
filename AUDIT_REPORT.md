@@ -1,6 +1,6 @@
 # PRT Audit Report (`audit/prt2`)
 
-Status: **in progress**. Phase: round 5 hunt.
+Status: **in progress**. Phase: round 5 triage, round 6 hunt.
 
 This file is the campaign state of the audit that `AUDIT.md` defines. The orchestrator rewrites it after every step so
 that it can resume after a compaction or a container restart. Confirmed issues are in `BUGS.md`, with their tests under
@@ -11,7 +11,7 @@ that it can resume after a compaction or a container restart. Confirmed issues a
 | Item | Value |
 |---|---|
 | Branch audited | `audit/prt2` at `20a788c` (docs: prepare PRT audit) |
-| Current phase | Rounds 1 to 4 and the first second opinion complete. Round 5 (assert and error inventory): 10 hunters, 4 back, reports in `campaign/r5/`. Readings settled by the second opinion are in `campaign/readings.md` and in this report |
+| Current phase | Rounds 1 to 4 and the first second opinion complete. Round 5 (assert and error inventory): hunt done (10 candidates, `campaign/r5/`), triage running (`wf_b927b2d0-651`). Round 6 (dynamic and differential testing): 10 hunters running in five workflows, reports in `campaign/r6/`. Readings settled by the second opinion are in `campaign/readings.md` and in this report |
 | Rounds completed | 4 |
 | Stop count (consecutive clean all-Fable rounds, different strategies) | 0 of 3 |
 | Withheld-findings round done | no |
@@ -75,7 +75,8 @@ the untracked `bugs/harness/work/`).
 | 2 | Data flow from each untrusted source (DFINPUT, DFINPUTCOUNT, DFLOG, DFPROOFSOL, DFCLAIM, DFCHAIN, DFYIELD, DFGUESTSTATE, DFSTORED, DFOUTPUT) | `claude-opus-5-5` | 27 (10 hunters, 1 triage, 8 provers, 8 reviewers) | 5.41M | 11 | 8 | 6 (all Medium) | no |
 | 3 | Variants of each family of confirmed bugs (VARCACHE, VARDIRTY, VARO2PLAYER, VARSHADOW, VARVERIFTRAP, VARGEN, VARREFMODEL, VARSCHED, VARGROWTH, VARSPEC) | `claude-opus-5-5` | 39 (10 hunters, 1 triage, 14 provers, 14 reviewers) | 7.30M | 20 | 14 | 10 (1 Critical, 1 High, 8 Medium) | no |
 | 4 | R4 at every reachable state (RGCLAIM, RGPROOF, RGLOG, RGDELIVERY, RGUARCH, RGCONFIG, RGREJECT, RGPLAYERGUEST, RGRESTART, RGEPOCHS) | `claude-opus-5-5` | 15 (10 hunters, 1 triage, 2 provers, 2 reviewers) | 4.07M | 5 | 2 | 1 (Medium) | no |
-| 5 | Assert and error inventory of the honest operator, file by file (INVINTERP, INVHASH, INVSTORE on Fable; INVACCESS, INVDEVICE, INVMACHINE, INVAPI, INVSOL, INVPLAYER, INVBRIDGE on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | running | | | | | |
+| 5 | Assert and error inventory of the honest operator, file by file (INVINTERP, INVHASH, INVSTORE on Fable; INVACCESS, INVDEVICE, INVMACHINE, INVAPI, INVSOL, INVPLAYER, INVBRIDGE on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | 11 hunter runs so far (one retry) | 4.06M so far | 10 | pending | pending | pending |
+| 6 | Dynamic and differential testing (DYNDIFF, DYNHASH, DYNCLAIM on Fable; DYNEVM, DYNLOGFUZZ, DYNPERSIST, DYNAPI, DYNPRT, DYNGUEST, DYNBRIDGE on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | running | | | | | |
 
 ## Candidates
 
@@ -283,7 +284,9 @@ Ten hunters (`claude-opus-5-5`, 3.41M tokens, none blocked) reported 5 candidate
 
 ## Blocked agents and fallbacks
 
-None yet.
+| Round | Agent | Model | What happened | Fallback |
+|---|---|---|---|---|
+| 5 | hunt:INVDEVICE | `claude-opus-5-5` | Reported that a safety system stopped part of its work | Retried once on the same model with a rephrased prompt; that run completed and reported no candidate. No less capable model was needed |
 
 ## Left uncovered
 

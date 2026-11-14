@@ -294,18 +294,20 @@ static int count_sockets(uint32_t pid) {
 
 // What: a spawned server must not inherit the sockets of its client.
 // How:  count the sockets of a server spawned while the client is connected to no other server, then of one spawned
-//       while the client keeps its connection to the first one. The counts must match.
+//       while the client keeps its connection to the first one. The counts must match. Each server first answers a
+//       request, so it has accepted its client's connection when its sockets are counted.
 BOOST_AUTO_TEST_CASE_NOLINT(spawn_inherits_no_client_sockets_test) {
     const spawned_server_fixture first;
+    // The request also keeps the client connected to the first server
+    const char *version{};
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_get_server_version(first.m, &version), CM_ERROR_OK);
     const int alone = count_sockets(first.pid);
     if (alone < 0) {
         BOOST_TEST_MESSAGE("cannot count the sockets of a process on this platform");
         return;
     }
-    // A request keeps the client connected to the first server
-    const char *version{};
-    BOOST_REQUIRE_EQUAL(cm_jsonrpc_get_server_version(first.m, &version), CM_ERROR_OK);
     const spawned_server_fixture second;
+    BOOST_REQUIRE_EQUAL(cm_jsonrpc_get_server_version(second.m, &version), CM_ERROR_OK);
     BOOST_CHECK_EQUAL(count_sockets(second.pid), alone);
 }
 

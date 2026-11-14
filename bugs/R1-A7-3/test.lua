@@ -125,8 +125,8 @@ harness.main(function()
     local short = one_step_over("short", 1 << 19)
     if not short.ran_whole then
         -- A fixed player may slice even the short input; drain it so the long input starts at a boundary.
-        while open:has_pending_input() or crisium_idle() do
-        end
+        repeat
+        until not crisium_idle()
     end
     local long = one_step_over("long", 1 << 26)
     io.stderr:write(

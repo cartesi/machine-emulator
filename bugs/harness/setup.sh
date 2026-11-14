@@ -74,6 +74,7 @@ step baremetal "$H/baremetal/build.sh"
 step configs "$H/configs/make-configs.sh" "${F[@]}"
 step sanitizer "$H/sanitizer/build.sh"
 step foundry "$H/solidity-step/install-tools.sh"
+step anvil-wrap "$H/anvil-wrap.sh"
 step emulator-image "$H/docker/build-images.sh" emulator "${F[@]}"
 step solidity-step mss
 step uarch-rebuild uarch_rebuild

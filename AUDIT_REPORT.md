@@ -37,6 +37,10 @@ that it can resume after a compaction or a container restart. Confirmed issues a
   (data flow) hunts while round 1 is still in triage and proof, so its hunters got round 1's candidates with the outcome
   "pending". The variant search for confirmed bugs, which `AUDIT.md` lists second, runs as round 3, once round 1 has
   confirmations. Hunts run as several workflows side by side to reach 10 concurrent hunters. No hunter was blocked in round 1.
+- **Disk filled once.** During round 1 proofs, anvil instances started by agents dumped block states under
+  `~/.foundry/anvil/tmp` (one grew 12 GB in 6 minutes) and filled the disk. The orchestrator removed the dumps, killed the
+  runaway anvil (the prover of R1-A7-2 was using it) and added `bugs/harness/anvil-wrap.sh`, which bounds the dumps. Agents
+  running at that moment may have seen write failures.
 - **Concurrency.** The workflow runtime caps concurrent agents at the CPU count minus two, which is 2 on this 4-CPU
   container, below the 10 hunters `AUDIT.md` allows.
 

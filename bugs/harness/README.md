@@ -268,3 +268,10 @@ error:` in its stderr. Smoke: `sanitizer/smoke.sh`.
   8545 answers, and kill the recipe's anvil at exit.
 * Stored machine directories are large (Linux configs ~400 MB each); the whole `work/` is ~8 GB plus ~5 GB of
   docker images; Dave and solidity-step builds compile with via-IR and take ~15 minutes each.
+
+## Disk note: anvil state dumps
+
+`anvil-wrap.sh` (run by `setup.sh`) wraps `work/foundry/bin/anvil` so that it passes `--max-persisted-states 256` unless the
+caller sets `--max-persisted-states` or `--prune-history`. Plain anvil dumps every block state under
+`~/.foundry/anvil/tmp` and filled the disk during round 1. Tests that query state at old blocks must raise the bound
+with `ANVIL_MAX_PERSISTED_STATES`. Always stop the anvil you start; stale dumps can be removed from that directory.

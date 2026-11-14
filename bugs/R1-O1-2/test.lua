@@ -12,8 +12,9 @@
 --
 -- Required (R12, section 4/8): loading a machine costs at most linear in the bytes it covers, and nothing a snapshot
 -- carries outside the hashed state may crash the honest operator. Same contents => the adoption must cost about
--- the same. The test fails (exit 1) when the crafted copy needs more than RATIO_LIMIT times the peak memory of the
--- control copy (or cannot be adopted, or yields a different root).
+-- the same. The test fails (exit 1) when the crafted copy needs more peak memory than the larger of RATIO_LIMIT times
+-- the control's and the control's plus a cache covering every page of the machine (or cannot be adopted, or yields
+-- a different root).
 local harness = require("harness")
 
 local BIG = tonumber(os.getenv("R1O12_BIG") or "") or 65536 -- phtc entries in the crafted copy
@@ -134,10 +135,16 @@ harness.main(function()
     if big.root ~= expected_root then
         return harness.expect(false, "R1/R9: unhashed phtc_size changed the root hash: " .. big.root)
     end
-    return harness.expect(big.hwm <= RATIO_LIMIT * ctl.hwm, string.format(
+    -- Allowed: at most RATIO_LIMIT x the control, or the control plus a page cache that covers every page of the
+    -- machine (12 KiB of payload per page), whichever is larger. A fix that clamps the stored capacity to the
+    -- machine's own size (bounded by the hashed contents) therefore passes; a cost set by phtc_size alone does not.
+    local limit_kb = math.max(RATIO_LIMIT * ctl.hwm, ctl.hwm + pages * 12288 // 1024)
+    print(string.format("allowed peak: %d kB (max of %.1fx control, control + %d pages x 12 KiB)", limit_kb,
+        RATIO_LIMIT, pages))
+    return harness.expect(big.hwm <= limit_kb, string.format(
         "R12 (loading a machine is bounded and at most linear in the bytes it covers) and section 4/8 (nothing a "
             .. "snapshot carries outside the hashed state may crash the honest operator): adopting the same "
-            .. "contents with config.json phtc_size=%d (machine has %d pages) must cost at most %.1fx the control's "
-            .. "peak memory; observed %.2fx (%d kB vs %d kB)",
-        BIG, pages, RATIO_LIMIT, big.hwm / ctl.hwm, big.hwm, ctl.hwm))
+            .. "contents with config.json phtc_size=%d (machine has %d pages) must cost at most %d kB of peak memory "
+            .. "(bounded by the machine's size); observed %d kB, %.2fx the control's %d kB",
+        BIG, pages, limit_kb, big.hwm, big.hwm / ctl.hwm, ctl.hwm))
 end)

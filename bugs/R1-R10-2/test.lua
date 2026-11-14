@@ -109,7 +109,7 @@ local function run(e)
     for _, r in ipairs(controls) do
         show(r)
         if not (r.native and r.cpp_ok and r.evm_ok) then
-            harness.setup_error("control probe did not verify on all paths: " .. r.name)
+            error("control probe did not verify on all paths: " .. r.name, 0) -- exit 2 after cleanup
         end
     end
     local cases = {

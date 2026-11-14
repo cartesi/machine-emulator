@@ -1,0 +1,15 @@
+# Alternate Debian builds of the toolchain packages that the Dockerfile's `toolchain` stage does NOT pin
+# (binutils, glibc and kernel headers, libstdc++ headers), fetched by content (sha1) from snapshot.debian.org.
+# Format: <sha1> <package> <version>
+# binutils-riscv64-unknown-elf: assembler, linker and objcopy of uarch-ram.bin (image: 2.44-3+7+b1).
+# 2.43.1-5+7 is the earlier trixie build; 2.45.50.20251125-1+7+b2 the later sid build (the next one, 2.46,
+# Breaks the pinned gcc-riscv64-unknown-elf 14.2.0, so apt could not pick it with the Dockerfile's pins).
+97706c0a2675a41b9d1b4411d597be8d8a596572 binutils-riscv64-unknown-elf 2.43.1-5+7
+d7c0aa6c323282fbfb1c5f8b8894b466ee11573a binutils-riscv64-unknown-elf 2.45.50.20251125-1+7+b2
+# libc6-dev-riscv64-cross: headers on the uarch include path (image: 2.41-11cross1; g++ needs only >= 2.23).
+5f7288fbfaf631e1b8cee7f4833e4c9b7b6b9ed0 libc6-dev-riscv64-cross 2.40-4cross1
+0ff9d90a352ff08304f3ccc55ea85dc60ae4754a libc6-dev-riscv64-cross 2.42-12cross1
+# linux-libc-dev-riscv64-cross (image: 6.12.38-1cross1).
+e15c123b47c0ce2e7f9d04e29037959e1d4ae0c7 linux-libc-dev-riscv64-cross 7.2.15-1
+# libstdc++-14-dev-riscv64-cross: C++ headers on the uarch include path (image: 14.2.0-19cross1; g++ needs >= 14).
+976dd49e51993cedcf0440b8f66320688d54889a libstdc++-14-dev-riscv64-cross 14.3.0-14cross1

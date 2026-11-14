@@ -1,6 +1,6 @@
 # PRT Audit Report (`audit/prt2`)
 
-Status: **in progress**. Phase: round 6 and round 7 hunts.
+Status: **in progress**. Phase: rounds 6 and 7 triage, round 8 hunt.
 
 This file is the campaign state of the audit that `AUDIT.md` defines. The orchestrator rewrites it after every step so
 that it can resume after a compaction or a container restart. Confirmed issues are in `BUGS.md`, with their tests under
@@ -11,7 +11,7 @@ that it can resume after a compaction or a container restart. Confirmed issues a
 | Item | Value |
 |---|---|
 | Branch audited | `audit/prt2` at `20a788c` (docs: prepare PRT audit) |
-| Current phase | Rounds 1 to 5 and the first second opinion complete. Round 6 (dynamic and differential testing): 10 hunters, 2 back, reports in `campaign/r6/`. Round 7 (manual promises): 10 hunters running in five workflows, reports in `campaign/r7/`. Reading-based drops and refutations of rounds 4 and 5 wait for the next second opinion. Readings settled so far are in `campaign/readings.md` and in this report |
+| Current phase | Rounds 1 to 5 and the first second opinion complete. Round 6 (dynamic): hunt done, 11 candidates, triage running (`wf_88e82738-fc3`). Round 7 (manual promises): hunt done, 22 candidates, triage running (`wf_8c335b8e-d0a`). Round 8 (attack goals): 10 hunters running in five workflows, reports in `campaign/r8/`. Reading-based drops and refutations of rounds 4 to 7 wait for the next second opinion |
 | Rounds completed | 5 |
 | Stop count (consecutive clean all-Fable rounds, different strategies) | 0 of 3 |
 | Withheld-findings round done | no |
@@ -76,8 +76,9 @@ the untracked `bugs/harness/work/`).
 | 3 | Variants of each family of confirmed bugs (VARCACHE, VARDIRTY, VARO2PLAYER, VARSHADOW, VARVERIFTRAP, VARGEN, VARREFMODEL, VARSCHED, VARGROWTH, VARSPEC) | `claude-opus-5-5` | 39 (10 hunters, 1 triage, 14 provers, 14 reviewers) | 7.30M | 20 | 14 | 10 (1 Critical, 1 High, 8 Medium) | no |
 | 4 | R4 at every reachable state (RGCLAIM, RGPROOF, RGLOG, RGDELIVERY, RGUARCH, RGCONFIG, RGREJECT, RGPLAYERGUEST, RGRESTART, RGEPOCHS) | `claude-opus-5-5` | 15 (10 hunters, 1 triage, 2 provers, 2 reviewers) | 4.07M | 5 | 2 | 1 (Medium) | no |
 | 5 | Assert and error inventory of the honest operator, file by file (INVINTERP, INVHASH, INVSTORE on Fable; INVACCESS, INVDEVICE, INVMACHINE, INVAPI, INVSOL, INVPLAYER, INVBRIDGE on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | 24 (11 hunter runs, 1 triage, 6 provers, 6 reviewers) | 5.80M | 10 | 6 | 3 (1 Critical, 2 Medium; all three found by Fable hunters) | no |
-| 6 | Dynamic and differential testing (DYNDIFF, DYNHASH, DYNCLAIM on Fable; DYNEVM, DYNLOGFUZZ, DYNPERSIST, DYNAPI, DYNPRT, DYNGUEST, DYNBRIDGE on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | running | | | | | |
-| 7 | The code against the manual's promises, one slice of the manual each (MANTOURN, MANHASHCOMP, MANARCH on Fable; MANGAME, MANHASHSTATE, MANGUEST, MANCLIROLL, MANCLIBASE, MANLUA1, MANLUA2 on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | running | | | | | |
+| 6 | Dynamic and differential testing (DYNDIFF, DYNHASH, DYNCLAIM on Fable; DYNEVM, DYNLOGFUZZ, DYNPERSIST, DYNAPI, DYNPRT, DYNGUEST, DYNBRIDGE on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | 10 hunters so far | 3.25M so far | 11 | pending | pending | pending |
+| 7 | The code against the manual's promises, one slice of the manual each (MANTOURN, MANHASHCOMP, MANARCH on Fable; MANGAME, MANHASHSTATE, MANGUEST, MANCLIROLL, MANCLIBASE, MANLUA1, MANLUA2 on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | 10 hunters so far | 3.32M so far | 22 | pending | pending | pending |
+| 8 | Attack goals of section 1 worked backwards (GOALACCEPT, GOALWRONGCLAIM, GOALTIMEOUT on Fable; GOALNODE, GOALNOPROOF, GOALELIMINATE, GOALOUTPUT, GOALDIVERGE, GOALESCAPE, GOALEPOCH on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | running | | | | | |
 
 ## Candidates
 

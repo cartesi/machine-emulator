@@ -5647,7 +5647,8 @@ Bundle roots are interior nodes of the hash tree, so the computation hash is unc
 The player stores those roots and retains the final-leaf paths returned by mcycle collection inside the forest, along with the repeated state inside padding bundles.
 The three inputs of our epoch fit in about nine thousand mcycle bundles, and one uarch period in at most 2<sup>10</sup>.
 
-When a query reaches an unknown node inside a bundle, the player opens it.
+Tree queries receive the current player explicitly.
+When a query reaches an unknown node inside a bundle, that player opens it.
 It replays a machine from the nearest retained input boundary through the bundle's transitions and hands the leaves to the forest.
 The forest checks the rebuilt subtree against the committed bundle root before installing it, so a faulty replay cannot change a claim.
 Later queries in that bundle read the installed subtree, and so do the other occurrences of a repeated bundle:

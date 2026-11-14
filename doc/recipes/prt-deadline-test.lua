@@ -464,7 +464,7 @@ return function(run_with_server, new_test_player)
     run_with_server(function(server, run_client, wait_connections)
         local player = new_test_player({ mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }, nil)
         local tree = repeated_tree(keccak("future leaf"), 3)
-        local left, right = tree:get_child_hashes(0, tree.height)
+        local left, right = tree:get_child_hashes(player, 0, tree.height)
         player.trees[tree:get_root_hash()] = tree
         local scheduled_calls, reveal_calls = {}, 0
         clone_handlers(player)
@@ -640,7 +640,7 @@ return function(run_with_server, new_test_player)
     run_with_server(function(server, run_client, wait_connections)
         local player = new_test_player({ mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }, nil)
         local tree = repeated_tree(keccak("leaf"), 3)
-        local left, right = tree:get_child_hashes(0, tree.height)
+        local left, right = tree:get_child_hashes(player, 0, tree.height)
         player.trees[tree:get_root_hash()] = tree
         local accepted, malformed = 0, false
         -- Both answers must share one batch, so test events schedule the player's own answers.
@@ -858,7 +858,7 @@ return function(run_with_server, new_test_player)
                         for _, player in ipairs(players) do
                             local tree = player.trees[arguments[1]]
                             if tree then
-                                local left, right = tree:get_child_hashes(0, tree.height)
+                                local left, right = tree:get_child_hashes(player, 0, tree.height)
                                 response = { computation_hash_left = left, computation_hash_right = right }
                             end
                         end

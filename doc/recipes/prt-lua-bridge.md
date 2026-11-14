@@ -346,7 +346,7 @@ established it, as the submitter of `CommitmentJoined` shows. A tournament's
 joining deadline is descriptor.startInstant + descriptor.allowance. Everyone
 means every bridge created with cleanup, which in the demo is only the honest
 player's. A claim's root children come from
-`player.trees[computation_hash]:get_child_hashes(0, tree.height)`, and parent
+`player.trees[computation_hash]:get_child_hashes(player, 0, tree.height)`, and parent
 propagation uses the parent claim's tree.
 
 | Event | Action-set changes | Player computation | Window |

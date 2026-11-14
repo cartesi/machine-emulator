@@ -28,7 +28,8 @@ printf 'x' >"$T/output.bin"
 printf 'return {}\n' >"$T/control.lua"
 printf 'while true do end\n' >"$T/loop.lua"
 printf 'return { iflags_y_data = ("x"):rep(1 << 29) }\n' >"$T/alloc512m.lua"
-printf 'return { iflags_y_data = ("x"):rep(1 << 34) }\n' >"$T/alloc16g.lua"
+# string.rep caps one string below 2 GiB, so this one asks for 2^20 strings of 1 GiB each (1 PiB in all)
+printf 'local s, t = ("x"):rep(1 << 30), {}\nfor i = 1, 1 << 20 do t[i] = s .. i end\nreturn t\n' >"$T/allocpib.lua"
 
 CPU=5                 # CPU seconds (not wall clock) granted to each verifier run
 VMEM_KIB=4000000      # address-space limit for the normal runs (~3.8 GiB)
@@ -87,12 +88,12 @@ else
 fi
 
 echo
-echo "== case 3: proof file of $(stat -c %s "$T/alloc16g.lua") bytes that builds a 16 GiB string (address space" \
+echo "== case 3: proof file of $(stat -c %s "$T/allocpib.lua") bytes that asks for 1 PiB of strings (address space" \
     "limited to ${VMEM_SMALL_KIB} KiB)"
-H="$(run $CPU $VMEM_SMALL_KIB "$T/alloc16g.lua")" || { echo "setup: runcase failed" >&2; exit 2; }
+H="$(run $CPU $VMEM_SMALL_KIB "$T/allocpib.lua")" || { echo "setup: runcase failed" >&2; exit 2; }
 echo "$H"
 if grep -q "not enough memory" <<<"$(field "$H" stderr)"; then
-    echo "VIOLATION: the verifier attempted a 16 GiB allocation for a $(stat -c %s "$T/alloc16g.lua")-byte proof" \
+    echo "VIOLATION: the verifier kept allocating until the address-space limit for a $(stat -c %s "$T/allocpib.lua")-byte proof" \
         "(allocation failed: 'not enough memory'); without the limit it would exhaust the host"
     fail=1
 elif [ -n "$(field "$H" signal)" ] || [ "$(field "$H" exit)" = 0 ]; then

@@ -44,6 +44,12 @@ that it can resume after a compaction or a container restart. Confirmed issues a
 - **Fable hunters earlier than planned.** During round 4 the requester asked that the next rounds use a few Fable
   5.2 hunters. From round 5, three of ten hunters run on `claude-fable-5-2` before any round has been clean. These mixed
   rounds do not count toward the stop rule, which needs rounds whose hunters all run on Fable.
+- **Hunt ends after round 10.** During round 9 the requester asked to wind the hunt down after round 10, with no
+  further rounds. The stop rule of `AUDIT.md` (three consecutive clean rounds whose hunters all run on Fable) will
+  therefore not be met; the audit ends on the requester's instruction. Round 10 withholds the campaign's findings
+  from its hunters, so the report can give the rediscovery count that `AUDIT.md` asks for. After round 10: finish the
+  open candidates, run the second opinion on the reading-based drops and refutations of rounds 4 to 10, re-run every
+  confirmed test, and write the final report.
 - **Concurrency.** The workflow runtime caps concurrent agents at the CPU count minus two, which is 2 on this 4-CPU
   container, below the 10 hunters `AUDIT.md` allows.
 

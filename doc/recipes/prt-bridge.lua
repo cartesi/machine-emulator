@@ -339,7 +339,8 @@ function methods:update_claims(snapshot)
         end
     end
     -- Compare in log order, including computations whose joining window closed without our claim.
-    -- The report belongs to the observed join, so a replacement log after a reorg can report again.
+    -- Reports belong to the observed logs, so replacement logs after a reorg can report again.
+    local root_claim = local_claims[self.root]
     for _, event in ipairs(snapshot.events) do
         local claim = local_claims[event.address]
         if event.name == "CommitmentJoined" and claim and event.commitment ~= claim.root then
@@ -351,10 +352,26 @@ function methods:update_claims(snapshot)
                 event.commitment,
                 claim.root
             )
+        elseif
+            event.name == "SentryClaim"
+            and event.address == self.consensus
+            and event.epochNumber == self.epoch
+            and root_claim
+            and event.postEpochMachineStateHash ~= root_claim.final_state
+        then
+            self:report_once(
+                event_key(event),
+                "sentry_claim_mismatch",
+                "at epoch %s: sentry %s claimed %s, locally computed %s",
+                tostring(self.epoch),
+                event.sentry,
+                event.postEpochMachineStateHash,
+                root_claim.final_state
+            )
         end
     end
     -- This evidence belongs to this observation, not to a binding or a previously staged result.
-    snapshot.staged_result_matches = check_staged_result(self, snapshot.staged, local_claims[self.root])
+    snapshot.staged_result_matches = check_staged_result(self, snapshot.staged, root_claim)
     return computed
 end
 

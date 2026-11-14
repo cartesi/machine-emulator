@@ -1722,6 +1722,68 @@ do
         assert(#unavailable.player.reports == 0, "an unavailable computation was compared with a join")
     end
 
+    -- Sentry claims belong to the consensus and epoch, and are compared with the root computation
+    -- even when it has no tournament binding. Captured reports exercise validators and sentinels alike.
+    local function sentry_claim(view, number, final_state, block_hash, address, sentry)
+        view.events[#view.events + 1] = {
+            name = "SentryClaim",
+            address = address,
+            epochNumber = evmu.bint(number),
+            sentry = sentry,
+            postEpochMachineStateHash = final_state,
+            log = { blockHash = block_hash, logIndex = "0x0" },
+        }
+    end
+    for _, sentinel in ipairs({ false, true }) do
+        local view = new_view("bob")
+        sentry_claim(view, 7, root_claim.final_state, "matching", "consensus", "bob")
+        sentry_claim(view, 6, hash, "previous", "consensus", "alice")
+        sentry_claim(view, 8, hash, "next", "consensus", "alice")
+        sentry_claim(view, 7, hash, "foreign", "another consensus", "alice")
+        local checking = new_client(sentinel)
+        checking.epoch = evmu.bint(7)
+        checking:update_claims(view)
+        assert(#checking.player.reports == 0, "matching or unrelated sentry claim was reported")
+
+        sentry_claim(view, 7, hash, "conflicting", "consensus", "alice")
+        for _ = 1, 2 do
+            checking:update_claims(view)
+        end
+        local reports = checking.player.reports
+        local message = "at epoch 7: sentry alice claimed " .. hash .. ", locally computed " .. root_claim.final_state
+        assert(#reports == 1 and reports[1].kind == "sentry_claim_mismatch", "sentry mismatch not reported once")
+        assert(reports[1].message == message, "sentry mismatch lacks its context")
+        assert(checking.claims.root and checking.claims.child, "sentry reporting changed claim bindings")
+        assert(checking.player.builds == 2, "sentry reporting rebuilt the computation")
+
+        local restarted = new_client(sentinel)
+        restarted.epoch = evmu.bint(7)
+        restarted:update_claims(view)
+        assert(#restarted.player.reports == 1 and restarted.player.reports[1].message == message)
+        view.contexts.root.joined = {}
+        local unjoined = new_client(sentinel)
+        unjoined.epoch = evmu.bint(7)
+        unjoined:update_claims(view)
+        assert(not unjoined.claims.root and #unjoined.player.reports == 2)
+        assert(unjoined.player.reports[2].message == message, "an unbound local claim missed the sentry mismatch")
+
+        local replacement = new_view("bob")
+        checking:update_claims(replacement)
+        assert(#reports == 1, "a removed sentry claim produced a new report")
+        sentry_claim(replacement, 7, hash, "replacement", "consensus", "alice")
+        checking:update_claims(replacement)
+        checking:update_claims(replacement)
+        assert(#reports == 2 and reports[2].message == message, "replacement sentry claim not reported once")
+
+        local unavailable = new_client(sentinel)
+        unavailable.epoch = evmu.bint(7)
+        unavailable.player.event_handler.commit_mcycle_claim = function()
+            return "nothing"
+        end
+        unavailable:update_claims(replacement)
+        assert(#unavailable.player.reports == 0, "sentry claim compared without a local computation")
+    end
+
     -- Staging is compared with the local final state and the root in the machine's outputs proof.
     -- Acceptance requires an explicit match, whether or not the local claim joined the tournament.
     local outputs = cartesi.keccak256("outputs")

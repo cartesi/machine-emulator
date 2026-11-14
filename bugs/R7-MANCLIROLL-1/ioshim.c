@@ -7,9 +7,12 @@
 //   FAIL_MATCH       unlink: only paths containing this string are considered
 //   FAIL_AFTER_FILE  ... and only once this file exists (optional)
 //   FAIL_NTH         fail the Nth considered call (default 1); every other call goes through
+//   FAIL_SIGINT      unlink only: instead of failing the chosen call, raise SIGINT and let the call succeed
+//                    (an operator interrupt, not a host fault; added by the reviewer)
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,6 +59,14 @@ int renameat2(int olddirfd, const char *oldpath, int newdirfd, const char *newpa
 int unlink(const char *path) {
     static int (*real)(const char *);
     if (!real) real = (int (*)(const char *)) dlsym(RTLD_NEXT, "unlink");
+    if (getenv("FAIL_SIGINT") && should_fail("unlink", path)) {
+        // No I/O fault: deliver SIGINT (an operator's Ctrl-C) at this point and let the unlink succeed
+        (void) !write(2, "ioshim: raising SIGINT at unlink ", 33);
+        (void) !write(2, path, strlen(path));
+        (void) !write(2, "\n", 1);
+        raise(SIGINT);
+        return real(path);
+    }
     if (should_fail("unlink", path)) {
         note("unlink", path);
         errno = EIO;

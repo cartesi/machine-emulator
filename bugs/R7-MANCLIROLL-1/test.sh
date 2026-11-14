@@ -55,7 +55,7 @@ run_case() { # <name> <description> [shim env...]
     run_cli "$WORK/$name" "$WORK/$name.log" LD_PRELOAD="$WORK/ioshim.so" \
         FAIL_AFTER_FILE="input-0-outputs-merkle-root.bin" "$@"
     local status=$?
-    if ! grep -q "ioshim: failing" "$WORK/$name.log"; then
+    if ! grep -qE "ioshim: (failing|raising)" "$WORK/$name.log"; then
         tail -20 "$WORK/$name.log" >&2
         echo "setup: the shim did not inject the fault in case $name (exit $status)" >&2
         exit 2
@@ -82,5 +82,11 @@ run_case rename "renameat2(machine.revert.tmp -> machine.revert) fails with EIO 
 # once input 0 is accepted; on audit/prt2 that is inside the commit of input 0).
 run_case unlink "the 2nd unlink() under machine.revert/ after input 0 is accepted fails with EIO" \
     FAIL_FUNC=unlink FAIL_MATCH="machine.revert/" FAIL_NTH=2
+
+# Case C (added by the reviewer): no host fault. The operator interrupts the CLI (SIGINT, Ctrl-C) while the commit
+# of input 0 removes the old machine.revert; every system call succeeds. lua5.4 turns SIGINT into an
+# "interrupted!" error when remove_stored returns, and the CLI's own error-path revert runs.
+run_case interrupt "SIGINT arrives during the removal of the old machine.revert in the commit of input 0 (no I/O fault)" \
+    FAIL_FUNC=unlink FAIL_MATCH="machine.revert/" FAIL_NTH=2 FAIL_SIGINT=1
 
 exit "$result"

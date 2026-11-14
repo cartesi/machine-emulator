@@ -70,6 +70,8 @@ Where the threat model can be read two ways, the severity column gives the revie
 | [R4-RGPLAYERGUEST-1](#r4-rgplayerguest-1) | cartesi-machine CLI aborts --mcycle-computation-hash (no claim) when a guest accepts with outputs-root length != 32, or by default with a root that differs from the host's frontier | cartesi-machine CLI, src/cartesi-machine.lua flush_pending_outputs (assert line 3689; root check 3691-3696), called from | Support (AUDIT.md: 'the cartesi-machine CLI ... Support'), s | R4, section 8 (not-correctly-designed exclusion), section 3 Support stand-in cla | Medium (preferred: CLI computation-hash run is a support tool that computes claims) / Out of scope (if the CLI is a development tool that may 'stop and report t |
 | [R5-INVHASH-1](#r5-invhash-1) | replace_memory_range after a hash-tree update keeps supplied .dht inner nodes despite mark_pages_dirty or missing .dpt; root, node hashes and synced snapshot disagree with contents | machine::replace_memory_range (src/machine.cpp 723-779), hash_tree::update / return_updated_dirty_pages (src/hash-tree.c | Rest of the machine API, off the honest path (preferred). Th | R9, manual backing_store (mark_pages_dirty), section 8 Medium off-path R9 case | Medium / Low |
 | [R5-INVSTORE-2](#r5-invstore-2) | cartesi-machine --revert-mode=stored removes machine.revert in place. After a stop mid-removal, the documented rule resumes from the partial backup and discards the synced copies. | cartesi-machine CLI stored revert mode (src/cartesi-machine.lua revert_stored commit/remove_backup) and its documented r | Support (AUDIT table: the cartesi-machine CLI), standing in  | O2, R4 (restart from an O2 directory), section 5 (tools must follow O1/O2), sect | Medium (preferred); Low if the 'cleaning up after a stop' Medium case caps the stand-in rating; Out of scope under a literal reading of the O2 reload exclusion |
+| [R6-DYNBRIDGE-1](#r6-dynbridge-1) | PRT bridge retires a settled epoch on the 'latest' nonce; a within-policy reorg resurrects its tx as an ownerless pending candidate that blocks every live epoch's moves | doc/recipes/prt-bridge.lua methods:tick (retirement 702-710, other-epoch early return 723-727), prt-transactions.lua non | Support (PRT bridge), standing in for the honest operator's  | R4 (submits within dispute clocks; defends every open epoch), section 3 support  | Medium (Support stand-in for Critical R4) / Out of scope (if section 4's pre-finality sentence covers shallow reorgs of own txs) |
+| [R6-DYNBRIDGE-2](#r6-dynbridge-2) | PRT epoch listener aborts crisium ("epoch log history was truncated") when a reorg shallower than a numeric input policy lowers the head over still-canonical, already-applied inputs | doc/recipes/prt-epoch.lua methods:poll with prt-log-history.lua observe (rewinds to min(common_ancestor, head)); run by  | Support (PRT player), standing in for the honest operator (O | R4, section 4 (chain trusted as far as input policy), section 3 stand-in rule, s | Medium (preferred: stand-in honest-operator crash on a within-policy reorg) / Low (if a crash that relaunch recovers violates no rule) |
 
 <!--
 Template for each issue. Copy it below the index, in the same order as the index.
@@ -8150,3 +8152,330 @@ inherit a restart that does not follow O2.
 Mitigation until fixed: after a stop, do not trust `machine.revert` merely because it exists. If
 `machine.revert.tmp` exists, resume from `machine`, which commit synced before cloning. Otherwise check that
 `machine.revert` clones and loads completely before discarding anything.
+
+## R6-DYNBRIDGE-1
+
+**Title.** The PRT bridge retires a settled epoch based on the `latest` nonce. A reorg shallower than both policies
+brings back that epoch's last transaction with no bridge left to own it, and every live epoch's bridge waits on it, so
+the live dispute's moves are never sent.
+
+**Severity.** Medium (preferred reading: a Support component standing in for a Critical R4 failure of the honest
+operator). Under the other reading, where section 4's pre-finality sentence covers a shallow reorg of the operator's
+own transaction, it is Out of scope.
+
+### Problem
+
+`methods:tick` in `doc/recipes/prt-bridge.lua` marks a settled epoch `finished` when three things hold: it has no jobs
+at the observation head, `transactions:pending(signer)` returns no candidate of this epoch, and the settlement block is
+at or below `head(retirement_policy)`. `pending()` (`doc/recipes/prt-transactions.lua`) finds the current candidate
+from `eth_getTransactionCount` at `latest`. So the retirement check treats the epoch's last transaction C as done once
+C is mined in any block, even an unconfirmed one. Only the settlement block has to be irreversible. `crisium.lua`
+`pass()` then drops the finished bridge, with its listener and player.
+
+The journal keeps every nonce until it has a receipt at or below both the finalized block and the observation head.
+Its own comment says "A reorg can resurrect every nonce up to high_water". If a shallow reorg removes C's block and C
+is not mined again, `pending()` again returns C, with `context.epoch` set to the retired epoch. Every live epoch's
+bridge then hits this early return on every tick:
+
+```lua
+if candidate.context and candidate.context.epoch ~= tostring(self.epoch) then
+    return snapshot, false, next_block
+end
+```
+
+The bridge that could cancel or outbid C no longer exists. The live epoch's joins, bisections and proofs are never
+sent. No error is raised, so nothing relaunches the player. The honest claim then loses its live matches by timeout,
+and the honest operator fails to defend an epoch whose dispute is open. That is a completeness failure (section 1),
+shown here by the Support bridge standing in for the honest operator.
+
+### Component, role and area
+
+PRT bridge in `doc/recipes`, together with its transaction journal and the `crisium.lua` pass that drives it. Role:
+Support. AUDIT.md: "The PRT player and bridge in `doc/recipes`, ... | Support. No production deployment runs the player,
+the bridge or the CLI." It stands in for the honest operator's path steps "Observing the chain" and "Submitting
+transactions". Area: retiring an epoch, and sharing the signer's nonce across epochs.
+
+### Location
+
+- `doc/recipes/prt-bridge.lua` `methods:tick`. Lines 702-710 hold the retirement check: `pending()` plus
+  `head(retirement_policy)` for the settlement block only. Lines 720-727 hold the early return on another epoch's
+  pending candidate.
+- `doc/recipes/prt-transactions.lua`. `methods:nonce` (line 34) defaults to `"latest"`. `methods:pending` (line 91)
+  uses it. Line 81 holds the comment about reorgs.
+- `doc/recipes/crisium.lua` `pass()` (line 295). Line 318 onward drops finished epochs. `doc/recipes/prt-epoch.lua`
+  line 128 passes `retirement_policy = self.input_policy`. The default input policy is `finalized`, and the default
+  dispute (observation) policy is 4 (`crisium.lua` lines 76-77).
+
+### Evidence and test
+
+`bugs/R6-DYNBRIDGE-1/` contains:
+
+- `test.lua`, the test.
+- `fakechain.lua`, an in-process scripted node. It keeps a nonce and contract state per block, a base fee, a mempool
+  with 10% replacement rules, finality and reorgs, and its RNG is fixed.
+- `README.md`, the scenario.
+
+The test drives two real `prt-bridge` instances (epoch 1 settled, epoch 2 live). They share one real, file-backed
+`prt-transactions` journal, and `prt-rpc`'s own `head`, `is_canonical`, `simulate` and `publish` run against the node.
+Only each bridge's view of the contracts (`refresh`, `jobs`, `prepare`) is scripted. The ticks follow `crisium.lua`
+`pass()`: newest epoch first, finished bridges dropped. The policies are observation depth 4, retirement depth 8, and
+finality 12 deep.
+
+The script runs as follows:
+
+1. Epoch 1 settles at block 5. A permissionless post-settlement job (such as `tryRecoveringBond`) becomes due, and
+   the honest copy C is published at tip 13.
+2. Another party's identical call is included in block 14. C is mined in block 15 as a no-op.
+3. At tip 18 the epoch-1 bridge retires and is dropped.
+4. A 4-block reorg replaces blocks 15 to 18. That is within both policies and above the observation head, block 14.
+5. Epoch 2's move must be mined inside its window [40, 60).
+
+The test runs three variants:
+
+- `control`: the node mines C again. The test exits 2 if this variant fails.
+- `drop`: the node does not re-inject C.
+- `fee`: the replacing blocks are full, so the base fee rises 12.5% per block past C's 3 gwei max fee and then holds
+  at 3.25 gwei.
+
+Run `bugs/run.sh R6-DYNBRIDGE-1`. It takes under a second and needs no chain or emulator machine. On audit/prt2 it
+prints, in part:
+
+```
+[drop]
+  tip 18: epoch 1 bridge finished and dropped (crisium pass)
+  after reorg, tip 18: pending e1-recover(epoch 1)@nonce 0, C in node pool: false
+  tip 70: base fee 1.000 gwei, epoch-2 move window [40,60) mined at block nil, pending e1-recover(epoch 1)@nonce 0, bridges 1
+[fee]
+  after reorg, tip 18: pending e1-recover(epoch 1)@nonce 0, C in node pool: true
+  tip 70: base fee 3.247 gwei, epoch-2 move window [40,60) mined at block nil, pending e1-recover(epoch 1)@nonce 0, bridges 1
+VIOLATED: R4 (node drops the reorged epoch-1 transaction): the live epoch's move is mined within its window [40,60)
+VIOLATED: R4 (reorged epoch-1 transaction re-injected but priced out): the live epoch's move is mined within its window [40,60)
+run.sh: R6-DYNBRIDGE-1: exit 1 (bug present)
+```
+
+The control mines the epoch-2 move at block 45. The test exited 1 in each of 4 runs by the reviewer.
+
+Two further checks were made out of tree; neither file is part of `bugs/`:
+
+- **The test passes once the retirement check is fixed.** The reviewer patched a copy of `prt-bridge.lua` so that an
+  epoch retires only when the journal holds no candidate of that epoch at any outstanding nonce, first_nonce to
+  high_water. With it, all three variants pass and the test exits 0. The epoch-1 bridge stays alive, cancels C after
+  the reorg, and retires at tip 44, and the epoch-2 move is mined at block 45.
+- **The default retirement policy fails too.** With the retirement policy set to crisium's default `"finalized"`
+  instead of 8, the test still exits 1.
+
+Found, proved and reviewed on Opus 5.5. No fallback model was used.
+
+### Trigger and reachability
+
+These conditions have to coincide:
+
+- **The epoch's last own transaction is above the observation head when the job disappears.** Epoch X is settled, and
+  its last own transaction C, a permissionless post-settlement call such as `tryRecoveringBond` (anyone may call it),
+  is mined above the observation head. Meanwhile the job has already vanished at the observation head, because
+  another party's identical call landed first. Anyone can make that call, and the adversary may "Race and reorder
+  transactions within the chain's rules" (section 7).
+- **A shallow reorg removes C.** A reorg that leaves the observation head alone, and so is shallower than both the
+  dispute policy and the input policy, removes C's block. This is ordinary chain behaviour that the operator's
+  policies exist to tolerate.
+- **C is not mined again before the live epoch's deadlines.** Either the node does not re-inject it (mempool eviction
+  or a node that drops reorged transactions), or the base fee stays above C's max fee. The adversary may "Raise
+  activity on the chain that does not belong to the application" (section 7). The live moves themselves would be
+  repriced by the journal, but C has no owner left to reprice it.
+
+The stall lasts until C is mined, which in the `drop` variant never happens, or until a manual relaunch reopens epoch
+X. The hunter observed that a relaunch with `--keep-epochs=0` does not reopen it. No guest state is involved, so the
+trigger is reachable from any valid template that has at least two epochs with a dispute.
+
+### Rating
+
+1. **Out of scope: not excluded.** Section 8 excludes "Reorganizations of the chain deeper than the operator's input
+   policy (section 4)". This reorg is shallower than both the input policy and the dispute (observation) policy, and
+   step 1 says "Check the trigger, not the symptom". Section 4 says "The honest operator acts only on history that its
+   policy treats as final ... Acting on history before it is final, and recovering when that history is replaced, is
+   outside this model." The bridge's retirement decision is exactly such premature action: it relies on C's
+   unconfirmed inclusion through the `latest` nonce. In the stood-in role this is a deviation from what the honest
+   operator does, not a chain failure. No other exclusion applies. The chain does not censor: the live move is never
+   sent. The node's behaviour is ordinary mempool behaviour, and the `fee` variant needs no node fault at all.
+2. **Role: Support.** AUDIT.md rates the PRT bridge "Support. No production deployment runs the player, the bridge or
+   the CLI." Section 3: "A defect that only a support component shows is Medium when it would rate High or Critical
+   in the role the component stands in for, such as ... the honest operator for an implementation of an operator."
+   This clause covers the bridge. It implements the honest operator's "Observing the chain" and "Submitting
+   transactions" (section 2, "Honest operator's path"). Step 2: "A defect that only a support component shows is
+   never above Medium."
+3. **High and Medium cases: the stand-in rule fits.** Section 8 Medium lists "A defect that only a support component
+   shows, when section 3 rates it Medium." In the stood-in role, no High case fits. The defect is not a verifier
+   issue, not an unreachable-state issue, not caused by data the operator may decline, and not a constant-factor cost.
+4. **Critical in the stood-in role.** R4: "The honest operator observes the chain and submits its transactions within
+   the dispute clocks" and "The honest operator defends every epoch whose dispute is open, including while it
+   processes the inputs of later epochs." Both are violated on the honest operator's path. The live epoch's moves are
+   never submitted, so the honest claim loses by timeout and a dishonest claim can win (section 1, "Completeness
+   failure ... cannot respond in time"). That would be Critical in the honest-operator role, so section 3 rates the
+   Support component Medium.
+
+**Two readings.**
+
+- **Reading A (preferred):** Medium. Section 8's exclusion names only reorgs deeper than the input policy, and
+  section 4's first sentence describes how the honest operator behaves, which the bridge fails to follow.
+- **Reading B:** Out of scope. Section 4's last sentence ("Acting on history before it is final, and recovering when
+  that history is replaced, is outside this model") excludes recovery from any shallow reorg that replaces a
+  transaction the operator already sent.
+
+The deciding question is whether that sentence excludes failures that follow from an operator implementation acting
+on non-final history, or only means that an honest operator never needs such recovery. A further fact would also
+decide: if submitted transactions are taken to be part of the history the operator "acts on" before finality,
+reading B also covers the journal's whole reorg handling, which the journal explicitly implements.
+
+### Possible solution and risks
+
+- **Retirement fix.** Retire an epoch only when the journal holds no candidate of that epoch at any outstanding
+  nonce, from first_nonce to high_water, so that only `forget_settled` (receipt at or below finality and the
+  observation head) releases it. Alternatively, read the nonce for the retirement check at
+  `head(retirement_policy)` instead of `latest`. Risk: a settled epoch's bridge and player stay alive a few blocks
+  longer, as far as finality, which delays `--keep-epochs` file removal.
+- **Ownership fix.** Let a live bridge adopt or cancel a pending candidate whose epoch has no live bridge. This also
+  covers candidates left by a restart that does not reopen the epoch. Risk: a live bridge could cancel a settled
+  epoch's still-useful bond recovery, which costs the bond recovery transaction, not the dispute.
+
+### Risk of not fixing it
+
+An operator running the recipes' player (crisium) can stop defending a live epoch without any error. The trigger
+needs another party to race a permissionless post-settlement call, a reorg shallower than the observation depth, and
+C not being mined again, through mempool eviction or a sustained base-fee rise. Every live move is then held back, and
+the honest claim loses its matches by timeout. No production deployment runs the bridge, so the exposure is limited
+to demonstrations and to anyone who copies its retirement logic into a real node. Outside the code, an operator can
+mitigate it by relaunching with epochs kept, or by watching for a pending candidate of an epoch that is no longer
+observed.
+
+## R6-DYNBRIDGE-2
+
+**Title.** PRT epoch listener aborts crisium with "epoch log history was truncated" when a reorganization shallower
+than a numeric input policy ends on a shorter branch, so the observation head moves back over blocks that are still
+canonical and whose inputs it already delivered.
+
+**Severity.** Medium (preferred: Support component standing in for the honest operator, whose chain observation would
+crash on a within-policy chain event) / Low (if a crash that a relaunch recovers violates no rule, because R4 provides
+for restarts after a stop).
+
+### Problem
+
+Under a numeric input policy `N` (crisium `--input-policy=N`, which `prt-rpc.lua` `M.policy` accepts as "a
+nonnegative block depth"; the recipe demo passes `PRT_INPUT_CONFIRMATIONS`, default 8), the listener observes up to
+`head = tip - N`. A reorganization can replace only blocks above that head and still end on a branch with fewer blocks.
+The tip number then goes down, and the head goes down with it, although every block at or below the old head stays
+canonical. `prt-log-history.lua` `observe(head)` rewinds to `math.min(common_ancestor(self), head)`, so it drops the
+logs of the still-canonical blocks between the new head and the old one. `prt-epoch.lua` `methods:poll` then compares
+the shorter log list with the logs it has already applied and fails with
+`assert(#logs >= #self.applied, "epoch log history was truncated")`. crisium calls `listener.poll` in `pass()` without
+`pcall`, so the error ends the player process: the honest operator's implementation stops observing the chain, delivering
+inputs and answering its disputes, on a chain event that its own policy says it must tolerate. Nothing it acted on was
+replaced. If nothing relaunches it, it stays down, and any claim may win its open epochs. Under `prt-supervise.sh`, it
+restarts from its stored state and spends the relaunch time out of the dispute clocks.
+
+### Component, role and area
+
+The PRT player in `doc/recipes`, specifically the epoch listener (`prt-epoch.lua`) and its log history
+(`prt-log-history.lua`), run by `crisium.lua`. The AUDIT.md table gives it the role Support: "The PRT player and bridge in
+`doc/recipes`, the `cartesi-machine` CLI, and the Lua helper libraries ... | Support. No production deployment runs the
+player, the bridge or the CLI." It stands in for the honest operator. The areas are "Observing the chain" and "Delivering
+inputs" on the honest operator's path.
+
+### Location
+
+- `doc/recipes/prt-epoch.lua`, `methods:poll`: `self.chain:head(self.input_policy)` (line 30), `history:observe` (line
+  34), and the assert at line 52.
+- `doc/recipes/prt-log-history.lua`, `methods:observe` (lines 54-59), which calls `rewind(self, math.min(common_ancestor(self), head))`.
+- `doc/recipes/prt-rpc.lua`, `methods:head` (lines 113-126): `number - policy` for a numeric policy.
+- `doc/recipes/crisium.lua`, `pass()` (line 300): `measure("poll", listener.poll, listener)` with no error handling. The
+  main loop does not catch errors either.
+
+### Evidence and test
+
+`bugs/R6-DYNBRIDGE-2/` contains `test.lua` and `README.md`. Run it with `bugs/run.sh R6-DYNBRIDGE-2`. It takes about a
+second and needs no chain and no machine. The test runs the real `prt-epoch.lua`, `prt-log-history.lua`, the `prt-rpc.lua`
+client (`head`, `is_canonical`, `logs`) and the ABI decoder built from the pinned Dave `InputBox` artifact
+(`bugs/harness/work/dave/patched`). The JSON-RPC node is scripted in the test and answers `eth_getBlockByNumber` and
+`eth_getLogs`. A stub player records the inputs the listener delivers. With input policy 8, inputs 0 to 2 go in blocks 10
+to 12, plus another application's input in block 11. At tip 20, the head is 12 and all three inputs are delivered. Then
+blocks 19 and 20 are replaced:
+
+- by 2 blocks (the control). The tip stays at 20. The listener keeps polling, and inputs 0 to 3 are each delivered once.
+  If the control fails, the test exits 2.
+- by 1 block (the defect). The tip moves to 19 and the head to 11. The test checks that block 12 is still canonical with
+  its original hash. Then the listener polls.
+
+It prints, on audit/prt2 (the listener's stderr progress lines omitted), and exits 1:
+
+```
+control (depth 2 -> 2 blocks): tip 20 head 12, old head 12 canonical true; poll ok; delivered {0:input-0, 1:input-1, 2:input-2, 3:input-3}
+shorter branch (depth 2 -> 1 block): tip 19 head 11, old head 12 canonical true; poll ERROR: .../doc/recipes/prt-epoch.lua:52: epoch log history was truncated
+VIOLATED: R4/section 4: a reorganization shallower than the input policy, which leaves every block the listener acted on canonical (old head 12), stopped the listener: .../doc/recipes/prt-epoch.lua:52: epoch log history was truncated
+run.sh: R6-DYNBRIDGE-2: exit 1 (bug present)
+```
+
+The reviewer re-ran it twice and got exit 1 both times. On a scratch copy of `prt-epoch.lua`, `poll` was changed to
+return `nil` without delivering while the new head is below a previous head that is still canonical. With that copy the
+test exits 0, and all four inputs are delivered once, in order. So the test asserts the required behavior and is not
+an artifact of the scripted node. Opus 5.5 found, proved and reviewed it. No fallback model was used.
+
+### Trigger and reachability
+
+No input sequence or guest is needed. The trigger is a chain event: a reorganization whose fork point is above the
+listener's observation head and whose new branch has fewer blocks than the one it replaces. On proof-of-stake Ethereum,
+fork choice goes by attestation weight, not by length, so a short reorganization can end on a lower block number. The
+event stops the listener only when an applied log of the epoch (an `InputAdded` for the application, or a consensus log
+the listener follows) lies in the blocks between the new head and the old one. With a head that moves back by one block,
+that block is the old head's. An application that receives inputs regularly meets this sooner or later. The listener of
+every open, unsealed epoch is exposed, the sentinel's as well as the validator's. With the default `finalized` policy (and normally with
+`safe`), the head does not move back unless the chain fails beyond the policy, so the defect needs a
+numeric policy. crisium documents that option, and the recipe demo uses it.
+
+### Rating
+
+1. Out of scope: no exclusion applies. "Reorganizations of the chain deeper than the operator's input policy (section
+   4)" does not apply, because the reorganization has depth 2 under a policy of 8. Section 4's "Acting on history before
+   it is final, and recovering when that history is replaced, is outside this model" does not apply either. The listener
+   acted only on blocks up to the old head, which had the policy's depth when it acted, and none of them was replaced.
+   The trigger is "data relayed by the node from others", which section 4 lists as untrusted, not a call to the machine
+   API or a stored directory.
+2. Role: the component is the PRT player's epoch listener, which is Support by the AUDIT.md table. Section 3 says: "A
+   defect that only a support component shows is Medium when it would rate High or Critical in the role the component
+   stands in for, such as ... the honest operator for an implementation of an operator or a tool that computes claims."
+   This clause covers the component: crisium is an implementation of an operator. The settled reading applies: "When a
+   Support component (the PRT player, the CLI) fails on its own operator path, rate it under section 3's stand-in rule."
+   Section 8 step 2: "A defect that only a support component shows is never above Medium."
+3. High and Medium cases: the case that fits is "A defect that only a support component shows, when section 3 rates it
+   Medium". No other High or Medium case fits.
+4. Critical, in the stood-in honest-operator role: the defect violates R4, "The honest operator observes the chain and
+   submits its transactions within the dispute clocks", on the honest operator's path ("Observing the chain", "Delivering
+   inputs"). It also matches the listed Critical case "A crash, hang, out-of-bounds read, or unbounded allocation caused
+   by data from other parties that the honest operator must process". The blocks above the policy's depth, and the tip
+   number derived from them, are chain data that section 4 trusts only "as far as the operator's input policy confirms
+   it", and the operator must read them to observe the chain. Critical in the stood-in role makes it Medium for this
+   Support component.
+
+Two readings give different classes. Under reading A (preferred), the crash itself is the violation. The listed Critical
+crash case has no "permanent" condition, and R4's restart clause is about recovering from stops, not a license to stop on
+a routine chain event. Under that reading it is Medium. Under reading B, a crash that a relaunch recovers violates no rule,
+because R4 provides "After a stop, it restarts from a directory that O2 guarantees and keeps defending its claim". Under
+that reading it is Low. Two facts would decide. First, whether the deployment always runs the player under a supervisor:
+crisium alone exits and stays down, and only `prt-supervise.sh` relaunches it. Second, how the relaunch cost (reopening
+every open epoch, refetching logs, reloading stored players) and how often the event recurs compare with the dispute
+clocks (A7).
+
+### Possible solution and risks
+
+In `methods:poll`, remember the last observed head and its hash. When a new head is below a previous head that is still
+canonical, return `nil` without delivering, and keep the history. Alternatively, have `observe` keep the logs up to the
+newest canonical block it already holds, and have `poll` deliver only up to the new head. Either way, a reorganization
+that does replace applied blocks must still take the existing reset and "epoch history changed" paths. The risk is
+hiding a real replacement. The canonicity check on the previous head, which the scratch fix used, prevents that, and the
+test checks that every input is then delivered exactly once, in order.
+
+### Risk of not fixing it
+
+An operator that runs crisium with a numeric `--input-policy` loses its player on any short reorganization that lowers
+the tip while an applied input sits in the blocks the head moves back over. No adversary has to act. Without a
+supervisor, the player stays down and stops defending its open epochs. With `prt-supervise.sh`, every such event costs a
+relaunch out of the dispute clocks. The mitigations outside the code are to use the default `finalized` policy (or `safe`)
+and to always run the player under `prt-supervise.sh`.

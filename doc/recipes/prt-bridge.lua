@@ -380,6 +380,20 @@ function methods:update_claims(snapshot)
                 event.commitment,
                 claim.root
             )
+        elseif event.name == "MatchDeleted" and claim then
+            -- The deletion records a loss even if the missed move's window closed between observations.
+            local side = event.one == claim.root and 1 or event.two == claim.root and 2
+            local winner = eth.small(event.winnerCommitment)
+            if side and winner ~= side then
+                self:report_once(
+                    event_key(event),
+                    "lost_match",
+                    "at %s: local commitment %s %s",
+                    event.address,
+                    claim.root,
+                    winner == 0 and "was eliminated with its opponent" or "lost to its opponent"
+                )
+            end
         elseif
             event.name == "SentryClaim"
             and event.address == self.consensus
@@ -875,28 +889,6 @@ function methods:report_once(subject, kind, fmt, ...)
     end
 end
 
--- Reports a match the honest commitment lost, because the other side won or both were eliminated. The
--- deletion is reported whenever it is observed, even when the window the honest side missed closed
--- between two observations.
-local function report_lost_matches(self, snapshot)
-    for _, event in ipairs(snapshot.events) do
-        if event.name == "MatchDeleted" then
-            local side = holds(self, event.address, event.one) and 1 or holds(self, event.address, event.two) and 2
-            local winner = eth.small(event.winnerCommitment)
-            if side and winner ~= side then
-                self:report_once(
-                    event_key(event),
-                    "lost_match",
-                    "at %s: the honest commitment %s %s",
-                    event.address,
-                    side == 1 and event.one or event.two,
-                    winner == 0 and "was eliminated with its opponent" or "lost to its opponent"
-                )
-            end
-        end
-    end
-end
-
 -- A sentinel's pass. The jobs a validator would publish become expectations, since the honest commitment
 -- must be defended and the epoch settled even when the sentinel signs nothing. A job with a window is
 -- reported as deadline_near once the next block is within warning_blocks of its end, and as
@@ -959,7 +951,6 @@ function methods:watch()
         tip = math.max(tip, snapshot.tip + 1)
         next_block = math.min(next_block or tip, tip)
     end
-    report_lost_matches(self, snapshot)
     if snapshot.settled and self.retirement_policy then
         self.finished = eth.small(snapshot.settled.log.blockNumber) <= self.chain:head(self.retirement_policy)
     end

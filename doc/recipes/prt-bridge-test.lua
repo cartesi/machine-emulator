@@ -1000,30 +1000,6 @@ do
             "unexpected sentinel reports at tip " .. tip
         )
     end
-    -- A deleted match the honest commitment lost is reported once, and one it won is not
-    view.events[#view.events + 1] = {
-        name = "MatchDeleted",
-        address = "root",
-        matchIdHash = "won",
-        one = "one",
-        two = "three",
-        winnerCommitment = 1,
-        log = { blockHash = "block2", logIndex = "0x0" },
-    }
-    view.events[#view.events + 1] = {
-        name = "MatchDeleted",
-        address = "root",
-        matchIdHash = "lost",
-        one = "four",
-        two = "one",
-        winnerCommitment = 1,
-        log = { blockHash = "block3", logIndex = "0x0" },
-    }
-    for _, lost in ipairs({ "lost_match at root: the honest commitment one lost to its opponent", "" }) do
-        local first = #reports + 1
-        sentinel:watch()
-        assert(table.concat(reports, "\n", first) == lost, "unexpected lost match reports")
-    end
 end
 -- The InputBox is shared by every application. The listener asks only for its own application's
 -- InputAdded logs, so inputs to other applications are neither downloaded nor kept.
@@ -1720,6 +1696,106 @@ do
         end
         unavailable:update_claims(late)
         assert(#unavailable.player.reports == 0, "an unavailable computation was compared with a join")
+    end
+
+    -- Loss reporting belongs to observation processing, shared by validators and sentinels.
+    -- Exercise both public passes, including a deletion first seen after the move's window closed.
+    local function deletion(address, root, side, winner, block_hash)
+        return {
+            name = "MatchDeleted",
+            address = address,
+            matchIdHash = "match",
+            one = side == 1 and root or "other",
+            two = side == 2 and root or "other",
+            winnerCommitment = evmu.bint(winner),
+            log = { blockHash = block_hash, logIndex = "0x0" },
+        }
+    end
+    for _, sentinel in ipairs({ false, true }) do
+        for _, address in ipairs({ "root", "child" }) do
+            local root = address == "root" and root_claim.root or child_claim.root
+            for side = 1, 2 do
+                for winner = 0, 2 do
+                    local view = new_view("bob")
+                    view.ready = true
+                    view.events = { deletion(address, root, side, winner, "deleted") }
+                    view.deleted[address .. ":match"] = true
+                    local checking = new_client(sentinel)
+                    function checking.observe()
+                        return view
+                    end
+                    -- No transactions are needed to observe a loss.
+                    function checking.jobs()
+                        return {}
+                    end
+                    if not sentinel then
+                        function checking.transactions.pending()
+                            return nil
+                        end
+                    end
+                    local pass = sentinel and checking.watch or checking.tick
+                    for _ = 1, 2 do
+                        pass(checking)
+                    end
+                    local reports = checking.player.reports
+                    if winner == side then
+                        assert(#reports == 0, "a winning local commitment was reported as lost")
+                    else
+                        assert(#reports == 1 and reports[1].kind == "lost_match", "a lost match was not reported once")
+                        assert(
+                            reports[1].message
+                                == "at "
+                                    .. address
+                                    .. ": local commitment "
+                                    .. root
+                                    .. " "
+                                    .. (winner == 0 and "was eliminated with its opponent" or "lost to its opponent")
+                        )
+                    end
+                    assert(checking.claims.root and checking.claims.child, "loss reporting changed claim bindings")
+                    assert(checking.player.builds == 2, "loss reporting rebuilt cached computations")
+                end
+            end
+        end
+        local view = new_view("bob")
+        view.events = {
+            deletion("root", "unrelated", 1, 2, "unrelated"),
+            deletion("another tournament", root_claim.root, 1, 2, "foreign"),
+        }
+        local checking = new_client(sentinel)
+        checking:update_claims(view)
+        assert(#checking.player.reports == 0, "an unrelated match was reported as lost")
+        view.events = { deletion("root", root_claim.root, 1, 2, "branch-a") }
+        checking:update_claims(view)
+        local restarted = new_client(sentinel)
+        restarted:update_claims(view)
+        assert(
+            #checking.player.reports == 1 and #restarted.player.reports == 1,
+            "restart missed an already observed loss"
+        )
+        local replacement = new_view("bob")
+        checking:update_claims(replacement)
+        local after_reorg = new_client(sentinel)
+        after_reorg:update_claims(replacement)
+        assert(
+            #checking.player.reports == 1 and #after_reorg.player.reports == 0,
+            "a removed deletion produced a loss report"
+        )
+        replacement.events = { deletion("root", root_claim.root, 1, 2, "branch-b") }
+        for _ = 1, 2 do
+            checking:update_claims(replacement)
+            after_reorg:update_claims(replacement)
+        end
+        assert(
+            #checking.player.reports == 2 and #after_reorg.player.reports == 1,
+            "a replacement deletion was not reported once"
+        )
+        local unavailable = new_client(sentinel)
+        unavailable.player.event_handler.commit_mcycle_claim = function()
+            return "nothing"
+        end
+        unavailable:update_claims(view)
+        assert(#unavailable.player.reports == 0, "an unavailable computation was reported as lost")
     end
 
     -- Sentry claims belong to the consensus and epoch, and are compared with the root computation

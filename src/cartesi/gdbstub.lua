@@ -443,6 +443,7 @@ function advance_modes.collect_mcycle_root_hashes(self, mcycle_end)
     collect.break_reason = collected.break_reason
     collect.mcycle_phase = collected.mcycle_phase
     collect.partial_bundle = collected.partial_bundle
+    collect.final_bundle_sibling_hashes = collected.final_bundle_sibling_hashes
     table.move(collected.hashes, 1, #collected.hashes, #collect.hashes + 1, collect.hashes)
     return collected.break_reason
 end
@@ -704,6 +705,7 @@ function GDBStub:collect_mcycle_root_hashes(
         hashes = collect.hashes,
         mcycle_phase = collect.mcycle_phase,
         partial_bundle = collect.partial_bundle,
+        final_bundle_sibling_hashes = collect.final_bundle_sibling_hashes,
         console_io_error = collect.console_io_error,
     }
 end

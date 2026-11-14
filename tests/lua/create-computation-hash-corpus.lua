@@ -5,11 +5,10 @@
 
 local cartesi = require("cartesi")
 local filesystem = require("cartesi.filesystem")
-local util = require("cartesi.util")
+local tests_util = require("cartesi.tests.util")
 
 local artifact_dir = assert(os.getenv("CARTESI_COMPUTATION_HASH_CORPUS_PATH"), "corpus path is not set")
 local machine_tests_dir = assert(os.getenv("CARTESI_TESTS_PATH"), "machine tests path is not set")
-local uarch_tests_dir = assert(os.getenv("CARTESI_TESTS_UARCH_PATH"), "uarch tests path is not set")
 
 local function shell_quote(value)
     return "'" .. value:gsub("'", "'\\''") .. "'"
@@ -25,46 +24,19 @@ for _, subdir in ipairs({ "templates", "inputs", "results" }) do
 end
 
 local guest_image = machine_tests_dir .. "/computation_hash.bin"
-local near_limit_uarch_image = uarch_tests_dir .. "/rv64ui-uarch-computation-hash-near-limit.bin"
-local overflow_uarch_image = uarch_tests_dir .. "/rv64ui-uarch-computation-hash-overflow.bin"
+local template_mcycles = {}
 
-local function make_machine_config(options)
-    options = options or {}
+local function make_machine_config()
     return {
         processor = { registers = { pc = 0x80000000 } },
         ram = { length = 1 << 20, backing_store = { data_filename = guest_image } },
         cmio = { rx_buffer = {}, tx_buffer = {} },
-        uarch = options.uarch_image and {
-            processor = { registers = { pc = options.uarch_pc } },
-            ram = { backing_store = { data_filename = options.uarch_image } },
-        } or nil,
     }
 end
 
 local function make_template(options)
-    local cleanup
-    if options.custom_uarch_image then
-        -- Keep the stock image at its normal entrypoint and place the boundary program elsewhere.
-        -- The template starts at the custom PC once. Collector reset returns the PC to the stock
-        -- entrypoint, while a later rejection reuses the separately captured custom tail.
-        local custom_offset = cartesi.UARCH_RAM_LENGTH // 2
-        local stock_machine <close> = cartesi.machine(make_machine_config())
-        local stock_uarch_ram = stock_machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, cartesi.UARCH_RAM_LENGTH)
-        local custom = util.read_file(options.custom_uarch_image)
-        assert(custom_offset + #custom <= #stock_uarch_ram, "custom uarch program does not fit")
-        assert(
-            stock_uarch_ram:sub(custom_offset + 1, custom_offset + #custom) == string.rep("\0", #custom),
-            "custom uarch program overlaps nonzero stock uarch RAM"
-        )
-        cleanup, options.uarch_image = filesystem.write_scope_temp_file(
-            stock_uarch_ram:sub(1, custom_offset) .. custom .. stock_uarch_ram:sub(custom_offset + #custom + 1)
-        )
-        options.uarch_pc = cartesi.UARCH_RAM_START_ADDRESS + custom_offset
-    end
-    local _ <close> = cleanup
-
     io.stderr:write("Creating computation-hash template " .. options.name .. "\n")
-    local machine <close> = cartesi.machine(make_machine_config(options))
+    local machine <close> = cartesi.machine(make_machine_config())
     local break_reason = machine:run(math.maxinteger)
     assert(break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY, "guest did not reach its initial CMIO yield")
     assert(machine:read_reg("htif_tohost_reason") == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
@@ -72,6 +44,7 @@ local function make_template(options)
         options.configure(machine)
     end
     local mcycle = machine:read_reg("mcycle")
+    template_mcycles[options.name] = mcycle
     machine:store(artifact_dir .. "/templates/" .. options.name)
     return mcycle
 end
@@ -91,38 +64,6 @@ make_template({
         machine:write_reg("mcycle", cartesi.MCYCLE_MAX - 255)
     end,
 })
-
--- Template: the CMIO guest is at its initial RX-accepted manual yield. A custom uarch program is
--- overlaid halfway through the zero-filled part of stock uarch RAM, and the uarch PC points to that
--- program. The program halts exactly at UARCH_CYCLE_MAX - 1 without reaching uarch-cycle overflow.
--- All other machine state matches the normal template.
--- Use: this verifies that revert-uarch-tail collection can reach the last valid uarch cycle, reset
--- to the stock uarch state, and reuse the captured near-limit tail for a later rejected input.
-assert(make_template({
-    name = "near-limit-uarch-tail",
-    custom_uarch_image = near_limit_uarch_image,
-}) == initial_mcycle)
-
--- Template: the CMIO guest is at its initial RX-accepted manual yield. An infinite loop is overlaid
--- halfway through the zero-filled part of stock uarch RAM, and the uarch PC points to that loop. All
--- other machine state matches the normal template.
--- Use: initial revert-uarch-tail collection runs the loop until uarch-cycle overflow, testing the
--- collector's exact overflow diagnostic before reset.
-assert(make_template({
-    name = "uarch-overflow-tail",
-    custom_uarch_image = overflow_uarch_image,
-}) == initial_mcycle)
-
-do
-    local machine <close> = cartesi.machine(artifact_dir .. "/templates/near-limit-uarch-tail")
-    local mcycle = machine:read_reg("mcycle")
-    assert(machine:run_uarch(cartesi.UARCH_CYCLE_MAX) == cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
-    assert(
-        machine:read_reg("uarch_cycle") == cartesi.UARCH_CYCLE_MAX - 1,
-        string.format("near-limit uarch calibration failed: reached %d", machine:read_reg("uarch_cycle"))
-    )
-    assert(machine:read_reg("mcycle") == mcycle, "near-limit uarch unexpectedly changed mcycle")
-end
 
 local actions = { accept = 0, reject = 1, exception = 2, halt = 3, ["manual-other"] = 4 }
 local function encode_command(command)
@@ -204,11 +145,55 @@ local function expected_hash_structure(...)
     return "Expected hash structure: " .. table.concat({ ... }, " ")
 end
 
+-- Saturation makes the input budget reachable in 255 cycles. Acceptance must still deliver
+-- the following input before reporting counter overflow; rejection must restore the boundary
+-- and execute the following input there. Both start with the stock, pristine uarch.
+local budget_seam_cases = {
+    {
+        id = "mcycle-budget-seam-accept",
+        description = "Accepted yield at the input maximum followed by another input",
+        comment = expected_hash_structure(
+            "the first input's positions repeat its accepted state root at MCYCLE_MAX.",
+            "The following input is delivered, changing the state despite the exhausted counter;",
+            "its overflow state root fills all remaining positions."
+        ),
+        template = "mcycle-boundary",
+        commands = {
+            { action = "accept", terminal_mcycle = cartesi.MCYCLE_MAX },
+            { action = "accept", terminal_mcycle = 0 },
+        },
+        category = "nonzero-hash",
+        terminal_mcycle = "18446744073709551615",
+        stderr_contains = "Mcycle overflow",
+        max_mcycle = "0xffffffffffffffff",
+        oracle = "budget-seam-mcycle",
+    },
+    {
+        id = "mcycle-budget-seam-reject",
+        description = "Rejected yield at the input maximum followed by an accepted input",
+        comment = expected_hash_structure(
+            "the first input's positions repeat its recorded revert root, including at the exhausted budget.",
+            "Rollback restores the initial counter and the following input accepts at MCYCLE_MAX-1;",
+            "that accepted state root fills all remaining positions."
+        ),
+        template = "mcycle-boundary",
+        commands = {
+            { action = "reject", terminal_mcycle = cartesi.MCYCLE_MAX },
+            { action = "accept", terminal_mcycle = cartesi.MCYCLE_MAX - 1 },
+        },
+        category = "success-hash",
+        terminal_mcycle = "18446744073709551614",
+        max_mcycle = "0xffffffffffffffff",
+        remote = true,
+        oracle = "budget-seam-mcycle",
+    },
+}
+
 local function add_case(case)
     local input_paths = {}
     for i, command in ipairs(case.commands or {}) do
         local path = string.format("inputs/%s-%d.bin", case.id, i - 1)
-        util.write_file(encode_command(command), artifact_dir .. "/" .. path)
+        filesystem.write_file(encode_command(command), artifact_dir .. "/" .. path)
         input_paths[#input_paths + 1] = path
     end
 
@@ -265,7 +250,9 @@ local function add_case(case)
         template = "templates/" .. case.template,
         inputs = input_paths,
         geometry = {
-            initial_mcycle = initial_mcycle,
+            initial_mcycle = math.ult(math.maxinteger, template_mcycles[case.template])
+                    and string.format("%u", template_mcycles[case.template])
+                or template_mcycles[case.template],
             input_count = #input_paths,
             log2_mcycle_period = case.log2_period,
             mcycle_period_index = case.period_index,
@@ -512,6 +499,9 @@ local mcycle_cases = {
     },
 }
 
+for _, case in ipairs(budget_seam_cases) do
+    mcycle_cases[#mcycle_cases + 1] = case
+end
 for _, case in ipairs(mcycle_cases) do
     case.level = "mcycle"
     case.log2_period = 19
@@ -729,32 +719,6 @@ add_uarch_case({
     stderr_contains = "Unexpected manual yield reason",
 })
 add_uarch_case({
-    id = "uarch-near-limit-tail",
-    description = "Collector setup changes the custom uarch boundary and input delivery refuses it",
-    comment = expected_hash_structure(
-        "none. Capturing the custom tail resets the uarch PC and changes the expected input boundary.",
-        "A direct collector test checks tail capture and reuse on rejection separately."
-    ),
-    template = "near-limit-uarch-tail",
-    commands = { { action = "reject", terminal_mcycle = window_start + 4 } },
-    category = "error-no-hash",
-    stderr_contains = "revert root hash does not match the machine root hash",
-    oracle = "near-limit-uarch-tail",
-    remote = true,
-})
-add_uarch_case({
-    id = "uarch-overflow-tail",
-    description = "Exact overflow while collecting the boundary revert-uarch tail",
-    comment = expected_hash_structure(
-        "none. Collecting the initial revert uarch tail reaches uarch-cycle overflow before",
-        "the selected mcycle period can be determined."
-    ),
-    template = "uarch-overflow-tail",
-    commands = { { action = "accept", terminal_mcycle = window_start + 4 } },
-    category = "error-no-hash",
-    stderr_contains = "uarch reached its maximum cycle and cannot advance more uarch cycles",
-})
-add_uarch_case({
     id = "uarch-bundled",
     description = "Alternative bundle size preserves the selected-window root",
     comment = expected_hash_structure(
@@ -769,5 +733,32 @@ add_uarch_case({
     equivalent_to = "uarch-after-window",
 })
 
-util.write_file(cartesi.tojson(manifest, 2) .. "\n", artifact_dir .. "/manifest.json")
+for _, seam in ipairs(budget_seam_cases) do
+    for input_offset = 0, 1 do
+        add_uarch_case({
+            id = seam.id:gsub("^mcycle", "uarch") .. "-input-" .. input_offset,
+            description = seam.description .. ": first uarch period of input " .. input_offset,
+            comment = expected_hash_structure(
+                "each mcycle contains its execution hashes, halted-state padding, and closing reset.",
+                "At rejection the closing reset authenticates the revert root and padding uses the saved revert tail.",
+                "The following input starts at the restored boundary after rejection,",
+                "or at MCYCLE_MAX after acceptance."
+            ),
+            template = seam.template,
+            commands = seam.commands,
+            category = seam.category,
+            terminal_mcycle = seam.terminal_mcycle,
+            stderr_contains = seam.stderr_contains,
+            max_mcycle = seam.max_mcycle,
+            remote = seam.remote,
+            period_index = input_offset << (cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - UARCH_LOG2_PERIOD),
+            oracle = "budget-seam-uarch",
+        })
+    end
+end
+
+filesystem.write_file(
+    cartesi.tojson(manifest, 2, "Manifest", tests_util.computation_hash_manifest_schemas) .. "\n",
+    artifact_dir .. "/manifest.json"
+)
 io.stderr:write("Created " .. artifact_dir .. "/manifest.json\n")

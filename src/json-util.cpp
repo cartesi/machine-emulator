@@ -258,6 +258,29 @@ static sharing_mode sharing_mode_from_name(const std::string &name) {
     return got->second;
 }
 
+static auto remove_mode_to_name(remove_mode mode) {
+    switch (mode) {
+        case remove_mode::stored:
+            return "stored";
+        case remove_mode::forced:
+            return "forced";
+        default:
+            throw std::domain_error{"invalid remove mode"};
+            break;
+    }
+    return "";
+}
+
+static remove_mode remove_mode_from_name(const std::string &name) {
+    const static std::unordered_map<std::string, remove_mode> g_remove_name = {{"stored", remove_mode::stored},
+        {"forced", remove_mode::forced}};
+    auto got = g_remove_name.find(name);
+    if (got == g_remove_name.end()) {
+        throw std::domain_error{"invalid remove mode"};
+    }
+    return got->second;
+}
+
 static auto reg_to_name(machine_reg r) {
     using reg = machine_reg;
     switch (r) {
@@ -996,6 +1019,24 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, remove_mode &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jk = j[key];
+    if (!jk.is_string()) {
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
+    }
+    value = remove_mode_from_name(jk.template get<std::string>());
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, remove_mode &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, remove_mode &value,
+    const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, interpreter_break_reason &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
@@ -1136,6 +1177,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_runtime_con
     ju_get_opt_field(j[key], "skip_version_check"s, value.skip_version_check, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "soft_yield"s, value.soft_yield, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "no_reserve"s, value.no_reserve, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "clear_hash_tree"s, value.clear_hash_tree, path + to_string(key) + "/");
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine_runtime_config &value,
@@ -1212,7 +1254,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constru
     }
     uint64_t log2_target_size = 0;
     ju_get_field(jk, "log2_target_size"s, log2_target_size, new_path);
-    if (log2_root_size > INT_MAX) {
+    if (log2_target_size > INT_MAX) {
         throw std::domain_error("\""s + new_path + "log2_target_size\" is out of bounds");
     }
     value.emplace(static_cast<int>(log2_root_size), static_cast<int>(log2_target_size));
@@ -1375,6 +1417,9 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
     access.set_type(type);
     uint64_t log2_size = 0;
     ju_get_field(jk, "log2_size"s, log2_size, new_path);
+    if (log2_size > INT_MAX) {
+        throw std::domain_error("\""s + new_path + "log2_size\" is out of bounds");
+    }
     access.set_log2_size(static_cast<int>(log2_size));
     uint64_t address = 0;
     ju_get_field(jk, "address"s, address, new_path);
@@ -2165,6 +2210,11 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, mcycle_root_hashes 
     ju_get_field(jconfig, "mcycle_phase"s, value.mcycle_phase, new_path);
     ju_get_field(jconfig, "break_reason"s, value.break_reason, new_path);
     ju_get_opt_field(jconfig, "partial_bundle"s, value.partial_bundle, new_path);
+    value.final_bundle_sibling_hashes.reset();
+    if (contains(jconfig, "final_bundle_sibling_hashes", new_path)) {
+        ju_get_vector_like_field(jconfig, "final_bundle_sibling_hashes"s, value.final_bundle_sibling_hashes.emplace(),
+            new_path);
+    }
     ju_get_opt_field(jconfig, "console_io_error"s, value.console_io_error, new_path);
 }
 
@@ -2232,6 +2282,10 @@ void to_json(nlohmann::json &j, const sharing_mode &sharing) {
     j = sharing_mode_to_name(sharing);
 }
 
+void to_json(nlohmann::json &j, const remove_mode &mode) {
+    j = remove_mode_to_name(mode);
+}
+
 void to_json(nlohmann::json &j, const base64_machine_hash &h) {
     j = encode_base64(h.get());
 }
@@ -2265,25 +2319,20 @@ void to_json(nlohmann::json &j, const access &a) {
         j["read"] = encode_base64(a.get_read().value());
     }
 
-    if (a.get_type() == access_type::write) {
-        if (a.get_written_hash().has_value()) {
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            j["written_hash"] = encode_base64(a.get_written_hash().value());
-        }
-        if (a.get_written().has_value()) {
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            j["written"] = encode_base64(a.get_written().value());
-        }
+    // Serialize every field present, so that whoever verifies the access sees exactly what was logged
+    if (a.get_written_hash().has_value()) {
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        j["written_hash"] = encode_base64(a.get_written_hash().value());
+    }
+    if (a.get_written().has_value()) {
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        j["written"] = encode_base64(a.get_written().value());
     }
     if (a.get_sibling_hashes().has_value()) {
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        const auto &sibling_hashes = a.get_sibling_hashes().value();
-        // Minimum logged data size is hash-tree word size
-        auto data_log2_size = std::max(a.get_log2_size(), HASH_TREE_LOG2_WORD_SIZE);
-        auto depth = HASH_TREE_LOG2_ROOT_SIZE - data_log2_size;
         nlohmann::json s = nlohmann::json::array();
-        for (int i = 0; i < depth; i++) {
-            s.push_back(encode_base64(sibling_hashes[i]));
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        for (const auto &sibling_hash : a.get_sibling_hashes().value()) {
+            s.push_back(encode_base64(sibling_hash));
         }
         j["sibling_hashes"] = s;
     }
@@ -2579,6 +2628,7 @@ void to_json(nlohmann::json &j, const machine_runtime_config &runtime) {
         {"skip_version_check", runtime.skip_version_check},
         {"soft_yield", runtime.soft_yield},
         {"no_reserve", runtime.no_reserve},
+        {"clear_hash_tree", runtime.clear_hash_tree},
     };
 }
 
@@ -2647,6 +2697,9 @@ void to_json(nlohmann::json &j, const mcycle_root_hashes &result) {
         {"break_reason", result.break_reason}};
     if (result.partial_bundle.has_value()) {
         j["partial_bundle"] = result.partial_bundle;
+    }
+    if (result.final_bundle_sibling_hashes.has_value()) {
+        j["final_bundle_sibling_hashes"] = base64_machine_hashes(result.final_bundle_sibling_hashes.value());
     }
     if (!result.console_io_error.empty()) {
         j["console_io_error"] = result.console_io_error;

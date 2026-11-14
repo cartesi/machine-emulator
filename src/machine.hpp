@@ -68,7 +68,8 @@ constexpr skip_hash_tree_update_t skip_hash_tree_update;
 /// \brief Cartesi Machine implementation
 class machine final {
 private:
-    const machine_config m_c;             ///< Copy of initialization config
+    machine_config m_c;                   ///< Current config, which replace_memory_range updates
+    const machine_config m_initial_c;     ///< Copy of initialization config
     machine_runtime_config m_r;           ///< Copy of initialization runtime config
     machine_console m_console;            ///< Console instance
     mutable machine_address_ranges m_ars; ///< Address ranges
@@ -115,6 +116,23 @@ private:
     /// \param config Machine configuration
     void init_dtb_contents(const machine_config &config);
 
+    /// \brief Constructor from machine configuration, keeping the files it creates in a remover
+    /// \param config Machine config to use instantiating machine
+    /// \param runtime Runtime config to use with machine
+    /// \param dir Directory to store the machine into and load it from with sharing all. Can be empty.
+    /// \param remover Object that removes created files and directories unless they are retained
+    machine(machine_config config, machine_runtime_config runtime, const std::string &dir, scope_remove &remover);
+
+    /// \brief Creates a machine in memory, stores it to a directory, and loads its configuration back
+    /// \param config Machine config to use instantiating machine
+    /// \param runtime Runtime config to use with machine
+    /// \param dir Directory to store the machine into
+    /// \param sharing Sharing mode to load the configuration with
+    /// \param remover Object that removes the stored files and directory unless they are retained
+    /// \returns Configuration of the machine loaded from the directory
+    static machine_config create_stored(machine_config config, const machine_runtime_config &runtime,
+        const std::string &dir, sharing_mode sharing, scope_remove &remover);
+
     /// \brief Dumps statistics
     void dump_stats();
 
@@ -160,9 +178,11 @@ public:
     /// \brief Constructor from machine configuration
     /// \param config Machine config to use instantiating machine
     /// \param runtime Runtime config to use with machine
+    /// \param dir Directory to store the machine into and load it from. If empty, the machine is created in-memory.
+    /// \param sharing Sharing mode to load the machine from the directory with
     /// \param remover Object that may remove created files and directories if construction fails
     explicit machine(machine_config config, machine_runtime_config runtime = {}, const std::string &dir = {},
-        scope_remove remover = {});
+        sharing_mode sharing = sharing_mode::all, scope_remove remover = {});
 
     /// \brief Constructor from previously serialized directory
     /// \param directory Directory to load stored machine from
@@ -186,11 +206,14 @@ public:
 
     /// \brief Removes all files and the directory of a previously stored machine.
     /// \param dir Path to the directory containing the stored machine to be removed.
-    /// \details On success, the removed parent directory entry is durable on disk.
-    static void remove_stored(const std::string &dir);
+    /// \param mode Removal mode.
+    /// \details The directory must hold only regular files.
+    /// On success, the removed parent directory entry is durable on disk.
+    static void remove_stored(const std::string &dir, remove_mode mode = remove_mode::stored);
 
     /// \brief Flushes all files of a previously stored machine to permanent storage.
     /// \param dir Path to the directory containing the stored machine to be synced.
+    /// \details Fails if a running machine maps any of its files for writing, where file locks are available.
     static void sync_stored(const std::string &dir);
 
     /// \brief Returns address range that covers a given physical memory region
@@ -437,6 +460,13 @@ public:
     /// \returns True if an interrupt was requested, false otherwise.
     bool poll_virtio_devices(uint64_t *timeout_us, i_device_state_access *da);
 
+    /// \brief Clears all cached hash-tree data without changing machine state.
+    /// \details Resets tree storage to freshly initialized values, updating shared backing stores in place.
+    /// Hashes are rebuilt lazily from machine state on the next hash or proof request. Statistics are kept.
+    void clear_hash_tree() noexcept {
+        m_ht.clear(m_ars);
+    }
+
     /// \brief Update the hash-tree so it matches the contents of the machine state.
     /// \returns True if successful, false otherwise.
     bool update_hash_tree() const;
@@ -503,12 +533,15 @@ public:
         return m_ht.get_node_hash(m_ars, address, log2_size);
     }
 
-    /// \brief Verifies integrity of hash tree without making any modifications to it tree.
-    /// \returns True if tree is self-consistent, false otherwise.
+    /// \brief Checks page hashes and dirty page tracking against memory, without modifying the hash tree.
+    /// \returns True if every page is either marked dirty or has the hash of its contents, false otherwise.
+    /// \details It does not check inner nodes or the root hash. For tests and debugging only.
     bool verify_hash_tree() const;
 
-    /// \brief Validate integrity of processor shadow.
-    void validate_processor_shadow(bool skip_version_check) const;
+    /// \brief Validate integrity of a processor shadow.
+    /// \param shadow Processor shadow to validate.
+    /// \param skip_version_check Whether to skip checking the emulator version registers.
+    void validate_processor_shadow(const shadow_state &shadow, bool skip_version_check) const;
 
     /// \brief Read the value of any register
     /// \param r Register to read
@@ -713,6 +746,9 @@ public:
     /// \param pma_index Index of PMA where address falls
     void write_unverified_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
         uint64_t pma_index) {
+        if (set_index > TLB_LAST_) {
+            throw std::out_of_range{"TLB set index out of bounds"};
+        }
         if (slot_index >= TLB_SET_SIZE) {
             throw std::out_of_range{"TLB slot index out of bounds"};
         }

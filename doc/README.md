@@ -85,6 +85,15 @@
     - [Running the game](#running-the-game)
     - [Each player must defend its own
       claim](#each-player-must-defend-its-own-claim)
+  - [Permissionless refereed
+    tournament](#permissionless-refereed-tournament)
+    - [Computation hashes with
+      repetition](#computation-hashes-with-repetition)
+    - [The player](#the-player-1)
+    - [The tournament](#the-tournament)
+    - [Settling a match](#settling-a-match)
+    - [Clocks and logical time](#clocks-and-logical-time)
+    - [Running the tournament](#running-the-tournament)
 
 # Introduction
 
@@ -488,9 +497,9 @@ where options are:
     otherwise it listens on "127.0.0.1:0".
 
   --remote-address=<ip>:<port>
+  --remote-address=filename:<filename>
     use a remote cartesi machine listening to <ip>:<port> instead of
     running a local cartesi machine.
-
 ...
 ```
 
@@ -510,7 +519,7 @@ sha256sum /usr/share/cartesi-machine/images/rootfs.ext2
 ```
 
 ``` text
-25bede19be173430251196bde040c8f797261d8b8d793271fbb666d410336537  /usr/share/cartesi-machine/images/rootfs.ext2
+c4a6aa18c06afc298d659a81b868169307ecd8662680b3251d7fc180005ee71c  /usr/share/cartesi-machine/images/rootfs.ext2
 ```
 
 Note that, if the hashes of the files you are using do not match the
@@ -969,7 +978,7 @@ cartesi-machine \
 produces the output
 
 ``` text
-0: 0x35cf7d67e9fa25655756d40adef38f885729e28f2ad0e85797f99b8aa9fab91d
+0: 0x4161eaac8398af4172e5a0a74c87a54c59418ef4c3e503191a3ac21746ffb718
 
          .
         / \
@@ -978,17 +987,17 @@ produces the output
  \       X       \
   \----/  \---/---\
        \    / CARTESI
-44219446: 0xbb5abc2524927d65bd0a840c01d1b067e80a9af4053e640951944e6232ea97db
+44219446: 0x77ae9863557f6f821eaa1e4a1334304abf3b0d2855e295044dfb133d8909bc7d
 ```
 
-The initial state hash `35cf7d67…` is the Merkle tree root hash for the
+The initial state hash `4161eaac…` is the Merkle tree root hash for the
 initial Cartesi Machine state. Since Cartesi Machines are reproducible,
 the initial state hash also works as a *promise* on the result of the
 entire computation.
 
-In other words, the “final state hash” `bb5abc25…` is the “only”
+In other words, the “final state hash” `77ae9863…` is the “only”
 possible outcome for the `--final-hash` at cycle `44219446`, given the
-result of the `--initial-hash` operation was `35cf7d67…`.
+result of the `--initial-hash` operation was `4161eaac…`.
 
 > [!NOTE]
 >
@@ -1018,7 +1027,7 @@ cartesi-machine \
 produces instead the output
 
 ``` text
-0: 0x35cf7d67e9fa25655756d40adef38f885729e28f2ad0e85797f99b8aa9fab91d
+0: 0x4161eaac8398af4172e5a0a74c87a54c59418ef4c3e503191a3ac21746ffb718
 
          .
         / \
@@ -1034,15 +1043,15 @@ Nothing to do.
 
 Halted
 Cycles: 49120357
-49120357: 0x21bad83f8f61fb7d3d3c50d3cabb6833f0976a1e9af5210fcaf89ddf828a8057
+49120357: 0xad26be2627e3f8bc2317edf1d6968790d14f0ef6ce83f82d71cb5b1320b7a172
 ```
 
 Naturally, the initial state hash is the same as before.
 
-However, the final state hash `21bad83f…` now pertains to cycle
+However, the final state hash `ad26be26…` now pertains to cycle
 `49120357`, where the machine is halted. This is the “only” possible
 state hash for a *halted* machine that started from state hash
-`35cf7d67…`.
+`4161eaac…`.
 
 ### Persistent Cartesi Machines
 
@@ -1053,7 +1062,7 @@ command-line option `--store=<directory>`. (In `<directory>`, the `%h`
 escape will be replaced by the state hash in hex.) The machine is stored
 as it was right before `cartesi-machine` returns to the command line.
 For example, to store the machine corresponding to state hash
-`bb5abc25…`
+`77ae9863…`
 
 ``` bash
 cartesi-machine \
@@ -1061,7 +1070,7 @@ cartesi-machine \
     --store="machine-%8h"
 ```
 
-This command creates a directory `machine-0xbb5abc`, containing a
+This command creates a directory `machine-0x77ae98`, containing a
 variety of files that allow the Cartesi Machine emulator to recreate a
 machine state. Every image file is copied into the directory, so no
 external dependencies remain.
@@ -1078,11 +1087,15 @@ If the directory already exists, the operation will fail. (This prevents
 the overwriting of a Cartesi Machine by mistake.) Once created, the
 directory can be compressed and transferred to other hosts. To restore
 the corresponding Cartesi Machine, use the command-line option
-`--load=<directory>`. For example,
+`--load=<directory>`. Besides the machine state, the directory holds
+cached hash-tree data, which is outside the state hash and is not
+checked on load. Load a directory you did not produce with
+`--clear-hash-tree`, which rebuilds that data from the machine state,
+before trusting its state hash. For example,
 
 ``` bash
 cartesi-machine \
-    --load="machine-0xbb5abc" \
+    --load="machine-0x77ae98" \
     --initial-hash \
     --final-hash
 ```
@@ -1091,7 +1104,7 @@ produces the output
 
 ``` text
 Loading machine: please wait
-44219446: 0xbb5abc2524927d65bd0a840c01d1b067e80a9af4053e640951944e6232ea97db
+44219446: 0x77ae9863557f6f821eaa1e4a1334304abf3b0d2855e295044dfb133d8909bc7d
 
         \ /   MACHINE
          '
@@ -1100,16 +1113,16 @@ Nothing to do.
 
 Halted
 Cycles: 49120357
-49120357: 0x21bad83f8f61fb7d3d3c50d3cabb6833f0976a1e9af5210fcaf89ddf828a8057
+49120357: 0xad26be2627e3f8bc2317edf1d6968790d14f0ef6ce83f82d71cb5b1320b7a172
 ```
 
 Note that, other than `--load`, no initialization command-line options
 were used. These initializations were used to define the machine before
 it was stored: their values are implicitly encoded in the stored state.
 The machine continues from where it left off, and reaches the same final
-state hash `21bad83f…`, as if it had never been interrupted.
+state hash `ad26be26…`, as if it had never been interrupted.
 
-Note also that the initial state hash `bb5abc25…` after `--load` matches
+Note also that the initial state hash `77ae9863…` after `--load` matches
 the final state hash before `--store`. After all, they are state hashes
 concerning the state of the same machine at the same cycle. `--load`
 verifies the archive format version recorded in the stored machine, and
@@ -1117,16 +1130,18 @@ the pre-store and post-load state hashes are equal because the same
 machine state is restored.
 
 The `cartesi-machine-stored-hash` command-line utility can be used to
-extract the state hash from a stored Cartesi Machine. The command
+extract the state hash from a stored Cartesi Machine. It reads the hash
+from the cached hash-tree data, so it does not check a directory you did
+not produce. The command
 
 ``` bash
-cartesi-machine-stored-hash machine-0xbb5abc
+cartesi-machine-stored-hash machine-0x77ae98
 ```
 
 produces the output
 
 ``` text
-0xbb5abc2524927d65bd0a840c01d1b067e80a9af4053e640951944e6232ea97db
+0x77ae9863557f6f821eaa1e4a1334304abf3b0d2855e295044dfb133d8909bc7d
 ```
 
 A stored machine can also be cloned. The option
@@ -1143,28 +1158,32 @@ modifications reflect on the loaded directory. Mode `none` is the
 in-memory default: nothing is changed in disk storage. Mode `config`
 operates on-disk only for the memory ranges configured as `shared`. Mode
 `all` keeps every backing store up to date with changes made while the
-machine runs. When `cartesi-machine` exits, the directory already holds
-the machine as it was left, ready to be loaded again, obviating the need
-for the store step. When `clone:` is present, the default mode changes
-from `none` to `all`, since experimenting on a disposable copy is the
-most common reason to clone. Mode `config` requires
-`--revert-mode=none`. Mode `all` supports `--revert-mode=stored` and
-`--revert-mode=none`.
+machine runs. When `cartesi-machine` exits cleanly, the directory
+already holds the machine as it was left, ready to be loaded again,
+obviating the need for the store step. When `clone:` is present, the
+default mode changes from `none` to `all`, since experimenting on a
+disposable copy is the most common reason to clone. Mode `config`
+requires `--revert-mode=none`. Mode `all` supports
+`--revert-mode=stored` and `--revert-mode=none`.
 
-One caveat remains. Process exit does not guarantee that the
-modifications have reached permanent storage. They may still be sitting
-in the host page cache, and a badly timed host crash could leave a
-partial directory on disk. The `sync` key closes this gap. It flushes
-every backing store file, the directory, and its parent to permanent
-storage right before `cartesi-machine` exits. Syncing requires a sharing
-mode other than `none`, since otherwise there is nothing to sync.
+Two caveats remain. The directory holds a valid machine only if
+`cartesi-machine` exits cleanly. A crash or kill can stop the machine
+partway through an instruction and leave the directory in a state no
+execution reaches, so such a directory must be discarded. Even a clean
+exit does not guarantee that the modifications have reached permanent
+storage. They may still be sitting in the host page cache, and a host
+crash or power loss could leave a partial directory on disk. The `sync`
+key closes this second gap. It flushes every backing store file, the
+directory, and its parent to permanent storage right before
+`cartesi-machine` exits. Syncing requires a sharing mode other than
+`none`, since otherwise there is nothing to sync.
 
 For example, the command
 
 ``` bash
 cartesi-machine \
     --revert-mode=none \
-    --load="cloned-machine,clone:machine-0xbb5abc,sharing:all,sync" \
+    --load="cloned-machine,clone:machine-0x77ae98,sharing:all,sync" \
     --final-hash
 ```
 
@@ -1176,7 +1195,7 @@ Loading machine: please wait
 
 Halted
 Cycles: 49120357
-49120357: 0x21bad83f8f61fb7d3d3c50d3cabb6833f0976a1e9af5210fcaf89ddf828a8057
+49120357: 0xad26be2627e3f8bc2317edf1d6968790d14f0ef6ce83f82d71cb5b1320b7a172
 Syncing machine: please wait
 ```
 
@@ -1184,18 +1203,18 @@ No `--store` was given, yet the finished machine is on disk. The command
 
 ``` bash
 cartesi-machine-stored-hash cloned-machine
-cartesi-machine-stored-hash machine-0xbb5abc
+cartesi-machine-stored-hash machine-0x77ae98
 ```
 
 produces the output
 
 ``` text
-0x21bad83f8f61fb7d3d3c50d3cabb6833f0976a1e9af5210fcaf89ddf828a8057
-0xbb5abc2524927d65bd0a840c01d1b067e80a9af4053e640951944e6232ea97db
+0xad26be2627e3f8bc2317edf1d6968790d14f0ef6ce83f82d71cb5b1320b7a172
+0x77ae9863557f6f821eaa1e4a1334304abf3b0d2855e295044dfb133d8909bc7d
 ```
 
-The clone advanced to the final state hash `21bad83f…`, while the source
-still holds the machine at the stored state hash `bb5abc25…`.
+The clone advanced to the final state hash `ad26be26…`, while the source
+still holds the machine at the stored state hash `77ae9863…`.
 
 ### Running as root
 
@@ -1384,7 +1403,7 @@ cartesi-machine \
 The result is as follows
 
 ``` text
-0: 0xa5b39f65c0236b47d317d9ecf3e97527bbce5466241b5e296c4ca4138f16db2d
+0: 0xf86a2ac340a3095c7b0e006f312432762832299dd20966fc7edc6198e9f7e47f
 Storing machine: please wait
 ```
 
@@ -1398,10 +1417,10 @@ cartesi-machine-stored-hash calculator-template/
 we can see from the output
 
 ``` text
-0xa5b39f65c0236b47d317d9ecf3e97527bbce5466241b5e296c4ca4138f16db2d
+0xf86a2ac340a3095c7b0e006f312432762832299dd20966fc7edc6198e9f7e47f
 ```
 
-that the stored template hash is `a5b39f65…`.
+that the stored template hash is `f86a2ac3…`.
 
 Templates are typically used by programs that control the emulator with
 the C++, Lua, or JSON-RPC interfaces.
@@ -1484,12 +1503,12 @@ The output of the command is
 
 ``` text
 Loading machine: please wait
-0: 0xa5b39f65c0236b47d317d9ecf3e97527bbce5466241b5e296c4ca4138f16db2d
+0: 0xf86a2ac340a3095c7b0e006f312432762832299dd20966fc7edc6198e9f7e47f
 ```
 
 In addition, the `pristine-input-proof.lua` file now contains a Lua
 table with the requested proof. The value of field `root_hash` is the
-expected initial state hash `a5b39f65…` seen in the output of the
+expected initial state hash `f86a2ac3…` seen in the output of the
 `cartesi-machine` command. The `target_address` value `0xa0000000` is
 the start of the input NVRAM. The `log2_target_size` value `12` refers
 to the size of the 4KiB input NVRAM. The `target_hash` value `292c23a9…`
@@ -1559,14 +1578,14 @@ This produces the output
 
 ``` text
 Loading machine: please wait
-0: 0xce84c8b11bb52bcec327613c73c3086453887f381aff1548ec1a660d483d1351
+0: 0xce7108017fae72739673a2140c0fa075c69b61cbeebcbdfb07552e3b7c6dce6c
 ```
 
 In addition, the `input-proof.lua` file now contains a Lua table with
 the requested proof, which is produced after the input NVRAM has been
 replaced. The `target_hash` value `d5ea32c1…` reflects the hash computed
-for the input. The `root_hash` value `ce84c8b1…` differs from
-`a5b39f65…` obtained for the template, as expected, and matches the
+for the input. The `root_hash` value `ce710801…` differs from
+`f86a2ac3…` obtained for the template, as expected, and matches the
 final hash printed by the utility. Moreover, the `sibling_hashes`
 entries in the template Cartesi Machine and in the instantiated Cartesi
 Machine remain the same, reflecting the fact that there were no other
@@ -1602,10 +1621,10 @@ Loading machine: please wait
 
 Halted
 Cycles: 70147052
-70147052: 0xdacd538e1a4189441185e14e6943e89396b9f627587c9c3e6167692aa58e25e7
+70147052: 0x17e87710fa6d5c538d11ad3e67b8cfd5ca16c5b08b3ebe60f78b05a3e32df4f8
 ```
 
-The `root_hash` field in the proof `dacd538e…` matches the final state
+The `root_hash` field in the proof `17e87710…` matches the final state
 hash output by the `cartesi-machine` command-line utility. The
 `target_hash` field `1beb375b…` is the hash of the `output.raw` NVRAM.
 To compute it independently, use the `cartesi-hash-tree-hash`
@@ -1648,10 +1667,10 @@ CARTESI_AR_CLINT_LENGTH=786432
 CARTESI_AR_CLINT_START=33554432
 CARTESI_AR_CMIO_RX_BUFFER_LOG2_SIZE=21
 ...
-CARTESI_VERSION_LABEL=''
+CARTESI_VERSION_LABEL='-test2'
 CARTESI_VERSION_MAJOR=0
-CARTESI_VERSION_MINOR=22
-CARTESI_VERSION_NUM=22000
+CARTESI_VERSION_MINOR=23
+CARTESI_VERSION_NUM=23000
 CARTESI_VERSION_PATCH=0
 ```
 
@@ -1684,11 +1703,11 @@ address and port the server will listen to.
 
 > [!NOTE]
 >
-> In this case, since we selected `127.0.0.1:8080`, the client must run
-> in the same container in order to communicate with the server. To be
-> accessible from outside the container, the `--server-address` option
-> would have to refer to an address and port that were *exposed* by the
-> container.
+> In this case, since the server listens on the loopback address
+> `127.0.0.1`, the client must run in the same container in order to
+> communicate with the server. To be accessible from outside the
+> container, the `--server-address` option would have to refer to an
+> address and port that were *exposed* by the container.
 
 To instruct the `cartesi-machine` command-line utility to connect with
 the server, add the command-line option `--remote-address=<address>` to
@@ -2085,9 +2104,10 @@ while ! cartesi-machine \
 cartesi-machine \
     --no-init-splash \
     --remote-address=127.0.0.1:8082 \
+    --remote-address=filename:calc-server.address \
     --no-remote-destroy \
     --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
-    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3,outputs_merkle_root_proof:epoch-0-outputs-merkle-root-proof.lua,print_input_state_hashes \
     --final-hash=epoch-0-state-hash.bin \
     -- /mnt/calc/calc.sh
 ```
@@ -2095,7 +2115,14 @@ cartesi-machine \
 This run instantiates the machine from the `calc.ext2` flash drive and
 advances inputs 0 to 2. Passing `--no-remote-destroy` and omitting
 `--remote-shutdown` leaves both the server and the machine it holds
-alive for the next epoch.
+alive for the next epoch. The client connects to the address given
+explicitly, and when it exits, it records in `calc-server.address` the
+address of the server it leaves alive. Rolling back a rejected input
+replaces the server with a fork taken before that input. The client
+rebinds the fork to the original address. If another process took that
+address in the meantime, the fork keeps its own address and the client
+warns and continues. The second epoch reads its server address from the
+same file, so it finds the server wherever the first left it.
 
 The client shell shows
 
@@ -2106,43 +2133,42 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 73313357
 
 Before input 0
-73313357: 0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78
-73313357: 0x0c2204650667b8af9d4950aec77b855601134c836feb5abfe86e1a24ba11e9ef
+73313357: 0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b
+73313357: 0x1006a229deab56988e3c38549bcc44c77ba1821d021b810b0333f2c2e449f81c
 
 Automatic yield tx-output (2) (0x000184 data)
-Cycles: 116613483
+Cycles: 116599141
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 123186056
+Cycles: 123166704
 Storing output-0-input-0.bin
 Storing input-0-outputs-merkle-root.bin
-Storing input-0-outputs-merkle-root-proof.lua
 
 Before input 1
-123186056: 0xdd7b078e873315ff83019d1d1af0b7a66b907018bcaa29930d85f386526115a4
-123186056: 0x48f4d9e313f69b5100ae533b056a90ef4d7c985dae83813aa0ac8433ca7de498
+123166704: 0x272c6eff59d64b5e6e9521e24a867fab2f6e3f4db06c56a7e9e5424e78edf738
+123166704: 0xf63a08d5e60e2cf65e98490d3e5b72cd0d56194342bc0830cbead70d3bb80848
 
 Automatic yield tx-output (2) (0x000044 data)
-Cycles: 163717503
+Cycles: 163976245
 
 Manual yield rx-rejected (2) (0x000000 data)
-Cycles: 168403653
+Cycles: 168387226
 Storing rejected-output-1-input-1.bin
 
 Before input 2
-123186056: 0xdd7b078e873315ff83019d1d1af0b7a66b907018bcaa29930d85f386526115a4
-123186056: 0xa2c9c9e434c4139a474bfad4b8cbdc9655ee2e5e26179a21c0bf046ee8242328
+123166704: 0x272c6eff59d64b5e6e9521e24a867fab2f6e3f4db06c56a7e9e5424e78edf738
+123166704: 0xe5618a14cf75f9449997b5f57a32b2f4e7ef1ae77e4c0f825c45cdfb09736137
 
 Automatic yield tx-output (2) (0x0002c4 data)
-Cycles: 165405319
+Cycles: 165343230
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 172002413
+Cycles: 171923967
 Storing output-1-input-2.bin
 Storing input-2-outputs-merkle-root.bin
-Storing input-2-outputs-merkle-root-proof.lua
 Storing output-0-input-0-proof.lua
 Storing output-1-input-2-proof.lua
+Storing epoch-0-outputs-merkle-root-proof.lua
 Left alive JSONRPC remote cartesi machine at '127.0.0.1:8082'
 ```
 
@@ -2153,13 +2179,13 @@ transferring information in and out. The first
 the calculator attempted to obtain its first request.
 
 Upon receiving control back, the client prints input index 0 and the
-state hash `b84921b8…`. It loads `input-0.bin` as the next request,
-prints the modified state hash `0c220465…`, and resumes the machine. The
+state hash `abee9bdb…`. It loads `input-0.bin` as the next request,
+prints the modified state hash `1006a229…`, and resumes the machine. The
 calculator evaluates `6*2^1024 + 3*2^512` and emits the result as a
 notice. That emission is an `automatic yield tx-output` at cycle
-`116613483`, which returns control to the client. The client collects
+`116599141`, which returns control to the client. The client collects
 the emitted output and stores it as `output-0-input-0.bin`. The
-`manual yield rx-accepted` at cycle `123186056` signals that input index
+`manual yield rx-accepted` at cycle `123166704` signals that input index
 0 was accepted. At this point the client also stores the outputs Merkle
 root the guest reported, as `input-0-outputs-merkle-root.bin`, and
 double-checks it against its own local computation of the same hash.
@@ -2173,33 +2199,34 @@ before the rejection. Shell pipelines run concurrently, so
 Rejection discards all outputs, such as this notice. For debugging
 purposes, the client saves the notice contents as
 `rejected-output-1-input-1.bin`. The resulting
-`manual yield rx-rejected` at cycle `168403653` rolls the machine state
+`manual yield rx-rejected` at cycle `168387226` rolls the machine state
 back to what it was before the input was processed. The state hash
-before input 2, `dd7b078e…`, is identical to the hash after input 0 was
+before input 2, `272c6eff…`, is identical to the hash after input 0 was
 accepted, which confirms the rejected input left no trace.
 
 Input index 2, with payload `2^2048`, is accepted like the first, so the
 client stores `output-1-input-2.bin` and
-`input-2-outputs-merkle-root.bin`. On each accept the client also writes
-the proof that the outputs Merkle root occupied the machine’s CMIO tx
-buffer, as `input-0-outputs-merkle-root-proof.lua` and
-`input-2-outputs-merkle-root-proof.lua`. The two output proofs for this
-epoch, `output-0-input-0-proof.lua` and `output-1-input-2-proof.lua`,
-are written at the end, once all of the epoch’s outputs are known. Each
-proves that one of the epoch’s outputs belongs to the tree the final
-outputs Merkle root commits to. The `--final-hash` option saves the
-machine state hash at the end of the epoch, as `epoch-0-state-hash.bin`,
-the state a dispute over this epoch would settle on.
+`input-2-outputs-merkle-root.bin`. After the epoch’s last input, the
+client writes the epoch’s proofs.
+`epoch-0-outputs-merkle-root-proof.lua` holds state value proofs of
+three words of the final state. The `iflags_Y` and `htif_tohost` words
+show that the machine is in a manual yield with reason rx-accepted, so
+the tx-buffer word holds the epoch’s outputs Merkle root. The two output
+proofs, `output-0-input-0-proof.lua` and `output-1-input-2-proof.lua`,
+each prove that one of the epoch’s outputs belongs to the tree that root
+commits to. The `--final-hash` option saves the machine state hash at
+the end of the epoch, as `epoch-0-state-hash.bin`, the state a dispute
+over this epoch would settle on.
 
 Now run the client to process the second epoch in the same server
 
 ``` bash
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8082 \
+    --remote-address=filename:calc-server.address \
     --no-remote-create \
     --remote-shutdown \
-    --cmio-advance-state=input_file_index_begin:3,input_file_index_end:6,last_output_proof:output-1-input-2-proof.lua,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:3,input_file_index_end:6,last_output_proof:output-1-input-2-proof.lua,outputs_merkle_root_proof:epoch-1-outputs-merkle-root-proof.lua,print_input_state_hashes \
     --cmio-inspect-state=query:query.bin,print_query_state_hashes
 ```
 
@@ -2221,8 +2248,10 @@ these are awkward to compute on the blockchain, whose native arithmetic
 works on fixed-width 256-bit integers and has no fractions. Their
 outputs continue the global output index, becoming outputs 2, 3, and 4.
 The file range selects `input-3.bin` through `input-5.bin`, and `%i`
-uses those same indices in output, report, and proof filenames. The run
-passes `--remote-shutdown` to stop the server once the epoch is done.
+uses those same indices in output, report, and proof filenames. The
+outputs Merkle root proof of this epoch goes to
+`epoch-1-outputs-merkle-root-proof.lua`. The run passes
+`--remote-shutdown` to stop the server once the epoch is done.
 
 The client shell now shows
 
@@ -2230,60 +2259,58 @@ The client shell now shows
 Connected to JSONRPC remote cartesi machine at '127.0.0.1:8082'
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 172002413
+Cycles: 171923967
 
 Before input 3
-172002413: 0x9a4977e9e19e9bc4e38c52c6cb41e469334ccbe67711d4de8bfd58e473c62afe
-172002413: 0x56800d3d331a792838823eff46655e8dd34779b88ebe1ceca5be1b7f80e0fc2a
+171923967: 0x0c2bb1776026375c91d1918072054e7a1e81d0b730e8d790601fc7aee0c0b990
+171923967: 0x4c0df85b5074590b431e5aa4ea1c610a77b29c2a31a9cddeb137e79a6554c4e1
 
 Automatic yield tx-output (2) (0x0000e4 data)
-Cycles: 213027965
+Cycles: 212626417
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 219403464
+Cycles: 219338423
 Storing output-2-input-3.bin
 Storing input-3-outputs-merkle-root.bin
-Storing input-3-outputs-merkle-root-proof.lua
 
 Before input 4
-219403464: 0x93d41f758fdfbbb1fb578db436bd3e2385b50e3831702ae12de769d78a41ce03
-219403464: 0x8698c8e11802e6deabafc91f3ca95775f79894d7420e1259d540527a8d1b5a71
+219338423: 0x08f258911c305d9fde3d4e56c825b9517cca64cf7d3f7f8c35b8c400f37f3328
+219338423: 0x467a957572614cfb8520a5b4ee8a35d4acab5c38414f85ba4ea2e7136f1f6268
 
 Automatic yield tx-output (2) (0x0000a4 data)
-Cycles: 260360266
+Cycles: 260296587
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 267121469
+Cycles: 267103441
 Storing output-3-input-4.bin
 Storing input-4-outputs-merkle-root.bin
-Storing input-4-outputs-merkle-root-proof.lua
 
 Before input 5
-267121469: 0xf0fa12e7f2ae943f2f5bd53348b348788fcb7ec9adc7862916837031498dcbbb
-267121469: 0x4cbad63e4cf36ffdffc021d46b0cfdbecefc00dd7af4e5b64600f6cd64ddb208
+267103441: 0xf2544b00fce41ae3efc922424f374563c9de34f4c1f59aabba123e8c8d277c5b
+267103441: 0x8668d1a7d6304ef1053b1e8bfdc5791883a505a7adffb704f3564b13718e2577
 
 Automatic yield tx-output (2) (0x0000c4 data)
-Cycles: 307636692
+Cycles: 307670419
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 314344497
+Cycles: 314435522
 Storing output-4-input-5.bin
 Storing input-5-outputs-merkle-root.bin
-Storing input-5-outputs-merkle-root-proof.lua
 Storing output-2-input-3-proof.lua
 Storing output-3-input-4-proof.lua
 Storing output-4-input-5-proof.lua
+Storing epoch-1-outputs-merkle-root-proof.lua
 
 Before query
-314344497: 0xaf238056a15e7f0cd997f1c692dae36eee2907c19260cd83d932577d551378e6
-314344497: 0x3b2b00edfde7d3c310719d83530d13ed913b506dd6f29cd2bafe5838bbc659f3
+314435522: 0xde30d030605ceaf85bd2a72d95a4b5a760c6a3975341fb06fa01c5f65bbff2bd
+314435522: 0x48167ff518b13aa00b8b3836dc6aaaa132c4f53ef601ed8f0f5f8ee5d921eebe
 
 Automatic yield tx-report (4) (0x000048 data)
-Cycles: 355432123
+Cycles: 355215516
 Storing query-report-0.bin
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 361748644
+Cycles: 361892585
 
 After query
 Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8082'
@@ -2395,7 +2422,7 @@ as follows
 
 Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 73313357
-73313357: 0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78
+73313357: 0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b
 Storing machine: please wait
 ```
 
@@ -2447,23 +2474,23 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 73313357
 
 Before input 0
-73313357: 0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78
-73313357: 0x0c2204650667b8af9d4950aec77b855601134c836feb5abfe86e1a24ba11e9ef
+73313357: 0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b
+73313357: 0x1006a229deab56988e3c38549bcc44c77ba1821d021b810b0333f2c2e449f81c
 
 Automatic yield tx-output (2) (0x000184 data)
-Cycles: 116613483
+Cycles: 116599141
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 123186056
+Cycles: 123166704
 Storing output-0-input-0.bin
 ...
-Cycles: 307636692
+Automatic yield tx-output (2) (0x0000c4 data)
+Cycles: 307670419
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 314344497
+Cycles: 314435522
 Storing output-4-input-5.bin
 Storing input-5-outputs-merkle-root.bin
-Storing input-5-outputs-merkle-root-proof.lua
 Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8083'
 ```
 
@@ -2488,25 +2515,39 @@ Stored mode performs the whole epoch in one invocation without a server
 cartesi-machine \
     --revert-mode=stored \
     --load="machine,clone:rolling-calculator-template,sharing:all" \
-    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:6,output_proof:,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:6,output_proof:,outputs_merkle_root_proof:outputs-merkle-root-proof.lua,print_input_state_hashes \
     --final-hash=final-hash.bin
 ```
 
-Before modifying an input boundary, the command syncs `machine`, clones
-it to `machine.revert`, and syncs the clone. An accepted input syncs
-`machine` before removing the snapshot. A rejected input or
-inspect-state query discards `machine`, durably renames the snapshot
-back to it, and reloads it. Stored-machine operations never overwrite an
-existing directory, so the initial clone check fails without touching
-`machine.revert` if it already exists.
+`machine.revert` always holds a synced copy of the last committed state.
+At the start, and after each accepted input, the command destroys the
+loaded machine, syncs the `machine` directory, clones it to
+`machine.revert.tmp`, syncs the clone, removes the old `machine.revert`,
+renames the clone to `machine.revert`, and loads `machine` again. A
+rejected input or inspect-state query removes `machine`, clones
+`machine.revert` back to it, and loads it again, leaving
+`machine.revert` in place. A clean exit syncs `machine` and then removes
+`machine.revert`. After a crash or kill, the names left on disk tell
+where the last committed state is. If `machine.revert` exists, it holds
+that state, so discard `machine` and `machine.revert.tmp` and clone
+`machine.revert` back to `machine`. If `machine.revert` is missing but
+`machine.revert.tmp` exists, the command stopped inside a commit after
+syncing `machine`, so `machine` holds that state and
+`machine.revert.tmp` can be discarded. If neither exists, the command
+stopped before its first commit, and the run starts over. Stored-machine
+operations never overwrite an existing directory, so the first commit
+fails without touching `machine.revert` or `machine.revert.tmp` if
+either already exists.
 
-The output files, rejected output, outputs Merkle roots, and root
-state-value proofs are byte-for-byte identical to those of the
-server-backed epoch runs. Output proofs are disabled by passing an empty
-`output_proof` filename pattern because this example does not use them.
-Loading `machine` after the command exits reproduces `final-hash.bin`,
-confirming that the accepted final state is durable. An abbreviated log
-shows the six inputs advancing in the same invocation
+The output files, rejected output, and outputs Merkle roots are
+byte-for-byte identical to those of the server-backed epoch runs. So is
+the outputs Merkle root proof, which matches the one written at the end
+of the second epoch because both runs end in the same state. Output
+proofs are disabled by passing an empty `output_proof` filename pattern
+because this example does not use them. Loading `machine` after the
+command exits reproduces `final-hash.bin`, confirming that the accepted
+final state is durable. An abbreviated log shows the six inputs
+advancing in the same invocation
 
 ``` text
 Loading machine: please wait
@@ -2515,25 +2556,25 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 73313357
 
 Before input 0
-73313357: 0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78
-73313357: 0x0c2204650667b8af9d4950aec77b855601134c836feb5abfe86e1a24ba11e9ef
+73313357: 0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b
+73313357: 0x1006a229deab56988e3c38549bcc44c77ba1821d021b810b0333f2c2e449f81c
 
 Automatic yield tx-output (2) (0x000184 data)
-Cycles: 116613483
+Cycles: 116599141
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 123186056
+Cycles: 123166704
 Storing output-0-input-0.bin
 Storing input-0-outputs-merkle-root.bin
 ...
 Automatic yield tx-output (2) (0x0000c4 data)
-Cycles: 307636692
+Cycles: 307670419
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 314344497
+Cycles: 314435522
 Storing output-4-input-5.bin
 Storing input-5-outputs-merkle-root.bin
-Storing input-5-outputs-merkle-root-proof.lua
+Storing outputs-merkle-root-proof.lua
 ```
 
 ### Computation hashes
@@ -2553,13 +2594,13 @@ after each uarch cycle.
 
 We compute them for the first epoch of the calculator, inputs 0 to 2 fed
 to its stored template. With the template and the encoded inputs in the
-working directory, start a `cartesi-jsonrpc-machine` server at
-`127.0.0.1:8095` as in the previous sections, and run the client
+working directory, start a `cartesi-jsonrpc-machine` server as in the
+previous sections, and run the client
 
 ``` bash
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8095 \
+    --remote-address=127.0.0.1:8084 \
     --remote-shutdown \
     --load=rolling-calculator-template \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
@@ -2569,7 +2610,7 @@ cartesi-machine \
 The mcycle computation hash is printed at the end of the epoch
 
 ``` text
-Mcycle computation hash: 0x1f384c90ad99c3ec1681cf23362c1d3428ab493551176f285cbc516cc6c19f3d
+Mcycle computation hash: 0x7dbebe159ee27081e7a0a2a3a7b6d8fe5510a1859a7d6a0f6ac9fba2cc8d9de1
 ```
 
 The `log2_mcycle_period` sub-key gives *p*, the log base 2 of the
@@ -2587,7 +2628,7 @@ them
 
 ``` bash
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8088
+    --server-address=127.0.0.1:8085
 ```
 
 From a different shell into the same container, run the first execution
@@ -2595,7 +2636,7 @@ From a different shell into the same container, run the first execution
 ``` bash
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8088 \
+    --remote-address=127.0.0.1:8085 \
     --no-remote-destroy \
     --load=rolling-calculator-template \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:1,resumable:true,end_epoch:false,state_hash:epoch-state.bin,outputs_frontier:outputs.json,output_proof: \
@@ -2606,8 +2647,8 @@ Passing `end_epoch:false` leaves the epoch open, and
 `--no-remote-destroy` keeps the machine in the server. The `state_hash`
 file receives the machine state hash after the last completed input,
 `outputs_frontier` the state of the outputs Merkle tree, and `frontier`
-in `--mcycle-computation-hash` the state of the computation hash tree.
-(Both are frontiers, explained under [The hash tree
+in `--mcycle-computation-hash` the state of the computation hash under
+construction. (Both are frontiers, explained under [The hash tree
 frontier](#the-hash-tree-frontier) in the blockchain perspective.)
 Output proofs across executions also need `output_hashes` and
 `output_input_indices`, which this example does not use, so it disables
@@ -2618,7 +2659,7 @@ second execution
 ``` bash
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8088 \
+    --remote-address=127.0.0.1:8085 \
     --no-remote-create \
     --remote-shutdown \
     --cmio-advance-state=input_file_index_begin:1,input_file_index_end:3,resumable:true,begin_epoch:false,state_hash:epoch-state.bin,outputs_frontier:outputs.json,output_proof: \
@@ -2627,11 +2668,11 @@ cartesi-machine \
 
 Passing `begin_epoch:false` continues the epoch from the saved files,
 after checking that the machine found in the server matches
-`state_hash`. The default `end_epoch:true` then seals the computation
-hash tree and prints
+`state_hash`. The default `end_epoch:true` then completes the
+computation hash and prints
 
 ``` text
-Mcycle computation hash: 0x1f384c90ad99c3ec1681cf23362c1d3428ab493551176f285cbc516cc6c19f3d
+Mcycle computation hash: 0x7dbebe159ee27081e7a0a2a3a7b6d8fe5510a1859a7d6a0f6ac9fba2cc8d9de1
 ```
 
 the same hash the single execution produced. An execution with both
@@ -2647,23 +2688,23 @@ The uarch cycle computation hash needs no epoch files. Replacing
 computes it for the period `mcycle_period_index` selects, with the same
 `log2_mcycle_period`. Each input owns 2<sup>48</sup> mcycles of the
 epoch, counted from the state that receives it, so the periods of input
-*i* start at index *i* times 2<sup>48-p</sup>. Period 48703 is the one
+*i* start at index *i* times 2<sup>48-p</sup>. Period 48684 is the one
 in which input 0 stops, so only input 0 needs to run
 
 ``` bash
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8087 \
+    --remote-address=127.0.0.1:8086 \
     --remote-shutdown \
     --load=rolling-calculator-template \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:1 \
-    --uarch-cycle-computation-hash=log2_mcycle_period:10,mcycle_period_index:48703
+    --uarch-cycle-computation-hash=log2_mcycle_period:10,mcycle_period_index:48684
 ```
 
 The hash is printed as soon as the period completes
 
 ``` text
-Uarch cycle computation hash: 0x7cfe46f6051e50bcbdc6fc43d22a558d209851a7330c5df694a7f218045757ea
+Uarch cycle computation hash: 0x0968414a6acdefb082c8c8d64270aff536e23861ec21b3c11d1b75972da9bb59
 ```
 
 A period in a later input does not require running the epoch from its
@@ -2876,22 +2917,22 @@ The output is
 
 ``` text
 Loading machine: please wait
-0: 0xce84c8b11bb52bcec327613c73c3086453887f381aff1548ec1a660d483d1351
-70147042: 0xa40ed2d8a959da6cd406e994cd5ff23822c80420ad390476061653838d612456
-70147043: 0xa96784bc5c2050b755ed30adbf5bc354326a7b39c64aabd195d828fc68b88122
-70147044: 0x209f993267d50bc5d35d11d1b726835f37210fe20ab924224a89bf5f47919ab6
-70147045: 0xe14339c2d7cd2d8ff55874cb0b4f435f93b123d9af0ec0e747367bc110f83960
-70147046: 0x5d8c70b84c7dd979f66d9bba88118d0997b09200a537de3675bb909d90b267fe
-70147047: 0xe3edf5ac6afcce0c9bea6c40cf866053d5dec3d0a12d5556fcbc3241d435caca
-70147048: 0x822995c61d44c9acdf0c8f1d63d3202d273ba9d9d0a685662c95a0ae00956c87
-70147049: 0x79f648b2c3d9bec01e8addbb4214ad9f158166eca83d6af3d6e9e43a128bf380
-70147050: 0xbf143c176d06999675d14f774e1b4bcb4e34345bd916428c683235d066751c44
-70147051: 0x1c209447c7db0fcac5ee6da3337fcf8980be73db16f2e8af186d843e67c455cc
-70147052: 0xdacd538e1a4189441185e14e6943e89396b9f627587c9c3e6167692aa58e25e7
+0: 0xce7108017fae72739673a2140c0fa075c69b61cbeebcbdfb07552e3b7c6dce6c
+70147042: 0xcbaecbc59f9b8a0960d103fca4395135371fe103a519bd8e8b05fefaae9117ad
+70147043: 0x3352b40e92578237477b5e12b2db4e9ae4d9f4218e2bacefa5bcf75ab355c198
+70147044: 0x1297c03c138b76598b780bf56315123840629696de75259e317d8b10258f5e8b
+70147045: 0x77b92ec9c50c6007f244d47b52c1b027d00db83c3ece763697ffa5ca6a3bf943
+70147046: 0x0ecbcc7eba23c63c3579d6c3e403117b0f75f2805fa85256949881b7ff9ad479
+70147047: 0xf4f2c0c82f6e66933cb13fb5ec199e691e17e84e04769d3d1a227c45eddfea24
+70147048: 0xb27f44876f4935617503dffbfafe7b2e670735ddc1b9bacf8ba7184f48468e42
+70147049: 0x76dc0274bb625d9419824623d330c5ec59a85b8e218bad45a3a189aed6f834ae
+70147050: 0xf0b81660855af7f06dccece192f9a24a56406c5a28f21a55da1eb1bc12b8ac03
+70147051: 0x193beba34e4cc0f5cc9ff2e7a81164fc1c048ccd164facb13f71ec2cd32b06d3
+70147052: 0x17e87710fa6d5c538d11ad3e67b8cfd5ca16c5b08b3ebe60f78b05a3e32df4f8
 
 Halted
 Cycles: 70147052
-70147052: 0xdacd538e1a4189441185e14e6943e89396b9f627587c9c3e6167692aa58e25e7
+70147052: 0x17e87710fa6d5c538d11ad3e67b8cfd5ca16c5b08b3ebe60f78b05a3e32df4f8
 ```
 
 The command-line option `--dump-memory-ranges[=<dir>]` causes the
@@ -2954,7 +2995,7 @@ that issues a putchar command to the HTIF console device by writing it
 to the `htif.tohost` CSR. That single main processor instruction expands
 into many uarch instructions. The one that actually triggers the host to
 emit a character is an `ecall` with `a7 = UARCH_ECALL_FN_PUTCHAR` and
-`a0 = 0x0a`. This happens when `uarch_cycle` is `2251`.
+`a0 = 0x0a`. This happens when `uarch_cycle` is `2248`.
 
 In the following command, the `--max-mcycle` and `--max-uarch-cycle`
 options tell `cartesi-machine` to stop just before the putchar `ecall`.
@@ -2965,7 +3006,7 @@ produced by a single uarch step:
 ``` bash
 cartesi-machine \
     --max-mcycle=44219446 \
-    --max-uarch-cycle=2251 \
+    --max-uarch-cycle=2248 \
     --log-step-uarch
 ```
 
@@ -2974,16 +3015,16 @@ producing the log
 ``` text
 Gathering uarch step log: please wait
 begin step
-  1: read uarch.cycle@0x400008(4194312): 0x8cb(2251)
+  1: read uarch.cycle@0x400008(4194312): 0x8c8(2248)
   2: read uarch.halt@0x400000(4194304): 0x0(0)
-  3: read uarch.pc@0x400010(4194320): 0x600b38(6294328)
-  4: read uarch.ram@0x600b38(6294328): 0x806700000073(141179869986931)
+  3: read uarch.pc@0x400010(4194320): 0x600b88(6294408)
+  4: read uarch.ram@0x600b88(6294408): 0x806700000073(141179869986931)
   begin ecall
     5: read uarch.x17@0x4000a0(4194464): 0x2(2)
     6: read uarch.x10@0x400068(4194408): 0xa(10)
-    7: write uarch.pc@0x400010(4194320): 0x600b38(6294328) -> 0x600b3c(6294332)
+    7: write uarch.pc@0x400010(4194320): 0x600b88(6294408) -> 0x600b8c(6294412)
   end ecall
-  8: write uarch.cycle@0x400008(4194312): 0x8cb(2251) -> 0x8cc(2252)
+  8: write uarch.cycle@0x400008(4194312): 0x8c8(2248) -> 0x8c9(2249)
   9: read uarch.halt@0x400000(4194304): 0x0(0)
 end step
 ```
@@ -3345,14 +3386,17 @@ ISA specification. The Cartesi-specific registers (`iprv`, `iunrep`,
 `iflags`, the HTIF and CMIO interfaces) are described under the
 [architecture section](#system-architecture) from the guest perspective.
 The `processor.registers.htif` sub-table holds the initial values of
-HTIF state. Field `iconsole` is a bitmask declaring whether the emulator
-honors console-putchar and console-getchar commands. Defaults to
-putchar-only. The `cartesi-machine` command-line option
-`-i`/`--htif-console-getchar` enables getchar. Field `iyield` is a
-bitmask declaring whether the emulator honors automatic and manual yield
-commands. Defaults to both enabled. The `cartesi-machine` command-line
-options `--no-htif-yield-automatic` and `--no-htif-yield-manual` clear
-the corresponding bits.
+HTIF state. Field `ihalt` is a bitmask declaring the available halt
+commands. Its only command, `HTIF_HALT_CMD_HALT`, is mandatory, so the
+emulator honors it whatever the value of `ihalt`. Field `iconsole` is a
+bitmask declaring whether the emulator honors console-putchar and
+console-getchar commands. Defaults to putchar-only. The
+`cartesi-machine` command-line option `-i`/`--htif-console-getchar`
+enables getchar. Field `iyield` is a bitmask declaring whether the
+emulator honors automatic and manual yield commands. Defaults to both
+enabled. The `cartesi-machine` command-line options
+`--no-htif-yield-automatic` and `--no-htif-yield-manual` clear the
+corresponding bits.
 
 The `uarch` entry describes the microarchitecture state. The
 `uarch.processor` field controls the uarch processor. Like the main
@@ -3484,7 +3528,7 @@ return {
     },
     registers = {
       clint = {
-        mtimecmp = 0x0,
+        mtimecmp = 0xffffffffffffffff,
       },
       f0 = 0x0,
       f1 = 0x0,
@@ -3536,7 +3580,7 @@ return {
       imcyclemax = 0xffffffffffffffff,
       iprv = 0x3,
       iunrep = 0x0,
-      marchid = 0x16,
+      marchid = 0x17,
       mcause = 0x0,
       mcounteren = 0x0,
       mcycle = 0x0,
@@ -3545,7 +3589,7 @@ return {
       mepc = 0x0,
       mideleg = 0x0,
       mie = 0x0,
-      mimpid = 0x16,
+      mimpid = 0x17,
       mip = 0x0,
       misa = 0x800000000014112d,
       mscratch = 0x0,
@@ -3715,7 +3759,7 @@ cartesi-machine \
 builds a Cartesi Machine that, when run, lists the contents of the
 `/bin/` directory before gracefully halting. The kernel `linux.bin` and
 root file-system `rootfs.ext2` come from the defaults under
-`/usr/share/cartesi-machine/images/`.
+`/usr/share/cartesi-machine/images`.
 
 The command-line option `--store-config[=<filename>]` makes the utility
 capture the initial machine configuration. Without an argument, the
@@ -4432,7 +4476,7 @@ cartesi-machine \
 ```
 
 ``` text
-0: 0x35cf7d67e9fa25655756d40adef38f885729e28f2ad0e85797f99b8aa9fab91d
+0: 0x4161eaac8398af4172e5a0a74c87a54c59418ef4c3e503191a3ac21746ffb718
 
          .
         / \
@@ -4448,7 +4492,7 @@ Nothing to do.
 
 Halted
 Cycles: 49120357
-49120357: 0x21bad83f8f61fb7d3d3c50d3cabb6833f0976a1e9af5210fcaf89ddf828a8057
+49120357: 0xad26be2627e3f8bc2317edf1d6968790d14f0ef6ce83f82d71cb5b1320b7a172
 ```
 
 Note that the initial state hashes and the final state hashes match, as
@@ -4822,7 +4866,7 @@ shell into the same playground container (for example, by running
 
 ``` bash
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8084
+    --server-address=127.0.0.1:8087
 ```
 
 Now, instead of using the `cartesi-machine` command-line utility to
@@ -4831,15 +4875,15 @@ shell
 
 ``` bash
 lua5.4 run-remote-config.lua \
-    127.0.0.1:8084 \
+    127.0.0.1:8087 \
     config-nothing-to-do
 ```
 
 The client shell produces
 
 ``` text
-Connecting to remote cartesi machine at '127.0.0.1:8084'
-Connected: remote version is 0.8.0
+Connecting to remote cartesi machine at '127.0.0.1:8087'
+Connected: remote version is 0.9.0
 
 Halted
 Cycles: 49120357
@@ -4936,6 +4980,7 @@ server calculator [example](#rolling-cartesi-machines)):
 local cartesi = require("cartesi")
 local cartesi_jsonrpc = require("cartesi.jsonrpc")
 local evmu = require("cartesi.evmu")
+local util = require("cartesi.util")
 
 local EVM_ADVANCE = "EvmAdvance(uint256 chain_id, address app_contract, address msg_sender, "
     .. "uint256 block_number, uint256 block_timestamp, uint256 prev_randao, uint256 index, bytes payload)"
@@ -5001,12 +5046,19 @@ local function commit(_)
     backup_machine = nil
 end
 
+-- Another process may take the address once it is released, so the restored server may have to stay where it is
+local try_rebind_server = util.protect(function(m, address)
+    return m:rebind_server(address)
+end)
+
 local function revert(m)
     assert(backup_machine, "no snapshot to revert to")
     local address = m:get_server_address()
     m:shutdown_server()
     m:swap(backup_machine)
-    m:rebind_server(address)
+    if not try_rebind_server(m, address) then
+        stderr("restored server stays at '%s'\n", m:get_server_address())
+    end
     backup_machine = nil
 end
 
@@ -5061,8 +5113,10 @@ machine based on the `"rolling-calculator-template"`. The
 `machine:fork_server()` call creates a backup server with a copy of the
 current state. On rejection, the script shuts down the server that
 rejected the input, swaps the backup handle into `machine`, and rebinds
-it to the original server address. On acceptance, it shuts down the
-now-stale backup.
+it to the original server address. If another process took that address
+in the meantime, the restored server keeps the address of the fork and
+the script reports it. On acceptance, it shuts down the now-stale
+backup.
 
 It then enters its main loop, which is executed until the machine halts.
 For each iteration, the script invokes `machine:run(math.maxinteger)` to
@@ -5103,7 +5157,7 @@ same docker container (for example, by running
 
 ``` bash
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8085
+    --server-address=127.0.0.1:8088
 ```
 
 Then, run the `run-rolling-calculator.lua` client script in the other
@@ -5112,7 +5166,7 @@ shell
 ``` bash
 printf '6*2^1024 + 3*2^512' > expression-0.txt
 printf '1+(' > expression-1.txt
-lua5.4 run-rolling-calculator.lua 127.0.0.1:8085
+lua5.4 run-rolling-calculator.lua 127.0.0.1:8088
 ```
 
 The client prints the connection status to the console and then feeds
@@ -5123,8 +5177,8 @@ the input. Finally, when the expression files run out, the client script
 exits and shuts down the server. The full transcript is
 
 ``` text
-Connecting to remote cartesi machine at '127.0.0.1:8085'
-Connected: remote version is 0.8.0
+Connecting to remote cartesi machine at '127.0.0.1:8088'
+Connected: remote version is 0.9.0
 feeding expression 0
 6*2^1024 + 3*2^512
 result is
@@ -5159,7 +5213,10 @@ machine state.
 Disputes are settled over the machine state hash at the end of an epoch.
 The latest outputs Merkle root sits in the tx-buffer in that state. A
 [state value proof](#state-value-proofs-1) of the tx-buffer word it
-occupies ties it to the state hash. Therefore, once the [verification
+occupies ties it to the state hash. The tx-buffer word holds the outputs
+Merkle root only when the machine is in a manual yield with reason
+rx-accepted. State value proofs of the `iflags_Y` and `htif_tohost`
+words show that it is. Therefore, once the [verification
 game](#verification-game) settles the state hash, the outputs Merkle
 root is settled with it. The blockchain then verifies any output with
 its *output proof* alone, checking that the leaf `keccak256(<output>)`
@@ -5183,16 +5240,18 @@ frontier](#the-hash-tree-frontier) in the Blockchain perspective.
 
 The following script extends the Rolling Cartesi Machine calculator
 [example](#rolling-cartesi-machines-1) to collect output proofs and the
-state-value proof for the outputs Merkle root. It buffers the outputs of
-each input until the input’s verdict is known. On accept, it folds the
-buffered outputs into the running frontier, checks the resulting root
-against the outputs Merkle root the guest wrote to the tx buffer, and
-saves the state value proof of that tx-buffer word, obtained with
-`machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)`,
-whose `target_hash` equals `cartesi.keccak256(<root hash>)`. On reject,
-it simply discards the buffered outputs, leaving the tree untouched.
-Once the epoch closes, it generates the per-output proofs against the
-final root and verifies each with the same `verify_slice` used above.
+outputs Merkle root proof. It buffers the outputs of each input until
+the input’s verdict is known. On accept, it folds the buffered outputs
+into the running frontier and checks the resulting root against the
+outputs Merkle root the guest wrote to the tx buffer. On reject, it
+simply discards the buffered outputs, leaving the tree untouched. Once
+the epoch closes, it saves the outputs Merkle root proof, with the
+`iflags_Y`, `htif_tohost`, and tx-buffer words of the final state. The
+script’s `prove_machine_word` function reads the word that contains an
+address and obtains the word’s state value proof with
+`machine:get_proof(<word address>, cartesi.HASH_TREE_LOG2_WORD_SIZE)`.
+The script then generates the per-output proofs against the final root
+and verifies each with the same `verify_slice` used above.
 
 ``` lua
 -- Load the JSON-RPC submodule, the EVM ABI helpers, and the hash-tree helpers
@@ -5275,12 +5334,19 @@ local function commit(_)
     backup_machine = nil
 end
 
+-- Another process may take the address once it is released, so the restored server may have to stay where it is
+local try_rebind_server = util.protect(function(m, address)
+    return m:rebind_server(address)
+end)
+
 local function revert(m)
     assert(backup_machine, "no snapshot to revert to")
     local address = m:get_server_address()
     m:shutdown_server()
     m:swap(backup_machine)
-    m:rebind_server(address)
+    if not try_rebind_server(m, address) then
+        stderr("restored server stays at '%s'\n", m:get_server_address())
+    end
     backup_machine = nil
 end
 
@@ -5291,7 +5357,7 @@ local output_hashes = {} -- keccak256 leaf of every accepted output, in order
 local output_inputs = {} -- the input index each accepted output came from
 local pending_outputs = {} -- outputs of the current input, buffered until its verdict is known
 
--- On accept, fold the input's outputs into the tree and save its tx-buffer root-hash proof
+-- On accept, fold the input's outputs into the tree and check the outputs Merkle root the guest wrote
 local function flush_accepted(input_index, root_hash)
     for _, output in ipairs(pending_outputs) do
         local leaf = cartesi.keccak256(output)
@@ -5302,11 +5368,24 @@ local function flush_accepted(input_index, root_hash)
     pending_outputs = {}
     assert(#root_hash == cartesi.HASH_SIZE, "expected outputs Merkle root in tx buffer")
     assert(hash_tree.frontier_get_root_hash(running_frontier) == root_hash, "outputs Merkle root mismatch")
-    local proof = machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
-    assert(proof.root_hash == machine:get_root_hash(), "proof root mismatch")
-    assert(proof.target_hash == cartesi.keccak256(root_hash), "tx buffer does not hold the outputs Merkle root")
-    hash_tree.verify_slice(proof)
-    save_proof(proof, string.format("input-%d-outputs-merkle-root-proof.lua", input_index))
+end
+
+-- Return the data of the machine word that contains the address, and its proof
+local function prove_machine_word(m, address)
+    local log2_word_size = cartesi.HASH_TREE_LOG2_WORD_SIZE
+    local word_address = address & ~((1 << log2_word_size) - 1)
+    return m:read_memory(word_address, 1 << log2_word_size), m:get_proof(word_address, log2_word_size)
+end
+
+-- At epoch close, prove the machine accepted its last input with the outputs Merkle root in the tx buffer
+local function save_outputs_merkle_root_proof(m)
+    local proof = {}
+    proof.iflags_y_data, proof.iflags_y_proof = prove_machine_word(m, cartesi.machine:get_reg_address("iflags_Y"))
+    proof.htif_tohost_data, proof.htif_tohost_proof =
+        prove_machine_word(m, cartesi.machine:get_reg_address("htif_tohost"))
+    proof.tx_buffer_data, proof.tx_buffer_proof = prove_machine_word(m, cartesi.AR_CMIO_TX_BUFFER_START)
+    assert(proof.tx_buffer_data == hash_tree.frontier_get_root_hash(running_frontier), "outputs Merkle root mismatch")
+    save_proof(proof, "outputs-merkle-root-proof.lua")
 end
 
 -- Run the machine until it halts or the expressions run out
@@ -5325,6 +5404,7 @@ repeat
             end
             local input <close> = io.open(string.format("expression-%d.txt", i), "r")
             if not input then
+                save_outputs_merkle_root_proof(machine)
                 break
             end
             local expr = assert(input:read("l"), string.format("empty expression file: expression-%d.txt", i))
@@ -5381,15 +5461,14 @@ printf '6*2^1024 + 3*2^512' > expression-0.txt
 lua5.4 run-rolling-calculator-output-proofs.lua 127.0.0.1:8089
 ```
 
-The expression `6*2^1024 + 3*2^512` produces the expected result, after
-which the client saves the tx-buffer-word proof tying the outputs Merkle
-root into the accepting state, and then, once the expressions run out
-and the epoch closes, the per-output proof against that root. The full
-transcript is
+The expression `6*2^1024 + 3*2^512` produces the expected result. Once
+the expressions run out and the epoch closes, the client saves the
+outputs Merkle root proof and the per-output proof against that root.
+The full transcript is
 
 ``` text
 Connecting to remote cartesi machine at '127.0.0.1:8089'
-Connected: remote version is 0.8.0
+Connected: remote version is 0.9.0
 feeding expression 0
 6*2^1024 + 3*2^512
 result is
@@ -5398,13 +5477,13 @@ result is
 73495708458383684478649003115037698421037988831222501494715481595948
 96901677837132352593468675094844090688678579236903861342030923488978
 36036892526733668721977278692363075584
-saved input-0-outputs-merkle-root-proof.lua
+saved outputs-merkle-root-proof.lua
 saved output-0-input-0-proof.lua
 ```
 
-The same proofs are what the `cartesi-machine` command-line utility
-writes for each accepted input and output when given
-`--cmio-advance-state=outputs_merkle_root_proof:<pattern>,output_proof:<pattern>`.
+The `cartesi-machine` command-line utility writes the same proofs at the
+end of an epoch when given
+`--cmio-advance-state=outputs_merkle_root_proof:<filename>,output_proof:<pattern>`.
 Verifying these proofs against a machine state hash, from the
 blockchain’s perspective, is shown under [Output
 verification](#output-verification).
@@ -5424,8 +5503,15 @@ supports them.
 `machine:rename_stored(<source_directory>, <destination_directory>)`
 atomically renames a stored machine without overwriting the destination
 and syncs the affected parent directories before returning.
-`machine:sync_stored(<directory>)` flushes the state held in the backing
-stores of a loaded directory to permanent storage.
+`machine:sync_stored(<directory>)` flushes a stored machine to permanent
+storage. A machine loaded from the directory with shared backing stores
+changes its files on any call, including `get_root_hash` and
+`get_proof`, and when it is destroyed, so sync only after destroying
+that machine. A directory used by a machine with sharing holds a valid
+machine only after that machine was destroyed without a crash and the
+directory was synced. If the process stops earlier, discard the
+directory. Where file locks are available, `sync_stored` fails while
+such a machine still uses the directory.
 `machine:remove_stored(<directory>)` removes a stored machine from disk
 and makes the removal durable. All four are also available on
 `cartesi.machine` itself, so a script can manipulate stored machines
@@ -5437,58 +5523,64 @@ Machine [example](#rolling-cartesi-machines-1), with the fork-based
 `snapshot`, `commit`, and `revert` reimplemented over stored machines,
 feeding the same expressions the command-line example processed so the
 resulting state hashes can be compared. The helpers and the main loop
-are unchanged, and the script ends by syncing the final on-disk state
-and printing its hash, so the excerpt below shows only the reimplemented
-part
+are unchanged, and the script ends by destroying the machine, syncing
+its directory, removing the backup, and printing the final state hash,
+so the excerpt below shows only the reimplemented part
 
 ``` lua
 -- Load a fresh clone of the rolling-calculator template, operating directly on its backing stores
 cartesi.machine:clone_stored("rolling-calculator-template", "machine")
 local machine = cartesi.machine("machine", nil, cartesi.SHARING_ALL)
 
--- Snapshot via storage: machine.revert keeps a copy of the pre-input state.
+-- Snapshot via storage: machine.revert keeps a synced copy of the last committed state
 local backup_directory
-local function snapshot(m)
-    m:destroy()
-    m:clone_stored("machine", "machine.revert")
-    backup_directory = "machine.revert"
-    m:sync_stored(backup_directory)
-    m:load("machine", nil, cartesi.SHARING_ALL)
+local function snapshot(_)
+    assert(backup_directory, "no committed state to revert to")
 end
 
 local function commit(m)
+    m:destroy()
     m:sync_stored("machine")
+    -- The backup only ever appears by renaming a synced clone
+    m:clone_stored("machine", "machine.revert.tmp")
+    m:sync_stored("machine.revert.tmp")
     if backup_directory then
         m:remove_stored(backup_directory)
     end
-    backup_directory = nil
+    m:rename_stored("machine.revert.tmp", "machine.revert")
+    backup_directory = "machine.revert"
+    m:load("machine", nil, cartesi.SHARING_ALL)
 end
 
 local function revert(m)
     assert(backup_directory, "no snapshot to revert to")
     m:destroy()
     m:remove_stored("machine")
-    m:rename_stored(backup_directory, "machine")
+    m:clone_stored(backup_directory, "machine")
     m:load("machine", nil, cartesi.SHARING_ALL)
-    backup_directory = nil
 end
 ```
 
 The live machine is loaded from a clone of the template with
 `cartesi.SHARING_ALL` (the third argument of the `cartesi.machine`
 constructor), so every modification lands directly on the backing stores
-of `machine` and there is no store step. `commit` syncs `machine` at
-every accepted boundary, including the initial boundary, so `snapshot`
-can clone the already-durable directory to `machine.revert` and sync the
-clone before execution modifies `machine`. The backing stores of a
-loaded directory are locked, so the machine is closed around the clone
-and reloaded afterward, a cheap operation that copies nothing. When a
-backup exists, `commit` removes it after syncing the accepted machine.
-`revert` discards the rejected state with `remove_stored`, durably
-renames `machine.revert` as `machine`, and reloads it. The script still
-records `revert_root_hash` when feeding each input, as every
-advance-state request requires, even though a rejection here is undone
-at the filesystem level.
+of `machine` and there is no store step. `commit` follows the
+command-line stored mode at every accepted boundary, including the
+initial one. It destroys the loaded machine, syncs the `machine`
+directory, clones it to `machine.revert.tmp`, syncs the clone, removes
+the old `machine.revert`, renames the clone to `machine.revert`, and
+loads `machine` again. `machine.revert` therefore always holds a synced
+copy of the last committed state. After a crash or kill, the names left
+on disk tell where that state is, as described under [Rolling Cartesi
+Machines directly from
+storage](#rolling-cartesi-machines-directly-from-storage). A loaded
+directory is locked, so the machine is destroyed around the clone and
+loaded again afterward, a cheap operation that copies nothing. `revert`
+removes the rejected state with `remove_stored`, clones `machine.revert`
+back as `machine`, and loads it again, leaving the backup in place until
+the next commit. The script still records `revert_root_hash` when
+feeding each input, as every advance-state request requires, even though
+a rejection here is undone at the filesystem level.
 
 Run the script with the expressions and the stored template in the
 working directory
@@ -5542,7 +5634,7 @@ scale=100; 355/113
 result is
 3.141592920353982300884955752212389380530973451327433628318584070796
 4601769911504424778761061946902654
-final state hash: 0xaf238056a15e7f0cd997f1c692dae36eee2907c19260cd83d932577d551378e6
+final state hash: 0xde30d030605ceaf85bd2a72d95a4b5a760c6a3975341fb06fa01c5f65bbff2bd
 ```
 
 The final state hash matches the command-line stored-mode run, so both
@@ -5574,7 +5666,17 @@ recorded revert root hash takes its place. With
 is instead the root hash of a complete subtree over that many
 consecutive samples, and a `partial_bundle` field returns the samples
 that did not fill a subtree, to be passed as `<partial_bundle>` to the
-next call.
+next call. When the call stops at a sampling point that completes a
+bundle, `final_bundle_sibling_hashes` contains the siblings proving its
+rightmost leaf, ordered from leaf to root. At a fixed point, the
+collector completes the current bundle with repetitions of the final
+state hash and returns these siblings for that bundle, followed by a
+separate bundle root in `hashes` containing only repetitions of the
+final state hash for padding. The proof therefore targets
+`hashes[#hashes - 1]` at a fixed point and `hashes[#hashes]` otherwise.
+The field is omitted when bundling is disabled or the call does not
+complete a bundle at its stopping point, and completing a bundle passed
+in `partial_bundle` also supplies the proof.
 
 `machine:collect_uarch_cycle_root_hashes(<mcycle_end>, <log2_bundle_uarch_cycle_count>, <revert_uarch_tail>)`
 runs the machine up to `<mcycle_end>` one uarch cycle at a time,
@@ -5746,7 +5848,7 @@ util.print_log(log, io.stderr)
 with command:
 
 ``` bash
-lua5.4 dump-uarch-step.lua config-nothing-to-do "44219446" "2251"
+lua5.4 dump-uarch-step.lua config-nothing-to-do "44219446" "2248"
 ```
 
 produces the output:
@@ -5760,19 +5862,19 @@ produces the output:
  \       X       \
   \----/  \---/---\
        \    / CARTESI
-Access log of uarch step at mcycle=44219446 uarch_cycle=2251:
+Access log of uarch step at mcycle=44219446 uarch_cycle=2248:
 
 begin step
-  1: read uarch.cycle@0x400008(4194312): 0x8cb(2251)
+  1: read uarch.cycle@0x400008(4194312): 0x8c8(2248)
   2: read uarch.halt@0x400000(4194304): 0x0(0)
-  3: read uarch.pc@0x400010(4194320): 0x600b38(6294328)
-  4: read uarch.ram@0x600b38(6294328): 0x806700000073(141179869986931)
+  3: read uarch.pc@0x400010(4194320): 0x600b88(6294408)
+  4: read uarch.ram@0x600b88(6294408): 0x806700000073(141179869986931)
   begin ecall
     5: read uarch.x17@0x4000a0(4194464): 0x2(2)
     6: read uarch.x10@0x400068(4194408): 0xa(10)
-    7: write uarch.pc@0x400010(4194320): 0x600b38(6294328) -> 0x600b3c(6294332)
+    7: write uarch.pc@0x400010(4194320): 0x600b88(6294408) -> 0x600b8c(6294412)
   end ecall
-  8: write uarch.cycle@0x400008(4194312): 0x8cb(2251) -> 0x8cc(2252)
+  8: write uarch.cycle@0x400008(4194312): 0x8c8(2248) -> 0x8c9(2249)
   9: read uarch.halt@0x400000(4194304): 0x0(0)
 end step
 ```
@@ -5840,7 +5942,7 @@ io.stderr:write("State transition accepted!\n")
 Running the script without arguments accepts the valid state transition:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "44219446" "2251"
+lua5.4 verify-uarch-step.lua config-nothing-to-do "44219446" "2248"
 ```
 
 ``` text
@@ -5853,7 +5955,7 @@ address of access \#7 (the write to `uarch.pc`) causes the program to
 reject the state transition proof:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "44219446" "2251" 'log.accesses[7].address = 0x100'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "44219446" "2248" 'log.accesses[7].address = 0x100'
 ```
 
 ``` text
@@ -5873,7 +5975,7 @@ internal consistency check, because `written` no longer hashes to
 `written_hash`:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "44219446" "2251" 'log.accesses[7].written = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "44219446" "2248" 'log.accesses[7].written = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
 ```
 
 ``` text
@@ -5889,7 +5991,7 @@ the same consistency check on the read side, because `read` no longer
 hashes to `read_hash`:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "44219446" "2251" 'log.accesses[5].read = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "44219446" "2248" 'log.accesses[5].read = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
 ```
 
 ``` text
@@ -5906,7 +6008,7 @@ proof’s `sibling_hashes` to reconstruct the state hash before the
 access. That reconstruction no longer matches the expected root:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "44219446" "2251" 'local a = log.accesses[5]; a.read = string.pack("<I8", 0x1234)..string.rep("\0", 24); a.read_hash = cartesi.keccak256(a.read)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "44219446" "2248" 'local a = log.accesses[5]; a.read = string.pack("<I8", 0x1234)..string.rep("\0", 24); a.read_hash = cartesi.keccak256(a.read)'
 ```
 
 ``` text
@@ -6816,23 +6918,23 @@ Then run the server and client, instantiating the machine directly from
 
 ``` bash
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8086
+    --server-address=127.0.0.1:8090
 ```
 
 ``` bash
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8086
+    --server-address=127.0.0.1:8090
 ```
 
 From a different shell into the same container, run the client
 
 ``` bash
 while ! cartesi-machine \
-    --remote-address=127.0.0.1:8086 \
+    --remote-address=127.0.0.1:8090 \
     --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8086 \
+    --remote-address=127.0.0.1:8090 \
     --remote-shutdown \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:2,print_input_state_hashes \
     --cmio-inspect-state=print_query_state_hashes \
@@ -6851,46 +6953,45 @@ the inspect-state request is processed.
 The client shell shows
 
 ``` text
-Connected to JSONRPC remote cartesi machine at '127.0.0.1:8086'
+Connected to JSONRPC remote cartesi machine at '127.0.0.1:8090'
 
 Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 55753466
 
 Before input 0
-55753466: 0x67469931ff251e9dda816e9e0eabd5c3af8bfe2eedf0d17d96886ce9869dfe69
-55753466: 0xc00613a1ca653edd78f18d9bbd72c23af88d7e558b4eccd417c799e9414a7b8a
+55753466: 0x1b4611f084cc93bb78db4a67a031129ad9686c1f893c9f455b402ed30598d509
+55753466: 0xd6d130c2b694ab0e2c9e788a85e181918e800971c3ecef477b0842c60541a7e2
 
 Automatic yield tx-output (2) (0x000064 data)
-Cycles: 55771686
+Cycles: 55772081
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 57885065
+Cycles: 57885460
 Storing output-0-input-0.bin
 Storing input-0-outputs-merkle-root.bin
-Storing input-0-outputs-merkle-root-proof.lua
 
 Before input 1
-57885065: 0x5f0d7db38e2fcfeabd1d96898d3a2cc49cebea9e4f4cd535e2013d7dd6e91ebb
-57885065: 0x781b67cc5af66b6ed9dfbb46733f0baecff59e36a8515838c751d935f5f72892
+57885460: 0x46cf4aa885ceff8ff442e36a3881b2024824d39393efa30c163c2e40cc1644c8
+57885460: 0xfcb856f7be2e214dac552dcdd0901f90df17e6cf29c0c7a4e942d3414a4b0feb
 
 Manual yield rx-rejected (2) (0x000000 data)
-Cycles: 57889062
+Cycles: 57889756
 Storing output-0-input-0-proof.lua
 
 Before query
-57885065: 0x5f0d7db38e2fcfeabd1d96898d3a2cc49cebea9e4f4cd535e2013d7dd6e91ebb
-57885065: 0xb2cb362cb69653c5941c677fc6390d1cd809dabced0a71d2f1d3e8dc5b71fe4b
+57885460: 0x46cf4aa885ceff8ff442e36a3881b2024824d39393efa30c163c2e40cc1644c8
+57885460: 0x5e76a4070bf3e5135748ceb431ed2dac2cd22f7c7601ffc4d613383f47a06a5b
 
 Automatic yield tx-report (4) (0x000011 data)
-Cycles: 57886325
+Cycles: 57886768
 Storing query-report-0.bin
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 57887463
+Cycles: 57887906
 
 After query
-57885065: 0x5f0d7db38e2fcfeabd1d96898d3a2cc49cebea9e4f4cd535e2013d7dd6e91ebb
-Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8086'
+57885460: 0x46cf4aa885ceff8ff442e36a3881b2024824d39393efa30c163c2e40cc1644c8
+Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8090'
 ```
 
 As expected, the yields and state hashes shown here follow the same
@@ -7211,9 +7312,12 @@ compressed instructions, as well as the optional supervisor and user
 privilege levels. In addition, Cartesi Machines support the Sv39 mode of
 address translation and memory protection. Sv39 provides a 39-bit
 protected virtual address space, divided into 4KiB pages, organized by a
-three-level page table. This set of features creates a balanced
-compromise between the simplicity demanded by a blockchain
-implementation and the flexibility expected from off-chain computations.
+three-level page table. Page tables must reside in RAM, the only memory
+range that supports page-table walks. A page-table entry anywhere else
+raises the access fault of the original access type. This set of
+features creates a balanced compromise between the simplicity demanded
+by a blockchain implementation and the flexibility expected from
+off-chain computations.
 
 Even so, the instruction set remains compact. Most instructions are very
 simple and can be emulated in a few lines of high-level code. In
@@ -7420,8 +7524,12 @@ VirtIO devices.
 
 The Core Local Interruptor (or CLINT) controls the timer interrupt. The
 active addresses are `0x0200bff8` (`mtime`)
-and `0x02004000` (`mtimecmp`). The CLINT issues a hardware interrupt
-whenever `mtime` equals `mtimecmp`. Since Cartesi Machines must ensure
+and `0x02004000` (`mtimecmp`). The machine timer interrupt is pending
+while `mtime` is greater than or equal to `mtimecmp`, compared as
+unsigned integers. The CLINT updates it whenever `mtimecmp` is written
+and whenever `mtime` is incremented. A new machine starts
+with `mtimecmp` at the largest 64-bit value, so no timer interrupt is
+pending until software programs one. Since Cartesi Machines must ensure
 reproducibility, the processor’s clock and the timer are locked by a
 constant frequency divisor of `8192`. In other words, `mtime` is
 incremented once for every `8192` increments of `mcycle`. There is no
@@ -7469,7 +7577,10 @@ are identified by the following values for the field `DEV`.
 
 Registers `ihalt`, `iconsole`, and `iyield` are bit masks specifying the
 commands that are available for the respective devices. Unavailable
-commands are silently ignored by the machine.
+commands are silently ignored by the machine. The only exception is
+command `HTIF_HALT_CMD_HALT` of the Halt device, which is mandatory, so
+the machine can always halt. The machine honors it whatever the value of
+`ihalt`.
 
 ##### Halt
 
@@ -7580,11 +7691,12 @@ device.
 The low-level view of what happens inside the machine is as follows:
 
     Initialize
+    Write outputs Merkle root (of the empty tree) to CMIO TX buffer
     `reason` = HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
-    `length` = 0
+    `length` = hash size
     Repeat
         Yield manual with `reason` as `REASON` and `length` as `DATA` in `tohost`
-        If `DATA` in `fromhost` is HTIF_YIELD_REASON_ADVANCE_STATE
+        If `REASON` in `fromhost` is HTIF_YIELD_REASON_ADVANCE_STATE
             Read ABI-encoded EvmAdvance(...) from CMIO RX buffer
             Process advance-state request
             For each output to emit (voucher, delegate-call voucher, or notice)
@@ -7607,7 +7719,7 @@ The low-level view of what happens inside the machine is as follows:
                 `length` = hash size
                 `reason` = HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
             End
-        ElseIf `DATA` in `fromhost` is HTIF_YIELD_REASON_INSPECT_STATE
+        ElseIf `REASON` in `fromhost` is HTIF_YIELD_REASON_INSPECT_STATE
             Read raw query from CMIO RX buffer
             Process inspect-state request
             For each report to emit
@@ -7618,7 +7730,8 @@ The low-level view of what happens inside the machine is as follows:
                 Write raw exception data to CMIO TX buffer and its length to `length`
                 `reason` = HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION
             Else
-                `length` = 0
+                Write outputs Merkle root to CMIO TX buffer
+                `length` = hash size
                 `reason` = HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
             End
         Else
@@ -7868,7 +7981,7 @@ The result is
 	};
 
 	cartesi-machine {
-		version = "0.22";
+		version = "0.23";
 		init = [55 53 45 52 3d 72 6f 6f 74 0a];
 		entrypoint = [64 74 63 20 2d 49 20 64 74 62 20 2d 4f 20 64 74 73 20 2f 73 79 73 2f 66 69 72 6d 77 61 72 65 2f 66 64 74];
 	};
@@ -8206,7 +8319,8 @@ this parent node. This is again concatenated with the just-calculated
 hash of the parent node (in the correct order) to obtain what must be
 the hash of the grandparent node. This process is repeated until the
 hash of what must be the root node is found and returned. Function
-`verify_slice(<proof>)` then compares this to `proof.root_hash`. If they
+`verify_slice(<proof>)` first checks that the shape of the proof matches
+its sizes, and then compares this hash to `proof.root_hash`. If they
 match, the proof passes. Otherwise, something is amiss.
 
 The slicing check `verify_slice` wires this walk into the proof
@@ -8214,6 +8328,11 @@ structure returned by `machine:get_proof()`:
 
 ``` lua
 local function verify_slice(proof, hash_type)
+    local log2_target_size, log2_root_size = proof.log2_target_size, proof.log2_root_size
+    assert(math.type(log2_target_size) == "integer" and math.type(log2_root_size) == "integer", "invalid proof sizes")
+    assert(0 <= log2_target_size and log2_target_size <= log2_root_size and log2_root_size <= 64, "invalid proof sizes")
+    assert(#proof.sibling_hashes == log2_root_size - log2_target_size, "wrong number of siblings")
+    assert(proof.target_address & ((1 << log2_target_size) - 1) == 0, "target address not aligned")
     assert(roll_hash_up_tree(proof, proof.target_hash, hash_type) == proof.root_hash, "target node not in tree")
 end
 ```
@@ -8312,6 +8431,7 @@ its root.
 ``` lua
 local function get_data_root_hash(data, log2_root_size, hash_type)
     local hash_function = cartesi[hash_type or "keccak256"]
+    assert(WORD_LOG2_SIZE <= log2_root_size and log2_root_size < 63, "invalid tree size")
     assert(#data <= (1 << log2_root_size), "data does not fit in the tree")
     -- Level zero is one hash per word, a trailing partial word zero-padded after the loop.
     local level = {}
@@ -8332,7 +8452,8 @@ local function get_data_root_hash(data, log2_root_size, hash_type)
         end
         level, pristine = parents, hash_function(pristine, pristine)
     end
-    return level[1]
+    -- Empty data pads to all zeros.
+    return level[1] or pristine
 end
 ```
 
@@ -8480,20 +8601,16 @@ are present. The module stores it as a fixed-length array with one slot
 per level, holding that level’s subtree root hash, or `false` where its
 bit is clear.
 
-The accessor `frontier_node` reads the hash of a node at one level from
-three regions that sit left to right in the tree, the frontier, an
-active region of nodes being worked on, and pristine padding:
+The helper `get_or_outside` reads the hash of a node at one level by its
+index. Nodes being worked on at that level form an active region. To its
+left the hash comes from the frontier, and to its right it is pristine
+padding, the two values the caller passes in:
 
 ``` lua
-local function frontier_node(frontier_entry, base, active, pristine_entry, index)
-    local lo, hi = base, base + #active - 1
-    if index < lo then
-        return frontier_entry -- fell left: a complete left subtree from the frontier
-    elseif index > hi then
-        return pristine_entry -- fell right: an all-pristine subtree
-    else
-        return active[index - lo + 1] -- inside the active region
-    end
+local function get_or_outside(values, base, index, left, right)
+    if math.ult(index, base) then return left end
+    if math.ult(base + #values - 1, index) then return right end
+    return values[index - base + 1]
 end
 ```
 
@@ -8532,7 +8649,10 @@ frontier:
 ``` lua
 local function frontier_push_back(frontier, hash, height)
     local hash_function = assert(frontier.hash_function)
-    local level = (height or 0) + 1
+    assert(is_raw_hash(hash), "invalid hash")
+    height = height or 0
+    assert_valid_subtree_height(frontier, height)
+    local level = height + 1
     assert_aligned_below(frontier, level, "frontier is not aligned to the subtree size")
     assert(not frontier[#frontier], "too many leaves")
     local right = hash
@@ -8563,9 +8683,14 @@ bounds select an empty range:
 local function frontier_append(frontier, hashes, begin_index, end_index, height)
     local hash_function = assert(frontier.hash_function)
     begin_index, end_index = normalize_range(hashes, begin_index, end_index)
-    local first_level = (height or 0) + 1
+    height = height or 0
+    assert_valid_subtree_height(frontier, height)
+    local first_level = height + 1
     assert_aligned_below(frontier, first_level, "frontier is not aligned to the subtree size")
     assert(frontier_padding_fits(frontier, end_index - begin_index, first_level), "too many leaves")
+    for i = begin_index, end_index - 1 do
+        assert(is_raw_hash(hashes[i]), "invalid hash")
+    end
     while begin_index < end_index do
         local added_height = 0
         local subtree_count = 1
@@ -8593,13 +8718,16 @@ padded with zero leaves to completion:
 ``` lua
 local function frontier_get_root_hash(frontier, pad, pad_height)
     local hash_function = assert(frontier.hash_function)
+    assert(pad == nil or is_raw_hash(pad), "invalid pad hash")
     local height = #frontier - 1
+    pad_height = pad_height or 0
+    assert_valid_subtree_height(frontier, pad_height)
     if frontier[height + 1] then return frontier[height + 1] end
     pad = pad or pristine_leaf
     local root = pad
-    assert_aligned_below(frontier, (pad_height or 0) + 1, "frontier is not aligned to the pad size")
+    assert_aligned_below(frontier, pad_height + 1, "frontier is not aligned to the pad size")
     -- pad doubles into the all-pad subtree of each level, the right sibling of every empty one
-    for level = (pad_height or 0) + 1, height do
+    for level = pad_height + 1, height do
         if frontier[level] then
             root = hash_function(frontier[level], root)
         else
@@ -8632,12 +8760,14 @@ local function frontier(log2_max_leaves_or_last_proof, hash_type)
     assert(hash_type ~= nil, "hash type is required")
     if is_proof(log2_max_leaves_or_last_proof) then
         local proof = log2_max_leaves_or_last_proof
+        assert_valid_frontier_proof(proof, hash_type)
         local log2_max_leaves = proof.log2_root_size
         local f = frontier_genesis(log2_max_leaves, hash_type)
         local hash_function = f.hash_function
+        -- A full height-64 tree has leaf count 2^64, which wraps to zero; its complete level is 65.
         local leaf_count = proof.target_address + 1
         local lowest_complete_level = 1
-        while (leaf_count & (1 << (lowest_complete_level - 1))) == 0 do
+        while lowest_complete_level <= log2_max_leaves and (leaf_count & (1 << (lowest_complete_level - 1))) == 0 do
             lowest_complete_level = lowest_complete_level + 1
         end
         -- Above the lowest complete level, where the leaf count's bit at that level is set, the last leaf
@@ -8679,9 +8809,15 @@ Finally, `frontier_next_proofs` produces an epoch’s output proofs:
 local function frontier_next_proofs(frontier, next_output_hashes)
     local hash_function = assert(frontier.hash_function)
     local log2_max_leaves = #frontier - 1
+    -- A proof's target address has 64 bits
+    assert(log2_max_leaves <= 64, "tree too tall for proofs")
     local next_output_count = #next_output_hashes
     if next_output_count == 0 then return {} end
+    for i = 1, next_output_count do
+        assert(is_raw_hash(next_output_hashes[i]), "invalid hash")
+    end
     local leaf_count = frontier_get_leaf_count(frontier)
+    assert(frontier_padding_fits(frontier, next_output_count, 1), "too many leaves")
     -- Allocate each proof's sibling array.
     local siblings = {}
     for i = 1, next_output_count do
@@ -8698,14 +8834,14 @@ local function frontier_next_proofs(frontier, next_output_hashes)
         -- Add each output's sibling at this level.
         for i = 1, next_output_count do
             local node = (leaf_count + i - 1) >> bit
-            siblings[i][level] = frontier_node(frontier_entry, base, active, pristine, node ~ 1)
+            siblings[i][level] = get_or_outside(active, base, node ~ 1, frontier_entry, pristine)
         end
         -- Hash the active nodes into their parents.
         local parents = {}
         local parents_base = base >> 1
         for p = parents_base, (base + #active - 1) >> 1 do
-            local left = frontier_node(frontier_entry, base, active, pristine, 2 * p)
-            local right = frontier_node(frontier_entry, base, active, pristine, 2 * p + 1)
+            local left = get_or_outside(active, base, 2 * p, frontier_entry, pristine)
+            local right = get_or_outside(active, base, 2 * p + 1, frontier_entry, pristine)
             parents[p - parents_base + 1] = hash_function(left, right)
         end
         active, base = parents, parents_base
@@ -8736,7 +8872,7 @@ a new leaf’s path to the root always ends at an aligned boundary at or
 before *c*, so it is a complete subtree whose root hash the frontier
 already holds, never an individual old leaf. The function sweeps the new
 leaves up one level at a time, reading each proof sibling through
-`frontier_node`, which supplies a frontier entry or pristine padding at
+`get_or_outside`, which supplies a frontier entry or pristine padding at
 the boundaries. The proofs are built together, in one batch at the end
 of the epoch, because an early output’s low siblings are later outputs
 of the same epoch. Note that proofs issued for outputs in previous
@@ -8757,49 +8893,86 @@ machine, whose entire output occupies a single NVRAM. A Rolling Cartesi
 Machine instead emits outputs one at a time and keeps running. The
 analogous operation is to verify the contents of a given output it
 produced. This is possible between epochs, once the state hash of the
-machine is agreed upon. From that state hash, a slicing operation
-recovers the outputs Merkle root from the machine’s CMIO tx buffer. As
-described under [Output proofs](#output-proofs), this is the root of a
-Merkle tree. Its leaves are the hashes of all outputs ever produced, in
-order. A second slicing operation, in that tree, then proves the
-output’s hash is one of its leaves.
+machine is agreed upon. From that state hash, slicing operations recover
+the outputs Merkle root from the machine’s CMIO tx buffer and confirm
+that the machine accepted its last input. As described under [Output
+proofs](#output-proofs), this is the root of a Merkle tree. Its leaves
+are the hashes of all outputs ever produced, in order. A second slicing
+operation, in that tree, then proves the output’s hash is one of its
+leaves.
 
 When the [Rolling Cartesi Machine calculator](#rolling-cartesi-machines)
-processed its first epoch, it saved more than the outputs themselves.
-For each accepted input, it saved a proof that the outputs Merkle root
-occupied the CMIO tx buffer. For each output, it saved an output proof.
-Through `--final-hash`, it also saved the machine state hash the epoch
-settled on. The output proofs are built against the epoch’s final
-outputs Merkle root. They therefore pair with the outputs Merkle root
-proof from the last accepted input, input 2. The following script
-verifies output 0 from the settled state hash and those artifacts alone,
-without instantiating any machine.
+processed its first epoch, it saved more than the outputs themselves. At
+the end of the epoch, it saved the outputs Merkle root proof, with the
+`iflags_Y`, `htif_tohost`, and tx-buffer words of the final state. For
+each output, it saved an output proof against the epoch’s final outputs
+Merkle root. Through `--final-hash`, it also saved the machine state
+hash the epoch settled on. The following script verifies output 0 from
+the settled state hash and those artifacts alone, without instantiating
+any machine.
 
 ``` lua
 local cartesi = require("cartesi")
-local util = require("cartesi.util")
+local fs = require("cartesi.filesystem")
 local hash_tree = require("cartesi.hash-tree")
+local util = require("cartesi.util")
+
+local WORD_MASK = (1 << cartesi.HASH_TREE_LOG2_WORD_SIZE) - 1
+local IFLAGS_Y_ADDRESS = cartesi.machine:get_reg_address("iflags_Y")
+local HTIF_TOHOST_ADDRESS = cartesi.machine:get_reg_address("htif_tohost")
 
 -- Read a proof saved as a Lua chunk
 local function read_proof(name)
     return assert(loadfile(name, "t", {}))()
 end
 
+-- Verify the data of the machine word that contains the address against the machine state hash
+local function verify_machine_word(data, proof, address, machine_hash)
+    assert(proof.root_hash == machine_hash, "proof not rooted at the machine state hash")
+    assert(proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "proof not whole-machine")
+    assert(proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE, "proof target not a word")
+    assert(proof.target_address == address & ~WORD_MASK, "proof at another address")
+    assert(#data == WORD_MASK + 1, "data not a word")
+    assert(hash_tree.get_data_root_hash(data, proof.log2_target_size) == proof.target_hash, "data does not match proof")
+    hash_tree.verify_slice(proof)
+end
+
+-- Read the 64-bit register at the address from the data of the word that contains it
+local function get_reg(data, address)
+    return string.unpack("<I8", data, 1 + (address & WORD_MASK))
+end
+
 -- The settled machine state hash, the two proofs, and the output to verify against them
-local machine_hash = util.read_file(assert(arg[1], "missing machine state hash"))
+local machine_hash = fs.read_file(assert(arg[1], "missing machine state hash"))
 local outputs_merkle_root_proof = read_proof(assert(arg[2], "missing outputs Merkle root proof"))
 local output_proof = read_proof(assert(arg[3], "missing output proof"))
-local output = util.read_file(assert(arg[4], "missing output"))
+local output = fs.read_file(assert(arg[4], "missing output"))
 
--- The outputs Merkle root proof must be rooted at the agreed machine state hash
-assert(outputs_merkle_root_proof.root_hash == machine_hash, "proof not rooted at the machine state hash")
-hash_tree.verify_slice(outputs_merkle_root_proof)
+-- The machine must be yielded manually, having accepted its last input
+local iflags_y_data = outputs_merkle_root_proof.iflags_y_data
+verify_machine_word(iflags_y_data, outputs_merkle_root_proof.iflags_y_proof, IFLAGS_Y_ADDRESS, machine_hash)
+assert(get_reg(iflags_y_data, IFLAGS_Y_ADDRESS) ~= 0, "machine not yielded")
+local htif_tohost_data = outputs_merkle_root_proof.htif_tohost_data
+verify_machine_word(htif_tohost_data, outputs_merkle_root_proof.htif_tohost_proof, HTIF_TOHOST_ADDRESS, machine_hash)
+local dev, cmd, reason = util.decode_tohost(get_reg(htif_tohost_data, HTIF_TOHOST_ADDRESS))
+assert(dev == cartesi.HTIF_DEV_YIELD, "machine not yielded")
+assert(cmd == cartesi.HTIF_YIELD_CMD_MANUAL, "yield not manual")
+assert(reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED, "input not accepted")
 
--- The output proof's root is the outputs Merkle root, the value the tx-buffer word holds
-assert(
-    cartesi.keccak256(output_proof.root_hash) == outputs_merkle_root_proof.target_hash,
-    "tx buffer holds another value"
+-- The tx-buffer word of that machine state holds the outputs Merkle root
+local outputs_merkle_root = outputs_merkle_root_proof.tx_buffer_data
+verify_machine_word(
+    outputs_merkle_root,
+    outputs_merkle_root_proof.tx_buffer_proof,
+    cartesi.AR_CMIO_TX_BUFFER_START,
+    machine_hash
 )
+
+-- The output proof must target a leaf of the full-height outputs tree, at an index inside it
+assert(output_proof.root_hash == outputs_merkle_root, "output proof not rooted at the outputs Merkle root")
+assert(output_proof.log2_target_size == 0, "output proof target not a leaf")
+assert(output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "output proof height mismatch")
+assert(output_proof.target_address >> cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT == 0, "output index out of range")
 hash_tree.verify_slice(output_proof)
 
 -- The output proof's target must be the hash of the output itself
@@ -8808,10 +8981,13 @@ assert(cartesi.keccak256(output) == output_proof.target_hash, "output does not m
 print(string.format("output %d verified against the machine state hash", output_proof.target_address))
 ```
 
-The script first confirms the output proof’s root equals the value the
-outputs Merkle root proof locates in the tx-buffer word. That joins the
-two trees. It then hashes the output’s bytes and matches them against
-the leaf the output proof locates, pinning down this exact output.
+The script first checks the three words against the state hash. The
+`iflags_Y` and `htif_tohost` words must show a manual yield with reason
+rx-accepted, so the tx-buffer word holds the outputs Merkle root. It
+then confirms the output proof’s root equals that value, which joins the
+two trees. Finally, it hashes the output’s bytes and matches them
+against the leaf the output proof locates, pinning down this exact
+output.
 
 Running the script over the artifacts the Rolling Cartesi Machine
 calculator saved
@@ -8819,7 +8995,7 @@ calculator saved
 ``` bash
 lua5.4 verify-output-proof.lua \
     epoch-0-state-hash.bin \
-    input-2-outputs-merkle-root-proof.lua \
+    epoch-0-outputs-merkle-root-proof.lua \
     output-0-input-0-proof.lua \
     output-0-input-0.bin
 ```
@@ -8834,7 +9010,9 @@ output 0 verified against the machine state hash
 
 A *computation hash* is the root of a Merkle tree whose leaves are the
 machine state hashes sampled at periodic intervals during a computation.
-The two kinds `cartesi-machine` computes, introduced under [Computation
+(It is the basis for the [permissionless refereed
+tournament](#permissionless-refereed-tournament).) The two kinds
+`cartesi-machine` computes, introduced under [Computation
 hashes](#computation-hashes), are the *mcycle computation hash*, over an
 entire epoch with one leaf every 2<sup>p</sup> mcycles and the initial
 state implicit, and the *uarch cycle computation hash*, over one of
@@ -8865,7 +9043,8 @@ to the end of the period.
 When only the computation hash itself matters, the frontier of [The hash
 tree frontier](#the-hash-tree-frontier) is enough, with
 `frontier_pad_back` folding in each run of repeated leaves, and this is
-what `cartesi-machine` uses internally. A dispute, however, must later
+what `cartesi-machine` uses internally. The [permissionless refereed
+tournament](#permissionless-refereed-tournament), however, must later
 reveal any leaf of a committed tree, along with the siblings on its
 path, and a frontier has collapsed everything to the left of its last
 leaf into root hashes. That calls for a data structure that captures the
@@ -8888,9 +9067,8 @@ sequence of complete trees of equal height, its *base values*, and the
 last of them repeats to fill the tree. Two complete trees of equal
 height that were built separately are joined as the left and right
 children of a *mixed tree*. A fixed-point or mixed tree can be descended
-into, down to its base values and through them, until a query reaches
-its target or an opaque hash. A mixed tree always joins two fixed-point
-or mixed trees, so a raw hash occurs only as a base value.
+into, down to its base values and children and through them, until a
+query reaches its target or an opaque hash.
 
 A fixed-point tree is a table with one array per level. The first array
 holds its base values, and each array above holds the hashes of the
@@ -8927,8 +9105,8 @@ In the excerpt, `<values>` holds the base values starting at `<first>`,
 `<base_height>` is their height, and `<log2_count>` is the number of
 levels built above them. The helper `get_or_last` reads the entry at a
 0-based index of a level, returning the last stored entry for any index
-past the end. The helper `get_value_hash` returns the hash of an entry,
-the entry itself when it is a raw hash and its root hash when it is a
+past the end. The helper `get_value_hash` returns the hash of a value,
+the value itself when it is a raw hash and its root hash when it is a
 tree. Each level stores the distinct parents of its children plus the
 first repeated one. With *n* stored children, the explicit pairs give
 the first *n*/2 parents, rounded down. The next parent pairs the last
@@ -8959,14 +9137,13 @@ root.
 A mixed tree is the simpler form:
 
 ``` lua
-local function new_mixed_tree(hash_function, left, right)
-    assert(left.height == right.height, "mixed children have different heights")
+local function new_mixed_tree(hash_function, height, left, right)
     return {
         kind = "mixed",
-        height = left.height + 1,
+        height = height,
         left = left,
         right = right,
-        hash = hash_function(left.hash, right.hash),
+        hash = hash_function(get_value_hash(left), get_value_hash(right)),
     }
 end
 ```
@@ -8987,18 +9164,23 @@ a frontier, with the same binary carry, but each occupied level holds
 the complete tree standing there rather than only its root hash.
 
 The constructor is `frontier_forest`, which takes the same height and
-hash type as `frontier` and returns an empty forest. Three functions
-append to it, mirroring `frontier_push_back`, `frontier_append`, and
-`frontier_pad_back`. The function `frontier_forest_push_back` appends
-one value, `frontier_forest_append` appends raw hashes in a half-open
-range with the same defaults as `frontier_append`, and
-`frontier_forest_pad_back` appends a number of copies of one value, or
-fills the rest of the forest when the count is omitted. Each also takes
-the height of what it appends. A value is a raw hash, standing for a
-subtree of that height, or a completed forest, which keeps its own
-height and all of its nodes. A completed forest goes in as the complete
-tree at its top level, which can then become a base value of a
-fixed-point tree. Appending a completed forest is how small trees, built
+hash type as `frontier` and returns an empty forest. Like `frontier`, it
+also accepts a proof of the last appended leaf instead of a height,
+verifies it, and restores coverage through that leaf. The forest retains
+the authenticated path within its completed subtrees, so queries can
+recover it once the forest is full. Sibling subtrees remain opaque, and
+the leaves after the target are supplied by subsequent appends. Three
+functions append to it, mirroring `frontier_push_back`,
+`frontier_append`, and `frontier_pad_back`. The function
+`frontier_forest_push_back` appends one value, `frontier_forest_append`
+appends raw hashes in a half-open range with the same defaults as
+`frontier_append`, and `frontier_forest_pad_back` appends a number of
+copies of one value, or fills the rest of the forest when the count is
+omitted. Each also takes the height of what it appends. A value is a raw
+hash, standing for a subtree of that height, or a full forest, which
+keeps its own height and all of its nodes. A full forest goes in as the
+complete tree at its top level, which can then become a base value of a
+fixed-point tree. Appending a full forest is how small trees, built
 separately, nest into a larger one.
 
 Appended values do not go into the levels right away. They accumulate in
@@ -9061,13 +9243,13 @@ local function forest_flush(forest, next_height)
             subtree_count = subtree_count << 1
         end
         local subtree = get_or_last(values, offset)
-        if added_height > 0 or not is_tree(subtree) then
+        if added_height > 0 then
             subtree = new_fixed_point_tree(forest.hash_function, height, added_height, values, offset + 1)
         end
         local level = first_level + added_height
         while forest[level] do
             assert(level < #forest, "too many leaves")
-            subtree = new_mixed_tree(forest.hash_function, forest[level], subtree)
+            subtree = new_mixed_tree(forest.hash_function, level, forest[level], subtree)
             forest[level] = false
             level = level + 1
         end
@@ -9097,12 +9279,11 @@ from the node upward:
 
 ``` lua
 local function frontier_forest_get_siblings(forest, position, height, into)
-    local top = assert(forest[forest.height + 1], "the forest is not full")
+    local top = forest.height + 1
+    assert(forest[top], "the forest is not full")
     assert_valid_forest_node(forest, position, height)
-    local current_bit = 1 << top.height
-    local stop_bit = 1 << height
     local siblings = {}
-    local node, err = descend_tree(top, position, current_bit, stop_bit, siblings)
+    local node, err = descend_tree(forest, forest, top, forest.height, position, height, siblings)
     if not node then return nil, err end
     into = into or {}
     for i = #siblings, 1, -1 do
@@ -9125,47 +9306,59 @@ Such a raw hash can be opened later with `frontier_forest_expand_leaf`:
 
 ``` lua
 local function frontier_forest_expand_leaf(forest, position, subtree)
-    local tree = assert(forest[forest.height + 1], "the forest is not full")
+    local container, key, container_height = forest, forest.height + 1, forest.height
+    assert(container[key], "the forest is not full")
     assert(is_forest(subtree), "the subtree is not a forest")
     local replacement, height = normalize_forest_value(forest, subtree)
     assert_valid_forest_node(forest, position, height)
-    -- Unwrap single-value trees. An opaque replacement exposes no descendants, and
-    -- accepting one could introduce a cycle when it references the leaf being expanded.
-    while replacement.kind == "fixed_point" and replacement.base_height == replacement.height do
-        replacement = replacement[1][1]
-        assert(is_tree(replacement), "the replacement leaf is opaque")
-    end
+    -- An opaque replacement exposes no descendants, and accepting one could introduce a cycle
+    -- when it references the leaf being expanded.
+    assert(is_tree(replacement), "the replacement leaf is opaque")
     while true do
+        local tree = load_value(forest, container, key, container_height)
+        if container_height == height then
+            assert(get_value_hash(tree) == replacement.hash, "leaf hash mismatch")
+            merge_node(
+                forest,
+                { container = { replacement }, key = 1, height = height },
+                { container = container, key = key, height = height }
+            )
+            if forest.directory then store_expansion(forest, replacement) end
+            container[key] = replacement
+            return
+        end
+        assert(is_tree(tree) and container_height > height, "leaf height mismatch")
         if tree.kind == "mixed" then
             local half = 1 << (tree.height - 1)
             if position < half then
-                tree = tree.left
+                key = "left"
             else
-                tree, position = tree.right, position - half
+                key, position = "right", position - half
             end
+            container, container_height = tree, tree.height - 1
         else
             local values = tree[1]
-            local index = math.min((position >> tree.base_height) + 1, #values)
-            local value = values[index]
-            if type(value) == "string" then
-                assert(tree.base_height == height, "leaf height mismatch")
-                assert(value == replacement.hash, "leaf hash mismatch")
-                values[index] = replacement
-                return
-            end
+            container, key, container_height =
+                values, math.min((position >> tree.base_height) + 1, #values), tree.base_height
             position = position & ((1 << tree.base_height) - 1)
-            tree = value
         end
     end
 end
 ```
 
-It replaces the opaque hash at `<position>` with a completed forest of
-the same height, after checking that the forest’s root is the hash it
-replaces. No ancestor hash changes, so the forest’s root is unaffected.
-When the opaque hash is the repeated last value of a fixed-point tree,
-every repetition reads the same entry, so all of them share the
-expansion.
+It fills in the subtree at `<position>` using a full forest of the same
+height, after checking that their root hashes match. Any branches
+already known at that position are retained. No ancestor hash changes,
+so the forest’s root is unaffected. When the opaque hash is the repeated
+last value of a fixed-point tree, every repetition reads the same entry,
+so all of them share the expansion. A forest stored with
+`frontier_forest_store` keeps its trees in a directory, one file per
+tree named by its hash, and `frontier_forest_load` reopens it. Queries
+and expansions then load the stored tree in place of a raw hash when
+they reach one, and an expansion also stores its new trees there. A
+stored or loaded forest cannot be appended to another forest or used in
+an expansion, since some of its trees may exist only as files in its own
+directory.
 
 ## Verification game
 
@@ -9353,13 +9546,12 @@ end
 The function
 `request_all(<subscribers>, <event>, <arguments>, <validator>)` notifies
 all `<subscribers>` of an `<event>` with associated `<arguments>` and
-returns a future. This future has self-explanatory methods
-`wait_at_most(<deadline>)` and `wait_at_least(<deadline>)`, which return
-the list of all entries that were returned by a `<validator>` function.
-In the snippet, the validator ensures the claim arrived on time and
-included a valid hash. It then creates and returns a player structure
-associated with the claim. Given the list of players, `request_claims`
-creates and returns the tournament object.
+returns a future. This future has a method `wait_at_most(<deadline>)`,
+which returns the list of all entries that were returned by a
+`<validator>` function. In the snippet, the validator ensures the claim
+arrived on time and included a valid hash. It then creates and returns a
+player structure associated with the claim. Given the list of players,
+`request_claims` creates and returns the tournament object.
 
 The meat of the dispute is, of course, `settle_dispute`:
 
@@ -9632,23 +9824,23 @@ is replaced with a copy of the machine currently on offer:
 
 ``` lua
 function machine_cache_methods:consider(epoch_input_offset, machine)
-    local checkpoints = assert(self.checkpoints, "machine cache is closed or moved")
-    assert(epoch_input_offset > self.last_epoch_input_offset, "machine checkpoints are not ordered")
+    local entries = assert(self.entries, "machine cache is closed or moved")
+    assert(epoch_input_offset > self.last_epoch_input_offset, "cache entries are not ordered")
     self.last_epoch_input_offset = epoch_input_offset
-    if epoch_input_offset - checkpoints[#checkpoints].epoch_input_offset < self.input_gap then
+    if epoch_input_offset - entries[#entries].epoch_input_offset < self.input_gap then
         return
     end
     local replace_index
-    if #checkpoints == self.capacity then
+    if #entries == self.capacity then
         replace_index = self.replace_cursor
-        while replace_index <= #checkpoints do
-            local previous = checkpoints[replace_index - 1].epoch_input_offset
-            if checkpoints[replace_index].epoch_input_offset - previous < self.input_gap then
+        while replace_index <= #entries do
+            local previous = entries[replace_index - 1].epoch_input_offset
+            if entries[replace_index].epoch_input_offset - previous < self.input_gap then
                 break
             end
             replace_index = replace_index + 1
         end
-        if replace_index > #checkpoints then
+        if replace_index > #entries then
             self.input_gap = self.input_gap << 1
             self.replace_cursor = 2
             return
@@ -9656,10 +9848,10 @@ function machine_cache_methods:consider(epoch_input_offset, machine)
     end
     local clone <close> = new_machine_pair(fork_machine(machine))
     if replace_index then
-        table.remove(checkpoints, replace_index).machine:shutdown_server()
+        table.remove(entries, replace_index).machine:shutdown_server()
         self.replace_cursor = replace_index
     end
-    checkpoints[#checkpoints + 1] = { epoch_input_offset = epoch_input_offset, machine = clone.machine }
+    entries[#entries + 1] = { epoch_input_offset = epoch_input_offset, machine = clone.machine }
     clone.machine = nil
 end
 ```
@@ -9863,7 +10055,7 @@ In the demonstration, the player then proves its last output:
 ``` lua
 function event_handler:prove_output()
     if #self.outputs == 0 then
-        return {}
+        return "nothing"
     end
     return {
         output_index = self.output_proofs[#self.outputs].target_address,
@@ -9896,7 +10088,7 @@ epoch’s input files. These files represent the inputs posted to the
 blockchain:
 
 ``` bash
-lua5.4 vg.lua referee 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" \
+lua5.4 vg.lua referee 127.0.0.1:8091 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b" \
     input-0.bin input-1.bin input-2.bin
 ```
 
@@ -9904,7 +10096,7 @@ Then connect the honest player, which processes the inputs announced by
 the referee:
 
 ``` bash
-lua5.4 vg.lua honest 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
+lua5.4 vg.lua honest 127.0.0.1:8091 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b"
 ```
 
 The first dishonest player is the forger, which substitutes
@@ -9913,31 +10105,31 @@ whereas the posted input asks for `2^2048`. All other fields remain the
 same:
 
 ``` bash
-lua5.4 vg-dishonest.lua forger 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 2 fake-input-2.bin
+lua5.4 vg-dishonest.lua forger 127.0.0.1:8091 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b" 2 fake-input-2.bin
 ```
 
 The second is the tamperer, which processes the posted inputs but
 corrupts memory at mcycle offset 100 within input 2:
 
 ``` bash
-lua5.4 vg-dishonest.lua tamperer 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 2 100
+lua5.4 vg-dishonest.lua tamperer 127.0.0.1:8091 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b" 2 100
 ```
 
 The third is the no-rollback player, which keeps the rejecting machine
 when input 1 finishes instead of restoring the pre-input snapshot:
 
 ``` bash
-lua5.4 vg-dishonest.lua no-rollback 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
+lua5.4 vg-dishonest.lua no-rollback 127.0.0.1:8091 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b"
 ```
 
 All four players start from the same machine state, but reach different
 final state hashes. The referee first collects their claims:
 
 ``` text
-Player honest claimed 0x9a4977e9....
-Player forger claimed 0xf2ee4265....
-Player tamperer claimed 0x90bbdd10....
-Player no-rollback claimed 0x083ef692....
+Player honest claimed 0x0c2bb177....
+Player forger claimed 0x931c2580....
+Player tamperer claimed 0xfea5eee6....
+Player no-rollback claimed 0xb1937962....
 ```
 
 The first round isolates a disagreement in input 1, at the reset that
@@ -9955,16 +10147,16 @@ Disagreement is within input 0x1 and mcycle [0x0, 0x800000000000).
 Disagreement is within input 0x1 and mcycle [0x0, 0x400000000000).
 Disagreement is within input 0x1 and mcycle [0x0, 0x200000000000).
 ...
-Disagreement is within input 0x1 and mcycle [0x2b1f73c, 0x2b1f740).
-Disagreement is within input 0x1 and mcycle [0x2b1f73c, 0x2b1f73e).
-Disagreement is within input 0x1 and mcycle [0x2b1f73c, 0x2b1f73d).
-Disagreement is within input 0x1, mcycle 0x2b1f73c, and uarch cycles [0x80000, 0x100000).
-Disagreement is within input 0x1, mcycle 0x2b1f73c, and uarch cycles [0xc0000, 0x100000).
-Disagreement is within input 0x1, mcycle 0x2b1f73c, and uarch cycles [0xe0000, 0x100000).
+Disagreement is within input 0x1 and mcycle [0x2b202a8, 0x2b202ac).
+Disagreement is within input 0x1 and mcycle [0x2b202a8, 0x2b202aa).
+Disagreement is within input 0x1 and mcycle [0x2b202a9, 0x2b202aa).
+Disagreement is within input 0x1, mcycle 0x2b202a9, and uarch cycles [0x80000, 0x100000).
+Disagreement is within input 0x1, mcycle 0x2b202a9, and uarch cycles [0xc0000, 0x100000).
+Disagreement is within input 0x1, mcycle 0x2b202a9, and uarch cycles [0xe0000, 0x100000).
 ...
-Disagreement is within input 0x1, mcycle 0x2b1f73c, and uarch cycles [0xffffc, 0x100000).
-Disagreement is within input 0x1, mcycle 0x2b1f73c, and uarch cycles [0xffffe, 0x100000).
-Disagreement is within input 0x1, mcycle 0x2b1f73c, and uarch cycles [0xfffff, 0x100000).
+Disagreement is within input 0x1, mcycle 0x2b202a9, and uarch cycles [0xffffc, 0x100000).
+Disagreement is within input 0x1, mcycle 0x2b202a9, and uarch cycles [0xffffe, 0x100000).
+Disagreement is within input 0x1, mcycle 0x2b202a9, and uarch cycles [0xfffff, 0x100000).
 Player honest's transition proof is valid.
 Player forger's transition proof is valid.
 Player tamperer's transition proof is valid.
@@ -10059,7 +10251,7 @@ result of the epoch, and the referee can verify outputs against it:
 
 ``` text
 Player honest wins.
-Final state hash is 0x9a4977e9e19e9bc4e38c52c6cb41e469334ccbe67711d4de8bfd58e473c62afe.
+Final state hash is 0x0c2bb1776026375c91d1918072054e7a1e81d0b730e8d790601fc7aee0c0b990.
 ```
 
 ``` text
@@ -10096,7 +10288,7 @@ original claims differ.
 Start the referee as before:
 
 ``` bash
-lua5.4 vg.lua referee 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" \
+lua5.4 vg.lua referee 127.0.0.1:8092 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b" \
     input-0.bin input-1.bin input-2.bin
 ```
 
@@ -10105,26 +10297,26 @@ but lets its first bisection request time out, relying on the other
 player claiming the same hash:
 
 ``` bash
-lua5.4 vg-dishonest.lua idle 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
+lua5.4 vg-dishonest.lua idle 127.0.0.1:8092 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b"
 ```
 
 Connect the adversary’s two players:
 
 ``` bash
-lua5.4 vg-dishonest.lua forger 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" 2 fake-input-2.bin
+lua5.4 vg-dishonest.lua forger 127.0.0.1:8092 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b" 2 fake-input-2.bin
 ```
 
 ``` bash
-lua5.4 vg-dishonest.lua fabulist 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78" \
-    2 fake-input-2.bin "0x9a4977e9e19e9bc4e38c52c6cb41e469334ccbe67711d4de8bfd58e473c62afe"
+lua5.4 vg-dishonest.lua fabulist 127.0.0.1:8092 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b" \
+    2 fake-input-2.bin "0x0c2bb1776026375c91d1918072054e7a1e81d0b730e8d790601fc7aee0c0b990"
 ```
 
 The idle player and the fabulist submit the same correct final hash:
 
 ``` text
-Player idle claimed 0x9a4977e9....
-Player forger claimed 0xf2ee4265....
-Player fabulist claimed 0x9a4977e9....
+Player idle claimed 0x0c2bb177....
+Player forger claimed 0x931c2580....
+Player fabulist claimed 0x0c2bb177....
 ```
 
 When the idle player fails to answer, the referee eliminates it after
@@ -10149,7 +10341,7 @@ Player fabulist failed to prove its transition and is eliminated.
 
 ``` text
 Player forger wins.
-Final state hash is 0xf2ee42659aa9a9d10330eae093870792424a2eb86e2ea4735da33cde556eb7ae.
+Final state hash is 0x931c25804697214b518a7182e33eb5db5e293d83821e8d700bc74708e47c3ae9.
 ```
 
 No invalid transition proof was accepted. The Sybils agreed on a false
@@ -10162,16 +10354,16 @@ Now repeat the game, replacing the idle player with the ordinary honest
 player:
 
 ``` bash
-lua5.4 vg.lua honest 127.0.0.1:8090 "0xb84921b83642864afdfa1955ac61e4f26f55d5a6f7670d433bc8d0e71b87cc78"
+lua5.4 vg.lua honest 127.0.0.1:8093 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b"
 ```
 
 It submits that same correct final hash and answers the referee for
 itself:
 
 ``` text
-Player honest claimed 0x9a4977e9....
-Player forger claimed 0xf2ee4265....
-Player fabulist claimed 0x9a4977e9....
+Player honest claimed 0x0c2bb177....
+Player forger claimed 0x931c2580....
+Player fabulist claimed 0x0c2bb177....
 ```
 
 Its tentative hashes expose the disagreement where the Sybils substitute
@@ -10186,7 +10378,7 @@ Player fabulist failed to prove its transition and is eliminated.
 
 ``` text
 Player honest wins.
-Final state hash is 0x9a4977e9e19e9bc4e38c52c6cb41e469334ccbe67711d4de8bfd58e473c62afe.
+Final state hash is 0x0c2bb1776026375c91d1918072054e7a1e81d0b730e8d790601fc7aee0c0b990.
 ```
 
 The fabulist’s defeat eliminates only the fabulist, even though it
@@ -10195,3 +10387,937 @@ tentative hashes, clocks, and proof responses belong to individual
 players; an equal final hash never authorizes one player to answer for
 another. The guarantee requires at least one honest player to defend its
 claim throughout the dispute within the allotted time.
+
+The next section introduces computation hash commitments, which let
+anyone defend a claim, and a tournament that settles large numbers of
+claims efficiently.
+
+## Permissionless refereed tournament
+
+The verification game settles a dispute in rounds, and each round
+eliminates at least one player. On a public blockchain anyone can post a
+claim, so an adversary can enter as many identities as it likes and buy
+a round of delay with each one. The [Permissionless Refereed
+Tournaments](https://arxiv.org/abs/2212.12439) algorithm (PRT) settles a
+dispute among N claims in a number of rounds logarithmic in N, and
+[Dave](https://doi.org/10.1145/3734698) builds on it. The `prt.lua`
+script models the [PRT
+contracts](https://github.com/cartesi/dave/tree/main/prt/contracts) Dave
+deploys, and we use it to settle the same epoch the verification game
+settled.
+
+Three changes to the verification game make this possible. First, a
+player commits to more than its final state hash. Its claim is a
+[computation hash](#hash-view-of-computation), the root of a tree whose
+leaves are the state hashes the computation passes through. The referee
+bisects two committed trees instead of asking players about the
+machine’s state at each midpoint, so any two claims can be compared
+without involving the others. Second, claims are compared in pairs. The
+referee pairs the claims in a bracket and runs the matches of a round at
+the same time. Every match eliminates at least one claim, so each round
+leaves at most half the claims, rounded up. Third, a claim does not
+belong to the player that posted it. Every request concerns a claim, and
+any holder of that claim may answer it. The answer must verify against
+the claim’s own commitment, so the sender does not matter. Every honest
+player computes the same claim, and that claim survives as long as
+anyone defends it. An unanswered request eliminates a claim, never a
+player. This defeats the Sybil attack of the previous section, since a
+Sybil that posts the honest claim and then abandons it cannot stop the
+honest player from defending that same claim.
+
+|                            | Verification game                                       | Permissionless refereed tournament                          |
+|----------------------------|---------------------------------------------------------|-------------------------------------------------------------|
+| A claim                    | The final state hash                                    | A computation hash over every sampled state                 |
+| A bisection answer         | Computed by advancing a machine to the midpoint         | Read from the committed tree                                |
+| Who answers                | The player that posted the claim                        | Any player that holds the claim                             |
+| A round                    | One dispute among all players, eliminating at least one | Concurrent matches between pairs, eliminating at least half |
+| Rounds needed for N claims | Up to N - 1                                             | About log<sub>2</sub> N                                     |
+
+The dispute runs at two levels, one per cycle counter. A player’s
+*mcycle claim* is the mcycle computation hash of the epoch. When two
+mcycle claims disagree on a leaf, having agreed on the leaf before it,
+the dispute moves into the period between the two leaves. Each side then
+posts a *uarch claim*, the uarch cycle computation hash of that period.
+The honest player’s mcycle claim must equal the hash `cartesi-machine`
+produced under [Computation hashes](#computation-hashes), and we will
+check that the tournament settles on exactly that hash.
+
+The demonstration samples the mcycle claim once every 2<sup>10</sup>
+mcycles (p = 10). The two levels pull this period in opposite
+directions. An mcycle claim costs one hash per period, so it favors long
+periods. A uarch claim expands one whole period into uarch transitions,
+so it favors short ones. For this epoch, p = 10 balances the two build
+times. Dave’s `ArbitrationConstants.sol` uses the same two levels over a
+larger epoch.
+
+### Computation hashes with repetition
+
+An mcycle computation hash has 2<sup>62</sup> leaves and a uarch cycle
+computation hash 2<sup>30</sup>. A player keeps its mcycle claim for the
+whole dispute, and each uarch claim while its match lasts, so storing
+either tree in full is out of the question. Two observations keep them
+small.
+
+First, almost all leaves are repetitions. The calculator finishes each
+input within about 50 million mcycles, and every sample after that, out
+to the input’s 2<sup>48</sup>th mcycle, repeats one state hash. The
+player therefore stores each claim as a [frontier
+forest](#frontier-forests), where a repetition of any length costs one
+stored value and one hash per level.
+
+Second, the stored nodes need not be leaves. The emulator delivers the
+sampled hashes in *bundles*, one subtree root per 2<sup>4</sup> mcycle
+samples (or one per mcycle, 2<sup>20</sup> uarch transitions). Bundle
+roots are interior nodes of the hash tree, so the computation hash is
+unchanged. The player stores those roots and retains the final-leaf
+paths returned by mcycle collection inside the forest, along with the
+repeated state inside padding bundles. The three inputs of our epoch fit
+in about nine thousand mcycle bundles, and one uarch period in at most
+2<sup>10</sup>.
+
+Tree queries receive the current player explicitly. When a query reaches
+an unknown node inside a bundle, that player opens it. It replays a
+machine from the nearest retained input boundary through the bundle’s
+transitions and hands the leaves to the forest. The forest checks the
+rebuilt subtree against the committed bundle root before installing it,
+so a faulty replay cannot change a claim. Later queries in that bundle
+read the installed subtree, and so do the other occurrences of a
+repeated bundle:
+
+``` lua
+function tree_meta.__index:get_proof(player, position, height)
+    height = height or 0
+    local siblings = hash_tree.frontier_forest_get_siblings(self.forest, position, height)
+    if not siblings then
+        open_bundle(self, player, position)
+        siblings = assert(hash_tree.frontier_forest_get_siblings(self.forest, position, height))
+    end
+    return {
+        target_address = position,
+        log2_target_size = height,
+        target_hash = self:get_node_hash(player, position, height),
+        log2_root_size = self.height,
+        root_hash = self:get_root_hash(),
+        sibling_hashes = siblings,
+    }
+end
+```
+
+The builds stream out of the emulator through the same collection
+interface as the `cartesi-machine` computation-hash builders. Only the
+sink differs. PRT’s builders push into a frontier forest, which retains
+the nodes later queries need.
+
+### The player
+
+The PRT player does the same work as the verification game’s
+[player](#the-player), but answers from the hash trees of its
+computation hashes.
+
+As before, the epoch is computed once, in response to `input_added`
+events. Each input runs to its fixed point (and is reverted if
+rejected), while the player pushes its bundle roots into the mcycle
+claim forest and collects the input’s outputs. The player offers each
+completed input boundary to the same machine cache the verification game
+uses. At `epoch_sealed`, it pads the rest of the epoch with the final
+state hash, saves the outputs Merkle root proof, and closes the forest.
+Its claim is the root’s two children and a proof of the last leaf, which
+is the final state hash. The mcycle forest already holds that leaf’s
+path, so producing the claim needs no bundle replay.
+
+The verification game’s player keeps an agreed pair and a tentative pair
+of machines and advances them to answer each midpoint. The PRT player
+answers a bisection by reading nodes from its tree:
+
+``` lua
+function event_handler.reveal_bisection(self, computation_hash, position, height, other_left_node)
+    local tree = self.trees[computation_hash]
+    local turn_left_node, turn_right_node = tree:get_child_hashes(self, position, height)
+    local descend_left = turn_left_node ~= other_left_node
+    local child_position = descend_left and position or position + (1 << (height - 1))
+    local turn_next_left_node, turn_next_right_node = tree:get_child_hashes(self, child_position, height - 1)
+    return {
+        turn_left_node = turn_left_node,
+        turn_right_node = turn_right_node,
+        turn_next_left_node = turn_next_left_node,
+        turn_next_right_node = turn_next_right_node,
+    }
+end
+```
+
+The referee names the node to open and the other claim’s left child
+below it. The player returns the node’s two children and the two
+children of the side where the claims part, which is all the referee
+needs to advance the bisection one level. No machine runs, unless the
+bisection reaches a bundle the player has not opened yet.
+
+A uarch claim is built when a dispute reaches one, by replaying the
+disputed input from the cache to the end of the disputed period:
+
+``` lua
+function player_meta.__index:build_uarch_cycle_computation_hash(epoch_input_offset, input_period_offset)
+    local pair <close> = self:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
+    local machine = pair.machine
+    local builder = self:new_uarch_cycle_computation_hash_builder(
+        combine_epoch_period_offset(self.geometry.periods_per_input, epoch_input_offset, input_period_offset)
+    )
+    builder:begin_epoch(machine)
+    self:run_to_input_mcycle_offset(
+        builder,
+        pair,
+        epoch_input_offset,
+        self:read_input(epoch_input_offset),
+        (input_period_offset + 1) * self.geometry.mcycles_per_period
+    )
+    return builder:end_epoch()
+end
+```
+
+State transition proofs come from a machine positioned at the disputed
+transition, as in the verification game.
+
+The dishonest strategies in `prt-dishonest.lua` reuse this player and
+wrap only what they corrupt. They cannot bypass the hash tree, which
+authenticates every bundle they open.
+
+A player runs in one of two modes. A stored player keeps its machines,
+inputs, and outputs in an epoch directory, and reopens it after a crash.
+A forked player keeps its machines in forked servers and its inputs and
+outputs in memory. Stored machines need a filesystem with reflinks,
+which the docker image this demonstration runs in lacks, so its players
+run in forked mode. Elsewhere, players run in stored mode, as in the
+[Lua PRT bridge](recipes/prt-lua-bridge.md) against the deployed
+contracts.
+
+### The tournament
+
+Seen from the referee, the whole game is short. It gathers the claims,
+reduces them to the one that survives every match, and verifies outputs
+against that claim’s final state:
+
+``` lua
+local function run_referee(dapp_contract)
+    local tournament = open_mcycle_tournament(dapp_contract)
+    local winner = run_tournament(tournament)
+    if winner then
+        wait_for_outputs(winner.final_state_hash)
+    end
+end
+```
+
+The mcycle tournament opens to every player subscribed to the epoch’s
+initial state hash, so the referee never needs to know how many players
+to expect. Each claim arrives with a proof of its final state hash at
+the tree’s last leaf. The referee checks that the claim’s two children
+join into the proof’s root and verifies the proof, the same check
+`joinTournament` performs on chain. Identical claims merge, and every
+player that posted one becomes a holder of it. Claims enter the bracket
+in the order their first posters joined, as Dave pairs commitments in
+the order they join.
+
+The tournament is a reduction. While more than one claim survives, it
+runs a round:
+
+``` lua
+function run_tournament(tournament)
+    local round = 0
+    while #tournament.claims > 1 do
+        round = round + 1
+        run_round(tournament, round)
+    end
+    return tournament.claims[1]
+end
+```
+
+A claim left without a partner advances unmatched, and a match that
+eliminates both claims contributes nothing:
+
+``` lua
+local function run_round(tournament, round)
+    local claims = tournament.claims
+    local matches = pair_claims(tournament, round)
+    local unmatched_claim = #claims % 2 == 1 and claims[#claims] or nil
+    run_matches(tournament, matches)
+    local surviving_claims = { unmatched_claim } -- unmatched_claim may be nil
+    for _, match in ipairs(matches) do
+        surviving_claims[#surviving_claims + 1] = match.claims[match.winner] -- match.claims[match.winner] may be nil
+    end
+    tournament.claims = surviving_claims
+end
+```
+
+The survivors keep their bracket order, so the next round depends only
+on the claims, not on the order in which the matches finished.
+
+A match bisects the two computation hashes down to the first leaf where
+they differ, as in Dave’s `Match.sol`. The claims take turns, one
+response per turn. The referee keeps only three nodes, the node the
+on-turn claim must open and the other claim’s two children at the same
+position. The on-turn claim opens its node by exposing its two children
+and, above the leaves, the two children of the side the bisection
+descends into:
+
+``` lua
+local function validate_bisection_response(match, response)
+    assert(match.height > 1, "match not bisecting")
+    assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node, "wrong children")
+    local turn_child_node = (response.turn_left_node ~= match.other_left_node) and response.turn_left_node
+        or response.turn_right_node
+    assert(keccak(response.turn_next_left_node, response.turn_next_right_node) == turn_child_node, "wrong next nodes")
+    return response
+end
+```
+
+The bisection descends left when the exposed left child differs from the
+other claim’s, since the claims then part in the left subtree, and right
+otherwise:
+
+``` lua
+local function advance_bisection(match, response)
+    assert(match.height > 1, "match not bisecting")
+    match.height = match.height - 1
+    local descend_left = response.turn_left_node ~= match.other_left_node
+    if descend_left then
+        match.turn_parent_node = match.other_left_node
+    else
+        match.turn_parent_node = match.other_right_node
+        match.position = match.position + (1 << match.height)
+    end
+    match.other_left_node = response.turn_next_left_node
+    match.other_right_node = response.turn_next_right_node
+    match.turn_index = get_other_turn_index(match.turn_index)
+end
+```
+
+At height one, a sealing response exposes the two differing leaves and
+proves the agreed state just before them against the on-turn claim, as
+Dave’s `sealDivergence` does. At leaf zero, the agreed state is the
+tournament’s initial state hash, which the referee already knows:
+
+``` lua
+local function validate_seal_response(tournament, match, response)
+    assert(match.height == 1, "match not ready to seal")
+    assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node, "wrong leaves")
+    local descend_left = response.turn_left_node ~= match.other_left_node
+    local leaf_index = match.position + (descend_left and 0 or 1)
+    local agreed_state_hash
+    if leaf_index ~= 0 then
+        local proof = response.agreed_state_hash_proof
+        assert(proof.target_address == leaf_index - 1, "agreed state proof not at leaf before divergence")
+        assert(proof.log2_target_size == 0, "agreed state proof target not a leaf")
+        assert(proof.log2_root_size == tournament.height, "agreed state proof height mismatch")
+        assert(#proof.sibling_hashes == tournament.height, "agreed state proof sibling count mismatch")
+        assert(proof.root_hash == match.claims[match.turn_index].computation_hash, "agreed state proof root mismatch")
+        assert(descend_left or proof.target_hash == response.turn_left_node, "wrong agreed state")
+        hash_tree.verify_slice(proof)
+        agreed_state_hash = proof.target_hash
+    else
+        agreed_state_hash = tournament.initial_state_hash
+    end
+    local turn_state_hash = descend_left and response.turn_left_node or response.turn_right_node
+    local other_state_hash = descend_left and match.other_left_node or match.other_right_node
+    local next_state_hashes = {}
+    next_state_hashes[match.turn_index] = turn_state_hash
+    next_state_hashes[get_other_turn_index(match.turn_index)] = other_state_hash
+    return {
+        leaf_index = leaf_index,
+        agreed_state_hash = agreed_state_hash,
+        next_state_hashes = next_state_hashes,
+    }
+end
+```
+
+These validators are pure functions, so the recipe tests the bisection
+on synthetic trees that differ at a chosen leaf before any machine is
+involved.
+
+`reveal_divergence` asks the holders of the on-turn claim to open its
+node and takes the first response that validates. When nobody answers in
+time, it waits for a timeout win and then for an elimination (see
+[Clocks and logical time](#clocks-and-logical-time)):
+
+``` lua
+local function reveal_divergence(tournament, match)
+    while match.height > 1 do
+        local turn_claim = match.claims[match.turn_index]
+        local start_instant = current_time()
+        local responder_deadline = start_instant + turn_claim.allowance
+        local eliminable_at = responder_deadline + match.claims[get_other_turn_index(match.turn_index)].allowance
+        local reveal <close> = request_first_valid(
+            subscription_hash(tournament.id, turn_claim),
+            EVENTS.reveal_bisection,
+            { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
+            function(response, _, received_at)
+                assert(received_at < responder_deadline, "late bisection")
+                return validate_bisection_response(match, response)
+            end
+        )
+        local response = reveal:wait_at_most(responder_deadline)
+        if not response then
+            return settle_timeout(tournament, match, responder_deadline, eliminable_at)
+        end
+        charge_turn_time(tournament, match, start_instant)
+        advance_bisection(match, response)
+    end
+end
+```
+
+`seal_divergence` asks for the leaves and the agreed-state proof the
+same way:
+
+``` lua
+local function seal_divergence(tournament, match)
+    local turn_claim = match.claims[match.turn_index]
+    local start_instant = current_time()
+    local responder_deadline = start_instant + turn_claim.allowance
+    local eliminable_at = responder_deadline + match.claims[get_other_turn_index(match.turn_index)].allowance
+    local seal <close> = request_first_valid(
+        subscription_hash(tournament.id, turn_claim),
+        EVENTS.seal_divergence,
+        { turn_claim.computation_hash, match.position, match.other_left_node },
+        function(response, _, received_at)
+            assert(received_at < responder_deadline, "late seal")
+            return validate_seal_response(tournament, match, response)
+        end
+    )
+    local divergence = seal:wait_at_most(responder_deadline)
+    if not divergence then
+        return nil, settle_timeout(tournament, match, responder_deadline, eliminable_at)
+    end
+    charge_turn_time(tournament, match, start_instant)
+    return divergence
+end
+```
+
+`run_match` reveals, seals, and settles the divergence, and returns
+early when a timeout or an elimination ends the match:
+
+``` lua
+local function run_match(tournament, match)
+    local winner = reveal_divergence(tournament, match)
+    if winner then
+        return winner
+    end
+    local divergence
+    divergence, winner = seal_divergence(tournament, match)
+    if winner then
+        return winner
+    end
+    return settle_divergence(tournament, match, divergence)
+end
+```
+
+### Settling a match
+
+`settle_divergence` passes the sealed divergence to the tournament’s
+settler, which returns the surviving claim, or zero if neither claim
+survives:
+
+``` lua
+local function settle_divergence(tournament, match, divergence)
+    local settled_state_hash = tournament:settle_state_hash(
+        match,
+        divergence.leaf_index,
+        divergence.agreed_state_hash,
+        divergence.next_state_hashes
+    )
+    for claim_index = 1, 2 do
+        if settled_state_hash == divergence.next_state_hashes[claim_index] then
+            return claim_index
+        end
+    end
+    return 0
+end
+```
+
+An mcycle match settles in a uarch tournament. The two claims disagree
+about the state hash after one period of one input, so each side must
+defend a uarch claim over that period, ending at the mcycle leaf it
+committed to. The uarch tournament runs like the mcycle one, with two
+differences. Only holders of the two disputed claims may join, and a
+uarch claim must end at one of the two contested states, as
+`validContestedFinalState` requires on chain. The winner’s final state
+names the surviving mcycle claim, and a uarch tournament without a
+winner eliminates both:
+
+``` lua
+local function settle_mcycle_state_hash(
+    mcycle_tournament,
+    mcycle_match,
+    epoch_period_offset,
+    agreed_state_hash,
+    next_state_hashes
+)
+    local uarch_tournament = open_uarch_tournament(
+        mcycle_tournament,
+        mcycle_match,
+        epoch_period_offset,
+        agreed_state_hash,
+        next_state_hashes
+    )
+    local uarch_winner = run_tournament(uarch_tournament)
+    return propagate_uarch_result(mcycle_match, uarch_winner, next_state_hashes)
+end
+```
+
+A uarch match settles against the machine itself. The bisection has
+isolated one uarch transition out of an agreed state hash, and its
+position within the disputed period picks the transition’s form, as in
+Dave’s `CartesiStateTransition.sol`. The transition out of an input
+boundary first delivers the input the dapp contract holds (never one a
+player supplies). The transition that closes an instruction verifies a
+uarch step (by then at its fixed point) followed by the uarch reset,
+which also reverts the machine when the instruction rejected its input.
+Every other transition is an ordinary uarch step:
+
+``` lua
+local function validate_state_transition_response(
+    dapp_contract,
+    root_hash_before,
+    epoch_period_offset,
+    state_transition_offset,
+    response
+)
+    local periods_per_input = dapp_contract.geometry.periods_per_input
+    local epoch_input_offset, input_period_offset = split_epoch_period_offset(periods_per_input, epoch_period_offset)
+    local _, uarch_cycle = split_state_transition_offset(state_transition_offset)
+    local obtained_root_hash = root_hash_before
+    local input_data = dapp_contract.inputs[epoch_input_offset + 1]
+    if state_transition_offset == 0 and input_period_offset == 0 and input_data then
+        obtained_root_hash = cartesi.machine:verify_send_cmio_response(
+            HTIF_YIELD_REASON_ADVANCE_STATE,
+            input_data,
+            root_hash_before,
+            response.send_cmio_log,
+            root_hash_before
+        )
+    end
+    obtained_root_hash = cartesi.machine:verify_step_uarch(obtained_root_hash, response.step_log)
+    if uarch_cycle == UARCH_CYCLE_MAX then
+        obtained_root_hash = cartesi.machine:verify_reset_uarch(obtained_root_hash, response.reset_uarch_log)
+    end
+    return obtained_root_hash
+end
+```
+
+This is the check the verification game makes. The transition out of the
+agreed state is unique, so a log that verifies reaches the one true
+state hash after it, whoever supplied the log. The claim that committed
+to that hash wins, and the other loses:
+
+``` lua
+local function settle_uarch_state_hash(tournament, match, state_transition_offset, root_hash_before, next_state_hashes)
+    local subscriptions = {
+        subscription_hash(tournament.id, match.claims[1]),
+        subscription_hash(tournament.id, match.claims[2]),
+    }
+    local start_instant = current_time()
+    local deadline_one = start_instant + match.claims[1].allowance
+    local deadline_two = start_instant + match.claims[2].allowance
+    local eliminable_at = math.max(deadline_one, deadline_two)
+    local proof <close> = request_first_valid(
+        subscriptions,
+        EVENTS.prove_state_transition,
+        { tournament.epoch_input_offset, tournament.input_period_offset, state_transition_offset },
+        function(response, _, received_at)
+            assert(received_at < eliminable_at, "late state transition proof")
+            return validate_state_transition_response(
+                tournament.dapp_contract,
+                root_hash_before,
+                tournament.epoch_period_offset,
+                state_transition_offset,
+                response
+            )
+        end
+    )
+    local obtained_root_hash = proof:wait_at_most(eliminable_at)
+    if not obtained_root_hash then
+        wait_until(eliminable_at)
+        local elimination <close> = request_first_valid(
+            EVERYONE,
+            EVENTS.eliminate_match,
+            {},
+            function(_, _, received_at)
+                assert(received_at >= eliminable_at, "early elimination")
+                return true
+            end
+        )
+        elimination:wait_at_most(FOREVER)
+    end
+    return obtained_root_hash
+end
+```
+
+Any holder of either claim may supply the logs, by positioning a fresh
+fork at the transition and logging it:
+
+``` lua
+function event_handler.prove_state_transition(self, epoch_input_offset, input_period_offset, state_transition_offset)
+    local period_mcycle_offset, uarch_cycle = split_state_transition_offset(state_transition_offset)
+    local pair <close> = self:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
+    local machine = pair.machine
+    local input_data = self:read_input(epoch_input_offset)
+    if state_transition_offset == 0 and input_period_offset == 0 and input_data then
+        -- Logging never fails. A machine that is not waiting for the input logs the no-op delivery.
+        local send_cmio_log =
+            machine:log_send_cmio_response(HTIF_YIELD_REASON_ADVANCE_STATE, input_data, pair.revert_root_hash)
+        return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
+    end
+    local builder = self:new_null_computation_hash_builder()
+    local input_mcycle_offset =
+        combine_input_mcycle_offset(self.geometry.mcycles_per_period, input_period_offset, period_mcycle_offset)
+    self:run_to_input_mcycle_offset(builder, pair, epoch_input_offset, input_data, input_mcycle_offset)
+    self:run_to_uarch_cycle(builder, pair, epoch_input_offset, input_data, input_mcycle_offset, uarch_cycle)
+    if uarch_cycle == UARCH_CYCLE_MAX then
+        local step_log = machine:log_step_uarch()
+        return { step_log = step_log, reset_uarch_log = machine:log_reset_uarch() }
+    end
+    return { step_log = machine:log_step_uarch() }
+end
+```
+
+### Clocks and logical time
+
+The referee uses the verification game’s transport.
+`request_first_valid` keeps the first response its validator accepts,
+from whichever holder of the claim sent it. Requests to eliminate an
+inactive match go to every player, since anyone may send the
+elimination.
+
+Like a blockchain, the referee runs in blocks. A request emitted in
+block B can be answered in block B + 1 at the earliest, and a player may
+schedule its response for a later block. The server advances to the next
+block only after it has handled every pending request and response, and
+it skips blocks in which nothing can happen. Responses are validated in
+match creation order, so the transcript does not depend on the order in
+which messages arrive. The recipe runs the tournament twice and requires
+identical narration.
+
+The windows follow Dave’s clock arithmetic. Each claim’s clock starts
+with the tournament’s allowance, less the blocks between the
+tournament’s opening and the claim’s joining. The dapp contract fixes
+the allowance at four blocks, and every claim joins one block after its
+tournament opens, so mcycle claims start with three blocks. A uarch
+tournament’s allowance is the larger clock its mcycle match left, as in
+Dave, so uarch claims start with two blocks. Two blocks is the least
+that lets a claim see an event in one block and answer in the next.
+
+Say a claim gets the turn at block b with c blocks on its clock, and the
+waiting claim has w. The on-turn claim must open its node before b + c.
+From b + c until b + c + w, a holder of the waiting claim may claim a
+timeout win. From b + c + w, anyone may eliminate both claims:
+
+``` lua
+-- Charges the on-turn claim for blocks beyond the response budget after a valid response.
+local function charge_turn_time(tournament, match, start_instant)
+    local turn_claim = match.claims[match.turn_index]
+    local elapsed = current_time() - start_instant
+    turn_claim.allowance = turn_claim.allowance - math.max(elapsed - tournament.dapp_contract.response_budget, 0)
+end
+```
+
+When the on-turn claim misses its deadline, `reveal_divergence` and
+`seal_divergence` settle the turn with `settle_timeout`. It waits for a
+timeout win until the match becomes eliminable, and then for an
+elimination:
+
+``` lua
+local function settle_timeout(tournament, match, responder_deadline, eliminable_at)
+    local timeout <close> = emit_win_match_by_timeout(tournament, match, responder_deadline, eliminable_at)
+    local winner = timeout:wait_at_most(eliminable_at)
+    if winner then
+        return winner
+    end
+    local elimination <close> = emit_eliminate_match(match, eliminable_at)
+    return elimination:wait_at_most(FOREVER)
+end
+```
+
+Each valid response is charged the blocks it took beyond a response
+budget equal to the allowance, so in this model no clock runs down. At a
+sealed uarch leaf both clocks run from the seal, and either side may
+prove the transition before the later deadline. If no proof arrives,
+anyone may eliminate both claims from that deadline. Expiry alone never
+eliminates a claim, since a valid timeout-win or elimination response
+must arrive. A player that connects and never answers therefore stalls
+the demonstration, where a blockchain would let its deadline pass. An
+mcycle match has no clock running while its uarch tournament runs, and
+the uarch result settles it as soon as that tournament ends.
+
+### Running the tournament
+
+Eight players contest the epoch, one honest and seven dishonest, using
+four dishonest strategies.
+
+The *quitter* fabricates a claim out of thin air, every leaf the same
+made-up hash. Such a claim is cheap to commit to (it takes one run), and
+its join proof is valid. The quitter then walks away, leaving the game
+at the first event after its claim. Two more quitters, `quitter 1` and
+`quitter 2`, join one after the other, so they meet each other.
+
+The *forger* runs the shared code with a machine that substitutes a
+forged input, claiming input 2 asked for `2+2048` rather than `2^2048`.
+Its claims are self-consistent everywhere, and it defends them
+faithfully, but no log of feeding the forged input verifies against the
+input the referee holds.
+
+The *tamperer* corrupts its machine mid-computation, writing over a word
+of RAM the guest never reads, and honestly commits to the corrupted
+history. Every replay repeats the corruption, so its claims are
+self-consistent too. The corruption never changes an output, but it
+changes every state hash after it, and the true transition out of the
+last agreed state contradicts the first changed sample.
+
+The *fabulist* computes the whole epoch honestly and lies about a single
+sample, overwriting one leaf of the honest claim deep inside input 2. It
+can answer every other request with honest data, but the reset that
+closes the period it lied about contradicts the leaf itself. Two
+fabulists run, lying about different samples, so they dispute each other
+too.
+
+To run the tournament, start the referee with the epoch’s initial state
+hash and input files. As in the verification game, the referee announces
+the inputs to the players through `run_epoch`, so the files must stay
+readable from each player’s working directory while the example runs.
+
+``` bash
+lua5.4 prt.lua referee 127.0.0.1:8094 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b" \
+    input-0.bin input-1.bin input-2.bin
+```
+
+The players take the referee address, the initial state hash, and their
+role arguments. Input filenames arrive from the referee, and no argument
+names the number of players or their order:
+
+``` bash
+lua5.4 prt.lua honest 127.0.0.1:8094 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b"
+```
+
+``` bash
+lua5.4 prt-dishonest.lua quitter 127.0.0.1:8094 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b"
+```
+
+``` bash
+lua5.4 prt-dishonest.lua forger 127.0.0.1:8094 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b" 2 forged-input-2.bin
+```
+
+``` bash
+lua5.4 prt-dishonest.lua tamperer 127.0.0.1:8094 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b" 0 100
+```
+
+``` bash
+lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8094 "0xabee9bdbca486a66006a8bf5bc3e991fd4d1a42909e1540ef929cfd943a63e6b" 2 2000
+```
+
+The eight players commit claims, each narrated with the label of the
+player that posted it:
+
+``` text
+Claim 0x1a22b0c7..., with final state 0xdd2e60cd..., joined (posted by quitter).
+Claim 0xae6aea64..., with final state 0x43d3a950..., joined (posted by tamperer).
+Claim 0xb74ee908..., with final state 0x0c2bb177..., joined (posted by fabulist).
+Claim 0x401ff3dd..., with final state 0x0c2bb177..., joined (posted by fixed_fabulist).
+Claim 0x0df1237d..., with final state 0xc9b5ba3a..., joined (posted by forger).
+Claim 0x7dbebe15..., with final state 0x0c2bb177..., joined (posted by honest).
+Claim 0x0e6cdf5f..., with final state 0x2743a118..., joined (posted by quitter 1).
+Claim 0x87f38778..., with final state 0x66eed701..., joined (posted by quitter 2).
+```
+
+The honest player and the two fabulists commit to the same final state
+(a fabulist lies only about an interior sample), but their claims
+differ, so they still dispute. The referee pairs the claims in the order
+they were posted and reduces them round by round until one claim is
+left:
+
+``` text
+Round 1, match 1, at the mcycle level: claim 0x1a22b0c7... against claim 0xae6aea64....
+Round 1, match 2, at the mcycle level: claim 0xb74ee908... against claim 0x401ff3dd....
+Round 1, match 3, at the mcycle level: claim 0x0df1237d... against claim 0x7dbebe15....
+Round 1, match 4, at the mcycle level: claim 0x0e6cdf5f... against claim 0x87f38778....
+Match 1: claim 0xae6aea64... wins.
+Match 2: claim 0x401ff3dd... wins.
+Match 3: claim 0x7dbebe15... wins.
+Match 4: no claim survives.
+Round 2, match 5, at the mcycle level: claim 0xae6aea64... against claim 0x401ff3dd....
+Match 5: claim 0x401ff3dd... wins.
+Claim 0x7dbebe15... advances unmatched to round 3.
+Round 3, match 6, at the mcycle level: claim 0x7dbebe15... against claim 0x401ff3dd....
+Match 6: claim 0x7dbebe15... wins.
+```
+
+The quitter joined first and meets the tamperer in match 1. The quitter
+has already left, so its opening goes unanswered, and the tamperer
+claims a timeout win at the quitter’s deadline:
+
+``` text
+Nobody opened claim 0x1a22b0c7.... Claim 0xae6aea64... claims a timeout win.
+```
+
+The two extra quitters meet in match 4. Both have left, so nobody claims
+a timeout win. At the elimination deadline the honest player sends the
+elimination, while defending its own claim in match 3. Repeated
+eliminations cannot resolve the match twice, and neither quitter
+survives into the next round:
+
+``` text
+An elimination response from tamperer removes both inactive claims.
+```
+
+Match 2, between the two fabulists, shows the whole shape of a dispute.
+The mcycle bisection converges on the leftmost lie, the first fabulist’s
+sample deep inside input 2, and opens a uarch tournament over that
+period. The second fabulist, honest there, submits the truthful uarch
+claim:
+
+``` text
+Height 61: the claims first disagree within leaves [0x0, 0x1fffffffffffffff].
+Height 60: the claims first disagree within leaves [0x0, 0xfffffffffffffff].
+Height 59: the claims first disagree within leaves [0x0, 0x7ffffffffffffff].
+...
+A uarch tournament opens over input 2, period 2000, starting from 0x4282516c....
+Claim 0x7da68719..., with final state 0x4953b2b7..., joined (posted by fabulist).
+Claim 0xb403f67c..., with final state 0x8a310f1b..., joined (posted by fixed_fabulist).
+Round 1, match 2.1, at the uarch level: claim 0x7da68719... against claim 0xb403f67c....
+Match 2.1: claim 0xb403f67c... wins.
+The uarch winner confirms 0x8a310f1b.... Claim 0xb74ee908... is eliminated.
+```
+
+The uarch bisection converges on the disputed transition. The lie sits
+at the end of an instruction, so the transition that closes it (a uarch
+step and the uarch reset) settles the match against the first fabulist:
+
+``` text
+Height 1: the claims first disagree within leaves [0x3ffffffe, 0x3fffffff].
+The claims diverge at state 1073741823: 0x4953b2b7... against 0x8a310f1b..., from the agreed state 0x5e5a5eee....
+The disputed transition is a uarch step and the uarch reset closing an instruction.
+The disputed transition provably leads to 0x8a310f1b....
+Claim 0x7da68719... committed to 0x4953b2b7... and is eliminated.
+```
+
+The other disputes settle the same way, each on a different form of
+transition. The forger meets the honest player in match 3 and is caught
+where it fed its forged input, at the transition that delivers input 2:
+
+``` text
+Height 61: the claims first disagree within leaves [0x0, 0x1fffffffffffffff].
+Height 60: the claims first disagree within leaves [0x0, 0xfffffffffffffff].
+Height 59: the claims first disagree within leaves [0x0, 0x7ffffffffffffff].
+...
+A uarch tournament opens over input 2, period 0, starting from 0x272c6eff....
+Claim 0x8c81df76..., with final state 0x22da6cf2..., joined (posted by forger).
+Claim 0xeeeba67e..., with final state 0xa8129a6e..., joined (posted by honest).
+Round 1, match 3.1, at the uarch level: claim 0x8c81df76... against claim 0xeeeba67e....
+Match 3.1: claim 0xeeeba67e... wins.
+The uarch winner confirms 0xa8129a6e.... Claim 0x0df1237d... is eliminated.
+```
+
+``` text
+Height 1: the claims first disagree within leaves [0x0, 0x1].
+The claims diverge at state 0: 0x2d46df79... against 0xb3756959..., from the agreed state 0x272c6eff....
+The disputed transition is the inclusion of input 2 and the first uarch step.
+The disputed transition provably leads to 0xb3756959....
+Claim 0x8c81df76... committed to 0x2d46df79... and is eliminated.
+```
+
+The tamperer meets the surviving fabulist in the second round, diverges
+at the corrupted sample in input 0, and loses on an ordinary uarch step:
+
+``` text
+Height 61: the claims first disagree within leaves [0x0, 0x1fffffffffffffff].
+Height 60: the claims first disagree within leaves [0x0, 0xfffffffffffffff].
+Height 59: the claims first disagree within leaves [0x0, 0x7ffffffffffffff].
+...
+A uarch tournament opens over input 0, period 1600, starting from 0xbda88d1e....
+Claim 0x307db716..., with final state 0x056a91ce..., joined (posted by tamperer).
+Claim 0x3a8fb60e..., with final state 0x6b11cb10..., joined (posted by fixed_fabulist).
+Round 1, match 5.1, at the uarch level: claim 0x307db716... against claim 0x3a8fb60e....
+Match 5.1: claim 0x3a8fb60e... wins.
+The uarch winner confirms 0x6b11cb10.... Claim 0xae6aea64... is eliminated.
+```
+
+``` text
+Height 1: the claims first disagree within leaves [0x0, 0x1].
+The claims diverge at state 0: 0xa2a01cf6... against 0x68887bdd..., from the agreed state 0xbda88d1e....
+The disputed transition is an ordinary uarch step.
+The disputed transition provably leads to 0x68887bdd....
+Claim 0x307db716... committed to 0xa2a01cf6... and is eliminated.
+```
+
+The second fabulist meets the honest player in the final. Its lie, a
+sample after input 2 has reached its fixed point, is contradicted by the
+reset that closes an instruction that no longer advances:
+
+``` text
+Height 61: the claims first disagree within leaves [0x0, 0x1fffffffffffffff].
+Height 60: the claims first disagree within leaves [0x0, 0xfffffffffffffff].
+Height 59: the claims first disagree within leaves [0x0, 0x7ffffffffffffff].
+...
+A uarch tournament opens over input 2, period 60000, starting from 0x0c2bb177....
+Claim 0x43950f4a..., with final state 0x4953b2b7..., joined (posted by fixed_fabulist).
+Claim 0x641d123d..., with final state 0x0c2bb177..., joined (posted by honest).
+Round 1, match 6.1, at the uarch level: claim 0x43950f4a... against claim 0x641d123d....
+Match 6.1: claim 0x641d123d... wins.
+The uarch winner confirms 0x0c2bb177.... Claim 0x401ff3dd... is eliminated.
+```
+
+``` text
+Height 1: the claims first disagree within leaves [0x3ffffffe, 0x3fffffff].
+The claims diverge at state 1073741823: 0x4953b2b7... against 0x0c2bb177..., from the agreed state 0x027e67c3....
+The disputed transition is a uarch step and the uarch reset closing an instruction.
+The disputed transition provably leads to 0x0c2bb177....
+Claim 0x43950f4a... committed to 0x4953b2b7... and is eliminated.
+```
+
+The dishonest claims fell to a timeout win, an elimination, a uarch
+reset, an input delivery, and an ordinary uarch step. The honest player
+defended its claim in two of the six mcycle matches and sent the
+elimination for the unrelated pair of quitters. Dishonest players
+settled the other disputes by defending the truth where their own lies
+did not reach.
+
+The winning claim commits to the epoch’s final state hash, which in turn
+commits to the outputs Merkle root. As in the verification game, the
+referee first establishes that root from the final state
+(`wait_for_outputs`), using the three machine-validity proofs Dave uses.
+They show that the machine yielded manually with `RX_ACCEPTED`, and they
+authenticate the CMIO TX-buffer word that holds the root. The referee
+then accepts output proofs against that root, and the player chooses
+which output to offer. An epoch without outputs still settles its
+outputs root. The referee waits for output proofs indefinitely, so the
+example’s script stops the server once the chosen output has been
+proved.
+
+The verdict settles the epoch:
+
+``` text
+Tournament winner is claim 0x7dbebe15....
+Winner computation hash: 0x7dbebe159ee27081e7a0a2a3a7b6d8fe5510a1859a7d6a0f6ac9fba2cc8d9de1
+Winner final state hash: 0x0c2bb1776026375c91d1918072054e7a1e81d0b730e8d790601fc7aee0c0b990
+Result proved against the final state:
+32317006071311007300714876688669951960444102669715484032130345427524655138867890893197201411522913463688717960921898019494119559150490921095088152386448283120630877367300996091750197750389652106796057638384067568276792218642619756161838094338476170470581645852036305042887575891541065808607552399123930385521914333389668342420684974786564569494856176035326322058077805659331026192708460314150258592864177116725943603718461857357598351152301645904403697613233287231227125684710820209725157101726931323469678542580656697935045997268352998638215525166389437335543602135433229604645318478604952148193555853611059596230656
+```
+
+The winner’s computation hash is the mcycle computation hash
+`cartesi-machine` computed directly, and its final state hash is the
+state the calculator’s first epoch saved as `epoch-0-state-hash.bin`
+(the script above checks both). The player offered its last output,
+output 1, the calculator’s answer for the epoch’s last input. The
+tournament ends on the same state the direct run produced, however many
+liars stood in the way.
+
+The model simplifies the PRT contracts in a few ways. The referee is one
+trusted process, where Dave is a family of contracts the blockchain
+executes, and no bonds change hands. In Dave, a dispute starts as soon
+as two claims exist. Each claim that joins meets the one waiting, and a
+claim that joins late may meet one that has already won a match. The
+model gathers a tournament’s claims first and runs the bracket in
+rounds, which is simpler to narrate. A uarch result settles its mcycle
+match at once, where Dave needs a transaction to propagate it. At a
+sealed uarch leaf, Dave accepts a proof only before the earlier
+deadline, and then lets the claim with the later deadline win by
+timeout. The [Lua PRT bridge](recipes/prt-lua-bridge.md) runs the same
+players against the deployed Dave contracts on a local chain. For the
+real thing, see the [Dave repository](https://github.com/cartesi/dave),
+the [Permissionless Refereed
+Tournaments](https://arxiv.org/abs/2212.12439) paper, and the
+[Dave](https://doi.org/10.1145/3734698) paper.

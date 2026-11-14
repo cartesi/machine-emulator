@@ -248,9 +248,12 @@ static inline bool isYieldedManualWith(uint64 tohost, uint64 yieldReason) {
     return dev == HTIF_DEV_YIELD && cmd == HTIF_YIELD_CMD_MANUAL && reason == yieldReason;
 }
 
+/// \brief Rejects the operation in every build type, as a Solidity require reverts
 template <typename T1, typename T2>
-void require([[maybe_unused]] T1 condition, [[maybe_unused]] T2 message) {
-    assert((condition) && (message));
+void require(T1 condition, T2 message) {
+    if (!condition) {
+        throw std::runtime_error{message};
+    }
 }
 
 template <typename UarchState>

@@ -212,6 +212,13 @@ describe("verify_step_uarch", function()
             end)
         end)
 
+        it("should reject a log2_size that does not fit an int on read access", function()
+            -- Truncated to an int, it would be 3, the right size for this access
+            step_should_fail(build_default_machine, 'log2_size" is out of bounds', function(log)
+                log.accesses[1].log2_size = (1 << 32) + 3
+            end)
+        end)
+
         it("should reject corrupt sibling hash on read access", function()
             step_should_fail(
                 build_default_machine,
@@ -723,6 +730,309 @@ describe("access proof sibling count", function()
             change_sibling_count(log, adjustment)
             expect.fail(function()
                 machine:verify_reset_uarch(initial_hash, log)
+            end, expected_error)
+        end)
+    end
+end)
+
+describe("uarch TLB writes with an invalid set index", function()
+    -- A uarch program that issues the WRITE_TLB ecall for slot 0 of a set the TLB does not have
+    local programs = {
+        ["3"] = { 0x00300513 }, -- li a0,3
+        ["0x40000"] = { 0x00040537 }, -- lui a0,0x40
+    }
+    for name, set_index_program in pairs(programs) do
+        local program = { table.unpack(set_index_program) }
+        program[#program + 1] = 0x00000593 -- li a1,0
+        program[#program + 1] = 0x00001637 -- lui a2,0x1
+        program[#program + 1] = (cartesi.UARCH_ECALL_FN_WRITE_TLB << 20) | 0x00893 -- li a7,write_tlb
+        program[#program + 1] = 0x00000073 -- ecall
+        local function build_machine()
+            local data_filename = create_test_uarch_program(program)
+            local machine = cartesi.machine({
+                ram = { length = 0x20000 },
+                uarch = { ram = { length = 0x1000, backing_store = { data_filename = data_filename } } },
+            }, {})
+            os.remove(data_filename)
+            return machine
+        end
+        it("should fail cleanly when running, logging and collecting set index " .. name, function()
+            for _, step in ipairs({
+                {
+                    function(machine)
+                        machine:run_uarch(16)
+                    end,
+                    "invalid TLB index",
+                },
+                {
+                    function(machine)
+                        for _ = 1, 16 do
+                            machine:log_step_uarch()
+                        end
+                    end,
+                    "invalid TLB index",
+                },
+                -- The collector refuses the custom uarch program before running it
+                {
+                    function(machine)
+                        local revert_tail = { string.rep("\0", cartesi.HASH_SIZE), string.rep("\0", cartesi.HASH_SIZE) }
+                        machine:collect_uarch_cycle_root_hashes(1, 0, revert_tail)
+                    end,
+                    "microarchitecture is not pristine",
+                },
+            }) do
+                local machine <close> = build_machine()
+                expect.fail(function()
+                    step[1](machine)
+                end, step[2])
+            end
+        end)
+    end
+end)
+
+describe("uarch TLB writes with an out-of-range slot index", function()
+    -- A uarch program that issues the WRITE_TLB ecall for set 0, slot 0, with vaddr_page 0x1000
+    local program = {
+        0x00000513, -- li a0,0
+        0x00000593, -- li a1,0
+        0x00001637, -- lui a2,0x1
+        (cartesi.UARCH_ECALL_FN_WRITE_TLB << 20) | 0x00893, -- li a7,write_tlb
+        0x00000073, -- ecall
+    }
+    local ECALL_CYCLE = 4
+    -- The slot index whose slot address lands on the start of guest RAM
+    local slot_index = (cartesi.AR_RAM_START - cartesi.AR_SHADOW_TLB_START) // cartesi.SHADOW_TLB_SLOT_SIZE
+    -- Machines stopped at the ecall, with the given TLB set and slot indices in a0 and a1
+    local function build_machine(set_index, slot)
+        local data_filename = create_test_uarch_program(program)
+        local machine = cartesi.machine({
+            ram = { length = 0x20000 },
+            uarch = { ram = { length = 0x1000, backing_store = { data_filename = data_filename } } },
+        }, {})
+        os.remove(data_filename)
+        machine:run_uarch(ECALL_CYCLE)
+        machine:write_reg("uarch_x10", set_index)
+        machine:write_reg("uarch_x11", slot)
+        return machine
+    end
+    -- Rebuilds the accesses of the genuine in-range log against the given machine, with the TLB slot write
+    -- moved to the address the indices in its a0 and a1 select, wrapped to 64 bits as an unchecked verifier
+    -- would compute it. Returns the log and the root hashes before and after it.
+    local function rebuild_log(machine, genuine_log)
+        local set_index, slot = machine:read_reg("uarch_x10"), machine:read_reg("uarch_x11")
+        local slot_size = cartesi.SHADOW_TLB_SLOT_SIZE
+        local tlb_address = cartesi.AR_SHADOW_TLB_START + (set_index * cartesi.TLB_SET_SIZE + slot) * slot_size
+        local slot_image = string.pack(
+            "<I8I8I8I8",
+            machine:read_reg("uarch_x12"),
+            machine:read_reg("uarch_x13"),
+            machine:read_reg("uarch_x14"),
+            0
+        )
+        local word_registers = {
+            [cartesi.machine:get_reg_address("uarch_pc")] = "uarch_pc",
+            [cartesi.machine:get_reg_address("uarch_cycle")] = "uarch_cycle",
+        }
+        -- Every access is proven at the hash-tree word that holds it
+        local word_log2_size = cartesi.HASH_TREE_LOG2_WORD_SIZE
+        local word_size = 1 << word_log2_size
+        local before = machine:get_root_hash()
+        local log = { log_type = genuine_log.log_type, accesses = {} }
+        for i, genuine in ipairs(genuine_log.accesses) do
+            local access = { type = genuine.type, log2_size = genuine.log2_size, address = genuine.address }
+            local is_slot_write = genuine.address == cartesi.AR_SHADOW_TLB_START and genuine.log2_size == word_log2_size
+            if is_slot_write then
+                expect.equal(cartesi.keccak256(slot_image), genuine.written_hash)
+                access.address = tlb_address
+            end
+            local word = access.address & ~(word_size - 1)
+            access.read_hash = machine:get_node_hash(word, word_log2_size)
+            access.sibling_hashes = machine:get_proof(word, word_log2_size).sibling_hashes
+            if genuine.read then
+                access.read = machine:read_memory(word, word_size)
+            end
+            if genuine.written_hash then
+                if is_slot_write then
+                    machine:write_memory(access.address, slot_image)
+                else
+                    local value = string.unpack("<I8", genuine.written, (genuine.address & (word_size - 1)) + 1)
+                    machine:write_reg(assert(word_registers[access.address]), value)
+                end
+                access.written_hash = machine:get_node_hash(word, word_log2_size)
+                if genuine.written then
+                    access.written = machine:read_memory(word, word_size)
+                end
+            end
+            log.accesses[i] = access
+        end
+        return log, before, machine:get_root_hash()
+    end
+
+    local genuine_log
+    do
+        local machine <close> = build_machine(0, 0)
+        genuine_log = machine:log_step_uarch()
+    end
+
+    for _, set_index in ipairs({ 0, 1 << 51 }) do
+        local name = string.format("set index 0x%x", set_index)
+        it("should fail cleanly when running and logging slot index " .. slot_index .. " with " .. name, function()
+            for _, step in ipairs({ "run_uarch", "log_step_uarch" }) do
+                local machine <close> = build_machine(set_index, slot_index)
+                expect.fail(function()
+                    if step == "run_uarch" then
+                        machine:run_uarch(ECALL_CYCLE + 1)
+                    else
+                        machine:log_step_uarch()
+                    end
+                end, "invalid TLB index")
+            end
+        end)
+        it("should reject a log that writes the slot to guest RAM with " .. name, function()
+            local machine <close> = build_machine(set_index, slot_index)
+            local log, before, after = rebuild_log(machine, genuine_log)
+            expect.equal(log.accesses[find_tlb_access(genuine_log)].address, cartesi.AR_RAM_START)
+            expect.fail(function()
+                cartesi.machine:verify_step_uarch(before, log, after)
+            end, "invalid TLB index")
+        end)
+    end
+end)
+
+describe("verify_reset_uarch at a rejected input", function()
+    for _, corruption in ipairs({ "revert root data", "revert root siblings", "missing revert root access" }) do
+        it("should reject " .. corruption, function()
+            local machine <close> = build_cmio_machine()
+            local revert_root_hash = machine:get_root_hash()
+            machine:write_revert_root_hash(revert_root_hash)
+            machine:write_reg("iflags_Y", 1)
+            machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+            machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+            machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+            machine:write_reg("uarch_halt", 1)
+            local initial_hash = machine:get_root_hash()
+            local log = machine:log_reset_uarch()
+            expect.equal(machine:verify_reset_uarch(initial_hash, log), revert_root_hash)
+            expect.not_equal(machine:get_root_hash(), revert_root_hash)
+
+            local revert_index
+            for i, access in ipairs(log.accesses) do
+                if access.address == cartesi.AR_SHADOW_REVERT_ROOT_HASH_START then
+                    revert_index = i
+                    break
+                end
+            end
+            assert(revert_index, "reset log did not authenticate the revert root")
+            local access = log.accesses[revert_index]
+            if corruption == "revert root data" then
+                access.read = bad_hash
+            elseif corruption == "revert root siblings" then
+                access.sibling_hashes[1] = bad_hash
+            else
+                table.remove(log.accesses, revert_index)
+            end
+            expect.fail(function()
+                machine:verify_reset_uarch(initial_hash, log)
+            end)
+        end)
+    end
+end)
+
+describe("verify_step_uarch on a misaligned uarch pc", function()
+    -- A before-state with a misaligned uarch pc, and a log of the reads that precede the instruction fetch
+    local function new_misaligned_case()
+        local machine <close> = build_default_machine()
+        machine:write_reg("uarch_pc", machine:read_reg("uarch_pc") + 2)
+        local root_hash = machine:get_root_hash()
+        local log2_word_size = cartesi.HASH_TREE_LOG2_WORD_SIZE
+        local function read_access(reg)
+            local address = machine:get_reg_address(reg)
+            local word_address = address & ~((1 << log2_word_size) - 1)
+            local proof = machine:get_proof(word_address, log2_word_size)
+            return {
+                type = "read",
+                address = address,
+                log2_size = 3,
+                read_hash = proof.target_hash,
+                read = machine:read_memory(word_address, 1 << log2_word_size),
+                sibling_hashes = proof.sibling_hashes,
+            }
+        end
+        local log = {
+            log_type = { has_annotations = false, has_large_data = false },
+            accesses = { read_access("uarch_cycle"), read_access("uarch_halt"), read_access("uarch_pc") },
+        }
+        return root_hash, log
+    end
+
+    it("should reject the log instead of aborting", function()
+        local root_hash, log = new_misaligned_case()
+        expect.fail(function()
+            cartesi.machine:verify_step_uarch(root_hash, log)
+        end, "misaligned readUint32 address")
+    end)
+
+    it("should reject the log through a JSON-RPC server, which keeps serving", function()
+        local jsonrpc = require("cartesi.jsonrpc")
+        local remote <close> = jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN)
+        local root_hash, log = new_misaligned_case()
+        expect.fail(function()
+            remote:verify_step_uarch(root_hash, log)
+        end, "misaligned readUint32 address")
+        expect.truthy(remote:get_server_version())
+    end)
+end)
+
+describe("verification through a JSON-RPC machine object", function()
+    local jsonrpc = require("cartesi.jsonrpc")
+    local sibling_count_error = "access sibling hash count is inconsistent with proof size"
+    local corruptions = {
+        {
+            "empty siblings",
+            sibling_count_error,
+            function(log)
+                log.accesses[1].sibling_hashes = {}
+            end,
+        },
+        {
+            "missing siblings",
+            sibling_count_error,
+            function(log)
+                change_sibling_count(log, -1)
+            end,
+        },
+        {
+            "extra siblings",
+            sibling_count_error,
+            function(log)
+                change_sibling_count(log, 1)
+            end,
+        },
+        {
+            "written data on a read access",
+            "unexpected written data in 1st access read access",
+            function(log)
+                log.accesses[1].written = log.accesses[1].read
+            end,
+        },
+        {
+            "written hash on a read access",
+            "unexpected written hash in 1st access read access",
+            function(log)
+                log.accesses[1].written_hash = log.accesses[1].read_hash
+            end,
+        },
+    }
+    for _, corruption in ipairs(corruptions) do
+        local name, expected_error, corrupt = table.unpack(corruption)
+        it("should reject " .. name .. " in uarch step logs as the local verifier does", function()
+            local remote <close> = jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN)
+            local machine <close> = build_default_machine()
+            local initial_hash = machine:get_root_hash()
+            local log = machine:log_step_uarch()
+            corrupt(log)
+            expect.fail(function()
+                remote:verify_step_uarch(initial_hash, log)
             end, expected_error)
         end)
     end

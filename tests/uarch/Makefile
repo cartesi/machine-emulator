@@ -24,10 +24,11 @@ RISCV_GCC ?= $(RISCV_PREFIX)gcc
 RISCV_GCC_OPTS ?= -static  -march=rv64i -mabi=lp64 -mcmodel=medany -fvisibility=hidden -nostdlib -nostartfiles
 RISCV_OBJDUMP ?= $(RISCV_PREFIX)objdump --disassemble-all --disassemble-zeroes --section=.text --section=.text.startup --section=.text.init --section=.data
 RISCV_OBJCOPY ?= $(RISCV_PREFIX)objcopy -S -O binary
+HOST_CXX ?= c++
 
 # Tests provided by us
-TESTS = fence ebreak ecall-putchar ecall-unsupported ecall-removed-mark-page-dirty ecall-write-tlb \
-	computation-hash-near-limit computation-hash-overflow
+TESTS = fence ebreak ecall-putchar ecall-unsupported ecall-removed-mark-page-dirty ecall-write-tlb ecall-write-tlb-invalid \
+	custom-pristine-halt-before-limit custom-pristine-halt-at-limit custom-pristine-overflow
 SRC_DIR = $(abspath .)
 BUILDDIR ?= $(abspath ./build)
 TEST_NAMES = $(addprefix rv64ui-uarch-, $(TESTS))
@@ -77,7 +78,7 @@ TARGETS =  \
 	$(TARGET_TEST_BINS) \
 	$(TARGET_TEST_DUMPS)
 
-all: $(TARGETS) catalog
+all: $(TARGETS) catalog check-emulator-constants
 
 clean:
 	@rm -rf $(TARGETS) $(BUILDDIR)
@@ -92,7 +93,7 @@ $(TARGET_THIRDPARTY_TESTS): $(THIRDPARTY_TESTS_SOURCES) | $(BUILDDIR)
 		-T$(UARCH_ENV_DIR)/link.ld \
 		$(subst $(TESTS_PREFIX),$(THIRDPARTY_SRC_DIR)/,$@).S -o $@
 
-$(TARGET_TESTS): $(TESTS_SOURCES) | $(BUILDDIR)
+$(TARGET_TESTS): $(TESTS_SOURCES) $(wildcard $(SRC_DIR)/*.h) | $(BUILDDIR)
 	$(RISCV_GCC) $(RISCV_GCC_OPTS) -I$(UARCH_ENV_DIR) \
 		-I$(THIRDPARTY_SRC_DIR)/../macros/scalar \
 		-I$(EMULATOR_SRC_DIR) \
@@ -107,3 +108,9 @@ $(TARGET_TESTS): $(TESTS_SOURCES) | $(BUILDDIR)
 
 $(BUILDDIR):
 	mkdir -p $@
+
+# Fails to compile when the emulator constants copied for assembly no longer match the emulator
+check-emulator-constants: check-emulator-constants.cpp emulator-constants.h
+	$(HOST_CXX) -std=c++23 -fsyntax-only -I$(EMULATOR_SRC_DIR) $<
+
+.PHONY: check-emulator-constants

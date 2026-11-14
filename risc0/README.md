@@ -62,7 +62,7 @@ This runs:
 
 1. Dev-mode interpreter tests (cargo test with RISC0_DEV_MODE=1) -- always runs
 2. Full proving pipeline (prove -> verify -> compress -> verify-seal) -- real proofs
-3. Solidity integration tests (forge test against Sepolia fork)
+3. Solidity integration tests (forge test with locally deployed verifier and router contracts)
 
 Steps 2-3 are slow (~3 min on M4 Pro) because they generate real proofs.
 To skip them during development:

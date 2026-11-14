@@ -45,31 +45,32 @@ end
 cartesi.machine:clone_stored("rolling-calculator-template", "machine")
 local machine = cartesi.machine("machine", nil, cartesi.SHARING_ALL)
 
--- Snapshot via storage: machine.revert keeps a copy of the pre-input state.
+-- Snapshot via storage: machine.revert keeps a synced copy of the last committed state
 local backup_directory
-local function snapshot(m)
-    m:destroy()
-    m:clone_stored("machine", "machine.revert")
-    backup_directory = "machine.revert"
-    m:sync_stored(backup_directory)
-    m:load("machine", nil, cartesi.SHARING_ALL)
+local function snapshot(_)
+    assert(backup_directory, "no committed state to revert to")
 end
 
 local function commit(m)
+    m:destroy()
     m:sync_stored("machine")
+    -- The backup only ever appears by renaming a synced clone
+    m:clone_stored("machine", "machine.revert.tmp")
+    m:sync_stored("machine.revert.tmp")
     if backup_directory then
         m:remove_stored(backup_directory)
     end
-    backup_directory = nil
+    m:rename_stored("machine.revert.tmp", "machine.revert")
+    backup_directory = "machine.revert"
+    m:load("machine", nil, cartesi.SHARING_ALL)
 end
 
 local function revert(m)
     assert(backup_directory, "no snapshot to revert to")
     m:destroy()
     m:remove_stored("machine")
-    m:rename_stored(backup_directory, "machine")
+    m:clone_stored(backup_directory, "machine")
     m:load("machine", nil, cartesi.SHARING_ALL)
-    backup_directory = nil
 end
 -- docs:end storage
 
@@ -112,8 +113,9 @@ repeat
         end
     end
 until break_reason == cartesi.BREAK_REASON_HALTED
-commit(machine)
-
--- Make the final on-disk state durable and print its hash
+-- Make the final on-disk state durable, remove its copy, and print its hash
+local final_hash = machine:get_root_hash()
+machine:destroy()
 machine:sync_stored("machine")
-stderr("final state hash: %s\n", cartesi.tohex(machine:get_root_hash()))
+machine:remove_stored(backup_directory)
+stderr("final state hash: %s\n", cartesi.tohex(final_hash))

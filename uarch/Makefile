@@ -20,7 +20,7 @@ else
 HOST_CXX := g++
 HOST_CC := gcc
 endif
-HOST_CFLAGS := -I$(EMULATOR_SRC_DIR)
+HOST_CFLAGS := -MMD -I$(EMULATOR_SRC_DIR)
 HOST_CXXFLAGS := -std=c++23
 
 CC := $(TOOLCHAIN_PREFIX)gcc
@@ -53,7 +53,7 @@ COV_GC_SECTIONS=
 UBFLAGS := -fno-strict-aliasing -fno-strict-overflow -fno-delete-null-pointer-checks
 WARNFLAGS := -Wall -Wextra -Wpedantic -Wno-array-bounds -Werror
 
-BASEFLAGS := -march=rv64i -mabi=lp64 $(UBFLAGS) $(WARNFLAGS) \
+BASEFLAGS := -march=rv64i -mabi=lp64 -MMD $(UBFLAGS) $(WARNFLAGS) \
 	-DMICROARCHITECTURE=1 \
 	-DNO_STD_VECTOR=1 \
 	-DAVOID_NATIVE_UINT128_T=1 \
@@ -116,11 +116,11 @@ coverage?=no
 
 ifeq ($(coverage),yes)
 # Under coverage we also build the instrumented uarch and a matching pristine
-# ram/hash pair generated from it. The coverage PC-collection test relinks the
-# emulator with these so reset_uarch restores the instrumented binary (the one
-# addr2line resolves PCs against) for every machine instruction. They are
-# coverage-only and never used for proofs. The default pristine stays stock so
-# the functional uarch tests keep running the fast optimized binary.
+# ram/hash pair generated from it. The coverage PC-collection test links a
+# separate cartesi module with these so reset_uarch restores the instrumented
+# binary (the one addr2line resolves PCs against) for every machine instruction.
+# They are coverage-only and never used for proofs. The default pristine stays
+# stock so the functional uarch tests keep running the fast optimized binary.
 all: uarch-ram.bin uarch-ram-coverage.bin uarch-pristine-ram.c uarch-pristine-hash.c \
 	uarch-pristine-ram-coverage.c uarch-pristine-hash-coverage.c validate-instruction-set
 else
@@ -201,6 +201,7 @@ uarch-ram-entry.o: uarch-ram-entry.S
 
 %.clang-tidy: %.cpp
 	$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- $(CLANG_TIDY_CXXFLAGS) $(CFLAGS) $(CXXFLAGS) $(CLANG_TIDY_WARNS)
+	@$(CXX) $(CFLAGS) $(CXXFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
 lint: $(CLANG_TIDY_TARGETS)
@@ -228,6 +229,9 @@ uarch-ram-coverage.elf: $(COV_EMULATOR_OBJS) $(COV_UARCH_OBJS) $(COV_THIRDPARTY_
 uarch-ram-coverage.bin: uarch-ram-coverage.elf
 	$(OBJCOPY) -S -O binary $^ $@
 
+ALL_OBJS = $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS) $(COMPUTE_COVERAGE_OBJS) \
+	$(COV_UARCH_OBJS) $(COV_EMULATOR_OBJS) $(COV_THIRDPARTY_OBJS) uarch-ram-entry.o uarch-ram-coverage-entry.o
+
 clean-executables:
 	@rm -f compute-uarch-pristine-hash compute-uarch-pristine-hash-coverage
 
@@ -236,4 +240,9 @@ clean-auto-generated:
 		uarch-pristine-hash-coverage.c uarch-pristine-ram-coverage.c
 
 clean: clean-executables clean-auto-generated
-	@rm -f *.ld *.elf *.bin *.tmp *.o *.clang-tidy *.insn.txt *.objdump $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS) $(COMPUTE_COVERAGE_OBJS) $(COV_UARCH_OBJS) $(COV_EMULATOR_OBJS) $(COV_THIRDPARTY_OBJS)
+	@rm -f *.ld *.elf *.bin *.tmp *.o *.d *.clang-tidy *.insn.txt *.objdump $(ALL_OBJS) $(DEPS)
+
+# Objects live next to their sources, some in other directories, so their
+# dependency files are listed by name rather than found with a wildcard
+DEPS = $(patsubst %.o,%.d,$(ALL_OBJS)) $(patsubst %,%.d,$(CLANG_TIDY_TARGETS))
+-include $(DEPS)

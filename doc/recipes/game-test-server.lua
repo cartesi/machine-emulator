@@ -30,9 +30,9 @@ local function run_with_server(protocol, scenario)
                     if typed then
                         reply, done = handler(wire_event, line)
                     elseif wire_event.operation == "finish" then
-                        reply, done = { value = true }, true
+                        reply, done = { value = "done" }, true
                     elseif wire_event.operation == "advance_time" then
-                        reply = { value = {} }
+                        reply = '{"value":[]}'
                     else
                         reply, done = handler(wire_event)
                     end
@@ -43,11 +43,14 @@ local function run_with_server(protocol, scenario)
                         if not typed and wire_event.id then
                             reply.id = wire_event.id
                             if reply.value ~= nil then
-                                reply.value = { answer = reply.value }
+                                reply.value = { answer = cartesi.tojson(reply.value) }
                             end
                         end
-                        reply.done = done or reply.done
-                        reply = cartesi.tojson(reply, -1)
+                        if done then
+                            reply.value = "done"
+                        end
+                        local schema = wire_event.operation == "advance_time" and "ResponsesEnvelope" or nil
+                        reply = cartesi.tojson(reply, -1, schema, protocol.schemas)
                     end
                     if reply ~= nil then
                         assert(sock:send(reply .. "\n"))

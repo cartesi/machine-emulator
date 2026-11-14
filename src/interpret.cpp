@@ -126,6 +126,11 @@ enum class rd_kind {
     xN, // rd is a positive natural number (1, 2, 3 ... 31)
 };
 
+enum class write_mode {
+    write,      // write memory
+    skip_write, // raise the exceptions of the write and update the TLB, but do not write
+};
+
 template <typename STATE_ACCESS>
 static inline void DUMP_STATS_INCR([[maybe_unused]] const STATE_ACCESS a, [[maybe_unused]] const char *name) {
 #ifdef DUMP_STATS
@@ -449,8 +454,12 @@ static NO_INLINE uint64_t raise_exception(const STATE_ACCESS a, uint64_t pc, uin
         }
     }
 
-    // Every raised exception increases the exception counter, so we can compute minstret later
-    a.write_icycleinstret(a.read_icycleinstret() + 1);
+    // An instruction that raises an exception consumes an mcycle without retiring, so icycleinstret counts it,
+    // and minstret = mcycle - icycleinstret stays exact. An interrupt is taken between instructions without
+    // consuming an mcycle, so it is not counted.
+    if ((cause & MCAUSE_INTERRUPT_FLAG) == 0) {
+        a.write_icycleinstret(a.read_icycleinstret() + 1);
+    }
 
     uint64_t new_pc = 0;
     if (deleg) {
@@ -587,15 +596,16 @@ static inline uint32_t get_highest_priority_irq_num(uint32_t v) {
     return ilog2(v); // LCOV_EXCL_LINE
 }
 
-/// \brief At every tick, set interrupt as pending if the timer is expired
+/// \brief At every tick, makes the timer interrupt pending exactly when the timer has expired
 /// \param a Machine state accessor object.
 /// \param mcycle Machine current cycle.
 template <typename STATE_ACCESS>
-static inline void set_rtc_interrupt(const STATE_ACCESS a, uint64_t mcycle) {
-    const uint64_t timecmp_cycle = rtc_time_to_cycle(a.read_clint_mtimecmp());
-    if (timecmp_cycle <= mcycle && timecmp_cycle != 0) {
-        const uint64_t mip = a.read_mip();
-        a.write_mip(mip | MIP_MTIP_MASK);
+static inline void update_rtc_interrupt(const STATE_ACCESS a, uint64_t mcycle) {
+    // The machine timer interrupt is pending exactly while mtime >= mtimecmp, as unsigned integers
+    const bool pending = rtc_cycle_to_time(mcycle) >= a.read_clint_mtimecmp();
+    const uint64_t mip = a.read_mip();
+    if (pending != ((mip & MIP_MTIP_MASK) != 0)) {
+        a.write_mip(mip ^ MIP_MTIP_MASK);
     }
 }
 
@@ -990,8 +1000,14 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(const STATE_
     }
     // Deal with aligned accesses
     uint64_t paddr{};
-    if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) [[unlikely]] {
+    const auto translation = translate_virtual_address(a, &paddr, vaddr, PTE_XWR_R_SHIFT);
+    if (translation == translation_result::page_fault) [[unlikely]] {
         pc = raise_exception(a, pc, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_PAGE_FAULT : MCAUSE_LOAD_PAGE_FAULT,
+            vaddr);
+        return {false, pc};
+    }
+    if (translation == translation_result::access_fault) [[unlikely]] {
+        pc = raise_exception(a, pc, RAISE_STORE_EXCEPTIONS ? MCAUSE_STORE_AMO_ACCESS_FAULT : MCAUSE_LOAD_ACCESS_FAULT,
             vaddr);
         return {false, pc};
     }
@@ -1095,7 +1111,7 @@ static FORCE_INLINE bool read_virtual_memory(const STATE_ACCESS a, uint64_t &pc,
 /// instead it returns a new PC in case an exception is raised. This is because the function
 /// is outlined, and taking PC by reference would cause the compiler to store it in a stack variable
 /// instead of always storing it in register (this is an optimization).
-template <typename T, typename STATE_ACCESS>
+template <typename T, write_mode MODE = write_mode::write, typename STATE_ACCESS>
 static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(const STATE_ACCESS a, uint64_t pc,
     uint64_t mcycle, uint64_t vaddr, uint64_t val64) {
     [[maybe_unused]] auto note = a.make_scoped_note("write_virtual_memory_slow");
@@ -1107,8 +1123,11 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(c
     }
     // Deal with aligned accesses
     uint64_t paddr{};
-    if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_W_SHIFT)) [[unlikely]] {
-        pc = raise_exception(a, pc, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
+    const auto translation = translate_virtual_address(a, &paddr, vaddr, PTE_XWR_W_SHIFT);
+    if (translation != translation_result::success) [[unlikely]] {
+        pc = raise_exception(a, pc,
+            translation == translation_result::page_fault ? MCAUSE_STORE_AMO_PAGE_FAULT : MCAUSE_STORE_AMO_ACCESS_FAULT,
+            vaddr);
         return {execute_status::failure, pc};
     }
     uint64_t pma_index = 0;
@@ -1116,10 +1135,16 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(c
     if (ar.is_writeable()) [[likely]] {
         if (ar.is_memory()) [[likely]] {
             const auto faddr = replace_tlb_entry<TLB_WRITE>(a, vaddr, paddr, pma_index);
-            a.write_memory_word(faddr, pma_index, static_cast<T>(val64));
+            if constexpr (MODE == write_mode::write) {
+                a.write_memory_word(faddr, pma_index, static_cast<T>(val64));
+            }
             return {execute_status::success, pc};
         }
         if (ar.is_device()) [[likely]] {
+            // Only a write tells whether the device accepts it, so a writable device passes the check
+            if constexpr (MODE == write_mode::skip_write) {
+                return {execute_status::success, pc};
+            }
             const uint64_t offset = paddr - ar.get_start();
             device_state_access da(a, mcycle);
             auto status = ar.write_device(&da, offset, log2_size_v<U>, static_cast<U>(static_cast<T>(val64)));
@@ -1135,13 +1160,14 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(c
 
 /// \brief Writes an aligned word to virtual memory.
 /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
+/// \tparam MODE write_mode::skip_write raises the exceptions of the write and updates the TLB without writing.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param pc Interpreter loop program counter (will be overwritten).
 /// \param vaddr Virtual address for word.
 /// \param val64 Value to write.
 /// \returns True if succeeded, false if exception raised.
-template <typename T, typename STATE_ACCESS>
+template <typename T, write_mode MODE = write_mode::write, typename STATE_ACCESS>
 static FORCE_INLINE execute_status write_virtual_memory(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle,
     uint64_t vaddr, uint64_t val64) {
     [[maybe_unused]] auto note = a.make_scoped_note("write_virtual_memory");
@@ -1159,7 +1185,7 @@ static FORCE_INLINE execute_status write_virtual_memory(const STATE_ACCESS a, ui
             // If we still have a miss after that, we replace the entry.
             // Outline the slow path into a function call to minimize host CPU code cache pressure
             DUMP_STATS_INCR(a, "tlb.wmiss");
-            auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, mcycle, vaddr, val64);
+            auto [status, new_pc] = write_virtual_memory_slow<T, MODE>(a, pc, mcycle, vaddr, val64);
             pc = new_pc;
             return status;
         }
@@ -1171,14 +1197,16 @@ static FORCE_INLINE execute_status write_virtual_memory(const STATE_ACCESS a, ui
     if (!a.template verify_cold_tlb_slot<TLB_WRITE>(slot_index)) [[unlikely]] {
         // Outline the slow path into a function call to minimize host CPU code cache pressure
         DUMP_STATS_INCR(a, "tlb.wmiss");
-        auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, mcycle, vaddr, val64);
+        auto [status, new_pc] = write_virtual_memory_slow<T, MODE>(a, pc, mcycle, vaddr, val64);
         pc = new_pc;
         return status;
     }
-    const auto pma_index = a.template read_tlb_pma_index<TLB_WRITE>(slot_index);
-    const auto vf_offset = a.template read_tlb_vf_offset<TLB_WRITE>(slot_index);
-    const auto faddr = vaddr + vf_offset;
-    a.template write_memory_word<T>(faddr, pma_index, static_cast<T>(val64));
+    if constexpr (MODE == write_mode::write) {
+        const auto pma_index = a.template read_tlb_pma_index<TLB_WRITE>(slot_index);
+        const auto vf_offset = a.template read_tlb_vf_offset<TLB_WRITE>(slot_index);
+        const auto faddr = vaddr + vf_offset;
+        a.template write_memory_word<T>(faddr, pma_index, static_cast<T>(val64));
+    }
     DUMP_STATS_INCR(a, "tlb.whit");
     return execute_status::success;
 }
@@ -1193,7 +1221,8 @@ static auto dump_insn([[maybe_unused]] const STATE_ACCESS a, [[maybe_unused]] ui
 #ifdef DUMP_INSN
     [[maybe_unused]] auto note = a.make_scoped_note("dump_insn");
     uint64_t ppc = pc;
-    if (!translate_virtual_address<STATE_ACCESS, false>(a, &ppc, pc, PTE_XWR_X_SHIFT)) {
+    if (translate_virtual_address<STATE_ACCESS, pte_update_mode::skip_update>(a, &ppc, pc, PTE_XWR_X_SHIFT) !=
+        translation_result::success) {
         d_printf("v    %08" PRIx64, ppc);
     } else {
         d_printf("p    %08" PRIx64, ppc);
@@ -1292,6 +1321,11 @@ static FORCE_INLINE execute_status execute_SC(const STATE_ACCESS a, uint64_t &pc
             return advance_to_raised_exception(a, pc);
         }
     } else {
+        // A failed SC must still pass the alignment and permission checks of a store
+        status = write_virtual_memory<T, write_mode::skip_write>(a, pc, mcycle, vaddr, 0);
+        if (status == execute_status::failure) [[unlikely]] {
+            return advance_to_raised_exception(a, pc);
+        }
         val = 1;
     }
     a.write_ilrsc(-1); // Must clear reservation, regardless of failure
@@ -2187,7 +2221,8 @@ static execute_status write_csr_stval(const STATE_ACCESS a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_sip(const STATE_ACCESS a, uint64_t val) {
-    const uint64_t mask = a.read_mideleg();
+    // Only SSIP is writable in sip. STIP and SEIP are read-only there, set and cleared by the execution environment.
+    const uint64_t mask = a.read_mideleg() & MIP_SSIP_MASK;
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
@@ -5554,8 +5589,10 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(const STATE_ACCESS a, u
     i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset, uint64_t &pma_index, uint64_t &last_vaddr_page) {
     uint64_t paddr{};
     // Walk page table and obtain the physical address
-    if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_X_SHIFT)) [[unlikely]] {
-        pc = raise_exception(a, pc, MCAUSE_FETCH_PAGE_FAULT, vaddr);
+    const auto translation = translate_virtual_address(a, &paddr, vaddr, PTE_XWR_X_SHIFT);
+    if (translation != translation_result::success) [[unlikely]] {
+        pc = raise_exception(a, pc,
+            translation == translation_result::page_fault ? MCAUSE_FETCH_PAGE_FAULT : MCAUSE_INSN_ACCESS_FAULT, vaddr);
         last_vaddr_page = ensure_fetch_cache_miss(pc);
         return fetch_status::exception;
     }
@@ -5782,7 +5819,7 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
 
         if (rtc_is_tick(mcycle)) {
             // Set interrupt flag for RTC
-            set_rtc_interrupt(a, mcycle);
+            update_rtc_interrupt(a, mcycle);
 
             // Polling external interrupts only in WFI instructions is not enough
             // because Linux won't execute WFI instructions while under heavy load,

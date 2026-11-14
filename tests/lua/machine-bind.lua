@@ -578,7 +578,7 @@ do_test("should have expected values", function(machine)
     assert(initial_config.processor.registers.imcyclemax == cartesi.MCYCLE_MAX, "wrong imcyclemax value")
     assert(initial_config.processor.registers.ilrsc == 0x2e0, "wrong ilrsc reg initial config value")
     assert(initial_config.processor.registers.mstatus == 0x230, "wrong mstatus reg initial config value")
-    assert(initial_config.processor.registers.clint.mtimecmp == 0, "wrong clint mtimecmp initial config value")
+    assert(initial_config.processor.registers.clint.mtimecmp == -1, "wrong clint mtimecmp initial config value")
     assert(initial_config.processor.registers.plic.girqpend == 0, "wrong plic girqpend initial config value")
     assert(initial_config.processor.registers.plic.girqsrvd == 0, "wrong plic girqsrvd initial config value")
     assert(initial_config.processor.registers.htif.fromhost == 0, "wrong htif fromhost initial config value")
@@ -1359,7 +1359,6 @@ do_test("uarch ecall putchar should print char to console", function()
                                  local cartesi = require 'cartesi'
                                  local tests_util = require 'cartesi.tests.util'
                                  local cartesi_util = require 'cartesi.util'
-                                 local initial_reg_values = {}
                                  local program = {
                                     (cartesi.UARCH_ECALL_FN_PUTCHAR << 20) | 0x00893, -- li	a7,putchar
                                     0x05800513, -- li a0,'X'
@@ -1367,7 +1366,6 @@ do_test("uarch ecall putchar should print char to console", function()
                                  }
                                  local uarch_ram_path = tests_util.create_test_uarch_program(program)
                                  local machine = cartesi.machine {
-                                     registers = initial_reg_values,
                                      ram = {length = 1 << 20},
                                      uarch = {
                                         ram = { backing_store = { data_filename = uarch_ram_path } }
@@ -1436,16 +1434,31 @@ do_test("receive_cmio_request fails if machine is not yielded", function(machine
     end)
 end)
 
-do_test("receive_cmio_request fails if data is too big", function(machine)
+do_test("receive_cmio_request clamps data to the tx buffer", function(machine)
+    local tx_buffer_length = 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE
+    machine:write_memory(cartesi.AR_CMIO_TX_BUFFER_START + tx_buffer_length - 4, "last")
+    local tx_buffer = machine:read_memory(cartesi.AR_CMIO_TX_BUFFER_START, tx_buffer_length)
+    for _, yield in ipairs({
+        { "iflags_Y", cartesi.HTIF_YIELD_CMD_MANUAL, cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED },
+        { "iflags_X", cartesi.HTIF_YIELD_CMD_AUTOMATIC, cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT },
+    }) do
+        local flag, yield_cmd, yield_reason = table.unpack(yield)
+        machine:write_reg("iflags_X", 0)
+        machine:write_reg("iflags_Y", 0)
+        machine:write_reg(flag, 1)
+        machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+        machine:write_reg("htif_tohost_cmd", yield_cmd)
+        machine:write_reg("htif_tohost_reason", yield_reason)
+        machine:write_reg("htif_tohost_data", tx_buffer_length + 1)
+        local cmd, reason, data = machine:receive_cmio_request()
+        assert(cmd == yield_cmd and reason == yield_reason)
+        assert(data == tx_buffer, "an oversized data length was not clamped to the tx buffer")
+    end
+    machine:write_reg("iflags_X", 0)
     machine:write_reg("iflags_Y", 1)
-    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
     machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
     machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
-    machine:write_reg("htif_tohost_data", 1 + (1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE))
-    tests_util.assert_error("CMIO request data is too large", function()
-        machine:receive_cmio_request()
-    end)
-    -- a data length that fits in the tx buffer is accepted
+    -- a data length that fits in the tx buffer is returned as is
     local expected_data = "12345678"
     machine:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, expected_data)
     machine:write_reg("htif_tohost_data", 8)
@@ -1498,8 +1511,7 @@ local function test_send_cmio_input_with_different_arguments()
         -- iflags.Y should be cleared
         assert(machine:read_reg("iflags_Y") == 0)
         -- fromhost should reflect the reason and data length
-        local expected_fromhost = ((reason & 0xffff) << 32) | (#data & 0xffffffff)
-        assert(machine:read_reg("htif_fromhost") == expected_fromhost)
+        assert(machine:read_reg("htif_fromhost") == util.encode_fromhost(0, 0, reason, #data))
     end
     do_test("send_cmio_response happy path", function(machine)
         assert_before_cmio_response_sent(machine)

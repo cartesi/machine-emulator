@@ -17,7 +17,6 @@
 --
 
 local cartesi = require("cartesi")
-local filesystem = require("cartesi.filesystem")
 local tests_util = require("cartesi.tests.util")
 
 local MAX_MCYCLE = cartesi.MCYCLE_MAX
@@ -126,8 +125,8 @@ do_test("logged mcycle steps should preserve target and overflow semantics", fun
     local mcycle = machine:read_reg("mcycle")
     machine:write_reg("imcyclemax", mcycle)
 
-    local zero_step_filename = filesystem.temp_pathname()
-    local overflow_step_filename = filesystem.temp_pathname()
+    local _ <close>, zero_step_filename = tests_util.scope_temp_pathname()
+    local _ <close>, overflow_step_filename = tests_util.scope_temp_pathname()
     local _ <close> = tests_util.scope_exit(function()
         os.remove(zero_step_filename)
         os.remove(overflow_step_filename)
@@ -149,10 +148,7 @@ end)
 
 do_test("logged mcycle step should do nothing at max mcycle", function(machine)
     machine:write_reg("mcycle", MAX_MCYCLE)
-    local step_filename = filesystem.temp_pathname()
-    local _ <close> = tests_util.scope_exit(function()
-        os.remove(step_filename)
-    end)
+    local _ <close>, step_filename = tests_util.scope_temp_pathname()
 
     local root_hash = machine:get_root_hash()
     assert(machine:log_step(1, step_filename) == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
@@ -164,10 +160,7 @@ end)
 
 do_test("logged mcycle step should overflow from one cycle before max mcycle", function(machine)
     machine:write_reg("mcycle", MAX_MCYCLE - 1)
-    local step_filename = filesystem.temp_pathname()
-    local _ <close> = tests_util.scope_exit(function()
-        os.remove(step_filename)
-    end)
+    local _ <close>, step_filename = tests_util.scope_temp_pathname()
 
     local root_hash_before = machine:get_root_hash()
     assert(machine:log_step(1, step_filename) == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
@@ -188,12 +181,22 @@ do_test("run_uarch should report overflow without changing halt at max uarch_cyc
     assert(machine:run_uarch(MAX_UARCH_CYCLE + 1) == cartesi.UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW)
 end)
 
-do_test("uarch overflow should take precedence over halt", function(machine)
+do_test("uarch halt should take precedence over overflow", function(machine)
     machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE)
     machine:write_reg("uarch_halt", 1)
     local hash_before = machine:get_root_hash()
-    assert(machine:run_uarch(MAX_UARCH_CYCLE) == cartesi.UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW)
+    assert(machine:run_uarch(MAX_UARCH_CYCLE) == cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
     assert(machine:get_root_hash() == hash_before)
+    assert(machine:read_reg("uarch_halt") == 1)
+end)
+
+do_test("run_uarch should report a halt on the step that reaches max uarch_cycle", function(machine)
+    -- li a7, halt; ecall
+    local halt_program = string.pack("<I4I4", (cartesi.UARCH_ECALL_FN_HALT << 20) | 0x893, 0x73)
+    machine:write_memory(machine:read_reg("uarch_pc"), halt_program)
+    machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE - 2)
+    assert(machine:run_uarch(MAX_UARCH_CYCLE) == cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
+    assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
     assert(machine:read_reg("uarch_halt") == 1)
 end)
 
@@ -205,14 +208,36 @@ do_test("logged uarch step should preserve state at max uarch cycle", function(m
     assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
     assert(machine:read_reg("uarch_halt") == 0)
     assert(root_hash_after == root_hash_before)
-    assert(#log.accesses == 1)
+    assert(#log.accesses == 2)
     assert(log.accesses[1].type == "read")
     assert(log.accesses[1].address == cartesi.UARCH_SHADOW_START_ADDRESS + 8) -- address of uarch_cycle
     assert(#log.accesses[1].read == 32)
     -- log data has 32 bytes. The uarch_cycle is the 2nd 8-byte word
     assert(log.accesses[1].read:sub(9, 16) == string.pack("J", MAX_UARCH_CYCLE))
     assert(log.accesses[1].sibling_hashes ~= nil)
+    -- the uarch_halt is read next, and is the 1st 8-byte word
+    assert(log.accesses[2].type == "read")
+    assert(log.accesses[2].address == cartesi.UARCH_SHADOW_START_ADDRESS) -- address of uarch_halt
+    assert(log.accesses[2].read:sub(1, 8) == string.pack("J", 0))
     assert(machine:verify_step_uarch(root_hash_before, log) == root_hash_after)
+end)
+
+do_test("logged uarch steps should verify a halt on the step that reaches max uarch_cycle", function(machine)
+    -- li a7, halt; ecall
+    local halt_program = string.pack("<I4I4", (cartesi.UARCH_ECALL_FN_HALT << 20) | 0x893, 0x73)
+    machine:write_memory(machine:read_reg("uarch_pc"), halt_program)
+    machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE - 2)
+    for _ = 1, 3 do
+        local root_hash_before = machine:get_root_hash()
+        local log = machine:log_step_uarch()
+        assert(machine:verify_step_uarch(root_hash_before, log) == machine:get_root_hash())
+    end
+    assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
+    assert(machine:read_reg("uarch_halt") == 1)
+    local root_hash_before = machine:get_root_hash()
+    local log = machine:log_reset_uarch()
+    assert(machine:verify_reset_uarch(root_hash_before, log) == machine:get_root_hash())
+    assert(machine:get_root_hash() ~= root_hash_before)
 end)
 
 print("passed all")

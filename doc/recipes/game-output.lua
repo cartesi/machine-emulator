@@ -1,6 +1,7 @@
 -- Final-state and output checks shared by the verification game and PRT.
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
+local util = require("cartesi.util")
 local keccak = cartesi.keccak256
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
 local WORD_MASK = WORD_SIZE - 1
@@ -25,13 +26,6 @@ local function get_uint64(data, offset)
     return string.unpack("<I8", data, 1 + offset)
 end
 
-local function split_tohost(tohost)
-    local dev = (tohost & cartesi.HTIF_DEV_MASK) >> cartesi.HTIF_DEV_SHIFT
-    local cmd = (tohost & cartesi.HTIF_CMD_MASK) >> cartesi.HTIF_CMD_SHIFT
-    local reason = (tohost & cartesi.HTIF_REASON_MASK) >> cartesi.HTIF_REASON_SHIFT
-    return dev, cmd, reason
-end
-
 -- Establishes that the settled machine is yielded manually with RX_ACCEPTED, then returns the
 -- outputs Merkle root authenticated at its tx-buffer word, matching Dave's machine validity proof.
 local function validate_outputs_merkle_root_response(result, final_state_hash)
@@ -40,7 +34,7 @@ local function validate_outputs_merkle_root_response(result, final_state_hash)
 
     verify_machine_word(result.htif_tohost_data, result.htif_tohost_proof, HTIF_TOHOST_ADDRESS, final_state_hash)
     local htif_tohost = get_uint64(result.htif_tohost_data, HTIF_TOHOST_ADDRESS & WORD_MASK)
-    local dev, cmd, reason = split_tohost(htif_tohost)
+    local dev, cmd, reason = util.decode_tohost(htif_tohost)
     assert(dev == cartesi.HTIF_DEV_YIELD, "tohost not a yield")
     assert(cmd == cartesi.HTIF_YIELD_CMD_MANUAL, "yield not manual")
     assert(reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED, "yield reason not rx-accepted")
@@ -54,6 +48,7 @@ local function validate_output_response(output, outputs_merkle_root)
     assert(output.output_index == output_proof.target_address, "output proof index mismatch")
     assert(output_proof.log2_target_size == 0, "output proof target not a leaf")
     assert(output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "output proof height mismatch")
+    assert(output.output_index >> cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT == 0, "output index out of range")
     assert(output_proof.root_hash == outputs_merkle_root, "output proof root mismatch")
     assert(keccak(output.output_data) == output_proof.target_hash, "output hash mismatch")
     hash_tree.verify_slice(output_proof)

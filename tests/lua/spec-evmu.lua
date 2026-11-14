@@ -236,6 +236,7 @@ describe("cartesi evmu", function()
         check_decode_hex("0X000102", "\x00\x01\x02")
         check_decode_hex("0x00010203", "\x00\x01\x02\x03")
         check_decode_hex(all_hex, all)
+        check_decode_hex("0XaBcDeF", "\xab\xcd\xef")
         check_decode_hex_error("", 'hex string must start with "0x"')
         check_decode_hex_error("0", 'hex string must start with "0x"')
         check_decode_hex_error("0x0", "hex string length must be even")
@@ -243,6 +244,26 @@ describe("cartesi evmu", function()
         check_decode_hex_error("0x000102 ", "hex string cannot contain whitespace")
         check_decode_hex_error("0x0001 02", "hex string cannot contain whitespace")
         check_decode_hex_error("0x00\t01", "hex string cannot contain whitespace")
+    end)
+
+    it("rejects signed hex pairs without throwing", function()
+        for _, pair in ipairs({ "+f", "+F", "-0", "-1", "-f", "-F" }) do
+            local message = string.format("hex string cannot contain %q", pair)
+            check_decode_hex_error("0x" .. pair, message)
+            check_decode_hex_error("0x" .. pair .. "00", message)
+            check_decode_hex_error("0x00" .. pair .. "ff", message)
+            check_decode_hex_error("0x00" .. pair, message)
+        end
+    end)
+
+    it("rejects signed hex pairs in ABI address inputs", function()
+        for _, pair in ipairs({ "+f", "-0", "-1" }) do
+            local address = "0x" .. string.rep(pair, 20)
+            local message = string.format("hex string cannot contain %q", pair)
+            check_encode_calldata_hex_error("f(address)", { address }, message)
+            local ok, err = pcall(evmu.encode_abi, "(address)", { address })
+            assert(not ok and is_suffix(message, err))
+        end
     end)
 
     it("type spec parsing", function()
@@ -437,6 +458,64 @@ describe("cartesi evmu", function()
         check_parse_func_sig_error("_() returns (", 'expected closing parenthesis at line 1, column 14 (got "")')
         check_parse_func_sig_error("_() returns (int", 'expected closing parenthesis at line 1, column 17 (got "")')
         check_parse_func_sig_error("_() returns (int, ", 'expected type spec at line 1, column 19 (got "")')
+    end)
+
+    it("preserves parameter names beginning with data-location keywords", function()
+        for _, location in ipairs({ "memory", "calldata", "storage" }) do
+            for _, suffix in ipairs({ "Root", "_x", "1" }) do
+                local name = location .. suffix
+                local parsed = evmu.parse_type_spec("uint256 " .. name)
+                assert(parsed.name == name and parsed.data_location == nil)
+                parsed = evmu.parse_type_spec("bytes " .. location .. " " .. name)
+                assert(parsed.name == name and parsed.data_location == location)
+                parsed = evmu.parse_func_sig("f(uint256 " .. name .. ") returns (uint256 " .. name .. ")")
+                assert(parsed.params.components[1].name == name)
+                assert(parsed.params.components[1].data_location == nil)
+                assert(parsed.returns.components[1].name == name)
+                assert(parsed.returns.components[1].data_location == nil)
+            end
+        end
+    end)
+
+    it("encodes and decodes names beginning with data-location keywords", function()
+        for _, name in ipairs({ "memoryIndex", "calldataHash", "storageRoot" }) do
+            local types = "(uint256 " .. name .. ")"
+            local values = { [name] = 7 }
+            local data = evmu.encode_abi(types, values)
+            assert(data == evmu.encode_abi("(uint256)", { 7 }))
+            assert(evmu.decode_abi(types, data)[name] == evmu.bint(7))
+            local calldata = evmu.encode_calldata("f" .. types, values)
+            assert(calldata == evmu.encode_calldata("f(uint256)", { 7 }))
+            assert(evmu.decode_calldata("f" .. types, calldata)[name] == evmu.bint(7))
+        end
+    end)
+
+    it("keeps cached function signatures while callers retain the parsed table", function()
+        local signature = "cache_keep(uint amount)"
+        local parsed, selector, canonical = evmu.parse_func_sig(signature)
+        collectgarbage("collect")
+        collectgarbage("collect")
+        local cached, cached_selector, cached_canonical = evmu.parse_func_sig(signature)
+        assert(cached == parsed, "retained parsed signature was evicted")
+        assert(cached_selector == selector and cached_canonical == canonical)
+        assert(canonical == "cache_keep(uint256)")
+    end)
+
+    it("collects cached function signatures after callers release the parsed table", function()
+        local signature = "cache_release(uint amount)"
+        local observed = setmetatable({}, { __mode = "v" })
+        local selector, canonical
+        do
+            local parsed
+            parsed, selector, canonical = evmu.parse_func_sig(signature)
+            observed[1] = parsed
+        end
+        collectgarbage("collect")
+        collectgarbage("collect")
+        assert(observed[1] == nil, "cache retained an unused parsed signature")
+        local parsed, new_selector, new_canonical = evmu.parse_func_sig(signature)
+        assert(parsed.name == "cache_release")
+        assert(new_selector == selector and new_canonical == canonical)
     end)
 
     it("calldata encoding and decoding", function()
@@ -843,6 +922,257 @@ describe("cartesi evmu", function()
     end)
 
     -- luacheck: pop
+end)
+
+describe("selectorless ABI", function()
+    local evmu = require("cartesi.evmu")
+    it("rejects integer strings before they wrap in bint conversion", function()
+        local values = {
+            "0x1" .. string.rep("0", 128),
+            "0x1" .. string.rep("0", 127) .. "5",
+            "0x" .. string.rep("f", 128),
+            "0b1" .. string.rep("0", 512),
+            "134078079299425970995740249982058461274793658205923933777235614437217640300735"
+                .. "46976801874298166903427690031858186486050853753882811946569946433649006084096",
+        }
+        for _, integer_type in ipairs({ "uint256", "int256", "uint8", "int8" }) do
+            local types = "(" .. integer_type .. ")"
+            for _, value in ipairs(values) do
+                for _, sign in ipairs({ "", "+", "-" }) do
+                    for _, encode in ipairs({ evmu.encode_abi, evmu.encode_calldata }) do
+                        local signature = encode == evmu.encode_abi and types or "f" .. types
+                        local ok, err = pcall(encode, signature, { sign .. value })
+                        assert(not ok, "accepted oversized integer string")
+                        assert(err:find("integer value does not fit in target type", 1, true))
+                    end
+                end
+            end
+        end
+    end)
+
+    it("preserves integer string syntax and leading zeros", function()
+        for _, prefix in ipairs({ "", "0x", "0X", "0b", "0B" }) do
+            for _, sign in ipairs({ "", "+", "-" }) do
+                for _, digit in ipairs({ "0", "1" }) do
+                    local value = sign .. prefix .. string.rep("0", 600) .. digit
+                    local expected = tonumber(sign .. digit)
+                    assert(evmu.encode_abi("(int256)", { value }) == evmu.encode_abi("(int256)", { expected }))
+                    assert(
+                        evmu.encode_calldata("f(int256)", { value }) == evmu.encode_calldata("f(int256)", { expected })
+                    )
+                end
+            end
+        end
+        for _, value in ipairs({ " 1", "1 ", "1 2", "\t0x1", "0b1\n", "+ 1", "0x", "0b", "0b2" }) do
+            assert(not pcall(evmu.encode_abi, "(uint256)", { value }))
+            assert(not pcall(evmu.encode_calldata, "f(uint256)", { value }))
+        end
+    end)
+
+    it("keeps integer range checks after string length checks", function()
+        local maximum = "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        local overflow = "115792089237316195423570985008687907853269984665640564039457584007913129639936"
+        local maximum_word = string.rep("\xff", 32)
+        for _, value in ipairs({ maximum, "0x" .. string.rep("f", 64), "0b" .. string.rep("1", 256) }) do
+            assert(evmu.encode_abi("(uint256)", { value }) == maximum_word)
+            assert(evmu.encode_calldata("f(uint256)", { value }):sub(5) == maximum_word)
+        end
+        for _, case in ipairs({
+            { "uint256", overflow },
+            { "uint256", string.rep("9", 78) },
+            { "int256", maximum },
+            { "uint8", "256" },
+            { "int8", "128" },
+            { "int8", "-129" },
+        }) do
+            local types = "(" .. case[1] .. ")"
+            assert(not pcall(evmu.encode_abi, types, { case[2] }))
+            assert(not pcall(evmu.encode_calldata, "f" .. types, { case[2] }))
+        end
+        local minimum = "-0x8" .. string.rep("0", 63)
+        assert(evmu.encode_abi("(int256)", { minimum }) == "\x80" .. string.rep("\0", 31))
+    end)
+
+    it("encodes nested event tuples and full-width coordinates", function()
+        local coordinate = evmu.bint(1) << 91
+        local types = "(uint256 cycle,(uint64 height,bytes payload) descriptor,bytes32[] siblings)"
+        local values = { coordinate, { 62, "0x1234" }, { "0x" .. string.rep("ab", 32) } }
+        local data = evmu.encode_abi(types, values)
+        assert(data == evmu.encode_calldata("eventData" .. types, values):sub(5))
+        local decoded = evmu.decode_abi(types, data)
+        assert(decoded.cycle == coordinate)
+        assert(decoded.descriptor.height == evmu.bint(62))
+        assert(decoded.descriptor.payload == "0x1234")
+        assert(decoded.siblings[1] == values[3][1])
+        assert(evmu.decode_abi(types, data, "raw").descriptor.payload == "\x12\x34")
+        assert(not pcall(evmu.decode_abi, types, data:sub(1, -2)))
+        assert(not pcall(evmu.decode_abi, types, data .. string.rep("\0", 32)))
+    end)
+    it("handles an empty tuple and rejects a non-tuple type", function()
+        assert(evmu.encode_abi("()", {}) == "")
+        assert(#evmu.decode_abi("()", "") == 0)
+        assert(not pcall(evmu.encode_abi, "uint256", {}))
+        assert(not pcall(evmu.decode_abi, "bytes32", string.rep("\0", 32)))
+        assert(not pcall(evmu.decode_abi, "()", string.rep("\0", 32)))
+    end)
+    it("decodes empty arrays of dynamic elements", function()
+        local cases = {
+            { "(bytes[])", { {} } },
+            { "(string[])", { {} } },
+            { "(uint256,string[])", { 1, {} } },
+            { "((uint256,bytes)[])", { {} } },
+            { "(bytes[],uint256)", { {}, 7 } },
+            { "(bytes[][])", { { {} } } },
+        }
+        for _, case in ipairs(cases) do
+            local types, values = case[1], case[2]
+            local data = evmu.encode_abi(types, values)
+            assert(evmu.encode_abi(types, evmu.decode_abi(types, data)) == data, types)
+            assert(not pcall(evmu.decode_abi, types, data .. string.rep("\0", 32)), types)
+        end
+        for _, case in ipairs({ { "f(bytes[])", { {} } }, { "f(string[],uint256)", { {}, 7 } } }) do
+            local signature, values = case[1], case[2]
+            local calldata = evmu.encode_calldata(signature, values)
+            assert(evmu.encode_calldata(signature, evmu.decode_calldata(signature, calldata)) == calldata, signature)
+        end
+    end)
+    it("rejects ABI arrays with holes", function()
+        local hash = "0x" .. string.rep("ab", 32)
+        local cases = {
+            { "(uint8[])", { { 1, nil, 3 } } },
+            { "(uint8[])", { { [1] = 1, [3] = 3 } } },
+            { "(uint8[])", { { [2] = 2 } } },
+            { "(uint8[])", { { [1] = 1, [math.maxinteger] = 3 } } },
+            { "(uint8[3],uint256)", { { 1, nil, 3 }, 42 } },
+            { "(string[])", { { "a", nil, "c" } } },
+            { "(bytes32[])", { { hash, nil, hash } } },
+            { "(uint8[][])", { { { 1 }, { 2, nil, 4 } } } },
+        }
+        for _, case in ipairs(cases) do
+            local types, values = case[1], case[2]
+            local ok, err = pcall(evmu.encode_abi, types, values)
+            assert(not ok and err:find("missing array element at index", 1, true), types)
+            ok, err = pcall(evmu.encode_calldata, "f" .. types, values)
+            assert(not ok and err:find("missing array element at index", 1, true), types)
+        end
+    end)
+    it("rejects ABI array keys outside the sequence", function()
+        for _, key in ipairs({ 0, -1, 1.5, "extra", false }) do
+            local values = { 1, 2 }
+            values[key] = 3
+            local ok, err = pcall(evmu.encode_abi, "(uint8[])", { values })
+            assert(not ok and err:find("invalid array index", 1, true), tostring(key))
+        end
+    end)
+    it("encodes false array elements", function()
+        local data = evmu.encode_abi("(bool[])", { { false, true, false } })
+        local decoded = evmu.decode_abi("(bool[])", data)[1]
+        assert(#decoded == 3 and decoded[1] == false and decoded[2] == true and decoded[3] == false)
+    end)
+    it("rejects overflowing ABI offsets and lengths", function()
+        local function word(n)
+            return string.rep("\0", 24) .. string.pack(">I8", n)
+        end
+        local tail = word(1) .. "x" .. string.rep("\0", 31)
+        local cases = {
+            { "(bytes,bytes)", word(0x7ffffffffffffff0) .. word(64) .. tail },
+            { "(string,string)", word(0x7ffffffffffffff0) .. word(64) .. tail },
+            { "(bytes,bytes)", word(64) .. word(96) .. word(math.maxinteger) .. tail },
+            { "(string,string)", word(64) .. word(96) .. word(math.maxinteger) .. tail },
+            { "(bytes[])", word(32) .. word(1) .. word(math.maxinteger) },
+            { "(bytes[])", word(32) .. word(1 << 59) },
+            { "(bytes[1])", word(32) .. word(math.maxinteger) },
+            { "((bytes))", word(32) .. word(math.maxinteger) },
+            { "(bytes[],bytes)", word(64) .. word(160) .. word(1) .. word(0x7fffffffffffffd0) .. word(0) .. tail },
+            {
+                "(address,uint256,bytes,bytes)",
+                string.rep("\0", 12)
+                    .. string.rep("\x11", 20)
+                    .. word(5)
+                    .. word(0x7fffffffffffffe0)
+                    .. word(128)
+                    .. word(0),
+            },
+        }
+        for _, case in ipairs(cases) do
+            local types, data = case[1], case[2]
+            local ok, err = pcall(evmu.decode_abi, types, data)
+            assert(not ok and err:find("insufficient calldata", 1, true), types)
+            local signature = "f" .. types
+            local _, selector = evmu.parse_func_sig(signature)
+            ok, err = pcall(evmu.decode_calldata, signature, selector .. data)
+            assert(not ok and err:find("insufficient calldata", 1, true), signature)
+        end
+    end)
+    it("checks dynamic data padding at the input boundary", function()
+        for _, types in ipairs({ "(bytes)", "(string)" }) do
+            for _, size in ipairs({ 0, 1, 31, 32, 33 }) do
+                local values = { evmu.raw(string.rep("x", size)) }
+                local data = evmu.encode_abi(types, values)
+                local decoded = evmu.decode_abi(types, data, "raw")
+                assert(decoded[1] == string.rep("x", size))
+                assert(not pcall(evmu.decode_abi, types, data:sub(1, -2)))
+            end
+        end
+    end)
+    it("rejects nonzero upper bits in ABI addresses", function()
+        local types = "(address)"
+        local signature = "f" .. types
+        local _, selector = evmu.parse_func_sig(signature)
+        for _, byte in ipairs({ "\0", "\xff" }) do
+            local address = string.rep(byte, 20)
+            local data = string.rep("\0", 12) .. address
+            for _, prefer in ipairs({ "raw", "hex" }) do
+                local expected = prefer == "raw" and address or evmu.encode_hex(address)
+                assert(evmu.decode_abi(types, data, prefer)[1] == expected)
+                assert(evmu.decode_calldata(signature, selector .. data, prefer)[1] == expected)
+                for position = 1, 12 do
+                    local dirty = data:sub(1, position - 1) .. "\1" .. data:sub(position + 1)
+                    local ok, err = pcall(evmu.decode_abi, types, dirty, prefer)
+                    assert(not ok and err:find("dirty upper bits in address value", 1, true))
+                    ok, err = pcall(evmu.decode_calldata, signature, selector .. dirty, prefer)
+                    assert(not ok and err:find("dirty upper bits in address value", 1, true))
+                end
+            end
+        end
+    end)
+    it("rejects nonzero padding in fixed-size ABI bytes", function()
+        for _, size in ipairs({ 1, 4, 31, 32 }) do
+            local types = string.format("(bytes%d,bytes32)", size)
+            local signature = "f" .. types
+            local _, selector = evmu.parse_func_sig(signature)
+            local bytes = string.rep("\xff", size)
+            local following = string.rep("\xff", 32)
+            local data = bytes .. string.rep("\0", 32 - size) .. following
+            for _, prefer in ipairs({ "raw", "hex" }) do
+                local expected = prefer == "raw" and bytes or evmu.encode_hex(bytes)
+                local decoded = evmu.decode_abi(types, data, prefer)
+                assert(decoded[1] == expected)
+                assert(decoded[2] == (prefer == "raw" and following or evmu.encode_hex(following)))
+                assert(evmu.decode_calldata(signature, selector .. data, prefer)[1] == expected)
+                for position = size + 1, 32 do
+                    local dirty = data:sub(1, position - 1) .. "\1" .. data:sub(position + 1)
+                    local message = string.format("dirty padding in bytes%d value", size)
+                    local ok, err = pcall(evmu.decode_abi, types, dirty, prefer)
+                    assert(not ok and err:find(message, 1, true))
+                    ok, err = pcall(evmu.decode_calldata, signature, selector .. dirty, prefer)
+                    assert(not ok and err:find(message, 1, true))
+                end
+            end
+        end
+    end)
+    it("decodes dynamic components whose data is out of order", function()
+        local function word(n)
+            return string.rep("\0", 24) .. string.pack(">I8", n)
+        end
+        local function padded(s)
+            return s .. string.rep("\0", 32 - #s)
+        end
+        -- The second component's data comes before the first one's
+        local data = word(0x80) .. word(0x40) .. word(2) .. padded("\2\3") .. word(1) .. padded("\1")
+        local decoded = evmu.decode_abi("(bytes,bytes)", data, "raw")
+        assert(decoded[1] == "\1" and decoded[2] == "\2\3")
+    end)
 end)
 
 lester.report()

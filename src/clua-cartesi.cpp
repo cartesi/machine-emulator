@@ -15,9 +15,11 @@
 //
 
 #include <cstddef>
+#include <cstdio>
 #include <exception>
 #include <string>
 #include <string_view>
+#include <tuple>
 
 #include <boost/config.hpp>
 
@@ -71,17 +73,18 @@ static int cartesi_mod_hasher(lua_State *L) {
         luaL_argerror(L, 1, "too few arguments");
     }
     size_t len1 = 0;
-    size_t len2 = 0;
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data1 = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 1, &len1));
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const auto *data2 = reinterpret_cast<const unsigned char *>(luaL_optlstring(L, 2, "", &len2));
 
     cm_hash hash{};
 
-    if (len2 > 0) { // Concat hash of two inputs
+    if (nargs == 2) { // Concat hash of two inputs
+        size_t len2 = 0;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        const auto *data2 = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &len2));
         if (len1 != CM_HASH_SIZE || len2 != CM_HASH_SIZE) {
-            luaL_argerror(L, 1, "concatenate hash is only supported for inputs with size of hash");
+            luaL_argerror(L, len1 != CM_HASH_SIZE ? 1 : 2,
+                "concatenate hash is only supported for inputs with size of hash");
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         const auto *left = reinterpret_cast<const cm_hash *>(data1);
@@ -113,84 +116,117 @@ static int cartesi_mod_sha256(lua_State *L) {
     return cartesi_mod_hasher<CM_HASH_SHA256>(L);
 }
 
-static int cartesi_mod_tobase64(lua_State *L) try {
+static int cartesi_mod_tobase64(lua_State *L) {
     size_t size = 0;
     const char *data = luaL_checklstring(L, 1, &size);
-    std::string &value = *clua_push_new_managed_toclose_ptr(L, encode_base64(std::string_view(data, size)));
-    lua_pushlstring(L, value.data(), value.size());
-    value.clear();
-    return 1;
-} catch (const std::exception &e) {
-    luaL_error(L, "%s", e.what());
-    return 1;
+    char message[1024]{};
+    try {
+        std::string &value = *clua_push_new_managed_toclose_ptr(L, std::string());
+        value = encode_base64(std::string_view(data, size));
+        lua_pushlstring(L, value.data(), value.size());
+        value.clear();
+        return 1;
+    } catch (const std::exception &e) {
+        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
+    } catch (...) {
+        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
+    }
+    return luaL_error(L, "%s", message);
 }
 
-static int cartesi_mod_frombase64(lua_State *L) try {
+static int cartesi_mod_frombase64(lua_State *L) {
     size_t size = 0;
     const char *data = luaL_checklstring(L, 1, &size);
-    std::string &value = *clua_push_new_managed_toclose_ptr(L, decode_base64(std::string_view(data, size)));
-    lua_pushlstring(L, value.data(), value.size());
-    value.clear();
-    return 1;
-} catch (const std::exception &e) {
-    luaL_error(L, "%s", e.what());
-    return 1;
+    char message[1024]{};
+    try {
+        std::string &value = *clua_push_new_managed_toclose_ptr(L, std::string());
+        value = decode_base64(std::string_view(data, size));
+        lua_pushlstring(L, value.data(), value.size());
+        value.clear();
+        return 1;
+    } catch (const std::exception &e) {
+        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
+    } catch (...) {
+        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
+    }
+    return luaL_error(L, "%s", message);
 }
 
-static int cartesi_mod_tohex(lua_State *L) try {
+static int cartesi_mod_tohex(lua_State *L) {
     size_t size = 0;
     const char *data = luaL_checklstring(L, 1, &size);
-    std::string &value = *clua_push_new_managed_toclose_ptr(L, encode_hex(std::string_view(data, size)));
-    lua_pushlstring(L, value.data(), value.size());
-    value.clear();
-    return 1;
-} catch (const std::exception &e) {
-    luaL_error(L, "%s", e.what());
-    return 1;
+    char message[1024]{};
+    try {
+        std::string &value = *clua_push_new_managed_toclose_ptr(L, std::string());
+        value = encode_hex(std::string_view(data, size));
+        lua_pushlstring(L, value.data(), value.size());
+        value.clear();
+        return 1;
+    } catch (const std::exception &e) {
+        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
+    } catch (...) {
+        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
+    }
+    return luaL_error(L, "%s", message);
 }
 
-static int cartesi_mod_fromhex(lua_State *L) try {
+static int cartesi_mod_fromhex(lua_State *L) {
     size_t size = 0;
     const char *data = luaL_checklstring(L, 1, &size);
-    std::string &value = *clua_push_new_managed_toclose_ptr(L, decode_hex(std::string_view(data, size)));
-    lua_pushlstring(L, value.data(), value.size());
-    value.clear();
-    return 1;
-} catch (const std::exception &e) {
-    luaL_error(L, "%s", e.what());
-    return 1;
+    char message[1024]{};
+    try {
+        std::string &value = *clua_push_new_managed_toclose_ptr(L, std::string());
+        value = decode_hex(std::string_view(data, size));
+        lua_pushlstring(L, value.data(), value.size());
+        value.clear();
+        return 1;
+    } catch (const std::exception &e) {
+        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
+    } catch (...) {
+        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
+    }
+    return luaL_error(L, "%s", message);
 }
 
-static int cartesi_mod_tojson(lua_State *L) try {
+static int cartesi_mod_tojson(lua_State *L) {
     lua_settop(L, 4);
-    const int indent = clua_opt_integer<int>(L, 2, -1);
-    const char *schema_name = luaL_optstring(L, 3, nullptr);
-    clua_tojson(L, 1, indent, schema_name, clua_tojsonschemadict(L, 4));
-    lua_settop(L, 1);
-    return 1;
-} catch (const std::exception &e) {
-    luaL_error(L, "%s", e.what());
-    return 1;
+    char message[1024]{};
+    try {
+        const int indent = clua_opt_integer<int>(L, 2, -1);
+        const char *schema_name = luaL_optstring(L, 3, nullptr);
+        clua_tojson(L, 1, indent, schema_name, clua_tojsonschemadict(L, 4));
+        lua_settop(L, 1);
+        return 1;
+    } catch (const std::exception &e) {
+        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
+    } catch (...) {
+        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
+    }
+    return luaL_error(L, "%s", message);
 }
 
-static int cartesi_mod_fromjson(lua_State *L) try {
+static int cartesi_mod_fromjson(lua_State *L) {
     lua_settop(L, 3);
-    const char *schema_name = luaL_optstring(L, 2, nullptr);
-    clua_fromjson(L, luaL_checkstring(L, 1), schema_name, clua_tojsonschemadict(L, 3));
-    return 1;
-} catch (const std::exception &e) {
-    luaL_error(L, "%s", e.what());
-    return 1;
+    char message[1024]{};
+    try {
+        const char *schema_name = luaL_optstring(L, 2, nullptr);
+        size_t len = 0;
+        const char *data = luaL_checklstring(L, 1, &len);
+        clua_fromjson(L, std::string_view(data, len), schema_name, clua_tojsonschemadict(L, 3));
+        return 1;
+    } catch (const std::exception &e) {
+        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
+    } catch (...) {
+        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
+    }
+    return luaL_error(L, "%s", message);
 }
 
-static int cartesi_mod_new(lua_State *L) try {
+static int cartesi_mod_new(lua_State *L) {
     auto &m = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr));
     if (cm_new(&m.get()) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    return 1;
-} catch (const std::exception &e) {
-    luaL_error(L, "%s", e.what());
     return 1;
 }
 
@@ -283,6 +319,8 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_SHARING_NONE, "SHARING_NONE", -1);
     clua_setintegerfield(L, CM_SHARING_CONFIG, "SHARING_CONFIG", -1);
     clua_setintegerfield(L, CM_SHARING_ALL, "SHARING_ALL", -1);
+    clua_setintegerfield(L, CM_REMOVE_STORED, "REMOVE_STORED", -1);
+    clua_setintegerfield(L, CM_REMOVE_FORCED, "REMOVE_FORCED", -1);
     clua_setintegerfield(L, CM_AR_CMIO_RX_BUFFER_START, "AR_CMIO_RX_BUFFER_START", -1);
     clua_setintegerfield(L, CM_AR_CMIO_RX_BUFFER_LOG2_SIZE, "AR_CMIO_RX_BUFFER_LOG2_SIZE", -1);
     clua_setintegerfield(L, CM_AR_SHADOW_TLB_LENGTH, "AR_SHADOW_TLB_LENGTH", -1);
@@ -293,6 +331,12 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_AR_SHADOW_STATE_START, "AR_SHADOW_STATE_START", -1);
     clua_setintegerfield(L, CM_AR_SHADOW_STATE_LENGTH, "AR_SHADOW_STATE_LENGTH", -1);
     clua_setintegerfield(L, CM_AR_SHADOW_TLB_START, "AR_SHADOW_TLB_START", -1);
+    clua_setintegerfield(L, CM_TLB_CODE, "TLB_CODE", -1);
+    clua_setintegerfield(L, CM_TLB_READ, "TLB_READ", -1);
+    clua_setintegerfield(L, CM_TLB_WRITE, "TLB_WRITE", -1);
+    clua_setintegerfield(L, CM_TLB_NUM_SETS, "TLB_NUM_SETS", -1);
+    clua_setintegerfield(L, CM_TLB_SET_SIZE, "TLB_SET_SIZE", -1);
+    clua_setintegerfield(L, CM_SHADOW_TLB_SLOT_SIZE, "SHADOW_TLB_SLOT_SIZE", -1);
     clua_setintegerfield(L, CM_AR_PMAS_START, "AR_PMAS_START", -1);
     clua_setintegerfield(L, CM_AR_PMAS_LENGTH, "AR_PMAS_LENGTH", -1);
     clua_setintegerfield(L, CM_PMA_EMPTY_DID, "PMA_EMPTY_DID", -1);

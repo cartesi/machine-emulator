@@ -1,9 +1,10 @@
 -- The parts of the PRT game shared by referee and players: geometry, event schemas,
 -- transport bindings and narration. The game script supplies
--- the match walk, machines, claim builds, tournament, and verification of the disputed transition.
+-- the match bisection, machines, claim builds, tournament, and verification of the disputed transition.
 
 local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")
+local util = require("cartesi.util")
 
 -- A nil subscription audience broadcasts to every live player; an empty list reaches nobody.
 local EVERYONE = nil
@@ -55,6 +56,10 @@ end
 -- docs:begin story
 local story = {}
 local NOTICE = "Notice(bytes payload)"
+-- Outputs are opaque to the referee, so the story narrates only those that decode as notices
+local try_decode_notice = util.protect(function(output_data)
+    return evmu.decode_calldata(NOTICE, output_data, "raw")
+end)
 local tournament_streams = setmetatable({}, { __mode = "k" })
 local match_streams = setmetatable({}, { __mode = "k" })
 local match_counts = setmetatable({}, { __mode = "k" })
@@ -258,8 +263,10 @@ function story.report_winner(winner)
 end
 
 function story.report_output(output)
-    local payload = evmu.decode_calldata(NOTICE, output.output_data, "raw").payload
-    narrate("verdict", "Result proved against the final state:\n%s", payload)
+    local notice = try_decode_notice(output.output_data)
+    if notice then
+        narrate("verdict", "Result proved against the final state:\n%s", notice.payload)
+    end
 end
 -- docs:end story
 
@@ -316,8 +323,8 @@ local SCHEMA_DICT = {
         output_proof = "Proof",
     },
     ClaimChildren = { computation_hash_left = "Base64", computation_hash_right = "Base64" },
-    ScheduleClaimChildrenEvent = { items = { "Default", "Base64" } },
-    ScheduleEliminationEvent = { items = { "Default" } },
+    WinMatchByTimeoutEvent = { items = { "Base64" } },
+    EliminateMatchEvent = { items = {} },
     Responses = { items = "Default" },
     AdvanceTimeEvent = { items = { "Default" } },
 }
@@ -348,12 +355,8 @@ local EVENTS = {
         "ProveOutputsMerkleRootResponse"
     ),
     prove_output = define_event("prove_output", "ProveOutputEvent", "ProveOutputResponse"),
-    schedule_match_timeout_win = define_event(
-        "schedule_match_timeout_win",
-        "ScheduleClaimChildrenEvent",
-        "ClaimChildren"
-    ),
-    schedule_match_elimination = define_event("schedule_match_elimination", "ScheduleEliminationEvent", "Default"),
+    win_match_by_timeout = define_event("win_match_by_timeout", "WinMatchByTimeoutEvent", "ClaimChildren"),
+    eliminate_match = define_event("eliminate_match", "EliminateMatchEvent", "Default"),
     advance_time = define_event("advance_time", "AdvanceTimeEvent", "Responses"),
 }
 

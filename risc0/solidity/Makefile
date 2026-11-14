@@ -1,5 +1,4 @@
 
-ETH_RPC_URL ?= https://ethereum-sepolia-rpc.publicnode.com
 CARTESI_RISC0_CLI := $(abspath ../rust/target/debug/cartesi-risc0-cli)
 FIXTURES_DIR := $(abspath ../test/fixtures)
 
@@ -8,7 +7,7 @@ FIXTURES_DIR := $(abspath ../test/fixtures)
 help:
 	@echo "Groth16 (seal) Integration Test"
 	@echo ""
-	@echo "  make test                            Run integration tests (Sepolia fork)"
+	@echo "  make test                            Run integration tests (local verifier)"
 	@echo "  make dep                             Install Foundry dependencies"
 	@echo "  make image-id                        Regenerate src/ImageID.sol"
 	@echo "  make clean                           Remove build artifacts"
@@ -41,7 +40,7 @@ build: dep
 
 test: dep src/ImageID.sol
 	@test -f "$(FIXTURES_DIR)/seal.bin" || { echo "Error: fixtures not found. Run 'make -C risc0 test' first."; exit 1; }
-	forge test --fork-url $(ETH_RPC_URL) -vvv
+	forge test -vvv
 
 clean:
 	-@forge clean 2>/dev/null || true

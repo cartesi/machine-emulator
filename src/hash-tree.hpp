@@ -41,10 +41,6 @@
 #include "page-hash-tree-cache.hpp"
 #include "variant-hasher.hpp"
 
-#ifdef HAS_SIGNPOSTS
-#include "signposts.hpp"
-#endif
-
 namespace cartesi {
 
 class hash_tree {
@@ -52,8 +48,8 @@ class hash_tree {
     struct dirty_page {
         int ar_index; ///< Source address range
         // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
-        page_hash_tree_cache::entry &br; ///< Borrowed page hash-tree cache entry
-        bool changed;                    ///< Whether the update operation really changed the page
+        page_hash_tree_cache::entry_metadata &br; ///< Borrowed page hash-tree cache entry
+        bool changed;                             ///< Whether the update operation really changed the page
     };
 
     using dirty_pages = std::pmr::vector<dirty_page>;
@@ -78,7 +74,6 @@ class hash_tree {
         index_type right{};
         index_type parent{};
         uint32_t log2_size{};
-        uint32_t marked{};
         machine_hash hash{};
     };
 
@@ -166,14 +161,15 @@ public:
         return m_mapped_memory.get_flags().shared;
     }
 
+    /// \brief Resets cached hashes and dirty-page tracking to freshly initialized values.
+    /// \details Keeps the sparse tree topology, backing-store mappings, and statistics.
+    void clear(address_ranges ars) noexcept;
+
     bool update(address_ranges ars);
 
     bool update_words(address_ranges ars, const dirty_words_type &dirty_words);
 
     bool update_page(address_ranges ars, uint64_t paddr_page);
-
-    /// \brief Evicts cached pages that are clean in the address range's dirty-page tree
-    void evict_clean_pages(const address_range &ar);
 
     bool verify(address_ranges ars) const;
 
@@ -189,8 +185,26 @@ public:
 
     hash_tree_stats get_stats(bool clear = false) noexcept;
 
+    /// \brief Sets the number of threads used by hash-tree updates (0 means all available threads)
+    void set_concurrency(uint64_t concurrency) noexcept;
+
 private:
     using changed_address_ranges = std::pmr::vector<int>;
+
+    /// \brief Work, in hashes, that each thread of a parallel update must have for the thread to pay for itself
+    /// \details Tuned on hosts whose OpenMP runtime puts idle threads to sleep, the default on macOS and the
+    /// recommended setting elsewhere (OMP_WAIT_POLICY=passive).
+    static constexpr uint64_t PARALLEL_HASHES_PER_THREAD{300};
+    /// \brief Work, in hashes, of comparing a dirty page with its cached copy
+    static constexpr uint64_t PAGE_SCAN_HASHES{3};
+    /// \brief Blocks of a page batch updated serially before its remaining work is estimated
+    static constexpr int SERIAL_BLOCKS_BEFORE_ESTIMATE{2};
+
+    /// \brief Returns the number of threads worth using for a given amount of work
+    /// \param work Estimated work, in hashes
+    /// \param blocks Number of blocks the work can be split into
+    /// \returns Number of threads, or 1 if the work does not pay for a parallel update
+    int get_parallel_threads(uint64_t work, int blocks) const noexcept;
 
     void get_pristine_proof(int curr_log2_size, proof_type &proof) const;
     void get_dense_proof(address_range &ar, int ar_log2_size, uint64_t address, proof_type &proof);
@@ -201,9 +215,9 @@ private:
     static pristine_hashes get_pristine_hashes(hash_function_type hash_function);
 
     bool update_dirty_pages(address_ranges ars, changed_address_ranges &changed_ars);
-    bool update_dirty_page(address_range &ar, page_hash_tree_cache::entry &entry, bool &changed);
+    bool update_dirty_page(address_range &ar, page_hash_tree_cache::entry_metadata &entry, bool &changed);
     bool enqueue_hash_dirty_page(page_hash_tree_cache::simd_page_hasher<variant_hasher> &queue, address_range &ar,
-        page_hash_tree_cache::entry &entry, page_hash_tree_cache_stats &stats);
+        page_hash_tree_cache::entry_metadata &entry, page_hash_tree_cache_stats &stats);
     bool return_updated_dirty_pages(address_ranges ars, dirty_pages &batch, changed_address_ranges &changed_ars);
 
     bool update_dense_trees(address_ranges ars, const changed_address_ranges &changed_ars);
@@ -221,14 +235,6 @@ private:
     static nodes_type create_nodes(const_address_ranges ars);
     static void check_address_ranges(const_address_ranges ars);
 
-#ifdef HAS_SIGNPOSTS
-    os_log_t m_log;
-    os_signpost_id_t m_spid_update;
-    os_signpost_id_t m_spid_update_page_hashes;
-    os_signpost_id_t m_spid_update_dense_trees;
-    os_signpost_id_t m_spid_update_sparse_tree;
-#endif
-
     mutable page_hash_tree_cache m_page_cache;
     os::mapped_memory m_mapped_memory;
     nodes_view_type m_sparse_nodes;
@@ -238,6 +244,10 @@ private:
     std::pmr::unsynchronized_pool_resource m_memory_pool;
     uint64_t m_sparse_node_hashes{0};
     std::array<uint64_t, HASH_TREE_LOG2_ROOT_SIZE> m_dense_node_hashes{};
+    /// \brief Whether to rehash ancestors of dirty pages whose hashes did not change, until an update succeeds
+    /// \details Stored dense trees left by an interrupted update, or a failed one, may hold the new hashes of dirty
+    /// pages without those of their ancestors.
+    bool m_bubble_up_unchanged_pages{true};
 };
 
 } // namespace cartesi

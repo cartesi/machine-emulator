@@ -1,0 +1,414 @@
+-- Real signing, mempool, fee changes, mining, and reorgs on disposable Anvil.
+local command = require("prt-command")
+local rpc_client = require("prt-rpc")
+local signing = require("prt-signer")
+local transactions = require("prt-transactions")
+local json = require("dkjson")
+local fs = require("cartesi.filesystem")
+local evmu = require("cartesi.evmu")
+local chain = rpc_client.new(os.getenv("PRT_RPC_URL") or "http://127.0.0.1:8545")
+local signer = signing.new("wallets/player-0", "wallets/password")
+local destination = "0x0000000000000000000000000000000000000001"
+local function rpc(method, args)
+    return assert(chain:rpc(method, args))
+end
+local function observe()
+    local n, hash = chain:head()
+    return { head = n, hash = hash }
+end
+local function intent(key)
+    return {
+        key = key or "work",
+        kind = "transfer",
+        to = destination,
+        data = "0x",
+        value = "0",
+        first = 0,
+        last = 1000,
+        context = { epoch = "1", root = "fixture" },
+    }
+end
+local function mine(count, base_fee)
+    for _ = 1, count or 1 do
+        if base_fee then
+            rpc("anvil_setNextBlockBaseFeePerGas", { string.format("0x%x", base_fee) })
+        end
+        rpc("evm_mine", {})
+    end
+end
+rpc("evm_setAutomine", { false })
+local baseline = rpc("evm_snapshot", {})
+local index = 0
+local function fresh(options)
+    assert(rpc("evm_revert", { baseline }))
+    baseline = rpc("evm_snapshot", {})
+    index = index + 1
+    destination = string.format("0x%040x", 4096 + index)
+    local args = options or {}
+    args.chain, args.path, args.bump_blocks = chain, "transactions-test-" .. index .. ".json", 2
+    return transactions.new(args), args
+end
+local function submit(manager, job)
+    return manager:submit(signer, job, observe())
+end
+local function successful(manager, key, hash)
+    local receipt = assert(manager:receipt(key))
+    assert(
+        receipt.transactionHash == hash and tonumber(receipt.status) == 1,
+        json.encode({ expected = hash, receipt = receipt })
+    )
+    return receipt
+end
+
+-- The player encodes its transactions and cast signs only their digest. The bytes match what cast builds
+-- for the same fields, and calldata larger than a command argument is signed and mined.
+do
+    local manager = fresh()
+    local small = submit(manager, intent()).candidate
+    local built = command
+        .run({
+            "cast",
+            "mktx",
+            "--keystore",
+            signer.keystore,
+            "--password-file",
+            signer.password_file,
+            "--chain",
+            tostring(evmu.bint(small.chain_id)),
+            "--nonce",
+            tostring(small.nonce),
+            "--gas-limit",
+            tostring(small.gas),
+            "--gas-price",
+            small.max_fee,
+            "--priority-gas-price",
+            small.priority_fee,
+            "--value",
+            small.value,
+            small.to,
+            small.data,
+        })
+        :gsub("%s+$", "")
+    assert(small.raw == built:lower(), "the encoded transaction differs from cast's")
+    -- Each signer uses its own key and rejects a transaction signed by the other account.
+    local other = signing.new("wallets/player-1", "wallets/password")
+    local other_raw, other_hash = other:sign(small)
+    assert(other_hash ~= small.hash, "different signers produced the same transaction")
+    assert(not pcall(signer.verify_signed, signer, small, other_raw), "accepted another account's signature")
+    assert(not pcall(other.verify_signed, other, small, small.raw), "accepted another account's signature")
+    mine()
+    successful(manager, "work", small.hash)
+    local large = intent("large")
+    large.data = "0x" .. string.rep("01", 70000)
+    local published = submit(manager, large)
+    assert(published.published, "a transaction with large calldata was not published")
+    mine()
+    successful(manager, "large", published.candidate.hash)
+end
+
+-- A fee surge leaves the original pending. Restart the tracker, then replace
+-- it at the SAME nonce. No transaction receipt is needed to return from submit.
+do
+    local manager, args = fresh()
+    local first = submit(manager, intent())
+    assert(first.published and first.candidate.nonce == 0)
+    assert(first.candidate.gas == 2 * 21000, "a transfer was not signed with twice its estimate")
+    assert(manager:pending(signer.address).hash == first.candidate.hash)
+    assert(not manager:idle() and not manager:receipt("work"))
+    assert(not submit(manager, intent()).published, "same-block retry published again")
+    mine(1, 50000000000)
+    assert(not manager:receipt("work"), "underpriced transaction was unexpectedly mined")
+    assert(not submit(manager, intent()).published, "fee bump interval was ignored")
+    mine(1, 50000000000)
+    manager = transactions.new(args)
+    local second = submit(manager, intent())
+    assert(second.published and second.candidate.nonce == 0)
+    assert(manager:pending(signer.address).hash == second.candidate.hash)
+    assert(evmu.bint(second.candidate.max_fee) > evmu.bint(first.candidate.max_fee))
+    assert(evmu.bint(second.candidate.priority_fee) > evmu.bint(first.candidate.priority_fee))
+    mine()
+    successful(manager, "work", second.candidate.hash)
+    local delayed = { head = 0, hash = manager.state.genesis }
+    assert(not manager:submit(signer, intent(), delayed).published, "unobserved mined work was submitted twice")
+    assert(rpc("eth_getTransactionReceipt", { first.candidate.hash }) == json.null)
+    assert(manager:idle() and manager:nonce(signer.address) == 1)
+end
+print("PRT transactions: gas surge, same-nonce replacement, and journal reload passed.")
+
+-- Fee ceilings retain nonce ownership and keep observation available. If fees
+-- fall again, publication can resume at the retained nonce.
+do
+    local manager = fresh({ max_fee = "10000000000", max_priority_fee = "2000000000" })
+    assert(submit(manager, intent()).published)
+    mine(2, 50000000000)
+    local capped = submit(manager, intent())
+    assert(capped.blocked == "fee_ceiling" and not capped.published)
+    assert(not manager:idle() and manager:nonce(signer.address) == 0)
+    mine(1, 1000000000)
+    if not manager:receipt("work") then
+        local resumed = assert(submit(manager, intent()).candidate)
+        assert(resumed.nonce == 0)
+        mine()
+        successful(manager, "work", resumed.hash)
+    end
+end
+
+-- A dropped candidate and an underpriced replacement both retain the nonce.
+-- Every publication can be reconstructed from the already-renamed journal.
+do
+    local manager, args = fresh()
+    local first = submit(manager, intent()).candidate
+    rpc("anvil_dropTransaction", { first.hash })
+    mine(2)
+    local publish = chain.publish
+    function chain.publish(_, raw)
+        local saved = assert(json.decode(fs.read_file(args.path)))
+        local candidates = saved.accounts[signer.address].nonces["0"].candidates
+        assert(candidates[#candidates].raw == raw, "publication preceded persistence")
+        assert(not fs.read_file(args.path):find("wallets", 1, true), "journal contains signer configuration")
+        return nil, { code = -32000, message = "replacement transaction underpriced" }
+    end
+    local rejected = submit(manager, intent())
+    assert(rejected.published and rejected.publication_error == -32000 and manager:nonce(signer.address) == 0)
+    chain.publish = publish
+    mine(2)
+    local retried = submit(manager, intent()).candidate
+    assert(retried.nonce == 0 and evmu.bint(retried.priority_fee) > evmu.bint(rejected.candidate.priority_fee))
+    mine()
+    successful(manager, "work", retried.hash)
+end
+print("PRT transactions: fee ceiling, dropped transaction, underpriced replacement, and write-before-publish passed.")
+
+-- Obsolete work is outbid immediately, without waiting for the bump interval.
+do
+    local manager = fresh()
+    local original = submit(manager, intent()).candidate
+    local canceled = submit(manager, nil).candidate
+    assert(canceled.action == "cancel" and canceled.nonce == original.nonce)
+    assert(canceled.to == signer.address and canceled.value == "0" and canceled.data == "0x")
+    mine()
+    assert(not manager:receipt("work"))
+    assert(tonumber(rpc("eth_getTransactionReceipt", { canceled.hash }).status) == 1)
+    assert(manager:idle())
+end
+
+-- Replacement is not revocation. An older candidate can win, including after
+-- publication was acknowledged ambiguously. Receipts identify the actual hash.
+do
+    local manager = fresh()
+    local first = submit(manager, intent()).candidate
+    local publish = chain.publish
+    function chain.publish()
+        return nil, { code = -32000 }
+    end
+    assert(submit(manager, nil).published)
+    chain.publish = publish
+    mine()
+    successful(manager, "work", first.hash)
+    assert(manager:idle())
+end
+
+-- A reorg can reopen MULTIPLE previously consumed nonces. Loading the journal
+-- must recover high_water, then overwrite each nonce before calling it idle.
+do
+    local manager, args = fresh()
+    local rewind = rpc("evm_snapshot", {})
+    local first = submit(manager, intent("one")).candidate
+    mine()
+    successful(manager, "one", first.hash)
+    local second = submit(manager, intent("two")).candidate
+    mine()
+    assert(second.nonce == 1 and manager:idle())
+    successful(manager, "two", second.hash)
+    assert(rpc("evm_revert", { rewind }))
+    manager = transactions.new(args)
+    assert(not manager:receipt("one") and not manager:receipt("two"))
+    local cancel0 = submit(manager, nil).candidate
+    assert(cancel0.nonce == 0)
+    mine()
+    assert(not manager:idle(), "lost the higher resurrected nonce")
+    local cancel1 = submit(manager, nil).candidate
+    assert(cancel1.nonce == 1)
+    mine()
+    assert(manager:idle() and manager:nonce(signer.address) == 2)
+end
+
+-- The stored journal keeps the nonces a reorg can still reopen, and forgets them once their
+-- blocks are finalized. Anvil finalizes the block 64 below the tip.
+do
+    local manager, args = fresh()
+    local function stored_nonces()
+        local account = json.decode(fs.read_file(args.path)).accounts[signer.address]
+        local nonces = {}
+        for nonce in pairs(account.nonces) do
+            nonces[#nonces + 1] = nonce
+        end
+        table.sort(nonces)
+        return table.concat(nonces, ","), account.first_nonce
+    end
+    local first = submit(manager, intent("one")).candidate
+    mine()
+    successful(manager, "one", first.hash)
+    submit(manager, intent("two"))
+    mine()
+    assert(stored_nonces() == "0,1", "an unfinalized nonce was forgotten")
+    mine(64)
+    submit(manager, intent("three"))
+    local nonces, first_nonce = stored_nonces()
+    assert(nonces == "2" and first_nonce == 2, "a finalized nonce was kept: " .. nonces)
+    assert(not manager:receipt("one"), "a forgotten candidate still answers receipts")
+    manager = transactions.new(args)
+    assert(not manager:idle())
+    mine()
+    assert(manager:idle() and manager:nonce(signer.address) == 3)
+end
+print("PRT transactions: immediate cancellation, older-candidate race, and multi-nonce reorg recovery passed.")
+
+-- Simulate process death after recording but before broadcast. Relaunch must
+-- reuse the reserved nonce, even though the network never saw the first hash.
+do
+    local manager, args = fresh()
+    local publish = chain.publish
+    function chain.publish()
+        error("fixture crash before publication")
+    end
+    assert(not pcall(submit, manager, intent()))
+    chain.publish = publish
+    manager = transactions.new(args)
+    assert(not manager:idle() and manager:nonce(signer.address) == 0)
+    mine(2)
+    local resumed = submit(manager, intent()).candidate
+    assert(resumed.nonce == 0)
+    mine()
+    successful(manager, "work", resumed.hash)
+end
+
+-- A consumed nonce and a reverted receipt are not successful job completion.
+-- A later successful retry must supersede that earlier receipt for suppression.
+do
+    local manager = fresh()
+    local failed = submit(manager, intent()).candidate
+    rpc("anvil_setCode", { destination, "0x60006000fd" })
+    mine()
+    local receipt = assert(manager:receipt("work"))
+    assert(receipt.transactionHash == failed.hash and tonumber(receipt.status) == 0)
+    assert(manager:idle())
+    rpc("anvil_setCode", { destination, "0x" })
+    local retried = submit(manager, intent()).candidate
+    assert(retried.nonce == 1)
+    mine()
+    successful(manager, "work", retried.hash)
+end
+
+-- An out-of-gas revert doubles the job's next limit, even when its new estimate is low again. The contract
+-- stores two new words only while slot 0 is set, like the pairing branch a join or a win can switch to
+-- before inclusion.
+do
+    local manager = fresh()
+    rpc("anvil_setCode", { destination, "0x60005415601157600160015560016002555b00" })
+    local set, clear = string.format("0x%064x", 1), string.format("0x%064x", 0)
+    local exhausted = submit(manager, intent()).candidate
+    rpc("anvil_setStorageAt", { destination, "0x0", set })
+    mine()
+    local receipt = assert(manager:receipt("work"))
+    assert(
+        tonumber(receipt.status) == 0 and tonumber(receipt.gasUsed) == exhausted.gas,
+        "the switched branch did not run out of gas"
+    )
+    rpc("anvil_setStorageAt", { destination, "0x0", clear })
+    local retried = submit(manager, intent()).candidate
+    assert(retried.gas == 2 * exhausted.gas, "the exhausted limit was not doubled")
+    rpc("anvil_setStorageAt", { destination, "0x0", set })
+    mine()
+    successful(manager, "work", retried.hash)
+end
+
+-- A balance below the gas limit at the max fee blocks the transaction before it is signed or stored, and
+-- publication resumes once the balance covers it.
+do
+    local manager = fresh()
+    local balance = rpc("eth_getBalance", { signer.address, "latest" })
+    rpc("anvil_setBalance", { signer.address, "0x1" })
+    local short = submit(manager, intent())
+    assert(short.blocked == "insufficient_funds" and not short.published, "a shortfall was not blocked")
+    assert(short.available == "1" and evmu.bint(short.needed) > 1, "the shortfall was misreported")
+    assert(manager:idle(), "a blocked transaction was stored")
+    rpc("anvil_setBalance", { signer.address, balance })
+    local resumed = submit(manager, intent())
+    assert(resumed.published, "publication did not resume")
+    mine()
+    successful(manager, "work", resumed.candidate.hash)
+end
+
+-- A candidate lost at the fee ceiling, here to a crash before publication, sets no replacement floor. The
+-- same job, or another job once the lost one is no longer due, is signed again at current fees, at the same
+-- nonce and within the configured ceiling.
+for _, key in ipairs({ "work", "other" }) do
+    local manager, args = fresh({ max_fee = "3000000000", max_priority_fee = "1000000000" })
+    local publish = chain.publish
+    function chain.publish()
+        error("fixture crash before publication at ceiling")
+    end
+    local lost = intent()
+    assert(not pcall(submit, manager, lost))
+    chain.publish = publish
+    manager = transactions.new(args)
+    mine(2, 1000000000)
+    local resumed = submit(manager, intent(key))
+    assert(resumed.published and resumed.candidate.nonce == 0, "a lost candidate at the ceiling blocked its nonce")
+    assert(evmu.bint(resumed.candidate.max_fee) <= evmu.bint(args.max_fee), "the ceiling was exceeded")
+    assert(not submit(manager, intent(key)).published, "republication was not throttled")
+    mine()
+    successful(manager, key, resumed.candidate.hash)
+end
+
+-- A live tip change while the keystore signs invalidates the attempt. Nothing
+-- may be published based on the earlier eligibility/deadline calculation.
+do
+    local manager = fresh()
+    local sign = signer.sign
+    function signer:sign(transaction)
+        local raw, hash = sign(self, transaction)
+        mine()
+        return raw, hash
+    end
+    assert(not submit(manager, intent()).published)
+    signer.sign = nil
+    assert(manager:idle() and not io.open(manager.path, "r"))
+end
+-- All nonce consumers enforce exclusive ownership, including idle queries.
+-- Otherwise an external transaction could make a pending journal appear done.
+do
+    local manager = fresh()
+    assert(submit(manager, intent()).published)
+    mine()
+    rpc("anvil_setNonce", { signer.address, "0x2" })
+    assert(not pcall(manager.pending, manager, signer.address), "pending accepted an unowned nonce")
+    assert(not pcall(manager.idle, manager), "idle accepted an unowned nonce")
+    assert(not pcall(submit, manager, intent()), "submission accepted an unowned nonce")
+end
+
+-- Requests share one connection to the node, and an idle connection that was closed is replaced
+-- before the next request.
+do
+    local before = chain.connection
+    rpc("eth_blockNumber", {})
+    assert(chain.connection == before, "a request opened another connection")
+    before:shutdown("both")
+    rpc("eth_blockNumber", {})
+    assert(chain.connection and chain.connection ~= before, "a closed connection was not reopened")
+end
+
+-- The node pushes new block headers over its WebSocket endpoint. Mining many blocks at once queues
+-- one header each, and waiting keeps only the newest. Without a new block, waiting times out.
+do
+    local heads = require("prt-websocket").new_head_subscription(
+        (os.getenv("PRT_RPC_URL") or "http://127.0.0.1:8545"):gsub("^http", "ws")
+    )
+    local start = chain:head()
+    rpc("anvil_mine", { "0x3e8" })
+    local header = assert(heads:wait(10), "no header arrived after mining")
+    assert(tonumber(header.number) == start + 1000, "waiting did not keep the newest header")
+    assert(heads:wait(0.2) == nil, "a header arrived without a new block")
+end
+print("PRT transaction tests passed.")

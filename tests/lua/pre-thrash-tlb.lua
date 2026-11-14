@@ -28,13 +28,13 @@ can verify the TLB was restored to the same state.
 
 local cartesi = require("cartesi")
 
-local TLB_CODE = 0
-local TLB_READ = 1
-local TLB_WRITE = 2
+local TLB_CODE = cartesi.TLB_CODE
+local TLB_READ = cartesi.TLB_READ
+local TLB_WRITE = cartesi.TLB_WRITE
 local TLB_SETS = { TLB_CODE, TLB_READ, TLB_WRITE }
 
-local TLB_SET_SIZE = 256
-local TLB_SLOT_BYTES = 32
+local TLB_SET_SIZE = cartesi.TLB_SET_SIZE
+local TLB_SLOT_BYTES = cartesi.SHADOW_TLB_SLOT_SIZE
 
 local PMA_ENTRY_BYTES = 16
 

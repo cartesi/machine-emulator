@@ -5,6 +5,127 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Added computation-hash corpus cases for accepted and rejected inputs at the saturated input budget,
+  followed by another input, including uarch periods on both sides of the input boundary
+- Added Lua JSON schemas for machine, runtime, and memory range configurations
+- Added `clear_hash_tree` to the C, Lua, and JSON-RPC APIs
+- Added the `clear_hash_tree` runtime option
+- Added the `--clear-hash-tree` command-line option
+- Added the `cartesi.filesystem` Lua module
+- Added `exists`, `create_directory`, and `list_directory` to `cartesi.filesystem`
+- Added `clone_file` and `truncate_file` to `cartesi.filesystem`
+- Added `new_temporary_file` to `cartesi.filesystem`
+- Added `sync_file` and `sync_directory` to `cartesi.filesystem`
+- Added `frontier_store` and `frontier_load` to `cartesi.hash-tree`
+- Added `frontier_forest_store` and `frontier_forest_load` to `cartesi.hash-tree`
+- Added `encode_abi` and `decode_abi` to `cartesi.evmu`
+- Added `decode_tohost` and `encode_fromhost` to `cartesi.util`
+- Added the permissionless refereed tournament to the user manual
+- Added a recipe that runs the tournament against Dave's contracts on a local chain
+- Added the `mode` argument to `remove_stored` in the C, Lua, and JSON-RPC APIs
+- Added the `sharing` argument to `create` in the C, Lua, and JSON-RPC APIs
+- Added the `sharing` option to `--create`
+- Added the `filename` option to `--remote-address`
+- Added automatic labels of flash drives and NVRAMs to `replace_memory_range`
+- Added the `.ram`, `.dtb`, `.cmio-rx-buffer`, `.cmio-tx-buffer`, and `.uarch-ram` labels to `replace_memory_range`
+
+### Changed
+- Changed Lua JSON conversion to reject empty tables without an array or object schema
+- Changed recipe game responses to carry JSON payload strings, decoded only when delivered
+- Changed the stored page hash-tree cache layout, making stored machines much faster to load
+- Changed `dependencies.lock` to define the kernel and rootfs download URLs
+- Bumped MARCHID version to 23
+- Bumped machine configuration archive version from 8 to 9
+- Bumped JSON-RPC protocol version to 0.9.0
+- Changed `--assert-rolling-template` to require a pristine uarch state in Keccak-256 machines
+- Changed `replace_memory_range` to accept the CMIO rx buffer
+- Changed `clone_stored` to fail instead of copying when a filesystem refuses a reference link with `EPERM`
+- Changed `cartesi-machine` and spawned JSON-RPC servers to default `OMP_WAIT_POLICY` to `passive`
+- Changed hash-tree updates to use as many threads as their estimated hashing work pays for
+- Changed `outputs_merkle_root_proof` of `--cmio-advance-state` to a single file, with no default, written when the epoch ends
+- Changed the outputs Merkle root proof to hold the `iflags_Y`, `htif_tohost` and tx buffer words with their proofs
+- Changed the PRT and verification game recipes to rebuild the hash tree of each epoch's first machine
+- Changed `sync_stored` to fail while a machine loaded with shared backing stores uses the stored machine
+- Changed the `sync` key of `--load` and the commits of `--revert-mode=stored` to reload the machine around the sync
+- Changed `--revert-mode=stored` to keep a synced copy of the last committed state in `<directory>.revert`
+- Changed `--revert-mode=stored` to remove `<directory>.revert` on a clean exit
+- Changed the PRT stored player to keep a synced copy of its last recorded boundary in `machine.revert`
+- Changed `receive_cmio_request` to clamp a declared data length to the CMIO tx buffer instead of failing
+- Changed the PRT player to report an outputs Merkle root mismatch instead of failing
+
+### Removed
+- Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`
+
+### Fixed
+- Fixed PRT template validation accepting halted machines with a manual yield also set
+- Fixed the Lua ABI function-signature cache retaining unused parsed signatures indefinitely
+- Fixed Lua JSON conversion silently replacing NaN and infinities with null instead of rejecting them
+- Fixed Lua JSON decoding treating object, array, and tuple schema fields as enum entries
+- Fixed Lua JSON conversion serializing empty tables as arrays despite object schemas
+- Fixed Lua JSON conversion accepting mixed table keys and expanding sparse arrays without a schema
+- Fixed overflow in Lua JSON `ArrayIndex` conversions
+- Fixed ABI decoding accepting out-of-bounds offsets and lengths after integer overflow
+- Fixed Lua JSON conversions truncating object keys containing NUL bytes
+- Fixed Lua and JSON-RPC parsing accepting JSON followed by a raw NUL byte and trailing data
+- Fixed Lua bindings leaking C++ exceptions when handling conversion and allocation errors
+- Fixed address ranges being accepted inside the uarch state hash tree node
+- Fixed proofs and uarch cycle root hashes using stale page hash-tree cache entries
+- Fixed interrupted stores and clones leaving directories that load with a torn page hash-tree cache
+- Fixed `remove_stored` failing on directories left by interrupted removals
+- Fixed stored machines left unloadable or with stale root hashes by interrupted hash-tree updates
+- Fixed interrupted hash-tree updates freezing the root hash of stored sparse trees
+- Fixed interrupted `clear_hash_tree` calls leaving clean pages with cleared hashes
+- Fixed `store` saving the original backing store of memory ranges replaced by `replace_memory_range`
+- Fixed spawned JSON-RPC servers inheriting the sockets of their client
+- Fixed machines created in a directory reporting and storing the backing stores they were created from
+- Fixed JSON-RPC servers exiting on responses that are not valid UTF-8
+- Fixed JSON-RPC clients altering the access logs they send for verification
+- Fixed forked JSON-RPC servers leaving zombie processes on macOS
+- Fixed forked JSON-RPC servers left running when their fork response could not be sent
+- Fixed forked JSON-RPC servers serving connections accepted by their parent
+- Fixed `clone_stored` failing once a read-only backing store reaches the hard link limit
+- Fixed `rename_stored` and `remove_stored` failing after succeeding when given a directory with a trailing separator
+- Fixed `remove_stored` removing the files of a directory named with a final `.` before failing
+- Fixed `clone_stored` and `clone_file` hard-linking a symbolic link instead of the read-only file it refers to
+- Fixed `decode_abi` and `decode_calldata` rejecting empty arrays of dynamic elements
+- Fixed `decode_abi` and `decode_calldata` rejecting dynamic data stored out of order
+- Fixed uarch TLB writes to an invalid set writing host memory out of bounds
+- Fixed JSON access logs and proofs accepting log2 sizes that do not fit an int, truncated to smaller sizes
+- Fixed `verify_slice` and `verify_splice` accepting proofs whose shape does not match their sizes
+- Fixed operations that require a reset microarchitecture accepting one that is halted, aborting `collect_uarch_cycle_root_hashes`
+- Fixed `collect_uarch_cycle_root_hashes` accepting revert uarch tails longer than the steps of an mcycle
+- Fixed `collect_uarch_cycle_root_hashes` accepting `log2_bundle_uarch_cycle_count` above 20
+- Fixed `write_memory` of the whole processor shadow accepting a shadow that a load would reject
+- Fixed `log_step` crashing on an empty or destroyed local machine
+- Fixed `cm_translate_virtual_address` crashing on a NULL output
+- Fixed `cm_jsonrpc_rebind_server` accepting a NULL address
+- Fixed JSON-RPC clients crashing on NULL data in memory accesses and cmio responses
+- Fixed JSON-RPC clients sending the data of cmio responses that do not fit in the rx buffer
+- Fixed `read_virtual_memory` and `write_virtual_memory` doing nothing for ranges that reach the end of the address space
+- Fixed `create` and `load` on a local machine object that already holds a machine leaking that machine
+- Fixed read-only memory ranges longer than their page-aligned backing image being rejected
+- Fixed the JSON-RPC server executing requests it rejects for an invalid `id`
+- Fixed `spawn_server` hanging on failure when the calling thread blocks `SIGTERM`
+- Fixed the JSON-RPC client and server rejecting IPv6 addresses, which are now written `[<ipv6-address>]:<port>`
+- Fixed the JSON-RPC server no longer accepting connections after it runs out of descriptors
+- Fixed the JSON-RPC server lingering after an accept error stops it from accepting connections
+- Fixed `cartesi-machine` aborting a revert when it cannot rebind the restored server to its address
+- Fixed `--dump-memory-ranges` passing its directory name to the shell
+- Fixed `cartesi.filesystem.write_file` ignoring errors that only show when the file is closed
+- Fixed `cartesi-machine` ignoring runtime options such as `--clear-hash-tree` with `--no-remote-create`
+- Fixed the verification game and the output verification recipe accepting output proofs at aliased indices
+- Fixed the output verification recipe accepting proofs of other tree heights or outside the tx buffer
+- Fixed the output verification recipe accepting outputs Merkle roots of states that did not accept their last input
+- Fixed `clear_hash_tree` keeping the dirty-page tracking of a stored machine, which could leave a wrong root hash
+- Fixed `verify_step_uarch` aborting the process on a log with a misaligned uarch access
+- Fixed release builds accepting uarch steps with misaligned accesses that the Solidity verifier rejects
+- Fixed the PRT referee model starting a claim's clock at a later re-post instead of its earliest post
+- Fixed the PRT referee model limiting a sealed leaf's proof to the earlier of the two deadlines
+- Fixed `run`, `collect_mcycle_root_hashes` and `read_reg` reading constant `mvendorid`, `marchid` and `mimpid` instead of the values in the machine state that the uarch reads
+- Fixed `collect_uarch_cycle_root_hashes` accepting a non-pristine microarchitecture, whose reset it computed wrongly
+- Fixed uarch steps reporting a uarch that halts on the step reaching `UARCH_CYCLE_MAX` as overflowed, which made `collect_uarch_cycle_root_hashes` fail
+- Fixed machine creation ignoring the configured `mvendorid`, `marchid` and `mimpid`, which the manual says are checked at instantiation
 
 ## [0.22.0] - 2026-10-15
 ### Added

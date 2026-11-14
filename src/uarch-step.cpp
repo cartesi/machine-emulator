@@ -886,6 +886,10 @@ static inline void executeECALL(const UarchState a, uint32 insn, uint64 pc) {
         uint64 vaddr_page = readX(a, 12); // a2 contains vaddr_page to write
         uint64 vp_offset = readX(a, 13);  // a3 contains vp_offset to write
         uint64 pma_index = readX(a, 14);  // a4 contains index of PMA where page falls
+        // Every implementation refuses an index outside the shadow TLB before computing the slot address
+        if (set_index >= TLB_NUM_SETS || slot_index >= TLB_SET_SIZE) {
+            throwRuntimeError(a, "invalid TLB index");
+        }
         writeTlbECALL(a, set_index, slot_index, vaddr_page, vp_offset,
             pma_index); // WARNING: This CANNOT be a NOOP in Solidity
         return advancePc(a, pc);
@@ -1087,14 +1091,13 @@ static inline void executeInsn(const UarchState a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 UArchStepStatus uarch_step(const UarchState a) {
-    // Report the derived overflow fixed point before all other break reasons.
+    // Report an existing halt fixed point, even at the cycle limit, then the derived overflow fixed point.
     uint64 cycle = readCycle(a);
-    if (cycle >= UARCH_CYCLE_MAX) {
-        return UArchStepStatus::UArchCycleOverflow;
-    }
-    // Report an existing ordinary halt fixed point.
     if (readHalt(a) != 0) {
         return UArchStepStatus::UArchHalted;
+    }
+    if (cycle >= UARCH_CYCLE_MAX) {
+        return UArchStepStatus::UArchCycleOverflow;
     }
     // Execute next instruction
     uint64 pc = readPc(a);
@@ -1102,15 +1105,14 @@ UArchStepStatus uarch_step(const UarchState a) {
     executeInsn(a, insn, pc);
     cycle = cycle + 1;
     writeCycle(a, cycle);
-    // Overflow has precedence when this step reaches the cycle limit.
-    if (cycle >= UARCH_CYCLE_MAX) {
-        return UArchStepStatus::UArchCycleOverflow;
-    }
-    // ECALL is the only instruction that can halt the uarch.
+    // ECALL is the only instruction that can halt the uarch, even on the step that reaches the cycle limit.
     if (insn == uint32(0x73)) {
         if (readHalt(a) != 0) {
             return UArchStepStatus::UArchHalted;
         }
+    }
+    if (cycle >= UARCH_CYCLE_MAX) {
+        return UArchStepStatus::UArchCycleOverflow;
     }
     return UArchStepStatus::Success;
 }

@@ -47,8 +47,6 @@ export CARTESI_TESTS_UARCH_PATH
 export CARTESI_COMPUTATION_HASH_CORPUS_PATH
 
 COMPUTATION_HASH_GUEST = $(CARTESI_TESTS_PATH)/computation_hash.bin
-COMPUTATION_HASH_UARCH_NEAR_LIMIT = $(CARTESI_TESTS_UARCH_PATH)/rv64ui-uarch-computation-hash-near-limit.bin
-COMPUTATION_HASH_UARCH_OVERFLOW = $(CARTESI_TESTS_UARCH_PATH)/rv64ui-uarch-computation-hash-overflow.bin
 COMPUTATION_HASH_MANIFEST = $(CARTESI_COMPUTATION_HASH_CORPUS_PATH)/manifest.json
 COMPUTATION_HASH_GENERATOR = lua/create-computation-hash-corpus.lua
 COMPUTATION_HASH_ARCHIVE = computation-hash-corpus.tar.gz
@@ -77,23 +75,22 @@ LUA_CLI ?= $(LUA)
 SPEC_FILTER ?=
 
 LUACOV_DIR := $(BUILDDIR)/luacov
+CM_CLI_SHARDS := 1 2 3 4
 
 ifeq ($(coverage),yes)
 # The lua test runners fork workers whose duplicate counter dumps would race the
 # shared .gcda files. Parallelism comes from make -j across test targets instead.
 override NUM_JOBS = 1
 export LUA_CLI = $(LUA) -lluacov
-LUACOV_STATS := $(LUACOV_DIR)/luacov.stats.out
+# Each independently running suite owns its statistics. CLI children within a
+# shard run sequentially and accumulate into that shard's file.
+LUACOV_STATS = $(LUACOV_DIR)/$@.stats.out
 LUACOV_CONFIG := $(abspath ./scripts/luacov.lua)
 export LUACOV_STATS
 export LUACOV_CONFIG
 $(LUACOV_DIR):
 	mkdir -p $@
-# spec-cm-cli's CLI children and test-evmu write luacov.stats.out under this dir,
-# so it must exist before them. They are also ordered so their writes do not race.
 LUACOV_DIR_ORDER := $(LUACOV_DIR)
-TEST_EVMU_ORDER := $(LUACOV_DIR) run-lua-spec-cm-cli
-TEST_COMPUTATION_HASH_ORDER := $(LUACOV_DIR) run-lua-spec-cm-cli test-evmu
 endif
 
 ifeq ($(TARGET_OS),Darwin)
@@ -123,8 +120,6 @@ endif
 
 RUN_ARCH_TEST = $(LUA) $(abspath ./lua/run-rv64i-arch-test.lua)
 
-MACHINE_GUEST_TOOLS_ROOTFS_URL = https://github.com/cartesi/machine-guest-tools/releases/download/$(MACHINE_GUEST_TOOLS_TAG)/rootfs-tools.ext2
-LINUX_IMAGE_URL = https://github.com/cartesi/linux/releases/download/$(LINUX_TAG)/linux-$(LINUX_VERSION).bin
 ROOTFS_TOOLS_IMAGE = $(CARTESI_IMAGES_PATH)/rootfs-tools.ext2
 LINUX_IMAGE = $(CARTESI_IMAGES_PATH)/linux-$(LINUX_VERSION).bin
 ROOTFS_TOOLS_INPUTS_HASH := $(shell printf '%s\n' \
@@ -161,15 +156,10 @@ build-tests-fuzz:
 
 build-tests-images: images
 
-build-tests-computation-hash-fixtures: $(COMPUTATION_HASH_GUEST) \
-	$(COMPUTATION_HASH_UARCH_NEAR_LIMIT) $(COMPUTATION_HASH_UARCH_OVERFLOW)
+build-tests-computation-hash-fixtures: $(COMPUTATION_HASH_GUEST)
 
 $(COMPUTATION_HASH_GUEST): machine/src/computation_hash.S
 	@$(MAKE) -C machine/src BUILDDIR=$(CARTESI_TESTS_PATH) $@
-
-$(COMPUTATION_HASH_UARCH_NEAR_LIMIT) $(COMPUTATION_HASH_UARCH_OVERFLOW): \
-	$(CARTESI_TESTS_UARCH_PATH)/rv64ui-uarch-%.bin: uarch/%.S
-	@$(MAKE) -C uarch BUILDDIR=$(CARTESI_TESTS_UARCH_PATH) $@
 
 build-computation-hash-corpus-with-toolchain:
 	$(MAKE) toolchain-exec CONTAINER_COMMAND="make build-tests-computation-hash-fixtures"
@@ -188,8 +178,7 @@ archive-computation-hash-corpus: $(COMPUTATION_HASH_MANIFEST)
 # Regenerate an existing artifact when its generator changes. Building missing fixture binaries
 # remains an explicit toolchain-managed step.
 $(COMPUTATION_HASH_MANIFEST): $(COMPUTATION_HASH_GENERATOR)
-	@test -f $(COMPUTATION_HASH_GUEST) -a -f $(COMPUTATION_HASH_UARCH_NEAR_LIMIT) \
-		-a -f $(COMPUTATION_HASH_UARCH_OVERFLOW) || \
+	@test -f $(COMPUTATION_HASH_GUEST) || \
 		{ echo 'Run make build-computation-hash-corpus-with-toolchain first' >&2; exit 1; }
 	@rm -rf $(CARTESI_COMPUTATION_HASH_CORPUS_PATH)
 	$(MAKE) create-computation-hash-corpus
@@ -225,7 +214,7 @@ $(ROOTFS_TOOLS_IMAGE): $(ROOTFS_TOOLS_INPUTS_KEY)
 	touch $@
 
 $(LINUX_IMAGE): $(LINUX_IMAGE_INPUTS_KEY)
-	wget -q -O $@ $(LINUX_IMAGE_URL)
+	wget -q -O $@ $(LINUX_URL)
 	printf '%s  %s\n' '$(LINUX_SHA256)' '$@' | shasum -a 256 -c -
 	touch $@
 
@@ -295,7 +284,7 @@ test-computation-hash: verify-existing-computation-hash-corpus
 
 # Downloaded corpora are immutable test inputs: deliberately do not make this target depend on
 # the generator or fixture timestamps.
-verify-existing-computation-hash-corpus: | $(TEST_COMPUTATION_HASH_ORDER)
+verify-existing-computation-hash-corpus: | $(LUACOV_DIR_ORDER)
 	$(LUA_CLI) ./lua/test-computation-hash.lua
 
 
@@ -328,6 +317,24 @@ test-uarch-rv64ui:
 test-uarch-interpreter:
 	$(MAKE) -C ../third-party/riscv-arch-test verify XLEN=64 RISCV_TARGET=cartesi RISCV_ISA=rv64i RISCV_DEVICE=I WORK=$(BUILDDIR)/uarch-riscv-arch-test RUN_ARCH_TEST='$(RUN_ARCH_TEST)'
 
+# Uarch programs from uarch/ that the stock pristine uarch never runs. Each run links a
+# cartesi module that embeds one of them as its pristine uarch into its own directory,
+# leaving the build tree untouched, and runs the spec with that module first in the
+# Lua path. Each collection costs about 2^20 uarch cycle root hashes, so these runs
+# stay out of test-parallel and therefore out of the sanitizer job.
+CUSTOM_UARCH_PRISTINES = halt-before-limit halt-at-limit overflow
+CUSTOM_UARCH_PRISTINE_PATH = $(BUILDDIR)/custom-uarch-pristine
+
+test-custom-uarch-pristine: $(addprefix run-custom-uarch-pristine-,$(CUSTOM_UARCH_PRISTINES))
+
+run-custom-uarch-pristine-%:
+	mkdir -p $(CUSTOM_UARCH_PRISTINE_PATH)/$*
+	$(LUA) ./scripts/custom-uarch-pristine-sources.lua \
+		$(CARTESI_TESTS_UARCH_PATH)/rv64ui-uarch-custom-pristine-$*.bin $(CUSTOM_UARCH_PRISTINE_PATH)/$*
+	$(MAKE) -C ../src custom-uarch-pristine-cartesi.so CUSTOM_UARCH_PRISTINE_DIR=$(CUSTOM_UARCH_PRISTINE_PATH)/$*
+	LUA_CPATH_5_4='$(CUSTOM_UARCH_PRISTINE_PATH)/$*/?.so;$(LUA_CPATH_5_4)' CUSTOM_UARCH_PRISTINE=$* \
+		$(LUA) lua/test-custom-uarch-pristine.lua --filter='$(SPEC_FILTER)'
+
 test-jsonrpc:
 	./scripts/test-jsonrpc-server.sh ../src/cartesi-jsonrpc-machine '$(LUA) ../src/cartesi-machine.lua' '$(LUA) ./lua/cartesi-machine-tests.lua' '$(LUA)'
 
@@ -345,10 +352,19 @@ run-lua-program-%: | $(CARTESI_IMAGES)
 run-lua-spec-%: | $(CARTESI_IMAGES)
 	$(LUA) lua/spec-$*.lua --filter='$(SPEC_FILTER)'
 
-# spec-cm-cli runs the CLI as child processes under LUA_CLI (lua -lluacov under
-# coverage), which write luacov.stats.out, so its directory must exist first.
+# Under coverage, split the CLI suite across independent processes scheduled by
+# make -j. Keep the ordinary serial entry point for local runs and filtering.
+ifeq ($(coverage),yes)
+run-lua-spec-cm-cli: test-cm-cli-parallel
+else
 run-lua-spec-cm-cli: | $(CARTESI_IMAGES) $(LUACOV_DIR_ORDER)
 	$(LUA) lua/spec-cm-cli.lua --filter='$(SPEC_FILTER)'
+endif
+
+test-cm-cli-parallel: $(addprefix run-lua-spec-cm-cli-shard-,$(CM_CLI_SHARDS))
+
+$(addprefix run-lua-spec-cm-cli-shard-,$(CM_CLI_SHARDS)): run-lua-spec-cm-cli-shard-%: | $(CARTESI_IMAGES) $(LUACOV_DIR_ORDER)
+	CM_CLI_SHARD=$*/$(words $(CM_CLI_SHARDS)) $(LUA) lua/spec-cm-cli.lua --filter='$(SPEC_FILTER)'
 
 test-lua: $(addprefix run-lua-program-,$(LUA_PROGRAMS)) \
 	$(addprefix run-lua-spec-,$(LUA_SPECS)) run-lua-spec-cm-cli test-evmu
@@ -357,9 +373,8 @@ test-lua: $(addprefix run-lua-program-,$(LUA_PROGRAMS)) \
 test-cm-cli: run-lua-spec-cm-cli
 
 # The evmu spec exercises Lua-only code, so it runs under LUA_CLI to measure its
-# coverage with luacov. Ordered after spec-cm-cli so their luacov.stats.out
-# writes do not race (only relevant under coverage).
-test-evmu: | $(TEST_EVMU_ORDER)
+# coverage with luacov in its own statistics file.
+test-evmu: | $(LUACOV_DIR_ORDER)
 	$(LUA_CLI) lua/spec-evmu.lua --filter='$(SPEC_FILTER)'
 
 test-c-api: | $(CARTESI_IMAGES)
@@ -371,6 +386,12 @@ test-c-api-remote: | $(CARTESI_IMAGES)
 test-c-jsonrpc-api: | $(CARTESI_IMAGES)
 	CARTESI_JSONRPC_MACHINE=../src/cartesi-jsonrpc-machine ./build/misc/test-machine-c-jsonrpc-api
 
+test-lua-filesystem:
+	./build/misc/test-lua-filesystem
+
+test-lua-exceptions:
+	./build/misc/test-lua-exceptions
+
 test-save-and-load: | $(CARTESI_IMAGES)
 	./scripts/test-save-and-load.sh '$(LUA) ../src/cartesi-machine.lua'
 
@@ -380,7 +401,7 @@ test-yield-and-save: | $(CARTESI_IMAGES)
 test-fuzz: build-tests-fuzz
 	@$(MAKE) -C fuzz CC=clang CXX=clang++ fuzz=yes run-fuzz-interpret
 
-test-misc: test-c-api test-c-api-remote test-c-jsonrpc-api test-save-and-load test-yield-and-save
+test-misc: test-c-api test-c-api-remote test-c-jsonrpc-api test-lua-filesystem test-lua-exceptions test-save-and-load test-yield-and-save
 
 test-generate-uarch-logs: $(BUILDDIR)/uarch-riscv-tests-json-logs
 	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --create-reset-uarch-log --create-send-cmio-response-log --jobs=$(NUM_JOBS) json-step-logs
@@ -405,24 +426,31 @@ test-coverage-uarch:
 	$(LUA) ./lua/htif-yield.lua --uarch
 
 # Tests that may run concurrently under make -j. Under coverage they share only
-# the .gcda files, which libgcov merges under a lock. Excludes the two coverage
-# tail steps ordered below.
+# the .gcda files, which libgcov merges under a lock. Excludes the uarch PC
+# collection below, which needs a coverage build.
 PARALLEL_TESTS = test-save-and-load test-machine test-lua test-jsonrpc \
-	test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine \
+	test-c-api test-c-api-remote test-c-jsonrpc-api test-lua-filesystem test-lua-exceptions test-coverage-machine \
 	test-uarch-rv64ui test-uarch-interpreter test-machine-with-log-step \
 	test-coverage-uarch test-computation-hash
 
 test-parallel: $(PARALLEL_TESTS)
 
-# Relink the emulator so reset_uarch restores the instrumented uarch for the
-# whole run, then collect the executed uarch PCs. This permanently swaps the
-# embedded pristine in the build tree, so it must not overlap any test that
-# executes the emulator. It is ordered after the whole parallel group.
-test-coverage-uarch-pcs: | test-parallel
-	mkdir -p $(UARCH_PCS_DIR)
-	$(MAKE) -C ../src swap-uarch-pristine-coverage
-	$(LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
-	$(LUA) ./lua/cartesi-machine-tests.lua --test="thrash%-tlb.bin" --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
+# Collect the executed uarch PCs with a cartesi module that embeds the instrumented
+# uarch as its pristine, so reset_uarch restores the instrumented binary (the one PCs
+# are resolved against) for the whole run instead of reverting to the stock uarch
+# after the first instruction. The module is linked into its own directory, leaving
+# the build tree untouched, so this can run alongside the other tests.
+COVERAGE_UARCH_PRISTINE_DIR=$(BUILDDIR)/coverage-uarch-pristine
+COVERAGE_UARCH_PRISTINE_LUA=LUA_CPATH_5_4='$(COVERAGE_UARCH_PRISTINE_DIR)/?.so;$(LUA_CPATH_5_4)' $(LUA)
+
+test-coverage-uarch-pcs:
+	mkdir -p $(UARCH_PCS_DIR) $(COVERAGE_UARCH_PRISTINE_DIR)
+	$(MAKE) -C ../src custom-uarch-pristine-cartesi.so coverage=yes \
+		CUSTOM_UARCH_PRISTINE_DIR=$(COVERAGE_UARCH_PRISTINE_DIR) \
+		CUSTOM_UARCH_PRISTINE_RAM_C=$(abspath ../uarch/uarch-pristine-ram-coverage.c) \
+		CUSTOM_UARCH_PRISTINE_HASH_C=$(abspath ../uarch/uarch-pristine-hash-coverage.c)
+	$(COVERAGE_UARCH_PRISTINE_LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
+	$(COVERAGE_UARCH_PRISTINE_LUA) ./lua/cartesi-machine-tests.lua --test="thrash%-tlb.bin" --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
 
 ifeq ($(COVERAGE_TOOLCHAIN),clang)
 export LLVM_PROFILE_FILE=coverage-%p.profraw
@@ -450,8 +478,8 @@ GCOVR_FLAGS=--gcov-ignore-parse-errors --use-gcov-files \
 coverage-report: $(COVERAGE_OUTPUT_DIR)
 	$(LUA) ./scripts/run-gcov.lua $(MACHINE_EMULATOR_SRC_DIR) '$(GCOV)'
 	$(UARCH_PCS_TO_GCOV_CMD)
-	$(LUA) ./scripts/luacov-to-gcov.lua $(LUACOV_STATS) ../src/cartesi-machine.lua ../src
-	$(LUA) ./scripts/luacov-to-gcov.lua $(LUACOV_STATS) ../src/cartesi/evmu.lua ../src
+	$(LUA) ./scripts/luacov-to-gcov.lua ../src/cartesi-machine.lua ../src $(wildcard $(LUACOV_DIR)/*.stats.out)
+	$(LUA) ./scripts/luacov-to-gcov.lua ../src/cartesi/evmu.lua ../src $(wildcard $(LUACOV_DIR)/*.stats.out)
 	mkdir -p $(COVERAGE_OUTPUT_DIR)/gcc
 	cd ../src && gcovr $(GCOVR_FLAGS) --root . --filter '$(abspath ../src)' --filter '$(abspath ../uarch)' --html-details $(COVERAGE_OUTPUT_DIR)/gcc/index.html --txt $(COVERAGE_OUTPUT_DIR)/coverage.txt --print-summary
 
@@ -462,16 +490,15 @@ clean-coverage:
 	@rm -f ../src/*.gcda ../src/*.gcov
 	@rm -rf $(LUACOV_DIR) $(UARCH_PCS_DIR) $(COVERAGE_OUTPUT_DIR)
 
-# Full coverage run. It runs the parallel test group, then the in-place pristine-swap
-# uarch collection (both sequenced by order-only prerequisites), then the report. Run with
-# -j. coverage-report itself carries no prerequisites so it can also be run alone to
-# regenerate the report from existing coverage data. Ends by relinking the stock
-# pristine so the build tree is ready for the next run.
-coverage-all: | test-coverage-uarch-pcs
+# Full coverage run. It runs the parallel test group, the custom pristine uarch tests
+# and the uarch PC collection, then the report, sequenced by order-only prerequisites.
+# Run with -j. coverage-report itself carries no prerequisites so it can also be run
+# alone to regenerate the report from existing coverage data.
+coverage-all: | test-parallel test-custom-uarch-pristine test-coverage-uarch-pcs
 	$(MAKE) coverage-report
-	$(MAKE) -C ../src swap-uarch-pristine-stock
 
-test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step create-computation-hash-corpus
+test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step create-computation-hash-corpus \
+	test-custom-uarch-pristine
 
 lint format check-format:
 	@$(MAKE) -C misc $@
@@ -486,8 +513,10 @@ check-lua:
 	luacheck lua/
 
 .PHONY: machine uarch misc riscv-tests riscv-arch-test build-tests-fuzz build-tests-fuzz-seed-corpus test-fuzz
-.PHONY: $(PARALLEL_TESTS) test-parallel test test-misc test-lua test-cm-cli test-evmu run-lua-spec-cm-cli \
-	test-coverage-uarch-pcs coverage-report coverage-all clean-coverage
+.PHONY: test-cm-cli-parallel $(addprefix run-lua-spec-cm-cli-shard-,$(CM_CLI_SHARDS))
+.PHONY: $(PARALLEL_TESTS) test-parallel test test-misc test-lua test-lua-filesystem test-lua-exceptions test-cm-cli test-evmu run-lua-spec-cm-cli \
+	test-coverage-uarch-pcs coverage-report coverage-all clean-coverage \
+	test-custom-uarch-pristine
 .PHONY: build-tests-computation-hash-fixtures build-computation-hash-corpus \
 	build-computation-hash-corpus-with-toolchain create-computation-hash-corpus archive-computation-hash-corpus \
 	test-computation-hash verify-existing-computation-hash-corpus clean-computation-hash-corpus

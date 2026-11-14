@@ -60,6 +60,7 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #include <boost/asio/signal_set.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/beast/core.hpp> // IWYU pragma: keep
 #include <boost/beast/http.hpp> // IWYU pragma: keep
 #include <boost/beast/version.hpp>
@@ -78,6 +79,7 @@
 #include "cm-exception.hpp"
 #include "json-util.hpp"
 #include "jsonrpc-discover.hpp"
+#include "jsonrpc-endpoint.hpp"
 #include "jsonrpc-fork-result.hpp"
 #include "jsonrpc-version.hpp"
 #include "machine-config.hpp"
@@ -180,6 +182,12 @@ static void install_signal_handlers() {
     // Reset signal handlers that might have been set by the parent process who spawned us
     install_signal_handler(SIGINT, SIG_DFL);
     install_signal_handler(SIGTERM, SIG_DFL);
+    // Unblock the signals that stop us, which the process that started us may have blocked
+    sigset_t stop_signals{};
+    sigemptyset(&stop_signals);
+    sigaddset(&stop_signals, SIGINT);
+    sigaddset(&stop_signals, SIGTERM);
+    pthread_sigmask(SIG_UNBLOCK, &stop_signals, nullptr);
 }
 
 //------------------------------------------------------------------------------
@@ -195,6 +203,7 @@ struct http_session : std::enable_shared_from_this<http_session> {
     beast::flat_buffer buffer;
     std::unique_ptr<http::request_parser<http::string_body>> req_parser;
     std::shared_ptr<http_handler> handler;
+    pid_t fork_child_pid{0}; ///< Server forked by the request being answered, until the response is sent
 
     // Take ownership of the stream
     http_session(tcp::socket &&socket, std::shared_ptr<http_handler> handler) :
@@ -258,6 +267,15 @@ struct http_session : std::enable_shared_from_this<http_session> {
 
     // Called when HTTP response is fully sent
     void on_send_response(bool keep_alive, beast::error_code ec, std::size_t /*bytes_transferred*/) {
+        // A forked server whose response was not sent is unknown to the client, so nobody else would stop it.
+        // It may not have set up its own signal handling yet, and it holds nothing to clean up, so it gets SIGKILL.
+        const auto undelivered_fork_child_pid = ec ? fork_child_pid : 0;
+        fork_child_pid = 0;
+        if (undelivered_fork_child_pid > 0) {
+            SLOG(warning) << "killing forked server pid " << undelivered_fork_child_pid
+                          << " because its fork response could not be sent";
+            std::ignore = kill(undelivered_fork_child_pid, SIGKILL);
+        }
         // Check error code
         if (ec == asio::error::operation_aborted) { // Operation may be aborted
             return;
@@ -302,6 +320,16 @@ struct http_session : std::enable_shared_from_this<http_session> {
 
 //------------------------------------------------------------------------------
 
+/// \brief Delay before accepting again after a transient accept error
+static constexpr auto ACCEPT_RETRY_DELAY = std::chrono::milliseconds{50};
+
+/// \brief Tells whether an accept error comes from a shortage of descriptors or memory, which passes on its own
+static bool is_transient_accept_error(const beast::error_code &ec) {
+    namespace errc = boost::system::errc;
+    return ec == errc::too_many_files_open || ec == errc::too_many_files_open_in_system ||
+        ec == errc::no_buffer_space || ec == errc::not_enough_memory;
+}
+
 // Accepts incoming connections and launches HTTP sessions
 struct http_handler : std::enable_shared_from_this<http_handler> {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -310,6 +338,9 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
     tcp::endpoint local_endpoint;                      ///< Address server receives requests at
     tcp::acceptor acceptor;                            ///< TCP connection acceptor
     uint64_t delay{0};                                 ///< How much to delay next request in ms
+    uint64_t acceptor_generation{0};                   ///< Incremented whenever the acceptor is replaced
+    asio::steady_timer accept_retry_timer;             ///< Delays accepting again after a transient accept error
+    bool accept_retrying{false};                       ///< Whether accepting failed with a transient error
     std::unique_ptr<cartesi::machine> machine;         ///< Cartesi Machine, if any
     std::vector<std::weak_ptr<http_session>> sessions; ///< HTTP sessions
 
@@ -317,7 +348,8 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
         ioc(ioc),
         signals(ioc),
         local_endpoint(acceptor.local_endpoint()),
-        acceptor(std::move(acceptor)) {
+        acceptor(std::move(acceptor)),
+        accept_retry_timer(ioc) {
         SLOG(info) << "remote machine server bound to " << local_endpoint;
     }
 
@@ -338,7 +370,8 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
 
     // Begins an asynchronous accept
     void next_accept() {
-        acceptor.async_accept(ioc, beast::bind_front_handler(&http_handler::on_accept, shared_from_this()));
+        acceptor.async_accept(ioc,
+            beast::bind_front_handler(&http_handler::on_accept, shared_from_this(), acceptor_generation));
     }
 
     // Bind the HTTP server to a new TCP port
@@ -350,6 +383,7 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
         // Replace current acceptor with the new one
         acceptor = std::move(new_acceptor);
         local_endpoint = acceptor.local_endpoint();
+        ++acceptor_generation;
         next_accept();
     }
 
@@ -358,6 +392,7 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
         beast::error_code ec;
         std::ignore = acceptor.cancel(ec);
         std::ignore = acceptor.close(ec);
+        std::ignore = accept_retry_timer.cancel();
     }
 
     // Close open sessions
@@ -383,19 +418,50 @@ private:
         close_sessions();
     }
 
+    // Accepts again after a transient accept error
+    void on_accept_retry(uint64_t generation, const beast::error_code &ec) {
+        // Operation may be aborted (e.g close_acceptor() was called), or the acceptor replaced and accepting already
+        if (ec == asio::error::operation_aborted || !acceptor.is_open() || generation != acceptor_generation) {
+            return;
+        }
+        next_accept();
+    }
+
     // Receives an incoming TCP connection
-    void on_accept(const beast::error_code ec, tcp::socket socket) {
+    void on_accept(uint64_t generation, const beast::error_code ec, tcp::socket socket) {
         // Operation may be aborted (e.g rebind() or close_acceptor() was called)
         if (ec == asio::error::operation_aborted || !acceptor.is_open()) {
             return;
         }
-        if (ec) {
-            SLOG(error) << local_endpoint << " accept error: " << format_ec(ec);
-            // If we can't accept, the listening socket is probably in a broken state,
-            // close the acceptor so the client abort new connection attempts.
-            // This may happen when amount of open files is reached.
-            close_acceptor();
+        // A connection accepted before the acceptor was replaced, as when a forked server rebinds, is not ours
+        if (generation != acceptor_generation) {
+            SLOG(warning) << local_endpoint << " dropping a connection accepted before the acceptor was replaced";
             return;
+        }
+        if (ec) {
+            // Running out of descriptors or memory passes once connections close, so accept again a little later
+            if (is_transient_accept_error(ec)) {
+                if (!accept_retrying) {
+                    SLOG(warning) << local_endpoint << " accept error: " << format_ec(ec) << ", retrying every "
+                                  << ACCEPT_RETRY_DELAY.count() << "ms";
+                    accept_retrying = true;
+                }
+                accept_retry_timer.expires_after(ACCEPT_RETRY_DELAY);
+                accept_retry_timer.async_wait(
+                    beast::bind_front_handler(&http_handler::on_accept_retry, shared_from_this(), generation));
+                return;
+            }
+            // Any other error leaves the listening socket unusable. Without it and without the termination signal
+            // handlers, the IO main loop stops and the server exits once its open sessions end.
+            SLOG(error) << local_endpoint << " accept error: " << format_ec(ec) << ", no longer accepting connections";
+            close_acceptor();
+            uninstall_termination_signal_handlers();
+            return;
+        }
+
+        if (accept_retrying) {
+            SLOG(info) << local_endpoint << " accepting connections again";
+            accept_retrying = false;
         }
 
         // Disable Nagle's algorithm to minimize TCP connection latency
@@ -445,8 +511,10 @@ static json jsonrpc_response_ok(const json &j, const json &result = true) {
 /// \param message Error message
 /// \returns JSON object with response
 static json jsonrpc_response_error(const json &j, jsonrpc_error_code code, const std::string &message) {
+    // Messages can quote bytes from requests or files, so bytes that are not valid UTF-8 become U+FFFD
+    auto valid_message = json::parse(json(message).dump(-1, ' ', false, json::error_handler_t::replace));
     return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : json(nullptr)},
-        {"error", {{"code", code}, {"message", message}}}};
+        {"error", {{"code", code}, {"message", std::move(valid_message)}}}};
 }
 
 /// \brief Returns a parse error JSONRPC response as a JSON object
@@ -488,8 +556,9 @@ static json jsonrpc_response_method_not_found(const json &j, const std::string &
 /// \returns JSON object with response
 static json jsonrpc_response_machine_error(const json &j, jsonrpc_error_code code, const std::string &message,
     int cm_error_code) {
-    return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : json(nullptr)},
-        {"error", {{"code", code}, {"message", message}, {"data", cm_error_code}}}};
+    auto response = jsonrpc_response_error(j, code, message);
+    response["error"]["data"] = cm_error_code;
+    return response;
 }
 
 /// \brief Returns a failed JSONRPC response for the exception currently being handled
@@ -798,26 +867,6 @@ static json jsonrpc_get_version_handler(const json &j, const std::shared_ptr<htt
 /// \brief Parse a address from a string to an endpoint.
 /// \param address Address string (e.g "127.0.0.1:8000")
 /// \returns Endpoint address
-static tcp::endpoint address_to_endpoint(const std::string &address) {
-    try {
-        const auto pos = address.find_last_of(':');
-        const std::string ip = address.substr(0, pos);
-        const int port = std::stoi(address.substr(pos + 1));
-        if (port < 0 || port > 65535) {
-            throw std::runtime_error{"invalid port"};
-        }
-        return {asio::ip::make_address(ip), static_cast<uint16_t>(port)};
-    } catch (const std::exception &e) {
-        throw std::runtime_error{"invalid endpoint address \"" + address + "\""};
-    }
-}
-
-static std::string endpoint_to_string(const tcp::endpoint &endpoint) {
-    std::ostringstream ss;
-    ss << endpoint;
-    return ss.str();
-}
-
 /// \brief JSONRPC handler for the fork method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -835,7 +884,7 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
     // Listen in desired port before fork so failures happen still in parent,
     // who can directly report them to client
     tcp::acceptor acceptor{session->handler->ioc, tcp::endpoint{session->handler->local_endpoint.address(), 0}};
-    const std::string new_server_address = endpoint_to_string(acceptor.local_endpoint());
+    const std::string new_server_address = cartesi::endpoint_to_string(acceptor.local_endpoint());
     // Notify ASIO that we are about to fork
     session->handler->ioc.notify_fork(asio::io_context::fork_prepare);
 #ifdef HAVE_OPENMP
@@ -859,6 +908,8 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
 #endif
         // Notify to ASIO that we are the child
         session->handler->ioc.notify_fork(asio::io_context::fork_child);
+        // The child inherits SIGCHLD ignored, but on macOS it must ignore it again for its dead children to be reaped
+        install_signal_handler(SIGCHLD, SIG_IGN);
         // Close all sessions that were initiated by the parent
         session->handler->close_sessions();
         // Swap current handler acceptor with the new one
@@ -877,6 +928,7 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
             return jsonrpc_response_server_error(j, "fork failed ("s + strerror(fork_errno) + ")"s);
         }
         SLOG(trace) << session->handler->local_endpoint << " fork parent";
+        session->fork_child_pid = pid;
     }
     const cartesi::fork_result result{
         .address = new_server_address,
@@ -895,7 +947,7 @@ static json jsonrpc_rebind_handler(const json &j, const std::shared_ptr<http_ses
     static const char *const param_name[] = {"address"};
     auto args = parse_args<std::string>(j, param_name);
     const std::string new_server_address = std::get<0>(args);
-    const tcp::endpoint new_local_endpoint = address_to_endpoint(new_server_address);
+    const tcp::endpoint new_local_endpoint = cartesi::address_to_endpoint(new_server_address);
     if (new_local_endpoint != session->handler->local_endpoint) {
         SLOG(trace) << session->handler->local_endpoint << " rebinding to " << new_local_endpoint;
         session->handler->rebind(tcp::acceptor{session->handler->ioc, new_local_endpoint});
@@ -903,7 +955,7 @@ static json jsonrpc_rebind_handler(const json &j, const std::shared_ptr<http_ses
     } else {
         SLOG(trace) << session->handler->local_endpoint << " rebind unnecessary";
     }
-    const std::string result = endpoint_to_string(session->handler->local_endpoint);
+    const std::string result = cartesi::endpoint_to_string(session->handler->local_endpoint);
     return jsonrpc_response_ok(j, result);
 }
 
@@ -945,9 +997,9 @@ static json jsonrpc_machine_create_handler(const json &j, const std::shared_ptr<
     if (session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "machine exists");
     }
-    static const char *const param_name[] = {"config", "runtime_config", "directory"};
+    static const char *const param_name[] = {"config", "runtime_config", "directory", "sharing"};
     auto args = parse_args<cartesi::machine_config, cartesi::optional_param<cartesi::machine_runtime_config>,
-        cartesi::optional_param<std::string>>(j, param_name);
+        cartesi::optional_param<std::string>, cartesi::optional_param<cartesi::sharing_mode>>(j, param_name);
     switch (count_args(args)) {
         case 1:
             session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args));
@@ -960,6 +1012,12 @@ static json jsonrpc_machine_create_handler(const json &j, const std::shared_ptr<
             session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args),
                 std::get<1>(args).value(),  // NOLINT(bugprone-unchecked-optional-access)
                 std::get<2>(args).value()); // NOLINT(bugprone-unchecked-optional-access)
+            break;
+        case 4:
+            session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args),
+                std::get<1>(args).value(),  // NOLINT(bugprone-unchecked-optional-access)
+                std::get<2>(args).value(),  // NOLINT(bugprone-unchecked-optional-access)
+                std::get<3>(args).value()); // NOLINT(bugprone-unchecked-optional-access)
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -1129,9 +1187,9 @@ static json jsonrpc_machine_rename_stored_handler(const json &j, const std::shar
 /// \returns JSON response object
 static json jsonrpc_machine_remove_stored_handler(const json &j, const std::shared_ptr<http_session> &session) {
     static_cast<void>(session);
-    static const char *const param_name[] = {"dir"};
-    auto args = parse_args<std::string>(j, param_name);
-    cartesi::machine::remove_stored(std::get<0>(args));
+    static const char *const param_name[] = {"dir", "mode"};
+    auto args = parse_args<std::string, cartesi::optional_param<cartesi::remove_mode>>(j, param_name);
+    cartesi::machine::remove_stored(std::get<0>(args), std::get<1>(args).value_or(cartesi::remove_mode::stored));
     return jsonrpc_response_ok(j);
 }
 
@@ -1280,6 +1338,19 @@ static json jsonrpc_machine_get_proof_handler(const json &j, const std::shared_p
         default:
             throw std::runtime_error{"error detecting number of arguments"};
     }
+}
+
+/// \brief JSONRPC handler for the machine.clear_hash_tree method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_clear_hash_tree_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    jsonrpc_check_no_params(j);
+    session->handler->machine->clear_hash_tree();
+    return jsonrpc_response_ok(j, true);
 }
 
 /// \brief JSONRPC handler for the machine.get_hash_tree_stats method
@@ -1775,7 +1846,12 @@ static json jsonrpc_machine_verify_send_cmio_response_handler(const json &j,
 /// \returns HTTP response message
 static http::message_generator jsonrpc_http_reply(const http::request<http::string_body> &req, const json &j,
     const std::shared_ptr<http_session> &session) {
-    std::string body = j.dump();
+    std::string body;
+    try {
+        body = j.dump();
+    } catch (const json::type_error &) { // Results holding strings that are not valid UTF-8, such as some paths
+        body = jsonrpc_response_error(j, jsonrpc_error_code::internal_error, "result is not valid UTF-8").dump();
+    }
     SLOG(trace) << session->handler->local_endpoint << " response is " << body;
     http::response<http::string_body> res{http::status::ok, req.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
@@ -1840,6 +1916,7 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.verify_reset_uarch", jsonrpc_machine_verify_reset_uarch_handler},
         {"machine.verify_step_uarch", jsonrpc_machine_verify_step_uarch_handler},
         {"machine.get_hash_tree_stats", jsonrpc_machine_get_hash_tree_stats_handler},
+        {"machine.clear_hash_tree", jsonrpc_machine_clear_hash_tree_handler},
         {"machine.get_node_hash", jsonrpc_machine_get_node_hash_handler},
         {"machine.get_proof", jsonrpc_machine_get_proof_handler},
         {"machine.get_root_hash", jsonrpc_machine_get_root_hash_handler},
@@ -1930,7 +2007,11 @@ http::message_generator handle_request(HTTP_REQ &&rreq, const std::shared_ptr<ht
     // Parse request body into a JSON object
     json j;
     try {
-        j = json::parse(req.body().data(), jsonrpc_parse_callback);
+        // The JSON lexer treats a raw NUL as end-of-input even with an explicit length.
+        if (req.body().contains('\0')) {
+            throw std::runtime_error{"unexpected NUL byte in JSON input"};
+        }
+        j = json::parse(req.body(), jsonrpc_parse_callback);
     } catch (const std::exception &x) {
         return jsonrpc_http_reply(req, jsonrpc_response_parse_error(x.what()), session);
     }
@@ -1973,6 +2054,7 @@ http::message_generator handle_request(HTTP_REQ &&rreq, const std::shared_ptr<ht
             if (!jiid.is_string() && !jiid.is_number() && !jiid.is_null()) {
                 jr.push_back(
                     jsonrpc_response_invalid_request(ji, "invalid field \"id\" (expected string, number, or null)"));
+                continue;
             }
         }
         if (session->handler->delay != 0) {
@@ -2015,7 +2097,7 @@ where options are
       gives the address server should bind to
       <server-address> can be
         <ipv4-address>:<port>
-        <ipv6-address>:<port>
+        [<ipv6-address>]:<port>
       when <port> is 0, an ephemeral port will be automatically selected
       default is "127.0.0.1:0"
 
@@ -2157,7 +2239,7 @@ int main(int argc, char *argv[]) try {
         if (server_address == nullptr) {
             server_address = "127.0.0.1:0";
         }
-        acceptor = tcp::acceptor{ioc, address_to_endpoint(server_address)};
+        acceptor = tcp::acceptor{ioc, cartesi::address_to_endpoint(server_address)};
     }
 
     SLOG(info) << "initial server address is '" << acceptor.local_endpoint() << "'";

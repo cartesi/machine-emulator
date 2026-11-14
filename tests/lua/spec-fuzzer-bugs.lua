@@ -99,7 +99,8 @@ local NOP = "\x13\x00\x00\x00"
 local function read_csr_via_interpret(csr_name, illegal_value)
     local machine <close> = cartesi.machine({
         ram = { length = 1 << 20 },
-        processor = { registers = { mstatus = MSTATUS_FS_DIRTY } },
+        -- The timer has expired, so the RTC tick at mcycle 0 keeps a written mip.MTIP
+        processor = { registers = { mstatus = MSTATUS_FS_DIRTY, clint = { mtimecmp = 0 } } },
     })
     machine:write_memory(RAM_START, encode_csrrs(1, CSR[csr_name]))
     machine:write_reg(csr_name, illegal_value)
@@ -257,6 +258,8 @@ describe("fuzzer bugs", function()
         machine:write_reg("pc", RAM_START)
         machine:write_reg("mie", MIP_MTIP)
         machine:write_reg("mstatus", MSTATUS_MIE | MSTATUS_FS_DIRTY | MSTATUS_MPP_S)
+        -- The timer has expired, so the RTC tick at mcycle 0 keeps MTIP pending
+        machine:write_reg("clint_mtimecmp", 0)
         machine:write_reg("mip", MIP_MTIP)
         machine:write_reg("mideleg", 0)
         machine:run(1)

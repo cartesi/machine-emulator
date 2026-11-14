@@ -98,6 +98,16 @@ typedef enum cm_pmas_constant {
     CM_UARCH_STATE_LENGTH = 0x400000,
 } cm_pmas_constant;
 
+/// \brief Shadow TLB constants.
+typedef enum cm_tlb_constant {
+    CM_TLB_CODE = 0,              ///< Index of the TLB set for instruction fetches
+    CM_TLB_READ = 1,              ///< Index of the TLB set for loads
+    CM_TLB_WRITE = 2,             ///< Index of the TLB set for stores
+    CM_TLB_NUM_SETS = 3,          ///< Number of TLB sets
+    CM_TLB_SET_SIZE = 256,        ///< Number of slots in each TLB set
+    CM_SHADOW_TLB_SLOT_SIZE = 32, ///< Size in bytes of each slot of the shadow TLB
+} cm_tlb_constant;
+
 /// \brief Driver IDs for PMA entries.
 typedef enum cm_pma_did {
     CM_PMA_EMPTY_DID = 0,              ///< Driver ID for empty range
@@ -173,6 +183,12 @@ typedef enum cm_sharing_mode {
     CM_SHARING_CONFIG = 1, ///< Share backing stores marked as shared in the machine configuration
     CM_SHARING_ALL = 2,    ///< Share all backing stores, all machine changes will be on-disk
 } cm_sharing_mode;
+
+/// \brief Stored machine removal modes.
+typedef enum cm_remove_mode {
+    CM_REMOVE_STORED = 0, ///< Remove an empty directory, or a loadable stored machine with no other files
+    CM_REMOVE_FORCED = 1, ///< Remove a directory holding any regular files
+} cm_remove_mode;
 
 /// \brief HTIF tohost/fromhost register field shifts.
 typedef enum cm_htif_shift {
@@ -523,20 +539,26 @@ CM_API void cm_delete(cm_machine *m);
 /// ```
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \param dir Directory to create an on-disk machine. If NULL or empty, the machine will be created in-memory.
+/// \param sharing Sharing mode of the on-disk machine with its directory (ignored when created in-memory).
 /// \returns 0 for success, non zero code for error.
+/// \details Creating an on-disk machine is equivalent to creating it in-memory,
+/// storing it to \p dir with cm_store(), and loading it back from \p dir with cm_load() using \p sharing.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
-CM_API cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config, const char *dir);
+CM_API cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config, const char *dir,
+    cm_sharing_mode sharing);
 
 /// \brief Combines cm_new() and cm_create() for convenience.
 /// \param config Machine configuration as a JSON object in a string (at least RAM length must be set).
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
-/// \param new_m Receives the pointer to the new machine object with a machine instance. Set to NULL on failure.
 /// \param dir Directory to create an on-disk machine. If NULL or empty, the machine will be created in-memory.
+/// \param sharing Sharing mode of the on-disk machine with its directory (ignored when created in-memory).
+/// \param new_m Receives the pointer to the new machine object with a machine instance. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 /// \details Use cm_delete() to delete the object.
 /// \details See cm_new() and cm_create() for more details.
-CM_API cm_error cm_create_new(const char *config, const char *runtime_config, const char *dir, cm_machine **new_m);
+CM_API cm_error cm_create_new(const char *config, const char *runtime_config, const char *dir, cm_sharing_mode sharing,
+    cm_machine **new_m);
 
 /// \brief Loads a new machine instance from a previously stored directory.
 /// \param m Pointer to an empty machine object (does not hold a machine instance).
@@ -548,6 +570,9 @@ CM_API cm_error cm_create_new(const char *config, const char *runtime_config, co
 /// \param new_m Receives the pointer to the new machine object with a machine instance. Set to NULL on failure.
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \returns 0 for success, non zero code for error.
+/// \details With CM_SHARING_CONFIG or CM_SHARING_ALL, the machine changes the shared backing store files in \p dir.
+/// The directory holds a valid machine again only after cm_destroy() succeeds and cm_sync_stored() then succeeds.
+/// If the process stops before that (crash, kill, or power loss), discard the directory.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 CM_API cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_config, cm_sharing_mode sharing);
 
@@ -570,6 +595,9 @@ CM_API cm_error cm_load_new(const char *dir, const char *runtime_config, cm_shar
 /// CM_SHARING_ALL: Store current machine state for all backing stores.
 /// \returns 0 for success, non zero code for error.
 /// \details The function refuses to store into an existing directory (it will not overwrite an existing machine).
+/// If the store is interrupted, the directory is left incomplete and cannot be loaded.
+/// Remove it with cm_remove_stored() in CM_REMOVE_FORCED mode.
+/// The stored files are durable only after cm_sync_stored() succeeds.
 CM_API cm_error cm_store(const cm_machine *m, const char *dir, cm_sharing_mode sharing);
 
 /// \brief Clones a machine stored from source directory to destination directory.
@@ -581,6 +609,9 @@ CM_API cm_error cm_store(const cm_machine *m, const char *dir, cm_sharing_mode s
 /// Writable files are copied using reflinks on copy-on-write filesystems.
 /// Sparsity of files is preserved.
 /// The source directory machine must not have a running instance.
+/// If the clone is interrupted, the destination directory is left incomplete and cannot be loaded.
+/// Remove it with cm_remove_stored() in CM_REMOVE_FORCED mode.
+/// The cloned files are durable only after cm_sync_stored() succeeds.
 CM_API cm_error cm_clone_stored(const cm_machine *m, const char *from_dir, const char *to_dir);
 
 /// \brief Renames a previously stored machine and makes the rename durable.
@@ -596,23 +627,28 @@ CM_API cm_error cm_rename_stored(const cm_machine *m, const char *from_dir, cons
 /// \brief Removes all files and the directory of a previously stored machine.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param dir Path to the directory containing the stored machine to be removed.
+/// \param mode Removal mode.
+/// CM_REMOVE_STORED: The directory must be empty, or hold a loadable stored machine and no other files.
+/// CM_REMOVE_FORCED: The directory may hold any regular files, such as an incomplete stored machine left by
+/// an interrupted cm_store() or cm_clone_stored().
 /// \returns 0 for success, non zero code for error.
 /// \details The stored machine must not be in use.
-/// On success, the entire directory and all machine files are deleted, and the
+/// In both modes, the directory must hold only regular files, and nothing is removed otherwise.
+/// On success, the entire directory and all its files are deleted, and the
 /// removed parent directory entry is durable on disk.
 /// On failure, some files or the directory may remain.
-CM_API cm_error cm_remove_stored(const cm_machine *m, const char *dir);
+/// An interrupted removal can be completed by calling the function again with the same mode.
+CM_API cm_error cm_remove_stored(const cm_machine *m, const char *dir, cm_remove_mode mode);
 
 /// \brief Flushes all files of a previously stored machine to permanent storage.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param dir Path to the directory containing the stored machine to be synced.
 /// \returns 0 for success, non zero code for error.
-/// \details The expected usage is to sync after the machine using the stored files has been closed.
+/// \details No machine may be using the stored files: sync only after destroying the machine loaded from them.
+/// A machine loaded with shared backing stores changes them on any call, including cm_get_root_hash() and
+/// cm_get_proof(), and when it is destroyed.
+/// Where file locks are available, the sync fails if a running machine maps any of the files for writing.
 /// On success, all previous changes to the stored machine files are durable on disk.
-/// \warning Syncing while a machine is still using the stored files commits to disk only
-/// the changes that were meant to persist on disk (changes to shared backing stores), and
-/// only on systems with a unified page cache (Linux, macOS). Elsewhere, only data already
-/// written back to the files is made durable.
 CM_API cm_error cm_sync_stored(const cm_machine *m, const char *dir);
 
 /// \brief Destroy a machine instance and remove it from the object.
@@ -657,8 +693,10 @@ CM_API cm_error cm_get_runtime_config(const cm_machine *m, const char **runtime_
 /// }
 /// ```
 /// \returns 0 for success, non zero code for error.
-/// \details The machine must have been initialized with an existing memory range that
-/// has the same start and length specified in the new range.
+/// \details The memory range being replaced is identified by "label", or by "start" and "length".
+/// A flash drive or NVRAM matches its own label and its automatic label ("flashdrive0", "nvram0", and so on).
+/// The other memory ranges match the labels ".ram", ".dtb", ".cmio-rx-buffer", ".cmio-tx-buffer", and
+/// ".uarch-ram", which no user label can take. A later cm_store() uses the new backing store.
 CM_API cm_error cm_replace_memory_range(cm_machine *m, const char *range_config);
 
 /// \brief Returns a JSON object with the machine config used to initialize the machine.
@@ -895,6 +933,14 @@ CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *brea
 /// point. Otherwise it contains the partial bundle and must be passed to a subsequent call to continue bundling the
 /// sequence of state root hashes correctly.
 ///
+/// With bundling, "final_bundle_sibling_hashes" is returned when the call stops on a sampling point that completes a
+/// bundle, or at a fixed point. It contains log2_bundle_mcycle_count base64-encoded sibling hashes ordered from leaf
+/// to root, proving the rightmost leaf of the last bundle in "hashes", excluding the fixed-point-only padding entry.
+/// At a fixed point, that leaf is the final state root hash, including the revert root hash for rejected inputs.
+/// Otherwise it is the state root hash at the final sampling point. The field is omitted when bundling is disabled
+/// or the call does not complete a bundle at its stopping point. A bundle started in a previous call can supply the
+/// proof when completed by this call.
+///
 /// If a console I/O error occurs during execution, it does NOT cause the operation to stop or fail.
 /// Instead, the machine continues running until completion. Any console I/O error message is returned
 /// in the "console_io_error" field of the result JSON object. This allows you to detect and handle
@@ -1017,8 +1063,8 @@ CM_API cm_error cm_reset_uarch(cm_machine *m);
 /// \param data Receives the yield data. If NULL, length will still be set without reading any data.
 /// \param length Receives the yield data length. Must be initialized to the size of data buffer.
 /// If initialized to 0, length will still be set without reading any data, as if data were NULL.
-/// \details May fail if the machine is not in a valid yield state, the yield data does not fit in the
-/// CMIO TX buffer, or the data buffer is too small.
+/// \details May fail if the machine is not in a valid yield state or the data buffer is too small.
+/// A data length the guest declares beyond the CMIO TX buffer is clamped to the buffer's length.
 /// In case of an automatic yield with progress reason, length is 4 and data is the per mille progress as an integer.
 /// In case of other automatic yields, length is variable (up to 2MB) and data is an output or reports.
 /// In case of a manual yield with accepted reason, length is 32 and data is filled with the outputs Merkle root.
@@ -1148,11 +1194,20 @@ CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reaso
 // Integrity checking
 // ------------------------------------
 
-/// \brief Verifies integrity of hash tree against current machine state.
-/// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param result True if tree is self-consistent, false otherwise.
+/// \brief Clears all cached hash-tree data without changing machine state or statistics.
+/// \param m Pointer to a machine instance.
 /// \returns 0 for success, non zero code for error.
-/// \details This method is used only for emulator internal tests.
+/// \details Resets hashes, page-cache entries, and dirty-page tracking to freshly initialized values.
+/// Shared hash-tree backing stores are reset in place. Hashes are rebuilt lazily on the next hash or proof request.
+CM_API cm_error cm_clear_hash_tree(cm_machine *m);
+
+/// \brief Checks the page hashes and dirty page tracking of the hash tree against current machine state.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param result True if every page is either marked dirty or has the hash of its contents, false otherwise.
+/// \returns 0 for success, non zero code for error.
+/// \details It does not check inner nodes or the root hash, which would cost more than rebuilding the tree.
+/// To get a hash tree that can be trusted, rebuild it with cm_clear_hash_tree().
+/// \details This method is used only for emulator internal tests and debugging.
 CM_API cm_error cm_verify_hash_tree(cm_machine *m, bool *result);
 
 /// \brief Obtains hash tree statistics

@@ -78,8 +78,9 @@ public:
     }
 
     /// \brief Create a machine from config
-    void create(const machine_config &config, const machine_runtime_config &runtime = {}, const std::string &dir = {}) {
-        do_create(config, runtime, dir);
+    void create(const machine_config &config, const machine_runtime_config &runtime = {}, const std::string &dir = {},
+        sharing_mode sharing = sharing_mode::all) {
+        do_create(config, runtime, dir, sharing);
     }
 
     /// \brief Load Create a machine from config
@@ -126,8 +127,8 @@ public:
     }
 
     /// \brief Removes a stored machine from a directory and makes the removal durable
-    void remove_stored(const std::string &dir) const {
-        do_remove_stored(dir);
+    void remove_stored(const std::string &dir, remove_mode mode = remove_mode::stored) const {
+        do_remove_stored(dir, mode);
     }
 
     /// \brief Flushes a stored machine in a directory to permanent storage
@@ -174,7 +175,13 @@ public:
         return do_get_node_hash(address, log2_size);
     }
 
-    /// \brief Verifies integrity of hash tree.
+    /// \brief Clears cached hash-tree data, preserving machine state and statistics.
+    /// \details Hashes are rebuilt lazily on the next hash or proof request.
+    void clear_hash_tree() {
+        do_clear_hash_tree();
+    }
+
+    /// \brief Checks page hashes and dirty page tracking against memory, for tests and debugging.
     bool verify_hash_tree() const {
         return do_verify_hash_tree();
     }
@@ -386,8 +393,8 @@ public:
 private:
     virtual i_machine *do_clone_empty() const = 0;
     virtual bool do_is_empty() const = 0;
-    virtual void do_create(const machine_config &config, const machine_runtime_config &runtime,
-        const std::string &dir) = 0;
+    virtual void do_create(const machine_config &config, const machine_runtime_config &runtime, const std::string &dir,
+        sharing_mode sharing) = 0;
     virtual void do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) = 0;
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
     virtual mcycle_root_hashes do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t log2_mcycle_period,
@@ -398,7 +405,7 @@ private:
     virtual void do_store(const std::string &dir, sharing_mode sharing) const = 0;
     virtual void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const = 0;
     virtual void do_rename_stored(const std::string &from_dir, const std::string &to_dir) const = 0;
-    virtual void do_remove_stored(const std::string &dir) const = 0;
+    virtual void do_remove_stored(const std::string &dir, remove_mode mode) const = 0;
     virtual void do_sync_stored(const std::string &dir) const = 0;
     virtual interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) = 0;
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
@@ -421,6 +428,7 @@ private:
     virtual void do_write_word(uint64_t address, uint64_t value) = 0;
     virtual machine_config do_get_initial_config() const = 0;
     virtual hash_tree_stats do_get_hash_tree_stats(bool clear) = 0;
+    virtual void do_clear_hash_tree() = 0;
     virtual machine_runtime_config do_get_runtime_config() const = 0;
     virtual void do_set_runtime_config(const machine_runtime_config &r) = 0;
     virtual void do_destroy() = 0;

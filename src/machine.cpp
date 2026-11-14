@@ -30,7 +30,10 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <utility>
+#include <vector>
 
 #include "access-log.hpp"
 #include "address-range-constants.hpp"
@@ -130,6 +133,12 @@ void machine::init_processor(const processor_config &p, const machine_runtime_co
         // Initialize to default values first
         *m_s = processor_state{};
 
+        // The machine-ID registers are read-only to the host, so the configured values go straight into the shadow,
+        // where validate_processor_shadow checks them against the emulator version
+        m_s->shadow.registers.mvendorid = p.registers.mvendorid;
+        m_s->shadow.registers.marchid = p.registers.marchid;
+        m_s->shadow.registers.mimpid = p.registers.mimpid;
+
         // General purpose registers
         for (int i = 1; i < X_REG_COUNT; i++) {
             write_reg(machine_reg_enum(reg::x0, i), p.registers.x[i]);
@@ -190,36 +199,36 @@ void machine::init_processor(const processor_config &p, const machine_runtime_co
     }
 
     // Check if registers are consistent
-    validate_processor_shadow(r.skip_version_check);
+    validate_processor_shadow(m_s->shadow, r.skip_version_check);
 }
 
-void machine::validate_processor_shadow(bool skip_version_check) const {
+void machine::validate_processor_shadow(const shadow_state &shadow, bool skip_version_check) const {
     // Ensure emulator version is compatible
     if (!skip_version_check) {
-        if (m_s->shadow.registers.marchid != MARCHID_INIT) {
+        if (shadow.registers.marchid != MARCHID_INIT) {
             throw std::invalid_argument{"marchid mismatch, emulator version is incompatible"};
         }
-        if (m_s->shadow.registers.mvendorid != MVENDORID_INIT) {
+        if (shadow.registers.mvendorid != MVENDORID_INIT) {
             throw std::invalid_argument{"mvendorid mismatch, emulator version is incompatible"};
         }
-        if (m_s->shadow.registers.mimpid != MIMPID_INIT) {
+        if (shadow.registers.mimpid != MIMPID_INIT) {
             throw std::invalid_argument{"mimpid mismatch, emulator version is incompatible"};
         }
     }
     // Ensure x0 is actually zero
-    if (m_s->shadow.registers.x[0] != 0) {
+    if (shadow.registers.x[0] != 0) {
         throw std::invalid_argument{"x0 register is corrupt"};
     }
     // Ensure iunrep in shadow state matches the config value
-    if (m_s->shadow.registers.iunrep != m_c.processor.registers.iunrep) {
+    if (shadow.registers.iunrep != m_c.processor.registers.iunrep) {
         throw std::invalid_argument{"iunrep mismatch between shadow state and config"};
     }
     // Ensure padding bytes are consistent
     if (!is_pristine(std::span<const unsigned char>{// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            reinterpret_cast<unsigned char *>(&m_s->shadow.registers_padding_[0]),
-            sizeof(m_s->shadow.registers_padding_)}) ||
+            reinterpret_cast<const unsigned char *>(&shadow.registers_padding_[0]),
+            sizeof(shadow.registers_padding_)}) ||
         !is_pristine(std::span<const unsigned char>{// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            reinterpret_cast<unsigned char *>(&m_s->shadow.tlb_padding_[0]), sizeof(m_s->shadow.tlb_padding_)})) {
+            reinterpret_cast<const unsigned char *>(&shadow.tlb_padding_[0]), sizeof(shadow.tlb_padding_)})) {
         throw std::invalid_argument{"shadow padding bytes are corrupt"};
     }
 }
@@ -295,9 +304,10 @@ void machine::init_dtb_contents(const machine_config &config) {
 }
 
 // ??D It is best to leave the std::move() on r because it may one day be necessary!
-machine::machine(machine_config c, machine_runtime_config r, const std::string &dir, scope_remove remover) :
+machine::machine(machine_config c, machine_runtime_config r, const std::string &dir, scope_remove &remover) :
     m_c{std::move(c).adjust_defaults()}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
-    m_r{std::move(r)},                   // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
+    m_initial_c{dir.empty() ? m_c : machine_config{m_c}.adjust_backing_stores(dir, sharing_mode::all)},
+    m_r{std::move(r)}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
     m_console{m_r.console},
     m_ars{m_c, m_r, m_console, dir, remover},
     m_ht{m_c.hash_tree, m_r.concurrency.update_hash_tree, m_ars, dir, remover},
@@ -313,10 +323,27 @@ machine::machine(machine_config c, machine_runtime_config r, const std::string &
     init_hot_tlb_contents();
     init_dtb_contents(m_c);
     init_console();
+    if (m_r.clear_hash_tree) {
+        clear_hash_tree();
+    }
     // Disable SIGPIPE handler, because this signal can be raised and terminate the emulator process
     // when calling write() on closed file descriptors.
     // This can happen with the stdout console file descriptors or network file descriptors.
     os::disable_sigpipe();
+    if (!dir.empty()) {
+        // The address ranges copied the backing stores into the directory, and now map them from there
+        m_c = m_initial_c;
+    }
+}
+
+// ??D It is best to leave the std::move() on r because it may one day be necessary!
+machine::machine(machine_config c, machine_runtime_config r, const std::string &dir, sharing_mode sharing,
+    scope_remove remover) :
+    // With sharing all, building directly in the directory gives the machine the store and load would
+    machine{dir.empty() || sharing == sharing_mode::all ? std::move(c) :
+                                                          create_stored(std::move(c), r, dir, sharing, remover),
+        std::move(r), // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
+        sharing == sharing_mode::all ? dir : std::string{}, remover} {
     // Construction succeeded, keep all created files and directories
     remover.retain_all();
 }
@@ -376,7 +403,7 @@ bool machine::has_htif_console() const {
 
 /// \brief Returns copy of initialization config.
 const machine_config &machine::get_initial_config() const {
-    return m_c;
+    return m_initial_c;
 }
 
 /// \brief Returns the machine runtime config.
@@ -388,6 +415,9 @@ const machine_runtime_config &machine::get_runtime_config() const {
 void machine::set_runtime_config(machine_runtime_config r) {
     // Update console configuration
     m_console.set_config(r.console);
+
+    // Update hash-tree concurrency
+    m_ht.set_concurrency(r.concurrency.update_hash_tree);
 
     // Set runtime configuration last, as previous operations may fail
     m_r = std::move(r);
@@ -407,9 +437,6 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
     // Create directory
     os::create_directory(dir);
     remover.add_directory(dir);
-
-    // Store config
-    remover.add_file(m_c.store(dir));
 
     // Store all address ranges
     auto store_address_range = [&](const backing_store_config &c, const address_range &ar, bool read_only) {
@@ -439,12 +466,16 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
             }
             os::copy_file(c.data_filename, data_filename, ar.get_length());
             remover.add_file(data_filename);
-            if (!c.dht_filename.empty()) {
+            // Only a pair of trees describes the data. Without one, blank trees make the load rehash it.
+            if (!c.dht_filename.empty() && !c.dpt_filename.empty()) {
                 os::copy_file(c.dht_filename, dht_filename);
                 remover.add_file(dht_filename);
-            }
-            if (!c.dpt_filename.empty()) {
                 os::copy_file(c.dpt_filename, dpt_filename);
+                remover.add_file(dpt_filename);
+            } else {
+                os::truncate_file(dht_filename, memory_address_range::get_dht_storage_length(ar.get_length()), true);
+                remover.add_file(dht_filename);
+                os::truncate_file(dpt_filename, memory_address_range::get_dpt_storage_length(ar.get_length()), true);
                 remover.add_file(dpt_filename);
             }
         }
@@ -483,6 +514,9 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
         remover.add_file(phtc_filename);
     }
 
+    // Store config last, so an interrupted store leaves a directory that cannot be loaded
+    remover.add_file(m_c.store(dir));
+
     // Retain all stored files
     remover.retain_all();
 }
@@ -499,12 +533,6 @@ void machine::clone_stored(const std::string &from_dir, const std::string &to_di
     // Create directory
     os::create_directory(to_dir);
     remover.add_directory(to_dir);
-
-    // Clone config
-    const auto from_config_filename = machine_config::get_config_filename(from_dir);
-    const auto to_config_filename = machine_config::get_config_filename(to_dir);
-    os::clone_file(from_config_filename, to_config_filename);
-    remover.add_file(to_config_filename);
 
     // Clone all address ranges
     auto clone_ar_backing_store = [&](const backing_store_config &from_bs, const backing_store_config &to_bs) {
@@ -536,14 +564,30 @@ void machine::clone_stored(const std::string &from_dir, const std::string &to_di
     os::clone_file(from_c.hash_tree.phtc_filename, to_c.hash_tree.phtc_filename);
     remover.add_file(to_c.hash_tree.phtc_filename);
 
+    // Clone config last, so an interrupted clone leaves a directory that cannot be loaded
+    const auto from_config_filename = machine_config::get_config_filename(from_dir);
+    const auto to_config_filename = machine_config::get_config_filename(to_dir);
+    os::clone_file(from_config_filename, to_config_filename);
+    remover.add_file(to_config_filename);
+
     // Retain all stored files
     remover.retain_all();
 }
 
 /// \brief Returns the parent directory whose entries must be synced when a directory changes.
 /// \param dir Path to the directory.
+/// \details Like rename() and rmdir(), it takes the parent to be everything but the last element, which cannot be
+/// "." or "..". Call it before changing anything, so such a path is rejected first.
 static std::string parent_directory(const std::string &dir) {
-    const auto parent = std::filesystem::path(dir).parent_path();
+    auto path = std::filesystem::path(dir);
+    // A trailing separator leaves an empty last element, whose parent would be the directory itself
+    while (!path.has_filename() && path.has_relative_path()) {
+        path = path.parent_path();
+    }
+    if (path.filename() == "." || path.filename() == "..") {
+        throw std::invalid_argument{"directory name cannot end in '.' or '..'"};
+    }
+    const auto parent = path.parent_path();
     if (parent.empty()) {
         return ".";
     }
@@ -554,10 +598,9 @@ void machine::rename_stored(const std::string &from_dir, const std::string &to_d
     if (from_dir.empty() || to_dir.empty()) {
         throw std::invalid_argument{"directory name cannot be empty"};
     }
-    static_cast<void>(machine_config::load(from_dir));
-
     const auto from_parent = parent_directory(from_dir);
     const auto to_parent = parent_directory(to_dir);
+    static_cast<void>(machine_config::load(from_dir));
 
     os::rename_directory(from_dir, to_dir);
     os::sync_directory(to_parent);
@@ -605,20 +648,68 @@ static void for_each_stored_filename(const std::string &dir, const F &func) {
     func(machine_config::get_config_filename(dir));
 }
 
-void machine::remove_stored(const std::string &dir) {
-    // Remove all files
-    for_each_stored_filename(dir, os::remove_file);
+machine_config machine::create_stored(machine_config c, const machine_runtime_config &r, const std::string &dir,
+    sharing_mode sharing, scope_remove &remover) {
+    machine{std::move(c), r, std::string{}, remover}.store(dir);
+    for_each_stored_filename(dir, [&remover](const std::string &filename) { remover.add_file(filename); });
+    remover.add_directory(dir);
+    return machine_config::load(dir, sharing);
+}
+
+void machine::remove_stored(const std::string &dir, remove_mode mode) {
+    if (dir.empty()) {
+        throw std::invalid_argument{"directory name cannot be empty"};
+    }
+    const auto parent = parent_directory(dir);
+    std::vector<std::string> filenames;
+    for (const auto &name : os::list_directory(dir)) {
+        filenames.push_back(std::string{dir}.append("/").append(name));
+    }
+
+    // A stored machine holds only regular files, so refuse anything else before removing any file
+    for (const auto &filename : filenames) {
+        std::error_code ec;
+        const auto status = std::filesystem::symlink_status(filename, ec);
+        if (ec || !std::filesystem::is_regular_file(status)) {
+            throw std::runtime_error{"unable to remove stored machine: '" + filename + "' is not a file"};
+        }
+    }
+
+    // Unless forced, only remove the files of a loadable stored machine, refusing any other file
+    if (mode != remove_mode::forced && !filenames.empty()) {
+        std::vector<std::string> stored_filenames;
+        for_each_stored_filename(dir, [&](const std::string &filename) { stored_filenames.push_back(filename); });
+        for (const auto &filename : filenames) {
+            if (!std::ranges::contains(stored_filenames, filename)) {
+                throw std::runtime_error{"unable to remove stored machine: '" + filename + "' is not one of its files"};
+            }
+        }
+    }
+
+    // Remove all files, the config file last, so an interrupted removal can be resumed without forcing
+    const auto config_filename = machine_config::get_config_filename(dir);
+    bool has_config = false;
+    for (const auto &filename : filenames) {
+        if (filename == config_filename) {
+            has_config = true;
+        } else {
+            os::remove_file(filename);
+        }
+    }
+    if (has_config) {
+        os::remove_file(config_filename);
+    }
 
     // Remove directory
     os::remove_directory(dir);
 
     // Sync the removed directory entry in its parent, making the removal durable
-    os::sync_directory(parent_directory(dir));
+    os::sync_directory(parent);
 }
 
 void machine::sync_stored(const std::string &dir) {
-    // Sync all files
-    for_each_stored_filename(dir, os::sync_file);
+    // Sync all files, failing if a running machine maps any of them for writing
+    for_each_stored_filename(dir, [](const std::string &filename) { os::sync_file(filename, true); });
 
     // Sync directory entries
     os::sync_directory(dir);
@@ -628,38 +719,8 @@ void machine::sync_stored(const std::string &dir) {
 }
 
 void machine::replace_memory_range(const memory_range_config &config) {
-    auto resolved = config;
-    if (!config.label.empty()) {
-        // Find the memory range with the matching label
-        const memory_range_config *found = nullptr;
-        for (const auto &f : m_c.flash_drive) {
-            if (f.label == config.label) {
-                found = &f;
-                break;
-            }
-        }
-        if (found == nullptr) {
-            for (const auto &n : m_c.nvram) {
-                if (n.label == config.label) {
-                    found = &n;
-                    break;
-                }
-            }
-        }
-        if (found == nullptr) {
-            throw std::invalid_argument{"no memory range with label \""s + config.label + "\""};
-        }
-        if (config.start != UINT64_C(-1) && config.start != found->start) {
-            throw std::invalid_argument{"memory range label \""s + config.label + "\" start mismatch: expected "s +
-                std::to_string(found->start) + ", got "s + std::to_string(config.start)};
-        }
-        if (config.length != UINT64_C(-1) && config.length != found->length) {
-            throw std::invalid_argument{"memory range label \""s + config.label + "\" length mismatch: expected "s +
-                std::to_string(found->length) + ", got "s + std::to_string(config.length)};
-        }
-        resolved.start = found->start;
-        resolved.length = found->length;
-    } else {
+    const bool by_label = !config.label.empty();
+    if (!by_label) {
         const bool missing_start = config.start == UINT64_C(-1);
         const bool missing_length = config.length == UINT64_C(-1);
         if (missing_start && missing_length) {
@@ -672,10 +733,46 @@ void machine::replace_memory_range(const memory_range_config &config) {
             throw std::invalid_argument{"memory range replacement without a label requires length"};
         }
     }
-    m_ars.replace(resolved);
+    // Find the configuration of the existing memory range, which labels and addresses identify uniquely
+    const auto matches = [by_label, &config](std::string_view label, std::string_view auto_label, uint64_t start,
+                             uint64_t length) {
+        if (by_label) {
+            return label == config.label || auto_label == config.label;
+        }
+        return start == config.start && length == config.length;
+    };
+    auto replacement = config;
+    backing_store_config *existing_backing_store = nullptr;
+    m_c.for_each_backing_store(
+        [&matches, &replacement, &existing_backing_store](std::string_view label, std::string_view auto_label,
+            uint64_t start, uint64_t length, backing_store_config &backing_store) {
+            if (matches(label, auto_label, start, length)) {
+                replacement.start = start;
+                replacement.length = length;
+                existing_backing_store = &backing_store;
+            }
+        });
+    if (existing_backing_store == nullptr) {
+        throw std::invalid_argument{by_label ? "no memory range with label \""s + config.label + "\""s :
+                                               "attempted replace of inexistent memory range"s};
+    }
+    if (by_label) {
+        if (config.start != UINT64_C(-1) && config.start != replacement.start) {
+            throw std::invalid_argument{"memory range label \""s + config.label + "\" start mismatch: expected "s +
+                std::to_string(replacement.start) + ", got "s + std::to_string(config.start)};
+        }
+        if (config.length != UINT64_C(-1) && config.length != replacement.length) {
+            throw std::invalid_argument{"memory range label \""s + config.label + "\" length mismatch: expected "s +
+                std::to_string(replacement.length) + ", got "s + std::to_string(config.length)};
+        }
+    }
+    // Write TLB slots may hold the only dirty marks of the range being dropped, so they go to it first
+    mark_write_tlb_dirty_pages();
+    m_ars.replace(replacement);
+    // The current configuration records the replacement, so store sees it.
+    *existing_backing_store = std::move(replacement.backing_store);
     // Cached host pointers must be rebuilt for the new mapping.
     init_hot_tlb_contents();
-    m_ht.evict_clean_pages(m_ars.find(resolved.start, resolved.length));
 }
 
 void machine::dump_insn_hist() {
@@ -880,11 +977,11 @@ uint64_t machine::read_reg(reg r) const {
         case reg::fcsr:
             return m_s->shadow.registers.fcsr;
         case reg::mvendorid:
-            return MVENDORID_INIT;
+            return m_s->shadow.registers.mvendorid;
         case reg::marchid:
-            return MARCHID_INIT;
+            return m_s->shadow.registers.marchid;
         case reg::mimpid:
-            return MIMPID_INIT;
+            return m_s->shadow.registers.mimpid;
         case reg::mcycle:
             return m_s->shadow.registers.mcycle;
         case reg::icycleinstret:
@@ -1747,11 +1844,15 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
     if (paddr == AR_SHADOW_STATE_START && length == AR_SHADOW_STATE_LENGTH) {
         // Overwrite the processor shadow state with the provided data
         static_assert(AR_SHADOW_STATE_LENGTH == sizeof(m_s->shadow));
+        // Validate a copy first, because the data need not be aligned, and the machine must be untouched on failure
+        shadow_state shadow{};
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        memcpy(reinterpret_cast<unsigned char *>(&shadow), data, sizeof(shadow));
+        validate_processor_shadow(shadow, m_r.skip_version_check);
         // Make sure we marked as dirty whatever pages were in the write TLB
         mark_write_tlb_dirty_pages();
         // Overwrite shadow
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        memcpy(reinterpret_cast<unsigned char *>(&m_s->shadow), data, sizeof(m_s->shadow));
+        m_s->shadow = shadow;
         // Reinitialize the hot TLB to reflect changes in the shadow TLB
         init_hot_tlb_contents();
         return;
@@ -1813,26 +1914,22 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
     if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
-    const uint64_t vaddr_limit = vaddr_start + length;
-    const uint64_t vaddr_page_start = vaddr_start & ~(AR_PAGE_SIZE - 1);                      // align page backward
-    const uint64_t vaddr_page_limit = (vaddr_limit + AR_PAGE_SIZE - 1) & ~(AR_PAGE_SIZE - 1); // align page forward
+    if (length - 1 > UINT64_MAX - vaddr_start) {
+        throw std::invalid_argument{"virtual memory range wraps around the address space"};
+    }
     // copy page by page, because we need to perform address translation again for each page
-    for (uint64_t vaddr_page = vaddr_page_start; vaddr_page < vaddr_page_limit; vaddr_page += AR_PAGE_SIZE) {
+    for (uint64_t chunk_offset = 0; chunk_offset < length;) {
+        const uint64_t vaddr = vaddr_start + chunk_offset;
+        const uint64_t vaddr_page = vaddr & ~(AR_PAGE_SIZE - 1);
         uint64_t paddr_page = 0;
-        if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
+        if (cartesi::translate_virtual_address<state_access, pte_update_mode::skip_update>(a, &paddr_page, vaddr_page,
+                PTE_XWR_R_SHIFT) != translation_result::success) {
             throw std::domain_error{"page fault"};
         }
-        uint64_t paddr = paddr_page;
-        uint64_t vaddr = vaddr_page;
-        uint64_t chunklen = std::min<uint64_t>(AR_PAGE_SIZE, vaddr_limit - vaddr);
-        if (vaddr_page < vaddr_start) {
-            const uint64_t off = vaddr_start - vaddr_page;
-            paddr += off;
-            vaddr += off;
-            chunklen -= off;
-        }
-        const uint64_t chunkoff = vaddr - vaddr_start;
-        read_memory(paddr, data + chunkoff, chunklen);
+        const uint64_t offset = vaddr - vaddr_page;
+        const uint64_t chunk_length = std::min<uint64_t>(AR_PAGE_SIZE - offset, length - chunk_offset);
+        read_memory(paddr_page + offset, data + chunk_offset, chunk_length);
+        chunk_offset += chunk_length;
     }
 }
 
@@ -1844,28 +1941,24 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
     if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
-    const uint64_t vaddr_limit = vaddr_start + length;
-    const uint64_t vaddr_page_start = vaddr_start & ~(AR_PAGE_SIZE - 1);                      // align page backward
-    const uint64_t vaddr_page_limit = (vaddr_limit + AR_PAGE_SIZE - 1) & ~(AR_PAGE_SIZE - 1); // align page forward
+    if (length - 1 > UINT64_MAX - vaddr_start) {
+        throw std::invalid_argument{"virtual memory range wraps around the address space"};
+    }
     // copy page by page, because we need to perform address translation again for each page
-    for (uint64_t vaddr_page = vaddr_page_start; vaddr_page < vaddr_page_limit; vaddr_page += AR_PAGE_SIZE) {
+    for (uint64_t chunk_offset = 0; chunk_offset < length;) {
+        const uint64_t vaddr = vaddr_start + chunk_offset;
+        const uint64_t vaddr_page = vaddr & ~(AR_PAGE_SIZE - 1);
         uint64_t paddr_page = 0;
         // perform address translation using read access mode,
         // so we can write any reachable virtual memory range
-        if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
+        if (cartesi::translate_virtual_address<state_access, pte_update_mode::skip_update>(a, &paddr_page, vaddr_page,
+                PTE_XWR_R_SHIFT) != translation_result::success) {
             throw std::domain_error{"page fault"};
         }
-        uint64_t paddr = paddr_page;
-        uint64_t vaddr = vaddr_page;
-        uint64_t chunklen = std::min<uint64_t>(AR_PAGE_SIZE, vaddr_limit - vaddr);
-        if (vaddr_page < vaddr_start) {
-            const uint64_t off = vaddr_start - vaddr_page;
-            paddr += off;
-            vaddr += off;
-            chunklen -= off;
-        }
-        const uint64_t chunkoff = vaddr - vaddr_start;
-        write_memory(paddr, data + chunkoff, chunklen);
+        const uint64_t offset = vaddr - vaddr_page;
+        const uint64_t chunk_length = std::min<uint64_t>(AR_PAGE_SIZE - offset, length - chunk_offset);
+        write_memory(paddr_page + offset, data + chunk_offset, chunk_length);
+        chunk_offset += chunk_length;
     }
 }
 
@@ -1873,7 +1966,8 @@ uint64_t machine::translate_virtual_address(uint64_t vaddr) {
     const state_access a(*this);
     // perform address translation using read access mode
     uint64_t paddr = 0;
-    if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) {
+    if (cartesi::translate_virtual_address<state_access, pte_update_mode::skip_update>(a, &paddr, vaddr,
+            PTE_XWR_R_SHIFT) != translation_result::success) {
         throw std::domain_error{"page fault"};
     }
     return paddr;
@@ -1905,10 +1999,8 @@ machine_cmio_request machine::receive_cmio_request(std::span<uint8_t> data) cons
             std::memcpy(data.data(), &tohost_data, request.available_length);
         }
     } else {
-        request.available_length = tohost_data;
-        if (request.available_length > AR_CMIO_TX_BUFFER_LENGTH) {
-            throw std::runtime_error{"CMIO request data is too large"};
-        }
+        // The guest declares any length, but only the tx buffer holds data
+        request.available_length = std::min<uint64_t>(tohost_data, AR_CMIO_TX_BUFFER_LENGTH);
         if (!data.empty()) {
             if (request.available_length > data.size()) {
                 throw std::invalid_argument{"data buffer length is too small"};
@@ -2196,7 +2288,7 @@ interpreter_break_reason machine::get_state_break_reason(interpreter_break_reaso
 }
 
 interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::string &filename) {
-    if (read_reg(reg::uarch_cycle) != 0) {
+    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
         throw std::runtime_error{"microarchitecture is not reset"};
     }
     auto root_hash_before = get_root_hash();
@@ -2240,8 +2332,7 @@ interpreter_break_reason machine::run(uint64_t mcycle_end) {
     if (mcycle_end < mcycle) {
         throw std::invalid_argument{"mcycle is past"};
     }
-    const auto uarch_cycle = read_reg(reg::uarch_cycle);
-    if (uarch_cycle != 0) {
+    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
         throw std::invalid_argument{"microarchitecture is not reset"};
     }
     const state_access a(*this);
@@ -2358,7 +2449,7 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
     if (!update_hash_tree()) {
         throw std::runtime_error{"update hash tree failed"};
     }
-    if (read_reg(reg::uarch_cycle) != 0) {
+    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
         throw std::runtime_error{"microarchitecture is not reset"};
     }
 
@@ -2444,6 +2535,13 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
             const state_access sa(*this);
             root_hash = is_rejected_manual_yield(sa) ? read_revert_root_hash() : m_ht.get_root_hash();
 
+            // Preserve the rightmost leaf's siblings before completing the final bundle
+            const bool collection_ends = at_fixed_point ||
+                result.break_reason != interpreter_break_reason::reached_target_mcycle || mcycle_reached == mcycle_end;
+            if (collection_ends && log2_bundle_mcycle_count > 0 && back_tree.get_remaining_leaf_count() == 1) {
+                result.final_bundle_sibling_hashes = back_tree.get_context();
+            }
+
             // Add the state root hash to the current bundle
             back_tree.push_back(root_hash);
 
@@ -2473,7 +2571,10 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
         // Complete the partial bundle and append its bundle root hash
         if (!back_tree.empty()) {
             assert(!back_tree.full());
-            back_tree.pad_back(back_tree.get_remaining_leaf_count(), pad_hashes);
+            // Leave the rightmost leaf for last so its siblings are still in the frontier
+            back_tree.pad_back(back_tree.get_remaining_leaf_count() - 1, pad_hashes);
+            result.final_bundle_sibling_hashes = back_tree.get_context();
+            back_tree.push_back(root_hash);
             result.hashes.emplace_back(back_tree.get_root_hash());
             back_tree.clear();
         }
@@ -2519,7 +2620,7 @@ machine_hashes machine::collect_mcycle_bundle(uint64_t bundle_offset, uint64_t l
     if (m_r.soft_yield) {
         throw std::runtime_error{"cannot collect hashes when soft yield is enabled"};
     }
-    if (read_reg(reg::uarch_cycle) != 0) {
+    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
         throw std::runtime_error{"microarchitecture is not reset"};
     }
 
@@ -2659,6 +2760,11 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
     if (mcycle_end < mcycle_start) {
         throw std::runtime_error{"mcycle is past"};
     }
+    if (log2_bundle_uarch_cycle_count < 0 ||
+        static_cast<uint64_t>(log2_bundle_uarch_cycle_count) > ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) {
+        throw std::runtime_error{"log2_bundle_uarch_cycle_count must be in {0, ..., " +
+            std::to_string(ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) + "}"};
+    }
     if (is_unreproducible()) {
         throw std::runtime_error{"cannot collect hashes from unreproducible machines"};
     }
@@ -2672,8 +2778,13 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
     if (!update_hash_tree()) {
         throw std::runtime_error{"update hash tree failed"};
     }
-    if (read_reg(reg::uarch_cycle) != 0) {
+    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
         throw std::runtime_error{"microarchitecture is not reset"};
+    }
+    // The reset that closes each mcycle only restores the uarch words written during it
+    if (get_node_hash(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, skip_hash_tree_update) !=
+        get_uarch_pristine_hash()) {
+        throw std::runtime_error{"microarchitecture is not pristine"};
     }
 
     uarch_cycle_root_hashes result;
@@ -2700,6 +2811,10 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
         }
         if (revert_uarch_tail.size() < 2) {
             throw std::runtime_error{"revert uarch tail is too short"};
+        }
+        // One state root hash per step of an mcycle: up to its maximum number of uarch cycles, then the reset
+        if (revert_uarch_tail.size() > (UINT64_C(1) << ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE)) {
+            throw std::runtime_error{"revert uarch tail is too long"};
         }
         if (revert_uarch_tail.back() != read_revert_root_hash()) {
             throw std::runtime_error{"revert uarch tail does not end with the revert root hash"};

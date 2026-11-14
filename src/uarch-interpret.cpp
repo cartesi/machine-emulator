@@ -31,11 +31,12 @@ uarch_interpreter_break_reason uarch_interpret(const STATE_ACCESS a, uint64_t cy
     if (cycle_end < cycle) {
         throw std::invalid_argument{"uarch_cycle is past"};
     }
-    if (cycle >= UARCH_CYCLE_MAX) {
-        return uarch_interpreter_break_reason::uarch_cycle_overflow;
-    }
+    // Report an existing halt fixed point, even at the cycle limit, then the derived overflow fixed point
     if (a.read_uarch_halt() != 0) {
         return uarch_interpreter_break_reason::uarch_halted;
+    }
+    if (cycle >= UARCH_CYCLE_MAX) {
+        return uarch_interpreter_break_reason::uarch_cycle_overflow;
     }
     if (cycle == cycle_end) {
         return uarch_interpreter_break_reason::reached_target_uarch_cycle;

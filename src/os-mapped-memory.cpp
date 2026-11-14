@@ -40,6 +40,7 @@
 #include "scope-exit.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
@@ -232,7 +233,8 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
         // so we have to zero fill the last partial page just to be safe.
         // See more about this on BUGS section in mmap() Linux man pages.
         const uint64_t partial_page_size = backing_file_length % page_size;
-        const uint64_t partial_page_remaining = std::min(page_size - partial_page_size, length - backing_file_length);
+        const uint64_t partial_page_remaining =
+            partial_page_size != 0 ? std::min(page_size - partial_page_size, length - backing_file_length) : 0;
         if (partial_page_remaining > 0) {
             if (flags.read_only) {
                 // We can't write on read-only mappings.
@@ -526,6 +528,11 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
     m_backing_fp = backing_fp;
     m_unaligned_host_memory = unaligned_host_memory;
 #endif // HAVE_MMAP
+}
+
+void mapped_memory::clear() noexcept {
+    assert(!m_flags.read_only && "cannot clear a read-only mapping");
+    std::ranges::fill(get_storage_data(), 0);
 }
 
 mapped_memory::~mapped_memory() noexcept {

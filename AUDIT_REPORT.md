@@ -1,6 +1,6 @@
 # PRT Audit Report (`audit/prt2`)
 
-Status: **in progress**. Phase: round 3 triage, round 4 hunt.
+Status: **in progress**. Phase: second opinion after round 3, round 4 hunt.
 
 This file is the campaign state of the audit that `AUDIT.md` defines. The orchestrator rewrites it after every step so
 that it can resume after a compaction or a container restart. Confirmed issues are in `BUGS.md`, with their tests under
@@ -11,12 +11,12 @@ that it can resume after a compaction or a container restart. Confirmed issues a
 | Item | Value |
 |---|---|
 | Branch audited | `audit/prt2` at `20a788c` (docs: prepare PRT audit) |
-| Current phase | Rounds 1 and 2 complete. Round 3 (variants): hunt done (20 candidates, `campaign/r3/hunt-*.json`), triage running (`wf_0fcf3c27-748`). Round 4 (R4 at every reachable state): 10 hunters running in five workflows, reports in `campaign/r4/`. The second opinion on reading-based drops and refutations of rounds 1 to 3 runs when round 3 finishes. Outcomes of finished proofs are kept in `campaign/outcomes.json` and rendered by `campaign/render.py` |
-| Rounds completed | 2 |
+| Current phase | Rounds 1 to 3 complete. Second opinion on 37 reading-based drops and refutations running (`wf_093e49f4-017`, list in `campaign/second-opinion-1.json`). Round 4 (R4 at every reachable state): 10 hunters, 2 back, reports in `campaign/r4/`. Outcomes of finished proofs are kept in `campaign/outcomes.json` and rendered by `campaign/render.py` |
+| Rounds completed | 3 |
 | Stop count (consecutive clean all-Fable rounds, different strategies) | 0 of 3 |
 | Withheld-findings round done | no |
 | Second opinion (after round 3) done | no |
-| Hunter models for the next round | all `claude-opus-5-5`, high effort |
+| Hunter models for the next round | Round 5: three hunters on `claude-fable-5-2`, seven on `claude-opus-5-5`, at the requester's instruction |
 | Confirmed issues | 43 (7 Critical, 6 High, 30 Medium, by the reviewers' preferred readings) |
 | Open candidates | none |
 
@@ -41,6 +41,9 @@ that it can resume after a compaction or a container restart. Confirmed issues a
   `~/.foundry/anvil/tmp` (one grew 12 GB in 6 minutes) and filled the disk. The orchestrator removed the dumps, killed the
   runaway anvil (the prover of R1-A7-2 was using it) and added `bugs/harness/anvil-wrap.sh`, which bounds the dumps. Agents
   running at that moment may have seen write failures.
+- **Fable hunters earlier than planned.** During round 4 the requester asked that the next rounds use a few Fable
+  5.2 hunters. From round 5, three of ten hunters run on `claude-fable-5-2` before any round has been clean. These mixed
+  rounds do not count toward the stop rule, which needs rounds whose hunters all run on Fable.
 - **Concurrency.** The workflow runtime caps concurrent agents at the CPU count minus two, which is 2 on this 4-CPU
   container, below the 10 hunters `AUDIT.md` allows.
 
@@ -70,7 +73,7 @@ the untracked `bugs/harness/work/`).
 |---|---|---|---|---|---|---|---|---|
 | 1 | One angle per rule or obligation (R1-R14, O1, O2, A1-A8, GUEST, BOUNDARY) | `claude-opus-5-5` | 111 (26 hunters, 1 triage, 42 provers, 42 reviewers) | 18.15M (3 hunters in a stopped workflow not counted) | 70, plus 1 from Prepare | 42 | 27 (5 Critical, 5 High, 17 Medium) | no |
 | 2 | Data flow from each untrusted source (DFINPUT, DFINPUTCOUNT, DFLOG, DFPROOFSOL, DFCLAIM, DFCHAIN, DFYIELD, DFGUESTSTATE, DFSTORED, DFOUTPUT) | `claude-opus-5-5` | 27 (10 hunters, 1 triage, 8 provers, 8 reviewers) | 5.41M | 11 | 8 | 6 (all Medium) | no |
-| 3 | Variants of each family of confirmed bugs (VARCACHE, VARDIRTY, VARO2PLAYER, VARSHADOW, VARVERIFTRAP, VARGEN, VARREFMODEL, VARSCHED, VARGROWTH, VARSPEC) | `claude-opus-5-5` | 10 hunters so far | 3.46M so far | 20 | pending | pending | pending |
+| 3 | Variants of each family of confirmed bugs (VARCACHE, VARDIRTY, VARO2PLAYER, VARSHADOW, VARVERIFTRAP, VARGEN, VARREFMODEL, VARSCHED, VARGROWTH, VARSPEC) | `claude-opus-5-5` | 39 (10 hunters, 1 triage, 14 provers, 14 reviewers) | 7.30M | 20 | 14 | 10 (1 Critical, 1 High, 8 Medium) | no |
 | 4 | R4 at every reachable state (RGCLAIM, RGPROOF, RGLOG, RGDELIVERY, RGUARCH, RGCONFIG, RGREJECT, RGPLAYERGUEST, RGRESTART, RGEPOCHS) | `claude-opus-5-5` | running | | | | | |
 
 ## Candidates

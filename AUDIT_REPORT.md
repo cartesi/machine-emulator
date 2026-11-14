@@ -1,6 +1,6 @@
 # PRT Audit Report (`audit/prt2`)
 
-Status: **in progress**. Phase: round 3 hunt (variants).
+Status: **in progress**. Phase: round 3 triage, round 4 hunt.
 
 This file is the campaign state of the audit that `AUDIT.md` defines. The orchestrator rewrites it after every step so
 that it can resume after a compaction or a container restart. Confirmed issues are in `BUGS.md`, with their tests under
@@ -11,7 +11,7 @@ that it can resume after a compaction or a container restart. Confirmed issues a
 | Item | Value |
 |---|---|
 | Branch audited | `audit/prt2` at `20a788c` (docs: prepare PRT audit) |
-| Current phase | Rounds 1 and 2 complete. Round 3 (variants of confirmed bugs): 10 hunters, 8 back, VARCACHE and VARDIRTY still running (`wf_79b195d8-c53`); reports in scratchpad `campaign/r3/`; triage next. Outcomes of finished proofs are kept in `campaign/outcomes.json` and rendered by `campaign/render.py` |
+| Current phase | Rounds 1 and 2 complete. Round 3 (variants): hunt done (20 candidates, `campaign/r3/hunt-*.json`), triage running (`wf_0fcf3c27-748`). Round 4 (R4 at every reachable state): 10 hunters running in five workflows, reports in `campaign/r4/`. The second opinion on reading-based drops and refutations of rounds 1 to 3 runs when round 3 finishes. Outcomes of finished proofs are kept in `campaign/outcomes.json` and rendered by `campaign/render.py` |
 | Rounds completed | 2 |
 | Stop count (consecutive clean all-Fable rounds, different strategies) | 0 of 3 |
 | Withheld-findings round done | no |
@@ -70,7 +70,8 @@ the untracked `bugs/harness/work/`).
 |---|---|---|---|---|---|---|---|---|
 | 1 | One angle per rule or obligation (R1-R14, O1, O2, A1-A8, GUEST, BOUNDARY) | `claude-opus-5-5` | 111 (26 hunters, 1 triage, 42 provers, 42 reviewers) | 18.15M (3 hunters in a stopped workflow not counted) | 70, plus 1 from Prepare | 42 | 27 (5 Critical, 5 High, 17 Medium) | no |
 | 2 | Data flow from each untrusted source (DFINPUT, DFINPUTCOUNT, DFLOG, DFPROOFSOL, DFCLAIM, DFCHAIN, DFYIELD, DFGUESTSTATE, DFSTORED, DFOUTPUT) | `claude-opus-5-5` | 27 (10 hunters, 1 triage, 8 provers, 8 reviewers) | 5.41M | 11 | 8 | 6 (all Medium) | no |
-| 3 | Variants of each family of confirmed bugs (VARCACHE, VARDIRTY, VARO2PLAYER, VARSHADOW, VARVERIFTRAP, VARGEN, VARREFMODEL, VARSCHED, VARGROWTH, VARSPEC) | `claude-opus-5-5` | running | | | | | |
+| 3 | Variants of each family of confirmed bugs (VARCACHE, VARDIRTY, VARO2PLAYER, VARSHADOW, VARVERIFTRAP, VARGEN, VARREFMODEL, VARSCHED, VARGROWTH, VARSPEC) | `claude-opus-5-5` | 10 hunters so far | 3.46M so far | 20 | pending | pending | pending |
+| 4 | R4 at every reachable state (RGCLAIM, RGPROOF, RGLOG, RGDELIVERY, RGUARCH, RGCONFIG, RGREJECT, RGPLAYERGUEST, RGRESTART, RGEPOCHS) | `claude-opus-5-5` | running | | | | | |
 
 ## Candidates
 

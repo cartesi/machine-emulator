@@ -21,8 +21,10 @@ as the referee's runner does.
   the N = 1 growth by less than one output (2 MiB). Observed: 2.00 MiB vs 32.00 MiB (every payload is kept in
   `pending_outputs`, then `self.outputs`, for the epoch). Deterministic counts, no timing.
 
-The test exits 1 if either check fails. A copy of vg.lua that pushes only leaf hashes into the frontier and reports
-(instead of asserting) a root mismatch makes both checks pass (exit 0).
+The test exits 1 if check A fails. Reviewer repair: check B is printed but no longer asserted, because section 8
+says "Keeping outputs to prove them later is not on the honest operator's path" (the payloads are kept for
+`prove_output`), so the exit status depends on check A only. A copy of vg.lua whose `flush_pending_outputs` reports (instead of asserting) a root mismatch exits
+0; pushing only leaf hashes into the frontier would also make check B pass.
 
 ## Requirements quoted (THREAT_MODEL.md)
 
@@ -51,6 +53,6 @@ Needs docker (guest build with the pinned toolchain) and `lua-posix`. Runs in a 
 check A: input_added raised: .../doc/recipes/vg.lua:429: outputs Merkle root mismatch; claim none; reference 0xb40f...f78d
 check B: heap growth across input_added: 1 outputs -> 2.00 MiB, 16 outputs -> 32.00 MiB (difference 30.00 MiB; one output is 2.00 MiB)
 VIOLATED: R4/section 8: an accepted input whose outputs root does not match its outputs must not stop the honest player from computing its claim
-VIOLATED: R12: the memory the honest player retains must not grow with the number of outputs
+note (not asserted): the honest player's Lua heap grows with the number of outputs it keeps for prove_output; section 8 puts keeping outputs to prove them later off the honest operator's path
 run.sh: R1-R8-2: exit 1 (bug present)
 ```

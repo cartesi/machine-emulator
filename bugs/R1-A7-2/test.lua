@@ -49,7 +49,7 @@ harness.main(function()
     local logfile = string.format("%s/r1-a7-2-anvil-%d.log", tmp, port)
     local pidp = assert(io.popen(string.format(
         "anvil --host 127.0.0.1 --port %d --chain-id 11155111 --gas-limit %d --block-base-fee-per-gas 0 "
-            .. "--hardfork prague --accounts 3 --balance 100000000 --order fees > %s 2>&1 & echo $!",
+            .. "--hardfork prague --accounts 3 --balance 100000000 --order fees --prune-history 64 > %s 2>&1 & echo $!",
         port, GAS_LIMIT, logfile)))
     local anvil_pid = assert(tonumber(pidp:read("l")))
     pidp:close()
@@ -335,7 +335,8 @@ harness.main(function()
         local tx = send(honest, t1, data, v, { gas = hexn(3000000) })
         local jr = wait_receipt(tx)
         print(string.format("honest joinTournament in block %d: %s", num(jr.blockNumber),
-            jr.status == "0x1" and "accepted" or ("REVERTED " .. json.encode(err and err.data or sim))))
+            jr.status == "0x1" and "accepted" or ("REVERTED " .. json.encode(err and err.data or sim)
+                .. ((err and tostring(err.data):find("0xac57beef", 1, true)) and " = TournamentIsClosed()" or ""))))
         if jr.status == "0x1" then
             local cs = call(t1, "commitmentStanding", { eth.hex(cartesi.keccak256(eth.raw(args[3]), eth.raw(args[4]))) },
                 "((bool,bytes32,address,bool,uint64,uint64))")[1]

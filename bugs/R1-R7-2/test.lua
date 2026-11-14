@@ -28,7 +28,7 @@ harness.main(function()
     end
 
     -- probe one instruction at the start of RAM in M-mode, one mcycle; returns trapped, mcause, pc
-    local function probe(insn, len)
+    local function probe(insn, len, use_uarch)
         local m <close> = cartesi.machine({ ram = { length = 1 << 20 } })
         local bytes = string.pack(len == 2 and "<I2" or "<I4", insn)
         m:write_memory(RAM, bytes .. string.rep("\x13\x00\x00\x00", 4)) -- followed by nops
@@ -41,7 +41,15 @@ harness.main(function()
         m:write_reg("mtvec", TVEC)
         m:write_reg("mcause", 0xdead)
         local mc = m:read_reg("mcycle")
-        m:run(mc + 1)
+        if use_uarch then -- one mcycle through the microarchitecture (uarch running the interpreter) + reset
+            if m:run_uarch() ~= cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
+                harness.setup_error("uarch did not halt")
+            end
+            m:reset_uarch()
+            if m:read_reg("mcycle") ~= mc + 1 then harness.setup_error("uarch did not complete one mcycle") end
+        else
+            m:run(mc + 1)
+        end
         local pc, cause = m:read_reg("pc"), m:read_reg("mcause")
         return pc == TVEC and cause == 2, cause, pc
     end
@@ -64,10 +72,10 @@ harness.main(function()
         { name = "0x8000", enc = "1000000000000000" },
     }
     local base32 = {
-        ["sext.b x5,x6 (Zbb)"] = 0x60431293,
-        ["zext.h x5,x6 (Zbb)"] = 0x080342bb,
-        ["sext.h x5,x6 (Zbb)"] = 0x60531293,
-        ["add.uw x5,x6,x0 (Zba)"] = 0x080302bb,
+        { name = "sext.b x5,x6 (Zbb)", insn = 0x60431293 },
+        { name = "zext.h x5,x6 (Zbb)", insn = 0x080342bb },
+        { name = "sext.h x5,x6 (Zbb)", insn = 0x60531293 },
+        { name = "add.uw x5,x6,x0 (Zba)", insn = 0x080302bb },
     }
 
     -- control: a reserved encoding outside Zcb and a plain RV64IMAFDC instruction behave as expected
@@ -84,7 +92,8 @@ harness.main(function()
         manual:match("implements the `([^`]+)` ISA") or "?"))
 
     local base_traps = {}
-    for name, insn in pairs(base32) do
+    for _, b in ipairs(base32) do
+        local name, insn = b.name, b.insn
         local t, cause = probe(insn, 4)
         base_traps[name] = t
         print(string.format("  32-bit %-24s 0x%08x  %s", name, insn, t and "illegal (mcause 2)" or
@@ -95,8 +104,10 @@ harness.main(function()
     for _, z in ipairs(zcb) do
         local insn, len = bits(z.enc)
         local t, cause, pc = probe(insn, len)
-        print(string.format("  16-bit %-18s 0x%04x  %s", z.name, insn,
-            t and "illegal (mcause 2)" or string.format("EXECUTED (pc=0x%x mcause=0x%x)", pc, cause)))
+        local tu = probe(insn, len, true) -- informational: the uarch path behaves the same (consistent deviation)
+        print(string.format("  16-bit %-18s 0x%04x  %s  [uarch: %s]", z.name, insn,
+            t and "illegal (mcause 2)" or string.format("EXECUTED (pc=0x%x mcause=0x%x)", pc, cause),
+            tu and "illegal" or "executed"))
         if not t then
             if not manual_documents_zcb then
                 violations[#violations + 1] = string.format("%s (0x%04x) executes, but RV64IMAFDCZicsr_Zifencei "

@@ -13,22 +13,30 @@ preparation (`prepare`) are stubbed. One tournament holds two matches:
   `eliminateMatchByTimeout`, window open to `math.maxinteger`);
 - a match of the honest claim `H`, which is on turn: `advanceMatch` due until `responderDeadline` (block 20).
 
-Three scenarios:
+Every transaction the mock chain includes lands 6 blocks after its nonce was first published (the newest
+candidate of that nonce lands). The honest claim gets the turn at tip 9 with 11 blocks on its clock (deadline
+block 20; a clock expires at equality): more than one inclusion and less than two. Scenarios:
 
-1. control: the cleanup becomes eligible on the same tick the honest move becomes due (tip 9) with nothing pending:
-   the bridge publishes `advanceMatch` at tip 9 (setup check; exit 2 if not).
-2. the cleanup became eligible one block earlier (tip 8), so it is pending when the honest move becomes due, and
-   the chain includes it 6 blocks after publication;
-3. same, but the cleanup is not included before the honest deadline (congestion, fee ceiling, dropped from the
-   pool).
+1. control: the cleanup becomes eligible on the same tick as the honest move (tip 9), with nothing pending. The
+   bridge publishes `advanceMatch` at tip 9 and it lands in block 15. This is a setup check: exit 2 if it fails.
+2. the cleanup became eligible one block earlier (tip 8), so it is pending when the honest move becomes due.
+3. informational only, not asserted: the cleanup is never included. A chain that includes none of the honest
+   transactions is outside the goal, and a fixed bridge's move would not land there either.
 
-Required in 2 and 3: `advanceMatch` is published at tip 9, as in the control (replacing the cleanup at the same
-nonce). On audit/prt2 the bridge keeps the pending cleanup ("Keep working on a useful pending action"), never
-attempts `advanceMatch` while the cleanup is pending, and only re-prices the cleanup every `bump_blocks`.
+Required in scenario 2 (R4): the honest `advanceMatch` lands before block 20. On audit/prt2 the bridge keeps the
+pending cleanup ("Keep working on a useful pending action") and does not attempt `advanceMatch` until the cleanup is
+mined. It publishes `advanceMatch` at tip 14 at nonce 1, and that lands in block 20, when the honest clock has
+already expired.
 
-Requirement (THREAT_MODEL.md): R4 "The honest operator observes the chain and submits its transactions within the
-dispute clocks." and A8 "Failing to process one match's data, for any reason, must not stop, delay or decide any
-other match." (as the standard of the honest operator that the bridge stands in for).
+Requirement (THREAT_MODEL.md R4): "The honest operator observes the chain and submits its transactions within the
+dispute clocks." The deployed Dave clock model provisions one inclusion budget per honest response (Dave
+`docs/dimensioning.md`: "every advance ... within `G` of becoming due"; "Lateness beyond a bound is censorship,
+drawn from one ledger that nothing refills").
+
+Reviewer note: the prover's original version asserted that `advanceMatch` was published at the same tip as in the
+control, and that it was published even when the chain never includes the cleanup. The reviewer replaced both
+with the inclusion-window assertion above. "No delay at all" is stricter than R4, and the never-included case
+needs a chain that includes no honest transaction.
 
 ## Run
 
@@ -43,17 +51,19 @@ Takes about a second; no chain, no machine.
 ```
 control (no pending cleanup):
   tip 9: published advanceMatch at nonce 0
+  honest advanceMatch due from tip 9, window closes at block 20: first published at tip 9, lands in block 15
 pending cleanup, included 6 blocks after publication:
   tip 8: published eliminateMatchByTimeout at nonce 0
   tip 11: published eliminateMatchByTimeout at nonce 0
   tip 14: published advanceMatch at nonce 1
-pending cleanup, not included before the honest deadline:
+  honest advanceMatch due from tip 9, window closes at block 20: first published at tip 14, lands in block 20
+informational: pending cleanup never included:
   tip 8, 11, 14, 17: published eliminateMatchByTimeout at nonce 0
-  honest advanceMatch ... NEVER published within its window
-VIOLATED: A8/R4: a pending cleanup of another match must not delay the honest advanceMatch (control published at tip 9, with the pending cleanup at tip 14)
-VIOLATED: R4: the honest advanceMatch must be published within its window although a cleanup is pending (control at tip 9, with a stuck cleanup: never)
+  honest advanceMatch due from tip 9, window closes at block 20: NEVER published within its window
+VIOLATED: R4: with every transaction included 6 blocks after publication, the honest advanceMatch must land before its deadline (block 20) although a cleanup of another match is pending (control: published at tip 9, lands in block 15; with the pending cleanup: published at tip 14, lands in block 20)
 ```
 
-With a fix that keeps the pending job only when it expires no later than the earliest due job (for example,
-`job.key == candidate.job and job.last <= eligible[1].last` in `methods:tick`), the test exits 0 and
-`doc/recipes/prt-bridge-test.lua` still passes (checked by the prover on a scratch copy).
+With a fix that keeps the pending job only when it expires no later than the earliest due job
+(`job.key == candidate.job and job.last <= eligible[1].last` in `methods:tick`), `advanceMatch` replaces the cleanup
+at nonce 0 at tip 9, lands in block 14, and the test exits 0. With that fix, `doc/recipes/prt-bridge-test.lua` also
+exits 0. The reviewer checked both on a scratch copy.

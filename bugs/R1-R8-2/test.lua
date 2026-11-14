@@ -21,7 +21,8 @@
 -- exceeds the growth for N = 1 by less than one output (2 MiB), i.e. that it does not grow with the number of
 -- outputs. The count is deterministic: no timing is involved.
 --
--- Exit 1 if either check fails (bug present), 0 if both hold, 2 on setup errors.
+-- Exit 1 if check A fails (bug present), 0 if it holds, 2 on setup errors. Check B is printed but not asserted
+-- (reviewer repair: section 8, "Keeping outputs to prove them later is not on the honest operator's path").
 
 local harness = require("harness")
 
@@ -153,7 +154,11 @@ harness.main(function()
     local a = harness.expect(results.a,
         "R4/section 8: an accepted input whose outputs root does not match its outputs must not stop the honest "
         .. "player from computing its claim")
-    local b = harness.expect(results.b,
-        "R12: the memory the honest player retains must not grow with the number of outputs")
-    return a and b
+    -- Check B is informational only (reviewer repair): section 8 says "Keeping outputs to prove them later is not
+    -- on the honest operator's path", so the payloads vg.lua keeps for prove_output do not decide the exit status.
+    if not results.b then
+        print("note (not asserted): the honest player's Lua heap grows with the number of outputs it keeps for "
+            .. "prove_output; section 8 puts keeping outputs to prove them later off the honest operator's path")
+    end
+    return a
 end)

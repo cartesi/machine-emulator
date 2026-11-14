@@ -1,6 +1,6 @@
 # PRT Audit Report (`audit/prt2`)
 
-Status: **in progress**. Phase: round 7 proofs, round 8 hunt.
+Status: **in progress**. Phase: round 8 triage, round 9 hunt.
 
 This file is the campaign state of the audit that `AUDIT.md` defines. The orchestrator rewrites it after every step so
 that it can resume after a compaction or a container restart. Confirmed issues are in `BUGS.md`, with their tests under
@@ -11,12 +11,12 @@ that it can resume after a compaction or a container restart. Confirmed issues a
 | Item | Value |
 |---|---|
 | Branch audited | `audit/prt2` at `20a788c` (docs: prepare PRT audit) |
-| Current phase | Rounds 1 to 6 and the first second opinion complete. Round 7 (manual promises): triage done, 9 proofs running (`wf_9c2932df-0f8`, `wf_8f473e9d-52f`). Round 8 (attack goals): 10 hunters running, reports in `campaign/r8/`. Reading-based drops and refutations of rounds 4 to 7 wait for the next second opinion |
-| Rounds completed | 6 |
+| Current phase | Rounds 1 to 7 and the first second opinion complete. Round 8 (attack goals): hunt done, 10 candidates, triage running (`wf_fc17c503-e65`). Round 9 (subsystem invariants): 10 hunters running in five workflows, reports in `campaign/r9/`. Reading-based drops and refutations of rounds 4 to 8 wait for the second second-opinion pass, to run when round 8 finishes |
+| Rounds completed | 7 |
 | Stop count (consecutive clean all-Fable rounds, different strategies) | 0 of 3 |
 | Withheld-findings round done | no |
 | Second opinion (after round 3) done | yes: 37 re-checked, 5 overturned, reading changed (stop count stays 0) |
-| Hunter models for the next round | Round 5: three hunters on `claude-fable-5-2`, seven on `claude-opus-5-5`, at the requester's instruction |
+| Hunter models for the next round | Round 10: four hunters on `claude-fable-5-2`, six on `claude-opus-5-5`, at the requester's instruction (no round has been clean, so the schedule of `AUDIT.md` has not moved any hunter yet) |
 | Confirmed issues | 60 (10 Critical, 7 High, 43 Medium, by the reviewers' preferred readings) |
 | Open candidates | none |
 
@@ -77,8 +77,9 @@ the untracked `bugs/harness/work/`).
 | 4 | R4 at every reachable state (RGCLAIM, RGPROOF, RGLOG, RGDELIVERY, RGUARCH, RGCONFIG, RGREJECT, RGPLAYERGUEST, RGRESTART, RGEPOCHS) | `claude-opus-5-5` | 15 (10 hunters, 1 triage, 2 provers, 2 reviewers) | 4.07M | 5 | 2 | 1 (Medium) | no |
 | 5 | Assert and error inventory of the honest operator, file by file (INVINTERP, INVHASH, INVSTORE on Fable; INVACCESS, INVDEVICE, INVMACHINE, INVAPI, INVSOL, INVPLAYER, INVBRIDGE on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | 24 (11 hunter runs, 1 triage, 6 provers, 6 reviewers) | 5.80M | 10 | 6 | 3 (1 Critical, 2 Medium; all three found by Fable hunters) | no |
 | 6 | Dynamic and differential testing (DYNDIFF, DYNHASH, DYNCLAIM on Fable; DYNEVM, DYNLOGFUZZ, DYNPERSIST, DYNAPI, DYNPRT, DYNGUEST, DYNBRIDGE on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | 17 (10 hunters, 1 triage, 3 provers, 3 reviewers) | 4.22M | 11 | 3 | 2 (both Medium, in the bridge; found by an Opus hunter) | no |
-| 7 | The code against the manual's promises, one slice of the manual each (MANTOURN, MANHASHCOMP, MANARCH on Fable; MANGAME, MANHASHSTATE, MANGUEST, MANCLIROLL, MANCLIBASE, MANLUA1, MANLUA2 on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | 10 hunters so far | 3.32M so far | 22 | pending | pending | pending |
-| 8 | Attack goals of section 1 worked backwards (GOALACCEPT, GOALWRONGCLAIM, GOALTIMEOUT on Fable; GOALNODE, GOALNOPROOF, GOALELIMINATE, GOALOUTPUT, GOALDIVERGE, GOALESCAPE, GOALEPOCH on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | running | | | | | |
+| 7 | The code against the manual's promises, one slice of the manual each (MANTOURN, MANHASHCOMP, MANARCH on Fable; MANGAME, MANHASHSTATE, MANGUEST, MANCLIROLL, MANCLIBASE, MANLUA1, MANLUA2 on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | 29 (10 hunters, 1 triage, 9 provers, 9 reviewers) | 5.89M | 22 | 9 | 6 (all Medium; 4 found by Fable hunters, 2 by Opus) | no |
+| 8 | Attack goals of section 1 worked backwards (GOALACCEPT, GOALWRONGCLAIM, GOALTIMEOUT on Fable; GOALNODE, GOALNOPROOF, GOALELIMINATE, GOALOUTPUT, GOALDIVERGE, GOALESCAPE, GOALEPOCH on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | 10 hunters so far | 3.38M so far | 10 | pending | pending | pending |
+| 9 | Invariant audit by subsystem (SUBTLB, SUBCMIO, SUBCOMPHASH, SUBCONSENSUS on Fable; SUBCSR, SUBUARCH, SUBTOURN, SUBJOURNAL, SUBEPOCHDIR, SUBREFSTATE on Opus) | 4 `claude-fable-5-2`, 6 `claude-opus-5-5` | running | | | | | |
 
 ## Candidates
 

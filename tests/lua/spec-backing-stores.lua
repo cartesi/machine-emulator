@@ -1035,35 +1035,52 @@ describe("backing stores", function()
             return (string.unpack("<I8", filesystem.read_file(directory .. "/hash_tree.phtc")))
         end
 
-        it("should keep a stored cache uninitialized while it changes, until a store or destruction", function()
-            local _ <close>, directory = tests_util.scope_temp_pathname()
-            local _ <close>, stored_directory = tests_util.scope_temp_pathname()
-            local _ <close> = tests_util.scope_exit(function()
-                for _, dir in ipairs({ directory, stored_directory }) do
-                    pcall(cartesi.machine.remove_stored, cartesi.machine, dir, cartesi.REMOVE_FORCED)
+        for _, sharing in ipairs({ cartesi.SHARING_CONFIG, cartesi.SHARING_ALL }) do
+            it("should preserve cached hashes after store or destroy and sync, sharing " .. sharing, function()
+                local _ <close>, directory = tests_util.scope_temp_pathname()
+                local _ <close>, stored_directory = tests_util.scope_temp_pathname()
+                local _ <close> = tests_util.scope_exit(function()
+                    for _, dir in ipairs({ directory, stored_directory }) do
+                        pcall(cartesi.machine.remove_stored, cartesi.machine, dir, cartesi.REMOVE_FORCED)
+                    end
+                end)
+                local machine <close> = cartesi.machine({
+                    ram = { length = 4096 },
+                    hash_tree = { phtc_size = capacity },
+                }, {}, directory)
+                machine:write_memory(cartesi.AR_RAM_START, string.rep("A", 4096))
+                local stored_root = machine:get_root_hash()
+                machine:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+                expect.fail(function()
+                    machine:sync_stored(directory)
+                end, "flock() failed")
+                machine:store(stored_directory, sharing)
+                machine:sync_stored(stored_directory)
+                expect.equal(read_tag(stored_directory), initialized_tag)
+                machine:write_memory(cartesi.AR_RAM_START, string.rep("B", 4096))
+                local final_root = machine:get_root_hash()
+                machine:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+                machine:destroy()
+                machine:sync_stored(directory)
+                expect.equal(read_tag(directory), initialized_tag)
+                for _, snapshot in ipairs({
+                    { directory, final_root, "B" },
+                    { stored_directory, stored_root, "A" },
+                }) do
+                    local restored <close> = cartesi.machine(snapshot[1], {}, cartesi.SHARING_NONE)
+                    expect.equal(restored:get_root_hash(), snapshot[2])
+                    expect.equal(restored:get_root_hash(), tests_util.calculate_emulator_hash(restored))
+                    local proof = restored:get_proof(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+                    expect.equal(
+                        proof.target_hash,
+                        cartesi.keccak256(string.rep(snapshot[3], 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE))
+                    )
+                    hash_tree.verify_slice(proof, "keccak256")
                 end
             end)
-            local machine <close> = cartesi.machine({
-                ram = { length = 4096 },
-                hash_tree = { phtc_size = capacity },
-            }, {}, directory)
-            machine:get_root_hash()
-            expect.equal(read_tag(directory), 0)
-            expect.fail(function()
-                machine:sync_stored(directory)
-            end, "flock() failed")
-            expect.equal(read_tag(directory), 0)
-            machine:store(stored_directory)
-            expect.equal(read_tag(stored_directory), initialized_tag)
-            machine:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
-            expect.equal(read_tag(directory), 0)
-            machine:destroy()
-            expect.equal(read_tag(directory), initialized_tag)
-            machine:sync_stored(directory)
-            expect.equal(read_tag(directory), initialized_tag)
-        end)
+        end
 
-        it("should rebuild a stored cache left uninitialized by an interrupted change", function()
+        it("should rebuild a cache stored with an unfinished entry", function()
             local _ <close>, directory = tests_util.scope_temp_pathname()
             do
                 local machine <close> = cartesi.machine({
@@ -1076,7 +1093,7 @@ describe("backing stores", function()
             local _ <close> = tests_util.scope_exit(function()
                 cartesi.machine:remove_stored(directory)
             end)
-            -- A process stopped mid-change leaves the tag uninitialized and the rest of the cache in any state
+            -- An entry still borrowed at store or destruction leaves the cache uninitialized
             local filename = directory .. "/hash_tree.phtc"
             local data = filesystem.read_file(filename)
             data = write_word(write_word(data, 0, 0), entries_offset + 24, 1)
@@ -1573,7 +1590,7 @@ describe("backing stores", function()
         end)
     end)
 
-    it("should rehash the ancestors of page hashes stored by an interrupted update", function()
+    it("should rehash the ancestors of page hashes saved after a failed update", function()
         local ram_length = 0x10000
         local page = string.rep("B", 4096)
         local page_hash
@@ -1591,7 +1608,7 @@ describe("backing stores", function()
         local _ <close> = tests_util.scope_exit(function()
             cartesi.machine:remove_stored(directory)
         end)
-        -- An update interrupted after storing the page hash in its leaf leaves the page dirty and its ancestors stale
+        -- Model a failed update saved at clean destruction: the page hash is current, but its ancestors are stale
         local filename = string.format("%s/%016x-%x.dht", directory, cartesi.AR_RAM_START, ram_length)
         local data = filesystem.read_file(filename)
         local leaf_offset = (ram_length // 4096) * #page_hash
@@ -1602,20 +1619,20 @@ describe("backing stores", function()
         end
     end)
 
-    it("should rehash the stale ancestors of a range left by an interrupted update", function()
+    it("should rehash the stale ancestors of a range saved after a failed update", function()
         local ram_log2_size = 18
         local _ <close>, directory = tests_util.scope_temp_pathname()
         do
             local machine <close> = cartesi.machine({ ram = { length = 1 << ram_log2_size } }, {}, directory)
             machine:get_root_hash()
-            -- Leave a page dirty in the stored dirty-page tree, as an interrupted update would
+            -- Leave a page dirty in the stored dirty-page tree, as a failed update would
             machine:write_memory(cartesi.AR_RAM_START, string.rep("R", 4096))
         end
         local _ <close> = tests_util.scope_exit(function()
             cartesi.machine:remove_stored(directory)
         end)
-        -- An update interrupted after storing the RAM leaf leaves the inner nodes above it stale, and once left
-        -- nodes marked as queued for update, freezing them. Each 64-byte node holds its left child, right child and
+        -- Model a failed update saved at clean destruction, with stale ancestors and nonzero padding.
+        -- The padding once held a queued-for-update mark. Each 64-byte node holds its left child, right child and
         -- parent indices (8 bytes each), its log2 size (4 bytes), 4 bytes that once held that mark, and its hash.
         local filename = directory .. "/hash_tree.sht"
         local data = filesystem.read_file(filename)

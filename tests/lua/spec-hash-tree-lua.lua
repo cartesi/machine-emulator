@@ -1552,6 +1552,91 @@ describe("hash-tree.lua", function()
                 end)
             end
 
+            -- Storing after each leaf flushes each carry into a mixed tree.
+            local function store_mixed_forest(directory, frontier_path)
+                local forest = hash_tree.frontier_forest(H4, "keccak256")
+                for _, value in ipairs(leaves) do
+                    hash_tree.frontier_forest_push_back(forest, value)
+                    hash_tree.frontier_forest_store(forest, directory, frontier_path)
+                end
+                return forest
+            end
+
+            it("loads only the mixed trees on a queried path", function()
+                local _ <close>, directory = new_scope_directory()
+                local frontier_path = directory .. "/frontier.json"
+                local forest = store_mixed_forest(directory, frontier_path)
+                local levels = reference_levels(leaves)
+                local loaded
+                do
+                    local original = fs.read_file
+                    local _ <close> = tests_util.scope_exit(function()
+                        fs.read_file = original
+                    end)
+                    local reads = {}
+                    fs.read_file = function(path)
+                        reads[path] = (reads[path] or 0) + 1
+                        return original(path)
+                    end
+                    loaded = hash_tree.frontier_forest_load(directory, frontier_path)
+                    local expected_reads = {
+                        [frontier_path] = 1,
+                        [tree_path(directory, levels[H4][1])] = 1,
+                    }
+                    expect.equal(reads, expected_reads)
+                    expect.equal(hash_tree.frontier_forest_get_root_hash(loaded), levels[H4][1])
+                    expect.equal(hash_tree.frontier_forest_get_node_hash(loaded, 0, H4), levels[H4][1])
+                    expect.equal(reads, expected_reads)
+                    expect.equal(
+                        hash_tree.frontier_forest_get_siblings(loaded, 0, 0),
+                        hash_tree.frontier_forest_get_siblings(forest, 0, 0)
+                    )
+                    for height = 1, H4 - 1 do
+                        expected_reads[tree_path(directory, levels[height][1])] = 1
+                    end
+                    expect.equal(reads, expected_reads)
+                    expect.equal(hash_tree.frontier_forest_get_node_hash(loaded, 0, 0), leaves[1])
+                    expect.equal(reads, expected_reads)
+                end
+                expect_same_queries(forest, loaded)
+            end)
+
+            it("rejects corrupted mixed children when their paths are opened", function()
+                local _ <close>, directory = new_scope_directory()
+                local frontier_path = directory .. "/frontier.json"
+                local forest = store_mixed_forest(directory, frontier_path)
+                local levels = reference_levels(leaves)
+                local child_path = tree_path(directory, levels[H4 - 1][1])
+                local original = fs.read_file(child_path)
+                for _, corruption in ipairs({
+                    {
+                        cartesi.tohex(levels[H4 - 2][1]):sub(3),
+                        cartesi.tohex(leaves[1]):sub(3),
+                        "stored tree hash mismatch",
+                    },
+                    { '"height":' .. (H4 - 1), '"height":' .. (H4 - 2), "stored tree height mismatch" },
+                }) do
+                    fs.write_file((original:gsub(corruption[1], corruption[2])), child_path)
+                    local loaded = hash_tree.frontier_forest_load(directory, frontier_path)
+                    -- The right path uses the left child's hash without reading its corrupted file.
+                    local position = MAX4 // 2
+                    expect.equal(hash_tree.frontier_forest_get_node_hash(loaded, position, 0), leaves[position + 1])
+                    expect.equal(
+                        hash_tree.frontier_forest_get_siblings(loaded, position, 0),
+                        hash_tree.frontier_forest_get_siblings(forest, position, 0)
+                    )
+                    expect.fail(function()
+                        hash_tree.frontier_forest_get_node_hash(loaded, 0, 0)
+                    end, corruption[3])
+                    expect.fail(function()
+                        hash_tree.frontier_forest_get_siblings(loaded, 0, 0)
+                    end, corruption[3])
+                    expect.equal(hash_tree.frontier_forest_get_root_hash(loaded), levels[H4][1])
+                    fs.write_file(original, child_path)
+                    expect_same_queries(forest, loaded)
+                end
+            end)
+
             it("stores an expansion without rewriting its parent and loads it when reached", function()
                 local _ <close>, directory = new_scope_directory()
                 local frontier_path = directory .. "/frontier.json"

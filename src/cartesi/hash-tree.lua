@@ -532,8 +532,7 @@ end
 -- A forest with a directory keeps each fixed-point or mixed tree in a file named by its hash.
 -- A file holds what cannot be recomputed. A fixed-point tree stores its base values and a mixed
 -- tree its children, all as hashes, so a loaded tree reproduces its hash only when every stored
--- value is intact. Trees below a loaded fixed-point tree load when a query or an expansion reaches
--- them.
+-- value is intact. Trees below a loaded tree load when a query or an expansion reaches them.
 -- A file becomes reachable only once the files below it are durable: the frontier file is written
 -- after its trees' directory entries are synced, and so is the top file of an expansion. The
 -- forest records in durable the trees a completed sync confirmed, and those it loaded.
@@ -574,9 +573,7 @@ local function load_tree(forest, hash, height)
     else
         assert(stored.kind == "mixed", "invalid stored tree kind")
         assert(is_raw_hash(stored.left) and is_raw_hash(stored.right), "invalid stored children")
-        local left = load_tree(forest, stored.left, height - 1) or stored.left
-        local right = load_tree(forest, stored.right, height - 1) or stored.right
-        tree = new_mixed_tree(forest.hash_function, height, left, right)
+        tree = new_mixed_tree(forest.hash_function, height, stored.left, stored.right)
     end
     assert(tree.hash == hash, "stored tree hash mismatch")
     forest.durable[tree] = true
@@ -1135,8 +1132,8 @@ local function frontier_forest_store(forest, directory, frontier_path)
     fs.sync_directory(fs.get_parent_directory(frontier_path))
 end
 
--- Reopens a forest stored by frontier_forest_store. Its levels and mixed trees load at once, and
--- the trees below fixed-point trees load as queries reach them.
+-- Reopens a forest stored by frontier_forest_store. Its level trees load at once, and the trees
+-- below them load when a query or an expansion reaches them.
 local function frontier_forest_load(directory, frontier_path)
     local stored = cartesi.fromjson(fs.read_file(frontier_path), "StoredFrontier", STORED_SCHEMAS)
     local forest = frontier_forest(stored.height, stored.hash_type)

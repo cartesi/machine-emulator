@@ -25,8 +25,14 @@ For each variant, the test checks that the SC fails (`x9 != 0`) and that P1 and 
 
 The test also checks a control and the uarch path:
 
-- **Control.** The same program with a "remap" that keeps VA 0x1000 on P1. Its SC must succeed. If it does not,
-  the test exits 2.
+- **Baseline** (added by the reviewer). `lr.d; nop; nop; sc.d` with no remap. Its SC must succeed in S-mode on both
+  paths. If it does not, the test exits 2.
+- **Control.** The same program with a "remap" that keeps VA 0x1000 on P1. Its result must be consistent: either the
+  SC succeeds and writes P1, or it fails and writes nothing. P2 is never written. If not, the test exits 2. (The
+  reviewer relaxed this check. The prover's version required success, but a `csrw satp`, `sfence.vma` or store
+  between LR and SC puts the pair outside the constrained LR/SC loop, so the spec allows the SC to fail. Also, the
+  invalidate-on-satp/sfence.vma fix below makes it fail, so the original test would have exited 2, not 0, after
+  that fix.)
 - **Uarch path.** Every case also runs through the uarch path (`run_uarch` and `reset_uarch` per mcycle). It must
   reach the same root hash as native interpretation. If it does not, the test exits 2.
 
@@ -64,6 +70,8 @@ It runs in under a second.
 ## Expected output on audit/prt2 (exit 1)
 
 ```
+baseline (native)            pc=0x5010 prv=1 x9(sc rd)=0 P1=0x9999 P2=0x1111
+baseline (uarch)             pc=0x5010 prv=1 x9(sc rd)=0 P1=0x9999 P2=0x1111
 satp control (native)        pc=0x5010 prv=1 x9(sc rd)=0 P1=0x9999 P2=0x1111
 satp control (uarch)         pc=0x5010 prv=1 x9(sc rd)=0 P1=0x9999 P2=0x1111
 satp remap   (native)        pc=0x5010 prv=1 x9(sc rd)=0 P1=0x1111 P2=0x9999

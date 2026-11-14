@@ -5,7 +5,7 @@
 -- the released Dave contracts (bugs/harness/work/dave/released), this test:
 --   1. settles epoch 0 of a bare-metal application whose guest spends 2^30 mcycles on every input and accepts it;
 --   2. lets an input sender fill the blocks before the earliest possible acceptStagedTournamentResult with
---      addInput transactions (one per input, the chain's real 30M block gas limit), and lets the HONEST side
+--      addInput calls (batched through Flood.sol, about 30.6k gas each, under a 30M block gas limit), and lets the HONEST side
 --      stage and accept as early as the contracts allow, which seals the epoch and starts its root tournament;
 --   3. models the honest operator as executing every sealed input as soon as it is in the mempool, at Dave's
 --      own reference emulator speed (1.1 ns per mcycle, docs/dimensioning.md), with no per-input overhead,

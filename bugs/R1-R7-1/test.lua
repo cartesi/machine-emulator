@@ -51,6 +51,14 @@ harness.main(function()
             0x1882b4af, -- sc.d x9,x8,(x5)
             0x0000006f, -- j .
         },
+        -- baseline (reviewer addition): no remap, no SYSTEM instruction between LR and SC; must succeed
+        base = {
+            0x1002b32f, -- lr.d x6,(x5)
+            0x00000013, -- nop
+            0x00000013, -- nop
+            0x1882b4af, -- sc.d x9,x8,(x5)
+            0x0000006f, -- j .
+        },
     }
 
     local function build(variant, remap)
@@ -123,6 +131,17 @@ harness.main(function()
     end
 
     local ok = true
+    do -- baseline: proves the setup (paging, S-mode, LR/SC pairing) works; it must succeed on any fix
+        local b, bu = run_native("base", false), run_uarch("base", false)
+        show("baseline (native)", b)
+        show("baseline (uarch)", bu)
+        for _, o in ipairs({ b, bu }) do
+            if o.pc ~= 0x5000 + 4 * NINSN or o.iprv ~= 1 or o.x9 ~= 0 or o.p1 ~= NEW or o.p2 ~= OLD then
+                harness.setup_error("baseline LR/SC without remap did not succeed in S-mode")
+            end
+        end
+        if b.root ~= bu.root then harness.setup_error("baseline: native and uarch paths disagree") end
+    end
     for _, variant in ipairs({ "satp", "pte" }) do
         local ctl = run_native(variant, false)
         local ctlu = run_uarch(variant, false)
@@ -141,8 +160,14 @@ harness.main(function()
         if ctl.root ~= ctlu.root or got.root ~= gotu.root then
             harness.setup_error(variant .. ": native and uarch paths disagree (a different defect)")
         end
-        if not (ctl.x9 == 0 and ctl.p1 == NEW and ctl.p2 == OLD) then
-            harness.setup_error(variant .. ": control LR/SC on an unchanged mapping did not succeed")
+        -- Reviewer repair: with SYSTEM instructions (csrw satp / sfence.vma) or a store between LR and SC, the
+        -- spec allows the control SC to fail (it is not a constrained LR/SC loop), and a fix that invalidates the
+        -- reservation on satp writes or sfence.vma makes it fail. So the control only has to be consistent:
+        -- success writes P1, failure writes nothing; P2 is never written.
+        local ctl_ok = (ctl.x9 == 0 and ctl.p1 == NEW and ctl.p2 == OLD)
+            or (ctl.x9 ~= 0 and ctl.p1 == OLD and ctl.p2 == OLD)
+        if not ctl_ok then
+            harness.setup_error(variant .. ": control LR/SC on an unchanged mapping gave an inconsistent result")
         end
         ok = harness.expect(got.x9 ~= 0 and got.p2 == OLD and got.p1 == OLD,
             variant .. ": R7 (Atomics; Address translation): after LR at VA 0x1000 (P1) and a remap of VA 0x1000 "

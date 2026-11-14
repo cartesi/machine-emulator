@@ -34,7 +34,6 @@
 #include <ranges>
 #include <span>
 #include <utility>
-#include <vector>
 
 #include <boost/container/static_vector.hpp>
 #include <boost/interprocess/offset_ptr.hpp>
@@ -92,7 +91,6 @@ public:
 
         address_type m_paddr_page{}; ///< Physical page address
         uint64_t m_borrowed{};       ///< Whether entry is borrowed
-        uint64_t m_payload_index{};  ///< Index in the separate payload array
 
         friend page_hash_tree_cache;
 
@@ -259,7 +257,7 @@ public:
 
     // Ensure LRU, entry, and payload sizes are the same across all platforms we support
     static_assert(sizeof(lru) == 3 * sizeof(uint64_t), "unexpected LRU size");
-    static_assert(sizeof(entry_metadata) == 5 * sizeof(uint64_t), "unexpected entry size");
+    static_assert(sizeof(entry_metadata) == 4 * sizeof(uint64_t), "unexpected entry size");
     static_assert(sizeof(entry_payload) == m_page_size + (m_page_hash_tree_size * MACHINE_HASH_SIZE),
         "unexpected payload size");
 
@@ -435,9 +433,8 @@ public:
             new (&m_lru) lru;
             new (m_entries.data()) entry_metadata[num_entries];
             new (m_payloads.data()) entry_payload[num_entries];
-            for (size_t i = 0; i < num_entries; ++i) {
-                m_entries[i].m_payload_index = i;
-                m_payloads[i].clear_hash_tree(m_pristine_page_hash_tree);
+            for (auto &payload : m_payloads) {
+                payload.clear_hash_tree(m_pristine_page_hash_tree);
             }
             m_initialized = initialized_tag::initialized;
         } else {
@@ -483,14 +480,14 @@ public:
     /// \param e Cache entry
     /// \returns Reference to entry payload
     entry_payload &get_payload(entry_metadata &e) noexcept {
-        return m_payloads[e.m_payload_index];
+        return m_payloads[&e - m_entries.data()];
     }
 
     /// \brief Returns payload for a cache entry
     /// \param e Cache entry
     /// \returns Reference to entry payload
     const entry_payload &get_payload(const entry_metadata &e) const noexcept {
-        return m_payloads[e.m_payload_index];
+        return m_payloads[&e - m_entries.data()];
     }
 
     /// \brief Tries to borrow a cache entry
@@ -706,14 +703,8 @@ private:
         if (m_lru.size() > m_entries.size()) {
             throw std::runtime_error{"corrupted page hash-tree cache: LRU size exceeds capacity"};
         }
-        // Distinct payloads are required because borrowed entries can be hashed in parallel.
-        std::vector<bool> used_payloads(m_payloads.size());
         for (size_t i = 0; i < m_entries.size(); ++i) {
             const auto &e = m_entries[i];
-            if (e.m_payload_index >= m_payloads.size() || used_payloads[e.m_payload_index]) {
-                throw std::runtime_error{"corrupted page hash-tree cache: invalid payload index"};
-            }
-            used_payloads[e.m_payload_index] = true;
             if (e.get_borrowed()) {
                 throw std::runtime_error{"corrupted page hash-tree cache: borrowed entry"};
             }
@@ -771,7 +762,7 @@ private:
     initialized_tag &m_initialized;      ///< Whether cache has been initialized
     lru &m_lru;                          ///< Recently used entries
     std::span<entry_metadata> m_entries; ///< Compact metadata, with active entries in a prefix
-    std::span<entry_payload> m_payloads; ///< Cached pages and hashes
+    std::span<entry_payload> m_payloads; ///< Cached pages and hashes, at the same indices as their metadata
 
     // The following fields are always initialized from scratch
     ankerl::unordered_dense::map<address_type, entry_metadata::ref>

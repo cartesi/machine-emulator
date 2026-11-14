@@ -2192,7 +2192,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(write_reg_null_machine_test) {
 
 BOOST_AUTO_TEST_CASE_NOLINT(page_hash_tree_cache_payload_alignment_test) {
     constexpr std::array<std::pair<size_t, size_t>, 5> layouts{
-        {{1, 4096}, {101, 4096}, {102, 8192}, {204, 8192}, {205, 12288}}};
+        {{1, 4096}, {127, 4096}, {128, 8192}, {255, 8192}, {256, 12288}}};
     for (const auto &[capacity, payloads_offset] : layouts) {
         cartesi::page_hash_tree_cache cache{cartesi::keccak_256_hasher{}, capacity, "", false};
         const auto storage = cache.get_storage_data();

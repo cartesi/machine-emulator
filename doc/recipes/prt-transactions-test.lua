@@ -323,18 +323,38 @@ do
     successful(manager, "work", retried.hash)
 end
 
--- A balance below the gas limit at the max fee blocks the transaction before it is signed or stored, and
--- publication resumes once the balance covers it.
-do
-    local manager = fresh()
+-- A balance below the value or the gas limit at the max fee blocks the transaction before it is signed
+-- or stored. Publication resumes once funded, including for a value above the Lua integer range.
+for _, value in ipairs({ "0", "2", "18446744073709551616" }) do
+    local manager, args = fresh()
+    local job = intent()
+    job.value = value
     local balance = rpc("eth_getBalance", { signer.address, "latest" })
-    rpc("anvil_setBalance", { signer.address, "0x1" })
-    local short = submit(manager, intent())
+    local available = value == "0" and evmu.bint(1) or evmu.bint(value) - 1
+    rpc("anvil_setBalance", { signer.address, "0x" .. evmu.bint.tobase(available, 16) })
+    local sign, signed = signer.sign, false
+    function signer:sign(candidate)
+        signed = true
+        return sign(self, candidate)
+    end
+    local short = submit(manager, job)
     assert(short.blocked == "insufficient_funds" and not short.published, "a shortfall was not blocked")
-    assert(short.available == "1" and evmu.bint(short.needed) > 1, "the shortfall was misreported")
+    assert(
+        short.available == tostring(available) and evmu.bint(short.needed) > available,
+        "the shortfall was misreported"
+    )
+    if value ~= "0" then
+        assert(short.needed == value, "the value shortfall was not reported exactly")
+        rpc("anvil_setBalance", { signer.address, "0x" .. evmu.bint.tobase(evmu.bint(value), 16) })
+        local gas_short = submit(manager, job)
+        assert(gas_short.blocked == "insufficient_funds", "covering only the value bypassed the gas check")
+        assert(gas_short.available == value and evmu.bint(gas_short.needed) > evmu.bint(value))
+    end
+    assert(not signed and not fs.exists(args.path), "a blocked transaction was signed or persisted")
+    signer.sign = nil
     assert(manager:idle(), "a blocked transaction was stored")
     rpc("anvil_setBalance", { signer.address, balance })
-    local resumed = submit(manager, intent())
+    local resumed = submit(manager, job)
     assert(resumed.published, "publication did not resume")
     mine()
     successful(manager, "work", resumed.candidate.hash)

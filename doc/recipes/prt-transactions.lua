@@ -213,6 +213,18 @@ function methods:submit(signer, intent, observation)
     if intent then
         to, data, value = intent.to, intent.data, intent.value or "0"
     end
+    -- A value the account cannot cover can fail either preflight before gas is known.
+    -- Report that lower bound first; the full check below includes the gas limit at the fee cap.
+    local available = quantity(assert(self.chain:rpc("eth_getBalance", { address, block.number })))
+    local needed = quantity(value)
+    if available < needed then
+        return {
+            blocked = "insufficient_funds",
+            nonce = nonce,
+            needed = tostring(needed),
+            available = tostring(available),
+        }
+    end
     -- Use canonical execution state, excluding our own pending transaction.
     -- Inclusion windows are checked separately against the next live block.
     local _, failure = self.chain:simulate(signer, to, data, value, { blockHash = block.hash, requireCanonical = true })
@@ -253,8 +265,7 @@ function methods:submit(signer, intent, observation)
     }
     -- A pool reserves the whole limit at the max fee against the balance, so a shortfall blocks the
     -- transaction before it is signed or stored.
-    local needed = evmu.bint(candidate.gas) * quantity(candidate.max_fee) + quantity(candidate.value)
-    local available = quantity(assert(self.chain:rpc("eth_getBalance", { address, block.number })))
+    needed = evmu.bint(candidate.gas) * quantity(candidate.max_fee) + quantity(candidate.value)
     if available < needed then
         return {
             blocked = "insufficient_funds",

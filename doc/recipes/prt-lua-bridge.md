@@ -496,8 +496,10 @@ floor for the tip. A transaction still pending after `PRT_FEE_BUMP_BLOCKS` is
 replaced at the same nonce, with both fee fields raised by at least
 `PRT_FEE_BUMP_PERCENT`, within the fee ceilings. A player at a ceiling reports
 it as an anomaly, keeps the nonce, and resumes if fees fall. A player whose
-balance cannot cover a transaction's gas limit at its fee cap reports that too,
-and signs and stores nothing until the funds arrive. A candidate the node no
+balance cannot cover a transaction's value plus its gas limit at the fee cap
+reports that too, and signs and stores nothing until the funds arrive. Before
+preflight, a balance below the value reports that value as the minimum needed;
+after gas estimation, the required amount includes gas. A candidate the node no
 longer holds (lost to a crash before publication or a dropped mempool) sets no
 replacement floor, so the next action at its nonce is signed at current fees. A
 candidate survives an underpriced or ambiguous publication response, and a
@@ -558,7 +560,7 @@ error, and continues.
 | `falling_behind` | More inputs are pending than the gap between the machine cache's boundaries |
 | `unjoined_claim` | A tournament's joining window closed without the player's commitment |
 | `fee_ceiling` | A pending transaction reached the fee ceiling, and keeps its nonce |
-| `insufficient_funds` | The account cannot pay a transaction's gas at its fee cap |
+| `insufficient_funds` | The account cannot pay a transaction's value or its value plus gas at the fee cap |
 | `deadline_near` | A sentinel's expected action, such as the honest commitment's answer to a match, is still missing and its window ends within the warning blocks |
 | `missed_deadline` | A sentinel's expected action is still missing and its window closed |
 | `stalled_action` | A sentinel's expected action without a window, such as staging a won result, has been due for the warning blocks |

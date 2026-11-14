@@ -258,7 +258,7 @@ void clua_push_cm_hash(lua_State *L, const cm_hash *hash) {
     lua_pushlstring(L, reinterpret_cast<const char *>(hash), CM_HASH_SIZE);
 }
 
-static int64_t clua_get_array_table_len(lua_State *L, int tabidx, bool require_dense) {
+static int64_t clua_get_array_table_len(lua_State *L, int tabidx) {
     if (lua_istable(L, tabidx) == 0) {
         return -1;
     }
@@ -281,7 +281,7 @@ static int64_t clua_get_array_table_len(lua_State *L, int tabidx, bool require_d
         lua_pop(L, 1); // pop value
     }
     lua_pop(L, 1); // pop key
-    if (require_dense && count != len) {
+    if (count != len) {
         throw std::invalid_argument{"array keys must be consecutive integers starting at 1"};
     }
     return len;
@@ -391,7 +391,7 @@ static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx,
     idx -= idx < 0 ? 1 : 0; // adjust offset after pushing j reference
     switch (lua_type(L, idx)) {
         case LUA_TTABLE: {
-            int64_t len = clua_get_array_table_len(L, idx, schema.is_null());
+            int64_t len = clua_get_array_table_len(L, idx);
             if (len == 0 && !schema.is_object()) {
                 throw std::invalid_argument{"empty table requires an array or object schema"};
             }

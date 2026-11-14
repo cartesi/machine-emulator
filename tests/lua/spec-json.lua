@@ -34,6 +34,7 @@ describe("JSON table keys", function()
     it("should accept dense arrays regardless of insertion order", function()
         local value = { [3] = "c", [1] = "a", [2] = false }
         expect.equal(cartesi.tojson(value), '["a",false,"c"]')
+        expect.equal(cartesi.tojson(value, nil, "Array", { Array = { items = "Default" } }), '["a",false,"c"]')
     end)
 
     it("should preserve string keys that look like array indices", function()
@@ -68,16 +69,55 @@ describe("JSON table keys", function()
         end
     end)
 
+    it("should reject gaps with a schema", function()
+        local schemas = {
+            Array = { items = "Default" },
+            Pair = { items = { "Default", "Default" } },
+            Triple = { items = { "Default", "Default", "Default" } },
+            Record = { values = "Array" },
+        }
+        for _, value in ipairs({ { [2] = "b" }, { [1] = "a", [3] = "c" } }) do
+            for _, name in ipairs({ "Base64Array", "Array", value[1] and "Triple" or "Pair" }) do
+                expect.fail(function()
+                    cartesi.tojson(value, nil, name, schemas)
+                end, "array keys must be consecutive integers starting at 1")
+            end
+            expect.fail(function()
+                cartesi.tojson({ values = value }, nil, "Record", schemas)
+            end, "array keys must be consecutive integers starting at 1")
+        end
+    end)
+
     it("should reject a huge sparse index before expanding the array", function()
+        local schemas = { Array = { items = "Default" }, Record = { values = "Array" } }
+        local value = { [math.maxinteger] = "b" }
+        for _, name in ipairs({ "Default", "Base64Array", "Array" }) do
+            expect.fail(function()
+                cartesi.tojson(value, nil, name, schemas)
+            end, "array keys must be consecutive integers starting at 1")
+        end
         expect.fail(function()
-            cartesi.tojson({ [math.maxinteger] = true })
+            cartesi.tojson({ values = value }, nil, "Record", schemas)
         end, "array keys must be consecutive integers starting at 1")
     end)
 
-    it("should preserve explicitly schematized empty arrays and gaps", function()
+    it("should reject gaps in tuple schema definitions", function()
+        for _, index in ipairs({ 2, math.maxinteger }) do
+            local schemas = { Tuple = { items = { [index] = "Default" } } }
+            expect.fail(function()
+                cartesi.tojson({ 1, 2 }, nil, "Tuple", schemas)
+            end, "array keys must be consecutive integers starting at 1")
+            expect.fail(function()
+                cartesi.fromjson("[1,2]", "Tuple", schemas)
+            end, "array keys must be consecutive integers starting at 1")
+        end
+    end)
+
+    it("should preserve explicitly schematized empty arrays", function()
         local schemas = { Empty = { items = {} }, Array = { items = "Default" } }
-        expect.equal(cartesi.tojson({}, nil, "Empty", schemas), "[]")
-        expect.equal(cartesi.tojson({ [2] = "b" }, nil, "Array", schemas), '[null,"b"]')
+        for _, name in ipairs({ "Empty", "Array", "Base64Array" }) do
+            expect.equal(cartesi.tojson({}, nil, name, schemas), "[]")
+        end
     end)
 end)
 

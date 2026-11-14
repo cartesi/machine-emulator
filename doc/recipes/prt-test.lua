@@ -4028,24 +4028,71 @@ do
     getmetatable(player).__close(player)
 end
 
--- A period whose uarch run does not end in a halt it can be reset from has no uarch claim, and the
--- failure is reported once.
+-- A persistent uarch failure is retried on each request, but reported only once per period.
 do
     local player = new_test_player(nil, prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial"))))
     local received = {}
     function player.anomaly_handler(kind, message)
         received[#received + 1] = kind .. " " .. message
     end
+    local attempts = 0
     function player.new_uarch_tree()
+        attempts = attempts + 1
         error("uarch reached its maximum cycle and cannot advance more uarch cycles", 0)
     end
     for _ = 1, 2 do
         assert(player.event_handler.commit_uarch_claim(player, 0, 1) == "nothing", "a uarch claim was built")
     end
-    local expected = "uarch_error at input 0, period 1: "
+    assert(attempts == 2, "the failed uarch claim was not retried")
+    local expected = "uarch_claim_failed at input 0, period 1: "
         .. "uarch reached its maximum cycle and cannot advance more uarch cycles"
     assert(#received == 1 and received[1] == expected, "the uarch failure was not reported once")
     getmetatable(player).__close(player)
+end
+
+-- A transient failure leaves the next request free to build a valid claim. Later requests reuse it.
+for _, stored in ipairs({ false, true }) do
+    local player <close> = new_test_player()
+    if stored then
+        player.event_handler = prt.stored_event_handler
+    end
+    local received = {}
+    function player.anomaly_handler(kind, message)
+        received[#received + 1] = kind .. " " .. message
+    end
+    local attempts, stores = 0, 0
+    local new_uarch_tree = player.new_uarch_tree
+    local final_hash = keccak("recovered uarch claim")
+    function player:new_uarch_tree(input, period)
+        attempts = attempts + 1
+        if attempts == 1 then
+            error("injected clone failure", 0)
+        end
+        local forest = hash_tree.frontier_forest(self.geometry.uarch_height, "keccak256")
+        hash_tree.frontier_forest_pad_back(forest, final_hash)
+        return new_uarch_tree(self, input, period, forest)
+    end
+    function player.store_uarch_claim(_, claim)
+        assert(claim.epoch_input_offset == 0 and claim.input_period_offset == 1)
+        stores = stores + 1
+    end
+    local commit = player.event_handler.commit_uarch_claim
+    assert(commit(player, 0, 1) == "nothing", "a failed construction returned a claim")
+    assert(#player.uarch_claims == 0 and stores == 0, "a failed construction retained a claim")
+    for _ = 1, 2 do
+        local claim = commit(player, 0, 1)
+        assert(type(claim) == "table", "the transient failure suppressed a later claim")
+        local proof = claim.final_state_hash_proof
+        assert(proof.target_hash == final_hash, "the recovered claim has the wrong final state")
+        assert(proof.root_hash == keccak(claim.computation_hash_left, claim.computation_hash_right))
+        hash_tree.verify_slice(proof)
+    end
+    assert(attempts == 2 and stores == 1 and #player.uarch_claims == 1, "the successful claim was not reused")
+    assert(
+        #received == 1 and received[1] == "uarch_claim_failed at input 0, period 1: injected clone failure",
+        "the transient failure was not reported once"
+    )
+    assert(not next(player.reported_uarch_failures), "the successful construction retained its failure report")
 end
 
 print("prt-test: ok")

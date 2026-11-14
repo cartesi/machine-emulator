@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the `.ram`, `.dtb`, `.cmio-rx-buffer`, `.cmio-tx-buffer`, and `.uarch-ram` labels to `replace_memory_range`
 
 ### Changed
+- Renamed the PRT player's `uarch_error` anomaly to `uarch_claim_failed` to include operational failures
 - Changed Lua JSON conversion to reject empty tables without an array or object schema
 - Changed recipe game responses to carry JSON payload strings, decoded only when delivered
 - Changed the stored page hash-tree cache layout, making stored machines much faster to load
@@ -58,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`
 
 ### Fixed
+- Fixed transient uarch claim construction failures permanently suppressing PRT claims until restart
 - Fixed PRT template validation accepting halted machines with a manual yield also set
 - Fixed Lua JSON conversion silently replacing NaN and infinities with null instead of rejecting them
 - Fixed Lua JSON decoding treating object, array, and tuple schema fields as enum entries

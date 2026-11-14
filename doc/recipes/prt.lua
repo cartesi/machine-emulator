@@ -1915,8 +1915,7 @@ function event_handler.seal_divergence(self, computation_hash, position, other_l
     return response
 end
 
--- Building a uarch claim fails when the uarch run of some mcycle in the period does not end in a halt it
--- can be reset from, because it trapped or reached its maximum cycle.
+-- Building a uarch claim can fail during machine replay, storage or RPC operations, as well as uarch execution.
 local try_new_uarch_tree = util.protect(function(self, epoch_input_offset, input_period_offset)
     return self:new_uarch_tree(epoch_input_offset, input_period_offset)
 end)
@@ -1930,18 +1929,23 @@ function event_handler.commit_uarch_claim(self, epoch_input_offset, input_period
             return new_claim(self, claim.tree)
         end
     end
-    -- A period whose uarch claim cannot be built has none, and is reported once
-    self.failed_uarch_periods = self.failed_uarch_periods or {}
+    -- Retry construction on each request. Remember failures only to avoid repeating their reports.
     local period_key = string.format("%d:%d", epoch_input_offset, input_period_offset)
-    if self.failed_uarch_periods[period_key] then
-        return "nothing"
-    end
     local tree, err = try_new_uarch_tree(self, epoch_input_offset, input_period_offset)
     if not tree then
-        self.failed_uarch_periods[period_key] = true
-        self:report_anomaly("uarch_error", "at input %d, period %d: %s", epoch_input_offset, input_period_offset, err)
+        if not self.reported_uarch_failures[period_key] then
+            self.reported_uarch_failures[period_key] = true
+            self:report_anomaly(
+                "uarch_claim_failed",
+                "at input %d, period %d: %s",
+                epoch_input_offset,
+                input_period_offset,
+                err
+            )
+        end
         return "nothing"
     end
+    self.reported_uarch_failures[period_key] = nil
     local claim = { epoch_input_offset = epoch_input_offset, input_period_offset = input_period_offset, tree = tree }
     self.uarch_claims[#self.uarch_claims + 1] = claim
     self:store_uarch_claim(claim)
@@ -3163,6 +3167,7 @@ local function new_empty_player(meta, dapp_contract, label, previous_outputs_fro
         output_count = 0,
         trees = {},
         uarch_claims = {},
+        reported_uarch_failures = {},
         previous_outputs_frontier = new_outputs_frontier(previous_outputs_frontier),
     }, meta)
 end

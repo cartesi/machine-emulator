@@ -1884,6 +1884,51 @@ describe("hash-tree.lua", function()
                 expect_leaves(loaded, 4)
             end)
 
+            it("stores merged descendants below already durable subtrees", function()
+                local values = make_leaves(8)
+                local pair_hashes = {}
+                for i = 1, 4 do
+                    pair_hashes[i] = cartesi.keccak256(values[2 * i - 1], values[2 * i])
+                end
+                for _, reload in ipairs({ false, true }) do
+                    local _ <close>, directory = new_scope_directory()
+                    local fine = hash_tree.frontier_forest(3, "keccak256")
+                    hash_tree.frontier_forest_append(fine, values)
+                    hash_tree.frontier_forest_store(fine, directory, directory .. "/fine.json")
+
+                    -- Persist the first half before merging with the fine representation, so
+                    -- that the merge must add descendants below an already durable subtree.
+                    local coarse = hash_tree.frontier_forest(3, "keccak256")
+                    hash_tree.frontier_forest_append(coarse, pair_hashes, 1, 3, 1)
+                    hash_tree.frontier_forest_store(coarse, directory, directory .. "/coarse.json")
+                    if reload then
+                        coarse = hash_tree.frontier_forest_load(directory, directory .. "/coarse.json")
+                    end
+                    hash_tree.frontier_forest_append(coarse, pair_hashes, 3, 5, 1)
+                    hash_tree.frontier_forest_store(coarse, directory, directory .. "/coarse.json")
+
+                    -- The coarse root replaces the fine root's file. Both frontiers must still
+                    -- expose every leaf and its proof after loading from disk.
+                    for _, name in ipairs({ "fine", "coarse" }) do
+                        local loaded = hash_tree.frontier_forest_load(directory, directory .. "/" .. name .. ".json")
+                        expect.equal(
+                            hash_tree.frontier_forest_get_root_hash(loaded),
+                            hash_tree.frontier_forest_get_root_hash(fine)
+                        )
+                        for position = 0, 7 do
+                            expect.equal(
+                                hash_tree.frontier_forest_get_node_hash(loaded, position, 0),
+                                values[position + 1]
+                            )
+                            expect.equal(
+                                hash_tree.frontier_forest_get_siblings(loaded, position, 0),
+                                hash_tree.frontier_forest_get_siblings(fine, position, 0)
+                            )
+                        end
+                    end
+                end
+            end)
+
             it("merges trees of any shape stored under a hash", function()
                 local symbols = { cartesi.keccak256("x"), cartesi.keccak256("y") }
                 local function new_fine(values, first, height)

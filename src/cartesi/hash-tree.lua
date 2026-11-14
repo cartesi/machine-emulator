@@ -650,19 +650,23 @@ end
 
 -- Adds to the tree at node into what the tree at node, which has the same hash, knows below it. An
 -- opaque value of into takes the node as its value. Elsewhere both descend together, skipping a
--- right child pair equal to the left one, as repeated suffixes of both trees produce.
+-- right child pair equal to the left one, as repeated suffixes of both trees produce. Returns
+-- whether detail was added, clearing affected ancestors' durable markers so storage visits the
+-- new descendants even though the ancestors' hashes and encoded contents have not changed.
 local function merge_node(forest, into, node)
     local node_left, node_right = get_node_children(forest, node)
-    if not node_left then return end
+    if not node_left then return false end
     local into_left, into_right = get_node_children(forest, into)
     if not into_left then
         into.container[into.key] = get_node_value(forest, node)
-        return
+        return true
     end
-    merge_node(forest, into_left, node_left)
+    local changed = merge_node(forest, into_left, node_left)
     if not (is_same_node(into_left, into_right) and is_same_node(node_left, node_right)) then
-        merge_node(forest, into_right, node_right)
+        changed = merge_node(forest, into_right, node_right) or changed
     end
+    if changed and forest.durable then forest.durable[into.tree or into.container[into.key]] = nil end
+    return changed
 end
 
 -- Returns the contents of the file that stores a tree.

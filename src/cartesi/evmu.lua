@@ -310,10 +310,15 @@ local function mark_dynamic_types(parsed_type_spec)
         parsed_type_spec.static_size = n and 32 or nil
         parsed_type_spec.is_dynamic = (n == nil)
     elseif tn == "array" then
-        mark_dynamic_types(parsed_type_spec.element_type)
-        parsed_type_spec.is_dynamic = parsed_type_spec.element_type.is_dynamic or not parsed_type_spec.size
+        local element = parsed_type_spec.element_type
+        mark_dynamic_types(element)
+        -- Valid ABI types, but unsupported here: their encoded size cannot bound array decoding work.
+        if not element.is_dynamic and element.static_size == 0 then
+            errorf("ABI arrays with zero-size elements are not supported")
+        end
+        parsed_type_spec.is_dynamic = element.is_dynamic or not parsed_type_spec.size
         if not parsed_type_spec.is_dynamic then
-            parsed_type_spec.static_size = parsed_type_spec.size * parsed_type_spec.element_type.static_size
+            parsed_type_spec.static_size = parsed_type_spec.size * element.static_size
         end
     elseif tn == "tuple" then
         -- Tuple is dynamic if any of its components is dynamic

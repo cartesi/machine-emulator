@@ -987,6 +987,65 @@ describe("selectorless ABI", function()
         assert(not pcall(evmu.decode_abi, "bytes32", string.rep("\0", 32)))
         assert(not pcall(evmu.decode_abi, "()", string.rep("\0", 32)))
     end)
+    it("rejects ABI arrays with zero-size elements", function()
+        local function word(n)
+            return string.rep("\0", 24) .. string.pack(">I8", n)
+        end
+        local cases = {
+            { "(()[])", { {} }, word(32) .. word(0) },
+            { "(()[])", { { {} } }, word(32) .. word(1) },
+            { "(()[2])", { { {}, {} } }, "" },
+            { "((())[])", { { { {} } } }, word(32) .. word(1) },
+            { "(()[1][])", { {} }, word(32) .. word(0) },
+            { "(()[][])", { {} }, word(32) .. word(0) },
+        }
+        local message = "ABI arrays with zero-size elements are not supported"
+        for _, case in ipairs(cases) do
+            local types, values, data = case[1], case[2], case[3]
+            local signature = "f" .. types
+            local _, selector = evmu.parse_func_sig(signature)
+            -- Repeat to exercise cached function signatures after failed type analysis.
+            for _ = 1, 2 do
+                local ok, err = pcall(evmu.encode_abi, types, values)
+                assert(not ok and err:find(message, 1, true), types)
+                ok, err = pcall(evmu.decode_abi, types, data)
+                assert(not ok and err:find(message, 1, true), types)
+                ok, err = pcall(evmu.encode_calldata, signature, values)
+                assert(not ok and err:find(message, 1, true), signature)
+                ok, err = pcall(evmu.decode_calldata, signature, selector .. data)
+                assert(not ok and err:find(message, 1, true), signature)
+            end
+        end
+    end)
+    it("rejects huge zero-size ABI arrays before allocating elements", function()
+        local word = string.rep("\0", 24) .. string.pack(">I8", math.maxinteger)
+        local data = string.rep("\0", 31) .. "\x20" .. word
+        local types = "(()[])"
+        local signature = "f" .. types
+        local _, selector = evmu.parse_func_sig(signature)
+        local message = "ABI arrays with zero-size elements are not supported"
+        local ok, err = pcall(evmu.decode_abi, types, data)
+        assert(not ok and err:find(message, 1, true))
+        ok, err = pcall(evmu.decode_calldata, signature, selector .. data)
+        assert(not ok and err:find(message, 1, true))
+    end)
+    it("preserves empty tuples outside zero-size array elements", function()
+        local cases = {
+            { "()", {} },
+            { "(())", { {} } },
+            { "((),uint256)", { {}, 7 } },
+            { "(((),uint256)[])", { { { {}, 7 } } } },
+            { "(uint256[])", { {} } },
+        }
+        for _, case in ipairs(cases) do
+            local types, values = case[1], case[2]
+            local data = evmu.encode_abi(types, values)
+            assert(evmu.encode_abi(types, evmu.decode_abi(types, data)) == data, types)
+            local signature = "f" .. types
+            local calldata = evmu.encode_calldata(signature, values)
+            assert(evmu.encode_calldata(signature, evmu.decode_calldata(signature, calldata)) == calldata, signature)
+        end
+    end)
     it("decodes empty arrays of dynamic elements", function()
         local cases = {
             { "(bytes[])", { {} } },

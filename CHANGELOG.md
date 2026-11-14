@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the `.ram`, `.dtb`, `.cmio-rx-buffer`, `.cmio-tx-buffer`, and `.uarch-ram` labels to `replace_memory_range`
 
 ### Changed
+- Changed Lua ABI encoding and decoding to reject array types whose elements encode to zero bytes
 - Changed Lua JSON conversion to require dense arrays even when a schema is supplied
 - Renamed the PRT player's `uarch_error` anomaly to `uarch_claim_failed` to include operational failures
 - Changed Lua JSON conversion to reject empty tables without an array or object schema

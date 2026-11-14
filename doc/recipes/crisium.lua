@@ -44,39 +44,245 @@ local log_history = require("prt-log-history")
 local bridge = require("prt-bridge")
 local websocket = require("prt-websocket")
 
-local options = {}
-for _, argument in ipairs(arg) do
-    local name, value = argument:match("^%-%-([%w-]+)=(.*)$")
-    assert(name, "invalid argument: " .. argument)
-    options[name:gsub("-", "_")] = value
+local cmdline = {
+    mode = "sentinel",
+    warning_blocks = 10,
+    keep_epochs = 1,
+    first_epoch = 0,
+    input_policy = "finalized",
+    dispute_policy = 4,
+    bump_blocks = 3,
+    bump_percent = 15,
+    poll_interval = 1,
+}
+
+-- As in cartesi-machine.lua, each entry declares a name, its handler, and an optional
+-- completion hint. A trailing '=' marks an option that takes a value.
+local options = {
+    {
+        "--rpc=",
+        function(_, _, value)
+            cmdline.rpc = value
+        end,
+        "string",
+    },
+    {
+        "--application=",
+        function(_, _, value)
+            cmdline.application = value
+        end,
+        "string",
+    },
+    {
+        "--state=",
+        function(_, _, value)
+            cmdline.state = value
+        end,
+        "dir",
+    },
+    {
+        "--checkpoints=",
+        function(_, _, value)
+            cmdline.checkpoints = value
+        end,
+        "dir",
+    },
+    {
+        "--dave=",
+        function(_, _, value)
+            cmdline.dave = value
+        end,
+        "dir",
+    },
+    {
+        "--mode=",
+        function(_, _, value)
+            assert(value == "sentinel" or value == "validator", "invalid mode: " .. value)
+            cmdline.mode = value
+        end,
+        "string",
+    },
+    {
+        "--keystore=",
+        function(_, _, value)
+            cmdline.keystore = value
+        end,
+        "file",
+    },
+    {
+        "--password-file=",
+        function(_, _, value)
+            cmdline.password_file = value
+        end,
+        "file",
+    },
+    {
+        "--kind=",
+        function(_, _, value)
+            cmdline.kind = value
+        end,
+        "string",
+    },
+    {
+        "--label=",
+        function(_, _, value)
+            cmdline.label = value
+        end,
+        "string",
+    },
+    {
+        "--warning-blocks=",
+        function(_, _, value)
+            local number = math.tointeger(tonumber(value))
+            assert(number and number >= 0, "invalid number of warning blocks")
+            cmdline.warning_blocks = number
+        end,
+        "number",
+    },
+    {
+        "--anomaly-handler=",
+        function(_, _, value)
+            cmdline.anomaly_handler = value
+        end,
+        "string",
+    },
+    {
+        "--keep-epochs=",
+        function(_, _, value)
+            local number = math.tointeger(tonumber(value))
+            assert(number and number >= 0, "invalid number of kept epochs")
+            cmdline.keep_epochs = number
+        end,
+        "number",
+    },
+    {
+        "--input-policy=",
+        function(_, _, value)
+            cmdline.input_policy = rpc_client.policy(value)
+        end,
+        "string",
+    },
+    {
+        "--dispute-policy=",
+        function(_, _, value)
+            cmdline.dispute_policy = rpc_client.policy(value)
+        end,
+        "string",
+    },
+    {
+        "--first-epoch=",
+        function(_, _, value)
+            local number = math.tointeger(tonumber(value))
+            assert(number and number >= 0, "invalid first epoch")
+            cmdline.first_epoch = number
+        end,
+        "number",
+    },
+    {
+        "--bump-blocks=",
+        function(_, _, value)
+            cmdline.bump_blocks = assert(math.tointeger(tonumber(value)), "invalid fee bump interval")
+        end,
+        "number",
+    },
+    {
+        "--bump-percent=",
+        function(_, _, value)
+            cmdline.bump_percent = assert(math.tointeger(tonumber(value)), "invalid fee bump percent")
+        end,
+        "number",
+    },
+    {
+        "--max-fee=",
+        function(_, _, value)
+            cmdline.max_fee = value
+        end,
+        "number",
+    },
+    {
+        "--max-priority-fee=",
+        function(_, _, value)
+            cmdline.max_priority_fee = value
+        end,
+        "number",
+    },
+    {
+        "--cleanup=",
+        function(_, _, value)
+            cmdline.cleanup = value
+        end,
+        "string",
+    },
+    {
+        "--status-file=",
+        function(_, _, value)
+            cmdline.status_file = value
+        end,
+        "file",
+    },
+    {
+        "--poll-interval=",
+        function(_, _, value)
+            cmdline.poll_interval = assert(tonumber(value), "invalid poll interval")
+        end,
+        "number",
+    },
+    {
+        "--ws=",
+        function(_, _, value)
+            cmdline.ws = value
+        end,
+        "string",
+    },
+}
+
+local function try_named_option(option, argument)
+    local name, handler, hint = option[1], option[2], option[3]
+    if name:sub(-1) == "=" then
+        if argument:sub(1, #name) == name then
+            local value = argument:sub(#name + 1)
+            assert(#value > 0, "missing value for option " .. name:sub(1, -2))
+            handler(hint, argument, value)
+            return true
+        end
+        return false
+    end
+    if argument == name then
+        handler(hint, argument, nil)
+        return true
+    end
+    return false
 end
-local mode = options.mode or "sentinel"
-assert(mode == "sentinel" or mode == "validator", "invalid mode: " .. mode)
-local validator = mode == "validator"
+
+for _, argument in ipairs(arg) do
+    local matched = false
+    for _, option in ipairs(options) do
+        matched = try_named_option(option, argument)
+        if matched then
+            break
+        end
+    end
+    assert(matched, "unrecognized option " .. argument)
+end
+local validator = cmdline.mode == "validator"
 local required = { "rpc", "application", "state", "checkpoints", "dave" }
 if validator then
     table.move({ "keystore", "password_file", "kind" }, 1, 3, #required + 1, required)
 else
-    assert(options.kind == nil or options.kind == "honest", "a sentinel computes only honest claims")
-    options.kind = "honest"
+    assert(cmdline.kind == nil or cmdline.kind == "honest", "a sentinel computes only honest claims")
+    cmdline.kind = "honest"
 end
 for _, name in ipairs(required) do
-    assert(options[name], "missing --" .. name:gsub("_", "-"))
+    assert(cmdline[name], "missing --" .. name:gsub("_", "-"))
 end
 -- Only a validator signs, so only it loads the signer
 local signing = validator and require("prt-signer")
-local label = options.label or (validator and options.kind:match("^[%w_]+") or "sentinel")
-local warning_blocks = math.tointeger(tonumber(options.warning_blocks or "10"))
-assert(warning_blocks and warning_blocks >= 0, "invalid number of warning blocks")
-local anomaly_handler = options.anomaly_handler and require(options.anomaly_handler)
+local label = cmdline.label or (validator and cmdline.kind:match("^[%w_]+") or "sentinel")
+local anomaly_handler = cmdline.anomaly_handler and require(cmdline.anomaly_handler)
 assert(
     anomaly_handler == nil or type(anomaly_handler) == "function",
     "the anomaly handler module must return a function"
 )
-local keep_epochs = math.tointeger(tonumber(options.keep_epochs or "1"))
-assert(keep_epochs and keep_epochs >= 0, "invalid number of kept epochs")
-local input_policy = rpc_client.policy(options.input_policy or "finalized")
-local dispute_policy = rpc_client.policy(options.dispute_policy or 4)
 
 -- With PRT_PROFILE=yes, the player times its RPC calls by method, log decoding, each player
 -- handler, and its listener polls and bridge ticks. Its status carries the totals.
@@ -94,9 +300,9 @@ local function measure(name, f, ...)
     return table.unpack(results, 1, results.n)
 end
 
-local chain = rpc_client.new(options.rpc)
+local chain = rpc_client.new(cmdline.rpc)
 local function artifact(directory, name)
-    return (eth.artifact(options.dave .. "/" .. directory .. "/contracts/out", name))
+    return (eth.artifact(cmdline.dave .. "/" .. directory .. "/contracts/out", name))
 end
 local abi = eth.abi({
     artifact("cartesi-rollups", "Application"),
@@ -119,7 +325,7 @@ local function call(address, name, types)
 end
 
 -- Everything else comes from the application.
-local app = options.application:lower()
+local app = cmdline.application:lower()
 local consensus = call(app, "getOutputsMerkleRootValidator", "(address)"):lower()
 local input_box = call(consensus, "getInputBox", "(address)"):lower()
 assert(call(consensus, "getApplicationContract", "(address)"):lower() == app, "consensus serves another application")
@@ -135,44 +341,42 @@ assert(
 local template_hash = assert(chain:call(app, abi:calldata("getTemplateHash", {}))):lower()
 local geometry = bridge.read_geometry(chain, abi, factory)
 
-local signer = validator and signing.new(options.keystore, options.password_file)
-if not fs.exists(options.state) then
-    fs.create_directory(options.state)
+local signer = validator and signing.new(cmdline.keystore, cmdline.password_file)
+if not fs.exists(cmdline.state) then
+    fs.create_directory(cmdline.state)
 end
 
 -- The honest player completes the epoch removals a crash interrupted. No player starts before the
 -- oldest checkpoint.
 local oldest_checkpoint
-if fs.exists(options.checkpoints) then
-    for _, name in ipairs(fs.list_directory(options.checkpoints)) do
+if fs.exists(cmdline.checkpoints) then
+    for _, name in ipairs(fs.list_directory(cmdline.checkpoints)) do
         local removed = math.tointeger(tonumber(name:match("^epoch%-(%d+)%.removed$")))
         local number = math.tointeger(tonumber(name:match("^epoch%-(%d+)$")))
-        if removed and options.kind == "honest" then
+        if removed and cmdline.kind == "honest" then
             local suffix = "/epoch-" .. removed
-            prt.remove_epoch_files(options.checkpoints .. suffix, options.state .. suffix)
+            prt.remove_epoch_files(cmdline.checkpoints .. suffix, cmdline.state .. suffix)
         elseif number and (not oldest_checkpoint or number < oldest_checkpoint) then
             oldest_checkpoint = number
         end
     end
 end
-local first_epoch = math.tointeger(tonumber(options.first_epoch or "0"))
-assert(first_epoch and first_epoch >= 0, "invalid first epoch")
-first_epoch = math.max(first_epoch, oldest_checkpoint or 0)
+local first_epoch = math.max(cmdline.first_epoch, oldest_checkpoint or 0)
 local transactions = validator
     and require("prt-transactions").new({
         chain = chain,
-        path = options.state .. "/journal.json",
-        bump_blocks = assert(math.tointeger(tonumber(options.bump_blocks or "3")), "invalid fee bump interval"),
-        bump_percent = assert(math.tointeger(tonumber(options.bump_percent or "15")), "invalid fee bump percent"),
-        max_fee = options.max_fee,
-        max_priority_fee = options.max_priority_fee,
+        path = cmdline.state .. "/journal.json",
+        bump_blocks = cmdline.bump_blocks,
+        bump_percent = cmdline.bump_percent,
+        max_fee = cmdline.max_fee,
+        max_priority_fee = cmdline.max_priority_fee,
     })
 
 -- The honest player stores each epoch in its own epoch directory and reopens it after a relaunch.
 -- Its epoch seal stores the next epoch's checkpoint. The scripted adversaries keep their epochs in
 -- memory and compute them again.
 local function new_player(dapp, outputs_frontier, epoch_directory, checkpoint_directory)
-    local kind, first, second = options.kind:match("^([%w_]+):?([^:]*):?(.*)$")
+    local kind, first, second = cmdline.kind:match("^([%w_]+):?([^:]*):?(.*)$")
     local player
     if kind == "honest" then
         if not fs.exists(epoch_directory) then
@@ -191,7 +395,7 @@ local function new_player(dapp, outputs_frontier, epoch_directory, checkpoint_di
     elseif kind == "forger" then
         player = dishonest.new_forger(dapp, tonumber(first), second, label, outputs_frontier, anomaly_handler)
     else
-        error("unknown player kind: " .. options.kind)
+        error("unknown player kind: " .. cmdline.kind)
     end
     if profile then
         local handlers = player.event_handler
@@ -227,7 +431,7 @@ end
 local listeners, next_epoch = {}, first_epoch
 local function open_epochs()
     while true do
-        local checkpoint_directory = options.checkpoints .. "/epoch-" .. next_epoch
+        local checkpoint_directory = cmdline.checkpoints .. "/epoch-" .. next_epoch
         if not fs.exists(checkpoint_directory) then
             return
         end
@@ -255,17 +459,17 @@ local function open_epochs()
             player = new_player(
                 dapp,
                 outputs_frontier,
-                options.state .. "/epoch-" .. next_epoch,
-                options.checkpoints .. "/epoch-" .. (next_epoch + 1)
+                cmdline.state .. "/epoch-" .. next_epoch,
+                cmdline.checkpoints .. "/epoch-" .. (next_epoch + 1)
             ),
             signer = signer,
             sentinel = not validator,
-            warning_blocks = warning_blocks,
+            warning_blocks = cmdline.warning_blocks,
             label = label,
-            cleanup = options.cleanup ~= "no",
+            cleanup = cmdline.cleanup ~= "no",
             claim_staging_period = staging_period,
-            input_policy = input_policy,
-            dispute_policy = dispute_policy,
+            input_policy = cmdline.input_policy,
+            dispute_policy = cmdline.dispute_policy,
             first_block = first_block,
             -- An input logged in the previous seal's block can still belong to this epoch
             first_input_block = previous_seal and eth.small(previous_seal.log.blockNumber) or first_block,
@@ -280,14 +484,14 @@ end
 local oldest_stored, newest_finished = oldest_checkpoint or first_epoch, -1
 local function remove_finished_epochs(epoch_number)
     newest_finished = math.max(newest_finished, epoch_number)
-    while oldest_stored <= newest_finished - keep_epochs do
+    while oldest_stored <= newest_finished - cmdline.keep_epochs do
         for _, listener in ipairs(listeners) do
             if listener.epoch == oldest_stored then
                 return
             end
         end
         local suffix = "/epoch-" .. oldest_stored
-        prt.remove_epoch_files(options.checkpoints .. suffix, options.state .. suffix)
+        prt.remove_epoch_files(cmdline.checkpoints .. suffix, cmdline.state .. suffix)
         io.stderr:write("Epoch ", oldest_stored, ": files removed.\n")
         oldest_stored = oldest_stored + 1
     end
@@ -328,7 +532,7 @@ local function pass()
             do
                 local _ <close> = finished.player
             end
-            if options.kind == "honest" then
+            if cmdline.kind == "honest" then
                 remove_finished_epochs(finished.epoch)
             end
         end
@@ -348,10 +552,10 @@ end
 
 -- The status replaces the previous one whole, so a reader never sees a partial status.
 local function store_status(status)
-    if options.status_file then
-        local temporary = options.status_file .. ".tmp"
+    if cmdline.status_file then
+        local temporary = cmdline.status_file .. ".tmp"
         fs.write_file(json.encode(status), temporary)
-        assert(os.rename(temporary, options.status_file))
+        assert(os.rename(temporary, cmdline.status_file))
     end
 end
 
@@ -359,8 +563,7 @@ end
 -- must retry. Otherwise it does idle work, one step at a time, checking the tip between steps. With
 -- nothing to do, with --ws it waits for the node to push the next header, and reads the tip itself at
 -- least once per poll interval in case a header was missed. Otherwise it polls at that interval.
-local poll_interval = assert(tonumber(options.poll_interval or "1"), "invalid poll interval")
-local heads = options.ws and websocket.new_head_subscription(options.ws)
+local heads = cmdline.ws and websocket.new_head_subscription(cmdline.ws)
 local last_hash, again = nil, true
 while true do
     local tip, tip_hash = chain:head()
@@ -378,9 +581,9 @@ while true do
         last_hash, again = tip_hash, status.published or status.retry
     elseif not idle() then
         if heads then
-            heads:wait(poll_interval)
+            heads:wait(cmdline.poll_interval)
         else
-            socket.sleep(poll_interval)
+            socket.sleep(cmdline.poll_interval)
         end
     end
 end

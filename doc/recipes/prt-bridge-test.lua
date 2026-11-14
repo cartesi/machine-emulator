@@ -310,6 +310,63 @@ local argument = "dollar $HOME ; quote ' and $(exit 42)"
 assert(command.run({ "sh", "-c", 'printf "%s" "$1"', "--", argument }) == argument)
 assert(not pcall(command.run, { "sh", "-c", "exit 23" }))
 
+-- Exercise Crisium's entry point with private arguments. Missing required options stop it before
+-- initialization, so these checks need neither a running chain nor player files.
+do
+    local path = assert(package.searchpath("crisium", package.path))
+    local function fails(arguments, message)
+        local environment = setmetatable({ arg = arguments }, { __index = _G })
+        local ok, err = pcall(assert(loadfile(path, "t", environment)))
+        assert(not ok and tostring(err):find(message, 1, true), tostring(err))
+    end
+    fails({ "--anomaly-hanlder=alerts" }, "unrecognized option --anomaly-hanlder=alerts")
+    fails({ "--keep-epoch=2" }, "unrecognized option --keep-epoch=2")
+    fails({ "--anomaly-handler-extra=alerts" }, "unrecognized option --anomaly-handler-extra=alerts")
+    fails({ "--anomaly-handler=" }, "missing value for option --anomaly-handler")
+    fails({ "--anomaly-handler" }, "unrecognized option --anomaly-handler")
+    fails({ "--rpc=" }, "missing value for option --rpc")
+    fails({ "positional" }, "unrecognized option positional")
+    fails({ "--warning-blocks=-1" }, "invalid number of warning blocks")
+    fails({ "--keep-epochs=1.5" }, "invalid number of kept epochs")
+    fails({ "--first-epoch=bad" }, "invalid first epoch")
+    fails({ "--bump-blocks=bad" }, "invalid fee bump interval")
+    fails({ "--bump-percent=bad" }, "invalid fee bump percent")
+    fails({ "--poll-interval=bad" }, "invalid poll interval")
+    fails({ "--input-policy=latest" }, "observation policy must be")
+    fails({ "--dispute-policy=-1" }, "observation policy must be")
+    fails({ "--mode=other" }, "invalid mode: other")
+    fails({ "--kind=quitter" }, "a sentinel computes only honest claims")
+    -- All supported options pass dispatch, including values with '=' and fees outside Lua's range.
+    -- No handler module or signer is loaded until the required options have been checked.
+    fails({
+        "--application=app",
+        "--state=state",
+        "--checkpoints=checkpoints",
+        "--dave=dave",
+        "--mode=validator",
+        "--keystore=key",
+        "--password-file=password",
+        "--kind=tamperer:1:2",
+        "--label=label=one",
+        "--first-epoch=0",
+        "--keep-epochs=0",
+        "--cleanup=no",
+        "--input-policy=finalized",
+        "--dispute-policy=4",
+        "--status-file=status",
+        "--ws=ws://localhost",
+        "--poll-interval=0.25",
+        "--bump-blocks=3",
+        "--bump-percent=15",
+        "--max-fee=100000000000000000000",
+        "--max-priority-fee=10000000000000000000",
+        "--warning-blocks=0",
+        "--anomaly-handler=missing-handler",
+    }, "missing --rpc")
+    fails({ "--rpc=http://localhost?key=value", "--mode=validator" }, "missing --application")
+    fails({ "--rpc=rpc", "--application=app", "--state=state", "--checkpoints=checkpoints" }, "missing --dave")
+end
+
 -- Cleanup has no machine, local commitment, or claim ownership requirement.
 local captured
 local coordinator = bridge.new({

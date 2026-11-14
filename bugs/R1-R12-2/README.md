@@ -2,26 +2,23 @@
 
 ## What is asserted
 
-A bare-metal guest (encoded directly by `test.lua`, no toolchain needed) runs in M-mode with bare translation:
+`test.lua` encodes two bare-metal guests directly (no toolchain needed); both run in M-mode with bare translation.
 
-```
-loop: .rept 32
-      sfence.vma x0, x0
-      addi x0, x0, 0          # control
-      .endr
-      j loop
-```
+1. Decisive, worst case. Pages 0..254 of RAM each start with `j next page` (256 code slots), page 255 loads from
+   pages 256..511 and stores to pages 512..767 (256 read and 256 write slots), then runs `sfence.vma x0, x0; addi;
+   j .`. The test checks that all 768 slots are valid before the `sfence.vma`, counts the exact uarch cycles of that
+   mcycle and of the following `addi` (a code-TLB miss, the larger control) with `run_uarch`/`reset_uarch`, and asserts
 
-For 40 consecutive mcycles the test runs the pristine uarch program (`run_uarch` to halt, then `reset_uarch`),
-records the exact uarch cycles of each mcycle (deterministic counts, no timing), and counts the valid slots of the
-shadow TLB before it. For `sfence.vma` mcycles that start with at most 3 of the 768 slots valid it computes
+       per_slot = (uarch cycles of sfence.vma - uarch cycles of addi) / 768 <= 8
 
-    per_slot = (min uarch cycles of sfence.vma - max uarch cycles of addi) / 768
+   With a full TLB the semantics require 768 slot writes, i.e. 768 `write_tlb` ecalls; an inlined loop issues them
+   in about 3 to 4 uarch cycles each, so the bound is about twice what is needed.
+2. Diagnostic, not asserted. A guest alternating `sfence.vma` and `addi` (almost empty TLB); one flush is
+   single-stepped and its `write_tlb` ecalls counted, with how many target an already invalid slot. Skipping those
+   would only improve the average case, which section 8 puts out of scope, so it is not asserted.
 
-and asserts `per_slot <= 8`. The bound is twice what an inlined loop that still writes every slot needs (set the slot
-index, `ecall`, increment, branch: 4 uarch cycles per slot); a loop that skips slots already invalid needs about the
-same. As a diagnostic it single-steps one flush and counts the `write_tlb` ecalls and how many target an already
-invalid slot.
+The reviewer revised the test: the prover's version asserted only the almost-empty case, which a fix that skips
+invalid slots would pass while leaving the worst case unchanged.
 
 Cause: `flush_all_tlb`/`flush_tlb_vaddr` (`src/interpret.cpp`) write every slot unconditionally, and in the uarch each
 write is a call to `ua_write_tlb_ECALL` (`uarch/uarch-ecall.c`), compiled to 14 instructions (12 register moves,
@@ -52,14 +49,13 @@ Under a second; needs only the in-tree emulator build.
 ## Expected output on audit/prt2
 
 ```
-addi mcycles: 20, uarch cycles max 629
-sfence.vma mcycles (<= 3 of 768 slots valid before): 19, uarch cycles min 17492 max 17492
-single-stepped flush: 1 slots valid before, 768 write_tlb ecalls, 767 of them to slots already invalid, 17492 uarch cycles
-flush cost over the control: 21.96 uarch cycles per slot (bound 8)
+full TLB: 768 of 768 slots valid before sfence.vma, 0 after; sfence.vma 17492 uarch cycles, following addi 629
+almost empty TLB (diagnostic): 1 slots valid before, 768 write_tlb ecalls, 767 of them to slots already invalid, 17492 uarch cycles
+full-TLB flush cost over the control: 21.96 uarch cycles per slot (bound 8)
 VIOLATED: R12 / section 8 High: ...
 run.sh: R1-R12-2: exit 1 (bug present)
 ```
 
 Exit 1 while the defect is present; exit 0 once a flush costs at most 8 uarch cycles per slot beyond the control
-(for example an inlined ecall loop, or skipping slots already invalid). Any fix changes the uarch program and the
+with a full TLB (for example by inlining the write_tlb ecall; skipping invalid slots alone does not pass). Any fix changes the uarch program and the
 logged accesses, so it is a new protocol version (R13).

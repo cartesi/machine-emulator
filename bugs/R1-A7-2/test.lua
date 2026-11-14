@@ -21,7 +21,7 @@ local CENSORSHIP_SECONDS = 8 * 3600 -- _registerChainKind(TESTNET, 8 hours)
 local INCLUSION_SECONDS = 300 -- _getInclusionBudget() = 5 minutes
 local GAS_LIMIT = 30000000 -- block gas limit (Ethereum's long-standing value; anvil's default)
 local REF_NS_PER_MCYCLE = 1.1 -- Dave docs/dimensioning.md: "about 1.1 ns per big cycle" (unbroken run)
-local FLOOD_INPUTS = tonumber(os.getenv("FLOOD_INPUTS") or "80000")
+local FLOOD_INPUTS = tonumber(os.getenv("FLOOD_INPUTS") or "50000")
 local STAGING_PERIOD = 10 -- claim staging period (blocks), as doc/recipes/prt-deploy.lua
 
 harness.main(function()

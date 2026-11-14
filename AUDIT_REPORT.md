@@ -1,6 +1,6 @@
 # PRT Audit Report (`audit/prt2`)
 
-Status: **in progress**. Phase: second opinion after round 3, round 4 hunt.
+Status: **in progress**. Phase: round 4 proofs, round 5 hunt.
 
 This file is the campaign state of the audit that `AUDIT.md` defines. The orchestrator rewrites it after every step so
 that it can resume after a compaction or a container restart. Confirmed issues are in `BUGS.md`, with their tests under
@@ -11,7 +11,7 @@ that it can resume after a compaction or a container restart. Confirmed issues a
 | Item | Value |
 |---|---|
 | Branch audited | `audit/prt2` at `20a788c` (docs: prepare PRT audit) |
-| Current phase | Rounds 1 to 3 complete. Second opinion on 37 reading-based drops and refutations running (`wf_093e49f4-017`, list in `campaign/second-opinion-1.json`). Round 4 (R4 at every reachable state): 10 hunters, 2 back, reports in `campaign/r4/`. Outcomes of finished proofs are kept in `campaign/outcomes.json` and rendered by `campaign/render.py` |
+| Current phase | Rounds 1 to 3 and the second opinion complete. Round 4: triage done, proofs of R4-RGPLAYERGUEST-1 and R4-RGEPOCHS-1 running. Round 5 (assert and error inventory): 10 hunters, 2 back, reports in `campaign/r5/`. Readings settled by the second opinion are in `campaign/readings.md` and in this report |
 | Rounds completed | 3 |
 | Stop count (consecutive clean all-Fable rounds, different strategies) | 0 of 3 |
 | Withheld-findings round done | no |
@@ -74,7 +74,8 @@ the untracked `bugs/harness/work/`).
 | 1 | One angle per rule or obligation (R1-R14, O1, O2, A1-A8, GUEST, BOUNDARY) | `claude-opus-5-5` | 111 (26 hunters, 1 triage, 42 provers, 42 reviewers) | 18.15M (3 hunters in a stopped workflow not counted) | 70, plus 1 from Prepare | 42 | 27 (5 Critical, 5 High, 17 Medium) | no |
 | 2 | Data flow from each untrusted source (DFINPUT, DFINPUTCOUNT, DFLOG, DFPROOFSOL, DFCLAIM, DFCHAIN, DFYIELD, DFGUESTSTATE, DFSTORED, DFOUTPUT) | `claude-opus-5-5` | 27 (10 hunters, 1 triage, 8 provers, 8 reviewers) | 5.41M | 11 | 8 | 6 (all Medium) | no |
 | 3 | Variants of each family of confirmed bugs (VARCACHE, VARDIRTY, VARO2PLAYER, VARSHADOW, VARVERIFTRAP, VARGEN, VARREFMODEL, VARSCHED, VARGROWTH, VARSPEC) | `claude-opus-5-5` | 39 (10 hunters, 1 triage, 14 provers, 14 reviewers) | 7.30M | 20 | 14 | 10 (1 Critical, 1 High, 8 Medium) | no |
-| 4 | R4 at every reachable state (RGCLAIM, RGPROOF, RGLOG, RGDELIVERY, RGUARCH, RGCONFIG, RGREJECT, RGPLAYERGUEST, RGRESTART, RGEPOCHS) | `claude-opus-5-5` | running | | | | | |
+| 4 | R4 at every reachable state (RGCLAIM, RGPROOF, RGLOG, RGDELIVERY, RGUARCH, RGCONFIG, RGREJECT, RGPLAYERGUEST, RGRESTART, RGEPOCHS) | `claude-opus-5-5` | 11 so far | 3.58M so far | 5 | 2 | pending | pending |
+| 5 | Assert and error inventory of the honest operator, file by file (INVINTERP, INVHASH, INVSTORE on Fable; INVACCESS, INVDEVICE, INVMACHINE, INVAPI, INVSOL, INVPLAYER, INVBRIDGE on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | running | | | | | |
 
 ## Candidates
 
@@ -268,6 +269,18 @@ Upheld, with the deciding reason:
 - R3-VARO2PLAYER-1 (Low (preferred) / Medium only if the clocks budget a restart shorter than bump_blocks with): Support bridge. It needs a stop in the narrow window between store() and publish(). After relaunch the throttle treats the candidate like a failed publication, which is the designed behavior, and adds at most bump_blocks minus restart time. R4 says the operator 'restarts ... and keeps defending its claim' but budgets no restart time. Unlike R1-A8-4, the adversary cannot trigger or repeat it. Deciding fact: the restart slack in the clocks.
 - R3-VARO2PLAYER-2 (Low): Support player. The manual says 'Stored machines need a filesystem with reflinks'. XFS and btrfs make the earlier mkdir durable when a child is fsynced. So the trigger needs a host outside 'a host environment set up as the emulator documents' (section 4). Effects are a correct recomputation, or a restart that waits until a pending transaction is mined. There is no wrong hash and no O2-guaranteed directory is damaged.
 
+### Round 4
+
+Ten hunters (`claude-opus-5-5`, 3.41M tokens, none blocked) reported 5 candidates; seven hunters found none. Triage (`claude-opus-5-5`, 168,995 tokens) kept 2, dropped 2 and merged 1.
+
+| ID | Component | Triage rating | Title | Outcome | Reason |
+|---|---|---|---|---|---|
+| R4-RGPLAYERGUEST-1 | cartesi-machine CLI (src/cartesi-machine.lua flush_pending_outputs, ca | Medium (preferred: the computation-hash options are a tool t | cartesi-machine CLI aborts its --mcycle-computation-hash / --uarch-cycle-computation-hash run (no claim) when a guest accepts with an outputs-root length other  | kept | Checked: src/cartesi-machine.lua:3689 asserts #data == cartesi.HASH_SIZE on every rx-accepted yield and :3691-3696 asserts root equality by default, before builder:end_input. Section 3 claim-tool stand-in of R4 -> Medium; development-tool reading -> Low. |
+| R4-RGEPOCHS-1 | doc/recipes/vg.lua (verification-game referee: new_dapp_contract, sett | Low (preferred: a self-consistent demo constant; the refusal | Verification-game referee (vg.lua) fixes LOG2_INPUTS_PER_EPOCH = 16 and refuses epochs over 2^16 inputs, while the manual's dispute grid and the emulator consta | kept | Checked vg.lua:21, :928, :1030 and doc/README.md:9448. Medium only under the manual-contradiction stand-in reading (section 8 last paragraph of Medium, section 3 support rule); Low under the self-consistent-demo reading. Kept as unsure. |
+| R4-RGPROOF-1 | Lua helper library cartesi.hash-tree (frontier_forest_expand_leaf, sto | Low | cartesi.hash-tree frontier_forest_expand_leaf fails 'leaf height mismatch' after frontier_forest_store/load when an equal-hash fixed-point tree of lower base he | Dropped by triage (reading) | Checked prt.lua open_bundle callers (only after a nil query) and hash-tree.lua:1031. No caller reaches it; section 3 'Any other support defect is Low'. Hunter rated Low too. |
+| R4-RGEPOCHS-2 | doc/recipes/prt-bridge.lua methods:prepare (stageTournamentResult sets | Out of scope (application stall) / Low | crisium exits by assert and crash-loops under prt-supervise.sh once the honest claim wins an epoch whose final state is not an accepted yield and cannot be stag | Dropped by triage (reading) | Trigger is the application-stall exclusion (section 8); checked the job is due only after the root result time with no matches, and no later Dave epoch can open, so no R4 obligation is left unmet. Support Low. |
+| R4-RGPLAYERGUEST-2 | doc/recipes/prt-bridge.lua methods:prepare and doc/recipes/crisium.lua | Out of scope / Low | crisium exits by assert and crash-loops once an epoch whose guest stopped at a non-accepted fixed point finishes its tournament | Duplicate of R4-RGEPOCHS-2 | Same site, same root cause and same fix as R4-RGEPOCHS-2. |
+
 ## Blocked agents and fallbacks
 
 None yet.
@@ -324,3 +337,10 @@ Raised by round 3 triage:
 - Documentation of deviations: unclear whether threat-model statements (R8 'can never change the cycle counter') or DTB compatible strings ('riscv,clint0') count as the manual documenting a deviation, and whether guest-readable state-layout tables (PMA array) are a 'security-relevant point'; the recurring Medium vs literal-R7 Critical conflict applies again (R3-VARSPEC-1, R3-VARSPEC-2, R3-VARSPEC-3; same pattern as R2-DFGUESTSTATE-1).
 - Creation-time modes changed later: R14 allows 'deliberate changes through the machine API' but rules out 'any other host input'; unclear whether a runtime-config console input source switched on after creation, or a write to a register the manual calls an initial value (htif_iconsole), is a deliberate change or host input (R3-VARSHADOW-1; extends R1-R2-1).
 - CLI output as claim material: unclear whether lines printed in the claim-series format by implied options (--final-hash, start:) count as claims of 'a tool that computes claims' (R3-VARSPEC-4; extends R1-R6-1).
+
+Raised by round 4 triage:
+
+- Claim-computing CLI vs development tool: section 3 lists 'a tool that computes claims' as an honest-operator stand-in, while section 8 lets 'Development tools ... instead stop and report the violation' of the rollup interface. The cartesi-machine CLI's --mcycle-computation-hash/--uarch-cycle-computation-hash options fit both; which one decides Medium vs Low (R4-RGPLAYERGUEST-1; same question as R1-R8-2 for vg.lua and R1-R6-1 for the CLI printer).
+- What the honest operator owes after its claim wins: R4 says it 'keeps defending its claim' and 'defends every epoch whose dispute is open', but the model does not say whether an operator process that crash-loops after the root tournament is decided (because the settled state is not stageable) violates anything, or whether this is wholly the application-stall exclusion (R4-RGEPOCHS-2, R4-RGPLAYERGUEST-2).
+- Dispute constants in demonstration referees: R13 makes the dispute constants part of the protocol and the manual's hash view fixes 2^24 inputs per epoch, but the model does not say whether a self-consistent support referee/player pair (vg.lua) with a different constant is a defect, nor (already noted for R3-VARREFMODEL-3) whether vg.lua's referee is a referee model or a support component (R4-RGEPOCHS-1).
+- Library defects that no current caller reaches: section 3 rates a library by 'the most critical role among the components that reach the defect through it' but does not say how to rate a defect in a documented library operation that no shipped component reaches today (presumably 'Any other support defect is Low') (R4-RGPROOF-1).

@@ -72,6 +72,9 @@ Where the threat model can be read two ways, the severity column gives the revie
 | [R5-INVSTORE-2](#r5-invstore-2) | cartesi-machine --revert-mode=stored removes machine.revert in place. After a stop mid-removal, the documented rule resumes from the partial backup and discards the synced copies. | cartesi-machine CLI stored revert mode (src/cartesi-machine.lua revert_stored commit/remove_backup) and its documented r | Support (AUDIT table: the cartesi-machine CLI), standing in  | O2, R4 (restart from an O2 directory), section 5 (tools must follow O1/O2), sect | Medium (preferred); Low if the 'cleaning up after a stop' Medium case caps the stand-in rating; Out of scope under a literal reading of the O2 reload exclusion |
 | [R6-DYNBRIDGE-1](#r6-dynbridge-1) | PRT bridge retires a settled epoch on the 'latest' nonce; a within-policy reorg resurrects its tx as an ownerless pending candidate that blocks every live epoch's moves | doc/recipes/prt-bridge.lua methods:tick (retirement 702-710, other-epoch early return 723-727), prt-transactions.lua non | Support (PRT bridge), standing in for the honest operator's  | R4 (submits within dispute clocks; defends every open epoch), section 3 support  | Medium (Support stand-in for Critical R4) / Out of scope (if section 4's pre-finality sentence covers shallow reorgs of own txs) |
 | [R6-DYNBRIDGE-2](#r6-dynbridge-2) | PRT epoch listener aborts crisium ("epoch log history was truncated") when a reorg shallower than a numeric input policy lowers the head over still-canonical, already-applied inputs | doc/recipes/prt-epoch.lua methods:poll with prt-log-history.lua observe (rewinds to min(common_ancestor, head)); run by  | Support (PRT player), standing in for the honest operator (O | R4, section 4 (chain trusted as far as input policy), section 3 stand-in rule, s | Medium (preferred: stand-in honest-operator crash on a within-policy reorg) / Low (if a crash that relaunch recovers violates no rule) |
+| [R7-MANARCH-1](#r7-manarch-1) | Manual's advance-state delivery lists four writes; every path also sets imcyclemax=mcycle+2^48-1 and zero-pads the rx buffer, so the documented delivery yields a different state hash | Input delivery (src/send-cmio-response.cpp, state-access do_write_memory_with_padding) vs doc/README.md delivery descrip | Honest operator (manual as specification; regenerated step a | THREAT_MODEL intro and section 2 (manual defines the transition function), R7, R | Medium (preferred) / Critical (literal section 2 or R7 rx-buffer 'contents') / Low (manual read as non-exhaustive) |
+| [R7-MANARCH-2](#r7-manarch-2) | Manual presents processor shadow 0x0-0xfff and shadow TLB 0x1000-0x6fff as main-processor-visible ranges with PMA entries; emulator registers them with .pmas=false and guest loads fault | Interpreter / state layout: PMA array registration (src/machine-address-ranges.cpp ~315) vs doc/README.md 'The main proc | Honest operator (AUDIT.md: 'Interpreter, state-access layers | R7, R8, R13; section 8 manual-contradiction clause; section 8 Medium case 1 | Medium (preferred) / Critical (literal R7 'any deviation' in 'memory permissions') / Low (loose reading of manual) |
+| [R7-MANTOURN-1](#r7-mantourn-1) | At divergence leaf 0, Dave's _requireAgreeState and prt.lua validate_seal_response accept any agreed-state proof, though only an empty one fits; one surplus sibling is refused past leaf 0. | Dave v3.0.0-alpha.7 Match._requireAgreeState (via sealLeafMatch / sealInnerMatchAndCreateInnerTournament); doc/recipes/p | Referee model (Dave as the deployed referee; doc/recipes mod | R3 (trailing data), section 4 (proofs adversarial), section 3 referee model, sec | Medium / Low |
 
 <!--
 Template for each issue. Copy it below the index, in the same order as the index.
@@ -8479,3 +8482,470 @@ the tip while an applied input sits in the blocks the head moves back over. No a
 supervisor, the player stays down and stops defending its open epochs. With `prt-supervise.sh`, every such event costs a
 relaunch out of the dispute clocks. The mitigations outside the code are to use the default `finalized` policy (or `safe`)
 and to always run the player under `prt-supervise.sh`.
+
+## R7-MANARCH-1
+
+**Title.** The manual's specification of an advance-state delivery leaves out two hashed-state writes that every delivery path makes: `imcyclemax = mcycle + 2^48 - 1` (saturating) and zero padding of the rx buffer.
+
+**Severity.** Medium
+
+### Problem
+
+The threat model makes the manual the specification ("The emulator's user manual is the specification it refers to";
+section 2: "The manual's documented semantics define it on every state"). The manual describes an advance-state
+delivery in three places, and each lists the same four state changes:
+
+- the `#### Rollup` host loop (doc/README.md ~7795-7799): "Write the current state hash to the state at
+  AR_SHADOW_REVERT_ROOT_HASH_START / Write ABI-encoded EvmAdvance(...) to CMIO RX buffer ... / Write
+  HTIF_YIELD_REASON_ADVANCE_STATE to `REASON` and `length` as `DATA` in `fromhost` / Reset register `iflags_Y` to 0";
+- the prose after it (~7855-7861): the call records the state hash, "also writes the request to the CMIO RX buffer
+  and its type and length to the HTIF register `fromhost`, and unblocks the machine by clearing its `iflags_Y`
+  register";
+- the `send_cmio_response` API text (~4943-4953): it "writes `<data>` into `cmio.rx_buffer`, records the reason and
+  length in `htif_fromhost`, and clears `iflags_Y`", and records the revert root hash for advance-state delivery.
+
+The implemented delivery makes two more writes. Both change the state hash:
+
+1. It sets `imcyclemax` to `mcycle + 2^48 - 1`, saturating at `2^64 - 1`. The access log shows a write at `0x2f8`.
+   The manual never says that a delivery writes `imcyclemax`. Its register list says only "Register `imcyclemax`
+   holds the inclusive mcycle limit", and the configuration default is `0xffffffffffffffff`.
+2. It zero-fills the rx buffer from the end of the input up to the next power of two, at least 32 bytes. After a
+   longer earlier input, bytes the manual's delivery would leave in place are zeroed. The manual mentions no padding.
+
+So a delivery implemented from the manual (by a second node, or by an auditor checking `SendCmioResponse.sol` against
+the specification) reaches a different state hash from the one every implemented path computes. All implemented paths
+agree with each other, because they share `src/send-cmio-response.cpp`, and so does the regenerated step. The goal of
+section 1 is therefore not broken. What is broken is the rule that the manual defines the transition function: the
+manual gives the wrong transition for a step that is on every input boundary, and R13 makes "The accesses each logged
+transition makes" part of the protocol.
+
+### Component, role and area
+
+Input delivery: `send_cmio_response` and its log producer and replay. AUDIT.md table: "Interpreter, state-access
+layers, devices, uarch program, hash tree, log producers, ..., input delivery, ... | Honest operator". The same code
+is regenerated into `SendCmioResponse.sol` (Referee verifier), which agrees with the emulator. The disagreement is
+between all of them and the manual (doc/README.md, `#### Rollup` and the `send_cmio_response` API text), which is
+the specification.
+
+### Location
+
+- `src/send-cmio-response.cpp`, `send_cmio_response`: `writeImcyclemax(a, imcyclemax)` (~l.66-71) and
+  `writeMemoryWithPadding(a, AR_CMIO_RX_BUFFER_START, data, dataLength, writeLengthLog2Size)` (~l.75).
+- `src/state-access.hpp` `do_write_memory_with_padding` (~l.450-463): `fill_memory(paddr + data_length, 0, ...)`.
+- doc/README.md: host loop ~7790-7799, prose ~7855-7861, API text ~4943-4953, register list ~7384.
+
+### Evidence and test
+
+`bugs/R7-MANARCH-1/` contains `test.lua`, the test, and `README.md`, which describes it. Run it with
+`bugs/run.sh R7-MANARCH-1`. It takes under 1 s and needs the built emulator and
+`bugs/harness/work/configs/baremetal-template`.
+
+The test loads the harness valid template `baremetal-template`, which waits at an rx-accepted manual yield. It then
+compares two deliveries:
+
+- (A) `send_cmio_response(ADVANCE_STATE, input, root)`;
+- (B) the manual's four writes, done literally with `write_memory` (revert root hash, rx buffer) and `write_reg`
+  (`htif_fromhost`, `iflags_Y`).
+
+For each extra effect, the test passes if (A) and (B) reach the same root hash, or if some paragraph or list item of
+doc/README.md names that effect together with a delivery. Case 1 delivers to the template itself. Case 2 delivers a
+short input after the guest accepted a 1316-byte input, with `imcyclemax` copied from (A) to (B) so that only the rx
+buffer can differ.
+
+The reviewer re-ran it four times, and it exited 1 each time with the same output:
+
+```
+case 1: mcycle 3526372, imcyclemax before 0xffffffffffffffff
+  send_cmio_response : imcyclemax 0x100000035cee3 fromhost 0x144 iflags_Y 0 root b6d9e351...
+  manual's 4 writes  : imcyclemax 0xffffffffffffffff fromhost 0x144 iflags_Y 0 root 46e884f7...
+  log_send_cmio_response writes imcyclemax (0x2f8): true
+  manual documents that a delivery writes imcyclemax: no
+  roots equal once imcyclemax is copied from (A): true
+case 2: previous input 1316 bytes, new input 324 bytes
+  root (A) 8f51cc9d...
+  root (B) 71600514... (B with imcyclemax copied from A)
+  rx buffer differs at offsets [0x144, 0x1ff]: (A) zero, (B) previous input's bytes
+  manual documents zero padding of the rx buffer by a delivery: no
+  - delivery sets imcyclemax (0x100000035cee3) but the manual's delivery lists no such write; root hashes differ
+  - delivery zero-fills the rx buffer past the input (offsets 0x144-0x1ff) but the manual's delivery only writes the input; root hashes differ
+VIOLATED: an advance-state delivery changes the state exactly as the manual documents it ...
+run.sh: R7-MANARCH-1: exit 1 (bug present)
+```
+
+Case 1 shows that `imcyclemax` is the only difference: the roots match once it is copied. The prover reports that the
+test exits 0 against a copy of the manual with one added sentence that documents both effects. The reviewer did not
+change the test.
+
+### Trigger and reachability
+
+Every advance-state delivery that changes the state triggers effect 1. That includes the first input delivered to any
+valid template, and the honest operator performs such deliveries on its path ("Delivering inputs"). Effect 2 needs an
+input shorter than an earlier one whose bytes still lie past the new input's end, rounded up to the next power of two
+of at least 32 bytes. Any input sender can arrange this by posting two inputs of different lengths. No unreachable
+state is involved.
+
+### Rating
+
+1. Out of scope: no. The trigger is an ordinary delivery on the honest operator's path. The exclusion "The effect of a
+   deliberate state change made through the machine API, when the API performs it as documented" does not apply,
+   because the finding is that `send_cmio_response` does more than it is documented to do. No snapshot, obligation
+   violation, unreproducible machine or misdesigned application is needed.
+2. Role: input delivery is "Honest operator" in the AUDIT.md table. Section 3 says this role covers "The transition
+   function, its log producers, ... input delivery ... in every deployment". The regenerated step (Referee verifier)
+   agrees with the emulator, so no verifier or path divergence exists. The defect is a disagreement with the
+   specification. Section 8: "A contradiction between the manual and the behavior on a security-relevant point is a
+   defect in one of the two. It takes the severity it would have if the manual were right." This clause covers the
+   component: the point is the hashed result of the input-boundary transition, which R13 makes part of the protocol.
+3. High and Medium cases: if the manual's four-write delivery were right, every implemented path would deviate from it
+   in the same deterministic way. That matches "An undocumented deterministic deviation, consistent across all paths,
+   in behavior that no correct guest relies on for isolation or data integrity (R7)". The guest cannot read
+   `imcyclemax` (R8). A correct guest reads only the `length` bytes that `fromhost` reports, so it relies on neither
+   effect. Rating: Medium.
+4. Critical: not reached under the preferred reading. Under a literal reading, "The manual's documented semantics
+   define it on every state" (section 2) together with R3 would make the deviation a wrong transition. R7's "In these
+   areas, any deviation lets an input subvert a correct guest, even a deviation that is consistent across all paths",
+   with "The rx buffer, the tx buffer, and the yield interface (contents, lengths, and reason encoding)", would make
+   the rx-buffer padding Critical, if bytes past the delivered length count as rx-buffer "contents".
+
+Readings: Medium is preferred. Critical follows under the literal readings in step 4: section 2 for the whole
+delivery, and R7's area list for the padding. These facts favor Medium: no correct guest can observe the padding as a
+change to its input, and all paths, the deployed verifier included, agree. Low follows if the manual's delivery texts
+are read as non-exhaustive illustrations, and if the blockchain chapter's "Each input owns 2<sup>48</sup> mcycles of
+the epoch, counted from the state that receives it" (~2689, ~9021), together with "imcyclemax holds the inclusive
+mcycle limit", counts as documenting effect 1. That reading is weaker. Those sentences describe the computation-hash
+grid and never name a write to `imcyclemax`, its exact value or its saturation. Nothing in the manual documents
+effect 2 at all. Under that reading too, effect 2 remains an undocumented change to hashed rx-buffer contents.
+
+### Possible solution and risks
+
+Document both effects in doc/README.md. In the host loop, add a step before the rx write, for example "Set register
+`imcyclemax` to `mcycle` + 2^48 - 1 (saturating at 2^64 - 1)". After the rx write, add "zero-fill the CMIO RX buffer
+from the end of the input to the next power of two of at least 32 bytes". Make the prose after the loop and the
+`send_cmio_response` API text say the same, and the register list should say that an advance-state delivery sets
+`imcyclemax`. This is a documentation-only fix, so it carries no protocol risk. Changing the code to match the
+current manual would instead be wrong: it would drop the per-input mcycle limit that the dispute grid relies on (R5,
+R6), and it would change the protocol version (R13).
+
+### Risk of not fixing it
+
+The goal is not exposed in a deployment that runs only these implementations, since all paths agree. The risk lies in
+the specification. An independent implementation of delivery written from the manual (a second node, a verifier port,
+a ZK or alternative step) would compute different input-boundary hashes and lose disputes, or fail to detect
+divergences. Auditors who check `SendCmioResponse.sol` against the manual would see writes the specification does not
+explain. No party needs to trigger it: it happens on every delivery. Until the manual is fixed, the only mitigation
+outside the code is to treat `src/send-cmio-response.cpp` as normative.
+
+## R7-MANARCH-2
+
+**Title.** The manual presents the processor and board shadow (`0x0-0xfff`) and the shadow TLB (`0x1000-0x6fff`) as address ranges visible to the main processor, each described by a PMA entry. The emulator gives them no PMA entry, and every guest load from them raises a load access fault.
+
+**Severity.** Medium (preferred reading). Critical under a literal reading of R7's "any deviation" in "Address translation and memory permissions". Low if the manual's wording is read loosely (see Rating).
+
+### Problem
+
+`doc/README.md` says in four places that the main processor can see the processor shadow and the shadow TLB:
+
+- "The main processor": "The processor makes its entire state available, externally and read-only, by mapping every
+  register to the start of the physical address space (in the <i>processor shadow</i>, a 4KiB range)."
+- "The board": "Devices are mapped to the processor's physical address space. The mapping can be seen in the following
+  table". The table lists `0x00000000-0x00000fff` "Processor and board shadow" and `0x00001000-0x00006fff` "Shadow TLB".
+- "Address ranges": "The address ranges visible to the main processor are mapped at fixed positions in its 64-bit
+  physical address space. These are the ranges listed in the board mapping table ... and discoverable at runtime via
+  the PMA array". It then names only the uarch shadow and the uarch RAM as "private address ranges, which are not
+  accessible to the main processor".
+- "PMAs": "Each address range visible to the main processor is described by an entry in the array of Physical Memory
+  Attribute records (PMAs)". The driver-id table lists `PMA_SHADOW_STATE_DID` = 2. Only the uarch shadow's driver id is
+  said to be reserved "for consistency" without an entry.
+
+The emulator registers the shadow state for the hash tree only (`register_where{.hash_tree = true, .pmas = false}`).
+So the guest-readable PMA array at `0x10000` has 8 entries (RAM, DTB, tx buffer, rx buffer, HTIF, CLINT, PLIC, PMA
+array), none of them covering `0x0-0x6fff`. A main-processor load from `0x290` (`marchid`), `0x2f8` (`imcyclemax`),
+`0x1000` or `0x6ff8` traps with `mcause` 5 (load access fault).
+
+The emulator's behavior is the one the threat model requires: R8 says "Guest memory accesses cannot address the
+processor registers, ... the cached translation state, the revert root hash, `imcyclemax`". So the defect is most
+likely in the manual. The fault is deterministic, and native interpretation and the uarch agree on it and on the root
+hash, so no hash, proof or verification changes. It does not threaten the goal of section 1. It is a contradiction
+between the manual and the behavior on the guest's address map and memory permissions, a security-relevant point
+(the R8 containment boundary), and section 8 makes such a contradiction a defect in one of the two.
+
+### Component, role and area
+
+The interpreter and state layout: the set of address ranges registered in the PMA array at machine creation, and the
+interpreter's physical-memory access check that consults it. AUDIT.md table: "Interpreter, state-access layers,
+devices, uarch program, ... | Honest operator". The other side of the contradiction is the manual (`doc/README.md`,
+"The main processor", "The board", "Address ranges", "PMAs").
+
+### Location
+
+- `src/machine-address-ranges.cpp`, `machine_address_ranges` constructor (about line 315):
+  `push_back(make_shadow_state_address_range(c.processor), register_where{.hash_tree = true, .pmas = false});`.
+- `doc/README.md`: "The main processor" (about lines 7337-7339), "The board" table (about lines 7440-7441),
+  "Address ranges" (about lines 7874-7890), "PMAs" (about lines 7894-7928).
+
+### Evidence and test
+
+`bugs/R7-MANARCH-2/` contains `test.lua` (the test), `README.md` (what it asserts, expected output, and the
+reviewer's repair) and this entry. Run `bugs/run.sh R7-MANARCH-2` (under 1 s). No toolchain is needed.
+
+The test decodes the PMA array of a machine with 4 MiB of RAM and checks for any entry covering `0x0-0xfff` and
+`0x1000-0x6fff`, whatever its attributes. For each probe address it builds a hand-encoded M-mode guest (set `mtvec`,
+then `ld a1, 0(a0)`) and requires the load to return the value the host reads at that address. A control load from the
+PMA array (`0x10008`) must succeed, or the test exits 2. It then reads `doc/README.md` and checks whether the manual
+still presents the two ranges as visible to the main processor: they are in the board table and not named in the
+"Address ranges" or "PMAs" subsections. It exits 0 if the emulator matches the manual, or if the manual no longer
+presents the ranges as visible. It exits 1 if both still disagree.
+
+On audit/prt2 it exits 1 on every run (re-run six times by the reviewer). It prints:
+
+```
+PMA array: 8 entries
+  start=0x80000000 length=0x400000 attributes=0x0fd
+  ... (DTB, tx, rx, HTIF, CLINT, PLIC, and start=0x10000 length=0x1000 attributes=0x0a5)
+PMA entry covering processor and board shadow 0x0-0xfff: NO
+PMA entry covering shadow TLB 0x1000-0x6fff: NO
+guest ld 0x10008 (control: PMA array, a range with a PMA entry): value 0x400000, shadowed value 0x400000
+guest ld 0x290 (processor shadow, marchid (offset 0x290)): TRAP mcause=5 mtval=0x290
+guest ld 0x2f8 (processor shadow, imcyclemax (offset 0x2f8)): TRAP mcause=5 mtval=0x2f8
+guest ld 0x1000 (shadow TLB, first word): TRAP mcause=5 mtval=0x1000
+guest ld 0x6ff8 (shadow TLB, last word): TRAP mcause=5 mtval=0x6ff8
+manual presents 0x00000000-0x00000fff as visible to the main processor: yes
+manual presents 0x00001000-0x00006fff as visible to the main processor: yes
+manual: 'Each address range visible to the main processor is described by an entry ...' present: yes
+VIOLATED: R7: the manual says the processor shadow and shadow TLB are address ranges visible to the main processor, each described by a PMA entry; the emulator gives them no PMA entry and a guest load faults
+```
+
+The reviewer repaired the test: the manual-side check searched only the "Address ranges" subsection; it now also
+searches "PMAs", so a manual fix in either subsection is recognized. The result on audit/prt2 is unchanged. With a copy
+of the manual that adds one sentence to "PMAs" ("The processor shadow (`0x00000000-0x00000fff`) and the shadow TLB
+(`0x00001000-0x00006fff`) are likewise not accessible to the main processor."), the test exits 0. The reviewer also
+checked that native interpretation and the uarch (one `run_uarch`/`reset_uarch` per mcycle) both end the
+`imcyclemax` probe with `mcause` 5 and the same root hash. Found, proved and reviewed on `claude-opus-5-5`.
+
+Side observation, rated separately as R3-VARSPEC-1: the manual's PMA attribute bit layout differs from
+`src/pmas-constants.hpp`. The test ignores attribute bits for this reason.
+
+### Trigger and reachability
+
+There is nothing to trigger beyond a plain load. Every machine the emulator creates, every valid template included,
+has no PMA entry for `0x0-0x6fff`. Any guest code at M-mode (or any privilege level whose translation reaches these
+physical addresses) that follows the manual and reads a register from the processor shadow, or looks for a
+`PMA_SHADOW_STATE_DID` entry, gets a load access fault or does not find the entry. No input sequence is needed. The
+guests that ship with the emulator (OpenSBI and Linux) do not read the shadow.
+
+### Rating
+
+1. Out of scope: no exclusion applies. The trigger is a guest load in any machine. It needs no deliberate state change
+   through the machine API ("The effect of a deliberate state change made through the machine API"), no untrusted API
+   caller, no foreign snapshot, no reload of an unguaranteed directory, and no deployment violation of A1 to A8.
+   "Guest software that an input can subvert, as long as R7 and R8 hold" does not apply: the question is R7 itself.
+2. Role: the address ranges registered in the PMA array and the interpreter's access check belong to "Interpreter,
+   state-access layers, devices, uarch program, ... | Honest operator" (AUDIT.md). Section 3: the honest operator role
+   covers "The transition function ... in every deployment". That clause covers this component.
+3. High and Medium cases: section 8, "A contradiction between the manual and the behavior on a security-relevant
+   point is a defect in one of the two. It takes the severity it would have if the manual were right." The point is
+   security-relevant: it is the guest's address map and memory permissions, the boundary R8 draws. If the manual were
+   right, the emulator would deviate from the documented architecture by faulting on loads the manual allows. That
+   deviation is deterministic, consistent across all paths (native and uarch agree; all use the same PMA lookup), and
+   undocumented. It fits "An undocumented deterministic deviation, consistent across all paths, in behavior that no
+   correct guest relies on for isolation or data integrity (R7)": refusing a read of the processor registers takes no
+   isolation or data integrity from a guest, and R8 forbids the alternative. The Medium header also applies,
+   "violates a rule or the manual without affecting the goal". Medium.
+4. Critical: under the reading that the guest's access to the address ranges is itself R7's area "Address translation
+   and memory permissions", where "any deviation lets an input subvert a correct guest, even a deviation that is
+   consistent across all paths", the emulator departs from "the devices as the manual documents them" at every
+   reachable state, and the defect would be Critical.
+
+Three readings. The preferred one is Medium: R7's areas are the architecture a correct guest relies on for isolation
+and data integrity, and a fault on reading the processor shadow removes neither; the manual, not the code, is wrong,
+since the code's behavior is what R8 requires. The alternative is Critical: the literal R7 text counts any deviation
+in "memory permissions", and the manual documents these ranges as readable with PMA entries. A third, Low, reading
+takes "externally" in "The main processor" as host-only (the uarch section uses the same words for the uarch shadow,
+which the manual calls private) and the "Address ranges" and "PMAs" sentences as loose. That reading does not fit the
+text: "Address ranges" equates the visible ranges with the board table and carves out only the uarch ranges, and
+"PMAs" promises an entry for each visible range. The facts that would decide between Medium and Critical: whether a
+guest can be expected to rely on reading its own registers through the shadow for isolation or data integrity, and
+how "the severity it would have if the manual were right" applies when the manual's version would itself violate R8.
+
+### Possible solution and risks
+
+Fix the manual. In "Address ranges", list the processor and board shadow and the shadow TLB together with the uarch
+shadow and uarch RAM as ranges not accessible to the main processor, or split the board table into visible and
+private ranges. In "PMAs", say that these ranges have no PMA entries and that `PMA_SHADOW_STATE_DID` is reserved like
+`PMA_SHADOW_UARCH_STATE_DID`. In "The main processor", say that "externally" means through the machine API (host),
+not through guest loads. This changes no hash and carries no risk. Changing the code to match the manual (adding a
+read-only PMA entry for the shadow state) would let the guest read `imcyclemax`, the cached translation state and the
+other registers, which R8 forbids, and would change the PMA array, every root hash, the uarch program and the on-chain
+step, a new protocol version (R13, A6). It should not be done.
+
+### Risk of not fixing it
+
+No hash, proof or verification is affected, so no deployment's settlement is at risk. A guest, firmware or tool author
+who follows the manual and reads a register through the processor shadow, or searches the PMA array for a
+`PMA_SHADOW_STATE_DID` entry, gets a load access fault or no entry. A guest that does so while processing an input
+would trap where the manual promises a read. Mitigation outside the code: read machine-identification and other
+registers through the CSRs the specification provides, and treat `0x0-0x7fff` as inaccessible to the guest.
+
+## R7-MANTOURN-1
+
+**Title.** When a match is sealed at divergence leaf 0, both referees accept any agreed-state proof. Dave's
+`Match._requireAgreeState` (released v3.0.0-alpha.7, through `Tournament.sealLeafMatch` and
+`sealInnerMatchAndCreateInnerTournament`) and the PRT referee model's `validate_seal_response` (`doc/recipes/prt.lua`)
+never read the proof argument there. The same proof with a surplus sibling is refused past leaf 0.
+
+**Severity.** Medium (preferred reading). Low under the reading that the Medium trailing-data case and R3 cover only
+the verifiers of transition logs, not the tournament's computation-hash proof checks (see Rating).
+
+### Problem
+
+At height one, a seal reveals the two leaves where the claims diverge and proves the agreed state just before them
+against the claim on turn. At leaf 0 the agreed state is the tournament's initial hash, which the referee already
+holds. The manual says so: "At leaf zero, the agreed state is the tournament's initial state hash, which the referee
+already knows". The proof slot then has nothing to hold, and the only valid proof is an empty one.
+
+Neither referee checks that. Dave returns from the leaf-0 branch of `_requireAgreeState` after checking
+`agreeState == initialHash`, without looking at `agreeStateProof`:
+
+```solidity
+if (divergencePosition == 0) {
+    require(agreeState.eq(args.initialHash), ITournament.IncorrectAgreeState(args.initialHash, agreeState));
+    return;
+}
+revealingCommitment.requireState(args.height, divergencePosition - 1, agreeState, agreeStateProof);
+```
+
+Past leaf 0, `requireState` demands exactly `height` siblings (`CommitmentProofWrongSize`). The recipe model checks
+`response.agreed_state_hash_proof` only under `if leaf_index ~= 0`, where it also demands
+`#proof.sibling_hashes == tournament.height`. At leaf 0 it ignores the field, whatever table it holds.
+
+So a seal at leaf 0 carrying a non-empty, junk proof is accepted. The sealed result is unchanged: the agreed state is
+still the initial hash, and the contested leaves are the same. The junk is data the referee accepts and ignores. That
+is trailing data, which R3 makes a validity condition: "Conditions on the log are validity conditions. A log that
+fails one must be rejected. Examples are wrong order, wrong address, wrong size, duplicate, missing, or trailing
+data". Section 4 adds: "A verifier must assume that every count, index, address, size, and hash it receives was chosen
+to fool it". The security goal of section 1 is not broken, because the decision does not change. The rule is still
+violated, in the deployed referee and in the model alike.
+
+### Component, role and area
+
+- Dave v3.0.0-alpha.7 `prt/contracts`, the seal of a match (`Match.sealDivergence` → `_requireAgreeState`). The
+  AUDIT.md table gives it the role "Referee model, as the deployed referee".
+- The PRT referee model in `doc/recipes`, the seal validation (`validate_seal_response`). Role: "Referee model".
+
+Area: the proof of the agreed state in a seal. This is a computation-hash proof whose index and height are referee
+parameters (section 2).
+
+### Location
+
+- `bugs/harness/work/dave/released/prt/contracts/src/tournament/libs/Match.sol`: `_requireAgreeState` (lines
+  290-308), called from `sealDivergence` (lines 130-180). This is the pinned Dave source.
+- `bugs/harness/work/dave/released/prt/contracts/src/tournament/Tournament.sol`: `sealLeafMatch` (line 528) and
+  `sealInnerMatchAndCreateInnerTournament` (line 677).
+- `doc/recipes/prt.lua`: `validate_seal_response` (lines 310-339). The manual quotes the same function
+  (`doc/README.md`, around line 10692).
+
+### Evidence and test
+
+`bugs/R7-MANTOURN-1/` contains the following files.
+
+- `test.lua`, run by `bugs/run.sh R7-MANTOURN-1` (about 8 s, no chain needed). It runs two parts.
+  - Part 1 builds a height-1 match in `prt.lua` and calls `validate_seal_response`. It checks three controls. A
+    leaf-0 seal without a proof is accepted. A leaf-1 seal with the honest proof is accepted. A leaf-1 proof with a
+    surplus sibling is refused. It then asserts that a leaf-0 seal carrying a junk proof table is refused. The table
+    has 3 junk siblings, a wrong address and wrong sizes.
+  - Part 2 runs `dave.sh`.
+- `dave.sh` copies the harness's released Dave build (`bugs/harness/work/dave/released`, with the regenerated step)
+  to a temporary directory. It never touches the shared build. It runs `forge test --offline` on
+  `SealLeafZeroProof.t.sol` there.
+- `SealLeafZeroProof.t.sol` is built on Dave's own `SmallSingleLevelTournament` fixture: the real `Tournament`/`Match`
+  code with a height-3, single-level geometry. Two claims bisect down to height 1 at position 0. The test checks three
+  controls. A leaf-0 seal with an empty proof is accepted. A leaf-1 seal with the honest 3-sibling proof is accepted.
+  The same leaf-1 proof plus one trailing word is refused. It then asserts that `sealLeafMatch` at leaf 0 refuses a
+  1-word junk proof and a 64-word junk proof.
+- `README.md` describes the test.
+
+The test exits 1 if either referee accepts the junk proof at leaf 0, 0 if both refuse it, and 2 if a control fails or
+the setup is missing. On audit/prt2 the reviewer re-ran it twice, and the prover reports three runs. Every run exited
+1 with this output:
+
+```
+model controls: leaf-0 seal without proof accepted; leaf-1 honest proof accepted; leaf-1 proof with a surplus sibling refused
+model: leaf-0 seal with a junk agreed-state proof (3 junk siblings): ACCEPTED, divergence at leaf 0
+Dave controls: leaf-0 seal with empty proof accepted; leaf-1 honest proof accepted; leaf-1 proof with a trailing word refused (CommitmentProofWrongSize)
+Dave: sealLeafMatch at leaf 0 with a 1-word junk agreed-state proof: ACCEPTED
+Dave: sealLeafMatch at leaf 0 with a 64-word junk agreed-state proof: ACCEPTED
+VIOLATION (R3 trailing data): prt.lua validate_seal_response accepts a junk proof at leaf 0
+VIOLATION (R3 trailing data): Dave sealLeafMatch accepts a 1-word junk proof at leaf 0
+VIOLATION (R3 trailing data): Dave sealLeafMatch accepts a 64-word junk proof at leaf 0
+VIOLATED: R3: a seal at leaf 0 must refuse an agreed-state proof that carries data
+run.sh: R7-MANTOURN-1: exit 1 (bug present)
+```
+
+The prover tried each fix in a scratch copy, and each turned its part to "refused". The Dave fix was
+`require(agreeStateProof.length == 0)` in the leaf-0 branch. The model fix was
+`assert(response.agreed_state_hash_proof == nil)` in the leaf-0 branch. Found, proved and reviewed on Opus 5.5
+(`claude-opus-5-5`). No fallback model was used.
+
+### Trigger and reachability
+
+Any claimant can trigger it, because section 4 lists "dishonest claimants (any number, any logs, any proofs, any
+timing)" as untrusted. The claimant seals a match whose first divergent leaf is 0 and attaches a non-empty
+agreed-state proof. Leaf 0 diverges whenever a claim contradicts the other at its first sampled state. In a uarch-level
+tournament this is the dispute over the first uarch step, which is common. The adversary can also force it, since
+section 7 lets it "Steer the dispute to any position of the honest computation". No unreachable state is involved.
+
+The honest players never send such a proof. `prt.lua` `seal_divergence` attaches a proof only when
+`leaf_index ~= 0`, and `prt-bridge.lua` then sends `initialHash` and an empty sibling list.
+
+### Rating
+
+1. Out of scope: no. The trigger is a claimant's seal transaction, which section 4 makes adversarial. Three
+   exclusions were checked. The exclusion "Defects that need the deployment to violate one of A1 to A8, unless ... an
+   implementation of the referee model is what violates it" does not apply: the referee itself shows the defect. The
+   defect needs no direct use of the machine API by an untrusted party, no untrusted snapshot, and no host fault.
+2. Role: Dave is "Referee model, as the deployed referee", and `doc/recipes` is "Referee model" (AUDIT.md table).
+   Section 3, Referee model: "A defect in what it accepts or derives is rated as if a deployed referee had it". This
+   clause covers both components. The defect is in what they accept, not in a copy of a verifier they call: the check
+   is in `Match.sol` and in `validate_seal_response` themselves. The settled readings agree: the clause "covers every
+   message the model accepts".
+3. High and Medium cases: section 8 Medium: "A referee verifier that accepts trailing data that does not affect its
+   result (R3)". It fits, rated as a deployed referee. The seal's agreed-state check is a proof verifier of the deployed
+   referee. Section 1 counts proof verifiers among verifiers ("a proof verifier accepts a node that the committed tree
+   does not hold at the stated index and height"). Its index and height are referee parameters (section 2: "The tree
+   index and height at which each node of a computation-hash proof ... is authenticated"). The junk does not change
+   the sealed divergence. No High case fits: the before-state is reachable, and no wrong or second result is accepted.
+4. Critical: not reached. R3 is violated at a reachable state, but the listed Medium case caps it.
+
+Two readings give different classes.
+
+- **Medium (preferred).** R3's validity conditions and the Medium trailing-data case apply to every proof that a
+  referee verifies, computation-hash proofs included. This matches section 1, section 4 ("Logs and proofs are
+  adversarial") and the referee parameters of section 2. It also matches Dave's own design, which refuses one
+  trailing sibling past leaf 0.
+- **Low (alternative).** R3 ("Every log that a verifier accepts must then yield the same after-hash") and the Medium
+  case speak only of transition-log verifiers. Under that reading, the tournament's commitment-proof checks fall
+  under no rule, and an ignored argument violates nothing.
+
+The deciding fact is whether "verifier" in R3 and in the Medium case includes the referee's computation-hash proof
+checks. The threat model never says explicitly. A sibling finding, R1-R3-3 (the model accepts superfluous logs in
+state-transition proofs), was confirmed Medium under the same split.
+
+### Possible solution and risks
+
+- Dave: in the leaf-0 branch of `_requireAgreeState`, add `require(agreeStateProof.length == 0, ...)` (for example
+  `CommitmentProofWrongSize`). This covers both `sealLeafMatch` and `sealInnerMatchAndCreateInnerTournament`.
+- Model: in `validate_seal_response`, assert that `response.agreed_state_hash_proof == nil` when `leaf_index == 0`.
+
+Risk: a node that sends a non-empty proof at leaf 0 would then fail to seal, and its claim could time out. The honest
+recipe player and bridge send none. Other node implementations must be checked before the contract change is
+deployed. The sling node is out of this campaign's scope. Changing the contract also changes the deployed referee
+code, so it needs a new release (A6, R13).
+
+### Risk of not fixing it
+
+The decision of the match is not affected. A deployment left unfixed accepts proofs with meaningless content at one
+seal position, contrary to R3. Any claimant can put arbitrary calldata into a valid seal at its own gas cost. The
+refund is a fixed estimate (`refundable(Gas.SEAL_LEAF_MATCH, 0)`), so the junk is not reimbursed. Tools that index or
+replay seals must tolerate it. The model and Dave keep their checks asymmetric between leaf 0 and the other leaves.
+That leaves room for later changes that start reading the proof at leaf 0 to rely on unvalidated data. There is no
+mitigation outside the code. Off-chain tools should ignore the proof argument at leaf 0.

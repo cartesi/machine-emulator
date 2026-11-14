@@ -1,6 +1,6 @@
 # PRT Audit Report (`audit/prt2`)
 
-Status: **in progress**. Phase: round 9 and round 10 hunts.
+Status: **in progress**. Phase: round 9 hunt (last two hunters), round 10 triage.
 
 This file is the campaign state of the audit that `AUDIT.md` defines. The orchestrator rewrites it after every step so
 that it can resume after a compaction or a container restart. Confirmed issues are in `BUGS.md`, with their tests under
@@ -11,7 +11,7 @@ that it can resume after a compaction or a container restart. Confirmed issues a
 | Item | Value |
 |---|---|
 | Branch audited | `audit/prt2` at `20a788c` (docs: prepare PRT audit) |
-| Current phase | Rounds 1 to 8 and the first second opinion complete. Round 9 (subsystem invariants): 10 hunters, 2 back, reports in `campaign/r9/`. Round 10 (blind personas, last round): 10 hunters running, reports in scratchpad `blind10/`. Then: second opinion on reading-based drops and refutations of rounds 4 to 10, re-run of every confirmed test, final report |
+| Current phase | Rounds 1 to 8 and the first second opinion complete. Round 9 (subsystem invariants): 10 hunters, 8 back (SUBCOMPHASH and SUBTOURN still running, `wf_ec786e34-9c1`), reports in `campaign/r9/`. Round 10 (blind personas, last round): hunt done, 36 candidates in scratchpad `blind10/`, triage running (`wf` launched after the hunt; it writes `blind10/triage.json`). Then: proofs, second opinion on reading-based drops and refutations of rounds 4 to 10, re-run of every confirmed test, final report |
 | Rounds completed | 8 |
 | Stop count (consecutive clean all-Fable rounds, different strategies) | 0 of 3 |
 | Withheld-findings round done | round 10, running |
@@ -86,7 +86,7 @@ the untracked `bugs/harness/work/`).
 | 7 | The code against the manual's promises, one slice of the manual each (MANTOURN, MANHASHCOMP, MANARCH on Fable; MANGAME, MANHASHSTATE, MANGUEST, MANCLIROLL, MANCLIBASE, MANLUA1, MANLUA2 on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | 29 (10 hunters, 1 triage, 9 provers, 9 reviewers) | 5.89M | 22 | 9 | 6 (all Medium; 4 found by Fable hunters, 2 by Opus) | no |
 | 8 | Attack goals of section 1 worked backwards (GOALACCEPT, GOALWRONGCLAIM, GOALTIMEOUT on Fable; GOALNODE, GOALNOPROOF, GOALELIMINATE, GOALOUTPUT, GOALDIVERGE, GOALESCAPE, GOALEPOCH on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | 22 runs (10 hunters, 1 triage, 5 prover runs, 6 reviewer runs, three of them retries) | 5.33M | 10 | 4 | 2 (both Critical under the preferred reading; both found by Opus hunters) | no |
 | 9 | Invariant audit by subsystem (SUBTLB, SUBCMIO, SUBCOMPHASH, SUBCONSENSUS on Fable; SUBCSR, SUBUARCH, SUBTOURN, SUBJOURNAL, SUBEPOCHDIR, SUBREFSTATE on Opus) | 4 `claude-fable-5-2`, 6 `claude-opus-5-5` | running | | | | | |
-| 10 | Blind adversary personas, the campaign's findings withheld (PERINPUT, PERGUEST, PERSPEC, PERCHAIN on Fable; PERCLAIMANT, PERTEMPLATE, PERFAULT, PERDEPLOY, PERAPPDEV, PEROUTPUT on Opus). Last round | 4 `claude-fable-5-2`, 6 `claude-opus-5-5` | running | | | | | |
+| 10 | Blind adversary personas, the campaign's findings withheld (PERINPUT, PERGUEST, PERSPEC, PERCHAIN on Fable; PERCLAIMANT, PERTEMPLATE, PERFAULT, PERDEPLOY, PERAPPDEV, PEROUTPUT on Opus). Last round | 4 `claude-fable-5-2`, 6 `claude-opus-5-5` | 13 hunter runs so far (three retries or fallbacks) | 3.84M so far | 36 | pending | pending | pending |
 
 ## Candidates
 
@@ -380,6 +380,8 @@ Ten hunters (three on `claude-fable-5-2`: GOALACCEPT, GOALWRONGCLAIM, GOALTIMEOU
 | 5 | hunt:INVDEVICE | `claude-opus-5-5` | Reported that a safety system stopped part of its work | Retried once on the same model with a rephrased prompt; that run completed and reported no candidate. No less capable model was needed |
 | 8 | prove:R8-GOALTIMEOUT-1 | `claude-opus-5-5` | The first prover run reported that a safety system stopped part of its work | Retried once on the same model with a rephrased prompt; that run wrote the test. The candidate was then refuted on a reading, so nothing in `BUGS.md` depends on it |
 | 8 | review:R8-GOALEPOCH-2 | `claude-opus-5-5` | Both reviewer runs on Opus 5.5 (the original and the rephrased retry) reported that a safety system stopped part of their work | The review ran on `claude-sonnet-5-5`, which confirmed the issue. The prover ran on Opus 5.5 and the orchestrator re-ran the test. `BUGS.md` flags the issue as confirmed by a fallback model |
+| 10 | hunt:PERGUEST | `claude-fable-5-2` | Both runs on Fable 5.2 (the original and the rephrased retry) reported that a safety system stopped part of their work | The hunt ran on `claude-opus-5-5`, which completed and reported 2 candidates. Any issue confirmed from them is flagged in `BUGS.md` |
+| 10 | hunt:PERTEMPLATE | `claude-opus-5-5` | The first run reported that a safety system stopped part of its work | Retried once on the same model with a rephrased prompt; that run completed and reported 4 candidates |
 
 ## Left uncovered
 

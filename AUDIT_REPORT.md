@@ -1,6 +1,6 @@
 # PRT Audit Report (`audit/prt2`)
 
-Status: **in progress**. Phase: round 4 proofs, round 5 hunt.
+Status: **in progress**. Phase: round 5 hunt.
 
 This file is the campaign state of the audit that `AUDIT.md` defines. The orchestrator rewrites it after every step so
 that it can resume after a compaction or a container restart. Confirmed issues are in `BUGS.md`, with their tests under
@@ -11,13 +11,13 @@ that it can resume after a compaction or a container restart. Confirmed issues a
 | Item | Value |
 |---|---|
 | Branch audited | `audit/prt2` at `20a788c` (docs: prepare PRT audit) |
-| Current phase | Rounds 1 to 3 and the second opinion complete. Round 4: triage done, proofs of R4-RGPLAYERGUEST-1 and R4-RGEPOCHS-1 running. Round 5 (assert and error inventory): 10 hunters, 2 back, reports in `campaign/r5/`. Readings settled by the second opinion are in `campaign/readings.md` and in this report |
-| Rounds completed | 3 |
+| Current phase | Rounds 1 to 4 and the first second opinion complete. Round 5 (assert and error inventory): 10 hunters, 4 back, reports in `campaign/r5/`. Readings settled by the second opinion are in `campaign/readings.md` and in this report |
+| Rounds completed | 4 |
 | Stop count (consecutive clean all-Fable rounds, different strategies) | 0 of 3 |
 | Withheld-findings round done | no |
 | Second opinion (after round 3) done | yes: 37 re-checked, 5 overturned, reading changed (stop count stays 0) |
 | Hunter models for the next round | Round 5: three hunters on `claude-fable-5-2`, seven on `claude-opus-5-5`, at the requester's instruction |
-| Confirmed issues | 48 (9 Critical, 7 High, 32 Medium, by the reviewers' preferred readings) |
+| Confirmed issues | 49 (9 Critical, 7 High, 33 Medium, by the reviewers' preferred readings) |
 | Open candidates | none |
 
 ## Process deviations and notes
@@ -74,7 +74,7 @@ the untracked `bugs/harness/work/`).
 | 1 | One angle per rule or obligation (R1-R14, O1, O2, A1-A8, GUEST, BOUNDARY) | `claude-opus-5-5` | 111 (26 hunters, 1 triage, 42 provers, 42 reviewers) | 18.15M (3 hunters in a stopped workflow not counted) | 70, plus 1 from Prepare | 42 | 27 (5 Critical, 5 High, 17 Medium) | no |
 | 2 | Data flow from each untrusted source (DFINPUT, DFINPUTCOUNT, DFLOG, DFPROOFSOL, DFCLAIM, DFCHAIN, DFYIELD, DFGUESTSTATE, DFSTORED, DFOUTPUT) | `claude-opus-5-5` | 27 (10 hunters, 1 triage, 8 provers, 8 reviewers) | 5.41M | 11 | 8 | 6 (all Medium) | no |
 | 3 | Variants of each family of confirmed bugs (VARCACHE, VARDIRTY, VARO2PLAYER, VARSHADOW, VARVERIFTRAP, VARGEN, VARREFMODEL, VARSCHED, VARGROWTH, VARSPEC) | `claude-opus-5-5` | 39 (10 hunters, 1 triage, 14 provers, 14 reviewers) | 7.30M | 20 | 14 | 10 (1 Critical, 1 High, 8 Medium) | no |
-| 4 | R4 at every reachable state (RGCLAIM, RGPROOF, RGLOG, RGDELIVERY, RGUARCH, RGCONFIG, RGREJECT, RGPLAYERGUEST, RGRESTART, RGEPOCHS) | `claude-opus-5-5` | 11 so far | 3.58M so far | 5 | 2 | pending | pending |
+| 4 | R4 at every reachable state (RGCLAIM, RGPROOF, RGLOG, RGDELIVERY, RGUARCH, RGCONFIG, RGREJECT, RGPLAYERGUEST, RGRESTART, RGEPOCHS) | `claude-opus-5-5` | 15 (10 hunters, 1 triage, 2 provers, 2 reviewers) | 4.07M | 5 | 2 | 1 (Medium) | no |
 | 5 | Assert and error inventory of the honest operator, file by file (INVINTERP, INVHASH, INVSTORE on Fable; INVACCESS, INVDEVICE, INVMACHINE, INVAPI, INVSOL, INVPLAYER, INVBRIDGE on Opus) | 3 `claude-fable-5-2`, 7 `claude-opus-5-5` | running | | | | | |
 
 ## Candidates
@@ -275,8 +275,8 @@ Ten hunters (`claude-opus-5-5`, 3.41M tokens, none blocked) reported 5 candidate
 
 | ID | Component | Triage rating | Title | Outcome | Reason |
 |---|---|---|---|---|---|
-| R4-RGPLAYERGUEST-1 | cartesi-machine CLI (src/cartesi-machine.lua flush_pending_outputs, ca | Medium (preferred: the computation-hash options are a tool t | cartesi-machine CLI aborts its --mcycle-computation-hash / --uarch-cycle-computation-hash run (no claim) when a guest accepts with an outputs-root length other  | kept | Checked: src/cartesi-machine.lua:3689 asserts #data == cartesi.HASH_SIZE on every rx-accepted yield and :3691-3696 asserts root equality by default, before builder:end_input. Section 3 claim-tool stand-in of R4 -> Medium; development-tool reading -> Low. |
-| R4-RGEPOCHS-1 | doc/recipes/vg.lua (verification-game referee: new_dapp_contract, sett | Low (preferred: a self-consistent demo constant; the refusal | Verification-game referee (vg.lua) fixes LOG2_INPUTS_PER_EPOCH = 16 and refuses epochs over 2^16 inputs, while the manual's dispute grid and the emulator consta | kept | Checked vg.lua:21, :928, :1030 and doc/README.md:9448. Medium only under the manual-contradiction stand-in reading (section 8 last paragraph of Medium, section 3 support rule); Low under the self-consistent-demo reading. Kept as unsure. |
+| R4-RGPLAYERGUEST-1 | cartesi-machine CLI (src/cartesi-machine.lua flush_pending_outputs, ca | Medium (preferred: the computation-hash options are a tool t | cartesi-machine CLI aborts its --mcycle-computation-hash / --uarch-cycle-computation-hash run (no claim) when a guest accepts with an outputs-root length other  | **Confirmed, Medium (preferred: CLI computation-hash run is a support tool that computes claims) / Out of scope (if the CLI is a deve** | I re-ran the test twice and it exited 1 both times, on the assert at cartesi-machine.lua:3689. With only that assert removed, the CLI matches the PRT player and the test exits 0. Section 3 says support is "Medium when it would rate High or Critical in the role ... the honest operator for ... a tool that computes claims". This covers the CLI, whose hash the manual says is the honest claim. R4 says "whether or not its application is correctly designed". The alternative reading, "Development tools may instead stop", makes it Out of scope. |
+| R4-RGEPOCHS-1 | doc/recipes/vg.lua (verification-game referee: new_dapp_contract, sett | Low (preferred: a self-consistent demo constant; the refusal | Verification-game referee (vg.lua) fixes LOG2_INPUTS_PER_EPOCH = 16 and refuses epochs over 2^16 inputs, while the manual's dispute grid and the emulator consta | Refuted by reviewer (reading); rated Low (preferred) / Medium (alternative reading) | The test exits 1 every time (2 runs). vg.lua:21/928/1030 do use 2^16. vg is Support, not "The PRT referee model in doc/recipes". Its player takes the referee's extent, and A3 ("assigns no more inputs to an epoch than the input limit per epoch") holds, so the stood-in deployed referee breaks no rule's wording. The refusal is the operator's own setup assert. The stand-in clause covers vg but gives Low. |
 | R4-RGPROOF-1 | Lua helper library cartesi.hash-tree (frontier_forest_expand_leaf, sto | Low | cartesi.hash-tree frontier_forest_expand_leaf fails 'leaf height mismatch' after frontier_forest_store/load when an equal-hash fixed-point tree of lower base he | Dropped by triage (reading) | Checked prt.lua open_bundle callers (only after a nil query) and hash-tree.lua:1031. No caller reaches it; section 3 'Any other support defect is Low'. Hunter rated Low too. |
 | R4-RGEPOCHS-2 | doc/recipes/prt-bridge.lua methods:prepare (stageTournamentResult sets | Out of scope (application stall) / Low | crisium exits by assert and crash-loops under prt-supervise.sh once the honest claim wins an epoch whose final state is not an accepted yield and cannot be stag | Dropped by triage (reading) | Trigger is the application-stall exclusion (section 8); checked the job is due only after the root result time with no matches, and no later Dave epoch can open, so no R4 obligation is left unmet. Support Low. |
 | R4-RGPLAYERGUEST-2 | doc/recipes/prt-bridge.lua methods:prepare and doc/recipes/crisium.lua | Out of scope / Low | crisium exits by assert and crash-loops once an epoch whose guest stopped at a non-accepted fixed point finishes its tournament | Duplicate of R4-RGEPOCHS-2 | Same site, same root cause and same fix as R4-RGEPOCHS-2. |

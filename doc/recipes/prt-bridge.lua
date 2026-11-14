@@ -466,7 +466,7 @@ function methods:jobs(snapshot)
                 first_timeout = math.min(d1, d2)
                 timeout_root = d1 > d2 and event.one or event.two
                 local claim = holds(self, context.address, event.one) or holds(self, context.address, event.two)
-                if claim and not self.done then
+                if claim then
                     add("winLeafMatch", context, event, 0, first_timeout, claim.root)
                 end
             else
@@ -476,7 +476,7 @@ function methods:jobs(snapshot)
                 local responder = one_responds and event.one or event.two
                 timeout_root = one_responds and event.two or event.one
                 first_timeout = eth.small(event.responderDeadline)
-                if holds(self, context.address, responder) and not self.done then
+                if holds(self, context.address, responder) then
                     local kind = height > 1 and "advanceMatch"
                         or (
                             eth.small(context.descriptor.kind) == 0 and "sealLeafMatch"
@@ -485,7 +485,7 @@ function methods:jobs(snapshot)
                     add(kind, context, event, 0, first_timeout, responder)
                 end
             end
-            if holds(self, context.address, timeout_root) and not self.done then
+            if holds(self, context.address, timeout_root) then
                 add("winMatchByTimeout", context, event, first_timeout, eliminable, timeout_root)
             end
             if self.cleanup then
@@ -503,7 +503,7 @@ function methods:jobs(snapshot)
             if context.parent and not snapshot.deleted[context.parent_match] then
                 local expires = candidate ~= eth.zero and eth.small(standing.winnerExpiresAt) or result_at
                 if candidate ~= eth.zero then
-                    if holds(self, context.parent, standing.parentCommitment) and not self.done then
+                    if holds(self, context.parent, standing.parentCommitment) then
                         add("winInnerTournament", context, event, result_at, expires, standing.parentCommitment)
                     end
                 end
@@ -512,7 +512,7 @@ function methods:jobs(snapshot)
                 end
             end
             local claim = holds(self, context.address, candidate)
-            if claim and not self.done then
+            if claim then
                 if not context.parent and not snapshot.staged then
                     add("stageTournamentResult", context, event, result_at, nil, candidate)
                 end

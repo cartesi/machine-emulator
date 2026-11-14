@@ -424,8 +424,41 @@ do
 end
 
 -- Snapshot ownership is consumed by commit or revert; retired servers close immediately.
-do
-    local player <close> = vg.new_player(initial_hash)
+for _, occupied_address in ipairs({ false, true }) do
+    local listener <close> = setmetatable({}, {
+        __close = function(self)
+            if self.socket then
+                self.socket:close()
+            end
+        end,
+    })
+    local overrides
+    if occupied_address then
+        -- As in the CLI rebind regression, keep the server's listening socket open in this
+        -- process. Shutting down the server cannot free the port for the restored machine.
+        local jsonrpc = require("cartesi.jsonrpc")
+        local fcntl = require("posix.fcntl")
+        listener.socket = assert(require("socket").bind("127.0.0.1", 0))
+        local host, port = listener.socket:getsockname()
+        local address = host .. ":" .. port
+        local fd = math.tointeger(listener.socket:getfd())
+        local flags = assert(fcntl.fcntl(fd, fcntl.F_GETFD))
+        assert(fcntl.fcntl(fd, fcntl.F_SETFD, 0))
+        local server_bin = os.getenv("CARTESI_JSONRPC_MACHINE") or "cartesi-jsonrpc-machine"
+        local started = os.execute(string.format("%s --server-fd=%d >/dev/null 2>&1 &", server_bin, fd))
+        assert(fcntl.fcntl(fd, fcntl.F_SETFD, flags))
+        assert(started)
+        overrides = {
+            new_machine = function(_, state_hash)
+                local machine <close> = jsonrpc.connect_server(address)
+                machine:set_cleanup_call(jsonrpc.SHUTDOWN)
+                machine:load(cartesi.tohex(state_hash), { clear_hash_tree = true })
+                assert(machine:get_root_hash() == state_hash)
+                return machine:move()
+            end,
+        }
+    end
+    local player <close> = vg.new_player(initial_hash, nil, nil, overrides)
     local pair = player.epoch_pair
     pair:snapshot()
     local committed = pair.backup_machine
@@ -440,10 +473,17 @@ do
     pair:snapshot()
     local reverted = pair.backup_machine
     local address = pair.machine:get_server_address()
+    local backup_address = pair.backup_machine:get_server_address()
     pair.machine:write_reg("x1", ~pair.machine:read_reg("x1"))
     pair:revert()
     assert(not pair.backup_machine and pair.machine:get_root_hash() == committed_hash)
-    assert(pair.machine:get_server_address() == address, "revert changed the working server address")
+    if occupied_address then
+        assert(pair.machine:get_server_address() == backup_address, "revert lost the backup server's address")
+        assert(pair.machine:get_server_address() ~= address, "revert reused an occupied address")
+        -- Release the retained listener before checking that the displaced server is gone.
+        listener.socket:close()
+        listener.socket = nil
+    end
     assert(not pcall(reverted.get_root_hash, reverted), "revert left the displaced server running")
     assert(not pcall(pair.revert, pair))
     assert(pair.machine:get_root_hash() == committed_hash)

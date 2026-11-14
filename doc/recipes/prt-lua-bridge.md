@@ -557,6 +557,7 @@ error, and continues.
 | --- | --- |
 | `outputs_merkle_root_mismatch` | The outputs Merkle root the machine wrote when it accepted an input differs from the root built from the outputs it emitted, or a checkpoint's root differs from its outputs frontier |
 | `oversized_output` | An output declared a length larger than the TX buffer |
+| `delegate_call_voucher` | An emitted output starts with the four-byte selector of `DelegateCallVoucher(address,bytes)`. Reports the zero-based input offset within the epoch and output offset within that input. Only the prefix is checked, so malformed arguments also report. Emission is reported even if the input later rejects; proof replay and reopening completed inputs do not repeat it. Re-execution of an interrupted input can report again |
 | `unprovable_output` | An output does not prove against the root the settled machine holds |
 | `execution_stopped` | The machine halted, reached its cycle limit, or yielded an exception or an unexpected manual reason. Reported with the input offset and cause when the epoch first stops, and once on each reopening of a stopped epoch without the original input or cause. Later skipped inputs and proof replay do not repeat the report; the player continues defending its claim |
 | `uarch_claim_failed` | Building a uarch claim failed during replay, storage, RPC operations or uarch execution. The player reports the failure once per period and retries on subsequent requests. A successful construction clears the reporting state |

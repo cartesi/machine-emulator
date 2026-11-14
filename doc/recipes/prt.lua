@@ -2082,12 +2082,22 @@ function player_meta.__index:run_to_input_mcycle_offset(
     local machine = pair.machine
     local input_mcycle_base = begin_input(builder, pair, epoch_input_offset, input_data)
     local pending_output_hashes, last_output_data = {}, nil
+    -- First four bytes of keccak256("DelegateCallVoucher(address,bytes)"). No ABI decoding is needed.
+    local delegate_call_selector = "\x10\x32\x1e\x8b"
     local on_yield_automatic
     if last_output then
         function on_yield_automatic(yield_reason, output_data)
             if is_tx_output(yield_reason) then
                 if machine:read_reg("htif_tohost_data") > CMIO_TX_BUFFER_LENGTH then
                     self:report_anomaly("oversized_output", "at input %d", epoch_input_offset)
+                end
+                if output_data:sub(1, 4) == delegate_call_selector then
+                    self:report_anomaly(
+                        "delegate_call_voucher",
+                        "delegate-call voucher selector at input %d, output %d",
+                        epoch_input_offset,
+                        #pending_output_hashes
+                    )
                 end
                 pending_output_hashes[#pending_output_hashes + 1] = keccak(output_data)
                 last_output_data = output_data

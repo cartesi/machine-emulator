@@ -963,6 +963,101 @@ do
     getmetatable(player).__close(player)
 end
 
+-- Output monitoring classifies only the first four bytes. It neither decodes the payload nor
+-- changes the output frontier, and replay does not collect or report the outputs again.
+do
+    local evmu = require("cartesi.evmu")
+    local destination = "0x" .. string.rep("11", 20)
+    local delegate = evmu.encode_calldata("DelegateCallVoucher(address,bytes)", { destination, evmu.raw("payload") })
+    local selector = delegate:sub(1, 4)
+    local outputs = {
+        "",
+        selector:sub(1, 1),
+        selector:sub(1, 2),
+        selector:sub(1, 3),
+        evmu.encode_calldata("Voucher(address,uint256,bytes)", { destination, 0, evmu.raw(delegate) }),
+        evmu.encode_calldata("Notice(bytes)", { evmu.raw(delegate) }),
+        "x" .. delegate,
+        delegate,
+        selector,
+    }
+    local reports = {}
+    local function handler(kind, message)
+        reports[#reports + 1] = { kind = kind, message = message }
+    end
+    local player = new_test_player(nil, nil, "delegate", nil, handler)
+    local expected = hash_tree.frontier_copy(player.outputs_frontier)
+    -- Exercise the real input driver with synthetic automatic yields and an accepted boundary.
+    local function output_builder(rejected)
+        local builder = prt.new_null_computation_hash_builder()
+        local cursor = 0
+        function builder.begin_input(_, machine)
+            cursor = -1
+            function machine.receive_cmio_request()
+                if cursor == 0 then
+                    return cartesi.HTIF_YIELD_CMD_AUTOMATIC, cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT, delegate
+                elseif cursor <= #outputs then
+                    return cartesi.HTIF_YIELD_CMD_AUTOMATIC,
+                        cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT,
+                        outputs[cursor]
+                end
+                return cartesi.HTIF_YIELD_CMD_MANUAL,
+                    rejected and cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED
+                        or cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED,
+                    machine.outputs_root
+            end
+        end
+        function builder.run(_, machine)
+            cursor = cursor + 1
+            if cursor <= #outputs then
+                return cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY
+            end
+            machine.outputs_root = hash_tree.frontier_get_root_hash(expected)
+            return cartesi.BREAK_REASON_YIELDED_MANUALLY
+        end
+        return builder
+    end
+    player.epoch_builder = output_builder()
+    for input = 0, 1 do
+        for _, data in ipairs(outputs) do
+            hash_tree.frontier_push_back(expected, keccak(data))
+        end
+        add_input(player, input, fixture_input(keccak("input " .. input)))
+        assert(#reports == 2 * (input + 1), "delegate selector reports were missing, duplicated or overbroad")
+        for index = 1, 2 do
+            local anomaly = reports[2 * input + index]
+            assert(anomaly.kind == "delegate_call_voucher")
+            assert(
+                anomaly.message
+                    == string.format("delegate-call voucher selector at input %d, output %d", input, 6 + index)
+            )
+        end
+        assert(hash_tree.frontier_get_root_hash(player.outputs_frontier) == hash_tree.frontier_get_root_hash(expected))
+        assert(player.output_count == #outputs * (input + 1), "monitoring discarded an output")
+        assert(player.last_output.output_data == selector, "monitoring changed the malformed output")
+        hash_tree.verify_slice(player.last_output.output_proof)
+    end
+    -- Repeated delivery of completed inputs must not execute or report them again.
+    add_input(player, 0, fixture_input(keccak("input 0")))
+    assert(#reports == 4, "redelivery repeated output reports")
+    local pair <close> = player:new_machine_pair_at_epoch_input_offset(0)
+    player:run_to_input_mcycle_offset(
+        output_builder(),
+        pair,
+        0,
+        keccak("input 0"),
+        1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+    )
+    assert(#reports == 4, "proof replay repeated output reports")
+    player.epoch_builder = output_builder(true)
+    add_input(player, 2, fixture_input(keccak("rejected input")))
+    assert(#reports == 6, "rejected input emission was not reported")
+    assert(reports[5].message == "delegate-call voucher selector at input 2, output 7")
+    assert(reports[6].message == "delegate-call voucher selector at input 2, output 8")
+    assert(player.output_count == 2 * #outputs, "a rejected input retained its outputs")
+    assert(hash_tree.frontier_get_root_hash(player.outputs_frontier) == hash_tree.frontier_get_root_hash(expected))
+end
+
 -- An output that does not prove against the root the settled machine holds is reported and not offered.
 do
     local player = new_test_player(nil, prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial"))))
@@ -4056,6 +4151,109 @@ if arg[1] then
             "terminal input-boundary proof does not authenticate against the claim"
         )
         assert(#stopped == (terminal == "empty" and 0 or 1), "proof replay repeated the terminal report")
+    end
+end
+
+-- A real machine emits a selector-only output, then accepts. Stored-player reopening and
+-- replay retain its bytes, proof and final state without delivering the emission report again.
+do
+    local evmu = require("cartesi.evmu")
+    local output = evmu.encode_calldata("DelegateCallVoucher(address,bytes)", {
+        "0x" .. string.rep("11", 20),
+        evmu.raw(""),
+    }):sub(1, 4)
+    local frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+    local initial_outputs_root = hash_tree.frontier_get_root_hash(frontier)
+    hash_tree.frontier_push_back(frontier, keccak(output))
+    local final_outputs_root = hash_tree.frontier_get_root_hash(frontier)
+    local template_directory = temporary_directory .. "/delegate-template"
+    local epoch_directory = fs.create_temporary_directory(temporary_directory, "delegate-epoch-")
+    local _ <close> = setmetatable({}, {
+        __close = function()
+            prt.remove_epoch_directory(epoch_directory)
+            cartesi.machine:remove_stored(template_directory)
+        end,
+    })
+    local template <close> = cartesi.machine({
+        ram = { length = 4096 },
+        htif = { iyield = cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK | cartesi.HTIF_YIELD_CMD_MANUAL_MASK },
+    })
+    template:write_reg("pc", 0x80000000)
+    template:write_reg("x10", cartesi.AR_CMIO_TX_BUFFER_START)
+    template:write_reg("x11", (string.unpack("<I4", output)))
+    template:write_reg("x12", cartesi.AR_HTIF_START)
+    template:write_reg(
+        "x13",
+        (cartesi.HTIF_DEV_YIELD << 56)
+            | (cartesi.HTIF_YIELD_CMD_AUTOMATIC << 48)
+            | (cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT << 32)
+            | #output
+    )
+    for i = 0, 3 do
+        template:write_reg("x" .. (14 + i), (string.unpack("<I8", final_outputs_root, 8 * i + 1)))
+    end
+    local accepted = (cartesi.HTIF_DEV_YIELD << 56)
+        | (cartesi.HTIF_YIELD_CMD_MANUAL << 48)
+        | (cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED << 32)
+        | 32
+    template:write_reg("x18", accepted)
+    template:write_memory(
+        0x80000000,
+        string.pack(
+            "<I4I4I4I4I4I4I4",
+            0x00b52023, -- sw a1,0(a0): selector to TX buffer
+            0x00d63023, -- sd a3,0(a2): automatic output yield
+            0x00e53023, -- sd a4,0(a0): outputs root, word 0
+            0x00f53423, -- sd a5,8(a0): word 1
+            0x01053823, -- sd a6,16(a0): word 2
+            0x01153c23, -- sd a7,24(a0): word 3
+            0x01263023 -- sd s2,0(a2): manual acceptance yield
+        )
+    )
+    template:write_reg("iflags_Y", 1)
+    template:write_reg("htif_tohost", accepted)
+    template:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, initial_outputs_root)
+    local contract = {
+        geometry = prt.new_geometry(10),
+        initial_state_hash = template:get_root_hash(),
+        machine_directory = template_directory,
+    }
+    template:store(template_directory)
+    template:destroy()
+    local reports = {}
+    local function handler(kind, message)
+        reports[#reports + 1] = kind .. " " .. message
+    end
+    local input = fixture_input("delegate input")
+    local final_state
+    do
+        local stored <close> = prt.new_stored_player(contract, "delegate", nil, epoch_directory, nil, handler)
+        add_input(stored, 0, input)
+        assert(
+            #reports == 1 and reports[1] == "delegate_call_voucher delegate-call voucher selector at input 0, output 0"
+        )
+        final_state = stored.epoch_pair.machine:get_root_hash()
+    end
+    for _, sealed in ipairs({ false, true }) do
+        local reopened <close> = prt.new_stored_player(contract, "reopened", nil, epoch_directory, nil, handler)
+        add_input(reopened, 0, input)
+        if not sealed then
+            local pair <close> = reopened:new_machine_pair_at_epoch_input_offset(0)
+            reopened:run_to_input_mcycle_offset(
+                prt.new_null_computation_hash_builder(),
+                pair,
+                0,
+                fs.read_file(input),
+                1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+            )
+            assert(pair.machine:get_root_hash() == final_state, "replay changed the machine state")
+            reopened.event_handler.epoch_sealed(reopened, 1)
+        end
+        local proof = reopened:prove_output(0)
+        assert(proof.output_data == output and proof.output_proof.root_hash == final_outputs_root)
+        hash_tree.verify_slice(proof.output_proof)
+        assert(reopened.final_state_hash == final_state)
+        assert(#reports == 1, "reopening, redelivery, replay or proving repeated the output report")
     end
 end
 

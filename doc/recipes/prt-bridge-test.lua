@@ -695,6 +695,8 @@ for _, scheduler in ipairs(schedulers) do
     scheduler.claim_staging_period = 10
 end
 snapshot.staged = { log = { blockHash = "staging", blockNumber = "0x14", logIndex = "0x0" } }
+-- These scheduling fixtures represent a staged result already compared with local execution.
+snapshot.staged_result_matches = true
 assert(ready_at(29) == "")
 assert(ready_at(30) == "acceptStagedTournamentResult:one,acceptStagedTournamentResult:two")
 snapshot.settled = {}
@@ -1718,6 +1720,124 @@ do
         end
         unavailable:update_claims(late)
         assert(#unavailable.player.reports == 0, "an unavailable computation was compared with a join")
+    end
+
+    -- Staging is compared with the local final state and the root in the machine's outputs proof.
+    -- Acceptance requires an explicit match, whether or not the local claim joined the tournament.
+    local outputs = cartesi.keccak256("outputs")
+    local other_hash = eth.hex(cartesi.keccak256("other result"))
+    local function staged_view(state_hash, outputs_root, block_hash)
+        local view = new_view("bob")
+        view.ready = true
+        view.staged = {
+            stagedPostEpochMachineStateHash = state_hash,
+            stagedPostEpochOutputsMerkleRoot = outputs_root,
+            log = { blockHash = block_hash, blockNumber = "0x14", logIndex = "0x0" },
+        }
+        return view
+    end
+    local function staged_client(sentinel)
+        local checker = new_client(sentinel)
+        checker.epoch, checker.claim_staging_period = evmu.bint(7), 10
+        checker.player.event_handler.prove_outputs_merkle_root = function()
+            return { tx_buffer_data = outputs }
+        end
+        return checker
+    end
+    local function acceptance(checker, view)
+        for _, job in ipairs(checker:jobs(view)) do
+            if job.kind == "acceptStagedTournamentResult" then
+                return job
+            end
+        end
+    end
+    for _, sentinel in ipairs({ false, true }) do
+        for _, changed in ipairs({ "neither", "state", "outputs", "both" }) do
+            local state_hash = (changed == "state" or changed == "both") and other_hash or root_claim.final_state
+            local outputs_root = (changed == "outputs" or changed == "both") and other_hash or eth.hex(outputs)
+            local view = staged_view(state_hash, outputs_root, "staging")
+            local checker = staged_client(sentinel)
+            assert(not acceptance(checker, view), "acceptance scheduled before comparing the staged result")
+            for _ = 1, 2 do
+                checker:update_claims(view)
+            end
+            local agrees = changed == "neither"
+            assert((acceptance(checker, view) ~= nil) == agrees, "acceptance ignored " .. changed .. " mismatch")
+            assert(#checker.player.reports == (agrees and 0 or 1), "wrong staging report frequency")
+            if not agrees then
+                local anomaly = checker.player.reports[1]
+                assert(anomaly.kind == "staged_tournament_result_mismatch")
+                assert(anomaly.message:find("at epoch 7:", 1, true))
+                for _, value in ipairs({ state_hash, outputs_root, root_claim.final_state, eth.hex(outputs) }) do
+                    assert(anomaly.message:find(value, 1, true), "staging report omitted a compared hash")
+                end
+            end
+            local restarted = staged_client(sentinel)
+            restarted:update_claims(view)
+            assert(#restarted.player.reports == (agrees and 0 or 1), "restart missed the staged mismatch")
+
+            -- An absent tournament binding does not erase the locally computed result.
+            view.contexts.root.joined = {}
+            checker:update_claims(view)
+            assert(not checker.claims.root)
+            assert((acceptance(checker, view) ~= nil) == agrees, "acceptance depended on local claim ownership")
+        end
+
+        local checker = staged_client(sentinel)
+        local good = staged_view(root_claim.final_state, eth.hex(outputs), "good")
+        checker:update_claims(good)
+        assert(acceptance(checker, good))
+        local bad = staged_view(other_hash, eth.hex(outputs), "bad")
+        checker:update_claims(bad)
+        checker:update_claims(bad)
+        assert(not acceptance(checker, bad) and #checker.player.reports == 1, "reorg retained acceptance")
+        checker:update_claims(good)
+        assert(acceptance(checker, good) and #checker.player.reports == 1, "matching replacement did not recover")
+        bad.staged.log.blockHash = "replacement"
+        checker:update_claims(bad)
+        assert(not acceptance(checker, bad) and #checker.player.reports == 2, "replacement staging did not report")
+
+        local unknown = staged_client(sentinel)
+        unknown.player.event_handler.prove_outputs_merkle_root = function()
+            return "nothing"
+        end
+        unknown:update_claims(good)
+        assert(not acceptance(unknown, good) and #unknown.player.reports == 0, "missing outputs allowed acceptance")
+        unknown:update_claims(bad)
+        assert(#unknown.player.reports == 1, "known state mismatch was hidden by unavailable outputs")
+        local unavailable = staged_client(sentinel)
+        unavailable.player.event_handler.commit_mcycle_claim = function()
+            return "nothing"
+        end
+        unavailable:update_claims(good)
+        assert(not acceptance(unavailable, good), "missing local computation allowed acceptance")
+    end
+
+    -- A prepared acceptance is rechecked against the refreshed branch before publication. An already
+    -- pending acceptance becomes obsolete when a replacement staging event disagrees with local execution.
+    do
+        local checker = staged_client(false)
+        local view = staged_view(root_claim.final_state, eth.hex(outputs), "good")
+        checker:update_claims(view)
+        local job = assert(acceptance(checker, view))
+        checker.prepared[job.key] = { signer = checker.signer, to = "consensus", data = "accept" }
+        local replacement = staged_view(other_hash, eth.hex(outputs), "bad")
+        function checker.observe()
+            return replacement
+        end
+        local cancellations = 0
+        function checker.transactions.submit(_, _, candidate)
+            assert(candidate == nil, "a disagreeing result was submitted for acceptance")
+            cancellations = cancellations + 1
+            return { published = true }
+        end
+        local _, result = checker:attempt(job, view)
+        assert(not result and cancellations == 0, "prepared acceptance survived the refreshed comparison")
+        function checker.transactions.pending()
+            return { job = job.key, context = { epoch = "7" } }
+        end
+        checker:tick()
+        assert(cancellations == 1, "pending acceptance was not cancelled after disagreement")
     end
 end
 

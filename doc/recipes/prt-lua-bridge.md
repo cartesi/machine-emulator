@@ -563,12 +563,20 @@ error, and continues.
 | `falling_behind` | More inputs are pending than the gap between the machine cache's boundaries |
 | `unjoined_claim` | A tournament's joining window closed without the player's commitment |
 | `conflicting_claim` | An observed `CommitmentJoined` differs from the locally computed commitment. Validators and sentinels report the tournament and both commitments, even if the local claim can no longer join. Reported once per join log per process; a replacement log after a reorg or a restart can report again |
+| `staged_tournament_result_mismatch` | An observed `EpochStaged` has a machine-state hash or outputs root that differs from local execution. Reports the epoch and compared hashes once per staging log per process, including after restart, even if the local claim did not join. A replacement staging log after a reorg can report again |
 | `fee_ceiling` | A pending transaction reached the fee ceiling, and keeps its nonce |
 | `insufficient_funds` | The account cannot pay a transaction's value or its value plus gas at the fee cap |
 | `deadline_near` | A sentinel's expected action, such as the honest commitment's answer to a match, is still missing and its window ends within the warning blocks |
 | `missed_deadline` | A sentinel's expected action is still missing and its window closed |
 | `stalled_action` | A sentinel's expected action without a window, such as staging a won result, has been due for the warning blocks |
 | `lost_match` | A match of the honest commitment was deleted with its opponent as the winner, or with both eliminated |
+
+The bridge schedules `acceptStagedTournamentResult` only after both staged hashes
+match the local result. The expected outputs root comes from the machine's outputs
+proof. Missing local data does not authorize acceptance. Each observation recomputes
+the comparison; a prepared acceptance is checked again before publication, and a
+pending acceptance that becomes ineligible follows the existing cancellation path.
+A sentinel likewise does not expect acceptance of a result it disagrees with.
 
 ## The demo harness
 

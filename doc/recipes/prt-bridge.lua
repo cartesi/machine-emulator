@@ -280,6 +280,31 @@ local function can_join(self, context, snapshot)
         )
 end
 
+-- A staged result must agree with both the computed final state and the outputs root that machine
+-- holds. Missing local data leaves the comparison unknown, which cannot authorize acceptance.
+local function check_staged_result(self, staged, claim)
+    if not staged or not claim then
+        return nil
+    end
+    local response = payload(self, self.player.event_handler.prove_outputs_merkle_root(self.player))
+    local outputs_root = response and eth.hex(response.tx_buffer_data)
+    local outputs_match = outputs_root and staged.stagedPostEpochOutputsMerkleRoot == outputs_root
+    local matches = staged.stagedPostEpochMachineStateHash == claim.final_state and outputs_match
+    if matches == false then
+        self:report_once(
+            event_key(staged),
+            "staged_tournament_result_mismatch",
+            "at epoch %s: staged state %s, outputs %s; local state %s, outputs %s",
+            tostring(self.epoch),
+            staged.stagedPostEpochMachineStateHash,
+            staged.stagedPostEpochOutputsMerkleRoot,
+            claim.final_state,
+            outputs_root or "unavailable"
+        )
+    end
+    return matches
+end
+
 -- Claims belong to computations. Rebuild tournament bindings from the observed branch, parents first,
 -- keeping computation out of job queries. Cached computations survive changes to these bindings.
 function methods:update_claims(snapshot)
@@ -328,6 +353,8 @@ function methods:update_claims(snapshot)
             )
         end
     end
+    -- This evidence belongs to this observation, not to a binding or a previously staged result.
+    snapshot.staged_result_matches = check_staged_result(self, snapshot.staged, local_claims[self.root])
     return computed
 end
 
@@ -443,7 +470,13 @@ function methods:jobs(snapshot)
             end
         end
     end
-    if self.cleanup and snapshot.staged and not snapshot.settled and self.claim_staging_period then
+    if
+        self.cleanup
+        and snapshot.staged
+        and snapshot.staged_result_matches == true
+        and not snapshot.settled
+        and self.claim_staging_period
+    then
         add(
             "acceptStagedTournamentResult",
             snapshot.contexts[self.root],

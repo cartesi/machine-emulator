@@ -1295,6 +1295,28 @@ do
     assert(table.concat(submitted, ",") == "early", "a later-expiring job was attempted first")
 end
 
+-- A claim whose every leaf is the same state hash.
+local function repeated_claim(state_hash, height)
+    local cartesi = require("cartesi")
+    local root, siblings = state_hash, {}
+    for i = 1, height do
+        siblings[i] = root
+        root = cartesi.keccak256(root, root)
+    end
+    return {
+        computation_hash_left = siblings[height],
+        computation_hash_right = siblings[height],
+        final_state_hash_proof = {
+            target_address = (1 << height) - 1,
+            log2_target_size = 0,
+            log2_root_size = height,
+            target_hash = state_hash,
+            root_hash = root,
+            sibling_hashes = siblings,
+        },
+    }
+end
+
 -- The same child address can be recreated for another period. Rebind its
 -- claim to the new descriptor, retain the old computation, and revalidate
 -- contested final states even when returning to a previously computed period.
@@ -1302,33 +1324,30 @@ do
     local cartesi = require("cartesi")
     local builds = 0
     local player = { event_handler = {}, geometry = geometry }
+    local parent_response = repeated_claim(cartesi.keccak256("parent"), geometry.mcycle_height)
+    local parent_claim = eth.claim(parent_response, geometry.mcycle_height)
+    function player.event_handler.commit_mcycle_claim()
+        return parent_response
+    end
     function player.event_handler.commit_uarch_claim(_, input_index, period_index)
         assert(input_index == 0)
         builds = builds + 1
-        local state_hash = cartesi.keccak256(tostring(period_index))
-        local root, siblings = state_hash, {}
-        for i = 1, geometry.uarch_height do
-            siblings[i] = root
-            root = cartesi.keccak256(root, root)
-        end
-        return {
-            computation_hash_left = siblings[geometry.uarch_height],
-            computation_hash_right = siblings[geometry.uarch_height],
-            final_state_hash_proof = {
-                target_address = (1 << geometry.uarch_height) - 1,
-                log2_target_size = 0,
-                log2_root_size = geometry.uarch_height,
-                target_hash = state_hash,
-                root_hash = root,
-                sibling_hashes = siblings,
-            },
-        }
+        return repeated_claim(cartesi.keccak256(tostring(period_index)), geometry.uarch_height)
     end
     local parent = {
         address = "root",
         creation = creation,
-        descriptor = { startInstant = 0, allowance = 1 },
-        joined = {},
+        descriptor = {
+            initialHash = hash,
+            baseCycle = evmu.bint(0),
+            height = geometry.mcycle_height,
+            log2Stride = geometry.uarch_height,
+            level = 0,
+            kind = 1,
+            startInstant = 0,
+            allowance = 1,
+        },
+        joined = { [parent_claim.root] = { submitter = "alice" } },
         standing = { matchCount = 1 },
     }
     local child = {
@@ -1347,7 +1366,7 @@ do
             allowance = 100,
         },
         creation = {
-            one = "parent",
+            one = parent_claim.root,
             two = "other",
             contestedFinalStateOne = eth.hex(cartesi.keccak256("1")),
             contestedFinalStateTwo = hash,
@@ -1383,7 +1402,7 @@ do
         label = "replacement",
         transactions = {},
     })
-    client.claims.root = { root = "parent" }
+    client.claims.root = parent_claim
     assert(#client:jobs(view) == 0 and builds == 0 and not client.claims.child, "job query computed or bound a claim")
     client:update_claims(view)
     local original = client.claims.child
@@ -1412,9 +1431,15 @@ do
     child.creation.one, child.creation.two = "unrelated1", "unrelated2"
     client:update_claims(view)
     assert(not client.claims.child, "replacement match retained an ineligible claim association")
-    child.creation.one, child.creation.contestedFinalStateOne = "parent", original.final_state
+    child.creation.one, child.creation.contestedFinalStateOne = parent_claim.root, original.final_state
     client:update_claims(view)
     assert(builds == 2 and client.claims.child == original, "ineligible replacement erased reusable computation")
+    view.order = { parent }
+    client:update_claims(view)
+    assert(not client.claims.child, "a disappeared child retained its binding")
+    view.order = { parent, child }
+    client:update_claims(view)
+    assert(builds == 2 and client.claims.child == original, "a disappeared child lost its cached computation")
 
     -- Claim execution can outlive the joining window. Refresh must observe
     -- again before scheduling or deciding that pending work needs cancellation.
@@ -1439,26 +1464,6 @@ end
 -- binds the root and child claims its signer joined, and binds nothing for another signer's joins.
 do
     local cartesi = require("cartesi")
-    -- A claim whose every leaf is the same state hash.
-    local function repeated_claim(state_hash, height)
-        local root, siblings = state_hash, {}
-        for i = 1, height do
-            siblings[i] = root
-            root = cartesi.keccak256(root, root)
-        end
-        return {
-            computation_hash_left = siblings[height],
-            computation_hash_right = siblings[height],
-            final_state_hash_proof = {
-                target_address = (1 << height) - 1,
-                log2_target_size = 0,
-                log2_root_size = height,
-                target_hash = state_hash,
-                root_hash = root,
-                sibling_hashes = siblings,
-            },
-        }
-    end
     local mcycle_response = repeated_claim(cartesi.keccak256("final"), geometry.mcycle_height)
     local uarch_response = repeated_claim(cartesi.keccak256("period"), geometry.uarch_height)
     local root_claim = eth.claim(mcycle_response, geometry.mcycle_height)
@@ -1515,18 +1520,21 @@ do
             recovered = {},
         }
     end
-    local function new_client()
-        local player = { event_handler = {}, reports = {} }
+    local function new_client(sentinel)
+        local player = { event_handler = {}, reports = {}, builds = 0 }
         function player.report_anomaly(_, kind, fmt, ...)
             player.reports[#player.reports + 1] = { kind = kind, message = string.format(fmt, ...) }
         end
         function player.event_handler.commit_mcycle_claim()
+            player.builds = player.builds + 1
             return mcycle_response
         end
         function player.event_handler.commit_uarch_claim()
+            player.builds = player.builds + 1
             return uarch_response
         end
-        return bridge.new({
+        local construct = sentinel and bridge.new_sentinel or bridge.new
+        return construct({
             geometry = geometry,
             chain = {},
             abi = {},
@@ -1534,9 +1542,9 @@ do
             factory = "factory",
             consensus = "consensus",
             player = player,
-            signer = { address = "alice" },
+            signer = not sentinel and { address = "alice" } or nil,
             label = "restarted",
-            transactions = {},
+            transactions = not sentinel and {} or nil,
         })
     end
     local client = new_client()
@@ -1568,6 +1576,71 @@ do
         #absent.player.reports == 1 and report.kind == "unjoined_claim" and report.message == "at tournament root",
         "the unjoined claim was not reported once"
     )
+
+    -- Bindings and reports follow the observed window, even when the live tip is already past it.
+    -- Continuing and restarted validators and sentinels agree at each boundary.
+    for _, sentinel in ipairs({ false, true }) do
+        for _, missing in ipairs({ "root", "child", "neither" }) do
+            local view = new_view("bob")
+            view.head, view.tip = 8, 8
+            for _, tournament in ipairs(view.order) do
+                tournament.descriptor.allowance = 10
+                if missing == "root" or missing == tournament.address then
+                    tournament.joined = {}
+                end
+            end
+            local running = new_client(sentinel)
+            running:update_claims(view)
+            assert(running.claims.root and running.claims.child, "an open window lost a claim")
+            assert(#running.player.reports == 0, "an open window reported an unjoined claim")
+            view.tip = 12
+            running:update_claims(view)
+            local delayed = new_client(sentinel)
+            delayed:update_claims(view)
+            for _, current in ipairs({ running, delayed }) do
+                assert(current.claims.root and current.claims.child, "the live tip prematurely unbound a claim")
+                assert(#current.player.reports == 0, "the live tip prematurely reported an unjoined claim")
+                assert(#current:jobs(view) == 0, "the delayed observation scheduled an expired join")
+            end
+            -- Block 9 is the last possible join. Once observed, every eligible join is known.
+            view.head = 9
+            local restarted = new_client(sentinel)
+            for _, current in ipairs({ running, delayed, restarted }) do
+                for _ = 1, 2 do
+                    current:update_claims(view)
+                end
+                assert((current.claims.root ~= nil) == (missing ~= "root"), "wrong root binding after closure")
+                assert((current.claims.child ~= nil) == (missing == "neither"), "wrong child binding after closure")
+                local reports = current.player.reports
+                if missing == "neither" then
+                    assert(#reports == 0, "another signer's joins were reported as missing")
+                else
+                    assert(
+                        #reports == 1
+                            and reports[1].kind == "unjoined_claim"
+                            and reports[1].message == "at tournament " .. missing,
+                        "the closed window was not reported once"
+                    )
+                end
+            end
+            assert(running.player.builds == 2, "rebinding rebuilt cached computations")
+        end
+
+        -- A restart can first see a pruned child. Binding its parent requests another observation,
+        -- and building the fetched child requests a final fresh snapshot before scheduling work.
+        local resumed = new_client(sentinel)
+        local observations = 0
+        function resumed.observe()
+            observations = observations + 1
+            local view = new_view("bob")
+            view.ready = true
+            view.contexts.child.finished = observations == 1
+            return view
+        end
+        resumed:refresh()
+        assert(observations == 3 and resumed.player.builds == 2, "a pruned child was not refreshed and built")
+        assert(resumed.claims.root and resumed.claims.child, "a refreshed child lost its binding")
+    end
 end
 
 -- A transaction the player cannot publish is reported once each time the reason changes.

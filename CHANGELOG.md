@@ -59,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`
 
 ### Fixed
+- Fixed PRT bridges retaining unjoined claims after their observed joining window closed and missing the anomaly report
+- Fixed restarted PRT bridges dropping claims before delayed observations covered the joining window
 - Fixed transient uarch claim construction failures permanently suppressing PRT claims until restart
 - Fixed PRT template validation accepting halted machines with a manual yield also set
 - Fixed Lua JSON conversion silently replacing NaN and infinities with null instead of rejecting them

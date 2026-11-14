@@ -270,13 +270,6 @@ local function build_claim(self, context)
     return claim, response ~= nil
 end
 
-local function bind_claim(self, address, claim)
-    if self.claims[address] == claim then
-        return
-    end
-    self.claims[address] = claim
-end
-
 local function can_join(self, context, snapshot)
     local event, d = context.creation, context.descriptor
     return snapshot.tip + 1 < eth.small(d.startInstant) + eth.small(d.allowance)
@@ -287,43 +280,32 @@ local function can_join(self, context, snapshot)
         )
 end
 
--- Claims belong to computations; tournament addresses are only associations
--- reconstructed from the current branch. Keep computation out of job queries.
+-- Claims belong to computations. Rebuild tournament bindings from the observed branch, parents first,
+-- keeping computation out of job queries. Cached computations survive changes to these bindings.
 function methods:update_claims(snapshot)
     local computed = false
+    self.claims = {}
     for _, context in ipairs(snapshot.order) do
         local event = context.creation
         local holds_parent = not context.parent
             or holds(self, context.parent, event.one)
             or holds(self, context.parent, event.two)
-        if context.finished then
-            -- A restarted bridge observes before it holds its claims. A finished child it holds a commitment
-            -- of was not fetched then, so it is judged only after another observation.
-            computed = computed or holds_parent
-        else
-            local bound_child = context.parent and self.claims[context.address]
-            if bound_child and not holds_parent then
-                bind_claim(self, context.address, nil)
-                bound_child = nil
-            end
-            local joinable = can_join(self, context, snapshot)
-            local unbound = holds_parent and not self.done and not self.claims[context.address]
-            if bound_child or joinable or unbound then
+        if holds_parent and not self.done then
+            if context.finished then
+                -- Observation pruned this child's logs before its parent was bound. Fetch them before
+                -- deciding whether the player holds its child claim.
+                computed = true
+            else
                 local claim, built = build_claim(self, context)
-                -- After its joining window, the player holds its claim only if that commitment was joined, by
-                -- anyone, so a restarted bridge derives the same bindings from the chain
-                if claim and (bound_child or joinable or context.joined[claim.root]) then
-                    bind_claim(self, context.address, claim)
-                elseif
-                    claim
-                    and not self.unjoined[context.address]
-                    and snapshot.head + 1
-                        >= eth.small(context.descriptor.startInstant) + eth.small(context.descriptor.allowance)
-                then
-                    -- The window closed by the observed head, so every join is visible, and none was the
-                    -- player's commitment. The player cannot defend it there.
-                    self.unjoined[context.address] = true
-                    self.player:report_anomaly("unjoined_claim", "at tournament %s", context.address)
+                local deadline = eth.small(context.descriptor.startInstant) + eth.small(context.descriptor.allowance)
+                -- The head must include the last eligible join block before an absent join is conclusive.
+                -- Scheduling still uses the live tip, which can already be past the joining window.
+                if claim then
+                    if snapshot.head + 1 < deadline or context.joined[claim.root] then
+                        self.claims[context.address] = claim
+                    else
+                        self:report_once(context.address, "unjoined_claim", "at tournament %s", context.address)
+                    end
                 end
                 computed = computed or built
             end
@@ -905,8 +887,7 @@ local function new(args)
         signer = args.signer,
         label = args.label,
         claims = {},
-        -- Tournaments whose window closed without the player's commitment, reported once each.
-        unjoined = {},
+        reported = {},
         computations = {},
         cleanup = args.cleanup ~= false,
         epoch = args.epoch,
@@ -945,7 +926,6 @@ function M.new_sentinel(args)
     assert(args.player and args.label, "missing player or label")
     local sentinel = new(args)
     sentinel.sentinel = true
-    sentinel.reported = {}
     sentinel.warning_blocks = args.warning_blocks or 10
     assert(math.type(sentinel.warning_blocks) == "integer" and sentinel.warning_blocks >= 0, "invalid warning blocks")
     return sentinel

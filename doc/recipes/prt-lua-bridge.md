@@ -423,6 +423,14 @@ A tick is one pass of the bridge.
    observed block is canonical and the window is open, and publish at most one
    transaction.
 
+Each refresh rebuilds tournament bindings from the observation, parents before
+children, while retaining cached computations. A claim stays bound while the
+observed joining window is open, and afterward only if anyone joined its
+commitment. An absent join is reported once per tournament when the observed
+head includes the last eligible join block. The live tip still controls whether
+a new transaction can enter the window, so delayed observations neither allow
+late joins nor prematurely report missing ones.
+
 Nothing executes while historical events are processed, so a skipped head never
 triggers an expired job. Completion events from any participant complete the
 matching jobs before selection. A job whose simulation reverts is skipped until

@@ -74,6 +74,9 @@ Where the threat model can be read two ways, the severity column gives the revie
 | [R6-DYNBRIDGE-2](#r6-dynbridge-2) | PRT epoch listener aborts crisium ("epoch log history was truncated") when a reorg shallower than a numeric input policy lowers the head over still-canonical, already-applied inputs | doc/recipes/prt-epoch.lua methods:poll with prt-log-history.lua observe (rewinds to min(common_ancestor, head)); run by  | Support (PRT player), standing in for the honest operator (O | R4, section 4 (chain trusted as far as input policy), section 3 stand-in rule, s | Medium (preferred: stand-in honest-operator crash on a within-policy reorg) / Low (if a crash that relaunch recovers violates no rule) |
 | [R7-MANARCH-1](#r7-manarch-1) | Manual's advance-state delivery lists four writes; every path also sets imcyclemax=mcycle+2^48-1 and zero-pads the rx buffer, so the documented delivery yields a different state hash | Input delivery (src/send-cmio-response.cpp, state-access do_write_memory_with_padding) vs doc/README.md delivery descrip | Honest operator (manual as specification; regenerated step a | THREAT_MODEL intro and section 2 (manual defines the transition function), R7, R | Medium (preferred) / Critical (literal section 2 or R7 rx-buffer 'contents') / Low (manual read as non-exhaustive) |
 | [R7-MANARCH-2](#r7-manarch-2) | Manual presents processor shadow 0x0-0xfff and shadow TLB 0x1000-0x6fff as main-processor-visible ranges with PMA entries; emulator registers them with .pmas=false and guest loads fault | Interpreter / state layout: PMA array registration (src/machine-address-ranges.cpp ~315) vs doc/README.md 'The main proc | Honest operator (AUDIT.md: 'Interpreter, state-access layers | R7, R8, R13; section 8 manual-contradiction clause; section 8 Medium case 1 | Medium (preferred) / Critical (literal R7 'any deviation' in 'memory permissions') / Low (loose reading of manual) |
+| [R7-MANCLIROLL-1](#r7-mancliroll-1) | cartesi-machine stored revert mode: SIGINT or I/O error inside a commit runs the error-path revert, which deletes the synced O2-guaranteed machine directory before checking the backup | cartesi-machine CLI --revert-mode=stored (src/cartesi-machine.lua revert_stored commit 3893-3918, revert 3920-3929, __cl | Support (AUDIT.md: the cartesi-machine CLI), standing in for | O2, section 5 (tools must follow O1/O2; damage to a guaranteed directory not exc | Medium (preferred) / Low (if deleting a guaranteed directory breaks no rule while the template remains a guaranteed restart point) / Out of scope for the host-I |
+| [R7-MANCLIROLL-2](#r7-mancliroll-2) | Manual's uarch computation-hash shortcut (begin_epoch:false,next_input_offset, no epoch files) aborts with outputs Merkle root mismatch and no claim after any earlier accepted output | cartesi-machine CLI --cmio-advance-state + --uarch-cycle-computation-hash (initialize_cmio_outputs, flush_pending_output | Support (stands in for the honest operator as a tool that co | R4, section 3 support stand-in rule, section 8 manual-contradiction clause, R12  | Medium / Low |
+| [R7-MANHASHCOMP-1](#r7-manhashcomp-1) | The manual's output verifier, verify-output-proof.lua, runs proof files as Lua code, so an 18-byte proof hangs it and a 46-byte proof allocates about 1 GiB before any check runs | doc/recipes/verify-output-proof.lua read_proof (also printed in doc/README.md 'Output verification'); the same pattern i | Support (manual demonstration and copy of the output verifie | THREAT_MODEL s4 'Logs and proofs are adversarial' and 'must be memory-safe and b | Medium (alternative reading: Low) |
 | [R7-MANTOURN-1](#r7-mantourn-1) | At divergence leaf 0, Dave's _requireAgreeState and prt.lua validate_seal_response accept any agreed-state proof, though only an empty one fits; one surplus sibling is refused past leaf 0. | Dave v3.0.0-alpha.7 Match._requireAgreeState (via sealLeafMatch / sealInnerMatchAndCreateInnerTournament); doc/recipes/p | Referee model (Dave as the deployed referee; doc/recipes mod | R3 (trailing data), section 4 (proofs adversarial), section 3 referee model, sec | Medium / Low |
 
 <!--
@@ -8785,6 +8788,514 @@ who follows the manual and reads a register through the processor shadow, or sea
 `PMA_SHADOW_STATE_DID` entry, gets a load access fault or no entry. A guest that does so while processing an input
 would trap where the manual promises a read. Mitigation outside the code: read machine-identification and other
 registers through the CSRs the specification provides, and treat `0x0-0x7fff` as inaccessible to the guest.
+
+## R7-MANCLIROLL-1
+
+**Title.** In `cartesi-machine --revert-mode=stored`, an error raised inside a commit after the removal of the old
+`<directory>.revert` starts (a SIGINT, or a host I/O error) runs the CLI's own error-path revert. That revert deletes
+the synced, O2-guaranteed `<directory>` before it checks that a backup exists. The documented recovery rule then has
+no intact committed state to resume from.
+
+**Severity.** Medium (preferred). Low if deleting a guaranteed directory breaks no rule while the epoch's template
+stays a guaranteed restart point. For the host-I/O-error triggers alone, the host-fault exclusion read literally makes
+them Out of scope. The SIGINT trigger is not a host fault.
+
+### Problem
+
+`revert_stored.__index:commit` runs after `backup:snapshot()` has set `snapshot_taken = true` (in
+`run_advance_state_input`, the accepted branch calls `backup:commit()`). The commit does these steps:
+
+1. Destroys the machine and syncs `machine`. From here on O2 guarantees `machine`, and it holds the newly accepted
+   state.
+2. Clones `machine` to `machine.revert.tmp` and syncs the clone.
+3. Calls `remove_stored(machine.revert)` and sets `self.backup_directory = nil`.
+4. Renames `.tmp` to `machine.revert`. If the rename fails, it calls `remove_stored(machine.revert.tmp)` and
+   rethrows.
+5. Sets `self.backup_directory`, loads `machine` again, and only then clears `snapshot_taken`.
+
+Suppose an error leaves `commit()` during or after step 3. The trigger can be a SIGINT, which `lua5.4` raises as
+`interrupted!` once `remove_stored` returns, or an `EIO`, `ENOSPC` or `EDQUOT` from `unlink` or `rename`. Then
+`snapshot_taken` is still true, so the to-be-closed `backup` runs `revert_stored:__close(err)`, which calls
+`revert()`. `revert()` runs `m:remove_stored(machine)` unconditionally, and only then calls
+`m:clone_stored(self.backup_directory, machine)`. The backup directory is nil, removed or half-removed, so the clone
+fails. By then the synced `machine` is already gone. Three outcomes follow:
+
+- **SIGINT during the removal of the old backup.** `machine` and `machine.revert` are gone, and only
+  `machine.revert.tmp` holds the committed state. The documented rule says "If `machine.revert` is missing but
+  `machine.revert.tmp` exists, ... `machine` holds that state and `machine.revert.tmp` can be discarded". That
+  points at the deleted `machine`, and it tells the operator to discard the only intact copy.
+- **The rename fails.** `machine`, `machine.revert` and `machine.revert.tmp` are all gone. The rule says "If neither
+  exists, the command stopped before its first commit", which is false here.
+- **An unlink of the old backup fails.** `machine` is gone, and `machine.revert` is half-removed and does not load.
+  The rule resumes from that partial `machine.revert` and discards the intact `.tmp`.
+
+The manual's promise "`machine.revert` always holds a synced copy of the last committed state" fails in all three
+cases. The tool's own handling of a stop damages a directory while O2 guarantees it. Its documented restart then
+cannot resume from the guaranteed copy of the committed state, so the operator has to re-run the epoch from the
+template. No wrong hash results, and every failure is loud.
+
+### Component, role and area
+
+- **Component:** the `cartesi-machine` CLI (`src/cartesi-machine.lua`) in stored revert mode, together with its
+  documented recovery rule.
+- **Role:** Support. The AUDIT.md table says: "The PRT player and bridge in `doc/recipes`, the `cartesi-machine` CLI,
+  ... | Support. No production deployment runs the player, the bridge or the CLI." The CLI computes claims (outputs
+  Merkle roots, computation hashes), so it stands in for the honest operator.
+- **Emulator API:** `remove_stored`, `clone_stored`, `sync_stored` and `rename_stored` behave as documented and do
+  not show the defect.
+- **Area:** the CLI's snapshot/commit/revert state machine on its error path.
+
+### Location
+
+- `src/cartesi-machine.lua`:
+  - `revert_stored.__index:commit` (lines 3893-3918). `snapshot_taken` stays true until line 3917, after
+    `remove_stored(self.backup_directory)` (line 3905), `self.backup_directory = nil` (line 3906) and the failed-rename
+    branch (lines 3909-3913).
+  - `revert_stored.__index:revert` (lines 3920-3929), which calls `remove_stored(machine)` before
+    `clone_stored(self.backup_directory, ...)`.
+  - `revert_stored:__close` (lines 3941-3943).
+  - The caller: `backup:snapshot()` (line 4707), then `backup:commit()` (line 4725).
+  - The `--revert-mode` help (lines 163-175).
+- `doc/README.md`, lines 2522-2541: the stored-mode description and the recovery rule.
+
+### Evidence and test
+
+`bugs/R7-MANCLIROLL-1/` contains these files:
+
+- `test.sh`: the driver.
+- `ioshim.c`: an `LD_PRELOAD` shim. It fails one chosen `renameat2()` or `unlink()` with `EIO`, or, with
+  `FAIL_SIGINT`, raises SIGINT at that call and lets the call succeed.
+- `check.lua`: inspects what is left on disk and applies the documented rule.
+- `README.md`.
+
+**How the test runs.**
+
+1. `test.sh` builds the shim.
+2. It runs the manual's stored-mode command on `bugs/harness/work/configs/baremetal-template` with two accepted
+   inputs:
+   `--revert-mode=stored --load=machine,clone:<template>/machine,sharing:all --cmio-advance-state=input_file_index_begin:0,input_file_index_end:2`.
+3. It runs a control without a fault, which must succeed.
+4. It runs three fault cases. Each fires inside input 0's commit, once `input-0-outputs-merkle-root.bin` exists:
+   - **rename:** `renameat2(machine.revert.tmp -> machine.revert)` fails with `EIO`.
+   - **unlink:** the 2nd `unlink` under `machine.revert/` fails with `EIO`.
+   - **interrupt:** SIGINT is raised at the 2nd `unlink` under `machine.revert/`, and every call succeeds.
+5. `check.lua` computes the committed states independently from the template: initial `428a6bb8...`, after input 0
+   `1fd4a350...`, and after input 1 `c8bf66d5...`. Each case passes only if one of these holds:
+   - `machine`, which was O2-guaranteed with the state after input 0 when the fault hit, still loads with a later
+     committed state.
+   - The documented rule selects a directory that loads, with its cached root equal to its rebuilt root, and holds a
+     committed state.
+
+Run it with `bugs/run.sh R7-MANCLIROLL-1` (about 8 s). On audit/prt2 it prints the following (abridged):
+
+```
+== case rename: ...
+    ioshim: failing renameat2 machine.revert.tmp with EIO
+    lua5.4: .../cartesi-machine.lua:3926: bad argument #1 to 'clone_stored' (string expected, got nil)
+    machine: absent / machine.revert: absent / machine.revert.tmp: absent
+  case rename: BUG
+== case unlink: ...
+    ioshim: failing unlink machine.revert/0000000000000000-8000.dht with EIO
+    machine: absent
+    machine.revert: present, does not load: unable to open backing file '.../machine.revert/0000000000000000-8000.bin' ...
+    machine.revert.tmp: present, root 1fd4a350... (after input 0)
+  recovery rule: machine.revert exists -> resume from machine.revert; yields a committed state: false
+  case unlink: BUG
+== case interrupt: ...
+    ioshim: raising SIGINT at unlink machine.revert/0000000000000000-8000.dht
+    lua5.4: .../cartesi-machine.lua:3926: unable to read file 'machine.revert/config.json': open() failed: No such file or directory
+    machine: absent / machine.revert: absent
+    machine.revert.tmp: present, root 1fd4a350... (after input 0)
+  recovery rule: only machine.revert.tmp exists -> resume from machine; yields a committed state: false
+  case interrupt: BUG
+run.sh: R7-MANCLIROLL-1: exit 1 (bug present)
+```
+
+**Runs and checks.**
+
+- The prover wrote the rename and unlink cases. The reviewer added the interrupt case (the `FAIL_SIGINT` mode of
+  `ioshim.c`), because it triggers the same code path without a host fault, and made `check.lua`'s message generic.
+- The reviewer ran the test twice, and it exited 1 both times with the same output.
+- The reviewer then ran `test.sh` against a scratch copy of the CLI whose `commit` sets `self.snapshot_taken = false`
+  right after `m:sync_stored(self.machine_directory)`. With that copy, all three cases pass and the test exits 0:
+  `machine` survives with root `1fd4a350...`.
+- The prover reported that the rename case still fails with R5-INVSTORE-2's rename-before-remove fix applied.
+- All agents ran on Opus 5.5 (no fallback).
+
+### Trigger and reachability
+
+The trigger is an error raised inside a commit while the old `machine.revert` is being removed, or between that
+removal and the end of the rename. Two kinds of event raise it:
+
+- an operator's interrupt (SIGINT, Ctrl-C, as delivered by a terminal or a supervisor), which the shipped launcher
+  (`lua5.4 cartesi-machine.lua`) turns into a Lua error;
+- a host I/O error from `unlink` or `rename`.
+
+No input or adversary is needed. Every stored-mode run removes the old backup at every commit after the first, which
+means after every accepted input, with any valid template and any input sequence. On a Linux machine,
+`remove_stored` unlinks dozens of files and makes the removal durable, so the window is not instantaneous.
+
+### Rating
+
+1. **Out of scope.** Three exclusions were checked:
+   - "Host faults, such as a full disk, as long as the emulator does not turn them into a wrong hash, a wrong proof,
+     or a directory that O2 guarantees but that later loads as a different state." Read literally, this covers the
+     rename and unlink cases: deletion is none of the three listed outcomes. It does not cover the interrupt case,
+     because a SIGINT is not a host fault.
+   - "Defects that need the honest operator to reload a stored directory that O2 does not guarantee". The defect does
+     not need such a reload. `machine` was guaranteed when the CLI deleted it: it had been synced after its machine
+     was destroyed, and it was not used afterwards.
+   - O2's "leaves every stored directory it was writing or sharing in an unspecified state" does not excuse the
+     deletion either. Section 5 says: "A defect that ... damages a directory while O2 guarantees it, is not excused
+     by them."
+
+   So the defect is in scope through the interrupt trigger.
+2. **Role.** The CLI is Support (AUDIT.md table, quoted above). Section 3 says: "A defect that only a support
+   component shows is Medium when it would rate High or Critical in the role the component stands in for, such as
+   ... the honest operator for an implementation of an operator or a tool that computes claims." The clause covers
+   the CLI, which computes outputs Merkle roots and computation hashes. The emulator's stored-machine functions do
+   not show the defect.
+3. **High and Medium cases.** The candidate case is "A persistence operation that fails loudly, without a wrong hash
+   or damage to a directory that O2 guarantees, in an uncommon host setup that the manual documents, or while cleaning
+   up after a stop." It does not fit. The CLI's cleanup after the interrupt deletes `machine`, which is damage to a
+   directory that O2 guarantees. No High case fits.
+4. **Critical (in the stand-in role).** "Restarting after a stop (O2)" is part of the "Honest operator's path".
+   - R4 requires: "After a stop, it restarts from a directory that O2 guarantees and keeps defending its claim."
+   - O2 requires: "The operator discards those directories and resumes from a guaranteed one, such as the snapshot
+     taken before the current input."
+   - Section 5 adds: "O1 and O2 bind the emulator too. The tools and reference implementations that ship with it
+     must follow them".
+
+   The tool's stop handling deletes the guaranteed snapshot of the committed state. Its documented rule then resumes
+   from a deleted or partial directory, and it discards `machine.revert.tmp`, the remaining guaranteed copy. That
+   violates O2 as it binds the tool, at a reachable state and on the honest operator's path, which is Critical in the
+   honest-operator role. The support rule therefore gives **Medium**, and step 2 caps a support-only defect at Medium.
+   The manual's "`machine.revert` always holds a synced copy of the last committed state" is also contradicted.
+   Section 8 says such a contradiction "takes the severity it would have if the manual were right".
+
+**Other readings.**
+
+- **Low.** Starting over from the epoch's template, which the CLI never touches, is still "a directory that O2
+  guarantees". On this reading R4 can be met at the cost of re-running the epoch, deleting a guaranteed directory
+  breaks no listed rule, and the defect is Low. The deciding fact is whether section 5's "damages a directory while
+  O2 guarantees it" marks a violation on its own, or only removes an excuse.
+- **Out of scope.** The host-I/O-error cases alone are Out of scope under the literal host-fault exclusion. They would
+  be Medium only if the exclusion's protected outcomes were read to include damage to a guaranteed directory, which
+  the Medium case's wording "without ... damage to a directory that O2 guarantees" suggests.
+
+### Possible solution and risks
+
+Make the commit stop counting as an open snapshot once `machine` is synced: set `self.snapshot_taken = false`
+immediately after `m:sync_stored(self.machine_directory)`. After that point the accepted state is durable, and
+reverting it is never correct. Also make `revert()` check that `self.backup_directory` exists and loads before it
+removes `machine`, or clone the backup to a temporary name first and rename it into place. On a failed rename, keep
+`machine.revert.tmp` instead of removing it.
+
+Combine this with R5-INVSTORE-2's rename-before-remove change, so that a partial `machine.revert` never exists, and
+update the manual's rule and its Lua excerpt to match.
+
+Risks of the fix:
+
+- After an error past the sync, the process exits with `machine` holding the accepted state but not loaded. Callers
+  that expect a reverted machine on any error must not rely on that.
+- `machine.revert.tmp` may be left behind. The rule already says it is discarded in every case.
+
+### Risk of not fixing it
+
+No production deployment runs the CLI, so the goal is not directly exposed. An operator or integrator who interrupts
+a stored-mode run, or whose disk returns an I/O error, during a commit loses the synced copy of the last committed
+state. If they follow the documented recovery rule, they also discard the only remaining copy and must re-run the
+epoch from the template. Node implementations that copy this snapshot/commit/revert pattern inherit a stop handler
+that deletes guaranteed directories.
+
+Mitigation until fixed:
+
+- Do not interrupt stored-mode runs with SIGINT.
+- After any abnormal exit, check `machine.revert.tmp` for the committed state before discarding anything.
+
+## R7-MANCLIROLL-2
+
+**Title.** The manual's uarch computation-hash shortcut for a later input (`begin_epoch:false,next_input_offset`, "needs no epoch files") aborts with "outputs Merkle root mismatch" and prints no claim whenever an earlier input accepted an output.
+
+**Severity.** Medium (Low under the alternative reading below)
+
+### Problem
+
+doc/README.md ("Computation hashes") documents how to compute a uarch cycle computation hash for a period in a later
+input without running the epoch from its start:
+
+> The uarch cycle computation hash needs no epoch files. [...] A period in a later input does not require running
+> the epoch from its start. Given a machine at the state that receives that input, `begin_epoch:false` with
+> `next_input_offset` set to the input's zero-based offset in the epoch, counting rejected inputs, starts there.
+
+The CLI help says the same ("use begin_epoch:false and next_input_offset in --cmio-advance-state when starting from a
+later input. no epoch files are required for uarch computation hashes.").
+
+In that mode, with no `outputs_frontier` or `last_output_proof`, the `cartesi-machine` CLI starts its host copy of
+the outputs Merkle tree empty, while the guest's tx buffer commits to every output accepted earlier in the epoch (and
+before it), as a correctly designed application must. `check_outputs_merkle_root` defaults to true, so at the
+target input's rx-accepted yield the CLI asserts "outputs Merkle root mismatch at input k" and exits 1. When the target
+period lies after the input stops (the period is completed in `end_input`, after the flush), no claim is printed at
+all; when it lies inside the input, the hash is printed but the process still exits 1. Any correctly designed
+application that accepted at least one output before the target input triggers it, including the manual's own
+rolling-calculator example, whose inputs each emit an output.
+
+The claim computed by a tool that computes claims is what the honest operator defends. The documented route to the
+uarch-level claim of a later input, which keeps the cost of reaching the period at "the mcycles from the nearest
+retained input boundary" (R12), fails for essentially every real application. The behavior contradicts the manual on
+a point about computing claims (completeness), which section 8 rates "as if the manual were right".
+
+### Component, role and area
+
+The `cartesi-machine` CLI (`src/cartesi-machine.lua`), `--cmio-advance-state` output bookkeeping combined with
+`--uarch-cycle-computation-hash`. Role from the AUDIT.md table: "The PRT player and bridge in `doc/recipes`, the
+`cartesi-machine` CLI, and the Lua helper libraries ... | Support. No production deployment runs the player, the
+bridge or the CLI." The PRT player (`doc/recipes/prt.lua`) computes its claims through the Lua API, not through the
+CLI, and does not share the defect. The emulator API (`collect_uarch_cycle_root_hashes`) behaves correctly: with the
+check disabled, the same shortcut prints the correct hash.
+
+### Location
+
+- `src/cartesi-machine.lua`, `initialize_cmio_outputs` (about lines 3533-3557): with `begin_epoch:false`, no
+  `outputs_frontier` file and no `last_output_proof`, `advance.outputs_frontier` falls back to an empty frontier.
+- `src/cartesi-machine.lua`, `flush_pending_outputs` (about lines 3679-3697): `assertf(frontier root == data,
+  "outputs Merkle root mismatch at input %d", ...)` when `check_outputs_merkle_root` (default true, line 2084).
+- `src/cartesi-machine.lua`, `run_advance_state_input` (about lines 4712-4730): `flush_pending_outputs` runs before
+  `builder:end_input(runner)`, and `uarch_cycle_computation_hash_end_input` (about lines 4458-4473) is where a period
+  after the input's stop is completed.
+- doc/README.md, "Computation hashes", the paragraphs starting "The uarch cycle computation hash needs no epoch files"
+  (about lines 2686-2715); CLI help text for `check_outputs_merkle_root` and the `--uarch-cycle-computation-hash`
+  notes (about lines 558-562 and 635-637).
+
+### Evidence and test
+
+`bugs/R7-MANCLIROLL-2/` contains `test.lua` (the test), `README.md` (the prover's description) and this entry. Run
+with `bugs/run.sh R7-MANCLIROLL-2` (about 1 s). The test uses the harness `baremetal-template` guest
+(`emit-output.c`: every advance payload becomes one output and one report, and the guest accepts with the updated
+outputs Merkle root; payload `R` makes it reject). All CLI runs use `--remote-spawn --remote-shutdown`; the period is
+`log2_mcycle_period:10`, `mcycle_period_index:2^38+100000`, which lies in input 1, after it stops.
+
+1. Reference: from the template, inputs 0..1 with `begin_epoch:true`.
+2. `--store` after input 0; the test checks the stored machine waits at an rx-accepted manual yield (the state that
+   receives input 1).
+3. control2 (setup check): input 0 rejected, so no output precedes input 1; the documented shortcut must exit 0 and
+   match its reference.
+4. control (setup check): input 0 accepted with one output; the shortcut plus `check_outputs_merkle_root:false` must
+   match the reference.
+5. target: the shortcut exactly as documented (`input_file_index_begin:1,input_file_index_end:2,begin_epoch:false,
+   next_input_offset:1`, no epoch files) after input 0 accepted one output; asserts exit 0 and the reference hash.
+
+A failing control exits 2. On audit/prt2 the reviewer re-ran it twice (the prover three times), each time with exit 1
+and this output:
+
+```
+control2 (input 0 rejected): reference 0x7a27bb69b189b51003d4a579564d67f7b520f83b5f62e1f473f291fdb96bf8fa, shortcut exit 0, hash 0x7a27bb69b189b51003d4a579564d67f7b520f83b5f62e1f473f291fdb96bf8fa
+reference (from template, inputs 0..1, begin_epoch:true): 0xad98ec9470b66bb1d00bb11b1c4518d7a214e8e5d70e8ae8c76f7d60807a5710
+control (shortcut + check_outputs_merkle_root:false): exit 0, hash 0xad98ec9470b66bb1d00bb11b1c4518d7a214e8e5d70e8ae8c76f7d60807a5710
+target (documented shortcut after an accepted output): exit nonzero, hash nil
+  CLI error: /home/user/machine-emulator/src/cartesi-machine.lua:3692: outputs Merkle root mismatch at input 1
+VIOLATED: R4 / doc/README.md: the documented uarch computation-hash shortcut (begin_epoch:false,next_input_offset) from the machine that receives input 1 must compute the claim 0xad98ec9470b66bb1d00bb11b1c4518d7a214e8e5d70e8ae8c76f7d60807a5710
+run.sh: R7-MANCLIROLL-2: exit 1 (bug present)
+```
+
+The controls show that the command form is right and that only the host outputs-root check stops the run. A fix in
+the CLI (for example not checking against an unknown host frontier in this mode) makes the test exit 0. The test was
+not modified by the reviewer. Found, proved and reviewed on Opus 5.5; no fallback model was used.
+
+### Trigger and reachability
+
+Triggered by the operator running the manual's documented command, on any correctly designed application that
+accepted at least one output before the target input in the epoch, or before the epoch (the guest's root also commits
+to outputs its template already commits to). The state is reachable: a single accepted input that emits one output,
+delivered to a valid template, produces it (the test does exactly this from the harness template). No adversary is
+needed; an adversary can only choose to steer a uarch-level dispute into a later input, which the honest claim must
+then answer.
+
+### Rating
+
+1. Out of scope: no. The trigger is a correctly designed application and the documented CLI command. The exclusion
+   "An application that is not correctly designed ... Development tools may instead stop and report the violation"
+   does not apply, because the application follows the rollup interface (the controls show its root is the correct
+   one). No snapshot outside the valid-template conditions, no O1/O2 case, no host fault and no deployment violation
+   is involved.
+2. Role: the `cartesi-machine` CLI is Support per the AUDIT.md table. Section 3: "A defect that only a support
+   component shows is Medium when it would rate High or Critical in the role the component stands in for, such as
+   ... the honest operator for an implementation of an operator or a tool that computes claims." The clause covers
+   this component: `--uarch-cycle-computation-hash` is a tool that computes claims, so it stands in for the honest
+   operator. Section 8 step 2: "A defect that only a support component shows is never above Medium." Only the CLI
+   shows it (the PRT player computes claims through the Lua API).
+3. High and Medium cases: in the stood-in honest-operator role, no listed High or Medium case fits (it is not an
+   unreachable-state case, a constant-factor cost case, or "A persistence operation that fails loudly ... in an
+   uncommon host setup that the manual documents"). For the Support component itself, the case that applies is "A
+   defect that only a support component shows, when section 3 rates it Medium."
+4. Critical (in the stood-in role): R4 "From any reachable state, at the position where it is reached, the honest
+   operator can always compute the claim". "Computing claims" is on the honest operator's path (section 2). The
+   documented claim-computing operation fails from a reachable state, which in the honest-operator role is Critical.
+   Section 8 also says "A contradiction between the manual and the behavior on a security-relevant point is a defect
+   in one of the two. It takes the severity it would have if the manual were right." Stood-in Critical, so Support
+   Medium.
+
+Alternative reading (Low): the claim stays computable by other documented means, so R4 is not broken in the
+stood-in role: running the epoch from its start with `begin_epoch:true`, passing `check_outputs_merkle_root:false`
+(whose help text says the host tree is initialized "from outputs_frontier or last_output_proof, or start empty at
+genesis"), or passing a frontier or last output proof. Under that reading the defect is a documentation or
+diagnostics gap of a development tool ("a defect in a tool's diagnostics"), Low. Against it: the manual, which is the
+specification, documents the exact failing command and mentions none of these options; running from the epoch start
+gives up the bound "Reaching that position costs at most the mcycles from the nearest retained input boundary" (R12);
+keeping a last output proof is "not on the honest operator's path" (section 8); and the readings settled for this
+campaign rate a Support component that fails on its own operator path under the stand-in rule. The deciding fact is
+whether a documented opt-out found only in the CLI help (not in the manual's shortcut) keeps the claim "computable"
+for R4. The reviewer judges Medium best supported.
+
+### Possible solution and risks
+
+Either fix the CLI or the manual. In the CLI: when `begin_epoch:false` and neither `outputs_frontier` nor
+`last_output_proof` gives the host tree, do not check the guest's root against an empty host frontier (skip the check
+with a warning, or default `check_outputs_merkle_root` to false in that case, at least when only a uarch computation
+hash is requested), and also avoid writing output files and proofs at host indices that start at 0 (with the check
+disabled today the output is named `output-0-input-1.bin` instead of global index 1). Alternatively, refuse the
+command up front with a message naming the required option. In the manual: state that the shortcut needs
+`check_outputs_merkle_root:false` (or a frontier) whenever earlier outputs exist, and give the command. Risks:
+silently skipping the check removes a diagnostic that catches applications that break the rollup interface in other
+modes; it must be limited to the case where the host frontier is genuinely unknown.
+
+### Risk of not fixing it
+
+No production deployment runs the CLI, so the goal is not directly threatened. An operator implementation or test
+setup built on the CLI that follows the manual cannot compute uarch-level claims for any later input of a typical
+application, and would either lose uarch-level matches by timeout or fall back to rerunning the epoch from its start.
+Mitigation outside the code: pass `check_outputs_merkle_root:false` (or a correct `outputs_frontier`/
+`last_output_proof`) with the shortcut.
+
+## R7-MANHASHCOMP-1
+
+**Title.** The manual's output verifier (`doc/recipes/verify-output-proof.lua`) executes each proof file as a Lua
+chunk, so an 18-byte proof hangs it and a 46-byte proof makes it allocate gigabytes before any check runs.
+
+**Severity.** Medium (alternative reading: Low)
+
+### Problem
+
+The manual's "Output verification" section prints `doc/recipes/verify-output-proof.lua` as the script that verifies
+an output "from the settled state hash and those artifacts alone, without instantiating any machine". It reads the
+outputs Merkle root proof and the output proof with
+
+```lua
+local function read_proof(name)
+    return assert(loadfile(name, "t", {}))()
+end
+```
+
+so it runs each proof file as Lua code before it checks a single field. The empty environment removes the globals,
+but not loops, string concatenation or the string methods reached through the string metatable. A proof file
+`while true do end` never returns. `return { iflags_y_data = ("x"):rep(1 << 29) }` (46 bytes) allocates 512 MiB, and
+an 85-byte loop over 1 GiB strings allocates until the host runs out of memory. Everything the script checks after
+that (root hash, heights, address, accepted yield, leaf hash) is written to treat the proof as adversarial, but the
+decoding step is neither bounded in CPU nor in memory.
+
+THREAT_MODEL section 4 says "Logs and proofs are adversarial. A verifier must assume that every count, index,
+address, size, and hash it receives was chosen to fool it" and "Every path that carries such data must be
+memory-safe and bounded, and must report errors without terminating the process." A party that uses the manual's
+verifier to check an output proof that another party hands it (the prover who wants the output believed) can be
+hung or exhausted by that proof. This does not threaten the goal of section 1 directly: no on-chain referee, no
+referee model and no honest-operator component shares the reader. It violates the boundedness that section 4
+requires of every path that carries proofs.
+
+### Component, role and area
+
+`doc/recipes/verify-output-proof.lua`, a manual recipe that demonstrates off-chain output verification (A5). The
+AUDIT.md table does not name it. It is not part of "The PRT referee model in `doc/recipes`" (the `prt*.lua` player
+and model do not use it; the player decodes proofs as JSON) and it is not a test harness. Section 3 puts it in
+Support: "Everything else used only for tests, demonstrations, development or diagnostics. Examples are copies of
+the verifiers whose acceptance settles nothing". Area: proof decoding (`read_proof`).
+
+The CLI has the same reader (`src/cartesi-machine.lua` `read_proof`, `load(contents, filename, "t", {})()` for the
+default `lua` format), used by `--cmio-advance-state=...,last_output_proof:<file>`. That file is the operator's own
+artifact from the previous epoch, so the CLI instance is Low, and the test does not assert on it.
+
+### Location
+
+- `doc/recipes/verify-output-proof.lua`, `read_proof` (lines 11-13), called at lines 35-36 before any check.
+- `doc/README.md`, "Output verification" (around lines 8889-9010), which prints the same code.
+- Same pattern, Low: `src/cartesi-machine.lua` `read_proof` (around line 3446) with `resolve_format` defaulting to
+  `lua`.
+
+### Evidence and test
+
+`bugs/R7-MANHASHCOMP-1/` contains `test.sh` (the test), `runcase.py` (runs the verifier once under an
+`RLIMIT_CPU` of 5 s of CPU time and an `RLIMIT_AS` limit and prints exit, signal, peak RSS and stderr as JSON) and
+`README.md`. Run it with `bugs/run.sh R7-MANHASHCOMP-1` (about 7 s, peak memory about 1 GiB). The test writes a
+32-byte zero state hash, a 1-byte output and four proof files, and runs `lua5.4 verify-output-proof.lua <hash>
+<proof> <control proof> <output>` for each:
+
+- control `return {}`: exit 1 (`attempt to index a nil value (local 'proof')`), peak RSS 14808 KiB;
+- case 1 `while true do end` (18 bytes): killed by signal 24 (SIGXCPU) after 5 s of CPU;
+- case 2, 46 bytes, `("x"):rep(1 << 29)`: peak RSS 1063324 KiB, 1048516 KiB above the control, before the first
+  check fails;
+- case 3, 85 bytes, a loop building 2^20 strings of 1 GiB each, under a 2 GB address-space limit:
+  `lua5.4: not enough memory`.
+
+It prints a `VIOLATION:` line for each case, then `FAIL: ...` and `run.sh: R7-MANHASHCOMP-1: exit 1 (bug present)`.
+It exits 1 when a crafted proof hangs the verifier, makes it allocate 256 MiB or more beyond the control, makes it run
+out of memory, or is accepted; 0 when every crafted file is rejected promptly with bounded memory, as a data-only
+decoder gives (for example `cartesi.fromjson(contents, "Proof")`, which the CLI already uses for `.json` proofs); 2
+on setup errors. The reviewer re-ran it and got the same output and exit 1. The CPU limit is CPU time, not wall
+clock, so the result does not depend on machine load. All agents ran on Opus 5.5; no fallback was used.
+
+### Trigger and reachability
+
+Anyone who hands a proof file to a party that verifies an output with the manual's script: the prover of an output,
+a relayer, or whoever serves stored proofs. The trigger is a few bytes of proof file; no machine state is involved,
+so reachability of a machine state is not a question. The manual's own demonstration runs the script on artifacts
+that the operator's calculator saved, which is the fact behind the alternative Low reading below.
+
+### Rating
+
+1. Out of scope: not excluded. The trigger is a proof file, and section 4 says "Logs and proofs are adversarial". It
+   does not need "an untrusted party to call the machine API directly" (the script is not the machine API), a
+   snapshot, a deployment that violates A1 to A8, or a host fault. AUDIT.md's "Not in scope" list (test harnesses
+   `*-test.lua`, `*-test.sh`, the dishonest strategies, the validator nodes) does not cover this recipe.
+2. Role: Support. Section 3: "Support. Everything else used only for tests, demonstrations, development or
+   diagnostics. Examples are copies of the verifiers whose acceptance settles nothing" and "A defect that only a
+   support component shows is Medium when it would rate High or Critical in the role the component stands in for,
+   such as a referee verifier for a copy of a verifier, or the honest operator for an implementation of an operator
+   or a tool that computes claims." This clause covers the recipe. Output validation (A5) is in scope, so the
+   stood-in role exists. No component in a higher role shares the reader: the PRT player and bridge decode proofs
+   with the JSON bindings, and the CLI instance reads only the operator's own file.
+3. High and Medium cases: in the honest-operator stand-in (a node that checks an output proof it received for its
+   own information), the High case "A crash, hang, memory-safety defect or unbounded allocation in a component in
+   the honest-operator role, caused by data from other parties that the honest operator may decline" fits, and
+   section 4 lets it decline such proofs ("It may decline logs and proofs that it only verifies for its own
+   information"). In the referee-verifier stand-in, a verifier that hangs or allocates without bound on proof data
+   violates section 4's "Every path that carries such data must be memory-safe and bounded" at any state, which is
+   at least High. Either way the stand-in rating is High or above, so the Medium case "A defect that only a support
+   component shows, when section 3 rates it Medium" applies. Step 2 caps it: "A defect that only a support component
+   shows is never above Medium."
+4. Critical: not reached; the support cap applies.
+
+Alternative reading (Low): if the script only ever reads the operator's own artifacts, as the manual's single
+demonstration does ("Running the script over the artifacts the Rolling Cartesi Machine calculator saved"), then no
+data from other parties reaches it, no rule is violated, and section 8's Low ("a real defect that violates no rule or
+obligation of this model") applies. The deciding fact is the script's purpose. The manual presents it as verifying an
+output "from the settled state hash and those artifacts alone", that is, with the settled hash as the only trust
+anchor, and section 4 requires every verifier to treat the proofs it receives as adversarial. That reading supports
+Medium, and the reviewer prefers it.
+
+### Possible solution and risks
+
+Decode proofs as data, never as code. Have the recipe (and the manual's printed copy) read proofs with
+`cartesi.fromjson(contents, "Proof")` and have the CLI save the output proofs as JSON, or add a data-only parser for
+the Lua table format the CLI writes. Apply the same change to the CLI's `read_proof` default. Risks: proof files
+already saved in the Lua format would need converting or a parser for that format; the manual's commands and
+artifact names (`*.lua`) change. A sandbox with an instruction-count hook would bound the loop but not the single
+`string.rep` allocation of case 2, so it is not a sufficient fix.
+
+### Risk of not fixing it
+
+Users who copy the manual's verifier to check output proofs from other parties can be hung or driven out of memory
+by a tiny crafted file. The damage is a denial of service of the verifying process, not a wrong acceptance: the
+checks after decoding stay sound, and on-chain output validation is unaffected. Mitigation outside the code: run the
+script only on proofs one produced oneself, or under CPU and memory limits.
 
 ## R7-MANTOURN-1
 

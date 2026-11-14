@@ -22,6 +22,10 @@ twice with an `LD_PRELOAD` shim (`ioshim.c`) that makes one call fail with `EIO`
 * **rename**: `renameat2(machine.revert.tmp -> machine.revert)` in the commit of input 0;
 * **unlink**: the 2nd `unlink()` of a file under `machine.revert/` (the removal of the old backup in that commit).
 
+* **interrupt** (added by the reviewer; no I/O fault): the shim raises `SIGINT` (an operator's Ctrl-C) at the
+  2nd `unlink()` under `machine.revert/` and lets every call succeed. `lua5.4` turns the signal into an
+  `interrupted!` error when `remove_stored` returns, inside the commit of input 0.
+
 The CLI is not killed; it sees the error and runs its own cleanup. `check.lua` then requires, for each case, that
 EITHER the `machine` directory, which O2 guaranteed with the state after input 0 when the fault hit, still loads
 with that state (or the later committed state), OR the manual's recovery rule applied to the names left on disk
@@ -45,7 +49,7 @@ Requirement (THREAT_MODEL.md):
 bugs/run.sh R7-MANCLIROLL-1      # needs gcc, the in-tree build and bugs/harness/work/configs/baremetal-template
 ```
 
-About 10 s. Temporary files go to a `mktemp -d` directory that is removed at exit.
+About 10 s (three cases). Temporary files go to a `mktemp -d` directory that is removed at exit.
 
 ## Expected output on audit/prt2 (exit 1)
 
@@ -64,8 +68,19 @@ About 10 s. Temporary files go to a `mktemp -d` directory that is removed at exi
     machine.revert.tmp: present, root 1fd4a350... (after input 0)
   recovery rule: machine.revert exists -> resume from machine.revert; yields a committed state: false
   case unlink: BUG
+== case interrupt: ...
+    ioshim: raising SIGINT at unlink machine.revert/0000000000000000-8000.dht
+    lua5.4: .../cartesi-machine.lua:3926: unable to read file 'machine.revert/config.json': open() failed: ...
+    machine:            absent
+    machine.revert:     absent
+    machine.revert.tmp: present, root 1fd4a350... (after input 0)
+  recovery rule: only machine.revert.tmp exists -> resume from machine; yields a committed state: false
+  case interrupt: BUG
 run.sh: R7-MANCLIROLL-1: exit 1 (bug present)
 ```
+
+In the interrupt case the documented rule resumes from the deleted `machine` and discards `machine.revert.tmp`,
+the only remaining copy of the committed state.
 
 In the unlink case the only intact copy (`machine.revert.tmp`) is the one the documented rule discards.
 

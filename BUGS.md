@@ -47,6 +47,9 @@ Where the threat model can be read two ways, the severity column gives the revie
 | [R2-DFOUTPUT-1](#r2-dfoutput-1) | PRT stored player refuses every valid non-genesis template: store_first_epoch_checkpoint asserts the tx buffer holds the empty outputs root, so epoch 0 never starts | doc/recipes/prt.lua store_first_epoch_checkpoint (2741-2777), required by crisium.lua open_epochs and prt-demo.lua | Support (PRT player), standing in for the honest operator | R4, section 2 valid template and honest operator's path, section 3 support claus | Medium / Low |
 | [R2-DFSTORED-1](#r2-dfstored-1) | After an O1 adoption with clear_hash_tree, store with sharing none/config copies the template's stale .dht/.dpt files, so the synced snapshot reloads with the stale root | Emulator core: machine::store (src/machine.cpp, unshared branch) with hash_tree::clear (src/hash-tree.cpp:744) | Honest operator (AUDIT.md: 'storing, loading, cloning and sy | R9, R1, O1, O2, section 5 'O1 and O2 bind the emulator too' | Medium (preferred: store with sharing none/config is off the honest operator's path) / Critical (if a production node stores an adopted template with none/confi |
 | [R2-DFYIELD-1](#r2-dfyield-1) | PRT player's claim pass copies (and for TX_OUTPUT keccak-hashes) the guest-declared tx-buffer payload, up to 2 MiB, at every automatic yield, multiplying per-yield claim cost ~75-100x | PRT player, doc/recipes/prt.lua (run_next_input -> run_to_input_mcycle_offset on_yield_automatic -> run_to_stop/receive_ | Support (stands in for the honest operator computing claims) | R12 ('a part of a claim'), section 8 High constant-factor case, section 3 suppor | Medium (preferred: support stand-in for High constant-factor R12 case) / Out of scope (broad reading of outputs/yields exclusion) |
+| [R3-VARSPEC-1](#r3-varspec-1) | Manual's first-word PMA layout (E bit, DID 11-8, R/W/X/IR/IW at 3-7) contradicts the emulator's guest-readable encoding (M0 IO1 R2 W3 X4 IR5 IW6 DID 11-7, no E) | PMA array state layout: src/pmas-constants.hpp PMA_ISTART_shifts/masks, src/pmas.hpp pmas_pack_istart, vs doc/README.md  | Honest operator | R7, R13, section 8 manual-contradiction clause, Medium case 1 | Medium (preferred) / Critical (literal R7 'any deviation' in 'memory permissions') |
+| [R3-VARSPEC-2](#r3-varspec-2) | M-mode write to mcycle raises illegal-instruction (required by R8), but doc/README.md never documents this departure from the spec's MRW mcycle | Interpreter CSR file, src/interpret.cpp write_csr_mcycle (~2406), and doc/README.md "The main processor" | Honest operator (AUDIT.md: "Interpreter, state-access layers | R7, R8, section 8 Medium (undocumented deterministic deviation) | Medium (preferred) / Critical (if counter writability falls in R7's "Traps and interrupts" area) / Low (if implicit manual wording or R8 counts as documentation |
+| [R3-VARSPEC-3](#r3-varspec-3) | The CLINT implements an active msip register at 0x02000000 that sets mip.MSIP, but the manual says only mtime and mtimecmp are active. | CLINT device, src/clint-address-range.cpp, against doc/README.md '#### CLINT' | Honest operator (devices) | R7, R8, section 8 Medium case and manual-contradiction clause | Medium / Critical (literal R7 'Traps and interrupts') |
 
 <!--
 Template for each issue. Copy it below the index, in the same order as the index.
@@ -5133,3 +5136,409 @@ sender whose input reaches guest code that loops on automatic yields can impose 
 mcycle bound. That can push claim computation for an epoch, and processing of later epochs, past clocks sized for the
 emulator's own costs. Mitigations outside the code: disable automatic yields where outputs are not needed, or size
 the clocks for 2 MiB of copying and hashing per few mcycles.
+
+## R3-VARSPEC-1
+
+**Title.** The bit layout that the manual gives for the first word of a PMA entry (R/W/X/IR/IW positions, an `E` bit, a 4-bit `DID` at bits 11-8) does not match the encoding the emulator writes into the guest-readable PMA array.
+
+**Severity.** Medium (preferred reading). Critical under a literal reading of R7's "any deviation" in "Address translation and memory permissions" (see Rating).
+
+### Problem
+
+`doc/README.md`, section "PMAs", documents each PMA entry as two 64-bit words at `0x10000` that "are readable both
+internally and externally", and gives the first word as
+
+| Bits  | 63-12   | 11-8 | 7  | 6  | 5 | 4 | 3 | 2 | 1  | 0 |
+|-------|---------|------|----|----|---|---|---|---|----|---|
+| Field | start   | DID  | IW | IR | X | W | R | E | IO | M |
+
+with "The `M`, `IO`, and `E` bits are mutually exclusive". The emulator packs the word as `M`=0, `IO`=1, `R`=2,
+`W`=3, `X`=4, `IR`=5, `IW`=6, `DID`=11-7 (5 bits), and has no `E` bit. Every attribute other than `M` and `IO` sits at
+a different position than the manual says. A guest that decodes the PMA array as the manual documents gets wrong
+attributes for every range. Every entry appears to have `E` set together with `M` or `IO`. RAM appears to have
+`DID` 0 (empty). The read-only flash drive appears not readable but executable, with `DID` 1. The rx buffer appears
+not readable but executable, with `DID` 3 (flash drive).
+
+The permissions the emulator enforces are the configured ones. The interpreter, the uarch program (compiled from the
+same headers) and every other path decode the array with the same constants. So the deviation is deterministic and
+consistent across paths, and does not change any hash or proof. It contradicts the manual's description of the state
+layout, which R13 makes part of the transition function, and of guest-visible state that R7 says must follow the
+manual. It does not threaten the goal of section 1: no path disagrees, and enforcement of the permissions is correct.
+
+### Component, role and area
+
+The interpreter state layout: the PMA array written at machine creation and read by the interpreter and the uarch
+program. AUDIT.md table: "Interpreter, state-access layers, devices, uarch program, ... | Honest operator". The other
+side of the contradiction is the manual (`doc/README.md`, "PMAs"), which either the code or the manual must change to
+match.
+
+### Location
+
+- `src/pmas-constants.hpp`, `enum PMA_ISTART_shifts` and `enum PMA_ISTART_masks` (`M`=0, `IO`=1, `R`=2, `W`=3, `X`=4,
+  `IR`=5, `IW`=6, `DID_SHIFT`=7, `DID_MASK`=`31 << 7`, no `E`).
+- `src/pmas.hpp`, `pmas_pack_istart` and `pmas_unpack_istart`, which use those constants.
+- `doc/README.md`, section "PMAs" (about lines 7894-7943), the first-word table and the sentence on `M`/`IO`/`E`.
+
+### Evidence and test
+
+`bugs/R3-VARSPEC-1/` contains `test.lua` (the test), `README.md` (what it asserts) and this entry. Run
+`bugs/run.sh R3-VARSPEC-1` (about 1 s). The test builds a machine with 1 MiB of RAM and a read-only flash drive at
+`0x100000000`. An M-mode guest loads the `istart` word of the first 12 PMA entries from `0x10000`, once natively and
+once through the uarch (one `run_uarch`/`reset_uarch` per mcycle). The test requires the two runs and `read_word` to
+agree (otherwise exit 2). It parses the first-word table from `doc/README.md` and decodes each word with it. It then
+requires that no entry has more than one of `M`, `IO`, `E`. It also requires RAM to decode as `M`=1, `E`=0, `R`=`W`=`X`=1,
+`DID`=1, the read-only flash drive as `M`=1, `E`=0, `R`=1, `W`=`X`=0, `DID`=3, and the rx buffer as `M`=1, `E`=0,
+`R`=1, `W`=`X`=0, `DID`=7. Those are the attributes and DID values the manual and `src/pmas-defines.h` give for these
+ranges.
+
+On audit/prt2 it exits 1 on every run (re-run three times by the reviewer). It prints
+`manual PMA first-word layout: DID=11-8 E=2-2 IO=1-1 IR=6-6 IW=7-7 M=0-0 R=3-3 W=4-4 X=5-5 start=63-12`, then one line
+per entry, for example `entry  0 istart=0x00000000800000fd  manual decode: M=1 IO=0 E=1 R=1 W=1 X=1 IR=1 IW=1 DID=0`,
+`entry  2 istart=0x00000001000001a5  manual decode: M=1 IO=0 E=1 R=0 W=0 X=1 IR=0 IW=1 DID=1` and
+`entry  4 istart=0x00000000600003e5  manual decode: M=1 IO=0 E=1 R=0 W=0 X=1 IR=1 IW=1 DID=3`. It prints a
+`VIOLATED: ... mutually exclusive` line for all 9 entries, and `VIOLATED` lines for RAM `E`/`DID`, the flash drive
+`E`/`R`/`X`/`DID` and the rx buffer `E`/`R`/`X`/`DID`. It ends with
+`VIOLATED: R7/R13: the PMA words the guest reads follow the manual's documented layout`.
+
+Since the table is parsed from the manual, a fix on either side makes the test pass. The reviewer checked this with
+`MANUAL_OVERRIDE=<copy of doc/README.md with the table rewritten as start 63-12, DID 11-7, IW 6, IR 5, X 4, W 3, R 2,
+IO 1, M 0>`, and the test exited 0. The reviewer did not change the test. Found, proved and reviewed on
+`claude-opus-5-5`.
+
+### Trigger and reachability
+
+There is nothing to trigger. Every machine the emulator creates, every valid template included, has this layout in its
+PMA array. Any guest code, at M-mode (and at any privilege level that can reach `0x10000`), reads the words with a plain
+load. No input sequence is needed. A guest is misled only if it decodes the array with the manual's table. The guests
+that ship with the emulator (Linux with OpenSBI) discover ranges from the device tree instead.
+
+### Rating
+
+1. Out of scope: no exclusion applies. The trigger is reading documented, guest-visible state of any machine. It
+   needs no API misuse ("The effect of a deliberate state change made through the machine API"), no untrusted API
+   caller, no foreign snapshot, no reload of an unguaranteed directory, and no deployment violation of A1 to A8.
+2. Role: the PMA array layout belongs to the interpreter and state layout, "Interpreter, state-access layers, devices,
+   uarch program, ... | Honest operator" (AUDIT.md). Section 3: the honest operator role covers "The transition
+   function ... in every deployment". That clause covers this component.
+3. High and Medium cases: Medium fits, "An undocumented deterministic deviation, consistent across all paths, in
+   behavior that no correct guest relies on for isolation or data integrity (R7)." The encoding is deterministic. Native
+   execution, the uarch and `read_word` agree (the test checks this). All of them use `pmas_pack_istart` and
+   `pmas_unpack_istart`, so no hash diverges. The deviation is undocumented: the manual describes another layout. It
+   is in the descriptive words of the PMA array, not in the permissions the emulator enforces, which match the
+   configuration. Section 8: "A contradiction between the manual and the behavior on a security-relevant point is a
+   defect in one of the two. It takes the severity it would have if the manual were right." If the manual were right,
+   the code would encode a different layout. No enforcement, no hash, and no path agreement would change. That is the
+   Medium case above. The Medium header also applies: "violates a rule or the manual without affecting the goal".
+4. Critical: under the reading that the guest-readable PMA attributes are themselves part of R7's area "Address
+   translation and memory permissions", where "any deviation lets an input subvert a correct guest, even a deviation
+   that is consistent across all paths", the defect is a violation of R7 ("implements ... the devices as the manual
+   documents them, departing only where the manual documents a deviation") at every reachable state, and would be
+   Critical.
+
+Two readings. The preferred one is Medium: R7's areas are the architecture a correct guest relies on for isolation
+and data integrity. Here the enforced permissions are correct, and only the self-description in the PMA array differs.
+No shipped or correct guest decodes that array to get its isolation. The alternative is Critical: the literal R7 text
+counts any deviation in "memory permissions", and the PMA words are the guest-visible statement of those permissions.
+One fact would decide it: whether a correct guest is expected to rely on the PMA array's attribute bits (rather than
+the device tree) for isolation or data integrity. The manual says the array is "how the RISC-V interpreter discovers
+the available ranges at runtime". That points to the interpreter, not to the guest, so it favors Medium.
+
+### Possible solution and risks
+
+Either fix the manual or the code. Fixing the manual: rewrite the first-word table as `start` 63-12, `DID` 11-7, `IW`
+6, `IR` 5, `X` 4, `W` 3, `R` 2, `IO` 1, `M` 0. Drop the `E` bit and the "M, IO, and E are mutually exclusive" sentence,
+or restate it for `M` and `IO`, and say how empty or excluded ranges are represented. This changes no hash and carries
+no risk. Fixing the code instead (restoring an `E` bit and a 4-bit `DID` at 11-8) changes the state layout. That
+changes every machine's root hash, the uarch program and its pristine hash, and is a new protocol version (R13, A6),
+which would need the machine-identification registers bumped and the on-chain step regenerated. The manual fix is
+the safer choice.
+
+### Risk of not fixing it
+
+No hash, proof or verification is affected, so no deployment's settlement is at risk. A guest, firmware or tool
+author who follows the manual and decodes the PMA array gets wrong permissions and driver IDs for every range. For
+example, they see no RAM entry with `DID` 1 and no rx buffer with `DID` 7, and may misidentify ranges. The emulator still
+enforces the real permissions. Mitigation outside the code: use the device tree (as Linux does) or the code's
+constants in `src/pmas-constants.hpp` instead of the manual's table.
+
+## R3-VARSPEC-2
+
+**Title.** An M-mode write to `mcycle` raises an illegal-instruction exception, a departure from the RISC-V privileged specification that the manual does not document
+
+**Severity.** Medium
+
+### Problem
+
+The RISC-V privileged specification defines `mcycle` (CSR `0xB00`) as an MRW register, so M-mode may write it.
+The emulator does not allow this. `write_csr_mcycle` always returns `execute_status::failure`, so every CSR
+instruction that writes `mcycle` raises an illegal-instruction exception at every privilege level, M-mode included:
+`csrrw`, `csrrs` and `csrrc` with a nonzero `rs1`, and `csrrwi`, `csrrsi` and `csrrci` with a nonzero immediate.
+The exception has `mcause` 2 and `mtval` set to the instruction.
+
+The behavior is deliberate. The code comment says that `mcycle` measures the progress of the machine.
+THREAT_MODEL.md R8 also requires it: the guest "can never change the cycle counter". So the behavior itself is right.
+The defect is that the manual says nothing about it. R7 permits a departure from the RISC-V specification only
+"where the manual documents a deviation". `doc/README.md` never says that `mcycle` is read-only, that writing it
+traps, or that writes are ignored. "Limiting execution" calls it a CSR "that starts at 0 and is incremented after
+every instruction cycle". "The main processor" says only that "its value is advanced at every CPU cycle".
+
+A guest author who follows the manual and the specification would expect an M-mode `csrw mcycle` to retire. On the
+emulator, the guest's M-mode trap handler is entered instead. The behavior is deterministic, and the native and uarch
+paths agree on it, so the security goal is not affected. The defect is a rule violation in the manual's description
+of the transition function.
+
+### Component, role and area
+
+The component is the interpreter's CSR file, which the uarch program shares through the same source, together with
+the manual's description of the main processor. AUDIT.md lists "Interpreter, state-access layers, devices, uarch
+program, ..." with the role "Honest operator". The area is the counter CSRs (Zicsr/Zicntr writability of `mcycle`).
+
+### Location
+
+- `src/interpret.cpp`: `write_csr_mcycle` (around line 2406) returns `execute_status::failure`. The `write_csr`
+  dispatch (around line 2562) calls it for `csr::mcycle`. The sibling `write_csr_minstret` (around line 2397)
+  accepts writes.
+- `doc/README.md`: "The main processor" (the paragraph after the processor-shadow table, around line 7358) and
+  "Limiting execution" (around line 920). Neither documents the deviation. The "System architecture" introduction
+  promises that the section describes "the modifications made to support verification".
+
+### Evidence and test
+
+`bugs/R3-VARSPEC-2/` contains `test.lua` and `README.md`. Run it with `bugs/run.sh R3-VARSPEC-2`. It needs only the
+in-tree emulator build and takes about one second.
+
+The test builds a bare machine with 1 MiB of RAM that starts in M-mode at `0x80000000`, with `mtvec = 0x80000100`
+and `x6 = 0x12345`. It runs one instruction twice: natively with `machine:run`, and on the uarch path with
+`run_uarch` and `reset_uarch`. The two paths must reach the same root hash and pc, or the test exits 2. The
+instructions are the writes `csrrw x0,mcycle,x6`, `csrrs x0,mcycle,x6`, `csrrc x0,mcycle,x6` and
+`csrrwi x0,mcycle,5`, and two controls that must retire, `csrrw x0,minstret,x6` and `csrrs x7,mcycle,x0`.
+
+The test then searches the prose of `doc/README.md`, with fenced code blocks removed, for a sentence that names
+`mcycle` and says it is read-only, cannot be written, or that writing it traps, raises an exception or is ignored. It
+exits 1 if a write traps or is ignored and no such sentence exists (R7), or if a write changes `mcycle` (R8). It exits
+0 only when the manual documents the deviation and the guest cannot change `mcycle`.
+
+Output on audit/prt2 (commit 14a26ae). The reviewer re-ran it twice and it exited 1 both times:
+
+```
+csrrw x0,mcycle,x6                 native+uarch: pc=0x80000100 mcause=2 mtval=0xb0031073 mcycle 0->1  TRAPPED (illegal instruction)
+csrrs x0,mcycle,x6                 native+uarch: pc=0x80000100 mcause=2 mtval=0xb0032073 mcycle 0->1  TRAPPED (illegal instruction)
+csrrc x0,mcycle,x6                 native+uarch: pc=0x80000100 mcause=2 mtval=0xb0033073 mcycle 0->1  TRAPPED (illegal instruction)
+csrrwi x0,mcycle,5                 native+uarch: pc=0x80000100 mcause=2 mtval=0xb002d073 mcycle 0->1  TRAPPED (illegal instruction)
+csrrw x0,minstret,x6 (control)     native+uarch: pc=0x80000004 mcause=0 mtval=0x0 mcycle 0->1  retired
+csrrs x7,mcycle,x0 (control)       native+uarch: pc=0x80000004 mcause=0 mtval=0x0 mcycle 0->1  retired
+manual: no sentence naming `mcycle` says it is read-only, not writable, or that writes trap
+writes to mcycle: 4 trapped, 0 retired without effect, 0 changed mcycle
+VIOLATED: R7 (Traps and interrupts): a guest write to mcycle in M-mode departs from the RISC-V privileged spec (mcycle is MRW) and the manual must document that deviation
+run.sh: R3-VARSPEC-2: exit 1 (bug present)
+```
+
+The reviewer also checked the test against the expected fix. `MANUAL_OVERRIDE` pointed at a copy of the manual with
+one added sentence after the `mcycle` paragraph of "The main processor": "Unlike the RISC-V specification, which makes
+it an MRW register, the guest cannot write `mcycle`: a CSR instruction that writes it raises an illegal-instruction
+exception." With that copy the test exits 0. The tracked manual was not edited. Opus 5.5 found, proved and reviewed
+the issue. No fallback model was used.
+
+### Trigger and reachability
+
+Any guest code running in M-mode can trigger it by executing a CSR write to `mcycle`. Section 4 says that an input
+may take control of the firmware and "run any instruction stream at any privilege level", so the state is reachable
+from any valid template. In U-mode and S-mode the same instruction also traps, but there the result does not depart
+from the specification in the same way, because `mcycle` is an M-mode register.
+
+### Rating
+
+1. Out of scope: none applies. The defect needs no machine API call by an untrusted party, no deployment violation,
+   no snapshot the emulator did not write, no O1 or O2 violation and no host fault. It is not a case of "Guest
+   software that an input can subvert, as long as R7 and R8 hold", because the defect is the emulator's own
+   departure from R7.
+2. Role: the interpreter and the uarch program. AUDIT.md: "Interpreter, state-access layers, devices, uarch program,
+   ... | Honest operator". This clause covers the component directly. Section 3: "The transition function ... play[s]
+   this role in every deployment."
+3. High and Medium cases: section 8 Medium, "An undocumented deterministic deviation, consistent across all paths, in
+   behavior that no correct guest relies on for isolation or data integrity (R7)." This case fits:
+   - The manual is silent, so the deviation is undocumented.
+   - It is deterministic, and the test checks that native and uarch reach the same root hash.
+   - Writing `mcycle` is not something a correct guest relies on for isolation or data integrity. R8 requires that the
+     guest "can never change the cycle counter", so the threat model itself rules out any guest that depends on the
+     write taking effect.
+
+   The rating stops here: Medium.
+4. Critical: not reached under the preferred reading. The rule violated is R7: "The emulator implements the RISC-V
+   specification and the devices as the manual documents them, departing only where the manual documents a
+   deviation."
+
+Two readings give different classes:
+
+- **Critical (literal R7).** The symptom is an unexpected trap, so the deviation could be placed in the R7 area
+  "Traps and interrupts", where "any deviation lets an input subvert a correct guest, even a deviation that is
+  consistent across all paths". Then the Medium case would not fit, and step 4 would rate it Critical. The preferred
+  reading rejects this, for two reasons. First, the departure is in counter-CSR writability, and the trap is only how
+  it shows. If every unexpected trap belonged to "Traps and interrupts", the Medium case could never apply to an
+  instruction. Second, R8 requires the guest-visible behavior, so no correct guest can be subverted by it.
+- **Low.** One could read R8 (in the threat model, not the manual), or the manual's general phrases ("the
+  modifications made to support verification", "advanced at every CPU cycle"), as documenting the deviation. R7 asks
+  for "the manual" to document it, and those phrases never say that a write traps, so this reading is weaker.
+
+The deciding facts are whether counter writability belongs to the R7 area "Traps and interrupts", and whether
+implicit wording in the manual counts as documenting a deviation.
+
+### Possible solution and risks
+
+Keep the behavior and document it in "The main processor" of `doc/README.md`. For example: "Unlike the RISC-V
+specification, which makes it an MRW register, the guest cannot write `mcycle`: a CSR instruction that writes it raises
+an illegal-instruction exception." The same section could list the other counter CSRs whose behavior departs from the specification, so that
+guest authors have a single list. This is a documentation-only change. It
+does not change the transition function, the uarch program, the step contracts or any hash, so it needs no new
+protocol version (R13).
+
+Changing the code instead is not an option. Making the write take effect would break R8. Silently ignoring it would
+change the transition function (R13) and would still be a deviation that needs documenting.
+
+### Risk of not fixing it
+
+The security goal is not affected. All paths agree, and the guest cannot move the dispute clock. The risk is to
+guest authors: M-mode firmware written to the specification, for example code that resets or preloads the cycle
+counter, takes an unexpected illegal-instruction trap. The resulting misbehavior is deterministic and affects only
+that guest's own correctness. Until the manual is fixed, the only mitigation is this entry or the code comment in
+`write_csr_mcycle`.
+
+## R3-VARSPEC-3
+
+**Title.** The CLINT implements an active `msip` register at `0x02000000`, which sets `mip.MSIP`, but the manual says the only active CLINT addresses are `mtime` and `mtimecmp`.
+
+**Severity.** Medium (preferred reading). Critical under a literal reading of R7's "Traps and interrupts" area. See Rating.
+
+### Problem
+
+The manual's `#### CLINT` section (`doc/README.md`, lines 7523-7536) reads: "The Core Local Interruptor (or CLINT)
+controls the timer interrupt. The active addresses are `0x0200bff8` (`mtime`) and `0x02004000` (`mtimecmp`)." The
+manual never mentions `msip` or the machine software interrupt anywhere in its prose.
+
+The emulator has a third active CLINT register, `msip0`, at offset 0 (physical address `0x02000000`). It accepts
+32-bit accesses only. A 32-bit store with bit 0 set sets `mip.MSIP` and returns `success_and_serve_interrupts`. A
+store with bit 0 clear clears `mip.MSIP`. A 32-bit load returns `mip.MSIP`. If the manual were right, a store to
+`0x02000000` would raise a store/AMO access fault, as a store to any other inactive CLINT offset does, and could never
+make the machine software interrupt pending. The behavior is deterministic, and the native interpreter and the uarch
+agree on it. This is a contradiction between the manual and the behavior in the device semantics that R7 and R8 bind
+("the devices as the manual documents them"; "the guest reaches device registers only through the device semantics
+that the manual specifies").
+
+The security goal is not affected. The behavior is the same on every path, so no hash disagreement follows. As argued
+under Rating, no correct guest can rely on the register being absent for isolation or data integrity. The defect is
+that the specification the threat model refers to misdescribes the device's register map and the interrupts that the
+device can raise.
+
+The manual also prints a sample device tree (around line 8019). In it the CLINT node is `compatible = "riscv,clint0"`,
+with `interrupts-extended = <0x01 0x03 0x01 0x07>`, which wires it to the machine software interrupt (3) as well as
+the machine timer interrupt (7). Under the standard `riscv,clint0` binding, `msip` sits at offset 0. That listing is
+the only place where the manual hints at the register, and it contradicts the prose.
+
+### Component, role and area
+
+Devices (the CLINT), the interpreter's device access path shared by the native interpreter and the uarch program.
+AUDIT.md component table: "Interpreter, state-access layers, devices, uarch program, ... | Honest operator". The
+area is traps and interrupts, and device semantics (R7, R8).
+
+### Location
+
+- `src/clint-address-range.cpp`: `clint_csr::msip0 = 0`, `clint_read_msip` (32-bit read of `mip.MSIP`), and the
+  `clint_msip0_rel_addr` case of `clint_address_range::do_write_device` (sets or clears `MIP_MSIP_MASK`; its comment
+  reads "I don't yet know why Linux tries to raise MSIP when we only have a single hart").
+- `doc/README.md`: `#### CLINT` (lines 7523-7536), the board table (line 7445,
+  `0x02000000-0x020bffff`), and the sample device tree (lines 8019-8023).
+
+### Evidence and test
+
+`bugs/R3-VARSPEC-3/` contains `test.lua`, `README.md` and this entry. The guest is four hand-encoded instructions
+written into RAM by the test, so no other artifact is needed beyond the in-tree emulator build. Run it with
+`bugs/run.sh R3-VARSPEC-3`.
+
+The test exits 0 in either of two cases:
+
+- The manual's `#### CLINT` section mentions `msip`, `0x02000000` or "software interrupt".
+- On both the native interpreter (`run(4)`) and the uarch (`run_uarch` and `reset_uarch` for each mcycle), the
+  M-mode sequence `lui t0,0x2000; addi t1,x0,1; sw t1,0(t0)` raises a store/AMO access fault (`mcause` 7, `mtval`
+  `0x02000000`) and leaves `mip.MSIP` clear.
+
+As a control, the same store to `0x02000010`, an inactive CLINT offset, must fault that way. If it does not, the test
+exits 2. On audit/prt2 the test prints:
+
+```
+manual CLINT section documents msip: false
+control: store to 0x02000010 -> store access fault (mcause 7), MSIP clear
+native: after 'sw 1 -> 0x02000000': mip=0x8 (MSIP=true) mcause=0x0 mtval=0x0 pc=0x8000000c
+uarch : after 'sw 1 -> 0x02000000': mip=0x8 (MSIP=true) mcause=0x0 mtval=0x0 pc=0x8000000c
+VIOLATED: R7 / manual '#### CLINT': the only active CLINT addresses are mtime (0x0200bff8) and mtimecmp (0x02004000); a store to 0x02000000 must fault and must not raise mip.MSIP
+run.sh: R3-VARSPEC-3: exit 1 (bug present)
+```
+
+The reviewer re-ran it twice, and it exited 1 both times. Opus 5.5 found, proved and reviewed it. No fallback model
+was used.
+
+### Trigger and reachability
+
+Any guest code with physical access to the CLINT triggers it: M-mode, or S-mode, because the emulator implements no
+PMP. A single 32-bit store to `0x02000000` is enough. The state is reachable, because any guest-writable memory and
+register assignment is presumed reachable. According to the code comment, the shipped Linux/OpenSBI stack already
+writes this register during normal operation. No input or log from another party is needed beyond guest execution.
+
+### Rating
+
+1. Out of scope: no exclusion applies. No deliberate machine API state change, untrusted API caller, deployment
+   violation of A1 to A8, non-template snapshot, cached hash-tree data, or unguaranteed directory is involved. The
+   exclusion "Guest software that an input can subvert, as long as R7 and R8 hold" does not apply, because the
+   defect is in the emulator's own device semantics, which R7 and R8 govern.
+2. Role: the component is the CLINT device of the interpreter and the uarch program. In the AUDIT.md table,
+   "Interpreter, state-access layers, devices, uarch program, ... | Honest operator" covers it. Section 3: "The
+   transition function ... play[s] this role in every deployment."
+3. High and Medium cases: the Medium case fits: "An undocumented deterministic deviation, consistent across all
+   paths, in behavior that no correct guest relies on for isolation or data integrity (R7)."
+   - The register is undocumented in the manual's prose.
+   - The test shows it is deterministic and that native and uarch agree. The on-chain step replays the same uarch
+     program.
+   - No correct guest relies on the register being absent for isolation. The emulator implements no PMP, so every
+     privilege level that can reach the CLINT can already write M-mode firmware memory and `mtimecmp`, and can
+     already raise a machine-level interrupt. The register therefore gives no level a capability it lacks.
+   - No correct guest relies on it for data integrity either. A guest that follows the manual never stores to an
+     address the manual calls inactive.
+
+   Section 8 also says: "A contradiction between the manual and the behavior on a security-relevant point ... takes
+   the severity it would have if the manual were right." If the manual were right, the emulator would show exactly
+   this undocumented, consistent deviation, so that clause gives the same class.
+4. Critical (alternative reading): R7 says "The emulator implements the RISC-V specification and the devices as the
+   manual documents them, departing only where the manual documents a deviation. ... In these areas, any deviation
+   lets an input subvert a correct guest, even a deviation that is consistent across all paths. ... Traps and
+   interrupts." The behavior decides whether a store traps and whether an interrupt becomes pending. If R7's list of
+   areas is read as categorical, the Medium case's condition "no correct guest relies on" fails by definition. Step 4
+   then applies: R7 is violated at a reachable state, and the class is Critical.
+
+Two readings give different classes. Medium is preferred, because the facts show no isolation or data-integrity
+reliance: there is no PMP, `mtimecmp` already lets the same privilege levels raise M-level interrupts, and the
+shipped firmware itself relies on the register existing. Critical applies if R7's area list is categorical. A third
+reading rates it Low or not a defect: the manual's sample device tree, with `riscv,clint0` and its interrupt 3 wiring,
+would count as documenting a standard CLINT that includes `msip`. That reading is weaker. The listing is presented as
+example output of `dtc`, not as the device's specification. The prose explicitly lists the active addresses, says
+the CLINT "controls the timer interrupt", and never mentions the software interrupt. Which reading holds depends on
+two things: whether R7's area list is categorical, and whether a device-tree compatible string in example output
+counts as manual documentation.
+
+### Possible solution and risks
+
+Document the register in the manual's `#### CLINT` section. It sits at `0x02000000` (`msip`), accepts 32-bit
+accesses only, a store with bit 0 set makes the machine software interrupt pending (`mip.MSIP`), a store with bit 0
+clear clears it, and a load reads it. The section's opening sentence should also say that the CLINT controls the
+machine software interrupt as well as the timer interrupt. This changes no transition and needs no new protocol
+version.
+
+Removing the register to match the current prose is not advisable. The code comment says the shipped Linux/OpenSBI
+stack writes it, and `riscv,clint0` drivers expect it, so removal would change the transition function, need a new
+machine version (R13), and likely break the guest's software interrupts.
+
+### Risk of not fixing it
+
+No hash, proof or claim is affected, because all paths agree. Guest developers and independent implementers, such as
+a second verifier or a zk-proof of the main processor written from the manual, would implement a CLINT without `msip`.
+That would diverge from the deployed transition function on every guest that touches the register, the standard
+firmware included, and would break A6 for such an implementation. Until the manual is fixed, the source code
+(`src/clint-address-range.cpp`) is the only specification of the register.

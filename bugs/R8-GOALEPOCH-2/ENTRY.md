@@ -93,12 +93,13 @@ These requirement tests assert A5:
 To run it:
 
 ```sh
-bugs/run.sh R8-GOALEPOCH-2                  # ~25 s; exit 1 on audit/prt2
+bugs/run.sh R8-GOALEPOCH-2                  # ~30 s once the released Dave build exists; exit 1 on audit/prt2
 SIMULATE_FIX=1 bugs/run.sh R8-GOALEPOCH-2   # registers R in the constructor of the temp copy; exit 0
 ```
 
-On audit/prt2 the test prints the following (the reviewer re-ran it twice, with exit 1 both times; `SIMULATE_FIX=1`
-exits 0):
+On audit/prt2 the test prints the following (excerpt; the full output also has the control summary line and a
+"VIOLATION (A5)" line). The reviewer re-ran it twice, with exit 1 both times, and `SIMULATE_FIX=1` exits 0. No chain
+is started; forge runs in a throw-away copy of `bugs/harness/work/dave/released`.
 
 ```
 valid template: emit-output guest after one accepted input, mcycle 8589303

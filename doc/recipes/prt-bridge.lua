@@ -670,7 +670,7 @@ end
 
 -- Reports a transaction the player cannot publish, once each time the reason changes. Observing continues.
 function methods:report_blocked(result)
-    if result.blocked and self.blocked[self.label] ~= result.blocked then
+    if result.blocked and self.blocked ~= result.blocked then
         if result.needed then
             self.player:report_anomaly(
                 result.blocked,
@@ -683,7 +683,7 @@ function methods:report_blocked(result)
             self.player:report_anomaly(result.blocked, "at nonce %d", result.nonce)
         end
     end
-    self.blocked[self.label] = result.blocked
+    self.blocked = result.blocked
 end
 
 -- A nil result means the observation or job changed: the scheduler must
@@ -823,12 +823,10 @@ function methods:tick()
         end
     end
     table.sort(jobs, job_less)
-    local due, preferred, obsolete = {}, {}, false
+    local due, preferred, obsolete = {}, nil, false
     for _, job in ipairs(jobs) do
         if snapshot.tip + 1 >= job.first and snapshot.tip + 1 < job.last and not self.invalid[job.key] then
-            local address = self.signer.address
-            due[address] = due[address] or {}
-            table.insert(due[address], job)
+            table.insert(due, job)
         end
     end
     local candidate = self.transactions:pending(self.signer.address)
@@ -839,9 +837,8 @@ function methods:tick()
         if candidate.context and candidate.context.epoch ~= tostring(self.epoch) then
             return snapshot, false, next_block
         end
-        local eligible = due[self.signer.address] or {}
-        local selected = eligible[1]
-        for _, job in ipairs(eligible) do
+        local selected = due[1]
+        for _, job in ipairs(due) do
             if job.key == candidate.job then
                 selected = job
                 break
@@ -850,7 +847,7 @@ function methods:tick()
         if selected then
             -- Keep working on a useful pending action. Do not oscillate
             -- between two eligible actions belonging to the same account.
-            preferred[self.signer.address] = selected.key
+            preferred = selected.key
             if selected.key ~= candidate.job then
                 obsolete = true
             end
@@ -870,12 +867,11 @@ function methods:tick()
                 end
                 next_block = math.min(next_block or observable, observable)
             end
-            local selected = preferred[self.signer.address]
             if
                 not self.invalid[job.key]
                 and rejected ~= snapshot.tip_hash
                 and not awaiting
-                and (not selected or selected == job.key)
+                and (not preferred or preferred == job.key)
             then
                 local refreshed, result, retry_at = self:attempt(job, snapshot)
                 if not result then
@@ -1038,7 +1034,6 @@ local function new(args)
         rejected = {},
         invalid = {},
         prepared = {},
-        blocked = {},
     }, { __index = methods })
 end
 

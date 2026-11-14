@@ -837,10 +837,10 @@ describe("backing stores", function()
 
     describe("page hash-tree cache metadata", function()
         -- The persisted layout contains a tag, list size, sentinel links, and compact entries.
-        -- Each entry contains next/previous links, page address, borrowed flag, and payload index.
+        -- Each entry contains next/previous links, page address, and borrowed flag.
         local capacity = 32
         local entries_offset = 32
-        local entry_size = 40
+        local entry_size = 32
         local payloads_offset = (entries_offset + capacity * entry_size + 4095) & ~4095
 
         local function write_word(data, offset, value)
@@ -937,25 +937,6 @@ describe("backing stores", function()
                 end,
             },
             {
-                "out-of-range payload",
-                function(data)
-                    return write_word(data, entries_offset + 32, capacity)
-                end,
-            },
-            {
-                "overflowing payload",
-                function(data)
-                    return write_word(data, entries_offset + 32, -1)
-                end,
-            },
-            {
-                "duplicate payload",
-                function(data)
-                    local other = string.unpack("<I8", data, entries_offset + entry_size + 33)
-                    return write_word(data, entries_offset + 32, other)
-                end,
-            },
-            {
                 "duplicate page address",
                 function(data)
                     local other = string.unpack("<I8", data, entries_offset + entry_size + 17)
@@ -1040,7 +1021,7 @@ describe("backing stores", function()
             local filename = directory .. "/hash_tree.phtc"
             local data = filesystem.read_file(filename)
             expect.equal(string.unpack("<I8", data, 9), 0)
-            for _, offset in ipairs({ entries_offset, entries_offset + 8, entries_offset + 32 }) do
+            for _, offset in ipairs({ entries_offset, entries_offset + 8, entries_offset + 24 }) do
                 filesystem.write_file(write_word(data, offset, -1), filename)
                 expect.fail(function()
                     local _ <close> = cartesi.machine(directory)

@@ -2008,6 +2008,65 @@ dofile(%q)
         end
     end)
 
+    -- A clean stored-mode exit must leave both a usable remote machine and a synced
+    -- directory that can be opened by another stored-mode run without a stale backup.
+    for _, source in ipairs({ "create", "load", "load with sync" }) do
+        it("stored revert cleans up a retained remote machine after " .. source, function()
+            local jsonrpc = require("cartesi.jsonrpc")
+            local _ <close>, stored = scope_stored_dirname()
+            local _ <close> = tests_util.scope_exit(function()
+                pcall(cartesi.machine.remove_stored, cartesi.machine, stored .. ".revert.tmp")
+                pcall(cartesi.machine.remove_stored, cartesi.machine, stored .. ".revert")
+            end)
+            local server <close>, address = jsonrpc.spawn_server()
+            local _ <close>, final_hash = scope_temp_pathname()
+            local source_flag = "--create=" .. stored
+            if source ~= "create" then
+                run_ok({
+                    "--store=" .. stored,
+                    "--no-ram-image",
+                    "--no-root-flash-drive",
+                    "--ram-length=2Mi",
+                    "--max-mcycle=0",
+                    "--quiet",
+                })
+                source_flag = "--load=" .. stored .. ",sharing:all" .. (source == "load with sync" and ",sync" or "")
+            end
+            run_ok({
+                source_flag,
+                "--remote-address=" .. address,
+                "--revert-mode=stored",
+                "--no-remote-destroy",
+                "--no-ram-image",
+                "--no-root-flash-drive",
+                "--ram-length=2Mi",
+                "--max-mcycle=1",
+                "--final-hash=" .. final_hash,
+                "--quiet",
+            })
+            expect.equal(server:read_reg("mcycle"), 1)
+            local expected_hash = filesystem.read_file(final_hash)
+            expect.equal(server:get_root_hash(), expected_hash)
+            expect.falsy(filesystem.exists(stored .. ".revert"))
+            expect.falsy(filesystem.exists(stored .. ".revert.tmp"))
+            server:destroy()
+            do
+                local synced <close> = cartesi.machine(stored)
+                expect.equal(synced:get_root_hash(), expected_hash)
+            end
+            -- The next stored-mode run must be able to create its own backup and finish.
+            run_ok({
+                "--remote-address=" .. address,
+                "--load=" .. stored .. ",sharing:all",
+                "--revert-mode=stored",
+                "--max-mcycle=1",
+                "--quiet",
+            })
+            expect.truthy(server:is_empty())
+            expect.falsy(filesystem.exists(stored .. ".revert"))
+        end)
+    end
+
     -- -------------------------------------------------------------------------
     -- --replace-memory-range
     --

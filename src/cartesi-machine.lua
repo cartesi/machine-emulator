@@ -153,7 +153,9 @@ where options are:
     keep their current values. --no-reserve cannot be applied.
 
   --no-remote-destroy
-    do not destroy the cartesi machine in the remote server after the execution.
+    keep the cartesi machine loaded in the remote server after the execution.
+    with --load=...,sync or --revert-mode=stored, the machine is temporarily
+    destroyed for the sync and loaded again.
 
   --revert-mode=<mode>
     select how advance and inspect states are reverted.
@@ -4921,20 +4923,17 @@ end
 if cmdline.assert_rolling_template then assert_rolling_template(machine, cmdline.assert_rolling_template) end
 if cmdline.store_dir then store_machine(machine, initial_config, cmdline.store_dir, cmdline.store_sharing) end
 if backup:has_snapshot() then backup:revert() end
-if not cmdline.remote_address or cmdline.remote_destroy then
+local keep_machine = cmdline.remote_address and not cmdline.remote_destroy
+local sync = cmdline.load_sync or cmdline.revert_mode == "stored"
+local machine_directory = cmdline.load_dir or cmdline.create_dir
+if not keep_machine or sync then
     machine:destroy()
     -- A stored directory is durable only after the machine using it is destroyed and the directory synced,
     -- so the backup is removed only after that sync
     if cmdline.load_sync then stderr("Syncing machine: please wait\n") end
-    if cmdline.load_sync or cmdline.revert_mode == "stored" then
-        machine:sync_stored(cmdline.load_dir or cmdline.create_dir)
-    end
+    if sync then machine:sync_stored(machine_directory) end
     backup:remove_backup()
-elseif cmdline.load_sync then
-    stderr("Syncing machine: please wait\n")
-    -- The remote machine outlives the command, so it is destroyed for the sync and loaded again
-    machine:destroy()
-    machine:sync_stored(cmdline.load_dir)
-    machine:load(cmdline.load_dir, runtime_config, cmdline.load_sharing)
+    -- A retained remote machine resumes from the synced state after its backup is removed.
+    if keep_machine then machine:load(machine_directory, runtime_config, stored_sharing) end
 end
 os.exit(exit_code, true)

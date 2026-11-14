@@ -265,14 +265,19 @@ for _, variant in ipairs(variants) do
                         target:write_memory(address, string.pack("<I8", i))
                     end,
                 }
-                for _, write in ipairs(writes) do
-                    for i = 0, 2047 do
-                        local address = cartesi.AR_RAM_START + ((i * 7919) % 4096) * 4096
-                        write(serial, address, i)
-                        write(parallel, address, i)
+                expect.equal(parallel:get_root_hash(), serial:get_root_hash())
+                parallel:get_hash_tree_stats(true)
+                serial:get_hash_tree_stats(true)
+                for _, page_count in ipairs({ 1, 2048 }) do
+                    for _, write in ipairs(writes) do
+                        for i = 0, page_count - 1 do
+                            local address = cartesi.AR_RAM_START + ((i * 7919) % 4096) * 4096
+                            write(serial, address, i)
+                            write(parallel, address, i)
+                        end
+                        expect.equal(parallel:get_root_hash(), serial:get_root_hash())
+                        expect.equal(parallel:get_hash_tree_stats(true), serial:get_hash_tree_stats(true))
                     end
-                    expect.equal(parallel:get_root_hash(), serial:get_root_hash())
-                    expect.equal(parallel:get_hash_tree_stats(true), serial:get_hash_tree_stats(true))
                 end
                 expect.truthy(parallel:verify_hash_tree())
             end)

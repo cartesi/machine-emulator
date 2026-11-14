@@ -161,11 +161,6 @@ public:
         return m_mapped_memory.get_flags().shared;
     }
 
-    /// \brief Marks the stored page hash-tree cache initialized again, unless a cache operation is in progress
-    void mark_stored_page_cache_initialized() const noexcept {
-        m_page_cache.mark_stored_initialized();
-    }
-
     /// \brief Resets cached hashes and dirty-page tracking to freshly initialized values.
     /// \details Keeps the sparse tree topology, backing-store mappings, and statistics.
     void clear(address_ranges ars) noexcept;

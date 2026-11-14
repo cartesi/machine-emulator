@@ -33,7 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Changed Lua ABI encoding and decoding to reject array types whose elements encode to zero bytes
 - Changed Lua JSON conversion to require dense arrays even when a schema is supplied
-- Renamed the PRT player's `uarch_error` anomaly to `uarch_claim_failed` to include operational failures
 - Changed Lua JSON conversion to reject empty tables without an array or object schema
 - Changed recipe game responses to carry JSON payload strings, decoded only when delivered
 - Changed the stored page hash-tree cache layout, making stored machines much faster to load
@@ -53,7 +52,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed the `sync` key of `--load` and the commits of `--revert-mode=stored` to reload the machine around the sync
 - Changed `--revert-mode=stored` to keep a synced copy of the last committed state in `<directory>.revert`
 - Changed `--revert-mode=stored` to remove `<directory>.revert` on a clean exit
-- Changed the PRT stored player to keep a synced copy of its last recorded boundary in `machine.revert`
 - Changed `receive_cmio_request` to clamp a declared data length to the CMIO tx buffer instead of failing
 - Changed the PRT player to report an outputs Merkle root mismatch instead of failing
 
@@ -61,14 +59,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`
 
 ### Fixed
-- Fixed PRT transaction preflights failing before reporting insufficient funds for the transaction's value
-- Fixed the rolling-calculator storage recipe failing during cleanup when it exits before its first commit
-- Fixed stored revert mode leaving a stale backup and skipping the final sync with `--no-remote-destroy`
-- Fixed storing a forest in a shared directory losing descendants merged below already durable subtrees
-- Fixed the sparse-tree stale-ancestor regression test corrupting unrelated hashes through outdated node offsets
-- Fixed PRT bridges retaining unjoined claims after their observed joining window closed and missing the anomaly report
-- Fixed restarted PRT bridges dropping claims before delayed observations covered the joining window
-- Fixed transient uarch claim construction failures permanently suppressing PRT claims until restart
 - Fixed PRT template validation accepting halted machines with a manual yield also set
 - Fixed Lua JSON conversion silently replacing NaN and infinities with null instead of rejecting them
 - Fixed Lua JSON decoding treating object, array, and tuple schema fields as enum entries
@@ -85,7 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `remove_stored` failing on directories left by interrupted removals
 - Fixed stored machines left unloadable or with stale root hashes by interrupted hash-tree updates
 - Fixed interrupted hash-tree updates freezing the root hash of stored sparse trees
-- Fixed interrupted `clear_hash_tree` calls leaving clean pages with cleared hashes
 - Fixed `store` saving the original backing store of memory ranges replaced by `replace_memory_range`
 - Fixed spawned JSON-RPC servers inheriting the sockets of their client
 - Fixed machines created in a directory reporting and storing the backing stores they were created from
@@ -122,12 +111,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed the JSON-RPC server lingering after an accept error stops it from accepting connections
 - Fixed `cartesi-machine` aborting a revert when it cannot rebind the restored server to its address
 - Fixed `--dump-memory-ranges` passing its directory name to the shell
-- Fixed `cartesi.filesystem.write_file` ignoring errors that only show when the file is closed
 - Fixed `cartesi-machine` ignoring runtime options such as `--clear-hash-tree` with `--no-remote-create`
 - Fixed the verification game and the output verification recipe accepting output proofs at aliased indices
 - Fixed the output verification recipe accepting proofs of other tree heights or outside the tx buffer
 - Fixed the output verification recipe accepting outputs Merkle roots of states that did not accept their last input
-- Fixed `clear_hash_tree` keeping the dirty-page tracking of a stored machine, which could leave a wrong root hash
 - Fixed `verify_step_uarch` aborting the process on a log with a misaligned uarch access
 - Fixed release builds accepting uarch steps with misaligned accesses that the Solidity verifier rejects
 - Fixed the PRT referee model starting a claim's clock at a later re-post instead of its earliest post

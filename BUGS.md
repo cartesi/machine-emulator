@@ -15,11 +15,16 @@ Where the threat model can be read two ways, the severity column gives the revie
 | ID | Title | Component | Role | Cited rules | Severity |
 |---|---|---|---|---|---|
 | [R1-A2-1](#r1-a2-1) | PRT referee model (prt.lua new_dapp_contract/run_epoch) seals an epoch with its whole input record, no 2^24 cap, unlike DaveConsensus and vg.lua | doc/recipes/prt.lua new_dapp_contract, run_epoch (PRT referee model) | Referee model | A3, R4, section 3 (Referee model), section 5 (unlisted model/deployed disagreeme | Critical / Low |
+| [R1-A7-1](#r1-a7-1) | Released Dave COMMITMENT_BUDGET (120 min, 2^18-mcycle leaf) is sized for average uarch density; sfence.vma/fdiv.d-dense leaves need about 11-12 h and 3 h to build | Dave v3.0.0-alpha.7 ArbitrationConstants/ClockBudgets/Deployment.s.sol vs collect_uarch_cycle_root_hashes cost | Referee model (deployed referee); overrunning operation is H | A7, R12, R4, section 8 Critical (R12 cost beyond sizing), section 1 completeness | Critical (preferred) / Medium (if section 3's 'only changes how long a claim may take to respond' covers Dave's clock sizing) |
+| [R1-GUEST-2](#r1-guest-2) | rollup --utf8-payload accept/reject/finish consumes a non-UTF-8 input, then exits 1 with no request printed: the app halts or accepts an input it never saw | machine-guest-tools v0.18.1-test1 sys-utils/rollup/rollup.cpp (encode_payload, write_advance_state, finish_request_and_g | Guest software | Section 2 correctly designed application; section 3 Guest software (R7 rx buffer | Critical (reading A: --utf8-payload documented for rollup apps facing arbitrary senders) / Low (reading B: option scoped to UTF-8 text payloads) |
 | [R1-O1-2](#r1-o1-2) | Unhashed config.json hash_tree.phtc_size survives clear_hash_tree, so a template's distributor sets the honest operator's adoption memory without bound (12 kB/entry) | Emulator core: loading stored machines (machine_config::load, hash_tree / page_hash_tree_cache sized from stored phtc_si | Honest operator | Section 8 OOS snapshot clause, R12, R4, O1 (section 5), section 2 honest operato | Critical / Low (if the whole template directory, unhashed config included, is trusted input) |
 | [R1-O2-3](#r1-o2-3) | Failed collect_mcycle_root_hashes (non-console exception, e.g. bad_alloc) drops context-only dirty marks; hash tree, later roots and stored snapshots mismatch contents | collect_mcycle_root_hashes / collect_mcycle_hashes_state_access / hash tree dirty tracking | Honest operator | R9, section 4 (host faults), section 1 completeness | Critical (preferred: host fault turned into a wrong hash, R9 failed update) / Low (if memory exhaustion is not a covered host fault or continuing after an error |
+| [R1-R7-1](#r1-r7-1) | The LR/SC reservation is keyed by virtual address and survives satp writes and sfence.vma, so after a remap an SC succeeds on another physical page and writes it. | Interpreter (src/interpret.cpp execute_LR/execute_SC; ilrsc not cleared by write_csr_satp or execute_SFENCE_VMA), shared | Honest operator | R7 | Critical / Medium |
 | [R1-R10-1](#r1-r10-1) | Regenerated Solidity StepVerifier and C++ verify_step_uarch accept uarch stores to the PMA array, shadow TLB, HTIF and uarch_x0, which the native uarch refuses as traps | machine-solidity-step regenerated (EmulatorCompat.writeWord/AccessLogs.writeWord via UArchStep store helpers); C++ uarch | Referee verifier (regenerated machine-solidity-step); C++ ve | R3, R2, R10; section 8 High (verifier misbehaving on unreachable before-states) | High |
 | [R1-R10-2](#r1-r10-2) | Off-by-one in Memory.validateStrideLength makes the on-chain step verifier revert on uarch accesses to the top 32-byte leaf, which native uarch and C++ verifier accept | machine-solidity-step src/Memory.sol validateStrideLength (identical in released, regenerated and Dave machine/step) | Referee verifier | R2, R3, section 8 High (divergence at unreachable states) | High (preferred: divergence between paths at an unreachable state) / Low (if rejecting at an unreachable state is not a divergence) |
+| [R1-R12-2](#r1-r12-2) | The uarch issues a TLB flush's 768 write_tlb ecalls through an out-of-line 14-instruction wrapper: 17,492 uarch cycles (22 per slot) even with a full TLB, about 5-6x what is needed | uarch program TLB-flush path: src/interpret.cpp flush_tlb_slot/flush_tlb_set/flush_all_tlb/set_prv compiled into the uar | Honest operator (AUDIT.md: 'Interpreter, ..., uarch program, | R12, A7, section 8 High constant-factor case; fix implies R13/A6 version change | High (preferred reading); Low under the alternative reading that 'defect' excludes code-generation efficiency of a correct implementation |
 | [R1-R13-1](#r1-r13-1) | Regenerating machine-solidity-step v0.17.0-test1 from audit/prt2 fails to compile: UArchStep.sol uses undeclared TLB_NUM_SETS (added by afd5f9d), so the referee verifier cannot be rebuilt from audited source | machine-solidity-step v0.17.0-test1 regenerated from audit/prt2 (generate_UArchStep.sh, EmulatorConstants template/lua); | Referee verifier (AUDIT.md table); root cause in uarch progr | R13, A6 | High; Critical under the reading that every deployment must ship hand-edited or stale verifier code |
+| [R1-R8-3](#r1-r8-3) | Each collect_mcycle_root_hashes call re-marks and word-compares all 256 write-TLB pages even when nothing changed. A guest that yields every 1-2 mcycles makes each yield cost about 6x more. | collect_mcycle_root_hashes / hash tree (src/machine.cpp update_hash_tree, mark_write_tlb_dirty_pages) | Honest operator | R12, A7, section 8 High (constant-factor cost) | High (preferred: guest-induced constant-factor increase of R12 'a part of a claim', sizing unknown) / Out of scope (literal reading of the yield-count exclusion |
 | [R1-A3-1](#r1-a3-1) | PRT player opens epoch N+1's listener from epoch N's seal block, so it misses the inputs DaveConsensus defers past the 2^24 limit and crash-loops | doc/recipes/crisium.lua open_epochs (line 267) + doc/recipes/prt-epoch.lua poll (lines 37, 73, 96) | Support (PRT player, AUDIT.md table), standing in for the ho | R4 (last bullet), A3, section 8 Critical 'crash ... data the honest operator mus | Medium |
 | [R1-A6-2](#r1-a6-2) | PRT player and deployer check deployments only by pristine uarch hash, never CM_MARCHID, so they accept another version's verifier with an unchanged uarch image | doc/recipes/crisium.lua (start-up check, lines 128-132), doc/recipes/prt-deploy.lua (lines 44-48), doc/recipes/prt-lua-b | Support (PRT player/deployer in doc/recipes), standing in fo | R13, A6 | Medium (preferred: R13 check must hold against later releases); Low (if only versions already released count) |
 | [R1-A7-3](#r1-a7-3) | The stored PRT player runs a later epoch's whole input in one crisium idle step, so the sealed epoch's dispute is not observed or answered until that input finishes | PRT stored player and crisium main loop (doc/recipes/prt.lua, doc/recipes/crisium.lua) | Support, standing in for the honest operator | R4, A7, section 3 support rule, section 8 Medium case | Medium (reading A: Critical in the stood-in honest role, so Medium for support; reading B: High as a constant factor, still Medium for support) |
@@ -223,6 +228,386 @@ the manual, and code derived from it would inherit a referee that assigns inputs
 dispute. Such a referee silently drops inputs from the verified history and stops an honest operator that applies the
 limit. In the model itself, triggering it needs a Lua-level caller that supplies more than 2^24 inputs. The deployed
 Dave contracts already cap the epoch, which mitigates the risk for real deployments.
+
+## R1-A7-1
+
+**Title.** The released Dave clocks give the uarch-level commitment a budget sized for average uarch density. A guest
+running dense heavy instructions makes the honest leaf build take 1.5 to 6 times `COMMITMENT_BUDGET`.
+
+**Severity.** Critical. Under an alternative reading of section 3 it is Medium (see Rating).
+
+### Problem
+
+Dave v3.0.0-alpha.7 gives the honest claim `COMMITMENT_BUDGET` = 120 minutes to build the commitment it joins an
+inner (uarch-level) tournament with. `ClockBudgets.sol` says: "joining an inner tournament first takes `commitment`
+seconds to build the commitment". The parent's refill and the root allowance cover only that budget plus inclusions.
+Any time past it is charged as join lateness (`Tournament.joinTournament` -> `Clock.initializePausedAt`). It comes
+out of the censorship budget `C`, and the join reverts with `TournamentIsClosed` once the child's allowance has run
+out.
+
+With `log2step = [38, 0]`, the level-1 commitment covers one level-0 leaf: 2^18 mcycles, with one hash per executed
+uarch cycle. Dave sized the budget from a reference leaf build rate of 173 mcycles/s, measured on a workload of 566
+executed uarch cycles per mcycle (`docs/measurements/constants.md`). `docs/dimensioning.md` states the design choice:
+"Coordinates are dimensioned to the worst case. Clocks are dimensioned to the average case", and "leaf-level dense
+build within the commitment budget | aggregate | trusted app | average density". Dave rests this on an assumption
+that the application developer is "trusted specifically to keep input-reachable behavior disputable".
+
+The threat model assumes no such thing. The guest may be taken over by any input and "run any instruction stream at
+any privilege level" (section 4). A correctly designed application bounds only its mcycle usage (section 2). R12 puts
+the per-cycle worst case on the deployment: "The total cost of an epoch is the application's mcycle usage times these
+bounds. Bounding that usage is the application's job, and sizing the deployment for it is the deployment's job
+(A7)". The worst-case cost per mcycle of a uarch-level claim is far above the average Dave priced:
+
+- `sfence.vma` in S-mode: 17,329 uarch cycles per mcycle, 28-31 times the control's host cost;
+- `fdiv.d` in U-mode, which needs no privilege: 4,487 uarch cycles per mcycle, 7.2-8.0 times the control.
+
+Scaled to Dave's own reference host with no hardware slack, one leaf build takes about 11.3-12.4 h for `sfence.vma`
+and about 2.9-3.2 h for `fdiv.d`, against a 2 h budget. With the slack of 2 that Dave's own derivation assumes, it
+takes about 23 h and 6 h.
+
+What this does to the security goal, a completeness failure: "The honest operator ... cannot respond in time". The
+dispute adversary chooses where to diverge (section 7: "Steer the dispute to any position of the honest
+computation"). It can therefore put the inner tournament on a dense leaf.
+
+- On testnet constants (`C` = 8 h, child allowance about 10.3 h), one `sfence.vma`-dense leaf cannot be joined in
+  time on the reference host.
+- On mainnet constants (`C` = 1 week), each forced delegation over a dense leaf costs the honest claim about 9-21 h
+  of `C`, beyond the 2 h the refill restores. That time is not available for the censorship that `C` is meant to
+  absorb ("A correct commitment must survive `censorship` seconds of adversarial delay in total"). An adversary that
+  censors within the dispute clocks, plus one dense delegation, or a series of dense delegations forced through
+  Sybils, exhausts the honest clock. The honest claim then loses by timeout.
+
+### Component, role and area
+
+- Dave v3.0.0-alpha.7 released arbitration constants and clock model. AUDIT.md role: "Referee model, as the deployed
+  referee. Audit the released constants".
+- The cost they fail to cover is that of `collect_uarch_cycle_root_hashes`, the uarch-level claim builder that the
+  Dave node calls for dense leaf builds (`cartesi-rollups/node/src/engine/machine_stf.rs`, `big_cycle_roots`).
+  AUDIT.md role: Honest operator.
+- Area: dispute clock sizing (A7) against the R12 worst-case cost of a uarch-level claim.
+
+### Location
+
+- `bugs/harness/work/dave/released/prt/contracts/src/arbitration-config/ArbitrationConstants.sol`:
+  `COMMITMENT_BUDGET = 120 minutes`, `log2step` `[38, 0]`, `height` `[54, 38]`.
+- `.../prt/contracts/src/arbitration-config/ClockBudgets.sol`: `refill`, `maxAllowance`.
+- `.../prt/contracts/script/Deployment.s.sol`: censorship budget 1 week (mainnet), 8 hours (testnet), 0 (devnet);
+  inclusion budget 5 minutes.
+- `.../prt/contracts/src/tournament/Tournament.sol`: `joinTournament` (`TournamentIsClosed`,
+  `initializePausedAt`), `_isClosed`.
+- Rationale: `.../docs/dimensioning.md` ("The rule", "Worked examples") and `.../docs/measurements/constants.md`.
+- Emulator, honest operator: `collect_uarch_cycle_root_hashes` (its cost is what the uarch semantics require; it is
+  not itself the defect).
+
+### Evidence and test
+
+`bugs/R1-A7-1/` contains:
+
+- `test.lua`, the test;
+- `README.md`;
+- `guests/ctrl.S`, `guests/fdiv.S` and `guests/sfence.S`: bare-metal guests. Each enters a loop in U-mode (`ctrl`:
+  `addi`; `fdiv`: `fdiv.d`) or in S-mode (`sfence`: `sfence.vma`) with bare translation. The test builds them at run
+  time with `bugs/harness/baremetal/build.sh`.
+
+Run it with `bugs/run.sh R1-A7-1`. It takes about 20 s and needs the toolchain image for the guest build.
+
+The test parses `COMMITMENT_BUDGET`, `log2step`, the reference rate, the density and the hardware slack from the
+released Dave sources. It then measures, for each guest:
+
+- the exact number of executed uarch cycles per mcycle (a deterministic count);
+- the host cost per mcycle of `collect_uarch_cycle_root_hashes`, in interleaved rounds. Only the ratio R to the
+  control is used, so the host's speed cancels out.
+
+It projects one 2^18-mcycle leaf on Dave's reference host as `R * min(1, D_ctrl/566) * 2^18 / 173 s`, with no
+hardware slack. It then asserts that the projection is at most `COMMITMENT_BUDGET` for both dense guests.
+
+On audit/prt2 it exits 1. The reviewer ran it 3 times, and every run exited 1. A typical run prints:
+
+```
+Dave released: COMMITMENT_BUDGET 120 min, log2step [38, 0] -> one leaf = 2^18 mcycles
+Dave reference: 173 mcycles/s at 566.0 usteps/mcycle (hardware slack 2) -> average-density leaf build 1515 s (0.42 h), 3031 s with slack
+guest    usteps/mc ratio(cnt)  ms/mc(host)    ratio(host)  leaf h slack1  leaf h slack2
+ctrl           544       0.96         9.25           1.00           0.40           0.81
+sfence       17329      30.62       262.04          28.33          11.46          22.93
+fdiv          4487       7.93        69.27           7.49           3.03           6.06
+budget: 2.00 h (COMMITMENT_BUDGET)
+VIOLATED: A7/R12: honest uarch-level claim over one 2^18-mcycle leaf of a guest running sfence.vma in S-mode ... projects to 11.46 h ... with NO hardware slack ...
+VIOLATED: A7/R12: honest uarch-level claim over one 2^18-mcycle leaf of a guest running fdiv.d in U-mode ... projects to 3.03 h ... with NO hardware slack ...
+run.sh: R1-A7-1: exit 1 (bug present)
+```
+
+The margins are wide:
+
+- The threshold is a host ratio of about 4.9. `sfence.vma` measures 28-31 and `fdiv.d` measures 7.2-8.0.
+- A purely count-based projection, which does not depend on timing, also fails: about 12.9 h for `sfence.vma` and
+  3.3 h for `fdiv.d`.
+
+The test passes once the released clocks or strides are sized for the worst-case density. That fix would be a larger
+`COMMITMENT_BUDGET`, or a smaller level-0 stride.
+
+The test does not drive the chain. In particular, it does not show `TournamentIsClosed` on an honest late join; that
+consequence is derived from the contract code above. A1 to A8 compliance of the clock arithmetic itself was not
+re-checked. The candidate was found, proved and reviewed by Opus 5.5, with no fallback model.
+
+### Trigger and reachability
+
+The trigger needs two parties.
+
+- A guest region of 2^18 mcycles that is dense in heavy uarch instructions. Any input may produce it in an
+  otherwise correctly designed application: section 4 says an input "may then run any instruction stream at any
+  privilege level". The input stays within the application's mcycle bound, which `imcyclemax` enforces. For the
+  U-mode `fdiv.d` case, an application that legitimately runs floating-point-heavy user code is enough. No
+  compromise is needed.
+- A dispute adversary that posts a claim diverging inside that region. Section 7 allows it to "Steer the dispute to
+  any position of the honest computation, and force the honest claim through a logarithmic number of matches".
+
+Both are reachable, and no unreachability argument applies.
+
+### Rating
+
+1. Out of scope: no.
+   - The exclusion "Defects that need the deployment to violate one of A1 to A8" has two carve-outs, and both cover
+     this case: "unless the emulator's own behavior is what makes the obligation fail, such as a worst-case cost ...
+     larger than the deployment was sized for, or unless an implementation of the referee model is what violates it
+     (section 3)". Dave is that implementation; AUDIT.md: "Referee model, as the deployed referee. Audit the released
+     constants".
+   - "Average-case performance that does not change the worst-case cost of any operation listed in R12" does not
+     apply. The finding is about the worst case.
+   - "An application that is not correctly designed" does not apply. Section 2 requires a correctly designed
+     application only to bound "its own mcycle usage", not its uarch density. Dave's trusted-density assumption is
+     outside the threat model.
+2. Role: two components show the defect.
+   - Dave's released constants play "Referee model" (section 3).
+   - The overrunning operation, `collect_uarch_cycle_root_hashes`, plays "Honest operator" (AUDIT.md table).
+   - Section 3: "A defect is rated by the most critical role among the components that show it."
+3. High and Medium cases: none fits on the preferred reading.
+   - The High case on constant-factor cost increases needs "a defect that lets the guest ... multiply the worst-case
+     cost ... compared with the same operation without the defect". Here the cost is the one "the specified
+     semantics require", so there is no emulator defect.
+   - The defect is the mismatch between that cost and the sizing.
+4. Critical: two clauses apply.
+   - Section 8 lists as Critical "An operation listed in R12 whose worst-case cost a guest can make unbounded,
+     super-linear, or larger than what the deployment was sized for". R12 lists "a uarch-level claim".
+   - It also violates A7: "The dispute constants and clocks leave room for the honest claim to play the logarithmic
+     number of matches that a tournament forces on it, at the worst-case costs of R12". This happens at a reachable
+     state, on the honest operator's path ("Computing claims"). The resulting timeout is a completeness failure under
+     section 1.
+
+Alternative reading: Medium. Section 3 says of the referee model: "A defect that only changes how long a claim may
+take to respond, or only crashes or stalls the model ... is rated as support". If undersized clocks in Dave count as
+"only" changing how long a claim may take to respond, the defect is rated as support. Section 3 then gives Medium,
+because it "would rate High or Critical in the role the component stands in for".
+
+Facts that decide between the readings:
+
+- whether the support clause covers the deployed referee's clock sizing, or only clock differences in a model whose
+  clock values are not normative (section 5: "neither are its clock values");
+- whether the "worst-case cost larger than what the deployment was sized for" case counts the honest-operator
+  builder as a component that shows the defect.
+
+The reviewer prefers Critical. The goal's premise, "on the resources the deployment was sized for", fails exactly
+here, and AUDIT.md tells auditors to audit the released constants as the deployed referee. Both readings rate the
+defect Medium or above.
+
+### Possible solution and risks
+
+Size the clocks for the worst-case density of R12 rather than the average. Options:
+
+- Raise `COMMITMENT_BUDGET` to cover a leaf of `sfence.vma`-class instructions. That is about 30 times the
+  average-density build, plus slack.
+- Shrink the level-0 stride, for example with more levels or a smaller `log2step(0)`, so that a worst-case leaf fits
+  the current budget.
+- Have the emulator lower the worst-case uarch cost of the heaviest instructions. That would be a new protocol
+  version (R13).
+- Alternatively, make the trusted-density assumption an explicit deployment obligation, with tooling that enforces
+  it.
+
+Risks:
+
+- A larger budget lengthens every dispute and delays settlement.
+- More levels change the contract-client compatibility boundary ("Coordinated-bump checklist" in constants.md) and
+  the root-slowdown derivation.
+- Changing uarch costs changes the pristine uarch hash and the step.
+
+### Risk of not fixing it
+
+- On testnet constants, an adversary that controls any input able to drive a guest into a 2^18-mcycle
+  `sfence.vma`-dense region can make the honest claim unable to join the inner tournament in time on the reference
+  host. It can do the same with an application whose own U-mode code is `fdiv`/`fsqrt`-dense, combined with
+  censorship within `C`. A dishonest claim then wins the epoch.
+- On mainnet, the same overrun silently consumes the week-long censorship budget at every forced dense delegation.
+  The honest claim is left exposed to censorship the deployment claims to survive.
+- The only mitigation outside the code is Dave's documented trust assumption: that validators defend only
+  applications whose input-reachable behavior stays near average density. Nothing in the protocol checks or
+  enforces it.
+
+## R1-GUEST-2
+
+**Title.** `rollup --utf8-payload accept|reject|finish` consumes an advance-state input whose payload is not valid
+UTF-8, then exits 1 without printing the request. An input sender can make an application that uses the tool as the
+manual shows halt, or accept an input it never saw.
+
+**Severity.** Critical (preferred reading). Low under the reading that `--utf8-payload` is documented only for
+payloads that are UTF-8 text (see Rating).
+
+### Problem
+
+`rollup accept` (and `reject` and `finish`) first calls `cmt_rollup_finish`. That call yields manually with the
+accepted (or rejected) reason and receives the next request into the rx buffer. Only after that does the tool build
+its JSON output. In `--utf8-payload` mode, `encode_payload` returns the raw payload bytes as a `std::string`, and
+`nlohmann::json::dump(2)` runs with its default strict error handler, so it throws `type_error.316` on any invalid
+UTF-8 byte. `finish_request_and_get_next` catches the exception, prints it to stderr, and returns 1. Nothing is
+printed on stdout.
+
+By then the input has been delivered and the yield that answered the previous one has completed. The application gets
+no request and exit status 1. It cannot tell this from a failure that happened before the yield, and the tool
+documents no failure after the input is consumed. What happens next depends on how the application handles errors:
+
+- If it stops when the tool fails (`exit`, `set -e`), cartesi-init halts the machine. The application then deviates
+  from the rollup interface: it does not yield manually with the accepted or rejected reason after that input.
+  Every later input is lost. Under A5, the outputs of the halted state cannot be extracted.
+- If it retries `rollup accept`, the tool accepts the consumed input. The application never saw it and emitted
+  nothing for it.
+- If it continues with `rollup reject`, as the manual's `calc.sh` does when anything in its loop fails, the input is
+  rejected whatever it contains.
+
+Section 1 requires that no adversary can make a correctly designed application settle a state other than the one
+the state transition function defines. Section 3 counts a guest-software defect that lets an input make such an
+application deviate from the rollup interface as an R7 deviation in the rx buffer and the yield interface. Any
+input sender can trigger this one with a single payload byte such as `0xff`.
+
+### Component, role and area
+
+`machine-guest-tools` v0.18.1-test1, the `rollup` command-line tool in the guest root file system (the
+`rootfs-tools.ext2` that the harness pins as `rootfs.ext2`). Role from the AUDIT.md table: "`machine-guest-tools`
+v0.18.1-test1 | Guest software". Area: encoding the payload of the next request in `--utf8-payload` mode after the
+`finish` yield.
+
+### Location
+
+`sys-utils/rollup/rollup.cpp` in machine-guest-tools v0.18.1-test1:
+
+- `encode_payload`: for `encoding::utf8` it returns `{data, length}` without validating or escaping the bytes.
+- `write_advance_state` (and `write_inspect_state`): `std::cout << j.dump(2)`. nlohmann's strict handler throws
+  `type_error.316` for invalid UTF-8.
+- `finish_request_and_get_next`: `cmt_rollup_finish(r, &f)` (the yield, which receives the input) runs before
+  `write_advance_state`. The `catch` prints `x.what()` and returns 1.
+
+### Evidence and test
+
+`bugs/R1-GUEST-2/` contains `test.lua` (the test) and `README.md` (description, the documented scope of
+`--utf8-payload`, and the expected output). There are no other support files. The test uses the harness config
+`linux-rootfs` (harness `linux.bin` with the pinned guest-tools `rootfs.ext2`) and sets the entrypoint to a shell echo
+application. The application calls `rollup --utf8-payload accept|reject` and checks its exit status. It prints each
+request's payload, emits the payload as a notice and accepts. If the tool returns no request, it prints a message
+and exits 3. The test delivers four advance-state inputs through the machine API (`send_cmio_response` with
+`harness.encode_advance`): `hello`, `h\xc3\xa9llo` (valid UTF-8), `h\xffllo` (invalid UTF-8) and `bye`. The first two
+are controls and must each be accepted with one notice, otherwise the test exits 2. **Asserted:** after each input,
+the machine reaches a manual yield with the accepted or the rejected reason. A second run, which is informative and
+not asserted, uses an application that retries `rollup accept` when it fails.
+
+Run `bugs/run.sh R1-GUEST-2` (about 4 s, two short Linux boots). On audit/prt2 it prints (excerpt):
+
+```
+[stop on failure] input 1 (payload "hello"): accepted, 1 output(s) emitted
+[stop on failure] input 2 (payload "héllo"): accepted, 1 output(s) emitted
+[stop on failure] input 3 (payload "h\255llo"): halted, 0 output(s) emitted
+[stop on failure] guest console: [json.exception.type_error.316] invalid UTF-8 byte at index 1: 0xFF
+[stop on failure] guest console: app: rollup --utf8-payload accept failed: no request obtained, stopping
+VIOLATION: after input 3 (payload "h\255llo", not valid UTF-8) the machine halted instead of yielding manually with the accepted or the rejected reason
+  cause: `rollup --utf8-payload accept` received the input (its accept yield returned) and then failed to print it: nlohmann type_error.316 (invalid UTF-8), exit 1, empty stdout
+[retry on failure] input 3 (payload "h\255llo"): accepted, 0 output(s) emitted
+[retry on failure] input 4 (payload "bye"): accepted, 1 output(s) emitted
+INFO: with retry, input 3 was ACCEPTED with no notice: the application never saw it
+run.sh: R1-GUEST-2: exit 1 (bug present)
+```
+
+Exit status 1. The prover reported four runs with exit 1, and the reviewer re-ran it twice with exit 1. The test
+exits 0 once the tool prints a request for such a payload (by escaping, replacement or a documented fallback
+encoding), or once it ends that input at an accepted or rejected yield in some other defined way. No fallback model
+was used. The candidate was found by a hunter (angle GUEST), proved by a prover and reviewed, all on Opus 5.5.
+
+### Trigger and reachability
+
+Any input sender can trigger it. Threat model section 4: "input senders (any bytes, any count)". The sender sends
+an advance-state input whose payload contains a byte sequence that is not valid UTF-8, such as `0xff`. The input
+box ABI-encodes any payload, and a small payload fits in the rx buffer, so the delivery changes the state (R5). The
+application only has to use `rollup --utf8-payload accept`, `reject` or `finish`. The manual's rolling calculator
+`calc.sh` (doc/README.md) uses exactly these commands, and the PRT recipes run it. No special machine state is needed.
+The input is the first one processed after any accepted or rejected yield.
+
+### Rating
+
+1. Out of scope: no exclusion covers it. "The stall of an application that halts ..." excludes what an application
+   loses by halting on its own. Here an input makes guest software that section 3 puts in scope cause the halt.
+   "An application that is not correctly designed, other than through a defect in guest software that section 3
+   puts in scope" and "Guest software that an input can subvert, as long as R7 and R8 hold, other than the defects
+   that section 3 puts in scope" both defer to section 3 (step 2). The trigger is an ordinary input. It needs no
+   machine API call by an untrusted party, no snapshot and no violation of a deployment obligation.
+2. Role: Guest software (AUDIT.md: "`machine-guest-tools` v0.18.1-test1 | Guest software"). Section 3, which
+   covers this component: "A defect in them is in scope only where an application depends on them as documented,
+   and would be correctly designed if they worked as documented. A defect that lets an input make such an
+   application deviate from the rollup interface is Critical, as an R7 deviation in the rx buffer, the tx buffer and
+   the yield interface. Any other defect in them is Low."
+3. High and Medium cases: none fits. The listed High and Medium cases are about verifiers, path divergences,
+   emulator crashes, honest-operator components, reproducible builds, version detection, constant-factor cost,
+   support components, the machine API, hash integrity and persistence. None concerns guest software. Section 3
+   gives guest software only Critical or Low.
+4. Critical: the guest-software clause applies. The test's application uses only documented commands and options.
+   `rollup --help`, quoted in the manual, says `finish` (and its shortcuts `accept` and `reject`) "print the next
+   request to stdout", with "<data> contains arbitrary data in the selected payload encoding", and documents no
+   failure after the request is received. If the tool worked as documented, the application would print, emit and
+   accept every input. It would then meet section 2 ("After each input, it yields manually with the accepted or the
+   rejected reason"), so it is correctly designed. A single input makes it halt instead, which is a deviation from
+   the rollup interface. The obligation broken is section 2's correctly designed application, which section 3
+   rates "as an R7 deviation in the rx buffer, the tx buffer and the yield interface". With retry-on-failure error
+   handling, the consumed rx-buffer contents never reach the application before it accepts.
+
+Two readings give different classes:
+
+- **Reading A, Critical (preferred).** Using `--utf8-payload` in an application that receives inputs from anyone is
+  documented use. The manual's own canonical rollup application, `calc.sh`, uses `rollup --utf8-payload
+  accept/reject` on untrusted inputs, and the help text promises that `finish` prints the next request. The manual's
+  sentence "Use the default 0x-prefixed hex or `--base64-payload` instead when payloads contain arbitrary binary
+  data rather than text" is about the host encoder `cartesi-rollup-data.lua`, where the developer chooses the
+  payloads. It does not tell an application to expect its tool to consume an input and print nothing.
+- **Reading B, Low.** The option is documented as "encode/decode <data> fields in JSON values as UTF-8 text". A
+  JSON string cannot carry invalid UTF-8, and the manual advises hex or base64 for arbitrary binary data. Under
+  this reading, an application that selects a text-only encoding while senders can send any bytes is "outside its
+  intended use" (section 8, Low: "a defect in guest software that only an application outside its intended use
+  can reach"). Also, the manual's own `calc.sh` survives the input: when its loop fails, it calls `rollup reject`
+  next, which rejects the consumed input.
+
+Deciding facts: whether the guest `rollup` tool's documented contract for `--utf8-payload` covers advance-state
+payloads that are not UTF-8 text (the help text says neither yes nor no), and whether an application may treat a
+nonzero exit of `rollup accept` as fatal. Nothing in the tool's documentation says that a failure can follow a
+completed yield. I prefer A because the manual presents `--utf8-payload` as the way to write the calculator, a rollup
+application exposed to arbitrary senders, and because the defect is reached through the input, not through misuse by
+the application.
+
+### Possible solution and risks
+
+Make the tool's output total in `--utf8-payload` mode. Options:
+
+- (a) Dump with `nlohmann::json::error_handler_t::replace`. This is lossy: the application sees U+FFFD instead of the
+  bytes, so two different payloads can look the same to it.
+- (b) Fall back to a lossless, documented representation for non-UTF-8 payloads, such as hex with a flag field.
+  Applications must handle the new shape.
+- (c) Add a documented error path that reports, on stdout or through a distinct exit status, that the request was
+  received but could not be encoded, so the application can still reject it.
+
+Whatever the choice, document that any nonzero exit of `finish`, `accept` or `reject` after the yield means the
+input was consumed. Apply the same review to the other places that print payload-derived JSON (`write_inspect_state`,
+`gio`). The risks are behavioral changes for existing applications that parse the output. Option (a) may hide
+attacker-controlled differences between payloads from the application.
+
+### Risk of not fixing it
+
+Any input sender can halt, with one non-UTF-8 byte, every application that uses `rollup --utf8-payload` and stops
+when the tool fails. All later inputs are then lost and the outputs become unprovable (A5). An application that
+retries instead accepts an input it never processed. Applications that, like `calc.sh`, carry on with `rollup
+reject` only lose the input. Outside the code, the mitigation is to use the default hex or `--base64-payload`
+encoding in the guest, or to treat every failure of `rollup accept/reject/finish` as "input consumed, reject it".
 
 ## R1-O1-2
 
@@ -533,6 +918,181 @@ but the fault itself comes from the host. Mitigation outside the code: treat any
 `collect_mcycle_root_hashes` (other than a reported console error) as fatal for the machine, discard it and reload
 from the last guaranteed snapshot, or call `clear_hash_tree()` (or verify with `verify_hash_tree()`) before using it
 again.
+
+## R1-R7-1
+
+**Title.** The LR/SC reservation is keyed by virtual address and survives `satp` writes and `sfence.vma`, so after a remap an SC succeeds on a physical word in another 4 KiB page that the LR never reserved.
+
+**Severity.** Critical (R7, "Atomics and fences" and "Address translation", read as written). Medium under a narrower reading. See Rating.
+
+### Problem
+
+`execute_LR` stores the **virtual** address of the access in `ilrsc`. `execute_SC` succeeds whenever
+`ilrsc == vaddr`. Only three places write `ilrsc`: LR, SC (which always clears it) and `set_prv` (traps, `sret`,
+`mret`). A `satp` write (`write_csr_satp`) and `sfence.vma` (`execute_SFENCE_VMA`) leave it unchanged. Take a hart
+that runs `lr.d` at VA V (physical P1), then remaps V to P2 in another physical page without a trap or xRET (a
+`csrw satp` or a store to the leaf PTE, then `sfence.vma`), then runs `sc.d` at V. The SC succeeds (rd = 0) and
+writes P2.
+
+The RISC-V specification forbids this:
+
+- Privileged spec, Sv32 section, inherited by Sv39: "For implementations with both page-based virtual memory and the A
+  standard extension, the LR/SC reservation set must lie completely within a single base physical page (i.e., a
+  naturally aligned 4 KiB physical-memory region)."
+- Unprivileged A/Zalrsc: "The SC must fail if the address is not within the reservation set of the most recent LR in
+  program order". When an SC fails, it "does not write to memory, and it writes a nonzero value to rd".
+
+P2 lies in a different physical page from P1, so it cannot be in the reservation set, and the SC must fail.
+
+The manual (doc/README.md, "The main processor") says the main processor implements `RV64IMAFDCZicsr_Zifencei` with
+Sv39. It describes `ilrsc` only as the register that "holds the reservation address for the LR/SC atomic memory
+operations". It documents no deviation here. The behavior is deterministic and the same on every path: native
+interpretation and the uarch reach the same root hash, and the regenerated step replays the uarch. So nothing breaks
+in the dispute. The defect is an architectural deviation in an area that R7 lists ("Atomics and fences"; "Address
+translation and memory permissions"). There, R7 says "any deviation lets an input subvert a correct guest, even a
+deviation that is consistent across all paths". A guest that relies on the specified LR/SC semantics can complete a
+read-modify-write on a word it never load-reserved.
+
+### Component, role and area
+
+The interpreter (main-processor A extension and Sv39 address translation). The uarch program compiles the same
+`interpret.cpp`, and the regenerated machine-solidity-step implements the uarch, so all of them show the same
+behavior. AUDIT.md table: "Interpreter, state-access layers, devices, uarch program, ... | Honest operator". The
+regenerated step is "Referee verifier". It shows the deviation only because it faithfully implements the same state
+transition function, not because its verification is unsound.
+
+### Location
+
+`src/interpret.cpp`:
+
+- `execute_LR` (around line 1292): `a.write_ilrsc(vaddr)`.
+- `execute_SC` (around line 1313): `if (a.read_ilrsc() == vaddr) { ...write_virtual_memory... }`.
+- `set_prv` (around line 380): the only other place that clears `ilrsc`.
+- `write_csr_satp` (around line 2233) and `execute_SFENCE_VMA` (around line 3574) do not touch `ilrsc`.
+
+### Evidence and test
+
+`bugs/R1-R7-1/` contains `test.lua` and `README.md`. Run it with `bugs/run.sh R1-R7-1`, which takes under a second.
+
+The test builds a bare machine with 1 MiB of RAM, two Sv39 roots, and code at VA 0x5000. It runs in S-mode with
+`mie = 0` and `mstatus.MIE = 0`. It checks that every program reaches its final `j .` at pc 0x5010, still in S-mode,
+so no trap happened. P1 = 0x80020000 and P2 = 0x80021000 both start at 0x1111, and the SC stores 0x9999. Each case
+runs twice: natively (`run`) and through the uarch (`run_uarch` plus `reset_uarch` per mcycle). The two runs must
+reach equal root hashes, or the test exits 2. The cases are these.
+
+- **Baseline.** `lr.d; nop; nop; sc.d` with no remap. It must succeed, or the test exits 2. The reviewer added this
+  case.
+- **Control, per variant.** The same program as the remap case, but the "remap" keeps VA 0x1000 on P1. The result
+  must be consistent (success writes P1, failure writes nothing, P2 is untouched), or the test exits 2. The reviewer
+  relaxed this check. The prover's version required success, but the spec allows that SC to fail, and the
+  invalidate-on-remap fix makes it fail.
+- **Remap, variant `satp`.** `lr.d x6,(x5); csrw satp,x7; sfence.vma; sc.d x9,x8,(x5)`. The new root maps VA 0x1000
+  to P2.
+- **Remap, variant `pte`.** The `csrw` is replaced by `sd x10,0(x11)`, which overwrites the leaf PTE of VA 0x1000
+  through a mapping of the leaf table.
+
+In both remap variants the test asserts that `x9 != 0`, that P1 is 0x1111 and that P2 is 0x1111. On audit/prt2 it
+exits 1, deterministically: three runs by the prover and three by the reviewer gave the same result. It prints:
+
+```
+baseline (native)            pc=0x5010 prv=1 x9(sc rd)=0 P1=0x9999 P2=0x1111
+baseline (uarch)             pc=0x5010 prv=1 x9(sc rd)=0 P1=0x9999 P2=0x1111
+satp control (native)        pc=0x5010 prv=1 x9(sc rd)=0 P1=0x9999 P2=0x1111
+satp control (uarch)         pc=0x5010 prv=1 x9(sc rd)=0 P1=0x9999 P2=0x1111
+satp remap   (native)        pc=0x5010 prv=1 x9(sc rd)=0 P1=0x1111 P2=0x9999
+satp remap   (uarch)         pc=0x5010 prv=1 x9(sc rd)=0 P1=0x1111 P2=0x9999
+VIOLATED: satp: R7 (Atomics; Address translation): after LR at VA 0x1000 (P1) and a remap of VA 0x1000 to P2 in another 4 KiB physical page, the SC lies outside every legal reservation set and must fail (rd != 0) without writing memory
+pte control (native)         pc=0x5010 prv=1 x9(sc rd)=0 P1=0x9999 P2=0x1111
+pte control (uarch)          pc=0x5010 prv=1 x9(sc rd)=0 P1=0x9999 P2=0x1111
+pte remap   (native)         pc=0x5010 prv=1 x9(sc rd)=0 P1=0x1111 P2=0x9999
+pte remap   (uarch)          pc=0x5010 prv=1 x9(sc rd)=0 P1=0x1111 P2=0x9999
+VIOLATED: pte: R7 (Atomics; Address translation): after LR at VA 0x1000 (P1) and a remap of VA 0x1000 to P2 in another 4 KiB physical page, the SC lies outside every legal reservation set and must fail (rd != 0) without writing memory
+run.sh: R1-R7-1: exit 1 (bug present)
+```
+
+The test exits 0 under either fix below: keying the reservation by physical address, or invalidating it on `satp`
+writes and `sfence.vma`. All agents ran on the primary model, with no fallback.
+
+### Trigger and reachability
+
+The guest triggers it. It needs code that runs, in S-mode (or in M-mode with `mstatus.MPRV`), an LR, a change of
+translation for the reserved virtual address, and an SC to the same virtual address, with no trap and no xRET in
+between. Every trap, `sret` and `mret` calls `set_prv` and clears the reservation.
+
+The state is reachable. Section 4 says "Any input may take control of the firmware, the kernel, ... It may then run
+any instruction stream at any privilege level", and section 2 says "Any assignment of guest-writable memory and
+registers is presumed reachable". Page tables, `satp` (written through instruction semantics) and the code all lie
+in guest-writable RAM and registers. The test sets them through the machine API only for brevity. A valid template
+running an S-mode kernel can execute the same instruction sequence.
+
+A user-mode program cannot trigger the remap without a trap. The exception is a U-mode store to a page table that
+the kernel maps writable to it, which a correct kernel does not do.
+
+### Rating
+
+1. Out of scope: no. The trigger is guest instructions, not a machine API call. "The effect of a deliberate state
+   change made through the machine API" does not apply: the test uses the API only to set up guest-writable state,
+   which a guest can produce itself. "Guest software that an input can subvert, as long as R7 and R8 hold" does not
+   apply either, because R7 itself does not hold. No snapshot, reload, host fault or deployment obligation is
+   involved.
+2. Role: the interpreter, plus the uarch program built from it. AUDIT.md: "Interpreter, ... uarch program, ... |
+   Honest operator". Section 3: "The transition function, its log producers, ... play this role in every
+   deployment." That clause covers this component. The regenerated step ("Referee verifier") shares the semantics
+   but stays sound with respect to the state transition function as implemented, so the role does not raise the
+   rating beyond what R7 gives.
+3. High and Medium cases: no High case fits. The paths do not diverge (they agree), and the state is reachable. The
+   candidate Medium case is "An undocumented deterministic deviation, consistent across all paths, in behavior that
+   no correct guest relies on for isolation or data integrity (R7)". The deviation is undocumented, deterministic and
+   consistent across paths. But R7 says "A correct guest relies on the architecture for isolation and data integrity
+   in the areas listed below. In these areas, any deviation lets an input subvert a correct guest, even a deviation
+   that is consistent across all paths", and lists "Address translation and memory permissions" and "Atomics and
+   fences". LR/SC reservation semantics under address translation fall in both areas. So under the text as written,
+   the Medium case, which covers behavior "no correct guest relies on", does not fit.
+4. Critical: this violates R7 at a reachable state. R7 says "The emulator implements the RISC-V specification ...
+   departing only where the manual documents a deviation", and the manual documents none for LR/SC. Section 8 says
+   "violating any rule or obligation at a reachable state ... is critical". Under the reading in steps 3 and 4,
+   **Critical**.
+
+**Second reading: Medium.** The Medium case can instead be read as a question of fact about this particular
+behavior. On that reading it fits, and the rating is **Medium**, if no correct guest actually relies on an SC failing
+after a remap made between its own LR and SC with no trap. The facts for this reading:
+
+- Every trap and xRET already clears the reservation. So a user-mode victim is never exposed through a kernel remap,
+  and preemption also clears it.
+- Only S-mode or M-mode code that remaps between its own LR and SC sees the deviation.
+- The Zalrsc text recommends that software invalidate reservations with a scratch SC "if necessary when changing
+  virtual to physical address mappings". Linux follows that advice on exception return.
+
+That reading would settle on Medium if one could show that no supported guest software (kernel, OpenSBI or bare-metal
+runtime) remaps inside an LR/SC window. The categorical wording of R7 ("any deviation ... even a deviation that is
+consistent across all paths"), which answers exactly the Medium case's argument, supports the first reading better.
+Both readings rate it Medium or above.
+
+### Possible solution and risks
+
+There are two options.
+
+- **Clear `ilrsc` on every `satp` write and every `sfence.vma`** (in `write_csr_satp` and `execute_SFENCE_VMA`). This
+  is the smaller change. The spec allows an SC to fail at any time outside the constrained LR/SC loop, and SYSTEM
+  instructions and stores end that loop, so this fix never breaks forward progress. It does not cover a remap by a
+  plain store to a PTE that is still cached in the TLB with no `sfence.vma`. That case is fine: the stale translation
+  is architectural, the SC then still goes to P1, and that is allowed.
+- **Store the physical address of the LR access in `ilrsc`, and compare it with the translated physical address in
+  SC.** This follows the spec directly. It needs a translation before the comparison, and it changes the state
+  accesses that SC logs.
+
+Either fix changes the state transition function, and so the uarch program, its pristine hash, the regenerated step
+and the logged accesses (R13). It needs a new protocol version and a new `marchid`. It must not be mixed with
+deployed versions (A6).
+
+### Risk of not fixing it
+
+The dispute game itself is not exposed: every path computes the same (non-compliant) successor, so claims, proofs
+and verification still agree. The exposure is a correct guest that relies on the specified atomics under address
+translation. It can see an SC succeed on a word that was never load-reserved, and silently corrupt that word's
+read-modify-write. Only code running in S-mode or M-mode that changes the mapping between its own LR and SC can
+trigger it. Guest software can mitigate it by issuing an SC to a scratch word after every remap, as the spec
+recommends.
 
 ## R1-R10-1
 
@@ -898,6 +1458,160 @@ near the top of the address space, or a relaxed 56-bit limit would turn it into 
 R4) without any change to the Solidity code. Keeping the 56-bit address-range limit and the TLB slot verification
 keeps it unreachable.
 
+## R1-R12-2
+
+**Title.** In the uarch program every TLB flush issues its 768 `write_tlb` ecalls through a non-inlined 14-instruction
+wrapper, so a flush costs 17,492 uarch cycles (22 per slot) where about 3 to 4 per slot would do, even with a full TLB.
+
+**Severity.** High (under the reading preferred here; Low under the alternative reading given at the end of Rating).
+
+### Problem
+
+A full TLB flush happens on `sfence.vma`, on every `satp` write and on every privilege change (`set_prv`, so on every
+trap, interrupt and xRET). The interpreter writes all 768 slots (3 sets of 256), and in the uarch program each slot
+write is a call to `ua_write_tlb_ECALL`. That function is compiled out of line (no LTO, separate translation unit) into
+14 instructions: 5 moves of the arguments into temporaries, 2 instructions to load the ecall number, 5 moves back into
+`a0`-`a4`, `ecall` and `ret`. The calling loop adds 8 instructions per slot, which rematerialize constants that do not
+change between slots. A flush therefore costs 22 uarch cycles per slot, 17,492 uarch cycles per flush mcycle, against
+629 for an `addi` that misses the code TLB. The cost is the same whatever the TLB holds.
+
+With all 768 slots valid, the semantics do require 768 slot writes, and in the uarch the only way to write a slot is a
+`write_tlb` ecall. Issued from an inlined loop (slot index, `ecall`, increment, branch, the other arguments kept in
+registers), they need about 3 to 4 uarch cycles each, so about 2,300 to 3,100 uarch cycles plus the control's 629.
+The out-of-line wrapper thus multiplies the worst-case uarch cost of a flushing mcycle by about 5 to 6. Flushing
+mcycles are the most expensive mcycles in uarch cycles: 768 slot writes dwarf a page walk or a trap entry. A guest can
+execute them back to back, for example across the 2^10 mcycles that one uarch-level claim spans (doc/README.md: a uarch
+period is "at most 2^10" mcycle bundles of 2^20 uarch transitions). The honest operator executes and hashes every one
+of those uarch cycles to build the uarch-level claim, and R12 bounds that work only "per run" for fixed-point
+repetitions, not for executed cycles. So the defect multiplies the worst-case cost of an mcycle executed by the uarch
+and of a uarch-level claim by a constant factor that the semantics do not require.
+
+It does not break the goal by itself. It removes margin from the dispute clocks that A7 sizes "at the worst-case costs
+of R12".
+
+The other half of the original claim, that already invalid slots are rewritten, only affects the average case: with a
+full TLB nothing can be skipped, and a check per slot would make the worst case slightly more expensive. Section 8 puts
+"Average-case performance that does not change the worst-case cost of any operation listed in R12" out of scope, so
+this entry does not count it as a defect, and the test does not assert it.
+
+### Component, role and area
+
+The uarch program, in its TLB-flush path: the interpreter's `flush_tlb_slot`, `flush_tlb_set` and `flush_all_tlb` as
+compiled into the uarch, and the uarch bridge's `do_write_tlb` with `ua_write_tlb_ECALL`. AUDIT.md's components table
+gives "Interpreter, state-access layers, devices, uarch program, ... `collect_uarch_cycle_root_hashes` ..." the role
+"Honest operator". The native interpreter flushes the same way, but natively the per-slot cost is small and writing
+the slots of a full TLB is required, so the native path is not affected in its worst case.
+
+### Location
+
+- `src/interpret.cpp`: `set_prv` (about line 380, calls `flush_all_tlb`), `flush_tlb_slot`, `flush_tlb_set`,
+  `flush_all_tlb`, `flush_tlb_vaddr` (lines 885-937), and the callers at lines 500, 2279, 2341, 2858, 3592 and 3607
+  (`satp`/`mstatus` writes, `sfence.vma`).
+- `uarch/uarch-bridge-state-access.hpp`: `do_write_tlb` (line 190) calls `ua_write_tlb_ECALL`.
+- `uarch/uarch-ecall.c`: `ua_write_tlb_ECALL` (lines 44-59), an out-of-line function whose `asm` moves each `"r"`
+  operand into the clobbered argument registers.
+- `uarch/uarch-ram.elf.objdump`: `ua_write_tlb_ECALL` at 0x600b90-0x600bc4 (14 instructions) and the flush loop body
+  at 0x602430-0x60244c (8 instructions, `jal ra,600b90`), repeated for each of the three sets.
+
+### Evidence and test
+
+`bugs/R1-R12-2/` contains `test.lua` and `README.md`. The test builds two bare-metal guests from RISC-V encodings in
+Lua, so it needs no toolchain and only the in-tree emulator build. Run `bugs/run.sh R1-R12-2`. It takes about one
+second.
+
+1. The decisive part, the worst case. Pages 0..254 each start with `j next page` (256 code slots). Page 255 loads
+   from pages 256..511 and stores to pages 512..767 (256 read and 256 write slots), then runs `sfence.vma x0, x0;
+   addi; j .`. The test checks that all 768 shadow-TLB slots are valid before the `sfence.vma`. It runs that mcycle
+   and the following `addi` with the pristine uarch program (`run_uarch` to halt, then `reset_uarch`). Uarch cycle
+   counts are exact, with no timing involved. It asserts `(sfence cycles - addi cycles) / 768 <= 8`, about twice
+   what an inlined ecall loop needs.
+2. A diagnostic, not asserted. A guest alternates `sfence.vma` and `addi` with an almost empty TLB. The test
+   single-steps one flush and counts its `write_tlb` ecalls.
+
+On audit/prt2 it prints the following and exits 1 (deterministic, two runs identical):
+
+```
+full TLB: 768 of 768 slots valid before sfence.vma, 0 after; sfence.vma 17492 uarch cycles, following addi 629
+almost empty TLB (diagnostic): 1 slots valid before, 768 write_tlb ecalls, 767 of them to slots already invalid, 17492 uarch cycles
+full-TLB flush cost over the control: 21.96 uarch cycles per slot (bound 8)
+VIOLATED: R12 / section 8 High: flushing a full TLB costs 21.96 uarch cycles per slot (more than 8) beyond an addi; ...
+run.sh: R1-R12-2: exit 1 (bug present)
+```
+
+The prover's test asserted only the almost-empty case, which a fix that skips invalid slots would pass while leaving
+the worst case unchanged. The reviewer revised it so that the full-TLB worst case decides. That case fails for the
+same reason, 21.96 uarch cycles per slot. In a manual measurement (not part of the test, timings noisy on a shared
+host), running the full-TLB flush mcycle one uarch cycle at a time with a root hash after each, as
+`collect_uarch_cycle_root_hashes` does, took about 5.8 s of host CPU, against about 0.01 s for an ordinary mcycle with
+an empty TLB. Each extra uarch cycle costs a full step and a hash update. Found, proved and reviewed with
+`claude-opus-5-5`; no fallback model was used.
+
+### Trigger and reachability
+
+Any guest code, at any privilege level, after it reads an input: `sfence.vma`, a `satp` write, or any trap or xRET
+(even a U-mode `ecall` pays two flushes). The section 4 adversary "may then run any instruction stream at any
+privilege level". The state is reachable, because the flush costs the same from every state. The worst case, a full
+TLB, takes only touching 768 suitably spaced pages, which the test's guest does from a configuration-created machine.
+An adversary steers a dispute to such an mcycle, or fills a uarch period with such mcycles, and forces the honest
+operator to compute uarch-level claims over them (section 7: "Steer the dispute to any position of the honest
+computation").
+
+### Rating
+
+1. Out of scope: no. "Average-case performance that does not change the worst-case cost of any operation listed in
+   R12" does not apply, because the wrapper overhead is paid in the worst case (full TLB, flush every mcycle), as
+   the test shows. It does apply to the "rewrites already invalid slots" part, which this entry therefore does not
+   count. No other exclusion fits. The trigger is ordinary guest execution from a valid template, with no API misuse,
+   snapshot, O1/O2 or A1-A8 violation.
+2. Role: the uarch program, which AUDIT.md's table puts under "Honest operator". Section 3: "The transition function,
+   its log producers, the computation-hash builders ... play this role in every deployment." That clause covers this
+   component directly.
+3. High and Medium cases: the section 8 High case applies: "A defect that lets the guest, or host load that the
+   deployment was sized for, multiply the worst-case cost of an operation listed in R12 by a constant factor,
+   compared with the same operation without the defect, while staying within what the deployment was sized for. A
+   cost that the specified semantics require is not a defect. When the sizing is unknown, rate such a
+   constant-factor increase High." The operations are "an mcycle" (as executed by the uarch) and "a uarch-level
+   claim" (R12). The factor is about 5 to 6 on a flushing mcycle, and on a uarch-level claim whose mcycles all flush.
+   It is constant, because it is bounded by 768 slots per flush, and it stays far below the uarch cycle limit per
+   mcycle (2^20 - 1). The 768 ecalls are required. The 21 extra instructions per ecall are not required by any
+   semantics. The clause covers this component, because it speaks of any defect that multiplies an R12 operation's
+   worst-case cost. The sizing is unknown, so the class is High.
+4. Critical: not reached. It does not make any R12 operation unbounded, super-linear or larger than sizing.
+
+The two readings differ in what counts as "a defect". The reading preferred here takes the clause's only stated
+exception, "A cost that the specified semantics require is not a defect", as the test. On that reading, avoidable
+per-slot overhead on the dominant worst-case path is a defect, and the class is High. An alternative reading holds
+that "defect" means a mistake in logic, such as redundant or repeated work, and not code-generation efficiency of a
+correct implementation; the comment in `flush_tlb_slot` records that writing every slot is deliberate. On that
+reading this is a performance improvement, Low or not a defect. Two facts favor the first reading. The excess is
+literally redundant work: 10 register moves that undo each other, plus constants rematerialized for every slot. And it
+sits on the worst-case path, not spread over every instruction. What would decide it is whether the maintainers treat
+the uarch cycle cost of the worst-case mcycle as a sized quantity under A7.
+
+### Possible solution and risks
+
+Make the uarch ecall wrappers `static inline` in `uarch-ecall.h`, binding the operands directly to `a0`-`a4`/`a7` with
+register variables (`register uint64_t a0 asm("a0") = ...`) instead of `mv` from `"r"` operands, or enable LTO for the
+uarch build. Optionally flush the write set first, and hoist loop-invariant arguments. The flush loop then costs about 3
+to 4 uarch cycles per slot. Skipping already invalid slots is not needed for the worst case, and it would add a load
+and a compare per slot.
+
+Risks: any change to the uarch program changes its pristine hash, the uarch trajectory of every mcycle, and the
+accesses each logged transition makes. That makes it a new protocol version (R13, A6). The regenerated
+`machine-solidity-step` constants and the on-chain pristine hash must be updated together, and the new uarch must be
+rebuilt reproducibly. Register-variable asm must keep the ecall's clobbers exact. Otherwise the compiler may assume an
+argument register survives the ecall, which would be a uarch-versus-native divergence (R2) that the existing
+differential tests should catch.
+
+### Risk of not fixing it
+
+Any input sender who takes control of the guest can make every mcycle of a dispute region cost about 17,500 uarch
+cycles instead of about 3,000, and so make each uarch-level claim the honest operator must compute over such a region
+about 5 to 6 times as expensive. The same holds for every proof of a uarch step there. That consumes margin in the
+clocks that A7 sizes. If a deployment sized its uarch-level clocks without measuring flush-heavy mcycles, this factor
+moves it toward the Critical case "larger than what the deployment was sized for". Outside the code, the mitigation is
+to size the uarch-level clocks for the measured worst case: a period of 2^10 mcycles that each flush a full TLB.
+
 ## R1-R13-1
 
 **Title.** The on-chain step verifier cannot be rebuilt from audited source. Regenerating machine-solidity-step
@@ -1093,6 +1807,139 @@ released step. The stale step implements a different state transition function, 
 pristine hash, which mixes versions (A6) and makes the honest operator's proofs fail on-chain. Nobody needs to
 trigger it: every regeneration fails. The mitigation outside the code is to release a fixed machine-solidity-step
 together with this emulator version and audit it.
+
+## R1-R8-3
+
+**Title.** Every `collect_mcycle_root_hashes` call re-marks and word-compares every page mapped by the write TLB, even when nothing was written since the last call. A guest that fills the write TLB and loops on automatic yields makes each yield about 6x more expensive than it needs to be.
+
+**Severity.** High under the preferred reading: a guest multiplies the worst-case cost of "a part of a claim" (R12) by a constant factor, with the deployment's sizing unknown. Out of scope under the alternative reading, which takes the section 8 exclusion for "the number of its outputs or yields" literally, because each yield still has a bounded cost.
+
+### Problem
+
+`machine::collect_mcycle_root_hashes` calls `update_hash_tree()` on entry. That function runs
+`mark_write_tlb_dirty_pages()`, which marks dirty the page of every valid slot of the 256-slot write TLB
+(`TLB_SET_SIZE = 256`), whether or not anything was written there since the hash tree was last updated. `m_ht.update`
+then looks up each marked page and compares all 128 of its 32-byte words against the page hash-tree cache. Inside the
+call this marking is not needed. The collect state access records every write in `context.dirty_pages`
+(`collect-mcycle-hashes-state-access.hpp`, `m_c.dirty_pages.insert`), and the loop marks only those pages before each
+`m_ht.update`. So when a call returns, the hash tree is already up to date. If the next call follows with no other
+mutation in between, its entry marking repeats about 1 MiB of comparisons for nothing.
+
+A call returns at every automatic yield: the loop breaks on any break reason other than `reached_target_mcycle`.
+The honest operator's builder then calls it again (`doc/recipes/prt.lua`, `run_to_stop` -> `mcycle_computation_hash_run`).
+A guest can yield automatically every one or two mcycles. With a full write TLB, it pays the 256-page re-scan once
+per yield.
+
+So the per-call constant term of the cost of "a part of a claim" grows from about 17 pages (the always-dirty pages)
+to about 272 pages. Measured in time, it grows from about 30 us to about 190 us per yield. For a yield-every-2-mcycles
+guest, which is already the most expensive per-mcycle pattern without this defect, that raises the worst-case cost of
+computing the mcycle-level claim from about 15 us to about 95 us per mcycle. That is about 6x. It erodes the A7 margin:
+the clocks are sized for "the worst-case costs of R12". It does not produce a wrong hash.
+
+The hunter called this "rehashing". That is not accurate. The number of hash computations per call is the same with
+and without a full TLB (59 in the test). The extra work is marking, looking up and comparing unchanged pages.
+
+### Component, role and area
+
+`collect_mcycle_root_hashes` and the hash tree (`src/machine.cpp`, the hash-tree update and its page cache). Role:
+honest operator. The AUDIT.md table lists "Interpreter, state-access layers, devices, uarch program, hash tree, log
+producers, `collect_mcycle_root_hashes` and `collect_uarch_cycle_root_hashes`, ..." as "Honest operator".
+
+### Location
+
+- `src/machine.cpp`: `machine::collect_mcycle_root_hashes` (from line 2424). It calls `update_hash_tree()` on entry
+  (line 2451) and breaks on any reason other than `reached_target_mcycle` (around line 2557).
+- `src/machine.cpp`: `machine::update_hash_tree` (line 1645), `machine::mark_write_tlb_dirty_pages` (line 1639) and
+  `machine::mark_write_tlb_dirty_page` (line 1619).
+- `src/collect-mcycle-hashes-state-access.hpp`: write tracking into `context.dirty_pages` (lines 78 and 82).
+- Caller on the honest operator's path: `doc/recipes/prt.lua`, `run_to_stop` (line 1396) and
+  `mcycle_computation_hash_run` (line 1576).
+
+### Evidence and test
+
+`bugs/R1-R8-3/` contains `test.lua` (the test, with a hand-assembled bare-metal guest inlined as six instruction words)
+and `README.md`. Run it with `bugs/run.sh R1-R8-3`. It runs in well under a second.
+
+The guest runs on a machine with 4 MiB of RAM. It stores non-zero data to N distinct pages, which fills N write-TLB
+slots, and then loops on `sd t1,0(t4); j .` with `t1` set to an automatic yield (progress). After one warm-up call,
+the test makes 64 calls to `collect_mcycle_root_hashes(MCYCLE_MAX, 10, 0, 0)`. Each call runs 2 mcycles to the next
+yield and writes no memory. The test then reads `get_hash_tree_stats`. The control uses N = 1 and the subject uses
+N = 256. The test asserts, deterministically and without timing, that pages visited per call (`page_hits +
+page_misses`) with a full TLB are at most the control plus 16.
+
+Output on audit/prt2 (the reviewer re-ran it twice; the prover reports four runs, all exit 1). The CPU times vary and
+are printed for information only:
+
+```
+control  (1 write-TLB slot):    17.0 pages, 2048.0 words compared, 59.0 hashes, 2.0 mcycles per collect call (29.7 us, info)
+full TLB (256 write-TLB slots): 272.0 pages, 34688.0 words compared, 59.0 hashes, 2.0 mcycles per collect call (183.1 us, info)
+ratio of hash-tree pages visited per call: 16.0x
+VIOLATED: R12 / section 8 High: a collect_mcycle_root_hashes call that resumes at an automatic yield with no memory written must not re-visit every page mapped by the write TLB (per-call hash-tree work must not grow with valid write-TLB slots)
+run.sh: R1-R8-3: exit 1 (bug present)
+```
+
+The page counts, word counts and hash counts are identical across runs. The test exits 0 once a call that resumes
+with an up-to-date hash tree skips the re-scan of unchanged write-TLB pages. The reviewer made no changes to the test.
+
+### Trigger and reachability
+
+The guest triggers it. Any input that takes control of the guest (section 4: "Any input may take control of the
+firmware, the kernel, the rollup libraries, and the application") can store to 256 distinct pages and then yield
+automatically in a loop. Any assignment of guest-writable memory and registers is presumed reachable. Ordinary guests
+that touch many pages, such as Linux, also tend to keep the write TLB full, so a large part of this overhead is paid
+at every automatic yield even without an adversary. Ordinary guests yield far less often, though.
+
+### Rating
+
+1. **Out of scope.** Two exclusions were checked.
+   - "Average-case performance that does not change the worst-case cost of any operation listed in R12." This does
+     not apply: the per-mcycle worst case of computing a claim is a guest that yields every one or two mcycles, and the
+     defect multiplies exactly that case by about 6x in time.
+   - "An application that tries to exhaust the honest operator through the number of its outputs or yields. ... This
+     holds as long as ... each yield costs it a bounded amount (R12)." The per-yield cost here stays bounded (at most
+     256 pages). But "How to rate" step 1 says: "The entries about applications exclude what an application loses,
+     never an emulator defect that its guest triggers". The defect is the avoidable size of each yield's cost in the
+     emulator, not the number of yields, so under the preferred reading the exclusion does not cover it.
+2. **Role.** Honest operator. Section 3: "The transition function, its log producers, the computation-hash builders,
+   the hash tree and its node proofs ... play this role in every deployment". The AUDIT.md table names
+   `collect_mcycle_root_hashes` and the hash tree as honest operator. These clauses cover this component directly.
+3. **High and Medium cases.** Section 8, High: "A defect that lets the guest, or host load that the deployment was
+   sized for, multiply the worst-case cost of an operation listed in R12 by a constant factor, compared with the same
+   operation without the defect, while staying within what the deployment was sized for. A cost that the specified
+   semantics require is not a defect. When the sizing is unknown, rate such a constant-factor increase High". R12 lists
+   "a part of a claim". The specified semantics do not require re-scanning pages that the collect call itself already
+   tracked as unchanged. The factor is constant (bounded by the 256 write-TLB slots), so the case is High.
+4. **Critical.** This step does not apply. The cost stays linear in mcycles, with a bounded constant per call, so it is
+   not "unbounded, super-linear". It would be Critical only if the inflated cost exceeded what a given deployment was
+   sized for, which is unknown.
+
+**Two readings.** Under the literal reading of the yield exclusion (any cost that is bounded per yield is excluded),
+this is Out of scope. Under the reading that step 1 supports (application exclusions never excuse an emulator defect
+that the guest triggers, and the High constant-factor case covers it), it is High. The text favours the second
+reading. The threat model does not say whether "each yield costs it a bounded amount (R12)" means any bound, or the
+R12 worst case of the same operation without a defect. Settling that would decide the class.
+
+### Possible solution and risks
+
+Track whether the hash tree may be stale with respect to writes made through the untracked fast path. Set a flag on
+`machine::run`, `write_memory`, `write_reg`, shadow writes, loads, TLB changes and every other mutation that does not
+mark dirty pages itself. Make `update_hash_tree` run `mark_write_tlb_dirty_pages()` only when the flag is set, and
+clear it after a successful update. `collect_mcycle_root_hashes`, whose state access tracks every write, would then
+leave the flag clear when it returns. As a secondary improvement, avoid the per-call `result.hashes.reserve` of up to
+16384 hashes (512 KiB) when the call ends at an early yield.
+
+Risk: missing a single mutation path that writes through the write TLB without setting the flag would leave pages
+unmarked and produce a stale root hash. That is an R9 violation on the honest operator's path, which is Critical. The
+change needs a test that compares against `verify_hash_tree` after every API operation sequence, and a careful audit
+of every writer.
+
+### Risk of not fixing it
+
+A guest, controlled by any input that subverts it, can make the honest operator's mcycle-level claim computation about
+6x slower per mcycle than the worst case without the defect, for as many mcycles as the application's own bound
+allows. A deployment whose clocks and hardware were sized on measurements of the cost without the defect loses that
+margin (A7). If the margin is thin, the honest claim could time out. Mitigation outside the code: size A7 against
+this measured worst case, a guest yielding every one or two mcycles with a full write TLB.
 
 ## R1-A3-1
 

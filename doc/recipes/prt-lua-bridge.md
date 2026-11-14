@@ -693,8 +693,9 @@ staging period. The geometry, deployment, and population of players are fixed
 for this recipe.
 
 Only the honest player stores its epochs. A relaunched adversary computes its
-epochs again. The journal assumes a single writer. It keeps every signed
-candidate for the bounded run, without compaction. A reorg that crosses accepted
+epochs again. The journal assumes a single writer. Before publishing a
+transaction, it removes settled nonces whose canonical receipts are at or below
+both the finalized block and the observation head. A reorg that crosses accepted
 input history or a seal fails closed, and a confirmation depth is a policy, not
 finality.
 

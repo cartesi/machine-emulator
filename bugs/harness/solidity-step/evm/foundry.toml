@@ -1,0 +1,15 @@
+# EVM harness for the regenerated machine-solidity-step (bugs/harness/solidity-step/evm).
+# `step/` points at the variant built by solidity-step/regenerate.sh (work/solidity-step/step).
+[profile.default]
+src = "src"
+out = "../../work/evm/out"
+cache_path = "../../work/evm/cache"
+libs = []
+auto_detect_remappings = false
+remappings = ["step/=../../work/solidity-step/step/"]
+allow_paths = ["../../work/solidity-step"]
+solc_version = "0.8.30"
+evm_version = "prague"
+via_ir = true
+optimizer = true
+optimizer_runs = 200

@@ -74,3 +74,13 @@ run.sh: R7-MANARCH-2: exit 1 (bug present)
   IR 6, X 5, W 4, R 3, E 2, IO 1, M 0) differs from `src/pmas-constants.hpp` (DID in bits 11-7, IW 6, IR 5, X 4, W 3,
   R 2, IO 1, M 0, no E bit). For example, RAM shows attributes `0x0fd`, which the manual's table would decode as
   M and E both set and DID 0. For this reason the coverage check ignores attribute bits.
+
+## Reviewer repair
+
+The reviewer widened the manual-side check so that a manual fix naming the two ranges (in backticks) anywhere in the
+"Address ranges" or "PMAs" subsections is recognized; before, only the "Address ranges" subsection was searched. The
+result on audit/prt2 is unchanged (exit 1). A copy of the manual with one added sentence in the PMAs subsection
+("The processor shadow (`0x00000000-0x00000fff`) and the shadow TLB (`0x00001000-0x00006fff`) are likewise not
+accessible to the main processor.") makes the test exit 0. The reviewer also checked that native interpretation and
+the uarch (`run_uarch` plus `reset_uarch` per mcycle) agree on the fault (mcause 5) and on the root hash for the
+`imcyclemax` probe.

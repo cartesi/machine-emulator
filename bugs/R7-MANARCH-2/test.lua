@@ -114,8 +114,10 @@ harness.main(function()
     -- them among the ranges the main processor cannot access.
     local manual = harness.read_file(os.getenv("REPO") .. "/doc/README.md")
     local board = manual:match("### The board\n(.-)\n###")
-    local ranges = manual:match("#### Address ranges\n(.-)\n#### PMAs")
-    if not board or not ranges then harness.setup_error("cannot locate the board / Address ranges sections") end
+    -- "Address ranges" and "PMAs" subsections (up to the next chapter), so a manual fix that names the ranges as
+    -- invisible to the main processor in either subsection is recognized (reviewer repair: was Address ranges only)
+    local ranges = manual:match("#### Address ranges\n(.-)\n### ")
+    if not board or not ranges then harness.setup_error("cannot locate the board / Address ranges / PMAs sections") end
     local function lists(sec, s) return sec:find("`" .. s, 1, true) ~= nil end
     local manual_visible = {}
     for _, s in ipairs({ "0x00000000-0x00000fff", "0x00001000-0x00006fff" }) do

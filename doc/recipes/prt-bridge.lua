@@ -699,9 +699,9 @@ function methods:tick()
         return snapshot, false, snapshot.tip + 1
     end
     local jobs = self:jobs(snapshot)
-    -- A settled epoch whose root bond is recovered and that has nothing left to do is finished once its
-    -- settlement is irreversible under the retirement policy, and its owner can drop the bridge.
-    if #jobs == 0 and self.retirement_policy and snapshot.settled and snapshot.recovered[self.root] then
+    -- A settled epoch with no jobs left, including the signer's bond recoveries, is finished once its
+    -- settlement is irreversible and none of its transactions is pending. Another submitter's bond can remain.
+    if #jobs == 0 and self.retirement_policy and snapshot.settled then
         local candidate = self.transactions:pending(self.signer.address)
         if not (candidate and candidate.context and candidate.context.epoch == tostring(self.epoch)) then
             local irreversible = self.chain:head(self.retirement_policy)

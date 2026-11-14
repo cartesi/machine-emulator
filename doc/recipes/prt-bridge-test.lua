@@ -846,16 +846,19 @@ do
     append("inputbox", 0, input_event(4))
     assert(not pcall(session.poll, session) and #calls == 0, "missing input was accepted")
 end
--- A settled epoch with its root bond recovered and nothing left to do is finished only once the block
--- of the settling seal is irreversible under the retirement policy, and not while a transaction of the
--- epoch is pending.
-do
+-- A settled epoch waits for the signer's own bond recovery, but not another submitter's. It finishes
+-- only once the settling seal is irreversible and no transaction of the epoch is pending.
+for _, submitter in ipairs({ "alice", "bob" }) do
     local irreversible, pending = 4, nil
     local retiring = bridge.new({
         geometry = geometry,
         transactions = {
             pending = function()
                 return pending
+            end,
+            -- A mined recovery still needs its event to reach the observation head.
+            receipt = function()
+                return { blockNumber = "0xb" }
             end,
         },
         chain = {
@@ -874,20 +877,47 @@ do
         epoch = 2,
         retirement_policy = "finalized",
     })
-    local view = { ready = true, tip = 10, settled = { log = { blockNumber = "0x5" } }, recovered = {} }
+    local root = {
+        address = "root",
+        creation = { log = { blockHash = "block0", logIndex = "0x0" } },
+        descriptor = { startInstant = 0, allowance = 1 },
+        joined = { [hash] = { submitter = submitter } },
+        standing = {
+            matchCount = 0,
+            dangling = hash,
+            resultAt = 1,
+            log = { blockHash = "block1", logIndex = "0x0" },
+        },
+    }
+    retiring.claims.root = { root = hash }
+    local view = {
+        ready = true,
+        head = 10,
+        tip = 10,
+        tip_hash = "block10",
+        order = { root },
+        events = {},
+        staged = {},
+        settled = { log = { blockNumber = "0x5" } },
+        recovered = {},
+    }
     function retiring.refresh()
         return view
-    end
-    function retiring.jobs()
-        return {}
     end
     -- With no jobs, tick cancels a pending transaction of the epoch
     function retiring.cancel()
         return {}
     end
-    retiring:tick()
-    assert(not retiring.finished, "an epoch whose root bond is not recovered finished")
-    view.recovered.root = true
+    if submitter == "alice" then
+        local jobs = retiring:jobs(view)
+        assert(#jobs == 1 and jobs[1].kind == "tryRecoveringBond", "the signer's bond has no recovery job")
+        irreversible = 5
+        retiring:tick()
+        assert(not retiring.finished, "an epoch with the signer's bond still unrecovered finished")
+        view.recovered.root = true
+        irreversible = 4
+    end
+    assert(#retiring:jobs(view) == 0, "a recovered or another submitter's bond left a job")
     retiring:tick()
     assert(not retiring.finished, "a settlement that is not yet irreversible finished the epoch")
     irreversible, pending = 5, { context = { epoch = "2" } }

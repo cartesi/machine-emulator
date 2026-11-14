@@ -1979,6 +1979,184 @@ do
     end
 end
 
+-- Terminal proof failures reach the anomaly handler before the existing stop, without publishing.
+do
+    local monitored_epoch = evmu.bint(1) << 80
+    local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true }
+    local function new_checker(kind)
+        local reports, submissions = {}, 0
+        local checking = bridge.new({
+            geometry = geometry,
+            epoch = monitored_epoch,
+            root = "root",
+            factory = "factory",
+            consensus = "consensus",
+            chain = {
+                head = function()
+                    return observed.tip
+                end,
+                is_canonical = function()
+                    return true
+                end,
+            },
+            abi = {
+                calldata = function()
+                    return "0x"
+                end,
+            },
+            player = {
+                event_handler = {},
+                report_anomaly = function(_, anomaly, fmt, ...)
+                    reports[#reports + 1] = { kind = anomaly, message = string.format(fmt, ...) }
+                end,
+            },
+            signer = { address = "alice" },
+            label = "proof",
+            transactions = {
+                pending = function() end,
+                receipt = function() end,
+                submit = function()
+                    submissions = submissions + 1
+                    return { published = true }
+                end,
+            },
+        })
+        local work = {
+            key = "proof-job",
+            kind = kind,
+            context = { address = "root" },
+            event = { log = { blockHash = "block4", logIndex = "0x0" } },
+            first = 0,
+            last = 20,
+        }
+        function checking.refresh()
+            return observed
+        end
+        function checking.jobs()
+            return { work }
+        end
+        return checking, work, reports, function()
+            return submissions
+        end
+    end
+    local cartesi = require("cartesi")
+    local machine <close> = cartesi.machine({ ram = { length = 4096 } })
+    machine:write_reg("iflags_Y", 1)
+    machine:write_reg(
+        "htif_tohost",
+        (cartesi.HTIF_DEV_YIELD << 56)
+            | (cartesi.HTIF_YIELD_CMD_MANUAL << 48)
+            | (cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED << 32)
+    )
+    local response = {}
+    local word_size = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
+    for name, address in pairs({
+        iflags_y = cartesi.machine:get_reg_address("iflags_Y"),
+        htif_tohost = cartesi.machine:get_reg_address("htif_tohost"),
+        tx_buffer = cartesi.AR_CMIO_TX_BUFFER_START,
+    }) do
+        address = address & ~(word_size - 1)
+        response[name .. "_data"] = machine:read_memory(address, word_size)
+        response[name .. "_proof"] = machine:get_proof(address, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+    end
+    local final_state = eth.hex(machine:get_root_hash())
+    for _, valid in ipairs({ false, true }) do
+        -- A genuine proof offered against a different winning state must still be rejected.
+        for _ = 1, 2 do -- A fresh bridge reports again after restart.
+            local checking, _, reports, submissions = new_checker("stageTournamentResult")
+            checking.claims.root = { final_state = valid and final_state or hash }
+            checking.player.event_handler.prove_outputs_merkle_root = function()
+                return response
+            end
+            checking:tick()
+            if valid then
+                assert(
+                    submissions() == 1 and #reports == 0 and not checking.terminal,
+                    "valid staging was reported or stopped"
+                )
+            else
+                assert(submissions() == 0 and checking.terminal:find("machine word proof root mismatch", 1, true))
+                assert(
+                    #reports == 1 and reports[1].kind == "staging_proof_failed",
+                    "staging failure bypassed the handler"
+                )
+                assert(reports[1].message:find(tostring(monitored_epoch), 1, true))
+                assert(reports[1].message:find("root", 1, true) and reports[1].message:find(checking.terminal, 1, true))
+                checking:tick()
+                assert(#reports == 1 and submissions() == 0, "terminal staging failure repeated or published")
+            end
+        end
+    end
+    for _, native_valid in ipairs({ false, true }) do
+        for _, solidity_valid in ipairs({ false, true }) do
+            for _ = 1, 2 do -- A new process must not inherit suppression of a fatal report.
+                local checking, work, reports, submissions = new_checker("winLeafMatch")
+                checking.prepared[work.key] = {
+                    signer = checking.signer,
+                    to = "root",
+                    data = "0x",
+                    proof_check = { valid = native_valid, expected = "expected hash", obtained = "native result" },
+                }
+                function checking.chain.simulate(_, _, _, _, _, block)
+                    assert(block.blockHash == observed.hash and block.requireCanonical)
+                    if solidity_valid then
+                        return "0x"
+                    end
+                    return nil, { code = 3, message = "proof rejected" }
+                end
+                for _ = 1, 2 do
+                    local ok, err = pcall(checking.attempt, checking, work, observed)
+                    if native_valid == solidity_valid then
+                        assert(ok and #reports == 0, "agreement was reported as a verification mismatch")
+                    else
+                        assert(
+                            not ok
+                                and tostring(err):find("native and Solidity transition verification disagree", 1, true),
+                            "verification disagreement did not stop"
+                        )
+                        assert(
+                            #reports == 1 and reports[1].kind == "transition_verification_mismatch",
+                            "verification disagreement bypassed the handler or repeated"
+                        )
+                        for _, text in ipairs({
+                            tostring(monitored_epoch),
+                            "root",
+                            "block4",
+                            "expected hash",
+                            "native result",
+                        }) do
+                            assert(reports[1].message:find(text, 1, true), "verification report omitted context")
+                        end
+                    end
+                end
+                assert(
+                    submissions() == (native_valid and solidity_valid and 2 or 0),
+                    "an unverified proof was published"
+                )
+            end
+        end
+    end
+    -- An RPC failure or reorganized simulation is not evidence of verifier disagreement.
+    for _, fault in ipairs({ "rpc", "reorg" }) do
+        local checking, work, reports, submissions = new_checker("winLeafMatch")
+        checking.prepared[work.key] =
+            { signer = checking.signer, to = "root", data = "0x", proof_check = { valid = true } }
+        function checking.chain.simulate()
+            return nil, { code = fault == "rpc" and -32000 or 3 }
+        end
+        function checking.chain.is_canonical()
+            return fault ~= "reorg"
+        end
+        local ok, result = pcall(checking.attempt, checking, work, observed)
+        if fault == "rpc" then
+            assert(not ok and tostring(result):find("proof simulation RPC failure", 1, true))
+        else
+            assert(ok and result == nil, "an orphaned simulation was used")
+        end
+        assert(#reports == 0 and submissions() == 0, "an RPC failure or reorg produced a mismatch or publication")
+    end
+end
+
 -- A transaction the player cannot publish is reported once each time the reason changes.
 do
     local player = { event_handler = {}, reports = {} }

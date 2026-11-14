@@ -634,6 +634,14 @@ function methods:prepare(job)
         local ok, proof = pcall(eth.validity_proof, response, claim.final_state)
         if not ok then
             self.terminal = "Winning machine state cannot be staged: " .. tostring(proof)
+            self:report_once(
+                job.key,
+                "staging_proof_failed",
+                "at epoch %s, tournament %s: %s",
+                tostring(self.epoch),
+                context.address,
+                self.terminal
+            )
             return nil
         end
         address, args = self.consensus, { self.epoch, proof }
@@ -720,6 +728,21 @@ function methods:attempt(job, snapshot)
             return nil, nil
         end
         assert(not failure or failure.code == 3, "proof simulation RPC failure")
+        if transaction.proof_check.valid ~= (failure == nil) then
+            self:report_once(
+                job.key,
+                "transition_verification_mismatch",
+                "at epoch %s, tournament %s, block %s: native accepted=%s, Solidity accepted=%s; "
+                    .. "expected %s, native result %s",
+                tostring(self.epoch),
+                job.context.address,
+                snapshot.hash,
+                tostring(transaction.proof_check.valid),
+                tostring(failure == nil),
+                transaction.proof_check.expected,
+                transaction.proof_check.obtained
+            )
+        end
         assert(
             transaction.proof_check.valid == (failure == nil),
             "native and Solidity transition verification disagree"

@@ -561,6 +561,8 @@ error, and continues.
 | `unprovable_output` | An output does not prove against the root the settled machine holds |
 | `execution_stopped` | The machine halted, reached its cycle limit, or yielded an exception or an unexpected manual reason. Reported with the input offset and cause when the epoch first stops, and once on each reopening of a stopped epoch without the original input or cause. Later skipped inputs and proof replay do not repeat the report; the player continues defending its claim |
 | `uarch_claim_failed` | Building a uarch claim failed during replay, storage, RPC operations or uarch execution. The player reports the failure once per period and retries on subsequent requests. A successful construction clears the reporting state |
+| `staging_proof_failed` | The winning state's outputs-root validity proof failed local validation. Reports the epoch, tournament and failure before the existing terminal stop |
+| `transition_verification_mismatch` | Native verification and Solidity simulation at the canonical observed block disagree on acceptance of a leaf proof. Reports the epoch, tournament, block, both decisions, expected state and native result before the existing assertion stops execution. RPC failures and rejected observations are not classified as disagreements |
 | `falling_behind` | More inputs are pending than the gap between the machine cache's boundaries |
 | `unjoined_claim` | A tournament's joining window closed without the player's commitment |
 | `conflicting_claim` | An observed `CommitmentJoined` differs from the locally computed commitment. Validators and sentinels report the tournament and both commitments, even if the local claim can no longer join. Reported once per join log per process; a replacement log after a reorg or a restart can report again |
@@ -573,6 +575,10 @@ error, and continues.
 | `missed_deadline` | A sentinel's expected action is still missing and its window closed |
 | `stalled_action` | A sentinel's expected action without a window, such as staging a won result, has been due for the warning blocks |
 | `lost_match` | A match of the locally computed commitment was deleted with its opponent as the winner, or with both eliminated. Validators and sentinels report the tournament, commitment and outcome once per deletion log per process, even if the missed move's window closed between observations. A replacement deletion log after a reorg or a restart can report again |
+
+The fatal proof reports are delivered once per job per process. Restarting can
+report the same failure again. Reporting preserves the verification checks and
+stopping behavior; a failed proof is not published.
 
 The bridge schedules `acceptStagedTournamentResult` only after both staged hashes
 match the local result. The expected outputs root comes from the machine's outputs

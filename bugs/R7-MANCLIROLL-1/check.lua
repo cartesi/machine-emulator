@@ -1,5 +1,5 @@
--- Checks what `cartesi-machine --revert-mode=stored` left on disk after a host I/O fault inside the commit of
--- input 0 (the process saw the error and ran its own cleanup; it was not killed).
+-- Checks what `cartesi-machine --revert-mode=stored` left on disk after a host I/O fault, or a SIGINT, inside the
+-- commit of input 0 (the process saw the error and ran its own cleanup; it was not killed).
 --   lua5.4 check.lua <template-dir> <run-dir> <input-0> <input-1>
 -- Exit 0: a committed state survived; 1: the CLI's own cleanup destroyed it; 2: setup error (harness.main).
 --
@@ -105,7 +105,7 @@ harness.main(function()
     print("  recovery rule: " .. rule_what .. "; yields a committed state: " .. tostring(rule_ok))
 
     return harness.expect(machine_survived or rule_ok,
-        "O2/R4 (THREAT_MODEL sections 4 and 5): a host I/O fault inside the commit of input 0 made the CLI's own "
+        "O2/R4 (THREAT_MODEL sections 4 and 5): a fault (host I/O error or SIGINT) inside the commit of input 0 made the CLI's own "
             .. "error-path revert delete the O2-guaranteed `machine` directory, and no committed state is left "
             .. "that the documented recovery rule can resume from")
 end)

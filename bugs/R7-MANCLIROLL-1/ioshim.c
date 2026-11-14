@@ -59,7 +59,8 @@ int renameat2(int olddirfd, const char *oldpath, int newdirfd, const char *newpa
 int unlink(const char *path) {
     static int (*real)(const char *);
     if (!real) real = (int (*)(const char *)) dlsym(RTLD_NEXT, "unlink");
-    if (getenv("FAIL_SIGINT") && should_fail("unlink", path)) {
+    int chosen = should_fail("unlink", path);
+    if (chosen && getenv("FAIL_SIGINT")) {
         // No I/O fault: deliver SIGINT (an operator's Ctrl-C) at this point and let the unlink succeed
         (void) !write(2, "ioshim: raising SIGINT at unlink ", 33);
         (void) !write(2, path, strlen(path));
@@ -67,7 +68,7 @@ int unlink(const char *path) {
         raise(SIGINT);
         return real(path);
     }
-    if (should_fail("unlink", path)) {
+    if (chosen) {
         note("unlink", path);
         errno = EIO;
         return -1;

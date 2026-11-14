@@ -1,0 +1,225 @@
+{
+  "items": [
+    {
+      "id": "R5-INVINTERP-1",
+      "source_angle": "INVINTERP",
+      "title": "Packaged relwithdebinfo build defines NDEBUG only for interpret.cpp: asserts live in other honest-operator TUs, and inline state-access header functions get two bodies (ODR)",
+      "component": "Emulator build (src/Makefile:208-222, Dockerfile) and shared state-access headers",
+      "role": "Honest operator (build of the interpreter, hash tree, collectors)",
+      "decision": "drop",
+      "severity": "Low",
+      "rating_steps": {
+        "1": "Not excluded.",
+        "2": "Honest operator (AUDIT row 1).",
+        "3": "No case fits: no live assert was shown reachable from a reachable or unreachable state (the hunter checked the interpreter-related ones; INVACCESS/INVMACHINE checked the access/collector ones). R10's build-configuration sentence binds verifiers, and the C++ replay checks sizes before its asserts (INVACCESS).",
+        "4": "No rule violated: the two inline bodies differ only in an abort path whose condition always holds, so no canonical hash depends on the ODR violation (R1 'Undefined behavior' needs a dependence; same reading as R1-R9-2, upheld).",
+        "5": "Low: 'a real defect that violates no rule or obligation'."
+      },
+      "reason": "Fact confirmed (src/Makefile:219 'disable asserts only for interpret.cpp'). No reachable failing assert and no hash depends on the duplicate inline bodies; R1 reading as in upheld R1-R9-2. Low.",
+      "reading_based": true,
+      "duplicate_of": null,
+      "merged_ids": [],
+      "brief_for_prover": null
+    },
+    {
+      "id": "R5-INVHASH-1",
+      "source_angle": "INVHASH",
+      "title": "replace_memory_range with mark_pages_dirty (or a missing .dpt) on an already-hashed machine recomputes page hashes but keeps the supplied .dht inner nodes: root, node hashes, proofs and a later snapshot disagree with contents",
+      "component": "Hash tree (src/hash-tree.cpp return_updated_dirty_pages 381-394, update 758-771), memory_address_range (72-79), machine::replace_memory_range (machine.cpp 722-778)",
+      "role": "Hash tree: Honest operator; replace_memory_range: rest of the machine API (off-path preferred, on-path alternative)",
+      "decision": "keep",
+      "severity": "Medium (preferred: off-path API operation used as documented leaves the hash tree / a stored directory inconsistent, R9) / Critical (if a production node replaces ranges with supplied tree files on the honest path) / Low (if supplied tree files are trusted caller data, as in R1-R11-3)",
+      "rating_steps": {
+        "1": "Not 'deliberate state change performed as documented': manual (doc/README.md ~3305-3310) says mark_pages_dirty 'forces all pages to be marked dirty ... so their hashes are recomputed' and that omitting a tree file marks all pages dirty; the same files at creation give the right root, so the API does not perform as documented. O1 exclusion arguable either way.",
+        "2": "Hash tree is Honest operator; entry point replace_memory_range is 'the rest of the machine API' with no known production on-path caller; both ratings given per AUDIT table.",
+        "3": "Medium: 'A machine API operation off the honest operator's path that, used as documented, leaves the hash tree, the cached state of the machine or a stored directory inconsistent with the machine's contents (R9)'.",
+        "4": "Critical if on path: R9 'after any sequence of documented operations ... every snapshot the emulator itself writes'.",
+        "5": "Low under the trusted-caller-data reading."
+      },
+      "reason": "Distinct from R3-VARCACHE-1 (config.json not recording a replaced range) and R1-R11-3 (cross-hash-function reuse): here the bubble-up flag is not set after a replace. Manual promise checked. Medium case fits.",
+      "reading_based": false,
+      "brief_for_prover": "Defect: after a machine's hash tree has been updated once in the process (any get_root_hash/get_proof/log/collect), hash_tree::m_bubble_up_unchanged_pages is false (src/hash-tree.cpp update ~758-771). machine::replace_memory_range (src/machine.cpp ~722-778, machine_address_ranges::replace ~662-686) builds a new memory_address_range that maps the caller-supplied .dht as is; with backing_store.mark_pages_dirty=true, or when dpt_filename is omitted, the constructor (src/memory-address-range.cpp ~72-79) only marks the dirty-page tree dirty. hash_tree::return_updated_dirty_pages (~381-394) then marks a page clean without bubbling up when its recomputed hash equals the stored leaf, so the supplied inner nodes (including the range root copied into the sparse tree) are kept. Root/node hashes/proofs differ from the contents; verify_hash_tree() still returns true; in the dht-only variant store(dir, SHARING_ALL) writes a snapshot whose cached root differs from its rebuilt root. Required behaviour: manual doc/README.md ~3305-3310: 'Setting backing_store.mark_pages_dirty to true forces all pages to be marked dirty even when both tree files exist, so their hashes are recomputed on the next hash-tree update' and 'Otherwise, it marks all pages dirty'; R9: 'The content hash must equal the root of the actual contents. This applies to every cached, incremental, or persisted hash, after any sequence of documented operations'. Medium case: 'A machine API operation off the honest operator's path that, used as documented, leaves the hash tree ... or a stored directory inconsistent with the machine's contents (R9)'. Test idea (hunter): machine M with one 8-page flash drive (image A), call M:get_root_hash(). Make image B and its .dht/.dpt by storing a scratch machine holding B; overwrite inner nodes of the 512-byte .dht (bytes 32..255), keep leaves (256..511). M:replace_memory_range{start,length,backing_store={data_filename=B,dht_filename=crafted,dpt_filename=dpt,mark_pages_dirty=true}}; second machine: same without dpt_filename/mark_pages_dirty. Assert M:get_root_hash() equals the root of a fresh machine created with image B (or the root after M:clear_hash_tree()); for the dht-only variant assert the root of M:store(dir) loaded without clear_hash_tree equals the root with clear_hash_tree=true. Control: an emulator-written consistent but stale .dht gives the right root. Evidence scripts: /tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r5/INVHASH/t_replace.lua (modes 'mark', 'nodpt'), t_replace2.lua, t_replace3.lua. Hunter observed root 3822f18d... vs expected ff90e966...",
+      "duplicate_of": null,
+      "merged_ids": []
+    },
+    {
+      "id": "R5-INVSTORE-1",
+      "source_angle": "INVSTORE",
+      "title": "sync_stored reports success after an earlier sync of the same directory failed and the kernel dropped the dirty pages: the directory then meets O2 and reloads with a wrong cached root",
+      "component": "machine::sync_stored (src/machine.cpp 712-721), os::sync_file/sync_fd (src/os-filesystem.cpp), os::mapped_memory destructor; cm.h cm_sync_stored contract",
+      "role": "Honest operator (storing, loading, cloning and syncing machines)",
+      "decision": "keep",
+      "severity": "Critical (preferred: host fault turned into a directory that O2 guarantees but that loads as a different state, section 4/R9) / Out of scope or Low (if syncing again after a failed sync is the operator reusing a directory it had to discard, as in the upheld R3-VARDIRTY-2 reading)",
+      "rating_steps": {
+        "1": "Host-fault exclusion holds only 'as long as the emulator does not turn them into ... a directory that O2 guarantees but that later loads as a different state'. After the second, successful sync the directory meets O2's definition ('synced after the last change ... destroyed without a crash before that sync') and reloads with a wrong root. Alternative: retrying after a failed sync is misuse.",
+        "2": "Honest operator (AUDIT row 1: syncing machines).",
+        "3": "No High/Medium case: the Medium persistence case needs a loud failure 'without a wrong hash'; here the second call succeeds silently and yields a wrong hash.",
+        "4": "Critical: section 4 'must never turn one into a wrong hash ... or a directory that O2 guarantees but that later loads as a different state'; R9 'every snapshot the emulator itself writes'; cm.h promises 'On success, all previous changes to the stored machine files are durable on disk'.",
+        "5": "Low only under the misuse reading."
+      },
+      "reason": "Code confirmed: sync_stored is stateless (reopen+fsync per file). Distinct from R3-VARDIRTY-2: the API explicitly promises durability on success and O2's definition is then met. Critical preferred; OOS/Low alternative.",
+      "reading_based": false,
+      "brief_for_prover": "Defect: machine::sync_stored (src/machine.cpp 712-721) reopens each stored file and fsyncs it (os::sync_file, src/os-filesystem.cpp ~726-769), keeping no state. Linux reports a writeback error (ENOSPC/EIO) to one fsync and marks the pages clean, so after a failed sync_stored a later sync_stored of the same directory succeeds although those pages never reached disk. cm.h (~651) promises for cm_sync_stored: 'On success, all previous changes to the stored machine files are durable on disk'. After a remount the directory reloads (no rebuild, operator's own directory) with a cached root that is not the root of its contents. Required behaviour: section 4 'A host fault, such as a full disk ..., may stop the honest operator, but the emulator must never turn one into a wrong hash, a wrong proof, or a directory that O2 guarantees but that later loads as a different state'; O2 'The emulator guarantees a stored directory only when it was synced after the last change to its contents and, if a machine used it with shared backing storage, that machine was destroyed without a crash before that sync'; R9 'every snapshot the emulator itself writes'. Test idea (hunter): /tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r5/INVSTORE/syncretry.sh (root): tmpfs + fully allocated loop file + XFS reflink=1; clone and sync a bare-metal template; fstrim to punch holes in the loop backing file and fill the tmpfs so new blocks cannot be written; load with SHARING_ALL, write 2048 RAM pages, record get_root_hash, destroy, sync_stored -> fails ENOSPC; remove filler, sync_stored again -> succeeds; umount/mount; load without clear_hash_tree. Require: either the second sync_stored (or the later load) fails, or the reloaded root equals the recorded one. Observed: cached root 9a790f63... vs expected e15f3d65... (rebuilt root correct). Exit 2 if tmpfs/loop/mkfs.xfs unavailable. Portable variant: LD_PRELOAD fsync shim failing once with EIO, assert a later sync_stored of the same directory does not report success (weaker: shows the false success, not the reload). Note ext4 aborts its journal in this setup (second sync fails EROFS), so use XFS.",
+      "duplicate_of": null,
+      "merged_ids": []
+    },
+    {
+      "id": "R5-INVSTORE-2",
+      "source_angle": "INVSTORE",
+      "title": "Stored revert mode: the documented crash-recovery rule resumes from a partially removed <dir>.revert and discards the only synced copies (<dir>, <dir>.revert.tmp)",
+      "component": "cartesi-machine CLI --revert-mode=stored (src/cartesi-machine.lua help 160-175, commit ~3893-3919, remove_backup ~3933-3939) and the manual's stored-rollback sections/Lua example; machine::remove_stored (non-atomic)",
+      "role": "Support (CLI and manual example standing in for the honest operator's restart); remove_stored itself Honest operator but behaves as documented",
+      "decision": "keep",
+      "severity": "Medium (preferred: support stand-in for an R4/O2 restart failure, cf. confirmed R1-O2-2) / Out of scope (literal O2 reload exclusion) / Low (recovery text read as informal advice)",
+      "rating_steps": {
+        "1": "Literal reading: reloading a directory being written when the process stopped is excluded. But section 5: 'The tools and reference implementations that ship with it must follow them, and the emulator must make them possible to follow' (the reading that confirmed R1-O2-1/R1-O2-2).",
+        "2": "Support (AUDIT: the cartesi-machine CLI), standing in for the honest operator.",
+        "3": "Section 3 support rule: 'Medium when it would rate High or Critical in the role the component stands in for'. Also manual contradiction ('machine.revert therefore always holds a synced copy') on a security-relevant point.",
+        "4": "Stood-in: R4 'After a stop, it restarts from a directory that O2 guarantees' would be Critical; capped at Medium.",
+        "5": "Low if the help/manual rule is informal."
+      },
+      "reason": "Code confirmed: help says 'after a crash or kill, resume from <directory>.revert if it exists'; commit and remove_backup call non-atomic remove_stored on <dir>.revert. Same pattern as confirmed R1-O2-2, different component and fix.",
+      "reading_based": false,
+      "brief_for_prover": "Defect: in stored revert mode the CLI's commit (src/cartesi-machine.lua ~3893-3919) syncs <dir>, clones it to <dir>.revert.tmp, syncs that, then calls remove_stored(<dir>.revert) and renames the clone to <dir>.revert; remove_backup at clean exit (~3933-3939) also calls remove_stored(<dir>.revert). machine::remove_stored (src/machine.cpp ~661-710) unlinks files one by one and removes the directory last, so <dir>.revert exists but is incomplete during removal. The help (cartesi-machine.lua 160-175) and the manual (doc/README.md ~2522-2540, ~5536-5576, with its Lua example) say 'after a crash or kill, resume from <directory>.revert if it exists ... discard <directory>.revert.tmp in every case'. A stop during that removal leaves <dir> and <dir>.revert.tmp synced with the committed state and a partial <dir>.revert; the rule sends the operator to the partial one (clone fails) and discards the two good copies. Required behaviour: section 5 'O1 and O2 bind the emulator too. The tools and reference implementations that ship with it must follow them, and the emulator must make them possible to follow'; R4 'After a stop, it restarts from a directory that O2 guarantees and keeps defending its claim'; section 3 support rule 'Medium when it would rate High or Critical in the role the component stands in for'. Test idea (hunter): build the LD_PRELOAD kill shim /tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r5/INVSTORE/killunlink.c (SIGKILL before the Nth unlink matching KILL_UNLINK_MATCH); run cartesi-machine --revert-mode=stored --load=machine,clone:<bare-metal template>,sharing:all with --cmio-advance-state over two inputs and KILL_UNLINK_MATCH=machine.revert/ KILL_UNLINK_NTH=3; then apply the documented rule mechanically: since machine.revert exists, clone_stored(machine.revert, recovered) must succeed and its rebuilt root must equal the last committed state (held by machine and machine.revert.tmp). Observed: clone fails with 'open() failed: No such file or directory' while machine and machine.revert.tmp rebuild to 428a6bb8.... API variant: /tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r5/INVSTORE/recover.lua.",
+      "duplicate_of": null,
+      "merged_ids": []
+    },
+    {
+      "id": "R5-INVSTORE-3",
+      "source_angle": "INVSTORE",
+      "title": "cartesi-machine --store (and --create outside stored revert mode) never syncs the directory it writes, so a template made the documented way is never a directory that O2 guarantees",
+      "component": "cartesi-machine CLI store_machine (src/cartesi-machine.lua ~3734-3741) and exit path; manual template-creation sections",
+      "role": "Support (CLI standing in for the honest operator obtaining its valid template)",
+      "decision": "keep",
+      "severity": "Medium (if the CLI, as the documented template-producing tool, must follow O2) / Low (documentation gap: a documented sync route exists, --load=<dir>,sharing:all,sync) / Out of scope (literal: an unsynced directory is not guaranteed, so reloading it after a power loss is the operator's violation)",
+      "rating_steps": {
+        "1": "Literal O2 reload exclusion would apply; section 5 'tools ... must follow them' argues against. Host-fault exclusion ends where a wrong hash results.",
+        "2": "Support (AUDIT: the CLI).",
+        "3": "Support rule: Medium when the stood-in role would rate High/Critical; in the honest role a template that silently loads as different contents with the expected cached root would be Critical (R9/R4 'Obtaining its valid template').",
+        "4": "n/a (support).",
+        "5": "Low: the CLI does offer a documented way to make the directory guaranteed (load with sharing:all,sync), so O2 is 'possible to follow'; only the manual's flow omits it. Unsure, so kept."
+      },
+      "reason": "Confirmed store_machine calls machine:store only and cm.h says stored files are durable only after cm_sync_stored. Unsure between Medium and Low (a documented sync route exists); kept per triage rule. Distinct from dropped R3-VARO2PLAYER-2 (needs no special filesystem).",
+      "reading_based": false,
+      "brief_for_prover": "Defect: cartesi-machine --store (store_machine, src/cartesi-machine.lua ~3734-3741) calls machine:store only; the exit path (~4921-4939) calls sync_stored only for --load ... sync or --revert-mode=stored. machine::store writes with ftruncate+pwrite and never fsyncs; src/cm.h ~600 says 'The stored files are durable only after cm_sync_stored() succeeds'. The manual builds templates with --store (doc/README.md ~1061-1070, ~1388-1399, ~2405, ~4082-4100) and presents them as persistent. So the operator's template is never 'synced after the last change to its contents' (O2), and a power loss in the writeback window can leave a directory whose cached root equals the intended hash over different (zeroed) data pages; O1 asks no rebuild for the operator's own template. Required behaviour: section 5 'The tools and reference implementations that ship with it must follow them, and the emulator must make them possible to follow'; honest operator's path 'Obtaining its valid template' and R4 'After a stop, it restarts from a directory that O2 guarantees'; section 3 support rule 'Medium when it would rate High or Critical in the role the component stands in for'. Counterpoint for the reviewer: --load=<dir>,sharing:all,sync can make it guaranteed. Test idea (hunter): deterministic: strace -f -e trace=fsync,fdatasync,sync,syncfs of cartesi-machine --ram-image=<guest> --ram-length=64Mi --no-root-flash-drive --max-mcycle=0 --store=<dir>; require an fsync of every stored file, the directory and its parent (observed: 0 fsync calls for 27 files; --load=<dir>,sharing:all,sync makes 29). Stronger: loop-mounted fs on a tmpfs backing file, copy the backing file right after the command exits (what a power loss leaves), mount the copy and require <dir> loads with clear_hash_tree to the --final-hash value. Power-loss outcome was reasoned, not run.",
+      "duplicate_of": null,
+      "merged_ids": []
+    },
+    {
+      "id": "R5-INVAPI-1",
+      "source_angle": "INVAPI",
+      "title": "base64/hex decoders throw from inside std::string::resize_and_overwrite (formally undefined) on malformed data from other parties",
+      "component": "src/base64.hpp decode_base64, src/hex.hpp decode_hex",
+      "role": "Library: Support for verify paths and Lua helpers; Honest operator where the C API/JSON-RPC parses data on the honest path",
+      "decision": "drop",
+      "severity": "Low",
+      "rating_steps": {
+        "1": "Not excluded (data from other parties through a trusted caller).",
+        "2": "Library rated by the most critical role reaching it (Honest operator).",
+        "3": "No case: no crash, hang, memory-safety defect or unbounded allocation on libstdc++ (scope guard resets length; hunter's probe returns clean errors) and on libc++ the string is discarded unread.",
+        "4": "Section 4 'memory-safe and bounded ... report errors without terminating the process' holds in effect; R1 'Undefined behavior' concerns transitions, which this code does not compute.",
+        "5": "Low: formal UB without effect; at most 'a portability gap on an unsupported host'."
+      },
+      "reason": "Formal UB with no observed or expected effect on supported toolchains; errors are reported cleanly. Section 4's requirements hold in effect. Low.",
+      "reading_based": true,
+      "duplicate_of": null,
+      "merged_ids": [],
+      "brief_for_prover": null
+    },
+    {
+      "id": "R5-INVPLAYER-1",
+      "source_angle": "INVPLAYER",
+      "title": "PRT player turns any one-time error while building a uarch claim into a permanent in-process refusal (failed_uarch_periods), so it never joins that inner tournament",
+      "component": "doc/recipes/prt.lua event_handler.commit_uarch_claim / try_new_uarch_tree (~1918-1950), via prt-bridge.lua build_claim",
+      "role": "Support (PRT player) standing in for the honest operator",
+      "decision": "keep",
+      "severity": "Medium (preferred: a transient host fault turned into a lasting failure to defend, not a stop; stood-in R4 Critical) / Out of scope (literal host-fault exclusion: no wrong hash, proof or directory results)",
+      "rating_steps": {
+        "1": "Host-fault exclusion read literally covers it (outcome is none of wrong hash/proof/directory). Other reading: section 4 lets a fault 'stop' the operator, and R4 then requires that it 'restarts ... and keeps defending its claim'; here it neither stops nor recovers.",
+        "2": "Support (AUDIT: PRT player), stands in for the honest operator.",
+        "3": "No High case (not other parties' data).",
+        "4": "Stood-in: R4 'submits its transactions within the dispute clocks ... keeps defending its claim'; losing the inner tournament eliminates the honest claim (section 1 completeness failure) -> Critical, capped Medium.",
+        "5": "Out of scope under the literal exclusion."
+      },
+      "reason": "Code confirmed: util.protect wrapper, failed_uarch_periods set on any error and never cleared, later calls return 'nothing'. Rating turns on the host-fault reading.",
+      "reading_based": false,
+      "brief_for_prover": "Defect: doc/recipes/prt.lua event_handler.commit_uarch_claim (~1926-1950) calls try_new_uarch_tree = util.protect(new_uarch_tree) (~1919). On any error it sets self.failed_uarch_periods['<input>:<period>'] = true (in memory, never cleared, not persisted), reports a 'uarch_error' anomaly and returns 'nothing'; every later call for that period returns 'nothing' without retrying, although prt-bridge.lua build_claim calls it again every tick while the inner tournament is joinable (prt-bridge.lua ~219-262, ~300-330). The comment says the error means a uarch trap or cycle overflow, which R3/R4 say never happens from a reachable state, so only transient errors (ENOSPC/EIO while cloning/syncing pair/ and pair.revert, EMFILE, ENOMEM, lock conflict) reach it. crisium relaunches only on an uncaught error, so the honest uarch claim never joins and the honest mcycle claim loses its match. Required behaviour: R4 'The honest operator observes the chain and submits its transactions within the dispute clocks. After a stop, it restarts from a directory that O2 guarantees and keeps defending its claim'; section 4 'A host fault ... may stop the honest operator' (a stop that the supervisor would relaunch, not a permanent give-up); section 3 support rule 'Medium when it would rate High or Critical in the role the component stands in for ... the honest operator for an implementation of an operator'. Test idea (hunter): load prt.lua as a module, open a stored player on a small epoch and seal it; wrap player.new_uarch_tree (or machine:clone_stored) so the first call raises a simulated ENOSPC and later calls succeed; call event_handler.commit_uarch_claim(player, i, p) twice. Require the second call to return a claim (or the first to raise so the supervisor relaunches). Exit 1 while the second returns 'nothing'. Evidence: code reading only (no experiment).",
+      "duplicate_of": null,
+      "merged_ids": []
+    },
+    {
+      "id": "R5-INVBRIDGE-1",
+      "source_angle": "INVBRIDGE",
+      "title": "PRT journal aborts crisium when a join bond exceeds the signer's balance: preflight eth_call fails with a non-revert code and hits assert(failure.code == 3), crash-looping before the older epoch's bond recovery",
+      "component": "doc/recipes/prt-transactions.lua methods:submit (~218-221 vs ~254-265), via prt-bridge.lua attempt/prepare joinTournament, crisium.lua pass",
+      "role": "Support (PRT bridge/journal) standing in for the honest operator",
+      "decision": "keep",
+      "severity": "Medium (preferred: stood-in R4 Critical: the honest claim never joins the next epoch and every other match stalls) / Low (if a balance below one bond is an unprovisioned operator resource that may stop it)",
+      "rating_steps": {
+        "1": "Trigger is the operator's balance; section 4 lists CPU, memory and storage as provisioned, not funds. The code itself documents insufficient_funds as a reported, recoverable condition, and the crash prevents the recovery that would cure it.",
+        "2": "Support (AUDIT: PRT player and bridge).",
+        "3": "No High case (not other parties' data).",
+        "4": "Stood-in: R4 'submits its transactions within the dispute clocks ... keeps defending its claim' and 'defends every epoch whose dispute is open' -> Critical, capped Medium.",
+        "5": "Low if a shortfall is an unprovisioned resource."
+      },
+      "reason": "Code confirmed: simulate failure asserts code==3 before the insufficient_funds branch; hunter reproduced on anvil (-32003). Medium vs Low turns on whether operator funding is a provisioned resource.",
+      "reading_based": false,
+      "brief_for_prover": "Defect: doc/recipes/prt-transactions.lua methods:submit preflights with chain:simulate(signer,to,data,value,{blockHash,requireCanonical}) and on failure does assert(failure.code == 3, 'transaction preflight RPC failure') (~218-221). An eth_call whose value exceeds the sender's balance is not a revert (anvil -32003 'Insufficient funds for gas * price + value'; geth -32000), so for joinTournament (the only value-bearing job, value = bond, prt-bridge.lua prepare ~464-466, attempt ~653) the process raises instead of reaching the documented { blocked = 'insufficient_funds' } branch (~254-265), which is reachable only when value <= balance < value + gas*fee. crisium has no pcall; prt-supervise.sh relaunches, and crisium ticks the newest sealed epoch first (crisium.lua pass ~303-314), so the crash repeats before the older epoch's tryRecoveringBond, which would refill the account, and starves every other match. Required behaviour: bridge contract (prt-lua-bridge.md: 'Reports a transaction the player cannot publish ... Observing continues'); R4 'The honest operator observes the chain and submits its transactions within the dispute clocks' and 'defends every epoch whose dispute is open'; section 3 support rule 'Medium when it would rate High or Critical in the role the component stands in for'. Test idea (hunter): start anvil (use bugs/harness/anvil-wrap.sh), build prt-transactions with a fresh journal, a signer stub at an unfunded address, an intent of value 1 ETH (joinTournament-like). Require pcall(submit) not to raise and to return blocked='insufficient_funds' (or another non-raising result). Control: balance 1 ETH + 1 wei returns graceful insufficient_funds. Optional: two bridges, newest epoch first, assert the older epoch's tryRecoveringBond is still published in the same pass. Evidence: /tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r5/INVBRIDGE/funds.lua ('raised: prt-transactions.lua:220: transaction preflight RPC failure').",
+      "duplicate_of": null,
+      "merged_ids": []
+    },
+    {
+      "id": "R5-INVBRIDGE-2",
+      "source_angle": "INVBRIDGE",
+      "title": "PRT journal aborts crisium when the pinned 'latest' block is reorged out before its blockHash-pinned nonce/preflight RPC (-32001)",
+      "component": "doc/recipes/prt-transactions.lua methods:submit / methods:nonce",
+      "role": "Support (PRT bridge/journal) standing in for the honest operator",
+      "decision": "drop",
+      "severity": "Low (Out of scope under the strict pre-finality reading)",
+      "rating_steps": {
+        "1": "Section 4: 'Acting on history before it is final, and recovering when that history is replaced, is outside this model' arguably covers a tip reorg.",
+        "2": "Support.",
+        "3": "No case.",
+        "4": "Stood-in: one bounded supervisor relaunch; R4 budgets no restart time, and section 7 grants the adversary no reorgs, so it cannot be triggered or repeated on demand (upheld R3-VARO2PLAYER-1 reading). Not High/Critical in the stood-in role.",
+        "5": "Support: 'Any other support defect is Low'."
+      },
+      "reason": "Facts plausible (nonce/simulate assert on any non-3 error). Effect is one bounded relaunch on an uncontrolled tip reorg; stood-in not High/Critical (R3-VARO2PLAYER-1 reading). Hunter also prefers Low.",
+      "reading_based": true,
+      "duplicate_of": null,
+      "merged_ids": [],
+      "brief_for_prover": null
+    },
+    {
+      "id": "R5-INVBRIDGE-3",
+      "source_angle": "INVBRIDGE",
+      "title": "cartesi-machine CLI computation-hash run aborts on an accepted input whose 32-byte outputs root differs from the CLI's outputs frontier (check_outputs_merkle_root defaults true)",
+      "component": "src/cartesi-machine.lua flush_pending_outputs (~3691-3697), default at ~2084",
+      "role": "Support (CLI)",
+      "decision": "drop",
+      "severity": "Low (Out of scope under the development-tool clause)",
+      "rating_steps": {
+        "1": "Section 8: 'Development tools may instead stop and report the violation.'",
+        "2": "Support (CLI).",
+        "3": "Unlike R4-RGPLAYERGUEST-1's unconditional length assert (line 3689), this check is the documented, switchable option check_outputs_merkle_root (help ~462, ~561); with it set false the CLI computes the claim, so the tool does not stop the operator from computing claims; the default is a reporting feature.",
+        "4": "n/a.",
+        "5": "Low."
+      },
+      "reason": "Distinct site and fix from R4-RGPLAYERGUEST-1, but the check is a documented opt-out option (help lines 462/561), so the claim stays computable; stopping and reporting is allowed. Low.",
+      "reading_based": true,
+      "duplicate_of": null,
+      "merged_ids": [],
+      "brief_for_prover": null
+    }
+  ],
+  "threat_model_gaps": [
+    "Build configuration and assertions: R10 forbids build-type dependence only for verifiers. The model does not say whether it is a defect that the packaged honest-operator build keeps asserts live (process abort) everywhere but interpret.cpp while release=yes compiles them out, or whether formal UB (ODR-violating inline bodies, a throwing resize_and_overwrite operation) that no hash or result depends on violates R1/section 4 (R5-INVINTERP-1, R5-INVAPI-1; extends the R1-R9-2 gap).",
+    "Failed sync followed by a successful one: O2 defines a guaranteed directory as 'synced after the last change', but does not say whether a directory whose sync failed must be discarded, or whether a later successful sync restores the guarantee when the kernel dropped the failed pages (R5-INVSTORE-1; extends the R3-VARDIRTY-2 gap on continuing after failed calls).",
+    "O2 and template-producing tools: unclear whether a shipped tool that writes a template without syncing it (cartesi-machine --store) violates section 5's 'tools ... must follow them' when another documented route makes the directory guaranteed, and whether the honest operator's own unsynced template is covered by the O2 reload exclusion after a power loss (R5-INVSTORE-3).",
+    "Manual crash-recovery rules: whether a recovery procedure in the manual or CLI help that designates a directory O2 does not guarantee is a manual/behavior contradiction on a security-relevant point, a support defect, or excluded by the O2 reload exclusion (R5-INVSTORE-2).",
+    "Operator funds: section 4 lists the provisioned host resources (CPU, memory, storage) but not the operator's on-chain balance for bonds and gas; unclear whether a balance shortfall is an unprovisioned resource that 'may stop the honest operator' or a condition the operator must survive, especially when its own pending bond recovery would cure it (R5-INVBRIDGE-1).",
+    "Transient host faults that do not stop the operator: section 4 says a host fault 'may stop the honest operator', and R4 requires restarting after a stop, but the model is silent on an operator that keeps running and permanently gives up one claim after a transient fault (R5-INVPLAYER-1).",
+    "Per-range rebuild versus O1: unclear whether the documented mark_pages_dirty recomputation of replace_memory_range counts as a rebuild under O1 ('A defect that defeats the rebuild itself') or whether supplied tree files are trusted caller data (R5-INVHASH-1; related to R1-R11-3).",
+    "Tip reorgs that only invalidate a read pin: section 4 excludes 'recovering when that history is replaced', but does not say whether a reorg of non-final blocks that changes no history the operator acted on, and only crashes it, is covered (R5-INVBRIDGE-2).",
+    "Opt-out checks in claim-computing tools: unclear whether a support tool that computes claims but aborts by default on an application's interface violation, with a documented option to continue, meets R4's 'whether or not its application is correctly designed' (R5-INVBRIDGE-3; extends the R4-RGPLAYERGUEST-1 gap)."
+  ]
+}

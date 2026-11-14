@@ -1,0 +1,88 @@
+{
+  "round": 4,
+  "candidate_count": 5,
+  "hunters_without_candidates": ["RGCLAIM", "RGLOG", "RGDELIVERY", "RGUARCH", "RGCONFIG", "RGREJECT", "RGRESTART"],
+  "items": [
+    {
+      "id": "R4-RGPLAYERGUEST-1",
+      "source_angle": "RGPLAYERGUEST",
+      "title": "cartesi-machine CLI aborts its --mcycle-computation-hash / --uarch-cycle-computation-hash run (no claim) when a guest accepts with an outputs-root length other than 32, or (default) with a root that differs from the host's outputs tree",
+      "component": "cartesi-machine CLI (src/cartesi-machine.lua flush_pending_outputs, called from run_advance_state_input)",
+      "role": "Support (AUDIT.md: 'the cartesi-machine CLI ... Support'), standing in for the honest operator as 'a tool that computes claims' (section 3), as R1-R6-1 was rated",
+      "decision": "keep",
+      "severity": "Medium (preferred: the computation-hash options are a tool that computes claims, so R4 Critical in the stood-in role caps at Medium) / Low (if the CLI counts as a development tool that 'may instead stop and report the violation')",
+      "duplicate_of": null,
+      "merged_ids": [],
+      "rating_steps": "1. Out of scope: the guest is not correctly designed (it leaves a tx-buffer length != 32, or a root that does not cover its outputs), but section 8 excludes only what such an application gets: 'An application that breaks the rollup interface may leave its outputs unprovable, but it must never stop the honest operator from computing claims or producing proofs. Development tools may instead stop and report the violation.' Not excluded for a claim-computing tool. 2. Role: Support (AUDIT.md table); section 3 'Medium when it would rate High or Critical in the role the component stands in for, such as ... the honest operator for ... a tool that computes claims'. The manual's 'Computation hashes' section presents these options as computing the dispute claims (doc/README.md ~2582-2607, 5648). The emulator library and the PRT player compute the claim correctly (hunter evidence), so only the CLI shows it. 3. No High/Medium case in the stood-in role. 4. Stood-in role: R4 'From any reachable state ... the honest operator can always compute the claim ... This holds for every guest, whether or not its application is correctly designed' violated at a reachable state (yield DATA is guest-writable) -> Critical, capped at Medium for support. Alternative: development-tool reading -> Low. Precedents: R1-R8-2 (vg.lua player aborts on outputs-root mismatch) confirmed Medium; R1-R6-1 (CLI uarch printer) confirmed Medium as a claim tool. Distinct from R1-R8-2: different site (src/cartesi-machine.lua vs doc/recipes/vg.lua), different fix.",
+      "reason": "Checked: src/cartesi-machine.lua:3689 asserts #data == cartesi.HASH_SIZE on every rx-accepted yield and :3691-3696 asserts root equality by default, before builder:end_input. Section 3 claim-tool stand-in of R4 -> Medium; development-tool reading -> Low.",
+      "reading_based": false,
+      "brief_for_prover": "Defect: the cartesi-machine CLI cannot compute an epoch's computation hash for a guest that yields manual rx-accepted with an outputs-root length other than 32 bytes (and, with the default check_outputs_merkle_root:true, for a guest whose tx-buffer root differs from the host's outputs tree). Location: src/cartesi-machine.lua flush_pending_outputs (line 3689: assert(#data == cartesi.HASH_SIZE, \"expected outputs Merkle root in tx buffer\"); lines 3691-3696: assertf(frontier root == data, \"outputs Merkle root mismatch at input %d\")), called unconditionally from run_advance_state_input (~line 4723) before builder:end_input, whatever computation-hash builder is selected. check_outputs_merkle_root:false disables only the comparison, not the length assert. The CLI's own help (lines ~524-526, 558) says unexpected fixed points (halt, overflow, exception, unexpected manual yield) still finalize the computation hash. Trigger: a guest (any input may take control of it, section 4) writes htif tohost = (YIELD, MANUAL, RX_ACCEPTED, data != 32), e.g. writes the correct root word and yields with DATA 0 or 0xffffffff; reachable because yield DATA is guest-writable. The state is still an accepted fixed point (the emulator does not interpret the length: section 4 'The outputs Merkle root, the output payloads, and every other yield reason are opaque guest data'), so the claim is well defined; the PRT player (prt.new_forked_player) computes it and it equals an independent reference. Required behavior: section 8 'An application that breaks the rollup interface may leave its outputs unprovable, but it must never stop the honest operator from computing claims or producing proofs'; R4 'the honest operator can always compute the claim ... This holds for every guest, whether or not its application is correctly designed'; section 3 rates the CLI (Support) as standing in for the honest operator as 'a tool that computes claims' (Medium). Alternative reading (Low): 'Development tools may instead stop and report the violation'. Test idea (hunter): bugs/<ID>/test.sh builds a small bare-metal guest that writes the empty outputs root into the tx buffer and yields manual RX_ACCEPTED with DATA 0 for every input, stores its template at its first rx-accepted yield, runs `cartesi-machine --load=<template> --cmio-advance-state=input:input-%i.bin,input_file_index_begin:0,input_file_index_end:1,check_outputs_merkle_root:false --mcycle-computation-hash=log2_mcycle_period:10,filename:mch.bin`; asserts exit 0 and mch.bin equal to the root the PRT player (prt.new_forked_player + commit_mcycle_claim) computes for the same template and input. Today: 'cartesi-machine.lua:3689: expected outputs Merkle root in tx buffer', no mch.bin, exit 1. Same with --uarch-cycle-computation-hash. Evidence: /tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r4/RGPLAYERGUEST/chaos.c (ops 'z' = DATA 0, 'Z' = DATA 0xffffffff) and diff.lua."
+    },
+    {
+      "id": "R4-RGEPOCHS-1",
+      "source_angle": "RGEPOCHS",
+      "title": "Verification-game referee (vg.lua) fixes LOG2_INPUTS_PER_EPOCH = 16 and refuses epochs over 2^16 inputs, while the manual's dispute grid and the emulator constant use 2^24",
+      "component": "doc/recipes/vg.lua (verification-game referee: new_dapp_contract, settle_dispute extent)",
+      "role": "Support (verification game, not the PRT referee model: AUDIT.md names only the PRT referee model; precedent R3-VARREFMODEL-3), standing in for a referee ('Its referee stands in for contracts that Cartesi deploys', manual)",
+      "decision": "keep",
+      "severity": "Low (preferred: a self-consistent demo constant; the refusal is a loud setup assert of a support referee, no wrong hash) / Medium (if vg's referee, standing in for a deployed referee, must cover the manual's 2^24 grid and a deployed referee refusing such an epoch would rate Critical)",
+      "duplicate_of": null,
+      "merged_ids": [],
+      "rating_steps": "1. Out of scope: no exclusion fits; input count is an adversary capability (section 7 'Send any number of inputs the deployment accepts'). 2. Role: Support (verification game is not 'The PRT referee model in doc/recipes'); stands in for a referee per the manual. 3. Medium cases: section 8 'A contradiction between the manual and the behavior on a security-relevant point ... takes the severity it would have if the manual were right'. The manual's hash view fixes 'the maximum number of inputs per epoch (2^24)' (doc/README.md:9448) and R13 makes dispute constants part of the protocol. If the manual is right, vg's referee cannot settle an epoch of 2^16+1..2^24 inputs; a deployed referee doing so would fail A5's 'No party can make it stop accepting them' (Critical) -> support Medium. 4/5. Against: the vg player answers whatever extent the referee sends, both sides use the same constant, so no hash ever differs; the refusal is an assert on the referee's own command-line input list (a demo setup limit); under that reading it is Low. Unsure, so kept.",
+      "reason": "Checked vg.lua:21, :928, :1030 and doc/README.md:9448. Medium only under the manual-contradiction stand-in reading (section 8 last paragraph of Medium, section 3 support rule); Low under the self-consistent-demo reading. Kept as unsure.",
+      "reading_based": true,
+      "brief_for_prover": "Defect: the verification-game recipe's referee hard-codes LOG2_INPUTS_PER_EPOCH = 16 (doc/recipes/vg.lua:21, INPUTS_PER_EPOCH at :24) instead of cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH (24). settle_dispute bisects over an input extent of 2^16 (vg.lua:928), and new_dapp_contract asserts '#input_paths <= INPUTS_PER_EPOCH' with message \"invalid epoch\" (vg.lua:1030), so the referee refuses any epoch with more than 65,536 inputs. The manual's hash view of computation, which the verification game bisects, states 'Within the maximum number of inputs per epoch (2^24) ...' (doc/README.md:9448), and the manual says 'Its referee stands in for contracts that Cartesi deploys' (doc/README.md ~9401); DaveConsensus and prt.lua/prt-epoch.lua use 2^24. Trigger: an epoch with 65,537 to 2^24 inputs (input senders are untrusted and may send any number). Required behavior (Medium reading): section 8 'A contradiction between the manual and the behavior on a security-relevant point is a defect in one of the two. It takes the severity it would have if the manual were right'; a referee that cannot settle an epoch the input record forms violates A5 ('the referee accepts every output that the settled state commits to ... No party can make it stop accepting them'); section 3 support stand-in rule caps it at Medium. Counter-reading (Low): vg's player uses the referee's extents, both sides agree, no hash differs, and the assert only limits the demo's input-file list. Reviewer must decide the reading. Test idea (hunter): a Lua test that loads vg.lua as a module (or extracts new_dapp_contract) and calls new_dapp_contract(hash32, inputs) with 2^16+1 placeholder input paths (small files or a stubbed fs.read_file), asserting no error; or assert that the referee's log2_input_count equals cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH. Exits 1 today. Evidence: code reading only (hunter file hunt-RGEPOCHS.json)."
+    },
+    {
+      "id": "R4-RGPROOF-1",
+      "source_angle": "RGPROOF",
+      "title": "cartesi.hash-tree frontier_forest_expand_leaf fails 'leaf height mismatch' after frontier_forest_store/load when an equal-hash fixed-point tree of lower base height owns the hash-keyed file",
+      "component": "Lua helper library cartesi.hash-tree (frontier_forest_expand_leaf, store_tree, load_tree in src/cartesi/hash-tree.lua)",
+      "role": "Support (AUDIT.md: 'the frontier and forest functions of cartesi.hash-tree'); a library stands in for the most critical role among components that reach the defect through it, and none does",
+      "decision": "drop",
+      "severity": "Low",
+      "duplicate_of": null,
+      "merged_ids": [],
+      "rating_steps": "1. Out of scope: no exclusion; documented library calls. 2. Role: Support; section 3 'A library stands in for the most critical role among the components that reach the defect through it.' 3. Medium needs it to 'rate High or Critical in the role the component stands in for'. prt.lua calls expand only through open_bundle, 'Called only after a forest query reports an opaque path' (prt.lua:1778-1810); queries and expansion load the same hash-keyed representation, so when the reloaded representation is finer the query succeeds and no expansion runs; PRT forests push values only at bundle height or above. No component reaches it, so no stood-in role. 4. Not on the honest operator's path. 5. Low: 'Any other support defect is Low.'",
+      "reason": "Checked prt.lua open_bundle callers (only after a nil query) and hash-tree.lua:1031. No caller reaches it; section 3 'Any other support defect is Low'. Hunter rated Low too.",
+      "reading_based": true,
+      "brief_for_prover": null
+    },
+    {
+      "id": "R4-RGEPOCHS-2",
+      "source_angle": "RGEPOCHS",
+      "title": "crisium exits by assert and crash-loops under prt-supervise.sh once the honest claim wins an epoch whose final state is not an accepted yield and cannot be staged",
+      "component": "doc/recipes/prt-bridge.lua methods:prepare (stageTournamentResult sets self.terminal) and doc/recipes/crisium.lua main loop (assert(not status.terminal))",
+      "role": "Support (PRT player and bridge), standing in for the honest operator",
+      "decision": "drop",
+      "severity": "Out of scope (application stall) / Low",
+      "duplicate_of": null,
+      "merged_ids": ["R4-RGPLAYERGUEST-2"],
+      "rating_steps": "1. Out of scope: 'The stall of an application that halts, yields manually with a reason other than accepted or rejected, or never yields, and what the application loses by it. A5 governs what can then be extracted from its state.' 2. Role: Support standing in for the honest operator (readings.md item 7). 3-4. Even read as an emulator-side defect a guest triggers, no rule is violated in the stood-in role: the stage job is due only at the root's result time with matchCount 0 (prt-bridge.lua:411-432, tick due check at 712-718), so the root tournament is decided for the honest claim; DaveConsensus seals epoch N+1 only on accept(N), so no other dispute is open to defend (R4 'defends every epoch whose dispute is open' holds; R4 'keeps defending its claim' owes nothing more). 5. Lost bond recovery and process liveness are outside the model -> Low at most.",
+      "reason": "Trigger is the application-stall exclusion (section 8); checked the job is due only after the root result time with no matches, and no later Dave epoch can open, so no R4 obligation is left unmet. Support Low.",
+      "reading_based": true,
+      "brief_for_prover": null
+    },
+    {
+      "id": "R4-RGPLAYERGUEST-2",
+      "source_angle": "RGPLAYERGUEST",
+      "title": "crisium exits by assert and crash-loops once an epoch whose guest stopped at a non-accepted fixed point finishes its tournament",
+      "component": "doc/recipes/prt-bridge.lua methods:prepare and doc/recipes/crisium.lua main loop",
+      "role": "Support (PRT player and bridge)",
+      "decision": "duplicate",
+      "severity": "Out of scope / Low",
+      "duplicate_of": "R4-RGEPOCHS-2",
+      "merged_ids": [],
+      "rating_steps": "Same root cause (pcall(eth.validity_proof) failure sets bridge.terminal, crisium asserts) and same fix as R4-RGEPOCHS-2, which states it more completely (bond recovery ordering, no later epoch sealed).",
+      "reason": "Same site, same root cause and same fix as R4-RGEPOCHS-2.",
+      "reading_based": true,
+      "brief_for_prover": null
+    }
+  ],
+  "threat_model_gaps": [
+    "Claim-computing CLI vs development tool: section 3 lists 'a tool that computes claims' as an honest-operator stand-in, while section 8 lets 'Development tools ... instead stop and report the violation' of the rollup interface. The cartesi-machine CLI's --mcycle-computation-hash/--uarch-cycle-computation-hash options fit both; which one decides Medium vs Low (R4-RGPLAYERGUEST-1; same question as R1-R8-2 for vg.lua and R1-R6-1 for the CLI printer).",
+    "What the honest operator owes after its claim wins: R4 says it 'keeps defending its claim' and 'defends every epoch whose dispute is open', but the model does not say whether an operator process that crash-loops after the root tournament is decided (because the settled state is not stageable) violates anything, or whether this is wholly the application-stall exclusion (R4-RGEPOCHS-2, R4-RGPLAYERGUEST-2).",
+    "Dispute constants in demonstration referees: R13 makes the dispute constants part of the protocol and the manual's hash view fixes 2^24 inputs per epoch, but the model does not say whether a self-consistent support referee/player pair (vg.lua) with a different constant is a defect, nor (already noted for R3-VARREFMODEL-3) whether vg.lua's referee is a referee model or a support component (R4-RGEPOCHS-1).",
+    "Library defects that no current caller reaches: section 3 rates a library by 'the most critical role among the components that reach the defect through it' but does not say how to rate a defect in a documented library operation that no shipped component reaches today (presumably 'Any other support defect is Low') (R4-RGPROOF-1)."
+  ]
+}

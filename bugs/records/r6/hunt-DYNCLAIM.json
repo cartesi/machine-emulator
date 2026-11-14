@@ -1,0 +1,58 @@
+{
+  "angle": "DYNCLAIM",
+  "candidates": [],
+  "result": "No disagreement and no failure was observed between the independent naive reference and any of the claim-computation paths. Zero candidates.",
+  "harness": {
+    "directory": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNCLAIM",
+    "files": {
+      "guest/fz.c": "bare-metal guest (built with bugs/harness/baremetal/build.sh) that interprets the raw rx-buffer bytes as a script: accept (correct outputs root), reject, halt, spin forever, exception yield, manual yield with reason 7, emit output, report, progress yield, putchar, busy loops, arm CLINT timer + MTIE, wfi, ecall trap, wait until mcycle >= 2^64-1-3b",
+      "lib.lua": "the naive reference (ref_epoch: run one sampling period at a time with machine:run, read get_root_hash, apply the rejection exception by hand by reloading the template and replaying the effective inputs, run-length-encoded tree builder with padding written from scratch on cartesi.keccak256; ref_uarch: run_uarch one cycle at a time + get_root_hash, pad with the halted hash, reset_uarch, revert hash by hand, fixed-point tail computed twice and asserted equal) and drivers of collect_mcycle_root_hashes / collect_uarch_cycle_root_hashes (whole, in random parts with mcycle_phase, bundled with partial_bundle, final_bundle_sibling_hashes verified)",
+      "fuzz.lua": "random scenarios (0..6 inputs, empty and oversized 2 MiB+1 inputs, template at normal mcycle or at mcycle 2^64-margin so that imcyclemax saturates and the guest can spin to it); modes core / uarch / cli / clir (resumable CLI epoch split in two executions with --store/--load, uarch hash from the middle machine with next_input_offset) / all",
+      "exact.lua": "bisection search for inputs whose accept / reject / halt instruction executes exactly on the last cycle before imcyclemax (mcycle ends at 2^64-1 with Y or H set); writes 24 scenarios around them",
+      "player.lua, ptest.lua, ktest.lua": "drive doc/recipes/prt.lua players through their event handlers (forked over JSON-RPC, stored, stored reopened after the seal, stored SIGKILLed mid-epoch and restarted), ask the mcycle claim, uarch claims, and individual leaves of both trees (opens bundles); ktest kills at chosen calls while the player handles a rejected input",
+      "linux.lua": "the harness Linux template (valid-template: echo app on the guest-tools v0.18.1-test1 rootfs) through every path"
+    },
+    "runs": [
+      {"what": "fuzz.lua all, seeds 100..125 (period 2^0..2^7; collectors whole/parts/bundles, collect_mcycle_bundle, CLI --mcycle-computation-hash, uarch claims by collect_uarch_cycle_root_hashes b=0 / random b in parts / b=20, CLI --uarch-cycle-computation-hash)", "cases": 26, "checks": 459, "mismatches": 0},
+      {"what": "fuzz.lua core 1..6, cli 1..5, uarch 1..4 (harness bring-up runs)", "cases": 15, "checks": 87, "mismatches": 0},
+      {"what": "fuzz.lua all on the 24 exact-imcyclemax scenarios (accept, reject, halt exactly on the last cycle; further inputs after them), periods 2^0, 2^1, 2^3, 3 uarch periods each", "cases": 24, "checks": 552, "mismatches": 0},
+      {"what": "fuzz.lua core with console output to_buffer / every_char in the collectors (28 console_output breaks inside collections, period 2^0 included)", "cases": 14, "checks": 92, "mismatches": 0},
+      {"what": "fuzz.lua all with period 2^48, 2^44, 2^47 (bundle sizes up to period+bundle = 48)", "cases": 12, "checks": 213, "mismatches": 0},
+      {"what": "fuzz.lua core + cli at Dave's released period 2^18 with output-emitting inputs (about 5M mcycles each)", "cases": 2, "checks": 16, "mismatches": 0},
+      {"what": "fuzz.lua clir: CLI resumable epoch in two executions (store/load, frontier/state_hash/outputs_frontier files) and CLI uarch hash with begin_epoch:false,next_input_offset", "cases": 12, "checks": 21, "mismatches": 0},
+      {"what": "linux.lua p=17, uarch p=1: inputs accept / guest-tools reject / empty input (the echo app exits and the machine halts) / input after the halt; collectors, CLI mcycle hash, 8 uarch periods (first period of an input, mid-run, the period of the rejecting instruction and its neighbours, the halting period, an input slot after the halt, a slot past the last input) by collectors b=0/16/20 and CLI, forked player claim + 8 leaves + 1 uarch claim", "cases": 1, "checks": 45, "mismatches": 0},
+      {"what": "ptest.lua seeds 1..4 (periods 2^10 and 2^18): forked player, stored player, stored player reopened after the seal, stored player after 7 SIGKILLs (Lua-instruction-count and timed) and restart; mcycle claim, final state, uarch claims and leaves", "cases": 4, "checks": 148, "mismatches": 0},
+      {"what": "ptest.lua forked only: seeds 300..303 (up to 14 inputs) and the 24 exact-imcyclemax scenarios at period 2^10", "cases": 28, "checks": 404, "mismatches": 0},
+      {"what": "ptest.lua seeds 500..501 stored only, 8 more SIGKILL+restart rounds", "cases": 2, "checks": 40, "mismatches": 0},
+      {"what": "ktest.lua: stored player SIGKILLed at entry of clone_stored (inside pair:revert, machine directory already removed), store_forest, write_durable_file (state.json), pair:commit, second clone_stored, all right after a rejected input; restart, mcycle claim and one uarch claim compared", "cases": 5, "checks": 10, "mismatches": 0}
+    ],
+    "totals": "about 145 scenario runs, about 2090 comparisons, 20 kill/restart rounds, 0 mismatches, 0 failures of the code under test",
+    "compute": "single-threaded Lua processes, at most three of mine at a time (two of them I/O-bound stored-player runs); about 21 minutes of CPU in total, of which about 9 were wasted on two harness mistakes (a Linux reference at period 2^1 over a whole epoch, stopped; a collect_uarch_cycle_bundle test that materialized 2^20-entry bundles, stopped before printing a result). Wall time was much longer because the host load average was 11 to 18. One of my processes (exact.lua, which leaked machine objects) was OOM-killed once; fixed and rerun.",
+    "harness_errors_not_findings": [
+      "stored player needs an existing epoch directory (my driver did not create it at first)",
+      "guest console dots interleaved with my output lines (parser fixed)",
+      "collect_mcycle_bundle offset past the input span for period 2^48/2^44 (my test picked an out-of-range offset)",
+      "KILL_AT environment variable applied to 'cd' instead of the player in the first ktest run (no kill happened; rerun)"
+    ],
+    "observations_not_candidates": [
+      "Linux echo app of the harness (app.sh: 'rollup accept > /tmp/req || exit 1') exits on a zero-length advance input and the machine halts; a zero-length input is not ABI-encoded and cannot come from the InputBox; I did not analyze the rollup tool's behaviour here. Every claim path agreed on the resulting halted epoch.",
+      "On this ext4 scratch file system (no reflinks) every stored-player tree query clones and syncs a 34 MB machine directory, about 1 minute per query under the host's load; this is the documented reflink requirement and the already reported cache/clone costs (R2-DFINPUTCOUNT-1), not a new finding."
+    ]
+  },
+  "not_covered": [
+    "machine:collect_uarch_cycle_bundle (the C/Lua API method) against reference leaves: my test was stopped for cost before it reported anything. The player's own collect_uarch_cycle_bundle (built on collect_uarch_cycle_root_hashes) was exercised through uarch leaf queries.",
+    "Uarch-level claims at period 2^10 or more for periods dense with executed mcycles: the per-uarch-step reference costs about 0.3 ms per step, so player and CLI uarch claims at 2^10/2^14/2^18 were compared only for periods that stop within about 90 mcycles or are pure fixed-point tails; dense periods were compared only at periods 2^0..2^3.",
+    "Dave's released geometry at the uarch level (a 2^18-mcycle period) and any cost measurement (R12/A7): not measured.",
+    "Inputs that use their full 2^48 mcycles with an unsaturated imcyclemax; reaching imcyclemax was tested only with templates at mcycle 2^64-margin (saturated imcyclemax = 2^64-1).",
+    "A uarch run of 2^20-1 cycles or more in one mcycle (collector throws, entry count edge of append_uarch_reset_root_hash and of the revert-tail length check): not reachable with my guests.",
+    "Exception yield and progress-then-accept exactly on the last cycle before imcyclemax (the search found accept, reject, halt and report-then-reject only).",
+    "Guests with address translation, stale TLB entries, PLIC interrupts, or S/U-mode on bare metal: only the Linux template covers them, with one echo payload, one reject and one halt. Timer interrupts on bare metal were armed at random by the fuzz guest but not aimed at a sampling point.",
+    "Outputs: only correct outputs roots (the CLI aborts on wrong ones, R4-RGPLAYERGUEST-1 / R5-INVBRIDGE-3); output proofs, outputs_merkle_root_proof and resumable output-history files of the CLI were not compared.",
+    "CLI --revert-mode=stored and a remote server kept alive between resumable executions (I used --remote-spawn with fork revert and --store/--load); --max-mcycle interruptions; --print-*-root-hashes printers.",
+    "JSON-RPC collectors other than through the forked player (bundle 2^4 mcycle collection, uarch bundle 2^20).",
+    "Player restarts during a bisection, during a uarch claim build, during bundle expansion, after the seal with an agreed pair, and power-loss (unsynced page cache) faults: only SIGKILL while inputs are fed (20 rounds) and reopen after the seal.",
+    "The referee model (prt.lua referee over game-transport), crisium + bridge on the local chain, the Dave contracts and the EVM step: not run; claims were compared as hashes only, no transition proofs were verified.",
+    "Epochs with more than 14 inputs, the 2^24 input limit, vg.lua players, sha256 machines, the ASan/UBSan build.",
+    "The reference shares get_root_hash, run, run_uarch, reset_uarch, send_cmio_response and keccak256 with the paths under test, so a defect common to the native interpreter, the uarch and the hash tree would not show as a disagreement here."
+  ]
+}

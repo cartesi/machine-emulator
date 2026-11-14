@@ -1,0 +1,493 @@
+[
+ {
+  "chunk": [
+   "R6-DYNGUEST-1",
+   "R6-DYNGUEST-5",
+   "R7-MANGUEST-1",
+   "R7-MANGUEST-2",
+   "R7-MANGUEST-3",
+   "R10-PERAPPDEV-3",
+   "R10-PERAPPDEV-5"
+  ],
+  "model": "claude-opus-5-5",
+  "results": [
+   {
+    "id": "R6-DYNGUEST-1",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "The trigger is the application's own fixed command line, not an input. The manual pairs reasons with modes and calls /usr/bin/yield 'useful for tests and one-off demos'. Section 8 Low: 'a defect in guest software that only an application outside its intended use can reach'. Section 3: 'Any other defect in them is Low'. Would change if a documented application chose the pair from input.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R6-DYNGUEST-5",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "Formal UB: memcpy(dst,NULL,0) is the last statement of cmt_abi_put_bytes_d, after the emit_* checks. Outputs and roots were byte-correct. Section 3 is Critical only for 'a defect that lets an input make such an application deviate from the rollup interface'; otherwise 'Low'. R1's UB clause is about transitions, not guest code. Deciding fact: a shipped libcmt build whose output changes.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R7-MANGUEST-1",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "The trigger is rollup-http-server exiting, and no input path to that was found (main.rs panics only at startup). Even if an input did trigger it, this hex bug only swaps one non-accept/reject terminal state (tx-exception) for another (halt). The deviation would be the server's exit. Section 3: 'Any other defect in them is Low'. Deciding fact: an input that makes the server exit.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R7-MANGUEST-2",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "The manual itself says /usr/bin/yield is 'useful for tests and one-off demos' and 'for tooling that needs to talk to the device directly for testing or debugging'. Section 8 Low: 'a defect in guest software that only an application outside its intended use can reach'. Even if the manual's usage text were right, the defect would sit in the same tool. Section 3: 'Any other defect in them is Low'.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R7-MANGUEST-3",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "The puppet walkthrough says 'halts'. The manual's HTIF section and libcmt use a TX_EXCEPTION manual yield ('machine cannot continue'). If the walkthrough were right, the outcome is the same: A5 lists 'a halt, a manual yield with any reason other than accepted or rejected' alike, and R5 makes deliveries to both no-ops. So the contradiction is not 'on a security-relevant point'. Low.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R10-PERAPPDEV-3",
+    "verdict": "uphold",
+    "severity": "Low (Critical only if both hold: the external openapi rollup.yaml, not the manual, is the governing documentation, and section 3's 'deviate from the rollup interface' covers the meaning of decoded input fields)",
+    "reason": "The manual is the 'specification it refers to' and says 'The block timestamp field is in seconds'. The server passes seconds through unchanged. Only an external, unpinned rollup.yaml linked from the README says ms. Section 2 defines the rollup interface as manual accept/reject yields plus the outputs root, and the application still follows it. 'Any other defect in them is Low'.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R10-PERAPPDEV-5",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "(a) duplicates R2-DFINPUT-1, and (b) duplicates R7-MANGUEST-2 (yield tool: 'tests and one-off demos'). (c) A first /finish 'reject' happens at template-build time with no input. It leaves a machine that is not 'waiting at a manual yield with the accepted reason', so it is not a valid template. The inspect-state case is 'outside the verified history' (R4). Section 3: 'Any other defect in them is Low'.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   }
+  ],
+  "reading_changes": [
+   "Section 8's application-stall exclusion ('The stall of an application that halts ... and what the application loses by it') does not by itself end the rating of a guest-software defect at step 1. When an input makes in-scope guest software halt or stall an application that depends on it as documented, section 3's guest-software clause rates it Critical. The stall exclusion covers what an application loses by its own design, so the rating must rest on whether an input triggers it.",
+   "For guest software, 'as documented' and 'intended use' come from the manual first. The manual limits /usr/bin/yield to 'tests and one-off demos' and to tooling 'for testing or debugging', so defects only an application using it can reach are Low under 'a defect in guest software that only an application outside its intended use can reach'. External, unpinned documents (such as an openapi file linked from a README) do not override the manual."
+  ],
+  "blocked_or_stopped_partway": false
+ },
+ {
+  "chunk": [
+   "R5-INVINTERP-1",
+   "R5-INVAPI-1",
+   "R6-DYNLOGFUZZ-1",
+   "R9-SUBCSR-2",
+   "R9-SUBCMIO-2"
+  ],
+  "model": "claude-opus-5-5",
+  "results": [
+   {
+    "id": "R5-INVINTERP-1",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "Honest operator (AUDIT row 1). No live assert shown falsifiable: verifier replays check sizes before access-log.hpp asserts. R1 says the hash 'must not depend on ... Undefined behavior'; ODR bodies differ only in never-firing asserts, so nothing depends on them. R10 build clause unmet. Would change: an assert reachable from guest or log data.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R5-INVAPI-1",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "Library rated as honest operator. Section 4 requires such paths be 'memory-safe and bounded, and must report errors without terminating the process'; libstdc++ resets length, libc++ leaves an unread discarded string; errors return cleanly. No Critical/High case (no crash, corruption, OOB read). Would change: a supported stdlib that aborts or reads the bytes.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R6-DYNLOGFUZZ-1",
+    "verdict": "uphold",
+    "severity": "Low (preferred) / Medium if a contradictory log_type flag is an R3 'inconsistent' log condition rather than ignored extra data",
+    "reason": "Off-chain verifiers are Support per AUDIT table; Solidity step has no log_type, so no referee verifier shares it. Manual: annotations are 'metadata consumed by the pretty-printer'; flags never change the after-hash. Section 8: 'A support verifier that does so is Low.' Would change: log_type specified as a log-validity condition.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R9-SUBCSR-2",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "Only a trusted caller's config holding values the spec disallows shows it; valid template requires 'registers hold only values that the RISC-V specification and the manual allow'. Paths agree and R4 holds, so 'A configuration that would not is rejected' (would not yield R4) is not triggered. Manual promises no legalization. Would change: such a value breaking R4.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R9-SUBCMIO-2",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "R6: 'imcyclemax is likewise written only by such a delivery'; manual: 'When mcycle reaches this limit, the machine does not advance further' and MCYCLE_OVERFLOW 'signals a fixed point'. Only the host-loop pseudo-code omits it (already R7-MANLUA1-1). R4: inspect 'results carry no guarantee', so even if the manual were right it is Low.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   }
+  ],
+  "reading_changes": [],
+  "blocked_or_stopped_partway": false
+ },
+ {
+  "chunk": [
+   "R8-GOALOUTPUT-1",
+   "R8-GOALTIMEOUT-1",
+   "R8-GOALTIMEOUT-2",
+   "R8-GOALNODE-1",
+   "R8-GOALEPOCH-1",
+   "R7-MANTOURN-2"
+  ],
+  "model": "claude-opus-5-5",
+  "results": [
+   {
+    "id": "R8-GOALOUTPUT-1",
+    "verdict": "uphold",
+    "severity": "Low (preferred) / Critical if A5's 'accepts' covers executing a voucher within per-transaction limits and AUDIT's '(input box, output validation)' covers executeOutput",
+    "reason": "A5 frames acceptance as proof checking: 'An output is accepted only through a proof that authenticates a hash as a leaf'. AUDIT scopes the pinned contracts to '(input box, output validation)'. validateOutput accepts; only the execution copy loop runs out of gas. Section 8's 'honest proof or transaction' matches R12's 'transaction the honest operator sends'. Deciding facts: does A5 include execution, and does the AUDIT scope cover executeOutput?",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R8-GOALTIMEOUT-1",
+    "verdict": "uphold",
+    "severity": "Low (preferred) / Medium (section 3 support clause) or Critical (A7, R1-A7-1 reading) if every deployment must let the operator respond only from real chain finality",
+    "reason": "Section 4 lets the operator choose its depth: 'history that its policy treats as final, such as finalized blocks', and a deeper reorg 'is a failure of the chain'. R4 puts timing on the operator: it 'submits its transactions within the dispute clocks'. A7 sizes clocks 'at the worst-case costs of R12', not for finality. A depth-4 policy wins. Deciding fact: must clocks cover the chain's real finality delay?",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R8-GOALTIMEOUT-2",
+    "verdict": "uphold",
+    "severity": "Low (Medium or Critical only when combined with a per-match honest overrun, already rated in R1-A7-1 and related findings)",
+    "reason": "The manual lists the pairing as a simplification: 'Each claim that joins meets the one waiting... The model gathers a tournament's claims first'. Section 5 says listed simplifications 'are not normative'. Dave grants G/T per action, so the match count alone charges no honest clock. A7 forbids losing 'while it acts within its own clock', and R12 lets work grow with 'matches of the epochs still open'. Deciding fact: whether A7's 'logarithmic number' bounds the referee.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R8-GOALNODE-1",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "Section 1 soundness requires accepting 'a node that the committed tree does not hold'. Here the node is held. Zero-padded variants are the same fixed-size slot contents, and the length is the application's encoding. R9 covers 'every tree the emulator defines'. A5 covers outputs, not withdrawals. The AUDIT row scopes the contracts to '(input box, output validation)'. The trigger needs foreclosure plus a custom builder that ignores the interface's length check.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R8-GOALEPOCH-1",
+    "verdict": "uphold",
+    "severity": "Low (Medium only if a guardian reaction window during staging were part of the deployment this model protects; the model never mentions it)",
+    "reason": "AUDIT puts 'The PRT player and bridge in doc/recipes' in Support, and support rates Medium only if the stood-in role 'would rate High or Critical'. The trigger is a non-honest root winner, so the goal has already broken through another defect. acceptStagedTournamentResult is permissionless, and no rule requires the operator to alarm or refuse during staging.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R7-MANTOURN-2",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "Section 2 puts dispute constants in each deployment: 'A referee with its verifiers and dispute constants', including 'the sampling period'. The manual presents p=10 as a choice: 'For this epoch, p = 10 balances the two build times'. Rated 'as if the manual were right', the p=18 difference matters only through clock sizing, which R1-A7-1 already covers. The elimination-sender mismatch changes nothing, because 'the sender does not matter'.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   }
+  ],
+  "reading_changes": [],
+  "blocked_or_stopped_partway": false
+ },
+ {
+  "chunk": [
+   "R5-INVPLAYER-1",
+   "R6-DYNBRIDGE-3",
+   "R5-INVBRIDGE-1",
+   "R5-INVBRIDGE-2",
+   "R9-SUBJOURNAL-1",
+   "R2-DFCLAIM-1"
+  ],
+  "model": "claude-opus-5-5",
+  "results": [
+   {
+    "id": "R5-INVPLAYER-1",
+    "verdict": "uphold",
+    "severity": "Out of scope (preferred) / Medium (support stand-in, if R4's restart duty covers a fault turned into a lasting non-stop refusal)",
+    "reason": "The trigger is EMFILE/ENOSPC, a host fault. Section 8 excludes \"Host faults ... as long as the emulator does not turn them into a wrong hash, a wrong proof, or a directory\", and none of these occurs. Section 4: a fault \"may stop the honest operator\". Would decide: a trigger within sized resources, such as the player's own fd or disk growth.",
+    "step_contradicted": "",
+    "entry_written": false,
+    "needs_prover": false
+   },
+   {
+    "id": "R6-DYNBRIDGE-3",
+    "verdict": "uphold",
+    "severity": "Out of scope (preferred) / Medium (support stand-in R4 reading)",
+    "reason": "Only a stall in \"the operator's host, keys, and node\" (section 4, trusted), or in its link to that node, reaches it. That is a host or network fault, which \"may stop the honest operator\". The section 8 host-fault exclusion applies because there is no wrong hash, proof or directory. Would decide: an adversary-caused stall in the middle of a frame (section 7 grants none).",
+    "step_contradicted": "",
+    "entry_written": false,
+    "needs_prover": false
+   },
+   {
+    "id": "R5-INVBRIDGE-1",
+    "verdict": "uphold",
+    "severity": "Low (preferred) / Medium (support stand-in, if funds are not a provisioned resource)",
+    "reason": "The crash needs a balance below one bond. The bridge doc says \"A player must budget for the root bond, ... and further joins before earlier recoveries pay out\". The goal assumes \"the resources the deployment was sized for\", and \"including CPU, memory and storage\" is open-ended. Would decide: an adversary forcing more outstanding bonds than a fixed budget, or draining it through gas.",
+    "step_contradicted": "",
+    "entry_written": false,
+    "needs_prover": false
+   },
+   {
+    "id": "R5-INVBRIDGE-2",
+    "verdict": "uphold",
+    "severity": "Low (Out of scope under the pre-finality clause)",
+    "reason": "The trigger is a tip reorg, which section 7 does not grant the adversary. Section 4: \"recovering when that history is replaced, is outside this model.\" The effect is one supervisor relaunch, and R12 says restarting \"has a bounded cost\". No stood-in High or Critical case applies. Would decide: an adversary-repeatable trigger, or clocks with no slack for one restart.",
+    "step_contradicted": "",
+    "entry_written": false,
+    "needs_prover": false
+   },
+   {
+    "id": "R9-SUBJOURNAL-1",
+    "verdict": "uphold",
+    "severity": "Low or Out of scope (preferred) / Medium (if the stand-in must fit production-node default policies)",
+    "reason": "The refusal comes from a policy of the operator's own trusted node, which the operator can configure. Section 4 assumes \"a host environment set up as the emulator documents\", and prt-lua-bridge.md documents \"a local Anvil chain\", where the job is mined. A per-transaction chain limit (R12) is not involved. Would decide: documentation of a geth/reth setup for the bridge.",
+    "step_contradicted": "",
+    "entry_written": false,
+    "needs_prover": false
+   },
+   {
+    "id": "R2-DFCLAIM-1",
+    "verdict": "overturn",
+    "severity": "Critical (referee model rated as a deployed referee, A7 with R4), as a duplicate of confirmed R9-SUBREFSTATE-2. Merge it there and write no separate entry.",
+    "reason": "The drop rests on \"the honest operator holds its claim in both\". Section 2 puts \"Restarting after a stop (O2)\" on the honest path. In the model, holders are the posting connections. The re-run R9-SUBREFSTATE-2 test exits 1: the restarted honest player gets no requests and loses by timeout, which violates A7. Root cause and fix are the same.",
+    "step_contradicted": "Triage step 4 (upheld by the first second opinion): \"the honest operator holds its claim in both\". This leaves out the honest operator's path in section 2, \"Restarting after a stop (O2)\", and R4, \"After a stop, it restarts ... and keeps defending its claim\". After a restart, the model treats the operator as a new non-poster connection, so it no longer holds its claim.",
+    "entry_written": false,
+    "needs_prover": false
+   }
+  ],
+  "reading_changes": [
+   "A rating that rests on a premise about the honest operator, such as 'it holds its claim', 'it is always connected' or 'it is always a poster', must check that premise over the whole honest operator's path in section 2, including 'Restarting after a stop (O2)'. A premise that holds only for an operator that never restarts does not support Low.",
+   "For a model/deployment disagreement over who may act for a claim, ask whether the honest operator, after a restart on a new identity or connection, is one of the parties that may act in the model. If it is not, the disagreement decides a timeout (A7) and is not harmless."
+  ],
+  "blocked_or_stopped_partway": false
+ },
+ {
+  "chunk": [
+   "R10-PERTEMPLATE-4",
+   "R5-INVSTORE-3",
+   "R6-DYNPERSIST-1",
+   "R7-MANLUA1-2",
+   "R7-MANCLIBASE-1",
+   "R9-SUBEPOCHDIR-1"
+  ],
+  "model": "claude-opus-5-5",
+  "results": [
+   {
+    "id": "R10-PERTEMPLATE-4",
+    "verdict": "overturn",
+    "severity": "Critical (preferred) / High (if a template from another party is declinable) / Low (if R12 'bytes it covers' includes unhashed config.json, or the whole directory is trusted)",
+    "reason": "Loading is Honest operator (AUDIT row 1). Section 8: once a snapshot meets the conditions, 'nothing it carries outside the hashed state may ... crash the honest operator'. R12 requires a worst case 'bounded'; measured from 'a machine'. Padding costs 21 B/B; re-ran: exit 1; under prlimit --as=2GiB a 128 MiB pad aborts with std::bad_alloc. Matches confirmed R1-O1-2.",
+    "step_contradicted": "The reviewer read R12's 'the bytes it covers' as every byte of config.json. That makes loading a fixed machine unbounded and empties R12's 'bounded'. R12 measures cost 'from a machine'. The reviewer also required an observed crash. Section 8 says unhashed content 'may [not] ... crash the honest operator', which forbids a crash that unbounded padding makes possible.",
+    "entry_written": true,
+    "needs_prover": false
+   },
+   {
+    "id": "R5-INVSTORE-3",
+    "verdict": "uphold",
+    "severity": "Out of scope / Low (preferred); Medium if 'tools must follow them' requires writers to leave directories guaranteed",
+    "reason": "O2: 'guarantees a stored directory only when it was synced'; section 8 excludes 'reload a stored directory that O2 does not guarantee'. O2 binds the resumer; the CLI never resumes from it, and O2 is 'possible to follow' (documented sync key, sync_stored; manual 1169-1179 warns a clean exit is not durable). Deciding fact: whether the manual presents --store output as a guaranteed restart point.",
+    "step_contradicted": "",
+    "entry_written": false,
+    "needs_prover": false
+   },
+   {
+    "id": "R6-DYNPERSIST-1",
+    "verdict": "uphold",
+    "severity": "Out of scope / Low",
+    "reason": "Only trigger is fsync EIO, a host fault: section 8 excludes 'Host faults ... as long as the emulator does not turn them into a wrong hash, a wrong proof, or a directory that O2 guarantees but that later loads as a different state'. None occurs; the failure is loud, and the removed directory is not a snapshot. The Medium case needs 'an uncommon host setup that the manual documents' or 'cleaning up after a stop'; neither applies.",
+    "step_contradicted": "",
+    "entry_written": false,
+    "needs_prover": false
+   },
+   {
+    "id": "R7-MANLUA1-2",
+    "verdict": "uphold",
+    "severity": "Low (preferred) / Medium",
+    "reason": "store is Honest operator, but stale config.json registers are never read: load takes registers from the shadow file. R2 ('every path reads it from there') and R9 ('content hash must equal the root') hold. The Medium case 'stored directory inconsistent ... (R9)' concerns hash integrity and is 'off the honest operator's path'. Deciding fact: an on-path reader of get_initial_config registers.",
+    "step_contradicted": "",
+    "entry_written": false,
+    "needs_prover": false
+   },
+   {
+    "id": "R7-MANCLIBASE-1",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "Trigger is the trusted caller's own configuration. The zero-padded machine is well defined and consistently hashed, so R4's configuration clause holds (the accepted machine works). Any truncation changes the template hash, which the on-chain comparison catches. The R7 Medium 'deviation' case covers guest-visible architecture and devices, not host-side config validation. The manual contradiction is not on a 'security-relevant point'.",
+    "step_contradicted": "",
+    "entry_written": false,
+    "needs_prover": false
+   },
+   {
+    "id": "R9-SUBEPOCHDIR-1",
+    "verdict": "uphold",
+    "severity": "Low (preferred); Medium (support stand-in) only if reusing --state across deployments counts as documented restart",
+    "reason": "Player is Support. crisium asserts that the epoch-0 checkpoint equals the on-chain template hash, and the player writes later checkpoints itself. A mismatch needs another deployment's --state ('misuse of an API by its trusted caller') or 'Reorganizations ... deeper than the operator's input policy' (excluded). 'Restarting after a stop' of the same operator stays consistent.",
+    "step_contradicted": "",
+    "entry_written": false,
+    "needs_prover": false
+   }
+  ],
+  "reading_changes": [
+   "R12's 'at most linear in ... the bytes it covers' for storing, loading, cloning or syncing a machine refers to the machine (its state, as R12 measures 'from a machine at its starting position'), not to unhashed bytes of the stored directory that a distributor can inflate freely (config.json members, cache capacities); reading it otherwise makes the worst case of loading a fixed machine unbounded and empties 'bounded'.",
+   "Section 8's 'nothing it carries outside the hashed state may ... crash the honest operator' forbids the possibility: an allocation that scales without bound with unhashed snapshot content violates it even if the prover did not drive a host to an actual crash; do not refute such a finding for 'no crash shown'."
+  ],
+  "blocked_or_stopped_partway": false
+ },
+ {
+  "chunk": [
+   "R7-MANARCH-3",
+   "R7-MANHASHSTATE-1",
+   "R7-MANHASHCOMP-2",
+   "R7-MANGAME-1",
+   "R4-RGEPOCHS-1",
+   "R4-RGPROOF-1"
+  ],
+  "model": "claude-opus-5-5",
+  "results": [
+   {
+    "id": "R7-MANARCH-3",
+    "verdict": "uphold",
+    "severity": "Low (best supported); High for hole loads, or Medium for the device load, only if the manual's uarch map is read as exhaustive and as MMIO",
+    "reason": "Manual: uarch \"has access to the entire state ... including the main processor and the entire board\", and \"most of the state is unused and implicitly filled with zeros\". Device state is \"mapped into the 64-bit physical memory address space\" through shadows. Native read_word uses read_memory, which reads unmapped memory as zero. Hole loads are not shown to be R3 traps, and the before-state is unreachable. Decisive fact: whether a normative uarch map excludes holes.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R7-MANHASHSTATE-1",
+    "verdict": "uphold",
+    "severity": "Low (preferred) / Medium (if a referee that instantiates by splice or extracts NVRAM results is an in-scope stood-in role)",
+    "reason": "Support library plus demo recipes. prt.lua checks root, address and size itself, so no in-scope component reaches the defect. The stood-in protocol lies outside the model: section 2 says a valid template is \"changed only by running it and delivering inputs\" (splicing is neither), and A5 allows outputs only via the outputs tree of accepted states. The manual's 'checks M' sentence contradicts its own listing.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R7-MANHASHCOMP-2",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "frontier_forest refuses heights of 63 and above loudly. The only callers, prt.lua forests, are built by new_geometry, which itself asserts \"mcycle_height < 63 and uarch_height < 63\". So \"A library stands in for the most critical role among the components that reach the defect through it\" finds none. There is no wrong hash or proof, so no High or Medium case fits.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R7-MANGAME-1",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "The manual contradiction is real (\"either the current minimum gap or half of it\"). I re-simulated consider() for capacities 2 to 32 up to n=200000: the worst gap including the tail stays at or below 2n/capacity, the same bound that the promised spacing allows. The High constant-factor case needs the defect to \"multiply the worst-case cost\". It does not, so this is \"Average-case performance\" (out of scope) in the stood-in role. The retention cost itself is R3-VARGROWTH-1.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R4-RGEPOCHS-1",
+    "verdict": "uphold",
+    "severity": "Low (preferred) / Medium (if the manual's 2^24 binds the vg referee)",
+    "reason": "vg.lua is not \"The PRT referee model in doc/recipes\". Section 5 makes only \"The manual's permissionless refereed tournament\" normative, so vg is Support. Its player uses the referee's extent, so all parties use 2^16, and A3 (\"no more inputs to an epoch than the input limit per epoch\") holds. No wrong hash results. Decisive fact: whether vg's constants are normative.",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   },
+   {
+    "id": "R4-RGPROOF-1",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "Verified: prt.lua calls expand_leaf only from open_bundle, after an opaque get_node_hash or get_siblings. The failure needs a fixed-point base below the expansion height on a node above it. PRT pushes values only at bundle height or above, and finer bases exist only inside bundles. No component reaches it, so \"Any other support defect is Low.\"",
+    "entry_written": false,
+    "needs_prover": false,
+    "step_contradicted": ""
+   }
+  ],
+  "reading_changes": [
+   "When a Support demo stands in for an on-chain verifier of a protocol that the model does not define, first check that the stood-in operation fits the model's protocol. Examples are template instantiation by splicing an NVRAM, result extraction from a halted machine, and the non-PRT verification game with its own constants. Section 2 says a valid template is 'changed only by running it and delivering inputs'. A3 fixes the input path, A5 fixes the output path, and section 5 makes only the PRT model normative. If the stood-in operation falls outside these, no High or Critical rating exists in that role, and the support defect is Low.",
+   "Before rating a Support library above Low, check the reachability of each caller in code. Both a guard in the caller (for example the height assert in prt.lua new_geometry) and a call pattern (expand only after an opaque query) can stop every in-scope component from reaching the defect. Under 'A library stands in for the most critical role among the components that reach the defect through it', no reaching component means Low."
+  ],
+  "blocked_or_stopped_partway": false
+ },
+ {
+  "chunk": [
+   "R4-RGEPOCHS-2",
+   "R5-INVBRIDGE-3",
+   "R7-MANLUA1-1",
+   "R7-MANLUA1-3",
+   "R7-MANLUA2-1",
+   "R7-MANLUA2-2"
+  ],
+  "model": "claude-opus-5-5",
+  "results": [
+   {
+    "id": "R4-RGEPOCHS-2",
+    "verdict": "uphold",
+    "severity": "Low (Support standing in for honest operator; no rule left unmet)",
+    "reason": "Bridge crash-loops only after root tournament is decided for the honest claim. Checked: DaveConsensus advances epochs only in acceptStagedTournamentResult, which requires 'TournamentResultNotStaged' to be false, so no dispute stays open; R4 'defends every epoch whose dispute is open' holds. Rejections revert (prt.lua pair:revert), so only non-correctly-designed apps trigger it. Would change only if another dispute could open.",
+    "entry_written": false,
+    "needs_prover": false
+   },
+   {
+    "id": "R5-INVBRIDGE-3",
+    "verdict": "uphold",
+    "severity": "Low; Medium only if the CLI with default options is read as the stood-in claim-computing operator",
+    "reason": "Section 8: 'Development tools may instead stop and report the violation.' CLI is Support (AUDIT table) and no player/recipe computes claims through it (only test scripts). The stop is a documented opt-out option (check_outputs_merkle_root), so the trusted caller can always compute the claim; correct apps trigger it only when the caller omits outputs_frontier.",
+    "entry_written": false,
+    "needs_prover": false
+   },
+   {
+    "id": "R7-MANLUA1-1",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "Demo loops in doc/recipes (run-config.lua etc.) are Support: 'Everything else used only for tests, demonstrations'. They compute no claims and stand in for no operator, so 'Any other support defect is Low'. The emulator and the claim builders (cartesi-machine.lua, prt.lua) handle MCYCLE_OVERFLOW. The manual-contradiction clause covers emulator behavior, which matches the text.",
+    "entry_written": false,
+    "needs_prover": false
+   },
+   {
+    "id": "R7-MANLUA1-3",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "Confirmed adjust_starts skips explicit ranges, causing a loud overlap refusal at creation. If 'the manual were right' the machine would be created, but no hash, proof or directory is affected. R4 only requires accepted configs to work, and bad ones to be 'rejected when the machine is created'. The trusted caller can give explicit starts. No listed Medium case fits.",
+    "entry_written": false,
+    "needs_prover": false
+   },
+   {
+    "id": "R7-MANLUA2-1",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "Only the serialization shape differs from the manual. Producers and off-chain verifiers (Support) agree, and the referee uses its own binary encoding. If 'the manual were right', the shape would change but no wrong hash, accepted wrong transition or completeness loss would follow. R13 fixes 'the accesses each logged transition makes, and their order', not the Lua table shape.",
+    "entry_written": false,
+    "needs_prover": false
+   },
+   {
+    "id": "R7-MANLUA2-2",
+    "verdict": "uphold",
+    "severity": "Low",
+    "reason": "Honest-operator component, but the Lua manual says the tail 'supplies the entries of the reverted machine ... when the fixed point is a rejected input'. That describes when it is used and does not make it optional, and cm.h states the precondition. The call fails loudly before any change, and R6 says the operator 'continues from the machine to which the input was delivered', so it can always build the tail. R4 'can always compute the claim' holds.",
+    "entry_written": false,
+    "needs_prover": false
+   }
+  ],
+  "reading_changes": [
+   "The application-stall exclusion of section 8 removes only what the application loses. A crash of an operator component (or a support stand-in for one) that a stalled guest triggers is not excluded at step 1 ('The entries about applications exclude what an application loses, never an emulator defect that its guest triggers'). It must be rated at steps 3-4 by asking whether any R4 duty (open disputes, claims, proofs) is still owed. Triage of R4-RGEPOCHS-2 cited the exclusion first but reached the right result through step 4."
+  ],
+  "blocked_or_stopped_partway": false
+ }
+]

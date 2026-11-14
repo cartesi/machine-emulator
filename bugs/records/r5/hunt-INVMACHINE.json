@@ -1,0 +1,28 @@
+{
+ "angle": "INVMACHINE",
+ "candidates": [],
+ "inventory_summary": [
+  "machine.cpp construction: init_processor/init_uarch_processor/validate_processor_shadow/init_pmas_contents/init_console throws are driven by the trusted caller's configuration or a stored directory only; no guest, sender, claimant or relayed data reaches them.",
+  "machine::run / get_state_break_reason: throws only on caller misuse (mcycle past, uarch not reset); no guest-reachable error path.",
+  "receive_cmio_request: guest-controlled tohost DATA length is clamped to AR_CMIO_TX_BUFFER_LENGTH before read_memory; caller buffer size checked; progress yields copy 4 bytes. Lua wrapper sizes the buffer from a length query (local) or the 2 MiB worst case (remote): bounded.",
+  "send_cmio_response / log_send_cmio_response / cartesi::send_cmio_response: input length (sender-controlled, uint32) only drives uint32Log2 and a size test against AR_CMIO_RX_BUFFER_LOG2_SIZE; oversize and non-accepted cases are no-ops before any data dereference; null data accepted only for oversize; revert hash check only binds the trusted caller. record path: log_write_memory_with_padding bounded by write_length <= rx buffer.",
+  "uarch_reset_state / log_reset_uarch / verify_reset_uarch: revert sequencing consistent between record (context.root_hash_after) and replay; do_reset_uarch writes the full 4 MiB uarch node, replay expects the pristine hash.",
+  "uarch-step.cpp: every throw (require misaligned, invalid TLB index, unsupported ecall, ebreak, illegal instruction) is a uarch trap per R3; writeX calls are guarded for rd != 0; halt precedence on the last cycle matches uarch_interpret and the collectors.",
+  "uarch_interpret: throw only for cycle_end < cycle (caller).",
+  "collect_mcycle_root_hashes / collect_mcycle_bundle: loops progress on every iteration (console_output and automatic yields each consume an instruction; console exceptions are thrown after the interpreter advanced); reserve sizes clamped or rejected before running; asserts (back_tree not full, hashes.size() <= bundle count) hold by construction.",
+  "collect_uarch_cycle_root_hashes / collect_uarch_cycle_bundle: walked every assert for a uarch that halts at the latest allowed step (k = UARCH_CYCLE_MAX, transient count 2^20-2) under every bundle height: execution_bundle_count < capacity, the final bundle always has room for the reset leaf, mcycle_hash_offsets has >= 2 entries in every return path including mcycle = UINT64_MAX (fixed point by imcyclemax), revert tail bounds (2..2^20) match the per-mcycle leaf count; optimized reset restores registers (defaults equal UARCH_*_INIT) and every dirtied uarch word; write_tlb marks the whole 32-byte slot leaf.",
+  "uarch program (uarch/): assert is redefined to printf+abort(ebreak) so the dead __assert_fail/__assert_func returns are never used; mock address ranges cover every PMA kind a reproducible machine can have (virtio requires iunrep); do_read_pma sentinel for index >= PMA_MAX and empty entries for unused slots match the native read_pma; uarch-run mcycle+1 wrap at UINT64_MAX is preceded by the imcyclemax fixed-point check in interpret.",
+  "Recent commit de2a679 (page-table walk restricted to RAM via PMA_RAM_INDEX): native, uarch bridge (mock RAM range from PMA entry 0) and dirty-page marking (state_access, collect_mcycle) agree; push_back_ram enforces RAM at PMA index 0."
+ ],
+ "evidence_of_experiments": "Differential fuzzer (scratch fuzz.lua): random RV64GC instruction streams in a 1 MiB RAM bare machine with M/S trap handlers, medeleg/mideleg/mie randomized, MPP/SPP toggled so code runs in M, S and U; per mcycle compared root hashes of native run(mcycle+1) against run_uarch(2^20)+reset_uarch. About 100 seeds, about 2.6 million mcycles total: no divergence, no uarch trap, uarch always halted. Paging (satp Sv39/Sv48 active) was not reached by the generator.",
+ "not_covered": [
+  "Differential testing with address translation active (the fuzzer never reached satp != 0), with timer/RTC interrupts at tick boundaries combined with traps, and with HTIF yields/console output inside the fuzz stream.",
+  "Worst-case uarch cycles per mcycle (whether any reachable instruction sequence approaches UARCH_CYCLE_MAX); only reasoned that the collectors handle a halt at the last allowed step.",
+  "C API (cm.cpp) and JSON-RPC wrappers of collect_*, log_* and verify_* beyond cm_receive_cmio_request/cm_send_cmio_response/cm_log_send_cmio_response and the Lua receive/send wrappers.",
+  "uarch-record/replay vs Solidity step on crafted logs (support/verifier side), and verify_* statics on adversarial logs beyond reading replay-send-cmio and uarch-replay checks.",
+  "Persistence parts of machine.cpp (store, clone_stored, rename/remove/sync_stored, replace_memory_range) by angle definition.",
+  "machine::log_step / verify_step (mcycle-level step log, ZK path, out of scope).",
+  "Native interpret.cpp instruction semantics beyond the interrupt/assert invariants (assert_no_brk, get_highest_priority_irq_num) re-read here; the soft-float and uint128-emulation paths were exercised only by the random fuzz.",
+  "uarch linker script layout (stack vs .data/.bss) and stack depth of the uarch interpreter; not measured."
+ ]
+}

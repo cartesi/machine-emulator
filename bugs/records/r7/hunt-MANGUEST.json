@@ -1,0 +1,69 @@
+{
+ "angle": "MANGUEST",
+ "candidates": [
+  {
+   "title": "rollup-init cannot throw its rollup exception: it pipes a plain-text payload to `rollup exception` in the default hex mode, so the machine halts (xhalt 1) instead of yielding manual tx-exception",
+   "component": "machine-guest-tools v0.18.1-test1: rollup-http/rollup-init (installed /usr/bin/rollup-init), sys-utils/rollup/rollup.cpp throw_exception/decode_payload",
+   "role": "Guest software",
+   "location": "rollup-init (last line: echo \"{\\\"payload\\\": \\\"$MESSAGE\\\"}\" | rollup exception); sys-utils/rollup/rollup.cpp throw_exception() (~314-325) -> decode_payload() hex default -> cartesi::decode_hex throws 'hex string must start with 0x'; sys-utils/cartesi-init (RC!=0 -> xhalt RC)",
+   "description": "rollup-init (the wrapper that launches rollup-http-server and the dapp, listed in the manual's /bin listing) is meant to emit a rollup exception carrying 'rollup-http-server exited with N status' when the server exits. It feeds a JSON payload that is plain text to `rollup exception` without --utf8-payload; `rollup` defaults to --hex-payload, so decode_hex throws, `rollup` prints 'hex string must start with 0x' and exits 1 before any yield. The script then exits 1, cartesi-init runs xhalt 1 and the machine HALTS (iflags_H) instead of the documented manual yield HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION with the payload in the tx buffer. The exception payload is lost and the final state is a halt rather than an exception yield.",
+   "trigger": "Any event that makes rollup-http-server exit (process panic on start-up, e.g. a bad --address, RollupFd::create failure, a signal). I found no input-driven path that makes rollup-http-server exit: handler errors return HTTP 400, the dapp's exit is reported by dapp_process via libcmt directly.",
+   "reachability": "Reachable in a guest that uses rollup-init when rollup-http-server dies; not shown to be reachable from an input. Reproduced in a Linux machine with the harness rootfs (guest tools v0.18.1).",
+   "rating_steps": "1 Out of scope? The trigger is not an input; what the application loses when it stops (halt vs exception yield) is excluded: 'The stall of an application that halts, yields manually with a reason other than accepted or rejected, or never yields, and what the application loses by it.' The defect itself (tool fails to do its job) is still a real defect, so continue. 2 Role: machine-guest-tools = Guest software (AUDIT.md table). Section 3: 'A defect that lets an input make such an application deviate from the rollup interface is Critical ... Any other defect in them is Low.' 3 High/Medium cases: none apply (no emulator/verifier path). 4 Critical: no input makes a correctly designed application deviate from the rollup interface through it (rollup-http-server exit is not input-triggered as far as found). 5 Low: 'a real defect that violates no rule or obligation of this model'. If a prover finds an input that makes rollup-http-server exit, re-rate under the Critical guest-software clause (the application would halt instead of the documented exception yield, an R7 yield-interface deviation).",
+   "claimed_severity": "Low",
+   "threat_to_goal": "None directly: halt and tx-exception yield are both terminal states with no extractable outputs (A5). It removes the diagnostic exception the rollups protocol defines for this failure and turns it into a halt.",
+   "evidence": "Ran `cartesi-machine --no-init-splash -- 'rollup-init --address=127.0.0.1:99999 echo hi; echo rc=$?'` with bugs/harness/work/images/rootfs.ext2: output 'rollup-http-server exited with 101 status', 'hex string must start with 0x', rc=1, then 'Halted' (no 'Manual yield tx-exception'). The rootfs /usr/bin/rollup-init, rollup, libcmt.so hashes equal the release tarball's.",
+   "test_idea": "Boot the harness rootfs with entrypoint `rollup-init --address=127.0.0.1:99999 true`; assert the machine stops at a manual yield with tohost reason HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION (iflags_Y=1, iflags_H=0) and the tx buffer holds the message; currently iflags_H=1."
+  },
+  {
+   "title": "Manual and yield tool document reasons 'tx-voucher'/'tx-notice' that /usr/bin/yield refuses; the accepted 'tx-output' is undocumented, and mode/reason pairs are not checked (e.g. 'manual progress' sends rx-accepted)",
+   "component": "machine-guest-tools v0.18.1-test1 sys-utils/yield/yield.c; doc/README.md 'The /dev/cmio device' (~7247-7268)",
+   "role": "Guest software (test tool) / manual",
+   "location": "sys-utils/yield/yield.c help() lists tx-voucher, tx-notice; get_reason() accepts only progress, tx-output, tx-report, rx-accepted, rx-rejected, tx-exception; main() pairs any mode with any reason. doc/README.md 7260-7268 reproduces the help text.",
+   "description": "The manual documents `yield <mode> <reason>` with reasons including \"tx-voucher\" and \"tx-notice\"; the tool rejects both with 'Invalid <reason> argument.' and exits 1, while the real reason name \"tx-output\" (HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT) appears nowhere in the help or the manual. The tool also sends any reason with any mode: since reason values overlap (1,2,4), `yield manual progress` issues a manual rx-accepted yield, `yield manual tx-output` a manual rx-rejected yield, `yield automatic rx-rejected` an automatic tx-output yield, without the outputs root an accept requires.",
+   "trigger": "A developer or test script that follows the manual's usage text.",
+   "reachability": "Always (tool usage); not input-driven.",
+   "rating_steps": "1 Out of scope: no exclusion needed; it is a tool usage/diagnostic defect. 2 Role: Guest software, a test/demo tool ('useful for tests and one-off demos'), not part of the libcmt path applications depend on. 3 High/Medium: the manual contradiction is not on a security-relevant point (no state, verifier or rollup-interface semantics change). 4 Critical: no input makes an application deviate from the rollup interface. 5 Low: 'a defect in a tool's diagnostics'.",
+   "claimed_severity": "Low",
+   "threat_to_goal": "None; documentation/tool mismatch for a test utility.",
+   "evidence": "In a Linux machine (harness rootfs): `yield` printed the usage listing tx-voucher/tx-notice; `yield automatic tx-voucher` printed 'Invalid <reason> argument.' and returned 1. Source of yield.c at v0.18.1-test1 confirms the reason table.",
+   "test_idea": "Run `yield automatic tx-voucher 0` in the guest and assert the machine yields automatically with reason 2, or assert the help text and the manual name exactly the reasons get_reason accepts."
+  },
+  {
+   "title": "Manual says the puppet's / libcmt's exception 'halts the machine'; it is a manual yield with reason tx-exception (iflags_Y=1, iflags_H=0)",
+   "component": "doc/README.md 'The libcmt library' (puppet comment ~6790 and prose ~6870); libcmt include/libcmt/io.h comment 'emit a exception and halt execution'",
+   "role": "Manual (guest software documentation)",
+   "location": "doc/README.md 6790 ('exception:<data> -> cmt_rollup_emit_exception(data); halts'), 6870 ('emits an exception, halting the machine'); libcmt src/rollup.c cmt_rollup_emit_exception (manual yield, HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION)",
+   "description": "cmt_rollup_emit_exception performs an HTIF manual yield with reason 4; the emulator sets iflags_Y, not iflags_H. The manual's walkthrough says the machine halts. The machine instead waits at a manual yield (a fixed point where advance deliveries are no-ops, R5); if a host resumes it with a non-advance response (send_cmio_response applies those to any manual yield), puppet then accepts the request.",
+   "trigger": "Input 'exception:<data>' to the documented puppet application.",
+   "reachability": "Reachable by an input to puppet; the resulting state is a terminal fixed point in PRT.",
+   "rating_steps": "1 Out of scope: the consequence for the application is excluded ('The stall of an application that ... yields manually with a reason other than accepted or rejected ... and what the application loses by it'). 2 Role: manual text about guest software; puppet is a documentation example, not a listed component. 3 High/Medium: 'A contradiction between the manual and the behavior on a security-relevant point ... takes the severity it would have if the manual were right'; if the manual were right (a halt), A5 treats a halt and a tx-exception yield identically ('a halt, a manual yield with any reason other than accepted or rejected'), so the point is not security-relevant. 4 Critical: no rule broken. 5 Low.",
+   "claimed_severity": "Low",
+   "threat_to_goal": "None; descriptive inaccuracy.",
+   "evidence": "Ran the docs rootfs puppet with `--cmio-advance-state` and an input whose payload is 'exception:boom' (encoded with bugs/harness/lib/harness.lua encode_advance): output 'Manual yield tx-exception (4) (0x000004 data)', 'cmio exception with payload: \"boom\"', no 'Halted'.",
+   "test_idea": "Deliver 'exception:x' to puppet and assert iflags_H == 1 as the manual states (currently iflags_Y == 1, tohost reason 4)."
+  },
+  {
+   "title": "cmt_rollup_finish(reject) returns 0 without updating next_request_type/payload length (rollup CLI then reads an uninitialized cmt_rollup_finish_t), contrary to the manual's 'accepts or rejects ... blocks until the next one arrives'",
+   "component": "machine-guest-tools v0.18.1-test1 libcmt src/rollup.c cmt_rollup_finish/revert; sys-utils/rollup/rollup.cpp finish_request_and_get_next; rollup-http-server rollup_finish_request",
+   "role": "Guest software",
+   "location": "libcmt/src/rollup.c cmt_rollup_finish: `if (!finish->accept_previous_request) return revert(me->io); /* revert should not return! */`; rollup.cpp finish_request_and_get_next: `cmt_rollup_finish_t f; f.accept_previous_request = accept;` then reads f.next_request_type; emulator src/send-cmio-response.cpp applies non-advance responses to any manual yield.",
+   "description": "The manual (libcmt section and /dev/cmio section: rx-rejected '... the host reverts the machine state and replies with the next request as above') says finish blocks until the next request and reports its type. On reject, libcmt returns the ioctl result without unpacking the reply: finish->next_request_type and me->fromhost_data stay stale, so the caller sees the previous request type and length; `rollup reject` reads an uninitialized next_request_type (indeterminate value, UB). The emulator resumes a rejected (or exception) yield when a non-advance response such as inspect-state is sent (send_cmio_response only checks the accepted reason for advance-state).",
+   "trigger": "A host that resumes the rejecting machine, e.g. by sending an inspect-state response to it, instead of reverting it.",
+   "reachability": "Not reachable on the verified PRT history: advance-state deliveries to a rejected yield are no-ops (R5) and the honest operator continues from the delivered-to state; inspect-state requests are outside the verified history (R4).",
+   "rating_steps": "1 Out of scope? Needs a host action outside the verified history ('Inspect-state requests are outside the verified history ... their results carry no guarantee', R4). 2 Role: Guest software. 3 High/Medium: none. 4 Critical: no input makes a correctly designed application deviate from the rollup interface on the verified path. 5 Low.",
+   "claimed_severity": "Low",
+   "threat_to_goal": "None on the verified path; only hosts that resume rejected machines (inspect on a rejected state) see stale/indeterminate request data.",
+   "evidence": "Source reading of libcmt rollup.c, rollup.cpp and src/send-cmio-response.cpp; not run.",
+   "test_idea": "Host-side libcmt with io-mock or an emulator run: reject an advance, send an inspect-state response to the rejected machine, and assert that cmt_rollup_finish reports INSPECT and the new length (currently stale ADVANCE/old length)."
+  }
+ ],
+ "not_covered": [
+  "Kernel /dev/cmio driver and OpenSBI HTIF path between libcmt and the emulator (out of scope); fromhost after a delivery has DEV=0/CMD=0 (only REASON/DATA documented), not checked against the driver.",
+  "Did not build or run rollup-http-server request-level fuzzing (actix panics, concurrent /finish), only read the Rust source; found no input-driven exit of the server.",
+  "Did not run the manual's Dockerfile.rootfs-docs build (docker buildx riscv64) nor compare rootfs-docs.ext2 binaries with sources; only the harness rootfs.ext2 guest-tools binaries were compared with the v0.18.1-test1 tarball (identical).",
+  "Did not check the manual's printed cycle counts and hashes in the Hello-world and puppet transcripts (doc check harness exists: make -C doc check-rootfs-docs).",
+  "Did not test the NVRAM/flash-drive tools (flashdrive, nvram, memoryrange, readmmap, writemmap) end to end or the bc calculator example; only read labelinfo.c and confirmed DTB aliases/labels, 8-drive/8-NVRAM limits, FW_RESV=512KiB no-map, DTB at 0x7ff00000 in a1, pc=0x80000000, bootargs root=/dev/pmem0 rw, cartesi-init mounts/drop-ins/init-as-root/entrypoint-as-dapp.",
+  "Checked and found consistent (no candidate): HTIF field layout and yield reason values between manual, emulator and libcmt; iflags_X cleared at the next interpret entry on all paths (uarch included); manual yield requires iflags_Y reset; send_cmio_response accepted-reason gate; libcmt pack/unpack, ioctl numbers, Merkle root write on accept, EvmAdvance decoding of InputBox inputs."
+ ]
+}

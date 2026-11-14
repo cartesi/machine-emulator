@@ -1,0 +1,118 @@
+{
+ "angle": "DYNGUEST",
+ "candidates": [
+  {
+   "title": "yield utility maps reason names independently of the mode: `yield manual tx-output` makes an rx-rejected manual yield, `yield manual progress` an rx-accepted one, `yield manual tx-report` a tx-exception, `yield automatic rx-accepted` a progress yield",
+   "component": "machine-guest-tools v0.18.1-test1: sys-utils/yield/yield.c (/usr/bin/yield in the guest-tools rootfs)",
+   "role": "Guest software (AUDIT.md component table: machine-guest-tools)",
+   "location": "sys-utils/yield/yield.c get_reason() (one name->value table for automatic and manual reasons), parse_args(), main(); help() text lists tx-voucher/tx-notice that get_reason refuses",
+   "description": "get_reason() resolves the <reason> argument from a single table mixing automatic reasons (progress=1, tx-output=2, tx-report=4) and manual reasons (rx-accepted=1, rx-rejected=2, tx-exception=4) and never checks it against <mode>. Because the numeric codes overlap, every cross-mode combination is accepted and silently becomes a different yield: manual+tx-output = manual rx-rejected (the input is rejected and the machine reverts), manual+progress = manual rx-accepted (accepts with whatever the tx buffer holds as outputs root), manual+tx-report = manual tx-exception (application stops at a non-accepted fixed point), automatic+rx-accepted = progress, automatic+rx-rejected = tx-output (emits an output of `data` bytes of stale tx contents into the outputs tree). The help text additionally advertises reasons 'tx-voucher' and 'tx-notice' that are refused (noted by an earlier hunter, not reported).",
+   "trigger": "The application author (a shell application) invoking /usr/bin/yield with a mode/reason pair the tool accepts; not triggered by input senders.",
+   "reachability": "Reachable whenever a guest script calls yield with a cross-mode pair; executed in a real Linux machine. Not reachable from input bytes alone.",
+   "rating_steps": [
+    "1 Out of scope? Section 8 excludes 'An application that is not correctly designed, other than through a defect in guest software that section 3 puts in scope'. The defect is in guest software, so it is not excluded by that entry; it is triggered by the application's own command line.",
+    "2 Role: guest software (AUDIT.md: 'machine-guest-tools v0.18.1-test1 | Guest software'). Section 3: 'A defect that lets an input make such an application deviate from the rollup interface is Critical, as an R7 deviation ... Any other defect in them is Low.'",
+    "3 High/Medium cases: none applies (no verifier, no emulator path, no support component).",
+    "4 Critical: requires 'a defect that lets an input make such an application deviate from the rollup interface'. No input is involved: the deviation follows from the application's fixed invocation, so the Critical clause for guest software does not apply.",
+    "5 Low: 'Any other defect in them is Low.'"
+   ],
+   "claimed_severity": "Low",
+   "threat_to_goal": "None to the goal of section 1 (claims depend only on state hashes). An application built on the yield tool following its own help can reject inputs, accept with a garbage outputs root, or stall at an exception where it meant to emit outputs or report progress.",
+   "evidence": "ASan build with io-mock: `yield manual tx-output 5` -> tohost cmd=1 reason=2 and the mock's 'no revert' (rx-rejected) path; `yield manual progress 32` -> cmd=1 reason=1 (rx-accepted); `yield manual tx-report 3` -> writes none.exception-0.bin; `yield automatic rx-accepted 7` -> 'Progress: 0.70'; `yield automatic rx-rejected 0` -> writes none.output-0.bin. In a Linux machine (rootfs binary): `cartesi-machine -- 'yield automatic rx-accepted 500; echo after-progress; yield manual tx-output 7'` prints 'Progress: 50.00', then 'Manual yield rx-rejected (2) (0x000007 data)'.",
+   "test_idea": "Run the guest-tools rootfs with entrypoint 'yield manual tx-output 7' (no cmio inputs) and assert the tool exits non-zero without yielding (machine halts with the yield tool's error), i.e. iflags.Y is never set with reason rx-rejected; likewise for 'yield automatic rx-accepted 1'."
+  },
+  {
+   "title": "libcmt cmt_rollup_read_advance_state accepts non-canonical EvmAdvance encodings (trailing bytes, missing or non-zero padding, any in-range payload offset, including offsets aliasing the head)",
+   "component": "machine-guest-tools v0.18.1-test1: sys-utils/libcmt/src/rollup.c cmt_rollup_read_advance_state, src/abi.c cmt_abi_peek_bytes_d / cmt_abi_get_bytes_d (also reached through rollup CLI and rollup-http-server)",
+   "role": "Guest software",
+   "location": "libcmt/src/abi.c cmt_abi_peek_bytes_d (offset only checked <= buffer length, no alignment/0x100 check, no padding or trailing-data check); libcmt/src/rollup.c cmt_rollup_read_advance_state",
+   "description": "The decoder takes the payload offset from the rx buffer and only checks offset <= length and that offset+32+size fits. It does not require the canonical offset 0x100, 32-byte alignment, zero padding, padding presence, or that the buffer ends after the padded payload. A strict decoder (and Solidity's abi.encodeCall output) differs: of the mutated deliveries, 63-91 per 1,130 were accepted although non-canonical (e.g. canonical + 1 trailing byte, payload padding truncated by up to 28 bytes, 2 MiB input with junk after the padded payload, offset pointing into the static head so that header words are returned as payload). No accepted input decoded to fields different from what Solidity abi.decode semantics give (0 field mismatches), and every rejected input is also rejected by the Solidity-semantics reference.",
+   "trigger": "Rx-buffer contents that are not a canonical abi.encodeCall(EvmAdvance, ...). Only a caller of the machine API (or a different input source) can deliver them.",
+   "reachability": "Not reachable from the deployment's input record: InputBox.addInput (cartesi-rollups-contracts 3.0.0-alpha.10) builds every input with abi.encodeCall(Inputs.EvmAdvance, ...) and caps it at INPUT_MAX_SIZE = 65536, so every advance-state input is canonical; Dave and doc/recipes read inputs only from the InputBox. Inspect payloads are raw and never ABI-decoded.",
+   "rating_steps": [
+    "1 Out of scope? Not excluded by itself; it needs rx contents that no InputBox input produces.",
+    "2 Role: guest software.",
+    "3 High/Medium: no listed case (not an emulator path or verifier).",
+    "4 Critical: needs an input that makes a correctly designed application deviate from the rollup interface. Every reachable input is canonical and decodes exactly like the reference, and the non-canonical acceptance does not change accept/reject, outputs or the outputs root of the canonical inputs.",
+    "5 Low: 'Any other defect in them is Low.'"
+   ],
+   "claimed_severity": "Low",
+   "threat_to_goal": "None for deployments fed by the InputBox. It is an accepted-malformed-input defect: two different rx contents decode to the same request, which would matter only for an input source that is not canonical by construction.",
+   "evidence": "h/fuzz.c, 4 seeds: adv_accepted_noncanonical = 16 / 91 / 81 / 63, adv_field_mismatch = 0, failures = 0. Host CLI: canonical+1 trailing byte, and canonical truncated by 1 and 29 bytes of padding, printed a normal advance_state request. In a Linux machine input-8 (exactly 2 MiB: canonical encoding of 2096796 payload bytes followed by 28 bytes 0x77) was accepted by both the rollup CLI and rollup-http-server and echoed as a normal notice.",
+   "test_idea": "Host test linking libcmt with a fake io driver: deliver abi.encodeCall(EvmAdvance, ...) + one extra byte (and one with offset 0x120) and assert cmt_rollup_read_advance_state returns an error."
+  },
+  {
+   "title": "rollup CLI `reject`/`finish reject` branches on an uninitialized cmt_rollup_finish_t.next_request_type when cmt_rollup_finish returns, because libcmt's reject path returns 0 without filling the struct or fromhost_data",
+   "component": "machine-guest-tools v0.18.1-test1: sys-utils/rollup/rollup.cpp finish_request_and_get_next; libcmt/src/rollup.c cmt_rollup_finish / revert",
+   "role": "Guest software",
+   "location": "rollup.cpp finish_request_and_get_next (cmt_rollup_finish_t f; only accept_previous_request set; lines 373-381); libcmt rollup.c cmt_rollup_finish: `if (!finish->accept_previous_request) return revert(me->io);`",
+   "description": "On reject, cmt_rollup_finish returns revert()'s status (0 on success) without writing next_request_type or next_request_payload_length and without updating fromhost_data. The CLI then reads f.next_request_type uninitialized and may decode the rx buffer with a stale length. rollup-http-server zero-initializes its struct, so it would treat the stale rx as an advance.",
+   "trigger": "A host that answers a rejected manual yield instead of reverting the machine (the io-mock does so).",
+   "reachability": "Not reachable on the honest operator's path: R5/R6 make a rejection a fixed point and the honest operator continues from the machine to which the input was delivered, so the guest never sees revert() return; cartesi-machine --revert-mode=none aborts on a rejection. Reached with the io-mock.",
+   "rating_steps": [
+    "1 Out of scope? Needs a host that resumes a rejecting machine, which neither the emulator semantics (R5: a delivery to a machine not waiting at an accepted yield is a no-op) nor the honest operator does.",
+    "2 Role: guest software (rollup CLI, which the manual scopes to 'shell-driven demos and tests').",
+    "3 High/Medium: none.",
+    "4 Critical: no input reaches it.",
+    "5 Low."
+   ],
+   "claimed_severity": "Low",
+   "threat_to_goal": "None; a reliability defect of the mock-driven development flow.",
+   "evidence": "Non-sanitized build with io-mock: `CMT_INPUTS=0:in.bin valgrind --track-origins=yes rollup reject` -> 'Conditional jump or move depends on uninitialised value(s) at finish_request_and_get_next (rollup.cpp:379, 381) ... created by a stack allocation at rollup.cpp:373'. The ASan build exits 1 with no output for the same command.",
+   "test_idea": "With io-mock, run `rollup reject` under valgrind/MSan and assert no uninitialized-value report; or unit-test that cmt_rollup_finish(reject) either never returns or fills next_request_type and next_request_payload_length."
+  },
+  {
+   "title": "cmt_buf_split_by_comma reads one byte past the end of the buffer (heap-buffer-overflow) when the last token is not followed by a comma",
+   "component": "machine-guest-tools v0.18.1-test1: sys-utils/libcmt/src/buf.c cmt_buf_split_by (public cmt_buf_split_by_comma)",
+   "role": "Guest software (library API); its only caller is io-mock (development)",
+   "location": "libcmt/src/buf.c:70 `for (; *xs->begin && xs->begin < xs->end && ...` dereferences xs->begin before the bounds check; also `return *x->begin`",
+   "description": "The loop condition evaluates *xs->begin before xs->begin < xs->end, so when the scan reaches end it reads end[0]. For a cmt_buf_t that is not NUL-terminated this is an out-of-bounds read. io-mock passes getenv(\"CMT_INPUTS\"), whose terminator makes the extra byte in bounds.",
+   "trigger": "A caller of the public cmt_buf_split_by_comma with a non-NUL-terminated buffer.",
+   "reachability": "Not reachable from inputs: production libcmt (io.c, rollup.c) never calls it; io-mock is host-only.",
+   "rating_steps": [
+    "1 Not excluded.",
+    "2 Role: guest software (library), used only by the host mock.",
+    "3 None.",
+    "4 No input reaches it.",
+    "5 Low ('a defect in guest software that only an application outside its intended use can reach')."
+   ],
+   "claimed_severity": "Low",
+   "threat_to_goal": "None.",
+   "evidence": "h/splitby.c with a 5-byte malloc'ed \"0:a.b\": ASan 'heap-buffer-overflow ... READ of size 1' at cmt_buf_split_by buf.c:70 <- cmt_buf_split_by_comma buf.c:79.",
+   "test_idea": "Split a malloc'ed non-terminated buffer under ASan and assert no report and one token of length 5."
+  },
+  {
+   "title": "Emitting a voucher, delegate-call voucher or notice with an empty payload whose data pointer is NULL (explicitly allowed by the emit_* checks) calls memcpy(dst, NULL, 0), undefined behavior",
+   "component": "machine-guest-tools v0.18.1-test1: libcmt/src/abi.c cmt_abi_put_bytes_d, reached from cmt_rollup_emit_voucher / emit_delegate_call_voucher / emit_notice",
+   "role": "Guest software",
+   "location": "libcmt/src/abi.c:204 memcpy(res->begin, payload->data, payload->length); rollup.c emit_* accept `!payload->data && !payload->length`",
+   "description": "emit_* accept payload {length 0, data NULL} (the check rejects only NULL with nonzero length, and emit_report/emit_exception guard memcpy with `if (payload->data)`), but cmt_abi_put_bytes_d passes NULL to memcpy, which C declares nonnull even for length 0. UBSan flags it. With the separate-TU build no later null check can be removed, so no miscompilation was observed and outputs are correct.",
+   "trigger": "An application emitting an empty-payload output with a NULL data pointer (e.g. language bindings passing a null buffer for empty bytes).",
+   "reachability": "Reachable from any input that makes such an application emit an empty notice/voucher; the observed effect is only a sanitizer report.",
+   "rating_steps": [
+    "1 Not excluded.",
+    "2 Role: guest software.",
+    "3 None.",
+    "4 Critical needs a deviation from the rollup interface; outputs and root were byte-correct in every run (UB with no observed effect).",
+    "5 Low."
+   ],
+   "claimed_severity": "Low",
+   "threat_to_goal": "None observed; latent UB that a future LTO or inlining build could exploit.",
+   "evidence": "h/fuzz.c first run (UBSan with nonnull-attribute enabled): 'abi.c:204:5: runtime error: null pointer passed as argument 2, which is declared to never be null' on cmt_rollup_emit_notice with {0, NULL}; later runs disabled that check to continue.",
+   "test_idea": "Build libcmt with -fsanitize=nonnull-attribute and assert cmt_rollup_emit_notice(&(cmt_abi_bytes_t){0, NULL}) produces no runtime error and the canonical 68-byte Notice."
+  }
+ ],
+ "not_covered": [
+  "No coverage-guided fuzzing: clang has no compiler-rt/libFuzzer here, so the fuzzing was random differential fuzzing (seeded xorshift), not coverage-guided.",
+  "rollup-http-server was run only inside the machine on the 10 adversarial advance inputs (plus a code read); no Rust host build, no fuzzing of its JSON/hex handling, no tests of handler panics (payload[2..] on short or multibyte strings: read, not run), concurrency, or the 5 MiB JSON limit.",
+  "rollup-http-client and echo-dapp were not run.",
+  "The libcmt Lua/FFI bindings and other language bindings were not covered.",
+  "Inspect-state and gio inside the Linux machine (the host covered them only with the mock / fake driver); --utf8-payload variants were left out because they are known (R1-GUEST-2).",
+  "Rejections inside the Linux machine (runs used --no-revert, so no rejected input) and the libcmt finish-root cache after load_merkle/reset_merkle.",
+  "Outputs-tree behaviour between 2^21 and 2^63 leaves was checked only through a synthetic frontier at 2^63-1 (the 2^63 full-tree root loss is the known R1-A5-4).",
+  "Riscv64 binaries in rootfs.ext2 and the .deb/.tar.gz were not rebuilt from the tag for reproducibility; the in-machine runs only showed that they behave like the reference.",
+  "The kernel /dev/cmio driver (out of scope) and the cmio setup/mmap path of io.c: io.c was not fuzzed (it needs the kernel driver).",
+  "Malformed JSON robustness of the rollup CLI beyond payload fields (deeply nested JSON, huge numbers for gio domain, which are truncated by get<uint16_t> and are a variant of the dropped R1-GUEST-4)."
+ ],
+ "harness_summary": "Harness (all under /tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNGUEST): libcmt/rollup/yield from machine-guest-tools v0.18.1-test1 (bare clone, tag = commit ba02df1, same as v0.18.1) built for x86-64 with gcc 13 -fsanitize=address,undefined (clang has no compiler-rt here, so no libFuzzer); h/fuzz.c = custom random differential fuzzer with its own io driver and independent references (own Keccak-256 checked on known vectors, strict and Solidity-semantics EvmAdvance decoders, Notice/Voucher/DelegateCallVoucher encoders, naive height-63 outputs tree with independently computed zero hashes); 4 seeds (scale 1 + 3x scale 6): 7,500 keccak cases, 57,000 ABI-helper cases (widths 0..35, short buffers, put/get bytes), ~4,500 canonical + ~4,500 mutated EvmAdvance deliveries (payload sizes 0,1,31,32,33,65216,65536, rx limit-31..rx limit, embedded NULs, uint fields wider than 64 bits), ~15,000 emitted outputs/reports/gio + ~7,000 outputs-root comparisons at finish; 0 sanitizer reports in libcmt besides the one in candidate 5, 0 output/root mismatches. h/bigmerkle.c: 2^21+77 pushes, 838 root checks against a recursive reference (0 mismatches). h/cli.py: 573 runs of the ASan rollup CLI (mock io; /tmp/merkle.dat path changed to cwd in a scratch copy) with hex/base64/utf8 payloads, sizes 0/1/65216/rx limit, NULs, non-UTF-8, malformed hex/base64, tx-limit boundaries: 0 failures (only the known --utf8-payload non-UTF-8 behaviour). In a Linux machine (in-tree emulator, linux.bin + guest-tools rootfs.ext2, cartesi-machine --no-revert --cmio-advance-state ... check_outputs_merkle_root:true), 10 adversarial inputs (0/1-byte, max InputBox payload 65216, NUL/non-UTF-8 payload, bad offset, 2 MiB-28 canonical, exactly 2 MiB with trailing junk) through (a) a shell app on the real riscv64 `rollup` CLI and (b) rollup-http-server + curl: all notices/delegate-call vouchers byte-equal to the reference, reports equal to sha256 of the reference request JSON, outputs roots accepted by the emulator CLI."
+}

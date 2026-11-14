@@ -1,0 +1,85 @@
+{
+ "angle": "DYNHASH",
+ "candidates": [],
+ "result_summary": "No new candidate. Every executed mismatch was traced to an item already listed in context.md (R3-VARCACHE-1) or to documented behavior of sharing mode 'config'. After excluding those two classes from the oracle, all runs had zero failures.",
+ "executed": {
+  "harness_files": {
+   "reference_tree": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/ref.lua (independent Lua Merkle tree over read_memory dumps of every address range; keccak256 or sha256 only through cartesi.keccak256/sha256)",
+   "machine_fuzzer": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/fuzz.lua (usage: lua5.4 fuzz.lua <seed> <steps> <workdir> [keccak256|sha256]; env FUZZ_REPLACE, FUZZ_UNSORTED, FUZZ_RAM_LEN, FUZZ_FLASH1, FUZZ_NVRAM0, FUZZ_TRACE, FUZZ_STOP_ON_FAIL)",
+   "lua_helpers_differential": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/luatree.lua",
+   "linux_reload_vs_rebuild": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/linux.lua",
+   "linux_collectors_vs_twin": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/linux2.lua",
+   "bundled_collection_vs_naive": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/bundles.lua",
+   "probes": [
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/rep1.lua",
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/rep2.lua",
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/rep3.lua",
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/probeC.lua",
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/probeS.lua",
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/probeL.lua"
+   ],
+   "logs": [
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/old/log-11.txt",
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/old/log-12.txt",
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/old/log-13.txt",
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/old/log-14.txt",
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/log-31.txt",
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/log-32.txt",
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/log-33.txt",
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/san-41.txt",
+    "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNHASH/trace12.txt"
+   ]
+  },
+  "machine_fuzzer": {
+   "setup": "bare-metal emit-output guest (bugs/harness/work/baremetal), RAM 8 MiB, flash drives of 0x5000 and 0x21000 bytes, NVRAM of 0x3000 bytes (non-power-of-two lengths), hash_tree.phtc_size drawn from {1,2,3,5,8,64,4096}, concurrency.update_hash_tree drawn from {0,1,2,3,4} at every create/load and through set_runtime_config; OMP_NUM_THREADS 2 (4 for the variant seeds). Single process, sequential.",
+   "operations": "run, send_cmio_response, log_send_cmio_response (advance inputs of 0..70000 bytes, about 1 in 12 rejected), run_uarch, log_step_uarch, reset_uarch, log_reset_uarch, write_memory (RAM, flash, NVRAM, rx, tx, uarch RAM; page-crossing and no-op rewrites), write_word (memory and register addresses), write_reg, write_revert_root_hash, set_runtime_config, replace_memory_range (without supplied tree files, private or shared replacement), get_proof, get_root_hash, clear_hash_tree, collect_mcycle_root_hashes, collect_uarch_cycle_root_hashes, store(SHARING_ALL) then load in none/config/all, destroy and reload of the attached directory (optionally after sync_stored and/or clone_stored), store(SHARING_NONE/CONFIG) rollback copies, create directly in a directory in each sharing mode, manual snapshot/rollback through read_memory/write_memory including the full-shadow special case.",
+   "oracle": "After about 60% of the steps (so dirty marks accumulate across operations), and after every load: get_root_hash against the root of the independent Lua tree over the dumped contents; 6 get_proof calls at random addresses, target sizes 5..64 and root sizes 5..64 (target hash, root hash and every sibling compared with the reference tree, including addresses in the padding past a range's length and in pristine space); 4 get_node_hash calls; verify_hash_tree. Reloads: cached root of the reloaded directory against the contents dumped before destroy (sharing all) or against the root at store time (no sharing). Collectors without bundling: every returned hash against a twin machine (store + load) stepped natively with get_root_hash at each sampling point / after each uarch cycle and reset, plus equal final roots.",
+   "runs": [
+    "development: seed 1 (60 steps, twice), seed 2 (150), seed 3 (60, twice), seed 21 (120): 0 failures",
+    "batch 1, first oracle: seeds 11,12,13,14 x 400 steps = 1600 steps, 959 full checks, 5754 proofs, 18 reported mismatches, all of type 'reload root mismatch', all classified (see observations); no mismatch between a machine's root/proofs and its own contents",
+    "batch 2, oracle excluding the two classified classes and with the extra operations: seeds 31,32,33 x 350 steps = 1050 steps, 672 full checks, 4032 proofs, 26 mcycle-collector comparisons (1585 hashes), 21 uarch-collector comparisons (34811 hashes): 0 failures",
+    "seed 51, address ranges listed out of address order in the configuration (FUZZ_UNSORTED=1), 120 steps, 70 checks, 420 proofs: 0 failures",
+    "seed 52, hash_function sha256, 120 steps, 77 checks, 462 proofs: 0 failures (uarch operations are refused under SHA-256, as documented)",
+    "seed 61, RAM length 0x7f3000 and ranges at 0xffffffffc00000 and 0x7fffffffffc000 (top of the 56-bit space), 110 steps, 77 checks, 462 proofs: 0 failures",
+    "seed 41 under the ASan+UBSan build (bugs/harness/work/sanitizer), 120 steps, 81 checks, 486 proofs: 0 failures, no sanitizer report"
+   ],
+   "totals": "about 3600 fuzz steps, about 2200 full content-versus-tree checks, about 13000 proofs compared sibling by sibling"
+  },
+  "linux": [
+   "linux.lua seed 1, 6 iterations on a clone of the valid-template (Linux, Sv39, 128 MiB RAM, 350 MiB rootfs) loaded with SHARING_ALL: inputs, runs stopped mid-input, collectors, log_step_uarch, write_memory; destroy with and without a prior get_root_hash and with and without sync_stored; then root and 60 proofs per iteration of the reloaded directory (cached tree) against a from-scratch rebuild (clear_hash_tree) of the same directory, verify_hash_tree on odd iterations: 0 failures (360 proofs)",
+   "linux2.lua seeds 1..4, 130 rounds on two machines loaded from valid-template: collect_mcycle_root_hashes (281 hashes) and collect_uarch_cycle_root_hashes (7391 hashes) against the twin stepped natively: 0 failures"
+  ],
+  "lua_helpers": [
+   "luatree.lua seeds 1 (60 trials), 2, 3, 4 (1500 trials each) = 4560 trials: get_data_root_hash against a naive padded tree; frontier push_back/append (with subtree heights and begin/end indices)/pad_back (counts, nil count, pad heights)/get_root_hash (default pad, custom pad, pad subtree)/get_leaf_count/next_proofs/frontier(from proof)/overflow rejection without mutation; forests of height 0..9 with nested forest values up to depth 3 built with append/push_back/pad_back, then root, get_node_hash, get_siblings (+verify_slice), expand_leaf (about 4000 expansions, about 2300 accepted), store and load (about 1500): 0 failures. 'leaf height mismatch' refusals of expand_leaf occurred only where the position was not a stored value of the forest.",
+   "bundles.lua seed 1, 40 trials: collect_mcycle_root_hashes with bundle heights 1..5, split into random chunks chained through partial_bundle and mcycle_phase, against naive Merkle roots of the unbundled hashes of a twin, including 14 windows that end at a manual yield (fixed-point padding entry and final_bundle_sibling_hashes checked): 0 failures"
+  ],
+  "probes": [
+   "probeC.lua: write_word on shadow TLB slots, PMA entries, device ranges, DTB, uarch registers and mtimecmp: refused or applied, root equals reference after each",
+   "probeS.lua: replace_memory_range that fails (missing file, too long file, missing dht, read-only replacement, wrong length) or succeeds with a short or unaligned file, followed by writes and runs: root equals reference and verify_hash_tree true after each; store(B) from a machine attached to A with sharing all, which then keeps running: both A (after destroy and sync) and B reload with cached root equal to the expected contents and to a rebuild",
+   "probeL.lua: clone_stored, sync_stored and any load of a directory in use by a sharing machine are refused by file locks; a sharing load of a directory held by a non-sharing machine is refused",
+   "rep1..rep3.lua: analysis of the batch-1 mismatches"
+  ],
+  "compute": "about 18 minutes of CPU in total, single process at a time (hash-tree updates used up to 2, in four short runs up to 4, OpenMP threads)"
+ },
+ "observations": [
+  "Batch-1 mismatch class 1 (13 of 18 reports, with their cascades): replace_memory_range on a machine attached to its directory with sharing all, then destroy and reload: the directory reloads with the old range contents and the new registers. This is R3-VARCACHE-1 (confirmed). In batch 2 every such reloaded directory was still self-consistent: its cached root, proofs and verify_hash_tree matched its own contents.",
+  "Batch-1 mismatch class 2: store(SHARING_ALL) writes the 'shared' flags of the running machine's configuration into config.json. A machine created in a directory or loaded with sharing all therefore stores directories whose config marks every backing store and the hash tree as shared, and loading such a directory with SHARING_CONFIG modifies it (rep2.lua, trace12.txt). A directory stored from an in-memory machine has every flag false. The manual and the CLI help document mode config as sharing the ranges 'configured as shared' and --create with sharing:all as the way 'to propagate shared backing stores to configuration files'; Lua, CLI and JSON-RPC loads default to no sharing; the cached tree stayed equal to the contents (rebuild) in every case. Not reported as a candidate; an earlier hunter (R3 VARSHADOW) noted the same flags as documented API.",
+  "replace_memory_range accepts a backing file shorter than the range, or of a length that is not a multiple of the page size, and zero-fills the rest (probeS.lua). The hash tree is consistent with the padded contents. Not reported."
+ ],
+ "not_covered": [
+  "fill_memory: not exposed by the Lua binding used by the harness; not exercised.",
+  "replace_memory_range with caller-supplied .dht/.dpt files or mark_pages_dirty (R5-INVHASH-1, pending) was deliberately left out of the fuzzer; creation configs that supply their own dht/dpt/sht/phtc files were not exercised either.",
+  "Fault injection inside hash-tree updates, log producers, collectors or store (allocation failure, I/O errors, full disk) and kills of the process: none. All runs were fault-free, so R9's 'interrupted or failed updates' clause was not tested beyond API calls that fail on argument or file validation.",
+  "JSON-RPC machines (remote store/load/clone, fork_server, rebind, concurrent machines in one server process) were not exercised; everything ran through the local Lua binding in one process.",
+  "Linux guests were compared against a from-scratch rebuild by the same C++ code (clear_hash_tree on the reloaded directory), not against the independent Lua tree, which was too slow for a 480 MiB state; a defect common to incremental and from-scratch hashing would only show on the 8 MiB bare-metal machines. Only 6 reload iterations and 130 collector rounds were run on Linux.",
+  "Parallel hash-tree updates: at most 4 OpenMP threads on a loaded 4-CPU host, and only the SIMD hasher paths this host selects; large parallel batches occurred only after clear_hash_tree, full rollbacks and loads with rebuild.",
+  "SHA-256 machines: one 120-step seed; no persistence-heavy or Linux run under SHA-256.",
+  "collect_mcycle_bundle and collect_uarch_cycle_bundle, bundled uarch collection (log2_bundle_uarch_cycle_count > 0) and the revert-uarch-tail period after a rejection were executed only for hash-tree consistency of the machine afterwards; their returned bundle roots were not compared with a naive reference. Unbundled collector hashes at a rejected yield were excluded from the twin comparison.",
+  "The computation-hash builders in src/cartesi-machine.lua and doc/recipes/prt.lua (support) were not run; only the emulator's collectors and the cartesi.hash-tree helpers were.",
+  "cartesi.hash-tree: forest heights above 9 and up to 62, nesting deeper than 3, sha256 forests, frontier_store/frontier_load, verify_splice, and crash-interrupted forest stores were not tested; frontier heights above 9 (for example the 63-level outputs tree with counts near 2^63) were not tested dynamically.",
+  "log_step / verify_step (main-processor step log) and the off-chain verify_* functions were not part of the fuzzer; proofs were checked against the reference tree, not through verifiers or the EVM.",
+  "Sharing mode config with a mix of shared and private ranges was only checked for self-consistency of the reloaded directory, since its contents are a splice by design.",
+  "Machines with console output to buffer, virtio devices, unreproducible mode, soft yield, or huge address ranges (multi-GiB RAM/flash) were not exercised.",
+  "Reflink filesystems, hard-linked read-only ranges across clones, rename_stored and remove_stored were not part of the oracle (ext4 host, copy fallback)."
+ ]
+}

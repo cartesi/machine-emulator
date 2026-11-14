@@ -1,0 +1,56 @@
+{
+ "angle": "R6",
+ "summary": "No defect found in the paths that settle disputes or compute honest claims. The C++ collectors (collect_mcycle_root_hashes, collect_mcycle_bundle, collect_uarch_cycle_root_hashes, collect_uarch_cycle_bundle), log/verify reset_uarch (C++ record/replay and the regenerated UArchReset.sol), send_cmio_response (state_access, record, replay, regenerated SendCmioResponse.sol), Dave CartesiStateTransition (A4: revertRootHash = machineState), the PRT referee model (validate_state_transition_response passes root_hash_before as the revert hash) and the PRT player/vg player all apply the rejection exception the same way. A differential experiment confirmed this for the C++ paths and for the EVM reset. Two Low defects in the cartesi-machine CLI's diagnostic printer are reported below.",
+ "candidates": [
+  {
+   "title": "CLI --print-uarch-cycle-root-hashes prints made-up uarch hashes for the mcycles after a rejection (fake revert uarch tail)",
+   "component": "cartesi-machine CLI (src/cartesi-machine.lua), uarch cycle root hashes printing runner",
+   "role": "Support (AUDIT.md: 'the cartesi-machine CLI ... Support'). This is a diagnostic printer, not the claim builder: --uarch-cycle-computation-hash builds its tail correctly in uarch_cycle_computation_hash_begin_input.",
+   "location": "src/cartesi-machine.lua, uarch_cycle_root_hashes_runner_run (around lines 4036-4072): 'local fake_revert_uarch_tail = { revert_root_hash, revert_root_hash }' passed to collect_uarch_cycle_root_hashes. The comment claims that a rejected manual yield 'never happens outside cmio mode'.",
+   "description": "When the run stops at an rx-rejected manual yield inside the window, collect_uarch_cycle_root_hashes adds the period of the reverted machine using the revert_uarch_tail it is given (machine.cpp append_revert_uarch_tail_period). The CLI passes a two-entry tail made of the revert root hash. So for the mcycle after the rejecting instruction, the printed uarch-cycle hashes and the halt hash all equal the revert root hash. R6 says that in every later mcycle, the uarch-level hashes are those of 'the uarch trajectory that starts from the canonical state': the uarch steps of the pre-delivery machine (several hundred distinct hashes for the bare-metal template) until it halts, then the reset. The comment's premise is false. A guest yields rx-rejected through HTIF whenever iyield allows manual yields, which is the CLI default (iyield = AUTOMATIC|MANUAL), with or without cmio mode. Example: a machine stored partway through an input and loaded without cmio options.",
+   "trigger": "A CLI user runs cartesi-machine --load=<machine stored after a delivery and before its yield> --print-uarch-cycle-root-hashes=<n>,start:<mcycle>, and the guest rejects inside the window. Any guest that yields rx-rejected without cmio mode does the same; then the revert root hash is whatever the state holds, often zero.",
+   "reachability": "Reachable: guest-controlled rejection. The rejecting state comes from a valid template after a real delivery (baremetal-template + payload 'R').",
+   "rating_steps": {
+    "1_out_of_scope": "Not excluded. It needs no untrusted API caller, snapshot or O1/O2 violation.",
+    "2_role": "Support. The CLI is support per the AUDIT.md table. Section 3: 'A defect that only a support component shows is Medium when it would rate High or Critical in the role the component stands in for, such as ... the honest operator for an implementation of an operator or a tool that computes claims. ... Any other support defect is Low.' The printer only prints per-uarch-cycle state hashes for inspection. It does not commit to or build a computation hash. The CLI's claim builder (--uarch-cycle-computation-hash) captures the real tail.",
+    "3_high_medium_cases": "If triage counts the printer as 'a tool that computes claims' (its output is exactly the leaves of a uarch-level claim), it is Medium: in the honest-operator role, uarch-level leaves that ignore R6 ('In every later mcycle, the uarch trajectory that starts from the canonical state') would be Critical. Which reading applies depends on whether these printed leaves feed any claim or are diagnostics only.",
+    "4_critical": "No. Only a support component shows it.",
+    "5_low": "Under the reading that it is a diagnostic print: Low ('a defect in a tool's diagnostics')."
+   },
+   "claimed_severity": "Low (Medium if the printer counts as a tool that computes claims)",
+   "threat_to_goal": "It does not threaten the goal directly. No claim or proof uses these values. It misleads anyone who uses the printer to compare or debug uarch-level claims across a rejection, which is exactly where R6 makes the hashes subtle.",
+   "evidence": "Ran in scratch: baremetal-template, delivered payload 'R' (h0 = 0x428a6bb8...), ran 30 mcycles, stored the machine, then 'cartesi-machine --load=midinput --print-uarch-cycle-root-hashes=10,start:3526402'. The output ends with '3526406: 0x428a6bb8...' (the reset, correct), then '3526406,1: 0x428a6bb8...' and '3526407: 0x428a6bb8...'. The uarch cycle 1 hash of the next mcycle is the revert root hash itself. exp1.lua shows the true trajectory from the canonical state: the start-rejected collect with the real tail returns many distinct transient hashes before the halt.",
+   "test_idea": "Store a baremetal-template machine after delivering 'R' and before its yield. Run the CLI printer over a window that includes the rejection. Compare the printed '<rej+1>,1' hash with hashes[1] of collect_uarch_cycle_root_hashes(MCYCLE_MAX, 0) on the pre-delivery template (the real tail). The test fails while they differ."
+  },
+  {
+   "title": "CLI --print-uarch-cycle-root-hashes without start: collects nothing on a loaded machine (window anchored at mcycle 0, not the current mcycle)",
+   "component": "cartesi-machine CLI (src/cartesi-machine.lua)",
+   "role": "Support",
+   "location": "src/cartesi-machine.lua: option parsing 'cmdline.uarch_cycle_root_hashes_start = o.start or 0' (~line 2548). Runner construction passes the start unchanged (~line 4818; compare mcycle_root_hashes, which maps 0 to nil). uarch_cycle_root_hashes_runner_run sets window_end = start + count.",
+   "description": "Off-angle, found while testing candidate 1. The help text says 'if start: is given, the hashing will start at that mcycle', which implies the window otherwise starts at the current mcycle. Instead, the window is [0, count). On a machine loaded at mcycle above count, the runner prints only the initial root hash and no uarch hashes.",
+   "trigger": "A CLI user loads a stored machine with mcycle greater than count and passes --print-uarch-cycle-root-hashes=<count> without start.",
+   "reachability": "Always, for loaded machines past mcycle count.",
+   "rating_steps": {
+    "1_out_of_scope": "Not excluded.",
+    "2_role": "Support (CLI).",
+    "3_high_medium_cases": "None. It computes no claim and causes no wrong hash. It omits output.",
+    "4_critical": "No.",
+    "5_low": "Low: 'a defect in a tool's diagnostics'."
+   },
+   "claimed_severity": "Low",
+   "threat_to_goal": "None. It is a diagnostics usability defect and a contradiction with the help text.",
+   "evidence": "'cartesi-machine --load=midinput --print-uarch-cycle-root-hashes=10' (machine at mcycle 3526402) printed only '3526402: <root>' and the yield. With start:3526402 it printed 5079 lines.",
+   "test_idea": "Run the CLI on a stored machine with mcycle greater than count, without start. Assert that at least one '<mcycle>,<uarch_cycle>:' line is printed."
+  }
+ ],
+ "not_covered": [
+  "Bundled uarch collection (log2_bundle_uarch_cycle_count > 0) across a rejection was checked only by reading append_uarch_reset_root_hash and append_revert_uarch_tail_period, not by a differential run. The mcycle bundles across a rejection were checked dynamically (exp3) and match.",
+  "The sling node and the Rollups node, which compute the revert uarch tail and decide when to revert in production. Out of scope, and their tail content is never checked by the emulator beyond its last entry.",
+  "log_step/verify_step (main-processor step, ZK proving path). Read only: finish() applies the rejection exception after the step. Its root_hash_before is the content hash when started on a rejecting machine. Not pursued (ZK is out of scope).",
+  "machine-guest-tools (libcmt cmt_rollup_finish, rollup CLI, rollup-http-server) encoding of the rejected reason and their behavior on the next input after a rejection. Not read.",
+  "The Dave tournament contracts beyond CartesiStateTransition (leaf/counter derivation, uarch-level last-leaf check under A1), and the output validation (A5) in cartesi-rollups-contracts. Read only the parts that touch revert/delivery.",
+  "Stored-pair revert in the player (stored_machine_pair_methods:revert, revert_interrupted_input) under crash/restart (O2): read only, not run.",
+  "Configurations that set iflags_H and iflags_Y together (is_rejected_manual_yield ignores iflags_H, and so does the player's get_mcycle_sample_hash). I argued H with a rejected Y is unreachable from a valid template (H and Y are each set only by an HTIF write, interpret stops at either, and delivery never sets H). The template rules on iflags values in configs were not checked.",
+  "The EVM path for a delivery followed by a step after a rejection: only stepThenReset on the rejecting mcycle and on a later mcycle was run on the EVM harness (both return the revert root hash). Dave's CartesiStateTransition itself was read, not executed."
+ ]
+}

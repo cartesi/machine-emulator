@@ -1,0 +1,72 @@
+{
+ "angle": "DYNDIFF",
+ "candidates": [],
+ "result": "No divergence, throw or uarch trap observed. Every executed comparison agreed; zero candidates.",
+ "runs": [
+  {
+   "harness": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNDIFF/fuzz.lua + gen.lua (random and structured bare-metal RV64 programs written as raw machine code into a 2 MiB RAM image: all opcode groups incl. M/A/F/D and random compressed halves, CSR reads/writes at M/S/U, mret/sret/wfi/ecall/ebreak/sfence, traps with medeleg/mideleg, CLINT msip/mtimecmp, PLIC accesses, HTIF halt/putchar/automatic and manual yields with every reason, LR/SC/AMO, misaligned and device/shadow/PMA/uarch/rx/tx/DTB/unmapped addresses, self-modifying code and page-table writes, Sv39/Sv48 tables with random PTE flag and reserved bits, superpages, PTEs pointing outside RAM, satp/MPRV/SUM/MXR switches; config variation: mcycle start at 0, just before an RTC tick, near 2^64, imcyclemax inside the run, mtimecmp, iyield/iconsole, PLIC girqpend/girqsrvd, console to_null/to_buffer)",
+   "paths_compared": "per case 6 machines from the same config: R native run(mcycle+1) with root hash after every mcycle (reference); G native in random chunks and in one go; U run_uarch to halt + reset_uarch for every mcycle, and at sampled mcycles every uarch cycle stepped with root hash, log_step_uarch+verify_step_uarch in windows (first 3, last 4, 24 random consecutive), log_reset_uarch+verify_reset_uarch; K collect_uarch_cycle_root_hashes for the sampled mcycles (every hash compared with U); D collect_mcycle_root_hashes(period 2^0) for every mcycle; X one machine mixing native chunks, uarch+reset, partial uarch runs, logged steps, both collectors in random order; manual yields followed by send_cmio_response on all machines and log_send_cmio_response+verify_send_cmio_response on one; fixed points (halt, manual yield, imcyclemax) re-run under uarch+reset; verify_hash_tree on all 6 machines at the end",
+   "cases": "default mode: seeds 1..40 (N=2500, before the mixed machine X existed: 78,340 mcycles, 167.1M uarch cycles), 1000..1011 (N=2000: 16,237 mcycles), 2000..2156 (N=2500: 157 cases, 293,503 mcycles, 600.7M uarch cycles, 17,803 logged+verified uarch steps, 937,784 uarch cycles compared one by one against collect_uarch_cycle_root_hashes, 25 manual yields with deliveries, 8 rejections, 12 halts, 30 imcyclemax stops, 25 automatic yields), 300000..300053 (N=3000: 54 cases, 127,749 mcycles, 229.7M uarch cycles); FP-heavy mode (DYNDIFF_MODE=fp) seeds 50000..50039 (40 cases, 84,642 mcycles, 99.5M uarch cycles); MUL/DIV-heavy mode (DYNDIFF_MODE=mul) seeds 60000..60028 (29 cases, 61,921 mcycles, 73.7M uarch cycles); ASan+UBSan build (HARNESS_SANITIZE=1, DYNDIFF_MODE=mix) seeds 70000..70017 (18 cases, 25,272 mcycles, 38.4M uarch cycles)",
+   "outcome": "0 failing seeds in every batch; no sanitizer report; largest uarch cycle count of one mcycle 20,388 (limit 2^20-1)"
+  },
+  {
+   "harness": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNDIFF/sannative.lua",
+   "cases": "442 FP/MUL-heavy programs x 40,000 mcycles (17.68M mcycles) run natively under the ASan+UBSan build",
+   "outcome": "no ASan/UBSan report"
+  },
+  {
+   "harness": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNDIFF/lindiff.lua (Linux valid template of bugs/harness/work/configs: delivery of an EvmAdvance input, then windows of 1000 mcycles placed before RTC ticks and around the next mtimecmp; also linux-rootfs boot from mcycle 0)",
+   "paths_compared": "native stepped vs uarch+reset every mcycle vs collect_mcycle_root_hashes; first mcycle of each window every uarch cycle vs collect_uarch_cycle_root_hashes with log_step_uarch/verify every 37th cycle and log_reset_uarch/verify_reset_uarch; delivery by send vs log+verify",
+   "cases": "8 + 70 windows of input processing (payload 'hello dyndiff'), 70 windows of kernel boot (mcycle 0..39.3M), 17 windows up to and including the rejecting instruction (payload 'reject', input ends at mcycle 93,257,362), 35 windows up to and including the accepting yield (ends at 123,971,482): 199,115 mcycles, about 121M uarch cycles, 53 interrupts taken inside windows",
+   "outcome": "all agree; at the rejecting boundary collect_mcycle_root_hashes returns the revert root hash and the machine state equals the stepped one"
+  },
+  {
+   "harness": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNDIFF/uarchdiff.lua",
+   "cases": "uarch interpreter (run_uarch on code written to uarch RAM) vs main interpreter on the same random RV64I code with edge-case operands: 60 programs, 34,942 instructions, registers compared after every instruction, memory at the end",
+   "outcome": "0 mismatches"
+  },
+  {
+   "harness": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNDIFF/special.lua",
+   "cases": "HTIF putchar, automatic yield, console getchar (disabled), unknown device, manual yield: every uarch cycle of 15 mcycles logged and verified, console to_null and to_buffer: 35,298 log_step_uarch/verify_step_uarch pairs, each compared with collect_uarch_cycle_root_hashes",
+   "outcome": "all agree"
+  },
+  {
+   "harness": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNDIFF/boundary.lua",
+   "cases": "rejected/accepted/exception manual yield, automatic yield, halt, or nothing at mcycle 4, with imcyclemax in {3,4,5,6,max}: 30 combinations; stepped vs one-go vs uarch with log_reset_uarch/verify_reset_uarch vs collect_mcycle_root_hashes vs collect_uarch_cycle_root_hashes, break reasons and canonical (revert) hashes",
+   "outcome": "0 mismatches (three apparent ones were my own misreading of mcycle_hash_offsets, which carries an end sentinel)"
+  },
+  {
+   "harness": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNDIFF/delivery.lua",
+   "cases": "advance-state delivery by send_cmio_response vs log_send_cmio_response+verify_send_cmio_response at 10 states (running, accepted, rejected, exception, reasons 0 and 3, halted, automatic yield, accepted yield at imcyclemax, accepted near 2^64) x 5 lengths (0, 32, 4097, 2 MiB, 2 MiB + 1): 50 combinations; R5 no-op conditions, revert hash, imcyclemax saturation, resume native vs uarch",
+   "outcome": "0 problems"
+  },
+  {
+   "harness": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNDIFF/devstore.lua",
+   "cases": "sd, c.sd, fsd, lr/sc.d, amoswap/amoor/amoadd/amomaxu.d (and the 32-bit forms) onto HTIF tohost (halt, manual accepted, manual rejected, automatic, putchar), CLINT mtimecmp and msip, PLIC complete, with and without pending PLIC sources: 116 combinations; one-go vs stepped vs uarch+reset vs collect_mcycle_root_hashes",
+   "outcome": "0 problems"
+  },
+  {
+   "harness": "/tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r6/DYNDIFF/pmas.lua",
+   "cases": "ld/sd/lb/amoswap at 18 addresses covering every address range kind, with two flash drives and an NVRAM configured: 400 mcycles native vs uarch vs collector, verify_hash_tree",
+   "outcome": "all agree"
+  }
+ ],
+ "notes": [
+  "The uarch program is built with asserts enabled (uarch/uarch-runtime.hpp: assert prints and calls abort, which is an ebreak, i.e. a uarch trap). The abort sites present in uarch-ram.elf are: assert_no_brk (5 conditions, after the interrupt check and after every instruction that returns success/failure/flush), assert(false) in get_highest_priority_irq_num, the mcycle assert at the end of interpret, the soft-float normalize/normalize2 asserts, do_read_pma for an unknown non-memory PMA, and device read_memory/write_memory. Every uarch run above would have thrown on any of them; none fired. By reading: stores propagate the device status in execute_S/FS/C_S/C_FS/SC/AMO; mip, mie and mideleg writes return serve-interrupts; mie/mip are legalized to the six standard bits; PTEs are read only from RAM.",
+  "send_cmio_response refuses (throws) an advance-state delivery that would take effect when the supplied revert root hash differs from the machine root hash, and any revert hash on a non-advance reason, while log_send_cmio_response accepts both. With the referee parameter of A4 (revert root hash = before-hash) neither fails; not reported as a candidate."
+ ],
+ "not_covered": [
+  "The Solidity step (regenerated UArchStep/UArchReset/SendCmioResponse) and the Dave CartesiStateTransition were not run: only the C++ verify_step_uarch, verify_reset_uarch and verify_send_cmio_response (through Lua).",
+  "log_step/verify_step (main-processor step log) and the JSON-RPC interface were not used.",
+  "collect_mcycle_root_hashes only with period 2^0, phase 0 and no bundling; collect_uarch_cycle_root_hashes only with bundle size 2^0; collect_mcycle_bundle and collect_uarch_cycle_bundle not called. The hashes of the reverted period taken from revert_uarch_tail after a rejection were not checked beyond the reset entry.",
+  "log_step_uarch + verify_step_uarch covered only sampled windows of sampled mcycles (about 34,000 steps in the fuzzer, 35,298 in special.lua, about 3,400 on Linux); the other uarch cycles of sampled mcycles were compared by root hash only, and unsampled mcycles only after the reset.",
+  "Consistency across paths only: no independent RISC-V reference model, so a deviation from the specification that every path shares (R7) is invisible to these harnesses.",
+  "Sv57: satp writes with mode 10 were generated but the mode never became active in the runs; no Sv57 walk was exercised.",
+  "Each fuzz case runs at most 3000 mcycles and crosses at most one RTC tick; Linux windows are 1000 mcycles. Divergences that need long runs, many ticks, or rare kernel paths were sampled only by the 200 Linux windows.",
+  "PLIC sources can only be pending through the initial configuration (12% of fuzz cases); no device raises them in a reproducible machine. VirtIO, console input, soft yield and unreproducible machines were not exercised.",
+  "No store/load/clone/replace_memory_range between steps, no sha256 hash tree, no inspect-state deliveries; at most a handful of deliveries per case and no delivery on a machine restored after a rejection.",
+  "Only this host build (GCC 13.3, x86-64) and its ASan/UBSan variant; other compilers, optimization levels and hosts (R1) were not compared. The sanitizer build was used for 18 differential cases and 17.7M native mcycles only.",
+  "Worst-case uarch cycles per mcycle were only observed (maximum 20,388), not searched for.",
+  "The soft-float asserts compiled into the uarch were checked by magnitude arguments for add, mul, fma and the conversions and by fuzzing; div and sqrt only by fuzzing."
+ ]
+}

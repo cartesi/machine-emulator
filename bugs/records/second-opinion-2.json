@@ -1,0 +1,290 @@
+[
+ {
+  "id": "R4-RGPROOF-1",
+  "stage": "dropped by triage",
+  "round": 4,
+  "has_test": false
+ },
+ {
+  "id": "R4-RGEPOCHS-2",
+  "stage": "dropped by triage",
+  "round": 4,
+  "has_test": false
+ },
+ {
+  "id": "R5-INVINTERP-1",
+  "stage": "dropped by triage",
+  "round": 5,
+  "has_test": false
+ },
+ {
+  "id": "R5-INVAPI-1",
+  "stage": "dropped by triage",
+  "round": 5,
+  "has_test": false
+ },
+ {
+  "id": "R5-INVBRIDGE-2",
+  "stage": "dropped by triage",
+  "round": 5,
+  "has_test": false
+ },
+ {
+  "id": "R5-INVBRIDGE-3",
+  "stage": "dropped by triage",
+  "round": 5,
+  "has_test": false
+ },
+ {
+  "id": "R6-DYNLOGFUZZ-1",
+  "stage": "dropped by triage",
+  "round": 6,
+  "has_test": false
+ },
+ {
+  "id": "R6-DYNPERSIST-1",
+  "stage": "dropped by triage",
+  "round": 6,
+  "has_test": false
+ },
+ {
+  "id": "R6-DYNGUEST-1",
+  "stage": "dropped by triage",
+  "round": 6,
+  "has_test": false
+ },
+ {
+  "id": "R6-DYNGUEST-5",
+  "stage": "dropped by triage",
+  "round": 6,
+  "has_test": false
+ },
+ {
+  "id": "R7-MANTOURN-2",
+  "stage": "dropped by triage",
+  "round": 7,
+  "has_test": false
+ },
+ {
+  "id": "R7-MANGAME-1",
+  "stage": "dropped by triage",
+  "round": 7,
+  "has_test": false
+ },
+ {
+  "id": "R7-MANHASHCOMP-2",
+  "stage": "dropped by triage",
+  "round": 7,
+  "has_test": false
+ },
+ {
+  "id": "R7-MANGUEST-1",
+  "stage": "dropped by triage",
+  "round": 7,
+  "has_test": false
+ },
+ {
+  "id": "R7-MANGUEST-2",
+  "stage": "dropped by triage",
+  "round": 7,
+  "has_test": false
+ },
+ {
+  "id": "R7-MANGUEST-3",
+  "stage": "dropped by triage",
+  "round": 7,
+  "has_test": false
+ },
+ {
+  "id": "R7-MANCLIBASE-1",
+  "stage": "dropped by triage",
+  "round": 7,
+  "has_test": false
+ },
+ {
+  "id": "R7-MANLUA1-1",
+  "stage": "dropped by triage",
+  "round": 7,
+  "has_test": false
+ },
+ {
+  "id": "R7-MANLUA1-3",
+  "stage": "dropped by triage",
+  "round": 7,
+  "has_test": false
+ },
+ {
+  "id": "R7-MANLUA2-1",
+  "stage": "dropped by triage",
+  "round": 7,
+  "has_test": false
+ },
+ {
+  "id": "R7-MANLUA2-2",
+  "stage": "dropped by triage",
+  "round": 7,
+  "has_test": false
+ },
+ {
+  "id": "R8-GOALNODE-1",
+  "stage": "dropped by triage",
+  "round": 8,
+  "has_test": false
+ },
+ {
+  "id": "R8-GOALTIMEOUT-2",
+  "stage": "dropped by triage",
+  "round": 8,
+  "has_test": false
+ },
+ {
+  "id": "R8-GOALEPOCH-1",
+  "stage": "dropped by triage",
+  "round": 8,
+  "has_test": false
+ },
+ {
+  "id": "R9-SUBCSR-2",
+  "stage": "dropped by triage",
+  "round": 9,
+  "has_test": false
+ },
+ {
+  "id": "R9-SUBCMIO-2",
+  "stage": "dropped by triage",
+  "round": 9,
+  "has_test": false
+ },
+ {
+  "id": "R9-SUBEPOCHDIR-1",
+  "stage": "dropped by triage",
+  "round": 9,
+  "has_test": false
+ },
+ {
+  "id": "R10-PERAPPDEV-3",
+  "stage": "dropped by triage",
+  "round": 10,
+  "has_test": false
+ },
+ {
+  "id": "R10-PERAPPDEV-5",
+  "stage": "dropped by triage",
+  "round": 10,
+  "has_test": false
+ },
+ {
+  "id": "R4-RGEPOCHS-1",
+  "stage": "refuted by reviewer",
+  "round": 4,
+  "has_test": true,
+  "reviewer_reason": "The test exits 1 every time (2 runs). vg.lua:21/928/1030 do use 2^16. vg is Support, not \"The PRT referee model in doc/recipes\". Its player takes the referee's extent, and A3 (\"assigns no more inputs to an epoch than the input limit per epoch\") holds, so the stood-in deployed referee breaks no rule's wording. The refusal is the operator's own setup assert. The stand-in clause covers vg but gives Low.",
+  "reviewer_severity": "Low (preferred) / Medium (alternative reading)",
+  "gap": "It is unclear whether the manual's dispute-constant values (2^24 inputs per epoch) bind every component that stands in for a referee. Section 5 makes only the PRT model normative. The Terms let each deployment fix its own dispute constants, while R13 makes those constants part of the protocol version. If 2^24 is binding, a self-consistent 2^16 demo is a Medium manual contradiction (stand-in A6). Otherwise it is Low. The facts that would decide: some honest-operator component in vg's setup uses 2^24 (none does), or the manual states that vg's constants are normative."
+ },
+ {
+  "id": "R5-INVPLAYER-1",
+  "stage": "refuted by reviewer",
+  "round": 5,
+  "has_test": true,
+  "reviewer_reason": "Reproduced: exits 1 (about 2 min). prt.lua:1934-1944 memoizes the failure and later calls return \"nothing\". The only trigger is a host fault (EMFILE/ENOSPC). Section 8 excludes \"Host faults, such as a full disk, as long as the emulator does not turn them into a wrong hash, a wrong proof, or a directory that O2 guarantees but that later loads as a different state\", and step 1 says to \"Check the trigger\". That exclusion covers this trigger, and none of those three outcomes occurs.",
+  "reviewer_severity": "Out of scope (literal host-fault exclusion, preferred) / Medium (support stand-in for honest operator, R4 restart reading)",
+  "gap": "Section 4 says a host fault 'may stop the honest operator', and R4 says 'After a stop, it restarts ... and keeps defending its claim'. The model does not say whether a defect that turns a transient host fault into a lasting non-stop refusal, one that outlasts the fault without a wrong hash, proof or directory, falls under the host-fault exclusion or under the R4 recovery duty. The deciding facts are: a trigger without a host fault, or one within the host the deployment was sized for (for example the player's own fd or disk use), would bring it into scope. Reading 'may stop' as allowing only a stop followed by a restart would make it Medium."
+ },
+ {
+  "id": "R5-INVSTORE-3",
+  "stage": "refuted by reviewer",
+  "round": 5,
+  "has_test": true,
+  "reviewer_reason": "The facts reproduce (exit 1 on rerun; store_machine calls only machine:store). But O2 says 'guarantees a stored directory only when it was synced', and cm.h ~600 says stored files are 'durable only after cm_sync_stored()'. Step 1 excludes 'Defects that need the honest operator to reload a stored directory that O2 does not guarantee'. That clause covers this component. The emulator makes O2 possible to follow (sync_stored, --load ...,sync), and the CLI's --store resumes from nothing.",
+  "reviewer_severity": "Out of scope / Low (preferred: an unsynced --store directory is not guaranteed by O2, and losing it needs a reload after a stop, which is excluded; at most the manual's template sections leave out a sync step). Medium under the alternative reading that 'tools must follow them' requires every directory a tool writes to be left guaranteed (stand-in rule for a Support component).",
+  "gap": "Section 5 says 'The tools ... must follow' O1/O2, but it does not say whether a tool that writes a stored directory meant for later reuse (here, a template made with --store) must leave it guaranteed by syncing it, or only must never resume from an unguaranteed one. The text also does not say whether a power loss after a clean exit is a 'stop' of the writing process. The test's Part A asserts the first reading. Part B asserts that an unguaranteed directory reloads, which section 8 excludes. The PRT player clones the template and syncs the clone (prt.lua:2751-2752), so its checkpoints are guaranteed either way."
+ },
+ {
+  "id": "R5-INVBRIDGE-1",
+  "stage": "refuted by reviewer",
+  "round": 5,
+  "has_test": true,
+  "reviewer_reason": "The test fails deterministically (exit 1 twice): line 220 asserts code==3, and anvil returns -32003. But prt-lua-bridge.md says 'A player must budget for the root bond, the bond of the child tournament it is in, gas, and further joins before earlier recoveries pay out'. Section 1 assumes 'the resources the deployment was sized for'. No adversary path drains a budgeted account, and an unfunded join is impossible anyway. Support defect, Low.",
+  "reviewer_severity": "Low (preferred: the trigger is an underfunded account, which the bridge doc puts on the operator's budget) / Medium (if funds are not a provisioned resource and recovering older bonds is an expected way to fund a join)",
+  "gap": "The threat model never says whether the operator's on-chain funds (bonds, gas) count among 'the resources the deployment was sized for'. Section 4 lists 'CPU, memory and storage' with 'including'. If they do not count, an underfunded join that crash-loops and blocks older-epoch bond recoveries (which could pay for the join) is a stood-in R4 Critical, capped at Medium."
+ },
+ {
+  "id": "R6-DYNBRIDGE-3",
+  "stage": "refuted by reviewer",
+  "round": 6,
+  "has_test": true,
+  "reviewer_reason": "The code fact holds: line 87 calls settimeout(nil), and the test exits 1 after 11 s. Only the operator's own node (section 4: \"trusted ... the operator's host, keys, and node\"), or the link to it, can stall a frame halfway. Section 4: \"A host fault ... may stop the honest operator, but the emulator must never turn one into a wrong hash, a wrong proof, or a directory\". Section 8 also excludes host faults. That clause covers the player, and nothing wrong is produced.",
+  "reviewer_severity": "Out of scope (preferred: the trigger is a fault in the operator's own trusted node or its link, a host fault that only stops the operator) / Medium (alternative: a stand-in R4 violation)",
+  "gap": "The model does not say whether a stall in the link to the operator's own trusted node is a \"host fault\". It also does not say whether R4's \"observes the chain ... After a stop, it restarts\" requires the operator to recover by itself when a transient fault leaves it hung but not exited. Under that reading the stand-in rule gives Medium. What would decide it: no adversary in section 7 can cause a frame to stall halfway, and a manual restart of the hung player resumes normally."
+ },
+ {
+  "id": "R7-MANARCH-3",
+  "stage": "refuted by reviewer",
+  "round": 7,
+  "has_test": true,
+  "reviewer_reason": "Re-ran the test: exit 1, deterministic. The manual says uarch code \"has access to the entire state\", and it draws that state as a 64-bit tree whose unmapped space is \"implicitly filled with zeros\". \"In addition to ... all memory ranges and devices\" sets a minimum and does not list the whole map. The uarch reaches devices through their shadows. All paths agree, so R3's \"memory map does not allow\" never applies. The state is unreachable. A fix to the docs would leave the test failing.",
+  "reviewer_severity": "Low (best-supported reading) / High for the hole loads if the manual's uarch map is read as exhaustive",
+  "gap": "R3 defines a trap as 'an access that its memory map does not allow', but neither THREAT_MODEL nor the manual defines the uarch memory map for loads exhaustively. The manual's 'access to the entire state' together with its zero-filled 64-bit state tree supports reads anywhere. Reading 'In addition to ... all memory ranges and devices ... private 2MiB' as an exhaustive map would make hole loads traps, and the verifiers' acceptance would then be High. The EVM revert at 0xfffffffffffffff8 is a separate issue, already R1-R10-2."
+ },
+ {
+  "id": "R7-MANLUA1-2",
+  "stage": "refuted by reviewer",
+  "round": 7,
+  "has_test": true,
+  "reviewer_reason": "Facts hold: run.sh exits 1 twice (5 mismatches). store writes stale m_c, but init_processor loads registers from config only if backing_store.newly_created(), and stored configs always name the processor file, so no hash or transition reads them; R2 holds. Medium case 'leaves ... a stored directory inconsistent with the machine's contents (R9)' covers hash data, not these fields, and store is on-path. Not 'security-relevant'; Low.",
+  "reviewer_severity": "Low / Medium",
+  "gap": "Two things are unclear. First, whether the Medium case 'stored directory inconsistent with the machine's contents (R9)' covers non-hash metadata that no load path reads, here config.json register fields. Second, what makes a manual contradiction 'security-relevant' when it concerns inert fields. The rating would be higher if a production on-path reader used these fields, or if load or re-instantiation took registers from them; neither happens. The fix may also be a manual change, in which case the test would keep failing."
+ },
+ {
+  "id": "R7-MANHASHSTATE-1",
+  "stage": "refuted by reviewer",
+  "round": 7,
+  "has_test": true,
+  "reviewer_reason": "The test exits 1 on every run, for the reason claimed. The section 3 support clause applies: \"Medium when it would rate High or Critical in the role the component stands in for\". But no in-scope verifier shares the flaw. Dave fixes the template hash on-chain and delivers inputs through cmio. Outputs come through A5. prt.lua, game-output.lua and verify-output-proof.lua check root, address and size themselves. So the stood-in role is not in scope (\"First check that the stood-in role exists in scope\"), and the finding is Low.",
+  "reviewer_severity": "Low (alternative reading: Medium)",
+  "gap": "The model says \"a proof verifier accepts a node that the committed tree does not hold\" (section 1), and the emulator provides \"Merkle proofs of any aligned node\" (section 3). But section 2 lists node-index referee parameters only for computation-hash proofs and A5 extraction proofs. It does not say whether a verifier for the manual's documented template instantiation by NVRAM splicing, or for result extraction from a halted machine's NVRAM, is an in-scope stood-in role. One reading gives Low: no deployment does this, and the intro limits scope to PRT. The other gives Medium: the stand-in is a referee verifier of node proofs, the recipe breaks section 1 soundness in its wording, and the manual's sentence \"the code first checks the root hash M against the one found in the proof\" contradicts the code. The deciding fact: is any deployed or in-scope referee component (Dave, the doc/recipes PRT referee model) instantiating templates by splicing, or accepting non-A5 node proofs, without binding root, address and size? Nothing I found does."
+ },
+ {
+  "id": "R8-GOALTIMEOUT-1",
+  "stage": "refuted by reviewer",
+  "round": 8,
+  "has_test": true,
+  "reviewer_reason": "Test exits 1 deterministically (3 reruns): CannotAdvanceTimedOutClock at match 3, response 22. Facts verified. Section 4 says \"history that its policy treats as final\", and \"A reorganization deeper than that\" lets the operator choose its depth. R4 makes the operator itself \"submit its transactions within the dispute clocks\". A7 sizes the clocks \"at the worst-case costs of R12\", not for finality. A LAG-4 control wins. No rule is broken.",
+  "reviewer_severity": "Low (preferred: an operator dispute policy shallower than G is an allowed \"final\" policy, and with it the honest claim wins) / Medium (section 3 support clause) or Critical (A7, as in R1-A7-1), if every deployment must let the operator answer from Ethereum-finalized history",
+  "gap": "Section 4 does not say what \"final\" means. \"History that its policy treats as final, such as finalized blocks\" could mean any confirmation depth the operator picks, or the chain's real finality. The threat model never says whether a deployment's per-response clock must cover the chain's finality delay. Dave's dimensioning.md says a joined match's responses \"read latest\". If finality is required, this finding becomes Medium or Critical, and section 3's support clause on response time decides which."
+ },
+ {
+  "id": "R8-GOALOUTPUT-1",
+  "stage": "refuted by reviewer",
+  "round": 8,
+  "has_test": true,
+  "reviewer_reason": "A5 defines acceptance as \"through a proof that authenticates a hash as a leaf\". The manual's normative referee \"accepts output proofs against that root\". validateOutput accepts this voucher. Only executing it fails. No rule bounds that execution cost. The \"honest proof or transaction\" clause (R12: \"transaction the honest operator sends\") does not cover a user's executeOutput. The AUDIT row says \"output validation\" and does not mention execution. Test exits 1 deterministically, as claimed.",
+  "reviewer_severity": "Low (preferred: A5 acceptance = proof validation) / Critical (if A5's 'accepts' includes executing a voucher within the chain's per-transaction limits)",
+  "gap": "The model never says whether A5's 'accepts' covers executing a voucher, or whether outputs need a size bound like A3's bound on inputs. libcmt allows outputs up to the 2 MiB tx buffer. The model also does not fix the chain's per-transaction limit; the test assumes Ethereum mainnet EIP-7825 (2^24). Settling it: say whether output execution within per-transaction limits is a referee obligation (Critical), or only proof validation is (Low)."
+ },
+ {
+  "id": "R10-PERTEMPLATE-4",
+  "stage": "refuted by reviewer",
+  "round": 10,
+  "has_test": true,
+  "reviewer_reason": "R12 requires loading and cloning to be 'at most linear in ... the bytes it covers'. A load covers the stored files it reads, config.json among them, and the measured cost is a steady 21x. The test's bound ignores config.json. No crash was shown, so 'crash the honest operator' (section 8) is not met. Role: Honest operator (row 1, loading/cloning).",
+  "reviewer_severity": "Low (preferred); Critical or High only under the narrow reading that R12's 'bytes it covers' leaves out config.json",
+  "gap": "R12's 'the bytes it covers' does not say whether loading covers only the hashed address ranges or every byte of the stored directory, such as config.json. Under the narrow reading, an unhashed padded config.json makes adoption cost unbounded relative to the machine: Critical at step 4 via R12/R4 on 'Obtaining its valid template', or High if the template counts as declinable data from others. The model also does not say whether unknown members in config.json leave a snapshot a valid template, so a size or strict-schema fix that refuses the file may count as a loud refusal."
+ },
+ {
+  "id": "R9-SUBJOURNAL-1",
+  "stage": "refuted by reviewer",
+  "round": 9,
+  "has_test": true,
+  "reviewer_reason": "The test exits 1 on every run, and the code facts are confirmed. On plain Anvil, the node the recipe documents (\"on a local Anvil chain\"), the same job is mined in 1 block (exit 0). Section 4 trusts \"the operator's host, keys, and node\", assumes \"a host environment set up as the emulator documents\", and says a host \"output channel that refuses a write may stop the honest operator\". Support rule: Low.",
+  "reviewer_severity": "Low or Out of scope (preferred: the trigger is a node fee-cap policy outside the documented Anvil setup, a trusted-node refusal) / Medium (if the stood-in operator's software must fit production-default node caps)",
+  "gap": "The model does not say whether a trusted node's own deterministic policy refusal counts as a host fault or as part of the documented host setup. A fee cap such as --rpc.txfeecap, which a stood-in operator's software could respect, is an example. It is also unclear whether a Support component documented only for Anvil must be rated against production-node defaults when it stands in for the honest operator."
+ },
+ {
+  "id": "R2-DFCLAIM-1",
+  "stage": "dropped by triage in round 2 and upheld by the first second opinion; round 9 triage says confirmed R9-SUBREFSTATE-2 defeats the premise of that drop, so re-check it",
+  "round": 2,
+  "has_test": false
+ }
+]

@@ -1,0 +1,275 @@
+[
+ {
+  "id": "R1-A2-2",
+  "stage": "dropped by triage",
+  "round": 1,
+  "has_test": false
+ },
+ {
+  "id": "R1-A5-2",
+  "stage": "dropped by triage",
+  "round": 1,
+  "has_test": false
+ },
+ {
+  "id": "R1-A6-3",
+  "stage": "dropped by triage",
+  "round": 1,
+  "has_test": false
+ },
+ {
+  "id": "R1-GUEST-3",
+  "stage": "dropped by triage",
+  "round": 1,
+  "has_test": false
+ },
+ {
+  "id": "R1-GUEST-4",
+  "stage": "dropped by triage",
+  "round": 1,
+  "has_test": false
+ },
+ {
+  "id": "R1-GUEST-5",
+  "stage": "dropped by triage",
+  "round": 1,
+  "has_test": false
+ },
+ {
+  "id": "R1-R1-2",
+  "stage": "dropped by triage",
+  "round": 1,
+  "has_test": false
+ },
+ {
+  "id": "R1-R11-2",
+  "stage": "dropped by triage",
+  "round": 1,
+  "has_test": false
+ },
+ {
+  "id": "R1-R6-2",
+  "stage": "dropped by triage",
+  "round": 1,
+  "has_test": false
+ },
+ {
+  "id": "R1-R7-3",
+  "stage": "dropped by triage",
+  "round": 1,
+  "has_test": false
+ },
+ {
+  "id": "R1-R7-4",
+  "stage": "dropped by triage",
+  "round": 1,
+  "has_test": false
+ },
+ {
+  "id": "R1-R9-2",
+  "stage": "dropped by triage",
+  "round": 1,
+  "has_test": false
+ },
+ {
+  "id": "R2-DFLOG-1",
+  "stage": "dropped by triage",
+  "round": 2,
+  "has_test": false
+ },
+ {
+  "id": "R2-DFCLAIM-1",
+  "stage": "dropped by triage",
+  "round": 2,
+  "has_test": false
+ },
+ {
+  "id": "R2-DFCHAIN-1",
+  "stage": "dropped by triage",
+  "round": 2,
+  "has_test": false
+ },
+ {
+  "id": "R3-VARCACHE-2",
+  "stage": "dropped by triage",
+  "round": 3,
+  "has_test": false
+ },
+ {
+  "id": "R3-VARO2PLAYER-1",
+  "stage": "dropped by triage",
+  "round": 3,
+  "has_test": false
+ },
+ {
+  "id": "R3-VARO2PLAYER-2",
+  "stage": "dropped by triage",
+  "round": 3,
+  "has_test": false
+ },
+ {
+  "id": "R3-VARREFMODEL-3",
+  "stage": "dropped by triage",
+  "round": 3,
+  "has_test": false
+ },
+ {
+  "id": "R3-VARSPEC-5",
+  "stage": "dropped by triage",
+  "round": 3,
+  "has_test": false
+ },
+ {
+  "id": "R1-O1-1",
+  "stage": "refuted by reviewer",
+  "round": 1,
+  "has_test": true,
+  "reviewer_reason": "Ran it twice: exit 1, 9 of 10 loads fail. Every failure is a clean exception, and fuzzing showed no crash. A load built from config.json with blank cache filenames rebuilds to the same root, so O1 is \"possible to follow\". Section 8 lists only \"affect any transition (R1), crash the honest operator, or corrupt its memory\". A loud refusal is none of these. Section 4 treats reporting an error as different from terminating.",
+  "reviewer_severity": "Low (preferred) / Critical (literal reading of O1 plus \"honest operator's path\")",
+  "gap": "It is unclear whether \"make them possible to follow\" and \"defeats the rebuild itself\" require the documented --clear-hash-tree load to accept any intact-content directory, or only that some emulator path can rebuild. It is also unclear whether a loud refusal of a valid template counts as a defect, since section 8 lists only transition, crash and memory guarantees."
+ },
+ {
+  "id": "R1-R11-3",
+  "stage": "refuted by reviewer",
+  "round": 1,
+  "has_test": true,
+  "reviewer_reason": "Facts confirmed: exit 1 on 2 runs, and hash_tree::hash_tree does not tie the tree files to the hash function. The manual says a uarch machine \"can never be used with the ZK prover\", so switching is not use \"as documented\" (the Medium case is excluded). Cached data \"is not checked on load\". No node calls this. That leaves the Low case: \"misuse of an API by its trusted caller\".",
+  "reviewer_severity": "Low (alternative reading: Medium)",
+  "gap": "Two things are unclear. First, whether the manual's \"can never be used with the ZK prover (and vice-versa)\" is a promise that the emulator refuses a switch (then Medium, as a manual/behavior contradiction or an R9 Medium case) or an instruction to the caller (then Low misuse). Second, whether supplying cached tree files that do not match the config counts as a \"documented operation\" under R9."
+ },
+ {
+  "id": "R1-R9-1",
+  "stage": "refuted by reviewer",
+  "round": 1,
+  "has_test": true,
+  "reviewer_reason": "The test exits 1 every run (re-ran twice). cm.h says \"Gets the Keccak-256 hash of the pristine uarch state\", so the API does what it documents. R9's \"correct for every supported hash function\" covers precomputed hashes used under that function. On SHA-256 machines, reset/run/log/collect all refuse the uarch, so no SHA-256 pristine uarch exists and no content hash is wrong. The test asserts against the documented behaviour. Rated Low.",
+  "reviewer_severity": "Low (preferred: the API returns the Keccak-256 constant it documents) / Medium (if R9 is read to require a per-hash-function pristine uarch hash)",
+  "gap": "R9's \"Precomputed hashes ... must be correct for every supported hash function\" does not say whether a constant documented and used only under one hash function (the pristine uarch hash, defined by a uarch reset that SHA-256 machines refuse) must also have a correct variant, or be refused, under the other functions. That decides Low versus Medium for per-machine queries of a Keccak-only constant."
+ },
+ {
+  "id": "R1-A8-2",
+  "stage": "refuted by reviewer",
+  "round": 1,
+  "has_test": true,
+  "reviewer_reason": "The test exits 1 at prt-bridge.lua:631/632. But on the bridge's own honest proof, a disagreement needs a reachable R2 divergence, which has not been shown (R1-R10-2 is at unreachable states). That divergence would be the defect to rate (\"Rate that defect\"), and it decides the leaf match even without the assert. A node error is a trusted-host fault, which \"may stop the honest operator\". The loop ends at min(d1,d2) (line 385).",
+  "reviewer_severity": "Low (preferred) / Medium (if A8 'for any reason' binds the stood-in operator even against failures caused by another defect or a trusted-node fault)",
+  "gap": "A8 says \"for any reason\", but it is a deployment obligation. The model does not say whether a stood-in operator must isolate matches from failures that only another defect (a reachable native/Solidity divergence) or a fault of its trusted node can cause. It also does not say whether a bounded delay to permissionless cleanup of other parties' matches counts as \"delay\" of those matches."
+ },
+ {
+  "id": "R1-A5-1",
+  "stage": "refuted by reviewer",
+  "round": 1,
+  "has_test": true,
+  "reviewer_reason": "The test reproduces (exit 1, about 22 s) and the code facts hold. A5 says \"No party can make it stop accepting them\". But section 7's adversary list and section 4's untrusted column never give anyone guardian powers. The deployment picks the guardian, and GUARDIAN=0 turns foreclosure off. IConsensus.sol states foreclosure's purpose: \"preventing the claim from ever being accepted\". So the trigger is the deployment's own trusted role, which is out of scope.",
+  "reviewer_severity": "Out of scope (the guardian is a trusted emergency role that the deployment configures; preferred) / Critical (if A5's \"No party\" covers the guardian)",
+  "gap": "The threat model never says whether governance roles that the deployment configures in the referee contracts are trusted parts of the deployment or \"parties\" under A5's \"No party can make it stop accepting them\". These roles are the guardian, with foreclose() (Application.sol), the owner (which DaveAppFactory renounces) and sentries. Section 2's definition of a deployment does not mention them, and neither do the adversary list in section 7 or the trust boundaries in section 4. The manual's referee model has no guardian at all. Two facts would decide it: whether the maintainers count guardian-held keys as trusted like the operator's host, and whether A5's \"Conversely\" clause was meant to rule out an emergency foreclosure that the deployment opted into (GUARDIAN can be address(0))."
+ },
+ {
+  "id": "R1-R4-1",
+  "stage": "refuted by reviewer",
+  "round": 1,
+  "has_test": true,
+  "reviewer_reason": "The test exits 1 on both runs, as claimed. But the definition of a valid template requires \"with the uarch in its pristine reset state\", and the manual documents uarch data_filename (\"other than in unit tests\"). Step 1 then applies: \"deliberate state change made through the machine API, when the API performs it as documented\". R13 puts the uarch program in the protocol. The collector refuses loudly (\"not pristine\"), never giving a wrong hash, and --assert-rolling-template checks for a pristine uarch.",
+  "reviewer_severity": "Out of scope (preferred) / Low (misuse of a documented unit-test facility by the trusted caller) / Critical only if R4's configuration clause is read to bind on its own, beyond valid templates",
+  "gap": "R4's configuration clause limits only register values and the hash function. It says nothing about uarch state or the uarch RAM image, while the valid-template definition requires a pristine uarch. Read literally, \"this rule\" applies to reachable states only and is met vacuously. The register carve-out suggests a non-vacuous intent. Whether creation must reject a non-pristine uarch (which breaks the documented unit-test use) is ambiguous."
+ },
+ {
+  "id": "R2-DFINPUT-1",
+  "stage": "refuted by reviewer",
+  "round": 2,
+  "has_test": true,
+  "reviewer_reason": "The test exits 1 every time (2 of 2 runs; fromhost REASON=0 DATA=324, guest .data=324). The manual sentence at doc/README.md:7234-7238 is wrong. R7 binds \"the devices as the manual documents them\". The emulator matches the HTIF device section (7666-7668) and the Rollup protocol. The /dev/cmio section describes the kernel UAPI, which is out of scope, and calls the kernel header \"the source of truth\". No change to the emulator could satisfy the whole manual. This is a manual-only defect: Low.",
+  "reviewer_severity": "Low (best reading: documentation error in the manual's informative section on the Linux /dev/cmio UAPI) / Critical (literal reading of the section 8 contradiction clause applied to that one sentence, as an R7 yield-interface reason-encoding deviation)",
+  "gap": "Section 8 says a manual/behavior contradiction \"takes the severity it would have if the manual were right\". It does not say how to apply this when the manual contradicts itself and the behavior matches the normative, register-level section. It also does not say whether manual statements about out-of-scope components count, such as the Linux kernel UAPI that the manual calls informative (\"useful for the curious and for tooling\"). Read literally, one wrong sentence gives Critical. If the device sections govern R7, the result is Low."
+ },
+ {
+  "id": "R2-DFSTORED-2",
+  "stage": "refuted by reviewer",
+  "round": 2,
+  "has_test": true,
+  "reviewer_reason": "The test exits 1 every time, for the reason claimed. The manual documents both refusals: \"Read-only backing files are hard-linked\" and \"its size on disk must exactly match the length of the memory range\". The template is left untouched, and the unshared clear_hash_tree load (O1) works. Section 8 says \"crash the honest operator\", but section 4 contrasts a crash with \"report errors without terminating the process\". Clone/load have the Honest operator role, yet no rule is violated.",
+  "reviewer_severity": "Low (best reading: documented behavior, loud refusal, no rule violated) / Critical (only if a reported load exception counts as \"crash the honest operator\" and clone+SHARING_ALL is a required adoption path)",
+  "gap": "Section 8 says a valid snapshot must not \"crash the honest operator\" through what it carries outside the hashed state, but it does not say whether a reported, non-terminating load error counts. It also does not say whether \"Obtaining its valid template\" needs every documented load mode to work (here clone + SHARING_ALL) or only one working path (the O1 unshared load). Nor does it say whether file metadata or a file size that breaks the manual's on-disk format leaves a snapshot that \"meets\" the valid-template conditions."
+ },
+ {
+  "id": "R1-A7-2",
+  "stage": "refuted by reviewer",
+  "round": 1,
+  "has_test": true,
+  "reviewer_reason": "Re-ran: exit 1, TournamentIsClosed at block 7985. But the guest spends 2^30 mcycles on every input from anyone, so its epoch total is unbounded. Section 2: a correctly designed application keeps \"the total within what the deployment was sized for (A7)\". R12: \"Bounding that usage is the application's job\". R4: \"Whether those fit the clocks is for the application and the deployment\". The Section 8 exclusion covers \"what such an application gets\", which here is its settlement.",
+  "reviewer_severity": "Out of scope (preferred: the trigger is an application whose epoch total is not bounded) / Critical (alternative reading, where an adversary-chosen input count is outside the application's bound: A7, R4 on the referee model)",
+  "gap": "Unclear whether a correctly designed application's \"total stays within what the deployment was sized for\" must hold against an adversary-chosen input count (Dave's docs call this the \"second per-app contract\": meter and price effort), or whether section 7 (\"any number of inputs the deployment accepts\") puts that on A7. Not shown, and a separate case: the operator's fixed per-input cost beyond the app's mcycles may exceed the chain's input arrival rate on fast L2s."
+ },
+ {
+  "id": "R1-R12-4",
+  "stage": "refuted by reviewer",
+  "round": 1,
+  "has_test": true,
+  "reviewer_reason": "The test exits 1 every time, but the expansion is the documented result (cm.h: \"a JSON array of 2^log2... hashes\"). \u00a78: \"A cost that the specified semantics require is not a defect.\" Cost grows linearly with the positions the call covers. A looping guest at log2=16/18 costs 22.6/90.2 MiB and 1.2/5.8 s, against 17.0/67.1 MiB and 0.08/0.32 s for the halt guest. The guest cannot raise the worst case, so the OOS clause \"Average-case performance that does not change the worst-case cost\" applies.",
+  "reviewer_severity": "Out of scope (average-case cost the specified semantics require) / Low; at most Medium under a literal support reading",
+  "gap": "R12's clause on repeated fixed-point hashes (\"Where a computation hash repeats the hash of a fixed point...\") leaves two things open. It does not say whether it binds APIs whose specified output is the expanded leaf list, used to open bundles. It also does not say whether the uarch-halted tail counts as a \"fixed point\", since R5 lists only main-processor halt, yield and imcyclemax. The High constant-factor case (\"compared with the same operation without the defect\") is unclear when the claimed defect is the documented semantics itself."
+ },
+ {
+  "id": "R1-R14-2",
+  "stage": "refuted by reviewer",
+  "round": 1,
+  "has_test": true,
+  "reviewer_reason": "The omission is real: the test exits 1 every time, finding 0 of 1548 paragraphs. Section 4's \"the manual must state this requirement\" is not one of R1-R14, O1-O2 or A1-A8. No High or Medium case fits: \"A contradiction between the manual and the behavior\" does not cover silence. Step 4 needs a named rule. collect_mcycle_root_hashes records console_io_error and carries on; only run() throws, and that is a host fault (Out of scope). Step 5: Low.",
+  "reviewer_severity": "Low (preferred: no listed case fits and no numbered rule or obligation is violated) / Medium (only if the section 4 \"must state\" counts as a rule violated \"without affecting the goal\" under the Medium header)",
+  "gap": "Section 4 says \"the manual must state this requirement\", but section 8 has no listed case and no numbered rule for a missing manual statement. A reader who takes section 4 \"must\" clauses as rules gets Medium from the header \"violates a rule or the manual without affecting the goal\". The How-to-rate steps, which decide the class, give Low. The text should say whether the duty to document is a rule and, if so, what class an omission takes."
+ },
+ {
+  "id": "R1-R7-2",
+  "stage": "refuted by reviewer",
+  "round": 1,
+  "has_test": true,
+  "reviewer_reason": "The test exits 1 on both runs; the facts hold. But the RISC-V spec (unpriv rv32.adoc) says \"The behavior upon decoding a reserved instruction is UNSPECIFIED\" and that platforms \"may permit reserved opcode space be used for non-conforming extensions\". So R7 (\"departing only where the manual documents a deviation\") is not violated, and the Medium \"undocumented deterministic deviation\" case does not apply. That leaves a documentation gap rated Low. Assertion B would also still fail after the deviation was documented.",
+  "reviewer_severity": "Low (preferred) / Medium (alternative reading)",
+  "gap": "The model does not say whether behavior the RISC-V spec leaves UNSPECIFIED (here reserved encodings), when the emulator fixes it without the manual documenting it, counts as an \"undocumented deviation\" (Medium) or only as a documentation gap (Low). Section 2's \"The manual's documented semantics define it on every state\" leans toward Medium. R13's \"The interpreter semantics\" being part of the protocol leans toward Low. It is also unclear whether CHANGELOG.md, which documents Zcb (\"Added support for RISC-V Zcb compressed instructions (required by kernels built with GCC 14)\"), counts as the manual."
+ },
+ {
+  "id": "R1-GUEST-1",
+  "stage": "refuted by reviewer",
+  "round": 1,
+  "has_test": true,
+  "reviewer_reason": "Test exits 1 on two runs. Facts hold: rollup.cpp ignores cmt_rollup_load/save_merkle results. Manual: CLI \"is intended for shell-driven demos and tests. Production applications should use either a libcmt language binding or /usr/bin/rollup-http-server instead.\" That clause covers this component. Section 8 Low: \"a defect in guest software that only an application outside its intended use can reach\". The trigger, a whole-/tmp wipe, does not depend on input content.",
+  "reviewer_severity": "Low / Critical",
+  "gap": "Section 3 scopes guest software 'where an application depends on them as documented' but does not say whether the manual's statement that a tool is meant only for demos and tests puts every production app that uses it outside 'intended use'. It also does not say whether a deviation that every input causes, given the app's own unconditional cleanup of a shared tmpfs, counts as 'an input' making the app deviate. Deciding facts: whether a deployment may rely on the CLI at all, and whether a content-dependent trigger exists (none shown)."
+ },
+ {
+  "id": "R3-VARSPEC-4",
+  "stage": "refuted by reviewer",
+  "round": 3,
+  "has_test": true,
+  "reviewer_reason": "The test exits 1 every time, but the 6 lines it flags are the implied initial and final hashes (documented as \"print initial/final state hash\") and the start: line. Only the collected sample is claim material, and it is canonical. R6: \"Its own root hash is then the content hash of the rejecting machine.\" The CLI is Support per the AUDIT.md table. Nothing rates High in the stood-in role, so this is Low as \"a defect in a tool's diagnostics\".",
+  "reviewer_severity": "Low (preferred: documented --initial-hash/--final-hash and window-start diagnostics of a Support tool) / Medium (if every '<mcycle>: <hash>' line the option prints counts as claim material)",
+  "gap": "R4/R6 limit the rejection exception to hashes \"for a claim, a node or a proof\" and \"every hash the honest operator commits to\". They do not say whether a Support printer's labelled initial/final/window-start state-hash lines, printed in the same '<mcycle>: <hash>' format as the samples, count as claim hashes, or count as the machine's own root hash, which R6 says is the content hash. The deciding fact is whether the option offers those lines as claim material. The help text and doc/README.md list them separately as implied --initial-hash/--final-hash, and the manual's example shows the final line repeating the last sample, which points to diagnostics."
+ },
+ {
+  "id": "R3-VARDIRTY-2",
+  "stage": "refuted by reviewer",
+  "round": 3,
+  "has_test": true,
+  "reviewer_reason": "The test reproduces: it exits 1 on the same N windows. Trigger is a host fault. OOS covers \"Host faults ... as long as the emulator does not turn them into a wrong hash, a wrong proof\". The call fails loudly and returns no log. verify_hash_tree is true, so R9 holds. Only a caller that retries on the same machine gets a wrong hash, and the PRT player logs on fresh forks. Section 4: a host fault \"may stop the honest operator\".",
+  "reviewer_severity": "Out of scope / Low (preferred); Critical under the alternative reading that in-process continued use after a failed log call is documented use",
+  "gap": "The model does not say whether a state-changing API call that fails in-process from a host fault (e.g. bad_alloc) must leave the machine unchanged or only hash-consistent. R9 says the process \"keeps using the machine\" after a failed update but guarantees only content hash = contents. Section 4 lets a host fault \"stop\" the operator and expects an O2 restart. Two facts would decide: does the API promise state is unchanged on failure, and does a production node retry on the same machine?"
+ },
+ {
+  "id": "R3-VARGEN-1",
+  "stage": "refuted by reviewer",
+  "round": 3,
+  "has_test": true,
+  "reviewer_reason": "The test exits 1 deterministically, and its facts are right. But R13 says \"must be reproducibly buildable from audited source\", and a clean checkout does rebuild the uarch reproducibly. The High case needs code \"that cannot be reproducibly rebuilt\", which does not fit. The trigger is untracked generated files left by another version, and the documented add-generated-files.diff flow uses those files as inputs on purpose. That is not audited source. The build is trusted, so the result is Low.",
+  "reviewer_severity": "Low (best-supported reading: a clean checkout builds reproducibly, and leftover untracked files from another version are not \"audited source\") / High (triage's reading, where R13 would also cover incremental builds in dirty trees)",
+  "gap": "R13 says \"reproducibly buildable from audited source\" but does not say whether that covers only a clean build from the audited tree (plus the released generated-files patch) or every build path. That includes incremental builds in a tree that holds generated files from another version, and Docker contexts built from such a tree. Deployed artifacts come from CI builds of clean checkouts, so under the first reading this is Low and under the second it is High."
+ },
+ {
+  "id": "R3-VARREFMODEL-1",
+  "stage": "refuted by reviewer",
+  "round": 3,
+  "has_test": true,
+  "reviewer_reason": "Test exits 1 deterministically and the code matches. The manual says only \"The referee requests and the players' responses ... represent blockchain events and transactions\". The closer is not a player, its request comes before run_epoch, and Dave has no closer. The manual also lists \"The referee is one trusted process\". Section 3's \"as if a deployed referee had it\" applies only to referee logic, and this channel has no deployed counterpart. So Low.",
+  "reviewer_severity": "Low (preferred: phase closer and stop are the example's trusted orchestration) / Critical for the close effect and support Medium for the stop effect (A5 stall) if every wire message counts as an untrusted transaction",
+  "gap": "The threat model does not say whether the referee model's out-of-protocol control messages count as untrusted input to a deployed referee. These are the wall-clock admission close and the stop that ends the example, which game-transport.lua calls \"trusted orchestration\". The manual does not mention them either. Section 4 lists no trusted orchestrator for the referee model. Section 3 says \"what it accepts\" is rated as a deployed referee. The manual maps only referee requests and player responses to chain events. Read as untrusted, the close is Critical."
+ }
+]

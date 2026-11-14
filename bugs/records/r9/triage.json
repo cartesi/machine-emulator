@@ -1,0 +1,226 @@
+{
+ "items": [
+  {
+   "id": "R9-SUBTLB-1",
+   "source_angle": "SUBTLB",
+   "title": "SRET from S to S clears mstatus.MPRV without flushing the read/write TLB, so S-mode keeps translations filled under effective privilege MPP (U pages pass with SUM=0)",
+   "component": "Interpreter execute_SRET (src/interpret.cpp ~2800-2828), shared by native, uarch, collectors and log producers; machine creation accepts iprv=S with MPRV=1",
+   "role": "Honest operator (AUDIT.md row 1: Interpreter, uarch program)",
+   "decision": "keep",
+   "severity": "Medium (preferred) / Critical (literal R7, if a configuration-made template with iprv=S and MPRV=1 is a valid template) ",
+   "rating_steps": [
+    "1 Out of scope: no exclusion. The trigger is a template created from a configuration whose individual register values (iprv=S, mstatus.MPRV=1, MPP=U) the privileged spec allows; it is neither a snapshot the emulator did not write nor an untrusted API caller.",
+    "2 Role: interpreter = Honest operator (AUDIT.md row 1). Same code natively, in the uarch and in the collectors, so no divergence.",
+    "3 Medium case: 'An undocumented deterministic deviation, consistent across all paths, in behavior that no correct guest relies on for isolation or data integrity (R7)'. readings.md: this case 'has no reachability condition'. Code checked: execute_SRET clears MPRV when spp<M and calls set_prv only if prv != spp; MRET has the extra flush branch, SRET does not.",
+    "4 Critical alternative: R7 lists 'Address translation and memory permissions' where 'any deviation lets an input subvert a correct guest, even a deviation that is consistent across all paths'; Critical if a template with iprv=S, MPRV=1 is a valid template (per-register reading of 'Its registers hold only values that the RISC-V specification and the manual allow for them'). No input can produce MPRV=1 outside M from an M-mode start.",
+    "5 Not Low: the Medium deviation case applies whatever the reachability (readings.md)."
+   ],
+   "reason": "Code confirmed: SRET S->S with MPRV=1 clears MPRV but skips the TLB_READ/TLB_WRITE flush MRET and traps perform. Medium deviation case has no reachability condition (readings.md); Critical under literal R7 with the per-register valid-template reading.",
+   "reading_based": false,
+   "brief_for_prover": "Defect: src/interpret.cpp execute_SRET (~2800-2828) clears mstatus.MPRV when SPP<M but flushes the read/write TLB only through set_prv when prv != spp. With iprv=S, MPRV=1, MPP=U and SPP=S, the effective data privilege changes from U to S without a flush, so S-mode with SUM=0 keeps reading/writing a U page through a TLB hit that a page walk would refuse (load/store page fault). Compare execute_MRET (~2850-2862), which flushes TLB_READ/TLB_WRITE when it returns to M with MPRV set, and raise_exception. Trigger: a machine created from a configuration with processor.registers iprv=1 (S), mstatus with MPRV=1, MPP=U, SPP=S, satp = Sv39 root in RAM; machine creation accepts it (no legalization of the pair). Unreachable from an M-mode start by guest instructions (MPRV writable only in M; xRET to below M clears it). Required behavior: R7 'The emulator implements the RISC-V specification ... departing only where the manual documents a deviation', area 'Address translation and memory permissions'; section 8 Medium 'An undocumented deterministic deviation, consistent across all paths ...'. Hunter test idea: guest does ld from a U page (succeeds as effective U, fills read TLB), SRET with SPP=S to the next instruction, ld again from the same U page; assert the second load traps (scause/mcause 13, tval = the VA) rather than reaching the 'after' label. Control: same with sfence.vma before the second load traps. Alternative acceptable fix: creation refuses iprv != M with MPRV=1 (then the test may accept a creation error). Evidence: /tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r9/SUBTLB/mprv/test2.lua with mprv/mprv.S, mprv/mprv2.S (bare-metal guests). Ratings to report: Medium (preferred) / Critical (literal R7 with per-register valid-template reading).",
+   "duplicate_of": null,
+   "merged_ids": []
+  },
+  {
+   "id": "R9-SUBCSR-1",
+   "source_angle": "SUBCSR",
+   "title": "PMP CSRs (pmpcfg0-15, pmpaddr0-63) raise illegal-instruction in M-mode instead of reading as WARL read-only zero; undocumented in the manual",
+   "component": "Interpreter CSR file (src/interpret.cpp read_csr/write_csr default cases; src/riscv-constants.hpp CSR_address lacks 0x3A0-0x3EF)",
+   "role": "Honest operator (AUDIT.md row 1: Interpreter)",
+   "decision": "keep",
+   "severity": "Medium (preferred) / Critical (literal R7) / Low (if a zero-entry PMP may omit its CSRs, as R1-R7-3 was read for Zihpm)",
+   "rating_steps": [
+    "1 Out of scope: none; reachable by one M-mode CSR instruction from any valid template.",
+    "2 Role: interpreter = Honest operator; the same semantics are the state transition function of the uarch and the on-chain step.",
+    "3 Medium case: 'An undocumented deterministic deviation, consistent across all paths, in behavior that no correct guest relies on for isolation or data integrity (R7)', if the privileged spec requires PMP CSRs to exist (read-only zero) with zero entries. Checked: no PMP CSR in riscv-constants.hpp and no 'PMP' in doc/README.md.",
+    "4 Critical alternative: R7 'any deviation' in 'Privilege levels' / 'memory permissions'.",
+    "5 Low alternative: if the spec lets an implementation with zero PMP entries treat the CSRs as non-existent (illegal instruction), as the second opinion upheld for hpmcounter3-31 in R1-R7-3. Deciding fact: the exact privileged-spec text on zero-entry PMP CSR existence. Distinct site and fix from R1-R7-3 (different CSRs, different spec basis)."
+   ],
+   "reason": "Facts plausible and cheap-checked (no PMP CSR addresses, manual silent). Whether trapping is a deviation turns on the spec's zero-entry PMP wording; Medium/Critical under the deviation readings, Low by the R1-R7-3 precedent. Unsure, so kept.",
+   "reading_based": false,
+   "brief_for_prover": "Defect: src/interpret.cpp read_csr (~2005-2163) and write_csr (~2489-2640) have no case for pmpcfg0..15 (0x3A0-0x3AF) or pmpaddr0..63 (0x3B0-0x3EF); src/riscv-constants.hpp CSR_address has no such entries, so any csrr/csrw on them in M-mode raises illegal instruction (mcause 2, mtval = instruction). The privileged spec (20211203, 3.7.1) says implementations may implement zero, 16 or 64 PMP entries, 'All PMP CSR fields are WARL and may be read-only zero', 'PMP CSRs are only accessible to M-mode', and the machine CSR table lists them as MRW. doc/README.md never mentions PMP or documents this deviation. Required behavior: R7 'departing only where the manual documents a deviation' (areas Privilege levels, Address translation and memory permissions); section 8 Medium 'An undocumented deterministic deviation, consistent across all paths ...'. Before writing the test, quote the exact spec text that decides whether PMP CSRs must exist with zero entries; the precedent R1-R7-3 (hpmcounter3-31, Zihpm unclaimed) was rated Low because accessing a non-existent CSR may trap. If the spec makes the CSRs mandatory (read-only zero), the test should pass when the CSRs read zero and ignore writes, or when the manual documents the deviation. Hunter test idea: RAM image 'csrr a0,pmpcfg0; csrw pmpaddr0,a0; csrr a1,pmpaddr0; ...', mtvec to a halting stub, run a few mcycles in M-mode; assert mcause != 2, a0 == 0, a1 == 0. Evidence: /tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r9/SUBCSR/pmp.lua (after run(1): pc=mtvec, mcause=2, mtval=0x3a002573). Ratings: Medium (preferred) / Critical (literal R7) / Low (if zero-entry PMP may omit CSRs).",
+   "duplicate_of": null,
+   "merged_ids": []
+  },
+  {
+   "id": "R9-SUBCSR-2",
+   "source_angle": "SUBCSR",
+   "title": "Machine creation accepts mstatus read-only fields (VS, UBE/SBE/MBE, UXL/SXL) and misa values the hart does not implement; WARL-on-read does not legalize them",
+   "component": "Machine creation (machine::init_processor raw writes), src/riscv-warl.hpp WARL_mstatus, misa read without WARL",
+   "role": "Honest operator (machine creation, interpreter)",
+   "decision": "drop",
+   "severity": "Low",
+   "rating_steps": [
+    "1 Out of scope: not clearly excluded.",
+    "2 Role: machine creation / interpreter, Honest operator.",
+    "3 High/Medium: no divergence between paths (hunter checked native vs uarch). The Medium deviation case does not fit: given register values the spec allows, the hart behaves per spec; the guest-visible oddity exists only because the configuration holds values the spec does not allow for this hart.",
+    "4 Critical: R4's configuration clause covers only configurations 'holding only register values that the RISC-V specification and the manual allow'; these values are exactly what it exempts, and section 2's valid template requires 'Its registers hold only values that the RISC-V specification and the manual allow for them'. No input sequence produces them (write masks exclude the fields, misa writes are ignored).",
+    "5 Low: 'a failure that needs misuse of an API by its trusted caller'. Hunter also rates Low."
+   ],
+   "reason": "The values are ones R4's configuration clause explicitly exempts ('holding only register values that the RISC-V specification and the manual allow'); unreachable, all paths agree; only a trusted caller's illegal configuration shows it: section 8 Low.",
+   "reading_based": true,
+   "duplicate_of": null,
+   "merged_ids": [],
+   "brief_for_prover": null
+  },
+  {
+   "id": "R9-SUBCMIO-1",
+   "source_angle": "SUBCMIO",
+   "title": "Creation accepts a configuration at an rx-rejected manual yield (iflags.Y=1) whose revert root hash is 32 zero bytes: the canonical hash is the hash of no state, so no claim or proof can follow",
+   "component": "Machine creation (machine::machine register loading, validate_processor_shadow) with the rejection exception in collect_mcycle_root_hashes, collect_uarch_cycle_root_hashes, reset_uarch log producers and UArchReset",
+   "role": "Honest operator (creation, collectors, log producers); rest of the machine API for creation, as in R1-R4-1",
+   "decision": "keep",
+   "severity": "High (preferred: demonstrably unreachable state) / Critical (creation-time acceptance as an R4 configuration-clause violation) / Low (if R4's clause binds only valid templates)",
+   "rating_steps": [
+    "1 Out of scope: not excluded; readings.md: 'Do not let the general deliberate state change ... exclusion excuse accepting a configuration the clause says must be rejected', and R4's exemptions (unreproducible, other hash function, disallowed register values) are the full list. iflags.Y=1 and an rx-rejected manual-yield tohost are values the manual allows for those registers.",
+    "2 Role: creation and collectors/log producers: Honest operator (AUDIT row 1), creation as in R1-R4-1.",
+    "3 High: the state is demonstrably unreachable (argument given by hunter: every rejected yield reachable from a valid template follows a state-changing delivery that writes the referee-supplied before-hash as the revert root hash, A4, and the guest cannot write it, R8). The honest operator then cannot produce a uarch-level claim or proof for later positions; High 'A divergence between paths only at demonstrably unreachable states' / 'crash ... only demonstrably unreachable states trigger' in spirit, same family as R1-R4-1 (High preferred).",
+    "4 Critical alternative: R4 'Every reproducible configuration that the emulator accepts ... yields a machine on which this rule holds. A configuration that would not is rejected when the machine is created.' Here R4 fails (canonical hash 0x00..00, uarch tail must be fabricated).",
+    "5 Low only if R4's clause is read as binding valid templates only, which readings.md rejects."
+   ],
+   "reason": "Variant of confirmed R1-R4-1 at the rollup registers/revert root hash, with a different site and fix (validate iflags_Y/tohost against the revert root hash at creation). Same reading as R1-R4-1: High preferred / Critical.",
+   "reading_based": false,
+   "brief_for_prover": "Defect: machine creation (src/machine.cpp constructor ~150-200 writes iflags_Y and htif_tohost from the configuration; validate_processor_shadow ~205-234 checks only marchid/mvendorid/mimpid, x0, iunrep, padding) accepts a reproducible Keccak configuration with processor.registers.iflags.Y = 1 and htif.tohost = (HTIF_DEV_YIELD<<56)|(HTIF_YIELD_CMD_MANUAL<<48)|(HTIF_YIELD_MANUAL_REASON_RX_REJECTED<<32), while the revert root hash (no configuration field) is 32 zero bytes. The rejection exception (src/rejected-manual-yield.hpp is_rejected_manual_yield; machine.cpp collect_mcycle_root_hashes ~2534-2538, collect_uarch_cycle_root_hashes ~2810-2835 and ~2944; uarch-reset-state.cpp; regenerated UArchReset) then makes the canonical hash at the next mcycle boundary 0x00..00, the hash of no state: collect_mcycle_root_hashes returns it, log_reset_uarch/verify_reset_uarch return it, and collect_uarch_cycle_root_hashes accepts a made-up tail (it checks only the last entry). No later node, uarch trajectory or step proof can be produced. Required behavior: R4 'Every reproducible configuration that the emulator accepts, using the deployment's hash function and holding only register values that the RISC-V specification and the manual allow, yields a machine on which this rule holds. A configuration that would not is rejected when the machine is created.' Same family as confirmed R1-R4-1 (non-pristine uarch accepted at creation); keep the site distinct. Hunter test idea: pcall(cartesi.machine, cfg) with cfg = {ram={length=1<<20}, processor={registers={iflags={Y=1}, htif={tohost=<above>}}}} (reproducible, keccak256); require creation to fail, or, if it succeeds, that collect_mcycle_root_hashes(...).hashes[1] is not 32 zero bytes / is the hash of a state the operator can hold. Today creation succeeds and the hash is zero: exit 1. Optional second assertion with a processor backing store holding an arbitrary revert root hash. Evidence: /tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r9/SUBCMIO/exp2.lua (run with bugs/env.sh). Ratings: High (preferred, unreachable state, as R1-R4-1) / Critical (creation acceptance as R4 violation) / Low (if R4 binds valid templates only).",
+   "duplicate_of": null,
+   "merged_ids": []
+  },
+  {
+   "id": "R9-SUBCMIO-2",
+   "source_angle": "SUBCMIO",
+   "title": "Inspect-state delivery never renews imcyclemax, so an inspect after an input that used its whole budget gets no cycles and the manual's inspect host loop never ends",
+   "component": "Input delivery (src/send-cmio-response.cpp) and doc/README.md inspect host loop",
+   "role": "Honest operator (input delivery), but only for inspect, which is off the verified history",
+   "decision": "drop",
+   "severity": "Low",
+   "rating_steps": [
+    "1 Out of scope: not by name.",
+    "2 Role: input delivery (Honest operator); affected use is inspect-state only.",
+    "3 High/Medium: none fits; the manual's omission of imcyclemax in delivery is already R7-MANARCH-1 and the non-terminating manual loop is R7-MANLUA1-1 (dropped Low).",
+    "4 Critical: none. R6 requires exactly this ('imcyclemax is likewise written only by such a delivery'), and R4: 'Inspect-state requests are outside the verified history ... their results carry no guarantee.'",
+    "5 Low (hunter agrees)."
+   ],
+   "reason": "Behavior is what R6 requires; R4 says inspect 'results carry no guarantee'; manual omissions already covered by R7-MANARCH-1 and R7-MANLUA1-1. Low.",
+   "reading_based": true,
+   "duplicate_of": null,
+   "merged_ids": [],
+   "brief_for_prover": null
+  },
+  {
+   "id": "R9-SUBJOURNAL-1",
+   "source_angle": "SUBJOURNAL",
+   "title": "PRT journal prices large leaf proofs above the node's default RPC fee cap (1 ether), never publishes them, reports nothing, and stores a full candidate each bump interval",
+   "component": "PRT transaction journal doc/recipes/prt-transactions.lua (fees 140-154, submit ~236/256-298) via prt-bridge.lua attempt/tick/report_blocked",
+   "role": "Support (AUDIT.md: PRT player and bridge), standing in for the honest operator's 'Submitting transactions'",
+   "decision": "keep",
+   "severity": "Medium (support stand-in for Critical R4) / Low or Out of scope (if the trusted node's fee-cap policy is operator configuration or a host fault)",
+   "rating_steps": [
+    "1 Out of scope: arguable. Section 4 trusts 'the operator's host, keys, and node', and a node refusing a write resembles 'an output channel that refuses a write' (host fault). But the refusal is the node's documented default policy, not a fault, and a fee under the cap exists that the chain would include.",
+    "2 Role: journal/bridge are Support (AUDIT.md); section 3 'Medium when it would rate High or Critical in the role the component stands in for, such as ... the honest operator for an implementation of an operator'.",
+    "3 High/Medium in the stood-in role: none listed.",
+    "4 Critical in the stood-in role: R4 'The honest operator observes the chain and submits its transactions within the dispute clocks.' Adversary steers to a 64 KiB-input delivery leaf (section 7), gas limit 2 x estimate ~12.6M, base fee 40-78 gwei: first fee 2*base+tip exceeds the cap and every bump/fresh candidate stays above it; the leaf proof is never published. Support caps at Medium.",
+    "5 Low/OOS if the node fee cap is read as the operator's configuration under the goal's inclusion premise. Code checked: fees() = min(2*base+priority, max_fee) with no gas*fee bound; submit returns published=true with publication_error on refusal."
+   ],
+   "reason": "Code confirmed (fees ignores gas*maxFee; a refused publication returns published=true). Distinct from R3-VARSCHED-2 (priority cap). Stand-in R4 Critical gives support Medium; Low/OOS only if the trusted node's policy counts as configuration/host fault.",
+   "reading_based": false,
+   "brief_for_prover": "Defect: doc/recipes/prt-transactions.lua methods:fees (140-154) picks max_fee = min(2*base + priority, max_fee) and bumps it >= bump_percent per bump_blocks, never bounding the total gas*max_fee; submit (~236 gas = 2 x estimate; 256-298) stores the candidate then publishes, and a publication error returns {published=true, publication_error=code}; prt-bridge.lua report_blocked (573-588) reports only result.blocked and tick (770-772) counts it as published. geth and reth refuse in eth_sendRawTransaction any tx whose gas*maxFeePerGas exceeds --rpc.txfeecap (default 1 ether). A winLeafMatch for a 64 KiB input at its delivery transition has gas limit ~12.6M, so the cap is ~79 gwei; for base fees ~39.5-78 gwei base+tip fits, but 2*base+tip and every later candidate exceed it; fresh candidates after max_fee start over at the same over-cap fee. The honest leaf proof is never published, no anomaly is reported, and journal.json grows by a full candidate (~380 KB) per interval. Required behavior: R4 'The honest operator observes the chain and submits its transactions within the dispute clocks' (stood-in honest-operator role; section 3 support rule gives Medium). Hunter test idea: disposable anvil (use bugs/harness/anvil-wrap.sh), manual mining; wrap chain.publish to return {code=-32000, message='tx fee ... exceeds the configured cap (1.00 ether)'} when gas*max_fee > 1 ether (geth's checkTxFee rule); a job calling a gas-burner contract so eth_estimateGas ~6.3M; base fee fixed at 40 gwei; mine one block per tick for 30 blocks. Require the job to be mined at nonce 0 within the window (a max fee <= 79 gwei is accepted), or at least a blocked/anomaly result and no new stored candidate per refused attempt. Today: 0 accepted, ~30 candidates at nonce 0. Control at base 38 gwei publishes. Evidence: /tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r9/SUBJOURNAL/feecap.lua. Note in the report the deciding facts: whether the recipe's documented setup targets geth/reth defaults, and whether a trusted node's policy refusal is a host fault. Ratings: Medium / Low (or Out of scope).",
+   "duplicate_of": null,
+   "merged_ids": []
+  },
+  {
+   "id": "R9-SUBJOURNAL-2",
+   "source_angle": "SUBJOURNAL",
+   "title": "PRT journal discards every signed attempt when any block arrives during submit, so on chains with blocks faster than one submit the honest bridge rarely or never publishes",
+   "component": "PRT transaction journal doc/recipes/prt-transactions.lua methods:submit (block sampled at entry, discard at ~266-270), called by prt-bridge.lua attempt and crisium.lua",
+   "role": "Support (PRT bridge/journal), standing in for the honest operator's 'Submitting transactions'",
+   "decision": "keep",
+   "severity": "Medium (support stand-in for Critical R4 on a supported fast chain) / Low (if the recipe is Anvil-only or interval vs latency is deployment sizing)",
+   "rating_steps": [
+    "1 Out of scope: no exclusion; the trigger is the chain's block interval and RPC latency, not an adversary capability or host fault.",
+    "2 Role: Support (AUDIT.md); section 3 stand-in rule.",
+    "3 High/Medium in stood-in role: none listed.",
+    "4 Critical in stood-in role: R4 'submits its transactions within the dispute clocks'; when block interval < submit latency essentially every attempt returns {waiting=true}, so no move is ever published and the honest claim loses by timeout. Code checked: submit returns waiting whenever chain:head() hash differs from the block sampled at entry, even if the window is open and the observation canonical. Support caps at Medium.",
+    "5 Low if the recipes support only local Anvil or slow chains, or A7 sizing absorbs the geometric delay. Deciding facts: the chains the recipe claims to support and the submission latency A7 assumes."
+   ],
+   "reason": "Code confirmed at prt-transactions.lua ~266-268. On a supported sub-second chain the stand-in operator never submits (R4 Critical, support Medium); Low if only Anvil or slow-block chains are in scope. Unsure, so kept.",
+   "reading_based": false,
+   "brief_for_prover": "Defect: doc/recipes/prt-transactions.lua methods:submit samples the latest block at entry (~161-163), runs ~10 sequential RPCs plus two cast processes (nonce, receipts, eth_maxPriorityFeePerGas, eth_call, eth_estimateGas, eth_getBalance, sign, decode), then at ~266-268 'local _, current_hash = self.chain:head(); if current_hash ~= block.hash ... then return { waiting = true } end' discards the whole attempt if any block arrived, even though the job window is still open and the observation still canonical (window and canonicality are rechecked anyway). crisium retries only at the next tip, so the race repeats; with block interval < submit latency no move is ever published. doc/recipes/prt-transactions-test.lua 365-378 asserts the current behavior. Required behavior: R4 'The honest operator observes the chain and submits its transactions within the dispute clocks' (stood-in honest-operator role; support Medium). Hunter test idea: disposable anvil (bugs/harness/anvil-wrap.sh) with manual mining; wrap signer.sign (as prt-transactions-test.lua 365-378 does) to mine one block during every signing; call submit for a job whose window [0,1000) stays open; require publication at nonce 0 within a bounded number of attempts (e.g. 5). Today every attempt returns waiting. Evidence: /tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r9/SUBJOURNAL/latency.lua (0.25 s blocks: 24/30 discarded; 1 s: 2/20). Record the deciding facts (chains the recipe supports; Arbitrum's block.number mismatch noted by the hunter). Ratings: Medium / Low.",
+   "duplicate_of": null,
+   "merged_ids": []
+  },
+  {
+   "id": "R9-SUBEPOCHDIR-1",
+   "source_angle": "SUBEPOCHDIR",
+   "title": "Stored PRT player reopens an epoch directory (and keeps an existing checkpoint) without checking it continues the given initial state hash or geometry",
+   "component": "PRT stored player doc/recipes/prt.lua (store_epoch_state, reopen_epoch_directory, new_stored_player, store_*_epoch_checkpoint, load_epoch_checkpoint) with crisium.lua",
+   "role": "Support (PRT player), standing in for the honest operator's storing/reloading and restart",
+   "decision": "drop",
+   "severity": "Low",
+   "rating_steps": [
+    "1 Out of scope: the checkpoint variant needs a reorg deeper than the input policy ('Reorganizations of the chain deeper than the operator's input policy'). The other trigger is not excluded by name.",
+    "2 Role: Support (AUDIT.md: PRT player).",
+    "3 High/Medium: none; the Medium API case covers machine API operations, not the player's own records.",
+    "4 Critical in the stood-in role: none shown. Within one deployment the code keeps directory and checkpoint consistent (atomic checkpoint rename, removal of checkpoint K with state/epoch-K, per hunter); only reusing a --state directory across deployments, applications or checkpoint sets produces the mismatch, which is not 'Restarting after a stop' of the same operator.",
+    "5 Low: 'a failure that needs misuse of an API by its trusted caller' (operator misusing its own records); hunter also rates Low."
+   ],
+   "reason": "Only operator misuse of its own --state across deployments or an out-of-scope deep reorg triggers it; in-scope restarts stay consistent. Section 8 Low ('misuse ... by its trusted caller'); defense in depth.",
+   "reading_based": true,
+   "duplicate_of": null,
+   "merged_ids": [],
+   "brief_for_prover": null
+  },
+  {
+   "id": "R9-SUBREFSTATE-1",
+   "source_angle": "SUBREFSTATE",
+   "title": "Referee model stops accepting outputs for good once a prove_output request's fixed audience has answered without a new proof; later valid proofs from anyone are never heard",
+   "component": "PRT referee model doc/recipes/prt.lua wait_for_outputs (773-802) over game-transport.lua request_first_valid/dispatch_request (audience fixed at request time), accept_scheduled_response (925-939), step_time",
+   "role": "Referee model (AUDIT.md: the PRT referee model in doc/recipes)",
+   "decision": "keep",
+   "severity": "Critical (preferred: a defect in what the model accepts, A5 converse, rated as a deployed referee) / Medium (if read as 'only ... stalls the model', rated as support)",
+   "rating_steps": [
+    "1 Out of scope: no; the referee model itself violates A5, which the A1-A8 exclusion carves out ('unless an implementation of the referee model is what violates it'). Not an application stall: the settled state is accepted and commits to the outputs.",
+    "2 Role: Referee model. Section 3: 'A defect in what it accepts or derives is rated as if a deployed referee had it.' Counter-clause: 'only crashes or stalls the model ... is rated as support'.",
+    "3 High/Medium: none applies under the acceptance reading; under the stall reading, support Medium (stand-in deployed referee would be Critical).",
+    "4 Critical: A5 'the referee accepts every output that the settled state commits to, whenever its valid proof is presented. No party can make it stop accepting them.' Reached in the demo's normal flow after the honest player re-offers its already accepted last output; then any other output (from a late connector or an audience member) is refused. Code checked: wait_for_outputs loops request_first_valid(EVERYONE ...) with FOREVER; accept_scheduled_response drops responses from connections outside future.audience; game-transport comment 'Only an accepted response resolves a first-valid future'.",
+    "5 Not Low."
+   ],
+   "reason": "Code confirms the fixed audience and FOREVER wait. A5 converse violated by the referee model's acceptance (Critical as deployed referee); Medium if read as a stall. Distinct from R1-A8-3 (silent player barrier) and R3-VARREFMODEL-2 (crash on EOF).",
+   "reading_based": false,
+   "brief_for_prover": "Defect: doc/recipes/prt.lua wait_for_outputs (773-802) issues request_first_valid(EVERYONE, prove_output, {outputs_merkle_root}) and waits FOREVER for one valid, not-yet-accepted output, then issues the next request. game-transport.lua fixes each request's audience to the connections live at dispatch (dispatch_request/register_event ~669-687, ~826-838); accept_scheduled_response (925-939) ignores any response whose connection is not in future.audience; each member answers once; after all members have answered without a valid new proof no boundary remains (step_time ~1108-1137), so the logical clock never advances and the request never resolves ('Only an accepted response resolves a first-valid future'). Unsolicited lines without the current request id are dropped (~586-597). So after the honest player re-offers its already accepted last output (normal demo end: 'The player offered its last output, output 1'), the referee is frozen: a party connecting later with a valid proof of another committed output (e.g. output 0), or an audience member with a new proof, is never heard. The same pattern governs prove_outputs_merkle_root. Required behavior: A5 'Conversely, the referee accepts every output that the settled state commits to, whenever its valid proof is presented. No party can make it stop accepting them.' Section 3: 'A defect in what it accepts or derives is rated as if a deployed referee had it' (Critical); counter-reading 'only crashes or stalls the model ... rated as support' (Medium). Hunter test idea: drive the prt.lua referee on the calculator epoch (or wait_for_outputs through game-test-server with a stub settled state); after the last output is accepted and its repeated offer refused, connect a new client answering prove_output (or pushing in advance_time) with a valid proof of output 0; assert acceptance within a bounded number of dispatcher steps. Transport-level equivalent: a request_first_valid(EVERYONE) future must accept a valid answer from a player that connected after the request. Evidence: /tmp/claude-0/-home-user-machine-emulator/549e7dd9-06ba-5ccf-8b17-f8cce9526655/scratchpad/campaign/r9/SUBREFSTATE/late-presenter.lua (lua5.4 with bugs/env.sh, shipped game-transport.lua and game-test-server.lua): 'accepted=false time=19 B_asked=0 B_batches=2' (exit 1); control with B connected first accepts. Ratings: Critical (acceptance) / Medium (stall-as-support).",
+   "duplicate_of": null,
+   "merged_ids": []
+  },
+  {
+   "id": "R9-SUBREFSTATE-2",
+   "source_angle": "SUBREFSTATE",
+   "title": "Referee model binds a claim to the TCP connections that posted it: an honest operator that restarts on a new connection can never again answer for its claim, which loses by timeout",
+   "component": "PRT referee model doc/recipes/prt.lua partition_claims (230-258, only per-claim subscription), reveal/seal/timeout/uarch requests to holders; game-transport.lua subscribe_connection, accept_subscribers, audience check in accept_scheduled_response",
+   "role": "Referee model (AUDIT.md: the PRT referee model in doc/recipes)",
+   "decision": "keep",
+   "severity": "Critical (preferred: derives a timeout loss for the honest claim, A7, with R4's restart obligation) / Medium (if read as support stall) / Low (if per-connection holder identity is the manual's normative model and restart is outside it)",
+   "rating_steps": [
+    "1 Out of scope: no; restart is on the honest operator's path ('Restarting after a stop (O2)'), and the A1-A8 violation is by the referee model itself.",
+    "2 Role: Referee model; section 3: 'Which claim a timeout or an elimination decides is part of what it derives.'",
+    "3 High/Medium: none; it is not 'only changes how long a claim may take to respond' because the loss is permanent.",
+    "4 Critical: A7 'No rule of the referee may make the honest claim lose by timeout while it acts within its own clock', together with R4 'After a stop, it restarts from a directory that O2 guarantees and keeps defending its claim'. Code checked: subscribe_connection is called only from partition_claims (per accepted response connection) and accept_subscribers; manual 10614 'every player that posted one becomes a holder of it', manual 10421 'the sender does not matter'. Today a crash restart is masked by R3-VARREFMODEL-2 (referee asserts on EOF), but a 'done' close followed by reconnect reaches it.",
+    "5 Low alternative: if per-connection holders are the manual's normative model and restart is outside it; section 3 then still rates the manual as the defect if it violates A7.",
+    "Relation: same root cause and fix as R2-DFCLAIM-1 (dropped Low; second opinion upheld it because 'The honest operator holds its claim in both'). This candidate shows a reachable consequence that defeats that premise, so it is kept as the stronger statement; the second opinion should reconsider R2-DFCLAIM-1 together with it."
+   ],
+   "reason": "Kept as the stronger statement of R2-DFCLAIM-1's root cause: after an honest restart the referee model only hears the old connection, deriving a timeout loss (A7/R4) that a deployed referee would not; Critical as referee model, Medium/Low under other readings.",
+   "reading_based": false,
+   "brief_for_prover": "Defect: in the doc/recipes referee model, a claim's holders are the connection objects whose claim response was accepted (doc/recipes/prt.lua partition_claims 230-258 calls subscribe_connection(subscription_hash(tournament_id, claim), response.connection)); subscriptions are never extended (game-transport.lua subscribe_connection 623-630; accept_subscribers 900-917 subscribes only to the initial state hash before admission closes). Reveal/seal/timeout-win/uarch-claim admission/leaf-proof requests for a claim (prt.lua reveal_divergence 608-616, seal_divergence 638-646, emit_win_match_by_timeout 371-381, settle_uarch_state_hash 410-432, open_uarch_tournament 476-489) go only to, and accept only from, those connections (accept_scheduled_response audience/owner check ~933). An honest player that stops and restarts (R4) reconnects on a new connection: it is not a holder of its claim, cannot re-post it (claim collection closed), and is not in the audience of any request about it, so its claim loses by timeout while the restarted player acts within the clock. Dave identifies a claim by its commitment and lets any sender move; the manual says 'the sender does not matter' (doc/README.md ~10421). Required behavior: A7 'No rule of the referee may make the honest claim lose by timeout while it acts within its own clock'; R4 'After a stop, it restarts from a directory that O2 guarantees and keeps defending its claim'; section 3 'Which claim a timeout or an elimination decides is part of what it derives' (rated as a deployed referee). Test notes: a crash/EOF without 'done' currently crashes the referee (confirmed R3-VARREFMODEL-2), so the test must not depend on that: stop the honest player with an announced 'done' close (or otherwise avoid the EOF assert) and reconnect it as a new connection (e.g. stored player restarted with its epoch directory), then run against an adversary that bisects (quitter-like); assert the honest claim wins, i.e. the restarted player can answer reveal/seal/prove requests for its claim. Today the honest claim should lose by timeout. Evidence: code reading only (hunter). Related dropped candidate R2-DFCLAIM-1 (same root cause; this one adds the restart consequence). Ratings: Critical / Medium / Low.",
+   "duplicate_of": null,
+   "merged_ids": []
+  }
+ ],
+ "threat_model_gaps": [
+  "Valid-template register validity (R9-SUBTLB-1, R9-SUBCSR-2): section 2's 'Its registers hold only values that the RISC-V specification and the manual allow for them' and R4's configuration exemption do not say whether validity is per register or joint (mstatus.MPRV=1 is legal alone but no execution from reset combines it with iprv != M); this decides whether a configuration-made state reachable only from such a template counts as reachable (Critical under literal R7) or only as the Medium deviation case.",
+  "Rollup registers versus hidden state at creation (R9-SUBCMIO-1): R4's configuration clause speaks of 'register values that the RISC-V specification and the manual allow', but the revert root hash is not a configuration field; the model does not say whether a configuration whose individually allowed rollup registers (iflags.Y, tohost rx-rejected) imply a revert root hash it cannot supply must be rejected, nor what the canonical state is for a machine created at a rejected yield (the rejection exception presumes a delivered-to state). Extends the R1-R4-1 gap.",
+  "Optional CSRs with conditional existence (R9-SUBCSR-1): R7's 'departing only where the manual documents a deviation' does not say whether trapping on CSRs whose existence the spec ties to an implementation choice (PMP with zero entries) is a deviation; extends the R1-R7-3 (Zihpm) reading.",
+  "Trusted node policy versus inclusion (R9-SUBJOURNAL-1): section 4 trusts 'the operator's host, keys, and node', and a host fault includes 'an output channel that refuses a write', but the model does not say whether a standard node's documented default policy (geth/reth --rpc.txfeecap) that refuses an over-priced transaction is a host fault, operator configuration under the goal's inclusion premise, or a condition the operator's submission logic must respect.",
+  "Submission latency and chain speed (R9-SUBJOURNAL-2): A7 sizes clocks for the honest claim's work but the model names no supported chain block interval or RPC latency; whether an operator implementation that cannot submit on chains whose blocks are faster than one submission violates R4 or is a deployment-sizing matter is not stated.",
+  "Referee-model liveness vs acceptance (R9-SUBREFSTATE-1): section 3 separates 'what it accepts' (rated as deployed referee) from 'only crashes or stalls the model' (support), but a model that keeps running while its request mechanics exclude late or repeat presenters of valid output proofs fits both; A5's 'No party can make it stop accepting them' does not say whether the model may close output acceptance at the end of its demonstration.",
+  "Claimant identity across restarts (R9-SUBREFSTATE-2): the manual's normative model says 'every player that posted one becomes a holder of it' and 'the sender does not matter', while R4 requires restarting and continuing to defend; the model does not say whether a restarted operator is the same 'player', and section 5 gives no class to the R2-DFCLAIM-1 disagreement until a restart makes it decide a match.",
+  "Sustained input flood versus epoch execution (noted by SUBCONSENSUS, not a candidate): R1-A7-2 was refuted because the application's epoch total is its own job; a sustained flood above the honest operator's processing rate removes the single-block argument, and the model does not say whether execution capacity against an adversary-chosen input rate (section 7: 'Send any number of inputs the deployment accepts') falls on A7 sizing or on the application's mcycle bound.",
+  "Operator records across deployments (R9-SUBEPOCHDIR-1): no rule binds the honest operator's own stored records (epoch directories, checkpoints) to the deployment lineage they continue; whether reusing a state directory across deployments or checkpoint sets is misuse or part of 'Restarting after a stop' is not stated."
+ ]
+}

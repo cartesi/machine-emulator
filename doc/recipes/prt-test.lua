@@ -171,8 +171,8 @@ local function with_test_cache(cache, construct, geometry, ...)
     return player
 end
 
-local function new_test_player(geometry, cache, label, previous_outputs_frontier)
-    return with_test_cache(cache, prt.new_forked_player, geometry, label, previous_outputs_frontier)
+local function new_test_player(geometry, cache, label, previous_outputs_frontier, anomaly_handler)
+    return with_test_cache(cache, prt.new_forked_player, geometry, label, previous_outputs_frontier, anomaly_handler)
 end
 
 local dishonest = {}
@@ -4005,6 +4005,87 @@ if arg[1] then
                 == boundary:get_node_hash(player, 0, 0),
             "terminal input-boundary proof does not authenticate against the claim"
         )
+    end
+end
+
+-- Constructor-time reports reach the supplied handler, including through the dishonest constructors.
+-- A handler failure still falls back to stderr and allows construction to finish.
+for _, kind in ipairs({ "honest", "forger", "tamperer", "fabulist", "quitter", "failing handler" }) do
+    local cache =
+        prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial"), nil, nil, keccak("wrong root")))
+    local received = {}
+    local function handler(anomaly, message)
+        received[#received + 1] = anomaly .. " " .. message
+        if kind == "failing handler" then
+            error("injected handler failure", 0)
+        end
+    end
+    local stderr, printed = io.stderr, {}
+    io.stderr = { -- luacheck: ignore 122
+        write = function(_, text)
+            printed[#printed + 1] = text
+        end,
+    }
+    local started, player = pcall(function()
+        if kind == "forger" then
+            return dishonest.new_forger(nil, cache, 0, "unused", kind, nil, handler)
+        elseif kind == "tamperer" or kind == "fabulist" then
+            return dishonest["new_" .. kind](nil, cache, 0, 0, kind, nil, handler)
+        elseif kind == "quitter" then
+            return dishonest.new_quitter(nil, cache, kind, nil, handler)
+        end
+        return new_test_player(nil, cache, kind, nil, handler)
+    end)
+    io.stderr = stderr -- luacheck: ignore 122
+    assert(started, player)
+    getmetatable(player).__close(player)
+    assert(#received == 1 and received[1] == "outputs_merkle_root_mismatch at the epoch's start", kind)
+    assert(player.anomaly_handler == handler, "construction lost its anomaly handler")
+    if kind == "failing handler" then
+        assert(table.concat(printed):find("anomaly handler failed: injected handler failure", 1, true))
+    else
+        assert(#printed == 0, "a handled startup anomaly was also printed")
+    end
+end
+
+-- Stored players install the handler before both fresh initialization and reopening an active or sealed epoch.
+do
+    local template_directory = temporary_directory .. "/anomaly-template"
+    local epoch_directory = fs.create_temporary_directory(temporary_directory, "anomaly-epoch-")
+    local _ <close> = setmetatable({}, {
+        __close = function()
+            prt.remove_epoch_directory(epoch_directory)
+            cartesi.machine:remove_stored(template_directory)
+        end,
+    })
+    local template <close> = cartesi.machine({ ram = { length = 4096 } })
+    template:write_reg("iflags_Y", 1)
+    template:write_reg(
+        "htif_tohost",
+        (cartesi.HTIF_DEV_YIELD << 56)
+            | (cartesi.HTIF_YIELD_CMD_MANUAL << 48)
+            | (cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED << 32)
+    )
+    template:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, keccak("wrong output root"))
+    local contract = {
+        geometry = prt.new_geometry(10),
+        initial_state_hash = template:get_root_hash(),
+        machine_directory = template_directory,
+    }
+    template:store(template_directory)
+    template:destroy()
+    local received = {}
+    local function handler(kind, message)
+        received[#received + 1] = kind .. " " .. message
+    end
+    for _, message in ipairs({ "at the epoch's start", "at input 0", "at the epoch's end" }) do
+        received = {}
+        local player <close> = prt.new_stored_player(contract, "startup", nil, epoch_directory, nil, handler)
+        assert(#received == 1 and received[1] == "outputs_merkle_root_mismatch " .. message, message)
+        assert(player.anomaly_handler == handler, "reopening lost its anomaly handler")
+        if message == "at input 0" then
+            player.event_handler.epoch_sealed(player, 0)
+        end
     end
 end
 

@@ -176,19 +176,21 @@ local function new_player(dapp, outputs_frontier, epoch_directory, checkpoint_di
         if not fs.exists(epoch_directory) then
             fs.create_directory(epoch_directory)
         end
-        player = prt.new_stored_player(dapp, label, outputs_frontier, epoch_directory, checkpoint_directory)
+        player =
+            prt.new_stored_player(dapp, label, outputs_frontier, epoch_directory, checkpoint_directory, anomaly_handler)
     elseif kind == "quitter" then
-        player = dishonest.new_quitter(dapp, label, outputs_frontier)
+        player = dishonest.new_quitter(dapp, label, outputs_frontier, anomaly_handler)
     elseif kind == "tamperer" then
-        player = dishonest.new_tamperer(dapp, tonumber(first), tonumber(second), label, outputs_frontier)
+        player =
+            dishonest.new_tamperer(dapp, tonumber(first), tonumber(second), label, outputs_frontier, anomaly_handler)
     elseif kind == "fabulist" then
-        player = dishonest.new_fabulist(dapp, tonumber(first), tonumber(second), label, outputs_frontier)
+        player =
+            dishonest.new_fabulist(dapp, tonumber(first), tonumber(second), label, outputs_frontier, anomaly_handler)
     elseif kind == "forger" then
-        player = dishonest.new_forger(dapp, tonumber(first), second, label, outputs_frontier)
+        player = dishonest.new_forger(dapp, tonumber(first), second, label, outputs_frontier, anomaly_handler)
     else
         error("unknown player kind: " .. options.kind)
     end
-    player.anomaly_handler = anomaly_handler
     if profile then
         local handlers = player.event_handler
         player.event_handler = setmetatable({}, {

@@ -546,8 +546,10 @@ A player reports what it observes but cannot fix. Each anomaly has a kind and a
 message that says where, such as `at input 3`. By default the player prints
 `<label>: <kind> <message>` to stderr. With `--anomaly-handler=MODULE`, crisium
 loads the Lua module `MODULE` through `LUA_PATH`. The module returns a function,
-and the player calls it with the kind and the message instead of printing. The
-handler runs inside a pass, so it must return quickly and hand slow work to
+and the player calls it with the kind and the message instead of printing,
+including while creating or reopening an epoch. Player constructors accept an
+optional final `anomaly_handler` argument so these startup reports reach it.
+The handler runs synchronously, so it must return quickly and hand slow work to
 another process. If it raises an error, the player prints the anomaly with the
 error, and continues.
 

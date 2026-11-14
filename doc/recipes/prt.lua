@@ -3155,10 +3155,12 @@ local function reopen_epoch_directory(self)
 end
 
 -- The fields every player starts with. The optional outputs frontier continues the output history of
--- a previous epoch. The shared event handlers are read-only.
-local function new_empty_player(meta, dapp_contract, label, previous_outputs_frontier)
+-- a previous epoch. Install the anomaly handler before initialization or reopening can report.
+-- The shared event handlers are read-only.
+local function new_empty_player(meta, dapp_contract, label, previous_outputs_frontier, anomaly_handler)
     return setmetatable({
         event_handler = event_handler,
+        anomaly_handler = anomaly_handler,
         label = label or "honest",
         dapp_contract = dapp_contract,
         geometry = dapp_contract.geometry,
@@ -3187,8 +3189,8 @@ local function begin_epoch(self)
 end
 
 -- A forked player runs on forked servers.
-local function new_forked_player(dapp_contract, label, previous_outputs_frontier)
-    local self <close> = new_empty_player(player_meta, dapp_contract, label, previous_outputs_frontier)
+local function new_forked_player(dapp_contract, label, previous_outputs_frontier, anomaly_handler)
+    local self <close> = new_empty_player(player_meta, dapp_contract, label, previous_outputs_frontier, anomaly_handler)
     self.inputs = {}
     self.epoch_pair =
         new_forked_machine_pair(prt.new_machine(dapp_contract.initial_state_hash, dapp_contract.machine_directory))
@@ -3199,8 +3201,16 @@ end
 
 -- A stored player runs on stored machines in an existing epoch directory and reopens the epoch that
 -- directory holds. With a checkpoint directory, the epoch seal stores the next epoch's checkpoint there.
-local function new_stored_player(dapp_contract, label, previous_outputs_frontier, epoch_directory, checkpoint_directory)
-    local self <close> = new_empty_player(stored_player_meta, dapp_contract, label, previous_outputs_frontier)
+local function new_stored_player(
+    dapp_contract,
+    label,
+    previous_outputs_frontier,
+    epoch_directory,
+    checkpoint_directory,
+    anomaly_handler
+)
+    local self <close> =
+        new_empty_player(stored_player_meta, dapp_contract, label, previous_outputs_frontier, anomaly_handler)
     self.event_handler = stored_event_handler
     self.epoch_directory = epoch_directory
     self.checkpoint_directory = checkpoint_directory

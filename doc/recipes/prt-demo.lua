@@ -13,7 +13,7 @@ local initial_hash = assert(arg[1], "missing template hash")
 assert(#assert(eth.raw(initial_hash)) == 32, "invalid template hash")
 local mode = arg[2] or "story"
 local rpc_url = os.getenv("PRT_RPC_URL") or "http://127.0.0.1:8545"
-local chain = signing.install(rpc_client.new(rpc_url))
+local chain = rpc_client.new(rpc_url)
 -- Mining is the orchestrator's own request and may take as long as the node needs.
 local miner = rpc_client.new(rpc_url, false)
 local input_policy = rpc_client.policy(os.getenv("PRT_INPUT_CONFIRMATIONS") or "8")
@@ -674,7 +674,7 @@ end
 local function post_inputs(session, expressions)
     for _, expression in ipairs(expressions) do
         local receipt, err =
-            chain:send(deployer, input_box, abi:calldata("addInput", { app, eth.hex(expression .. "\n") }))
+            signing.send(chain, deployer, input_box, abi:calldata("addInput", { app, eth.hex(expression .. "\n") }))
         assert(receipt, err and json.encode(err))
         for _, log in ipairs(receipt.logs) do
             local event = abi:event(log)

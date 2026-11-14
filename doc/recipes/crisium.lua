@@ -93,9 +93,6 @@ local function measure(name, f, ...)
 end
 
 local chain = rpc_client.new(options.rpc)
-if validator then
-    signing.install(chain)
-end
 local function artifact(directory, name)
     return (eth.artifact(options.dave .. "/" .. directory .. "/contracts/out", name))
 end
@@ -136,12 +133,7 @@ assert(
 local template_hash = assert(chain:call(app, abi:calldata("getTemplateHash", {}))):lower()
 local geometry = bridge.read_geometry(chain, abi, factory)
 
-local signer = validator
-    and {
-        address = signing.address(options.keystore, options.password_file),
-        keystore = options.keystore,
-        password_file = options.password_file,
-    }
+local signer = validator and signing.new(options.keystore, options.password_file)
 if not fs.exists(options.state) then
     fs.create_directory(options.state)
 end

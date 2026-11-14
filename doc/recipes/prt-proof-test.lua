@@ -73,7 +73,7 @@ local function check(chain, transition, provider, player, paths, directory)
 end
 
 local initial_hash = assert(arg[1], "missing template hash")
-local chain = signing.install(rpc_client.new(os.getenv("PRT_RPC_URL") or "http://127.0.0.1:8545"))
+local chain = rpc_client.new(os.getenv("PRT_RPC_URL") or "http://127.0.0.1:8545")
 local deployment = prt_deploy.deploy(chain, initial_hash)
 local abi, geometry, consensus = deployment.abi, deployment.geometry, deployment.consensus
 local claimant = prt_deploy.signer(1)
@@ -98,7 +98,7 @@ local function get_events(address, name)
 end
 
 local function send(signer, to, name, args, value)
-    local receipt, failure = chain:send(signer, to, abi:calldata(name, args), value)
+    local receipt, failure = signing.send(chain, signer, to, abi:calldata(name, args), value)
     assert(receipt, failure and json.encode(failure))
     return receipt
 end

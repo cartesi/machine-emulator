@@ -421,15 +421,15 @@ snapshot.matches["root:match"] = nil
 assert(ready_at(15) == "", "deleted match left a scheduled action")
 
 -- A provider error must never be classified as a losing proof.
-local transport = signing.install(rpc_client.new("http://unused"))
+local transport = rpc_client.new("http://unused")
 function transport.rpc()
     return nil, { code = -32603, message = "unavailable" }
 end
-assert(not pcall(transport.send, transport, { address = "alice" }, "root", "0x"))
+assert(not pcall(signing.send, transport, { address = "alice" }, "root", "0x"))
 function transport.rpc()
     return nil, { code = 3, message = "execution reverted" }
 end
-local receipt, failure = transport:send({ address = "alice" }, "root", "0x")
+local receipt, failure = signing.send(transport, { address = "alice" }, "root", "0x")
 assert(not receipt and failure.code == 3)
 
 -- Addresses fetched up to the same block share requests, at most 128 addresses each, and each log

@@ -16,9 +16,7 @@ local rollups_out = M.dave_directory .. "/cartesi-rollups/contracts/out"
 
 -- The account of the local wallet with this index. Index 0 is the deployer.
 function M.signer(index)
-    local key = "wallets/player-" .. index
-    local address = signing.address(key, "wallets/password")
-    return { address = address, keystore = key, password_file = "wallets/password" }
+    return signing.new("wallets/player-" .. index, "wallets/password")
 end
 
 function M.deploy(chain, initial_hash)
@@ -37,7 +35,7 @@ function M.deploy(chain, initial_hash)
             code = code .. eth.hex(evmu.encode_abi(types, args)):sub(3)
         end
         io.stderr:write("Deploying ", name, "\n")
-        local receipt, failure = chain:send(deployer, nil, code)
+        local receipt, failure = signing.send(chain, deployer, nil, code)
         assert(receipt, failure and json.encode(failure))
         return assert(receipt.contractAddress):lower(), receipt
     end
@@ -65,7 +63,8 @@ function M.deploy(chain, initial_hash)
     })
     -- The players' geometry is the tournament factory's.
     local geometry = bridge.read_geometry(chain, abi, factory)
-    local receipt, failure = chain:send(
+    local receipt, failure = signing.send(
+        chain,
         deployer,
         dave_factory,
         abi:calldata("newDaveApp", {

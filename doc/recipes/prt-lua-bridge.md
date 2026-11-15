@@ -136,7 +136,8 @@ of players, mining, and narration, and exists only in the demo.
 | [prt-signer.lua](prt-signer.lua) | Sign and check transactions with `cast`, for a player that publishes them |
 | [prt-command.lua](prt-command.lua) | Run external commands such as `cast` |
 | [prt-websocket.lua](prt-websocket.lua) | Subscribe to new block headers over WebSocket |
-| [prt.lua](prt.lua) | The player. Execute inputs, build claims and proofs, and store epochs and checkpoints |
+| [prt-stored-player.lua](prt-stored-player.lua) | The stored player. Keep each epoch and its dispute on disk, reopen after a crash, and store checkpoints |
+| [prt.lua](prt.lua) | The player. Execute inputs, and build claims and proofs |
 | [prt-dishonest.lua](prt-dishonest.lua) | The scripted adversaries, built on the same player |
 | [prt-bridge-test.lua](prt-bridge-test.lua) | Encoding, scheduling, log history, and process-boundary fixtures |
 | [prt-transactions-test.lua](prt-transactions-test.lua) | Gas surges, dropped transactions, cancellation, journal reload, and nonce reorgs |
@@ -264,9 +265,9 @@ it commits the seal to its epoch directory, so a seal delivered again after a
 crash stores it again. Starting a player from a checkpoint looks like this.
 
 ```lua
-local prt = require("prt")
-local dapp, previous_outputs_frontier = prt.load_epoch_checkpoint(checkpoint_directory)
-local player <close> = prt.new_stored_player(
+local stored_player = require("prt-stored-player")
+local dapp, previous_outputs_frontier = stored_player.load_epoch_checkpoint(checkpoint_directory)
+local player <close> = stored_player.new_stored_player(
     dapp,
     "honest",
     previous_outputs_frontier,
@@ -275,7 +276,7 @@ local player <close> = prt.new_stored_player(
 )
 ```
 
-`prt.load_epoch_checkpoint` validates the manifest and the outputs frontier. The player
+`stored_player.load_epoch_checkpoint` validates the manifest and the outputs frontier. The player
 checks the machine hash and binds the frontier's root to the machine's CMIO TX
 buffer. The demo checks that every accepted epoch matches the next checkpoint,
 and the proof tests seal an empty continuation of a calculator checkpoint and

@@ -10,7 +10,7 @@ local fs = require("cartesi.filesystem")
 local json = require("dkjson")
 local rpc_client = require("prt-rpc")
 local signing = require("prt-signer")
-local prt = require("prt")
+local stored_player = require("prt-stored-player")
 local prt_deploy = require("prt-deploy")
 
 local function check(chain, transition, provider, player, paths, directory)
@@ -117,7 +117,7 @@ assert(creation, "root tournament creation missing")
 for _, directory in ipairs({ "epoch-0", "epoch-1", "epoch-2" }) do
     fs.create_directory(directory)
 end
-local bootstrap <close> = prt.new_stored_player(
+local bootstrap <close> = stored_player.new_stored_player(
     { initial_state_hash = assert(eth.raw(initial_hash)), geometry = geometry },
     "bootstrap",
     nil,
@@ -151,8 +151,8 @@ assert(
 )
 
 -- Epoch 1's player starts from the bootstrap's checkpoint and processes the inputs the chain holds.
-local dapp, outputs_frontier = prt.load_epoch_checkpoint("checkpoint-1")
-local player <close> = prt.new_stored_player(dapp, "honest", outputs_frontier, "epoch-1", "checkpoint-2")
+local dapp, outputs_frontier = stored_player.load_epoch_checkpoint("checkpoint-1")
+local player <close> = stored_player.new_stored_player(dapp, "honest", outputs_frontier, "epoch-1", "checkpoint-2")
 local paths = {}
 for _, event in ipairs(get_events(deployment.input_box, "InputAdded")) do
     if event.appContract == deployment.app then
@@ -167,12 +167,17 @@ check(chain, deployment.stf, consensus, player, paths, ".")
 
 -- Loading a checkpoint in a fresh player also covers a following epoch with no new outputs: its
 -- inherited outputs frontier must survive sealing.
-local next_dapp, next_outputs_frontier, manifest = prt.load_epoch_checkpoint("checkpoint-2")
+local next_dapp, next_outputs_frontier, manifest = stored_player.load_epoch_checkpoint("checkpoint-2")
 assert(manifest.output_count > 0, "the calculator inputs produced no outputs")
-local continued <close> =
-    prt.new_stored_player(next_dapp, "continuation", next_outputs_frontier, "epoch-2", "continuation-checkpoint")
+local continued <close> = stored_player.new_stored_player(
+    next_dapp,
+    "continuation",
+    next_outputs_frontier,
+    "epoch-2",
+    "continuation-checkpoint"
+)
 continued.event_handler.epoch_sealed(continued, 0)
-local _, _, continuation = prt.load_epoch_checkpoint("continuation-checkpoint")
+local _, _, continuation = stored_player.load_epoch_checkpoint("continuation-checkpoint")
 assert(
     continuation.final_state_hash == manifest.final_state_hash and continuation.outputs_root == manifest.outputs_root,
     "an epoch without outputs changed the checkpoint"

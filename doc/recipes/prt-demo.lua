@@ -7,7 +7,7 @@ local rpc_client = require("prt-rpc")
 local signing = require("prt-signer")
 local eth = require("prt-ethereum")
 local socket = require("socket")
-local prt = require("prt")
+local stored_player = require("prt-stored-player")
 local bridge = require("prt-bridge")
 local initial_hash = assert(arg[1], "missing template hash")
 assert(#assert(eth.raw(initial_hash)) == 32, "invalid template hash")
@@ -73,7 +73,7 @@ local function get_checkpoint_directory(number)
     return "checkpoints/epoch-" .. number
 end
 fs.create_directory("checkpoints")
-prt.store_first_epoch_checkpoint(initial_hash, geometry, get_checkpoint_directory(0))
+stored_player.store_first_epoch_checkpoint(initial_hash, geometry, get_checkpoint_directory(0))
 
 -- Every player runs as its own process, with its kind and the first epoch it plays. The scripted
 -- adversaries play the calculator epochs and leave the cleanup transactions to the honest player.
@@ -128,7 +128,7 @@ for _, player in ipairs(players) do
     if player.mode == "sentinel" then
         checkpoints = directory .. "/checkpoints"
         fs.create_directory(checkpoints)
-        prt.store_first_epoch_checkpoint(initial_hash, geometry, checkpoints .. "/epoch-0")
+        stored_player.store_first_epoch_checkpoint(initial_hash, geometry, checkpoints .. "/epoch-0")
     end
     local arguments = {
         "--mode=" .. (player.mode or "validator"),
@@ -637,7 +637,7 @@ local function play(session)
                     joined and labels[joined.submitter] == "honest",
                     "winning commitment differs from the honest claim"
                 )
-                local _, _, manifest = prt.load_epoch_checkpoint(get_checkpoint_directory(session.epoch + 1))
+                local _, _, manifest = stored_player.load_epoch_checkpoint(get_checkpoint_directory(session.epoch + 1))
                 assert(
                     snapshot.settled.initialMachineStateHash == manifest.final_state_hash,
                     "settled machine differs from checkpoint"
@@ -716,9 +716,9 @@ if play(second) then
 end
 assert(test_sentinel == "no", "the sentinel never reported " .. table.concat(expected_reports, " and "))
 
-local _, _, manifest = prt.load_epoch_checkpoint(get_checkpoint_directory(second.epoch + 1))
+local _, _, manifest = stored_player.load_epoch_checkpoint(get_checkpoint_directory(second.epoch + 1))
 assert(manifest.output_count == 5, "calculator output history did not continue")
-local _, _, watched = prt.load_epoch_checkpoint("players/sentinel/checkpoints/epoch-" .. (second.epoch + 1))
+local _, _, watched = stored_player.load_epoch_checkpoint("players/sentinel/checkpoints/epoch-" .. (second.epoch + 1))
 assert(
     watched.final_state_hash == manifest.final_state_hash and watched.outputs_root == manifest.outputs_root,
     "the sentinel computed another final state"

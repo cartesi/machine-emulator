@@ -37,7 +37,7 @@ local json = require("dkjson")
 local socket = require("socket")
 local rpc_client = require("prt-rpc")
 local eth = require("prt-ethereum")
-local prt = require("prt")
+local stored_player = require("prt-stored-player")
 local dishonest = require("prt-dishonest")
 local epoch = require("prt-epoch")
 local log_history = require("prt-log-history")
@@ -355,7 +355,7 @@ if fs.exists(cmdline.checkpoints) then
         local number = math.tointeger(tonumber(name:match("^epoch%-(%d+)$")))
         if removed and cmdline.kind == "honest" then
             local suffix = "/epoch-" .. removed
-            prt.remove_epoch_files(cmdline.checkpoints .. suffix, cmdline.state .. suffix)
+            stored_player.remove_epoch_files(cmdline.checkpoints .. suffix, cmdline.state .. suffix)
         elseif number and (not oldest_checkpoint or number < oldest_checkpoint) then
             oldest_checkpoint = number
         end
@@ -382,8 +382,14 @@ local function new_player(dapp, outputs_frontier, epoch_directory, checkpoint_di
         if not fs.exists(epoch_directory) then
             fs.create_directory(epoch_directory)
         end
-        player =
-            prt.new_stored_player(dapp, label, outputs_frontier, epoch_directory, checkpoint_directory, anomaly_handler)
+        player = stored_player.new_stored_player(
+            dapp,
+            label,
+            outputs_frontier,
+            epoch_directory,
+            checkpoint_directory,
+            anomaly_handler
+        )
     elseif kind == "quitter" then
         player = dishonest.new_quitter(dapp, label, outputs_frontier, anomaly_handler)
     elseif kind == "tamperer" then
@@ -439,7 +445,7 @@ local function open_epochs()
         if next_epoch > 0 and not previous_seal then
             return
         end
-        local dapp, outputs_frontier, manifest = prt.load_epoch_checkpoint(checkpoint_directory)
+        local dapp, outputs_frontier, manifest = stored_player.load_epoch_checkpoint(checkpoint_directory)
         if next_epoch == 0 then
             assert(manifest.final_state_hash:lower() == template_hash, "epoch 0's checkpoint is not the template")
         end
@@ -491,7 +497,7 @@ local function remove_finished_epochs(epoch_number)
             end
         end
         local suffix = "/epoch-" .. oldest_stored
-        prt.remove_epoch_files(cmdline.checkpoints .. suffix, cmdline.state .. suffix)
+        stored_player.remove_epoch_files(cmdline.checkpoints .. suffix, cmdline.state .. suffix)
         io.stderr:write("Epoch ", oldest_stored, ": files removed.\n")
         oldest_stored = oldest_stored + 1
     end

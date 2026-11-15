@@ -12,6 +12,7 @@ local fs = require("cartesi.filesystem")
 local prtu = require("prtu")
 local run_with_game_server = require("game-test-server")
 local prt = require("prt")
+local stored_player = require("prt-stored-player")
 local EVERYONE = prtu.EVERYONE
 local FOREVER = nil
 assert(require("prt-time-test"))
@@ -1091,7 +1092,7 @@ do
     local function new_player(defers)
         local player = new_test_player(nil, prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial"))))
         if defers then
-            player.event_handler = prt.stored_event_handler
+            player.event_handler = stored_player.stored_event_handler
         end
         return player
     end
@@ -2451,10 +2452,11 @@ if arg[1] then
         fs.create_directory(temporary_checkpoint)
         fs.write_file("leftover", temporary_checkpoint .. "/leftover")
         local template_directory = cartesi.tohex(initial_state_hash)
-        prt.store_first_epoch_checkpoint(template_directory, dapp_contract.geometry, checkpoint_directory)
+        stored_player.store_first_epoch_checkpoint(template_directory, dapp_contract.geometry, checkpoint_directory)
         assert(not fs.exists(temporary_checkpoint), "the template checkpoint left a temporary checkpoint")
         local manifest_text = fs.read_file(checkpoint_directory .. "/epoch.json")
-        local template_dapp_contract, outputs_frontier, manifest = prt.load_epoch_checkpoint(checkpoint_directory)
+        local template_dapp_contract, outputs_frontier, manifest =
+            stored_player.load_epoch_checkpoint(checkpoint_directory)
         assert(template_dapp_contract.initial_state_hash == initial_state_hash, "checkpoint lost the template")
         assert(
             template_dapp_contract.geometry.log2_mcycles_per_period == dapp_contract.geometry.log2_mcycles_per_period,
@@ -2471,7 +2473,7 @@ if arg[1] then
                 prt.new_forked_player(template_dapp_contract, "template checkpoint", outputs_frontier)
             assert(started.epoch_pair.machine:get_root_hash() == initial_state_hash, "player did not start from it")
         end
-        prt.store_first_epoch_checkpoint(template_directory, prt.new_geometry(11), checkpoint_directory)
+        stored_player.store_first_epoch_checkpoint(template_directory, prt.new_geometry(11), checkpoint_directory)
         assert(
             fs.read_file(checkpoint_directory .. "/epoch.json") == manifest_text,
             "storing again replaced the checkpoint"
@@ -2479,7 +2481,7 @@ if arg[1] then
     end
 
     -- A clone is durable only after its sync, so the template checkpoint is synced before its rename. A copy
-    -- of prt whose cartesi.machine records its stored-machine calls checks the order.
+    -- of prt-stored-player whose cartesi.machine records its stored-machine calls checks the order.
     do
         local checkpoint_directory = temporary_directory .. "/synced-checkpoint"
         local temporary_checkpoint = checkpoint_directory .. ".tmp"
@@ -2504,13 +2506,13 @@ if arg[1] then
                 end
             end,
         })
-        local loaded_prt, loaded_cartesi = package.loaded.prt, package.loaded.cartesi
-        package.loaded.prt = nil
+        local loaded_stored_player, loaded_cartesi = package.loaded["prt-stored-player"], package.loaded.cartesi
+        package.loaded["prt-stored-player"] = nil
         package.loaded.cartesi = setmetatable({ machine = recording_machine }, { __index = cartesi })
-        local loaded, recording_prt = pcall(require, "prt")
-        package.loaded.prt, package.loaded.cartesi = loaded_prt, loaded_cartesi
-        assert(loaded, recording_prt)
-        recording_prt.store_first_epoch_checkpoint(
+        local loaded, recording_stored_player = pcall(require, "prt-stored-player")
+        package.loaded["prt-stored-player"], package.loaded.cartesi = loaded_stored_player, loaded_cartesi
+        assert(loaded, recording_stored_player)
+        recording_stored_player.store_first_epoch_checkpoint(
             cartesi.tohex(initial_state_hash),
             dapp_contract.geometry,
             checkpoint_directory
@@ -2686,7 +2688,7 @@ if arg[1] then
         return setmetatable({}, {
             __close = function(directories)
                 for _, directory in ipairs(directories) do
-                    prt.remove_epoch_directory(directory)
+                    stored_player.remove_epoch_directory(directory)
                 end
             end,
         })
@@ -2743,7 +2745,7 @@ if arg[1] then
         }) do
             local _ <close>, epoch_directory = new_scope_epoch_directory()
             do
-                local stored <close> = prt.new_stored_player(dapp_contract, "stored", nil, epoch_directory)
+                local stored <close> = stored_player.new_stored_player(dapp_contract, "stored", nil, epoch_directory)
                 inject(stored, case[1], case[2])
                 local completed, failure = pcall(add_input, stored, 0, input_path)
                 assert(
@@ -2754,7 +2756,8 @@ if arg[1] then
             local recorded = case[3]
             local state = cartesi.fromjson(fs.read_file(epoch_directory .. "/state.json"))
             do
-                local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
+                local reopened <close> =
+                    stored_player.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
                 assert(reopened.input_count == recorded, "reopening did not keep the recorded inputs")
                 assert(
                     reopened.epoch_pair.machine:get_root_hash() == cartesi.fromhex(state.root_hash),
@@ -2775,7 +2778,7 @@ if arg[1] then
         do
             local _ <close>, epoch_directory = new_scope_epoch_directory()
             do
-                local stored <close> = prt.new_stored_player(dapp_contract, "stored", nil, epoch_directory)
+                local stored <close> = stored_player.new_stored_player(dapp_contract, "stored", nil, epoch_directory)
                 inject(stored, "sync_stored", function(directory)
                     return directory:find("%.revert$")
                 end)
@@ -2793,7 +2796,8 @@ if arg[1] then
             assert(ram:close())
             local state = cartesi.fromjson(fs.read_file(epoch_directory .. "/state.json"))
             do
-                local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
+                local reopened <close> =
+                    stored_player.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
                 assert(reopened.input_count == 1, "reopening did not keep the recorded input")
             end
             local epoch_machine <close> = cartesi.machine(epoch_directory .. "/machine", { clear_hash_tree = true })
@@ -2805,7 +2809,7 @@ if arg[1] then
         -- A temporary pair that fails to load removes its clone.
         local _ <close>, epoch_directory = new_scope_epoch_directory()
         do
-            local stored <close> = prt.new_stored_player(dapp_contract, "stored", nil, epoch_directory)
+            local stored <close> = stored_player.new_stored_player(dapp_contract, "stored", nil, epoch_directory)
             stored.machine_cache.entries[1].root_hash = keccak("wrong entry")
             assert(not pcall(stored.new_machine_pair_at_epoch_input_offset, stored, 0))
             local layout = list_epoch_directory(epoch_directory)
@@ -2826,7 +2830,8 @@ if arg[1] then
     do
         local _ <close>, deferred_directory = new_scope_epoch_directory()
         do
-            local deferring <close> = prt.new_stored_player(dapp_contract, "deferring", nil, deferred_directory)
+            local deferring <close> =
+                stored_player.new_stored_player(dapp_contract, "deferring", nil, deferred_directory)
             deferring.event_handler.input_added(deferring, 0, input_files[1])
             deferring.event_handler.input_added(deferring, 1, input_files[2])
             assert(deferring.event_handler.idle(deferring), "idle ran past a pending input")
@@ -2834,13 +2839,14 @@ if arg[1] then
         local _ <close>, immediate_directory = new_scope_epoch_directory()
         local expected
         do
-            local immediate <close> = prt.new_stored_player(dapp_contract, "immediate", nil, immediate_directory)
+            local immediate <close> =
+                stored_player.new_stored_player(dapp_contract, "immediate", nil, immediate_directory)
             add_input(immediate, 0, input_files[1])
             expected = { immediate.epoch_pair.machine:get_root_hash() }
             add_input(immediate, 1, input_files[2])
             expected[2] = immediate.epoch_pair.machine:get_root_hash()
         end
-        local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, deferred_directory)
+        local reopened <close> = stored_player.new_stored_player(dapp_contract, "reopened", nil, deferred_directory)
         assert(
             reopened.input_count == 1
                 and reopened.pending_input_count == 0
@@ -2862,17 +2868,17 @@ if arg[1] then
     do
         local _ <close>, epoch_directory = new_scope_epoch_directory()
         do
-            local stored <close> = prt.new_stored_player(dapp_contract, "replaced", nil, epoch_directory)
+            local stored <close> = stored_player.new_stored_player(dapp_contract, "replaced", nil, epoch_directory)
             add_input(stored, 0, input_files[1])
         end
         do
-            local reopened <close> = prt.new_stored_player(dapp_contract, "replaced", nil, epoch_directory)
+            local reopened <close> = stored_player.new_stored_player(dapp_contract, "replaced", nil, epoch_directory)
             local kept, failure = pcall(reopened.event_handler.input_added, reopened, 0, input_files[2])
             assert(not kept and failure:find("epoch history changed", 1, true), "an open epoch kept a replaced input")
             reopened.event_handler.input_added(reopened, 0, input_files[1])
             reopened.event_handler.epoch_sealed(reopened, 1)
         end
-        local reopened <close> = prt.new_stored_player(dapp_contract, "replaced", nil, epoch_directory)
+        local reopened <close> = stored_player.new_stored_player(dapp_contract, "replaced", nil, epoch_directory)
         local kept, failure = pcall(reopened.event_handler.input_added, reopened, 0, input_files[2])
         assert(not kept and failure:find("epoch history changed", 1, true), "a sealed epoch kept a replaced input")
         kept, failure = pcall(reopened.event_handler.epoch_sealed, reopened, 2)
@@ -2887,7 +2893,7 @@ if arg[1] then
         local _ <close>, epoch_directory = new_scope_epoch_directory()
         local sealed = {}
         for i = 1, #input_files do
-            local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
+            local reopened <close> = stored_player.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
             assert(reopened.input_count == i - 1, "reopening lost or invented inputs")
             for j = 1, i do
                 add_input(reopened, j - 1, input_files[j])
@@ -2920,7 +2926,7 @@ if arg[1] then
         fs.write_file("leftover", temporary_checkpoint .. "/leftover")
         do
             local sealing <close> =
-                prt.new_stored_player(dapp_contract, "sealing", nil, epoch_directory, checkpoint_directory)
+                stored_player.new_stored_player(dapp_contract, "sealing", nil, epoch_directory, checkpoint_directory)
             local forest_store = hash_tree.frontier_forest_store
             hash_tree.frontier_forest_store = function()
                 error("injected seal failure")
@@ -2935,7 +2941,7 @@ if arg[1] then
         end
         do
             local reopened <close> =
-                prt.new_stored_player(dapp_contract, "reopened", nil, epoch_directory, checkpoint_directory)
+                stored_player.new_stored_player(dapp_contract, "reopened", nil, epoch_directory, checkpoint_directory)
             assert(reopened.epoch_pair, "a seal that failed before its commit sealed the epoch")
             local root_hash = reopened.epoch_pair.machine:get_root_hash()
             reopened.event_handler.input_added(reopened, #input_files - 1, input_files[#input_files])
@@ -2972,7 +2978,8 @@ if arg[1] then
             local machine <close> = cartesi.machine(epoch_directory .. "/machine")
             assert(machine:get_root_hash() == final_state_hash, "the epoch directory does not hold the final machine")
             -- The checkpoint the seal kept.
-            local next_dapp_contract, outputs_frontier, manifest = prt.load_epoch_checkpoint(checkpoint_directory)
+            local next_dapp_contract, outputs_frontier, manifest =
+                stored_player.load_epoch_checkpoint(checkpoint_directory)
             assert(next_dapp_contract.initial_state_hash == final_state_hash, "checkpoint lost the final machine")
             assert(manifest.input_count == #input_files, "checkpoint input count mismatch")
             assert(
@@ -2990,7 +2997,7 @@ if arg[1] then
         end
         -- Scratch from the last snapshot and pair stays until a reopen, which removes it.
         do
-            local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
+            local reopened <close> = stored_player.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
             assert(reopened.input_count == #input_files, "reopening lost inputs")
             assert(reopened.mcycle_forest and not reopened.epoch_pair, "reopening did not restore the seal")
             assert(#reopened.uarch_claims == 0, "reopening invented a uarch claim")
@@ -3034,7 +3041,8 @@ if arg[1] then
                 end
                 error("injected tree registration failure")
             end
-            local opened, failure = pcall(prt.new_stored_player, dapp_contract, "failed", nil, epoch_directory)
+            local opened, failure =
+                pcall(stored_player.new_stored_player, dapp_contract, "failed", nil, epoch_directory)
             methods.new_mcycle_tree = original
             assert(not opened and tostring(failure):find("injected tree registration failure", 1, true))
             assert(closes == 1 and not failed_cache.entries, "failed registration did not close its cache exactly once")
@@ -3067,7 +3075,7 @@ if arg[1] then
             local boundaries = {}
             -- Only entry zero remains in memory, so every input lies in one gap.
             local function new_gapped_player()
-                local player = prt.new_stored_player(dapp_contract, "disputing", nil, epoch_directory)
+                local player = stored_player.new_stored_player(dapp_contract, "disputing", nil, epoch_directory)
                 for _, retained in ipairs(player.machine_cache.entries) do
                     boundaries[retained.epoch_input_offset] = retained.root_hash
                 end
@@ -3132,7 +3140,7 @@ if arg[1] then
         hash_tree.frontier_forest_pad_back(bundle, isolated_leaf)
         local bundle_root = hash_tree.frontier_forest_get_root_hash(bundle)
         do
-            local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
+            local reopened <close> = stored_player.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
             assert(reopened.mcycle_forest.directory == epoch_directory .. "/forests/mcycle")
             for period = 0, 1 do
                 local forest = hash_tree.frontier_forest(dapp_contract.geometry.uarch_height, "keccak256")
@@ -3158,7 +3166,7 @@ if arg[1] then
         fs.write_file("leftover", epoch_directory .. "/uarch-9-9.json")
         fs.write_file("leftover", epoch_directory .. "/forests/uarch-0-0/leftover.tmp.file")
         do
-            local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
+            local reopened <close> = stored_player.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
             assert(table.concat(fs.list_directory(epoch_directory .. "/forests"), ",") == "mcycle,uarch-0-0,uarch-0-1")
             assert(not fs.exists(epoch_directory .. "/uarch-9-9.json"))
             assert(not fs.exists(epoch_directory .. "/forests/uarch-0-0/leftover.tmp.file"))
@@ -3173,7 +3181,8 @@ if arg[1] then
         local old_state, replacements = state:gsub('"version": 4', '"version": 3', 1)
         assert(replacements == 1, "epoch state did not record its new layout version")
         fs.write_file(old_state, state_path)
-        local loaded_old, failure = pcall(prt.new_stored_player, dapp_contract, "old layout", nil, epoch_directory)
+        local loaded_old, failure =
+            pcall(stored_player.new_stored_player, dapp_contract, "old layout", nil, epoch_directory)
         fs.write_file(state, state_path)
         assert(not loaded_old and tostring(failure):find("unsupported epoch state version", 1, true))
     end
@@ -3285,7 +3294,8 @@ if arg[1] then
                 end
             end
             do
-                local crashing <close> = prt.new_stored_player(dapp_contract, "crashing", nil, epoch_directory)
+                local crashing <close> =
+                    stored_player.new_stored_player(dapp_contract, "crashing", nil, epoch_directory)
                 references[0] = describe_state(crashing)
                 local machine = crashing.epoch_pair.machine
                 local steps = {
@@ -3351,7 +3361,8 @@ if arg[1] then
             -- uarch claim recovers the seal, with or without the claim. A recovered claim is not rebuilt.
             -- A crash while opening a uarch bundle recovers the claim, and the bundle opens to the same proof.
             local function check_sealing_crash(crash)
-                local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, crash.directory)
+                local reopened <close> =
+                    stored_player.new_stored_player(dapp_contract, "reopened", nil, crash.directory)
                 local where = "reopening after a crash at " .. crash.step .. " while storing " .. crash.processing
                 local kind
                 if not reopened.mcycle_forest then
@@ -3402,7 +3413,7 @@ if arg[1] then
             end
             do
                 local reopened <close> =
-                    prt.new_stored_player(dapp_contract, "reopened", nil, references.opened_directory)
+                    stored_player.new_stored_player(dapp_contract, "reopened", nil, references.opened_directory)
                 reopened.build_uarch_cycle_computation_hash = function()
                     error("reopening lost the uarch claim")
                 end
@@ -3433,7 +3444,8 @@ if arg[1] then
                     goto next_crash
                 end
                 do
-                    local reopened <close> = prt.new_stored_player(dapp_contract, "reopened", nil, crash.directory)
+                    local reopened <close> =
+                        stored_player.new_stored_player(dapp_contract, "reopened", nil, crash.directory)
                     local boundary = reopened.input_count
                     assert(
                         boundary == crash.processing or boundary == crash.processing + 1,
@@ -3922,8 +3934,14 @@ if arg[1] then
         local _ <close>, epoch_directory = new_scope_epoch_directory()
         stopped = {}
         do
-            local stored <close> =
-                prt.new_stored_player(contract, "stopped", nil, epoch_directory, checkpoint_directory, handler)
+            local stored <close> = stored_player.new_stored_player(
+                contract,
+                "stopped",
+                nil,
+                epoch_directory,
+                checkpoint_directory,
+                handler
+            )
             stored.event_handler.input_added(stored, 0, fixture_input(inputs[1]))
             assert(#stopped == 0, "queueing an input reported before execution")
             stored:run_pending_inputs()
@@ -3931,8 +3949,14 @@ if arg[1] then
         end
         stopped = {}
         do
-            local stored <close> =
-                prt.new_stored_player(contract, "reopened", nil, epoch_directory, checkpoint_directory, handler)
+            local stored <close> = stored_player.new_stored_player(
+                contract,
+                "reopened",
+                nil,
+                epoch_directory,
+                checkpoint_directory,
+                handler
+            )
             assert(#stopped == 1 and stopped[1] == "when reopening an already stopped epoch")
             stored.event_handler.input_added(stored, 0, fixture_input(inputs[1]))
             stored.event_handler.epoch_sealed(stored, 1)
@@ -3941,7 +3965,8 @@ if arg[1] then
         end
         assert(fs.exists(checkpoint_directory), terminal .. " seal did not store the next checkpoint")
         stopped = {}
-        local reopened <close> = prt.new_stored_player(contract, "reopened", nil, epoch_directory, nil, handler)
+        local reopened <close> =
+            stored_player.new_stored_player(contract, "reopened", nil, epoch_directory, nil, handler)
         assert(reopened.mcycle_forest and reopened.epoch_stopped, terminal .. " reopening lost the seal")
         assert(reopened.final_state_hash == forked.final_state_hash, terminal .. " reopening changed the final state")
         assert(#stopped == 1 and stopped[1] == "when reopening an already stopped epoch")
@@ -3969,7 +3994,7 @@ if arg[1] then
         fs.create_directory(epoch_directory)
         do
             local stored <close> =
-                prt.new_stored_player(contract, "removed", nil, epoch_directory, checkpoint_directory)
+                stored_player.new_stored_player(contract, "removed", nil, epoch_directory, checkpoint_directory)
             stored.event_handler.input_added(stored, 0, fixture_input(inputs[1]))
             stored.event_handler.epoch_sealed(stored, 1)
         end
@@ -3978,7 +4003,7 @@ if arg[1] then
             cartesi.machine:rename_stored(checkpoint_directory, checkpoint_directory .. ".removed")
             cartesi.machine:remove_stored(epoch_directory .. "/machine", cartesi.REMOVE_FORCED)
         end
-        prt.remove_epoch_files(checkpoint_directory, epoch_directory)
+        stored_player.remove_epoch_files(checkpoint_directory, epoch_directory)
         assert(
             not fs.exists(checkpoint_directory)
                 and not fs.exists(checkpoint_directory .. ".removed")
@@ -4170,7 +4195,7 @@ do
     local epoch_directory = fs.create_temporary_directory(temporary_directory, "delegate-epoch-")
     local _ <close> = setmetatable({}, {
         __close = function()
-            prt.remove_epoch_directory(epoch_directory)
+            stored_player.remove_epoch_directory(epoch_directory)
             cartesi.machine:remove_stored(template_directory)
         end,
     })
@@ -4227,7 +4252,7 @@ do
     local input = fixture_input("delegate input")
     local final_state
     do
-        local stored <close> = prt.new_stored_player(contract, "delegate", nil, epoch_directory, nil, handler)
+        local stored <close> = stored_player.new_stored_player(contract, "delegate", nil, epoch_directory, nil, handler)
         add_input(stored, 0, input)
         assert(
             #reports == 1 and reports[1] == "delegate_call_voucher delegate-call voucher selector at input 0, output 0"
@@ -4235,7 +4260,8 @@ do
         final_state = stored.epoch_pair.machine:get_root_hash()
     end
     for _, sealed in ipairs({ false, true }) do
-        local reopened <close> = prt.new_stored_player(contract, "reopened", nil, epoch_directory, nil, handler)
+        local reopened <close> =
+            stored_player.new_stored_player(contract, "reopened", nil, epoch_directory, nil, handler)
         add_input(reopened, 0, input)
         if not sealed then
             local pair <close> = reopened:new_machine_pair_at_epoch_input_offset(0)
@@ -4303,7 +4329,7 @@ do
     local epoch_directory = fs.create_temporary_directory(temporary_directory, "anomaly-epoch-")
     local _ <close> = setmetatable({}, {
         __close = function()
-            prt.remove_epoch_directory(epoch_directory)
+            stored_player.remove_epoch_directory(epoch_directory)
             cartesi.machine:remove_stored(template_directory)
         end,
     })
@@ -4329,7 +4355,7 @@ do
     end
     for _, message in ipairs({ "at the epoch's start", "at input 0", "at the epoch's end" }) do
         received = {}
-        local player <close> = prt.new_stored_player(contract, "startup", nil, epoch_directory, nil, handler)
+        local player <close> = stored_player.new_stored_player(contract, "startup", nil, epoch_directory, nil, handler)
         assert(#received == 1 and received[1] == "outputs_merkle_root_mismatch " .. message, message)
         assert(player.anomaly_handler == handler, "reopening lost its anomaly handler")
         if message == "at input 0" then
@@ -4384,7 +4410,7 @@ end
 for _, stored in ipairs({ false, true }) do
     local player <close> = new_test_player()
     if stored then
-        player.event_handler = prt.stored_event_handler
+        player.event_handler = stored_player.stored_event_handler
     end
     local received = {}
     function player.anomaly_handler(kind, message)

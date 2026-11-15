@@ -134,8 +134,8 @@ where options are:
     to <filename> after the execution, or <filename> is removed by
     --remote-shutdown. --remote-fork, or a revert that cannot rebind the remote
     cartesi machine, can leave it at a new address. alone, filename: also reads
-    the address from <filename>, which must exist unless --remote-spawn is
-    specified. together with <ip>:<port>, <filename> must not exist yet.
+    the address from <filename>, which must exist. together with <ip>:<port>
+    or --remote-spawn, <filename> must not exist yet.
 
   --remote-health-check
     checks health of remote server and exit
@@ -1531,18 +1531,14 @@ end
 
 -- Reads the remote address a previous run left in a file, or nothing if there is no such file
 local function read_remote_address_file(filename)
-    local f <close> = io.open(filename, "r")
-    if not f then return nil end
-    return (assertf(f:read("l"), "no remote address in '%s'", filename))
+    if not fs.exists(filename) then return nil end
+    return (assertf(fs.read_file(filename):match("^[^\n]+"), "no remote address in '%s'", filename))
 end
 
 -- Writes the address of the server left alive, through a temporary file so readers never see a partial address
 local function write_remote_address_file(filename, address)
-    local temporary = filename .. ".tmp"
-    local f <close> = assert(io.open(temporary, "w"))
-    assert(f:write(address, "\n"))
-    assert(f:close())
-    return assert(os.rename(temporary, filename))
+    fs.write_durable_file(address .. "\n", filename)
+    return true
 end
 
 -- List of supported options
@@ -2914,22 +2910,20 @@ local function spawn_server()
     return server
 end
 
--- The address file records where the server ends up. Without an explicit address, it also says where to connect.
+-- The address file records where the server ends up. Without an explicit address or a spawned server, it also says
+-- where to connect.
 local remote_address_filename = cmdline.remote_address_filename
 if remote_address_filename then
-    if cmdline.remote_address then
+    if cmdline.remote_address or cmdline.remote_spawn then
         assertf(
             not fs.exists(remote_address_filename),
-            "remote address file '%s' already exists, but --remote-address also gives the address",
-            remote_address_filename
+            "remote address file '%s' already exists, but %s also gives the address",
+            remote_address_filename,
+            cmdline.remote_spawn and "--remote-spawn" or "--remote-address"
         )
     else
         cmdline.remote_address = read_remote_address_file(remote_address_filename)
-        assertf(
-            cmdline.remote_address or cmdline.remote_spawn,
-            "missing remote address file '%s'",
-            remote_address_filename
-        )
+        assertf(cmdline.remote_address, "missing remote address file '%s'", remote_address_filename)
     end
 end
 

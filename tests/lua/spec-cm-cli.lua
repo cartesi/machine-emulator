@@ -5483,6 +5483,12 @@ dofile(%q)
             "--remote-address=filename:" .. filename,
             "--max-mcycle=0",
         }, "already exists")
+        -- A spawned server needs an address of its own, not the one a previous run left in the file
+        run_fail({
+            "--remote-spawn",
+            "--remote-address=filename:" .. filename,
+            "--max-mcycle=0",
+        }, "already exists")
         local _, log = run_ok({
             "--remote-address=filename:" .. filename,
             "--no-remote-create",

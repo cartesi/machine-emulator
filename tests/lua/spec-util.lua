@@ -119,7 +119,7 @@ describe("cartesi.util", function()
 
     it("decodes the fields of an HTIF tohost value", function()
         local cartesi = require("cartesi")
-        local dev, cmd, reason, data = util.decode_tohost(0x0201000100000020)
+        local dev, cmd, reason, data = util.decode_htif_tohost(0x0201000100000020)
         expect.equal(dev, cartesi.HTIF_DEV_YIELD)
         expect.equal(cmd, cartesi.HTIF_YIELD_CMD_MANUAL)
         expect.equal(reason, cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
@@ -127,9 +127,9 @@ describe("cartesi.util", function()
     end)
 
     it("encodes the fields of an HTIF fromhost value", function()
-        expect.equal(util.encode_fromhost(0x02, 0x01, 0x0001, 0x00000020), 0x0201000100000020)
-        expect.equal(util.encode_fromhost(0xff, 0xff, 0xffff, 0xffffffff), -1)
-        expect.equal({ util.decode_tohost(util.encode_fromhost(0xab, 0xcd, 0x1234, 0x56789abc)) }, {
+        expect.equal(util.encode_htif_fromhost(0x02, 0x01, 0x0001, 0x00000020), 0x0201000100000020)
+        expect.equal(util.encode_htif_fromhost(0xff, 0xff, 0xffff, 0xffffffff), -1)
+        expect.equal({ util.decode_htif_tohost(util.encode_htif_fromhost(0xab, 0xcd, 0x1234, 0x56789abc)) }, {
             0xab,
             0xcd,
             0x1234,
@@ -138,7 +138,7 @@ describe("cartesi.util", function()
     end)
 
     it("rejects HTIF fields that do not fit", function()
-        local try_encode_fromhost = util.protect(util.encode_fromhost)
+        local try_encode_htif_fromhost = util.protect(util.encode_htif_fromhost)
         local cases = {
             { 0x100, 0, 0, 0, "dev" },
             { 0, 0x100, 0, 0, "cmd" },
@@ -147,7 +147,7 @@ describe("cartesi.util", function()
             { 0, 0, 0, -1, "data" },
         }
         for _, case in ipairs(cases) do
-            local word, err = try_encode_fromhost(table.unpack(case, 1, 4))
+            local word, err = try_encode_htif_fromhost(table.unpack(case, 1, 4))
             expect.equal(word, nil)
             expect.truthy(err:find("HTIF " .. case[5] .. " out of range", 1, true))
         end

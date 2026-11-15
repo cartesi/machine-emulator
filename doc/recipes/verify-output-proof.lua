@@ -40,7 +40,7 @@ verify_machine_word(iflags_y_data, outputs_merkle_root_proof.iflags_y_proof, IFL
 assert(get_reg(iflags_y_data, IFLAGS_Y_ADDRESS) ~= 0, "machine not yielded")
 local htif_tohost_data = outputs_merkle_root_proof.htif_tohost_data
 verify_machine_word(htif_tohost_data, outputs_merkle_root_proof.htif_tohost_proof, HTIF_TOHOST_ADDRESS, machine_hash)
-local dev, cmd, reason = util.decode_tohost(get_reg(htif_tohost_data, HTIF_TOHOST_ADDRESS))
+local dev, cmd, reason = util.decode_htif_tohost(get_reg(htif_tohost_data, HTIF_TOHOST_ADDRESS))
 assert(dev == cartesi.HTIF_DEV_YIELD, "machine not yielded")
 assert(cmd == cartesi.HTIF_YIELD_CMD_MANUAL, "yield not manual")
 assert(reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED, "input not accepted")

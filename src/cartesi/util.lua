@@ -335,7 +335,7 @@ function _M.find_drive(config, what, label)
 end
 
 -- Splits an HTIF tohost value into its device, command, reason, and data fields.
-function _M.decode_tohost(tohost)
+function _M.decode_htif_tohost(tohost)
     local dev = (tohost & cartesi.HTIF_DEV_MASK) >> cartesi.HTIF_DEV_SHIFT
     local cmd = (tohost & cartesi.HTIF_CMD_MASK) >> cartesi.HTIF_CMD_SHIFT
     local reason = (tohost & cartesi.HTIF_REASON_MASK) >> cartesi.HTIF_REASON_SHIFT
@@ -351,7 +351,7 @@ local function encode_htif_field(value, shift, mask, name)
 end
 
 -- Builds an HTIF fromhost value from its device, command, reason, and data fields.
-function _M.encode_fromhost(dev, cmd, reason, data)
+function _M.encode_htif_fromhost(dev, cmd, reason, data)
     return encode_htif_field(dev, cartesi.HTIF_DEV_SHIFT, cartesi.HTIF_DEV_MASK, "dev")
         | encode_htif_field(cmd, cartesi.HTIF_CMD_SHIFT, cartesi.HTIF_CMD_MASK, "cmd")
         | encode_htif_field(reason, cartesi.HTIF_REASON_SHIFT, cartesi.HTIF_REASON_MASK, "reason")

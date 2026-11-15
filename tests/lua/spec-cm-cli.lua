@@ -2830,7 +2830,7 @@ dofile(%q)
         end
         expect.equal(proof.tx_buffer_data, filesystem.read_file(prefix .. "-oh-0.bin"))
         expect.truthy(read_register("iflags_y") ~= 0)
-        local dev, cmd, reason = util.decode_tohost(read_register("htif_tohost"))
+        local dev, cmd, reason = util.decode_htif_tohost(read_register("htif_tohost"))
         expect.equal(dev, cartesi.HTIF_DEV_YIELD)
         expect.equal(cmd, cartesi.HTIF_YIELD_CMD_MANUAL)
         expect.equal(reason, cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)

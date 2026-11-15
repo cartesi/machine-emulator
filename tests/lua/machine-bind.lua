@@ -1511,7 +1511,7 @@ local function test_send_cmio_input_with_different_arguments()
         -- iflags.Y should be cleared
         assert(machine:read_reg("iflags_Y") == 0)
         -- fromhost should reflect the reason and data length
-        assert(machine:read_reg("htif_fromhost") == util.encode_fromhost(0, 0, reason, #data))
+        assert(machine:read_reg("htif_fromhost") == util.encode_htif_fromhost(0, 0, reason, #data))
     end
     do_test("send_cmio_response happy path", function(machine)
         assert_before_cmio_response_sent(machine)

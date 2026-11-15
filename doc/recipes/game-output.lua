@@ -34,7 +34,7 @@ local function validate_outputs_merkle_root_response(result, final_state_hash)
 
     verify_machine_word(result.htif_tohost_data, result.htif_tohost_proof, HTIF_TOHOST_ADDRESS, final_state_hash)
     local htif_tohost = get_uint64(result.htif_tohost_data, HTIF_TOHOST_ADDRESS & WORD_MASK)
-    local dev, cmd, reason = util.decode_tohost(htif_tohost)
+    local dev, cmd, reason = util.decode_htif_tohost(htif_tohost)
     assert(dev == cartesi.HTIF_DEV_YIELD, "tohost not a yield")
     assert(cmd == cartesi.HTIF_YIELD_CMD_MANUAL, "yield not manual")
     assert(reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED, "yield reason not rx-accepted")

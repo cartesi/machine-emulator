@@ -286,16 +286,9 @@ check-format-lua check-lua format-lua:
 
 # One pattern rule per target name. A pattern rule with several target patterns is a
 # grouped rule, so make would run the recipe once per stem and skip the remaining targets.
-PER_DIR_RECIPE = @eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(if $(findstring -doc,$@),doc,$(if $(findstring -src,$@),src,$(if $(findstring -uarch,$@),uarch,tests))) $(subst -doc,,$(subst -src,,$(subst -tests,,$(subst -uarch,,$@))))
-
-lint-%:
-	$(PER_DIR_RECIPE)
-
-check-format-%:
-	$(PER_DIR_RECIPE)
-
-format-%:
-	$(PER_DIR_RECIPE)
+# The stem is the directory. GNU make 3.81 uses the first pattern that matches rather than
+# the one with the shortest stem, so the -lua- patterns come before format-% and check-format-%.
+PER_DIR_RECIPE = @eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $* $(patsubst %-$*,%,$@)
 
 check-format-lua-%:
 	$(PER_DIR_RECIPE)
@@ -304,6 +297,15 @@ check-lua-%:
 	$(PER_DIR_RECIPE)
 
 format-lua-%:
+	$(PER_DIR_RECIPE)
+
+lint-%:
+	$(PER_DIR_RECIPE)
+
+check-format-%:
+	$(PER_DIR_RECIPE)
+
+format-%:
 	$(PER_DIR_RECIPE)
 
 source-default:

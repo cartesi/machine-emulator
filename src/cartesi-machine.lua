@@ -955,9 +955,10 @@ where options are:
         permanent storage before exiting. with a sharing mode other than "none"
         there is no final store, and process exit does not guarantee the
         modifications are durable on disk. even queries such as computing the
-        root hash modify the backing stores, so sync destroys the machine,
-        fsyncs every backing store file, the directory, and its parent, and
-        loads the machine again before exit.
+        root hash modify the backing stores, so sync destroys the machine and
+        fsyncs every backing store file, the directory, and its parent. a
+        remote machine kept with --no-remote-destroy is loaded again after the
+        sync.
         requires a sharing mode other than "none".
 
   --store=<directory>[,<key>:<value>[,...]...]

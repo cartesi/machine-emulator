@@ -510,8 +510,13 @@ void copy_file(const std::string &from, const std::string &to, uint64_t size) {
 }
 
 void hardlink_file(const std::string &from, const std::string &to) {
+#ifdef _WIN32
+    // Use the compatibility stub to report unsupported hard links on Windows.
+    if (link(from.c_str(), to.c_str()) != 0) {
+#else
     // Link the file a symbolic link refers to, not the link itself, as link() does on Linux
     if (linkat(AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(), AT_SYMLINK_FOLLOW) != 0) {
+#endif
         throw make_copy_path_system_error(errno, "unable to create hard link"s, from, to);
     }
 }

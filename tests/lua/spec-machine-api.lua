@@ -703,7 +703,7 @@ for _, variant in ipairs(variants) do
 
         describe("read_reg and write_reg", function()
             -- Registers whose write must be rejected.
-            local read_only = { x0 = true, mvendorid = true, marchid = true, mimpid = true }
+            local read_only = { x0 = true }
 
             it("should round-trip every shadow register through read_reg/write_reg", function()
                 -- Walk the shadow register page (it ends where the shadow TLB

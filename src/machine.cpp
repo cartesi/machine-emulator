@@ -133,12 +133,6 @@ void machine::init_processor(const processor_config &p, const machine_runtime_co
         // Initialize to default values first
         *m_s = processor_state{};
 
-        // The machine-ID registers are read-only to the host, so the configured values go straight into the shadow,
-        // where validate_processor_shadow checks them against the emulator version
-        m_s->shadow.registers.mvendorid = p.registers.mvendorid;
-        m_s->shadow.registers.marchid = p.registers.marchid;
-        m_s->shadow.registers.mimpid = p.registers.mimpid;
-
         // General purpose registers
         for (int i = 1; i < X_REG_COUNT; i++) {
             write_reg(machine_reg_enum(reg::x0, i), p.registers.x[i]);
@@ -152,6 +146,9 @@ void machine::init_processor(const processor_config &p, const machine_runtime_co
         // Named registers
         write_reg(reg::pc, p.registers.pc);
         write_reg(reg::fcsr, p.registers.fcsr);
+        write_reg(reg::mvendorid, p.registers.mvendorid);
+        write_reg(reg::marchid, p.registers.marchid);
+        write_reg(reg::mimpid, p.registers.mimpid);
         write_reg(reg::mcycle, p.registers.mcycle);
         write_reg(reg::icycleinstret, p.registers.icycleinstret);
         write_reg(reg::mstatus, p.registers.mstatus);
@@ -514,7 +511,7 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
         remover.add_file(phtc_filename);
     }
 
-    // Store config last, so an interrupted store leaves a directory that cannot be loaded
+    // Store config after the backing files. Durability requires a successful sync_stored().
     remover.add_file(m_c.store(dir));
 
     // Retain all stored files
@@ -564,7 +561,7 @@ void machine::clone_stored(const std::string &from_dir, const std::string &to_di
     os::clone_file(from_c.hash_tree.phtc_filename, to_c.hash_tree.phtc_filename);
     remover.add_file(to_c.hash_tree.phtc_filename);
 
-    // Clone config last, so an interrupted clone leaves a directory that cannot be loaded
+    // Clone config after the backing files. Durability requires a successful sync_stored().
     const auto from_config_filename = machine_config::get_config_filename(from_dir);
     const auto to_config_filename = machine_config::get_config_filename(to_dir);
     os::clone_file(from_config_filename, to_config_filename);
@@ -1350,11 +1347,14 @@ void machine::write_reg(reg w, uint64_t value) {
             m_s->shadow.registers.fcsr = value;
             break;
         case reg::mvendorid:
-            throw std::invalid_argument{"register is read-only"};
+            m_s->shadow.registers.mvendorid = value;
+            break;
         case reg::marchid:
-            [[fallthrough]];
+            m_s->shadow.registers.marchid = value;
+            break;
         case reg::mimpid:
-            throw std::invalid_argument{"register is read-only"};
+            m_s->shadow.registers.mimpid = value;
+            break;
         case reg::mcycle:
             m_s->shadow.registers.mcycle = value;
             break;

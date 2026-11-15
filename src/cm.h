@@ -595,7 +595,7 @@ CM_API cm_error cm_load_new(const char *dir, const char *runtime_config, cm_shar
 /// CM_SHARING_ALL: Store current machine state for all backing stores.
 /// \returns 0 for success, non zero code for error.
 /// \details The function refuses to store into an existing directory (it will not overwrite an existing machine).
-/// If the store is interrupted, the directory is left incomplete and cannot be loaded.
+/// If the store is interrupted, discard the directory even if it can be loaded.
 /// Remove it with cm_remove_stored() in CM_REMOVE_FORCED mode.
 /// The stored files are durable only after cm_sync_stored() succeeds.
 CM_API cm_error cm_store(const cm_machine *m, const char *dir, cm_sharing_mode sharing);
@@ -609,7 +609,7 @@ CM_API cm_error cm_store(const cm_machine *m, const char *dir, cm_sharing_mode s
 /// Writable files are copied using reflinks on copy-on-write filesystems.
 /// Sparsity of files is preserved.
 /// The source directory machine must not have a running instance.
-/// If the clone is interrupted, the destination directory is left incomplete and cannot be loaded.
+/// If the clone is interrupted, discard the destination directory even if it can be loaded.
 /// Remove it with cm_remove_stored() in CM_REMOVE_FORCED mode.
 /// The cloned files are durable only after cm_sync_stored() succeeds.
 CM_API cm_error cm_clone_stored(const cm_machine *m, const char *from_dir, const char *to_dir);

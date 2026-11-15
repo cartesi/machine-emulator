@@ -2336,7 +2336,7 @@ describe("collect hashes", function()
 end) -- describe collect hashes
 
 describe("machine-ID registers", function()
-    -- Only skip_version_check admits shadow words that differ from the emulator's constants
+    -- Host register writes may change IDs independently of the version check at construction.
     local ids = { mvendorid = cartesi.MVENDORID + 1, marchid = cartesi.MARCHID + 1, mimpid = cartesi.MIMPID + 1 }
     local function csrrs(rd, csr)
         return string.pack("<I4", (csr << 20) | (0x2 << 12) | (rd << 7) | 0x73)
@@ -2344,14 +2344,11 @@ describe("machine-ID registers", function()
     -- csrrs a0, mvendorid; csrrs a1, marchid; csrrs a2, mimpid; j .
     local program = csrrs(10, 0xF11) .. csrrs(11, 0xF12) .. csrrs(12, 0xF13) .. string.pack("<I4", 0x6f)
     local function create_machine()
-        local machine = cartesi.machine({ ram = { length = 4096 } }, { skip_version_check = true })
+        local machine = cartesi.machine({ ram = { length = 4096 } })
         machine:write_memory(cartesi.AR_RAM_START, program)
-        local shadow = machine:read_memory(cartesi.AR_SHADOW_STATE_START, cartesi.AR_SHADOW_STATE_LENGTH)
         for reg, value in pairs(ids) do
-            local offset = machine:get_reg_address(reg) - cartesi.AR_SHADOW_STATE_START
-            shadow = shadow:sub(1, offset) .. string.pack("<I8", value) .. shadow:sub(offset + 9)
+            machine:write_reg(reg, value)
         end
-        machine:write_memory(cartesi.AR_SHADOW_STATE_START, shadow)
         return machine
     end
 

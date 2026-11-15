@@ -382,14 +382,15 @@ void machine_address_ranges::push_back_uarch_ram(const uarch_ram_config &uram) {
 
 void machine_address_ranges::check(const address_range &new_ar, register_where where) {
     if (!where.pmas && !where.hash_tree) {
-        throw std::runtime_error{"address range "s + new_ar.get_description() + " must be registered somewhere"s};
+        throw std::runtime_error{
+            "address range "s.append(new_ar.get_description()).append(" must be registered somewhere")};
     }
     const auto start = new_ar.get_start();
     const auto end = new_ar.get_end();
     // Checks if new range is machine addressable space (safe unsigned overflows)
     if (start > AR_ADDRESSABLE_MASK || end > AR_ADDRESSABLE_MASK) {
-        throw std::invalid_argument{
-            "address range of "s + new_ar.get_description() + " must use at most 56 bits to be addressable"s};
+        throw std::invalid_argument{"address range of "s.append(new_ar.get_description())
+                .append(" must use at most 56 bits to be addressable")};
     }
     // The uarch reset proof replaces the entire uarch state hash tree node with the pristine uarch state hash,
     // so nothing but the shadow uarch state and the uarch RAM may live inside it. Ranges that hit those two
@@ -399,19 +400,20 @@ void machine_address_ranges::check(const address_range &new_ar, register_where w
     constexpr uint64_t uarch_state_end = UARCH_STATE_START_ADDRESS + UARCH_STATE_LENGTH;
     // Gap between the shadow uarch state and the uarch RAM
     if (uarch_shadow_end < UARCH_RAM_START_ADDRESS && start < UARCH_RAM_START_ADDRESS && end > uarch_shadow_end) {
-        throw std::invalid_argument{
-            "address range of "s + new_ar.get_description() + " overlaps with reserved uarch state address range"s};
+        throw std::invalid_argument{"address range of "s.append(new_ar.get_description())
+                .append(" overlaps with reserved uarch state address range")};
     }
     // Gap between the uarch RAM and the end of the uarch state
     if (uarch_ram_end < uarch_state_end && start < uarch_state_end && end > uarch_ram_end) {
-        throw std::invalid_argument{
-            "address range of "s + new_ar.get_description() + " overlaps with reserved uarch state address range"s};
+        throw std::invalid_argument{"address range of "s.append(new_ar.get_description())
+                .append(" overlaps with reserved uarch state address range")};
     }
     // Range A overlaps with B if A starts before B ends and A ends after B starts
     for (const auto &ar : m_all) {
         if (start < ar->get_end() && end > ar->get_start()) {
-            throw std::invalid_argument{"address range of "s + new_ar.get_description() +
-                " overlaps with address range of existing "s + ar->get_description()};
+            throw std::invalid_argument{"address range of "s.append(new_ar.get_description())
+                    .append(" overlaps with address range of existing ")
+                    .append(ar->get_description())};
         }
     }
 }

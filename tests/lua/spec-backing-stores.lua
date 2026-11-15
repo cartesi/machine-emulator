@@ -1691,7 +1691,7 @@ describe("backing stores", function()
                 cartesi.machine:remove_stored(dir)
             end
         end)
-        -- The config is written last, so an interrupted store or clone leaves it missing or still zero-filled
+        -- Missing or zero-filled configs are rejected. This does not simulate persistence ordering after power loss.
         for _, dir in ipairs({ stored_dir, cloned_dir }) do
             local filename = dir .. "/config.json"
             filesystem.remove_file(filename)

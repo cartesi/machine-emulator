@@ -80,7 +80,7 @@ CM_API cm_error cm_filesystem_create_temporary_directory(const char *dirname, co
 /// is called from the same thread. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
 /// \details The caller owns the stream and must close it with fclose(). Closing the stream does not remove the file.
-/// The returned path must not be changed nor deallocated; copy it before making another CM_API call if needed.
+/// The returned path must not be changed nor deallocated. Copy it before making another CM_API call if needed.
 CM_API cm_error cm_filesystem_create_temporary_file(const char *dirname, const char *prefix, FILE **file,
     const char **path);
 
@@ -112,14 +112,14 @@ CM_API cm_error cm_filesystem_read_file(const char *path, const uint8_t **data, 
 
 /// \brief Writes data to a file, creating it or overwriting it, without locking or syncing it.
 /// \param path Destination path.
-/// \param data Input bytes; may be NULL only when length is zero.
+/// \param data Input bytes, which may be NULL only when length is zero.
 /// \param length Number of input bytes.
 /// \returns 0 for success, non zero code for error. Includes errors detected when closing the file.
 CM_API cm_error cm_filesystem_write_file(const char *path, const uint8_t *data, uint64_t length);
 
 /// \brief Writes data through a temporary file, syncs it, and renames it onto the destination.
 /// \param path Destination path.
-/// \param data Input bytes; may be NULL only when length is zero.
+/// \param data Input bytes, which may be NULL only when length is zero.
 /// \param length Number of input bytes.
 /// \returns 0 for success, non zero code for error.
 /// \details The caller must sync the parent directory to make the rename durable.
@@ -150,7 +150,7 @@ CM_API cm_error cm_filesystem_get_parent_directory(const char *path, const char 
 CM_API cm_error cm_filesystem_temp_filename(const char **path);
 
 /// \brief Writes and closes a temporary file. The caller must remove it.
-/// \param data Input bytes; may be NULL only when length is zero.
+/// \param data Input bytes, which may be NULL only when length is zero.
 /// \param length Number of input bytes.
 /// \param path Receives a borrowed path, valid until the next CM_API call on this thread. NULL on failure.
 /// \returns 0 for success, non zero code for error.
@@ -176,7 +176,7 @@ CM_API cm_error cm_filesystem_new_temporary_file(const char *dirname, const char
     cm_filesystem_temporary_file **file);
 
 /// \brief Writes and closes an owned temporary file. Deleting the owner removes its path.
-/// \param data Input bytes; may be NULL only when length is zero.
+/// \param data Input bytes, which may be NULL only when length is zero.
 /// \param length Number of input bytes.
 /// \param file Receives the new owner. NULL on failure.
 /// \returns 0 for success, non zero code for error.
@@ -184,7 +184,7 @@ CM_API cm_error cm_filesystem_write_scope_temp_file(const uint8_t *data, uint64_
     cm_filesystem_temporary_file **file);
 
 /// \brief Obtains the owner's borrowed stream, or NULL if closed. NULL on failure.
-/// \details Do not fclose() this stream; use cm_filesystem_close_temporary_file_stream().
+/// \details Close this stream with cm_filesystem_close_temporary_file_stream(), never with fclose().
 /// The stream remains valid until it is closed or its owner is closed, renamed, or deleted.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_filesystem_get_temporary_file_stream(cm_filesystem_temporary_file *file, FILE **stream);

@@ -146,7 +146,7 @@ local function expected_hash_structure(...)
 end
 
 -- Saturation makes the input budget reachable in 255 cycles. Acceptance must still deliver
--- the following input before reporting counter overflow; rejection must restore the boundary
+-- the following input before reporting counter overflow. Rejection must restore the boundary
 -- and execute the following input there. Both start with the stock, pristine uarch.
 local budget_seam_cases = {
     {

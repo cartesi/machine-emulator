@@ -1175,7 +1175,7 @@ do
 end
 
 -- Receipts remain distinct from confirmed completion events. A canonical
--- but unobserved receipt suppresses resending; an orphaned receipt does not.
+-- but unobserved receipt suppresses resending. An orphaned receipt does not.
 do
     local mined = { blockNumber = "0xa", blockHash = "block10" }
     local client = bridge.new({

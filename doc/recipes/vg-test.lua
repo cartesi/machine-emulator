@@ -346,7 +346,7 @@ assert(not pcall(first.new_machine, first, string.rep("\0", 32)))
 assert(vg.usaturating_add(cartesi.MCYCLE_MAX - 2, 3) == cartesi.MCYCLE_MAX)
 assert(vg.usaturating_add(math.maxinteger, 2) == math.mininteger + 1)
 
--- Bootstrap owns the loaded template; later resets fork the initial entry.
+-- Bootstrap owns the loaded template. Later resets fork the initial entry.
 do
     local loads = 0
     local machine = first:new_machine(initial_hash)

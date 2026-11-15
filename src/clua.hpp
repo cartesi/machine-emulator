@@ -37,7 +37,7 @@ namespace cartesi {
 /// \brief Calls f, converting a C++ exception into a Lua error with the given prefix.
 /// \details Copy the message and leave the catch handler before raising the Lua error, whose longjmp
 /// would otherwise leave the exception alive. Resources that must survive Lua calls still need Lua-managed
-/// storage; this helper does not unwind C++ objects when Lua raises an error.
+/// storage, because this helper does not unwind C++ objects when Lua raises an error.
 template <typename F>
 decltype(auto) clua_protect(lua_State *L, const char *prefix, F &&f) {
     char message[1024]{};

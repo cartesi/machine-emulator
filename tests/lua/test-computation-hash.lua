@@ -426,7 +426,7 @@ local function check_budget_seam(case)
         local input_height = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - case.geometry.log2_mcycle_period
         local frontier =
             hash_tree.frontier(input_height + cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH, "keccak256")
-        -- Neither input reaches its first sampling point; each input's entire span is padding.
+        -- Neither input reaches its first sampling point, so each input's entire span is padding.
         hash_tree.frontier_push_back(frontier, double_hash(first_root, input_height), input_height)
         hash_tree.frontier_pad_back(
             frontier,

@@ -1,6 +1,6 @@
 -- Event-driven adapter for the doc/recipes players.
 -- Contracts own pairing, clocks, and results. Claims and prepared proofs survive
--- observations; the player's transaction journal owns its account's nonces and fees.
+-- observations. The player's transaction journal owns its account's nonces and fees.
 local evmu = require("cartesi.evmu")
 local eth = require("prt-ethereum")
 local rpc_client = require("prt-rpc")
@@ -688,7 +688,7 @@ function methods:attempt(job, snapshot)
     snapshot = refreshed
     -- Verify the proof against the observed leaf event. A
     -- later execution-state revert can mean that someone else
-    -- already answered; it is not evidence of a bad proof.
+    -- already answered, which is not evidence of a bad proof.
     local proof_failure
     if transaction.proof_check then
         local _, failure = self.chain:simulate(
@@ -866,7 +866,7 @@ function methods:tick()
         end
     end
     -- A due replacement can become unusable during preparation or preflight.
-    -- Its predecessor is still obsolete; do not leave that candidate unattended.
+    -- Its predecessor is still obsolete, so cancel it rather than leave it unattended.
     if obsolete and self:cancel(snapshot).published then
         return snapshot, true
     end

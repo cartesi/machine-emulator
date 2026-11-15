@@ -1091,7 +1091,7 @@ dofile(%q)
                 run_ok(flags)
                 local first = operation .. ":" .. tostring(option ~= false) .. "\n"
                 local reload = "load:" .. tostring(option == "--clear-hash-tree=always") .. "\n"
-                -- Creation only reloads during the setup commit; inspection also commits and reverts.
+                -- Creation only reloads during the setup commit. Inspection also commits and reverts.
                 expect.equal(filesystem.read_file(calls_file), first .. reload:rep(operation == "create" and 1 or 3))
                 local root = operation == "create" and source:get_root_hash() or template:get_root_hash()
                 expect.equal(filesystem.read_file(initial_hash), root)

@@ -650,7 +650,7 @@ public:
 private:
     /// \brief Sets the stored tag before serialization or destruction
     /// \details Rebuild on load if a failed operation left an entry borrowed. Crash recovery uses an untouched,
-    /// synced snapshot; the tag does not describe the cache while it is in use.
+    /// synced snapshot. The tag does not describe the cache while it is in use.
     void update_stored_tag() const noexcept {
         m_initialized = std::ranges::any_of(m_entries, [](const auto &e) { return e.get_borrowed(); }) ?
             initialized_tag::uninitialized :

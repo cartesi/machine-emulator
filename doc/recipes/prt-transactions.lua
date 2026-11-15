@@ -175,7 +175,7 @@ function methods:submit(intent, observation)
     end
     if previous and previous.job == (intent and intent.key) then
         -- A changed branch may need immediate republication at an earlier
-        -- height; never wait for the old branch's block count to catch up.
+        -- height, so never wait for the old branch's block count to catch up.
         if self.chain:is_canonical(previous.block, previous.block_hash) and tip - previous.block < self.bump_blocks then
             return { waiting = true }
         end
@@ -205,7 +205,7 @@ function methods:submit(intent, observation)
         to, data, value = intent.to, intent.data, intent.value or "0"
     end
     -- A value the account cannot cover can fail either preflight before gas is known.
-    -- Report that lower bound first; the full check below includes the gas limit at the fee cap.
+    -- Report that lower bound first. The full check below includes the gas limit at the fee cap.
     local available = quantity(assert(self.chain:rpc("eth_getBalance", { address, block.number })))
     local needed = quantity(value)
     if available < needed then
@@ -287,7 +287,7 @@ function methods:submit(intent, observation)
         assert(hash:lower() == candidate.hash, "published transaction hash mismatch")
     end
     -- A rejected or ambiguously acknowledged publication still owns this nonce.
-    -- Retry with higher fees on a later tick; never allocate the next nonce.
+    -- Retry with higher fees on a later tick, and never allocate the next nonce.
     return {
         published = true,
         candidate = candidate,

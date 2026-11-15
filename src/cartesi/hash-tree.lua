@@ -437,7 +437,7 @@ local function frontier(log2_max_leaves_or_last_proof, hash_type)
         local log2_max_leaves = proof.log2_root_size
         local f = frontier_genesis(log2_max_leaves, hash_type)
         local hash_function = f.hash_function
-        -- A full height-64 tree has leaf count 2^64, which wraps to zero; its complete level is 65.
+        -- A full height-64 tree has leaf count 2^64, which wraps to zero. Its complete level is 65.
         local leaf_count = proof.target_address + 1
         local lowest_complete_level = 1
         while lowest_complete_level <= log2_max_leaves and (leaf_count & (1 << (lowest_complete_level - 1))) == 0 do

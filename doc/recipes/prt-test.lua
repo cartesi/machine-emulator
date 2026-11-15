@@ -770,7 +770,7 @@ do
     assert(initial.counts.live == 2, "replay leaked a machine or rollback snapshot")
 end
 
--- Closing a player releases its epoch pair and entries; temporary pairs own their scopes.
+-- Closing a player releases its epoch pair and entries. Temporary pairs own their scopes.
 for _, phase in ipairs({ "constructed", "input", "snapshot", "sealed" }) do
     local initial = new_fake_machine(keccak("initial"))
     local cache = prt.new_forked_machine_cache(initial)
@@ -1349,7 +1349,7 @@ do
     assert(retained[0] and retained[6] and retained[12] and retained[18] and retained[24])
 end
 
--- Independent pairs own snapshots and transfers; cache closure owns only entries.
+-- Independent pairs own snapshots and transfers. Cache closure owns only entries.
 for _, fail in ipairs({ false, true }) do
     local machine = new_fake_machine("initial")
     if fail then
@@ -3862,7 +3862,7 @@ if arg[1] then
     end
 
     -- Puts a machine in a terminal state. Only the malformed halt_with_yield case retains a yield
-    -- at halt. Overflow closes the input budget; the other yields carry a reason no delivery applies to.
+    -- at halt. Overflow closes the input budget. The other yields carry a reason no delivery applies to.
     local function force_terminal(m, terminal)
         if terminal == "halt" or terminal == "halt_with_yield" then
             m:write_reg("iflags_Y", terminal == "halt_with_yield" and 1 or 0)

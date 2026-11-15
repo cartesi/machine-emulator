@@ -8,6 +8,7 @@ Specifically, it provides test coverage for:
 local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 local cartesi = require("cartesi")
+local util = require("cartesi.util")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
 describe("JSON floating-point numbers", function()
@@ -335,6 +336,35 @@ describe("tojson / fromjson schema dictionary", function()
             cartesi.tojson({ label = "data", backing_store = {} }, nil, "MemoryRangeConfig"),
             '{"backing_store":{},"label":"data"}'
         )
+    end)
+
+    -- The binding keeps its own schemas for the containers of the C++ configurations, and an empty table needs one
+    it("should accept an empty table for every container of the machine and runtime configurations", function()
+        local try_tojson = util.protect(cartesi.tojson)
+        local config = machine:get_initial_config()
+        config.flash_drive = { { start = 1 << 52, length = 0x1000, backing_store = {} } }
+        config.nvram = { { start = 1 << 53, length = 0x1000, backing_store = {} } }
+        config.virtio = { { type = "net-user", hostfwd = { { host_port = 1, guest_port = 2 } } } }
+        local containers = 0
+        local function check_each_container(value, schema_name, t, path)
+            for key, child in pairs(t) do
+                if type(child) == "table" then
+                    local child_path = path .. "." .. tostring(key)
+                    check_each_container(value, schema_name, child, child_path)
+                    t[key] = {}
+                    local encoded, err = try_tojson(value, nil, schema_name)
+                    expect.truthy(encoded, child_path .. ": " .. tostring(err))
+                    expect.equal(cartesi.fromjson(encoded, schema_name), value)
+                    t[key] = child
+                    containers = containers + 1
+                end
+            end
+        end
+        check_each_container(config, "MachineConfig", config, "config")
+        local runtime = machine:get_runtime_config()
+        check_each_container(runtime, "MachineRuntimeConfig", runtime, "runtime")
+        -- Guards against a configuration that no longer has the containers this test is about
+        expect.truthy(containers >= 30, "only " .. containers .. " containers checked")
     end)
 
     it("should roundtrip machine configurations without changing state or runtime settings", function()

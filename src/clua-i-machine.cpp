@@ -284,8 +284,8 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L);
 /// \brief Resolves a type name to its schema definition, following alias chains.
 /// \details A name is looked up in the user dictionary first, then the machine dictionary. It maps
 /// either to an object schema, which is returned, or to a string. A string naming a different type
-/// is an alias and is followed. A string naming itself is a leaf primitive (Base64, Hex, ArrayIndex,
-/// Schema) and is returned as is. Following aliases is what lets a user type be a bare top-level
+/// is an alias and is followed. A string naming itself is a leaf primitive (Base64, Hex, ArrayIndex)
+/// and is returned as is. Following aliases is what lets a user type be a bare top-level
 /// alias to a compound machine type (e.g. "AccessLog"), not just to a leaf. An unknown name or a
 /// cyclic chain is an error.
 static const nlohmann::json &clua_resolve_type_schema(lua_State *L, std::string_view type_name,
@@ -566,7 +566,6 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) {
         static const nlohmann::json machine_schema_dict = {
             {"Base64", "Base64"},
             {"Hex", "Hex"},
-            {"Schema", "Schema"},
             {"InterpreterBreakReason",
                 {{"failed", CM_BREAK_REASON_FAILED}, {"halted", CM_BREAK_REASON_HALTED},
                     {"yielded_manually", CM_BREAK_REASON_YIELDED_MANUALLY},

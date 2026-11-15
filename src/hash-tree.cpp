@@ -785,9 +785,6 @@ bool hash_tree::update_words(address_ranges ars, const dirty_words_type &dirty_w
     changed_address_ranges changed_ars{&m_memory_pool};
     std::pmr::vector<uint64_t> words{&m_memory_pool};
     std::pmr::vector<uint64_t> page_starts{&m_memory_pool};
-    curr_dense_node.reserve(4);
-    next_dense_node.reserve(4);
-    changed_ars.reserve(2);
     words.reserve(dirty_words.size());
     page_starts.reserve(words.size());
     std::ranges::copy(dirty_words, std::back_inserter(words));
@@ -803,6 +800,12 @@ bool hash_tree::update_words(address_ranges ars, const dirty_words_type &dirty_w
         ++start;
     }
     page_starts.push_back(words.size()); // last entry
+    // Reserve the containers filled below before anything is modified, so an allocation failure cannot leave a cache
+    // entry borrowed or a page hash without its ancestors. Each holds at most one entry per page or address range.
+    const auto page_count = page_starts.size() - 1;
+    curr_dense_node.reserve(page_count);
+    next_dense_node.reserve(page_count);
+    changed_ars.reserve(ars.size());
     //??D I'll assume here that we do not have more threads than the cache size,
     // so we don't need to process in batches, and will fail if this assumption if false
     uint64_t update_failures{0}; // NOLINT(misc-const-correctness)

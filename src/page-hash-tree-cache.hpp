@@ -472,7 +472,6 @@ public:
     }
 
     std::span<const unsigned char> get_storage_data() const noexcept {
-        update_stored_tag();
         return m_mapped_memory.get_storage_data();
     }
 
@@ -618,7 +617,6 @@ public:
 
     /// \brief Destructor
     ~page_hash_tree_cache() {
-        update_stored_tag();
 #ifdef DUMP_HASH_TREE_STATS
         auto s = get_stats();
         auto pages_all = s.page_hits + s.page_misses;
@@ -648,15 +646,6 @@ public:
     }
 
 private:
-    /// \brief Sets the stored tag before serialization or destruction
-    /// \details Rebuild on load if a failed operation left an entry borrowed. Crash recovery uses an untouched,
-    /// synced snapshot. The tag does not describe the cache while it is in use.
-    void update_stored_tag() const noexcept {
-        m_initialized = std::ranges::any_of(m_entries, [](const auto &e) { return e.get_borrowed(); }) ?
-            initialized_tag::uninitialized :
-            initialized_tag::initialized;
-    }
-
     /// \brief Returns the payload array offset aligned to the machine page size for a checked capacity
     static size_t get_payloads_offset(size_t num_entries) noexcept {
         const auto metadata_length = sizeof(initialized_tag) + sizeof(lru) + (num_entries * sizeof(entry_metadata));

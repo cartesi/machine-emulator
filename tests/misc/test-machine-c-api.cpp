@@ -55,7 +55,6 @@
 #include <cm-jsonrpc.h>
 #include <cm.h>
 #include <keccak-256-hasher.hpp>
-#include <os-filesystem.hpp>
 #include <page-hash-tree-cache.hpp>
 #include <riscv-constants.hpp>
 #include <uarch-constants.hpp>
@@ -2207,59 +2206,6 @@ BOOST_AUTO_TEST_CASE_NOLINT(page_hash_tree_cache_payload_alignment_test) {
             BOOST_CHECK_EQUAL(page_address - storage_address, payloads_offset + (i * 12288));
             BOOST_CHECK(cache.return_entry(metadata));
         }
-    }
-}
-
-BOOST_AUTO_TEST_CASE_NOLINT(page_hash_tree_cache_store_unfinished_entry_test) {
-    for (const bool shared : {false, true}) {
-        const auto filename = unique_temp_path(shared ? "cache-shared" : "cache-private");
-        const auto stored_filename = unique_temp_path(shared ? "cache-shared-copy" : "cache-private-copy");
-        cartesi::os::truncate_file(filename, cartesi::page_hash_tree_cache::get_storage_length(1), true);
-        {
-            cartesi::page_hash_tree_cache cache{cartesi::keccak_256_hasher{}, 1, filename, shared};
-            auto borrowed = cache.borrow_entry(cartesi::HASH_TREE_PAGE_SIZE);
-            BOOST_REQUIRE(borrowed.has_value());
-            for (const bool finished : {false, true}) {
-                if (finished) {
-                    BOOST_CHECK(cache.return_entry(borrowed->get()));
-                }
-                cartesi::os::create_file(stored_filename, cache.get_storage_data());
-                {
-                    cartesi::page_hash_tree_cache restored{cartesi::keccak_256_hasher{}, 1, stored_filename, false};
-                    bool hit = false;
-                    auto entry = restored.borrow_entry(cartesi::HASH_TREE_PAGE_SIZE, hit);
-                    BOOST_REQUIRE(entry.has_value());
-                    BOOST_CHECK_EQUAL(hit, finished);
-                    BOOST_CHECK(restored.return_entry(entry->get()));
-                }
-                BOOST_CHECK(std::filesystem::remove(stored_filename));
-            }
-        }
-        BOOST_CHECK(std::filesystem::remove(filename));
-    }
-}
-
-BOOST_AUTO_TEST_CASE_NOLINT(page_hash_tree_cache_destroy_unfinished_entry_test) {
-    for (const bool finished : {false, true}) {
-        const auto filename = unique_temp_path(finished ? "cache-finished" : "cache-unfinished");
-        cartesi::os::truncate_file(filename, cartesi::page_hash_tree_cache::get_storage_length(1), true);
-        {
-            cartesi::page_hash_tree_cache cache{cartesi::keccak_256_hasher{}, 1, filename, true};
-            auto borrowed = cache.borrow_entry(cartesi::HASH_TREE_PAGE_SIZE);
-            BOOST_REQUIRE(borrowed.has_value());
-            if (finished) {
-                BOOST_CHECK(cache.return_entry(borrowed->get()));
-            }
-        }
-        {
-            cartesi::page_hash_tree_cache restored{cartesi::keccak_256_hasher{}, 1, filename, false};
-            bool hit = false;
-            auto borrowed = restored.borrow_entry(cartesi::HASH_TREE_PAGE_SIZE, hit);
-            BOOST_REQUIRE(borrowed.has_value());
-            BOOST_CHECK_EQUAL(hit, finished);
-            BOOST_CHECK(restored.return_entry(borrowed->get()));
-        }
-        BOOST_CHECK(std::filesystem::remove(filename));
     }
 }
 

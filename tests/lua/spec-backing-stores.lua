@@ -1080,35 +1080,6 @@ describe("backing stores", function()
             end)
         end
 
-        it("should rebuild a cache stored with an unfinished entry", function()
-            local _ <close>, directory = tests_util.scope_temp_pathname()
-            do
-                local machine <close> = cartesi.machine({
-                    ram = { length = 4096 },
-                    hash_tree = { phtc_size = capacity },
-                }, {}, directory)
-                machine:write_memory(cartesi.AR_RAM_START, string.rep("A", 4096))
-                machine:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
-            end
-            local _ <close> = tests_util.scope_exit(function()
-                cartesi.machine:remove_stored(directory)
-            end)
-            -- An entry still borrowed at store or destruction leaves the cache uninitialized
-            local filename = directory .. "/hash_tree.phtc"
-            local data = filesystem.read_file(filename)
-            data = write_word(write_word(data, 0, 0), entries_offset + 24, 1)
-            data = data:sub(1, payloads_offset) .. string.rep("\255", #data - payloads_offset)
-            filesystem.write_file(data, filename)
-            for _, sharing in ipairs({ cartesi.SHARING_NONE, cartesi.SHARING_ALL }) do
-                local machine <close> = cartesi.machine(directory, {}, sharing)
-                expect.equal(machine:get_root_hash(), tests_util.calculate_emulator_hash(machine))
-                expect.equal(
-                    machine:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE),
-                    cartesi.keccak256(string.rep("A", 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE))
-                )
-            end
-        end)
-
         it("should reuse stored entries without touching cached payloads", function()
             local _ <close>, directory = tests_util.scope_temp_pathname()
             local pages = { 0x80000000, 0x90000000, 0x90001000, 0xa0000000 }

@@ -3219,10 +3219,8 @@ echo "
     end
 
     main_machine = main_machine:create(config, runtime_config, cmdline.create_dir, cmdline.create_sharing)
-end
-
--- An existing remote machine keeps its runtime configuration, except for the options given to this run
-if cmdline.remote_address and not cmdline.remote_create and not cmdline.load_dir then
+else
+    -- An existing remote machine keeps its runtime configuration, except for the options given to this run
     assert(not cmdline.no_reserve, "cannot use --no-reserve and --no-remote-create at the same time")
     local runtime = main_machine:get_runtime_config()
     if next(cmdline.console) then runtime.console = cmdline.console end

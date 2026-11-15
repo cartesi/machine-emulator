@@ -13,15 +13,6 @@ local methods = {}
 -- The consensus seals at most this many pending inputs per epoch.
 local MAX_INPUTS_PER_EPOCH = 1 << cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
 
-local function key(log)
-    return log.blockHash .. ":" .. log.logIndex
-end
-
-local function less(a, b)
-    local an, bn = eth.small(a.blockNumber), eth.small(b.blockNumber)
-    return an < bn or (an == bn and eth.small(a.logIndex) < eth.small(b.logIndex))
-end
-
 function methods:poll()
     if self.dispute then
         assert(self.chain:is_canonical(self.seal_block, self.seal_hash), "stable epoch seal was reorganized")
@@ -34,35 +25,19 @@ function methods:poll()
     history:observe(head, hash)
     local logs = {}
     for _, address in ipairs({ self.input_box, self.consensus }) do
-        for _, log in ipairs(history:get_logs(address, self.first_input_block, self.topics[address])) do
-            assert(log.address == address and type(log.removed) == "boolean", "invalid epoch log")
-            if log.removed then
-                history:reset()
-                return nil
-            end
-            assert(eth.small(log.blockNumber) <= head, "epoch log past sampled head")
-            logs[#logs + 1] = log
+        local address_logs = history:get_logs(address, self.first_input_block, self.topics[address])
+        if not history:check(address, address_logs) then
+            return nil
         end
+        table.move(address_logs, 1, #address_logs, #logs + 1, logs)
     end
-    table.sort(logs, less)
-    if not self.chain:is_canonical(head, hash) then
-        history:reset()
+    logs = history:merge(logs)
+    if not logs then
         return nil
     end
     assert(#logs >= #self.applied, "epoch log history was truncated")
-    local positions, blocks = {}, {}
-    for i, log in ipairs(logs) do
-        local identity = key(log)
-        assert(not positions[identity], "duplicate epoch log")
-        positions[identity] = true
-        if blocks[log.blockNumber] and blocks[log.blockNumber] ~= log.blockHash then
-            history:reset()
-            return nil
-        end
-        blocks[log.blockNumber] = log.blockHash
-        if self.applied[i] then
-            assert(self.applied[i] == identity, "epoch history changed, so restart from a matching checkpoint")
-        end
+    for i, applied in ipairs(self.applied) do
+        assert(applied == log_history.key(logs[i]), "epoch history changed, so restart from a matching checkpoint")
     end
     for i = #self.applied + 1, #logs do
         local log = logs[i]
@@ -129,7 +104,7 @@ function methods:poll()
                 warning_blocks = self.warning_blocks,
             })
         end
-        self.applied[i] = key(log)
+        self.applied[i] = log_history.key(log)
     end
     return self.dispute
 end

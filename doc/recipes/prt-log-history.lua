@@ -148,4 +148,58 @@ function methods:get_logs(address, first_block, topics)
     return self:get_logs_of({ address }, { [address] = first_block }, topics)[address]
 end
 
+-- The position of a log in the chain, which identifies it.
+function M.key(log)
+    return log.blockHash .. ":" .. log.logIndex
+end
+
+-- The history accepts only canonical quantities, which order by length and then as strings.
+local function quantity_less(a, b)
+    return #a < #b or (#a == #b and a < b)
+end
+
+-- Chain order of two logs.
+function M.less(a, b)
+    if a.blockNumber ~= b.blockNumber then
+        return quantity_less(a.blockNumber, b.blockNumber)
+    end
+    return quantity_less(a.logIndex, b.logIndex)
+end
+
+-- Checks the logs of an address against the observation head. Returns false, after forgetting
+-- everything, when the node marked one of them removed.
+function methods:check(address, logs)
+    for _, log in ipairs(logs) do
+        assert(log.address == address and type(log.removed) == "boolean", "invalid log")
+        if log.removed then
+            self:reset()
+            return false
+        end
+        assert(eth.small(log.blockNumber) <= self.head, "log is past the observation head")
+    end
+    return true
+end
+
+-- Sorts checked logs into chain order. Returns nil, after forgetting everything, when the observation
+-- head is no longer canonical or one block number has two hashes.
+function methods:merge(logs)
+    if not self.chain:is_canonical(self.head, self.head_hash) then
+        self:reset()
+        return nil
+    end
+    table.sort(logs, M.less)
+    local blocks, positions = {}, {}
+    for _, log in ipairs(logs) do
+        if (blocks[log.blockNumber] or log.blockHash) ~= log.blockHash then
+            self:reset()
+            return nil
+        end
+        blocks[log.blockNumber] = log.blockHash
+        local position = M.key(log)
+        assert(not positions[position], "duplicate log position")
+        positions[position] = true
+    end
+    return logs
+end
+
 return M

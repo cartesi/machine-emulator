@@ -11,23 +11,11 @@ local M = {}
 local methods = {}
 
 local function event_key(event)
-    return event.log.blockHash .. ":" .. event.log.logIndex
+    return log_history.key(event.log)
 end
 
 local function match_key(event)
     return event.address .. ":" .. event.matchIdHash
-end
-
--- The history accepts only canonical quantities, which order by length and then as strings.
-local function quantity_less(a, b)
-    return #a < #b or (#a == #b and a < b)
-end
-
-local function log_less(a, b)
-    if a.blockNumber ~= b.blockNumber then
-        return quantity_less(a.blockNumber, b.blockNumber)
-    end
-    return quantity_less(a.logIndex, b.logIndex)
 end
 
 -- The event of a log, decoded once. Logs without an event in the ABI are remembered as false.
@@ -86,14 +74,10 @@ function methods:observe()
         for _, address in ipairs(addresses) do
             fetched[address] = true
             local children, deletions = {}, {}
+            if not history:check(address, fetched_logs[address]) then
+                return nil
+            end
             for _, log in ipairs(fetched_logs[address]) do
-                assert(log.address == address, "invalid log address")
-                assert(type(log.removed) == "boolean", "log lacks removed flag")
-                if log.removed then
-                    history:reset()
-                    return nil
-                end
-                assert(eth.small(log.blockNumber) <= head, "log is past sampled head")
                 logs[#logs + 1] = log
                 local event = decode(self, log)
                 if event and event.name == "NewInnerTournament" then
@@ -120,23 +104,13 @@ function methods:observe()
         end
         addresses = announced
     end
-    if not self.chain:is_canonical(head, hash) then
-        history:reset()
+    logs = history:merge(logs)
+    if not logs then
         return nil
     end
-    table.sort(logs, log_less)
     local matches, deleted, recovered, events, sealed = {}, {}, {}, {}, false
     local staged, settled
-    local blocks, seen = {}, {}
     for _, log in ipairs(logs) do
-        if blocks[log.blockNumber] and blocks[log.blockNumber] ~= log.blockHash then
-            history:reset()
-            return nil
-        end
-        blocks[log.blockNumber] = log.blockHash
-        local key = log.blockHash .. ":" .. log.logIndex
-        assert(not seen[key], "duplicate log position")
-        seen[key] = true
         local event = decode(self, log)
         if event then
             events[#events + 1] = event

@@ -257,7 +257,7 @@ private:
     uint64_t m_sparse_node_hashes{0};
     std::array<uint64_t, HASH_TREE_LOG2_ROOT_SIZE> m_dense_node_hashes{};
     /// \brief Whether to rehash ancestors of dirty pages whose hashes did not change, until an update succeeds
-    /// \details Stored dense trees left by an interrupted update, or a failed one, may hold the new hashes of dirty
+    /// \details Stored dense trees left by a failed update may hold the new hashes of dirty
     /// pages without those of their ancestors.
     bool m_bubble_up_unchanged_pages{true};
 };

@@ -384,7 +384,7 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
         auto &ar = ars[ar_index];
         auto offset = br.get_paddr_page() - ar.get_start();
         if (page_hash_tree_cache::return_entry(br)) {
-            // If page hash was changed during update, or an interrupted update may have stored it without its ancestors
+            // If page hash was changed during update, or a failed update may have stored it without its ancestors
             if (changed || m_bubble_up_unchanged_pages) {
                 // If we haven't already done so, add changed address range to list
                 try_push_back(changed_ars, ar_index);
@@ -550,7 +550,7 @@ bool hash_tree::update_sparse_tree(address_ranges ars, const changed_address_ran
     std::priority_queue<E, decltype(changed_backing), std::greater<>> changed(std::greater<>{},
         std::move(changed_backing));
     // Nodes already queued for update are marked here rather than in the stored nodes,
-    // so an interrupted update cannot leave a node that is never queued again
+    // so a failed update cannot leave a node that is never queued again
     std::pmr::vector<uint8_t> marked(m_sparse_nodes.size(), 0, &m_memory_pool);
     const auto mark_changed = [&](index_type node_index) {
         if (marked[node_index] == 0) {
@@ -746,8 +746,6 @@ bool hash_tree::verify(address_ranges ars) const {
 void hash_tree::clear(address_ranges ars) noexcept {
     m_page_cache.clear();
     for (auto &ar : ars) {
-        // Mark pages dirty before clearing their hashes, so an interrupted clear never leaves a clean page with a
-        // cleared hash in a stored hash tree.
         // Mark every node, so no previous state of the tree can hide a page from the next update.
         ar.get_dirty_page_tree().mark_dirty();
         ar.get_dense_hash_tree().clear();

@@ -864,9 +864,6 @@ static json jsonrpc_get_version_handler(const json &j, const std::shared_ptr<htt
         });
 }
 
-/// \brief Parse a address from a string to an endpoint.
-/// \param address Address string (e.g "127.0.0.1:8000")
-/// \returns Endpoint address
 /// \brief JSONRPC handler for the fork method
 /// \param j JSON request object
 /// \param session HTTP session

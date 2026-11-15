@@ -418,7 +418,7 @@ describe("backing stores", function()
             machine:run()
             expect.fail(function()
                 cartesi.machine:sync_stored(stored_dirname)
-            end, "flock() failed")
+            end, "unable to sync file")
         end
 
         do -- a machine that shares no backing store leaves the files alone
@@ -1053,7 +1053,7 @@ describe("backing stores", function()
                 machine:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
                 expect.fail(function()
                     machine:sync_stored(directory)
-                end, "flock() failed")
+                end, "unable to sync file")
                 machine:store(stored_directory, sharing)
                 machine:sync_stored(stored_directory)
                 expect.equal(read_tag(stored_directory), initialized_tag)

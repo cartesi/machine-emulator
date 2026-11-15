@@ -493,7 +493,7 @@ for _, variant in ipairs(variants) do
                 handle:get_node_hash(cartesi.AR_RAM_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
                 expect.fail(function()
                     handle:sync_stored(dirname)
-                end, "flock() failed")
+                end, "unable to sync file")
                 handle:destroy()
                 expect.equal(read_tag(), 0x0250485443)
                 handle:sync_stored(dirname)

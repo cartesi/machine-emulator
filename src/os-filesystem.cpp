@@ -724,11 +724,7 @@ std::pair<FILE *, std::string> create_temporary_file(const std::string &dirname,
 #endif
 }
 
-#ifndef HAVE_UNIFIED_PAGE_CACHE
-#warning "sync_file() cannot flush changes still held in shared mappings of a running machine on this platform"
-#endif
-
-void sync_file(const std::string &filename, [[maybe_unused]] bool lock) {
+void sync_file(const std::string &filename) {
     // Open the file
 #ifdef _WIN32
     // On Windows, FlushFileBuffers() requires a handle with write access,
@@ -758,7 +754,7 @@ void sync_file(const std::string &filename, [[maybe_unused]] bool lock) {
 
 #ifdef HAVE_FLOCK
     // A running machine that maps the file for writing holds an exclusive lock on it
-    if (lock && flock(fd, LOCK_SH | LOCK_NB) != 0) {
+    if (flock(fd, LOCK_SH | LOCK_NB) != 0) {
         throw make_path_system_error(errno, "unable to sync file"s, filename, "flock() failed"s);
     }
 #endif

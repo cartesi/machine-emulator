@@ -141,12 +141,9 @@ void clone_file(const std::string &from, const std::string &to);
 
 /// \brief Flushes all modifications of a file to permanent storage.
 /// \param filename Path to the file, must exist.
-/// \param lock Whether to lock the file for reading during the operation.
 /// \throw std::system_error on error.
-/// \details Without \p lock, the file may be locked by a running machine that maps it.
-/// With \p lock, the operation fails if a running machine maps the file for writing,
-/// where file locks are available.
-void sync_file(const std::string &filename, bool lock = false);
+/// \details Fails if a running machine maps the file for writing, where file locks are available.
+void sync_file(const std::string &filename);
 
 /// \brief Creates a new directory with a unique name, accessible only by its owner on POSIX.
 /// \param dirname Directory to create the directory in, must exist.

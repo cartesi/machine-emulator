@@ -87,7 +87,7 @@ CM_API cm_error cm_filesystem_create_temporary_file(const char *dirname, const c
 /// \brief Flushes all modifications of a file to permanent storage.
 /// \param path Path to the file, must exist.
 /// \returns 0 for success, non zero code for error.
-/// \details The file is deliberately not locked, so it may be locked by a running machine that maps it.
+/// \details Fails if a running machine maps the file for writing, where file locks are available.
 CM_API cm_error cm_filesystem_sync_file(const char *path);
 
 /// \brief Flushes all modifications of an open file to permanent storage.

@@ -45,11 +45,11 @@ local function fresh(options)
     index = index + 1
     destination = string.format("0x%040x", 4096 + index)
     local args = options or {}
-    args.chain, args.path, args.bump_blocks = chain, "transactions-test-" .. index .. ".json", 2
+    args.chain, args.signer, args.path, args.bump_blocks = chain, signer, "transactions-test-" .. index .. ".json", 2
     return transactions.new(args), args
 end
 local function submit(manager, job)
-    return manager:submit(signer, job, observe())
+    return manager:submit(job, observe())
 end
 local function successful(manager, key, hash)
     local receipt = assert(manager:receipt(key))
@@ -113,7 +113,7 @@ do
     local first = submit(manager, intent())
     assert(first.published and first.candidate.nonce == 0)
     assert(first.candidate.gas == 2 * 21000, "a transfer was not signed with twice its estimate")
-    assert(manager:pending(signer.address).hash == first.candidate.hash)
+    assert(manager:pending().hash == first.candidate.hash)
     assert(not manager:idle() and not manager:receipt("work"))
     assert(not submit(manager, intent()).published, "same-block retry published again")
     mine(1, 50000000000)
@@ -123,15 +123,15 @@ do
     manager = transactions.new(args)
     local second = submit(manager, intent())
     assert(second.published and second.candidate.nonce == 0)
-    assert(manager:pending(signer.address).hash == second.candidate.hash)
+    assert(manager:pending().hash == second.candidate.hash)
     assert(evmu.bint(second.candidate.max_fee) > evmu.bint(first.candidate.max_fee))
     assert(evmu.bint(second.candidate.priority_fee) > evmu.bint(first.candidate.priority_fee))
     mine()
     successful(manager, "work", second.candidate.hash)
     local delayed = { head = 0, hash = manager.state.genesis }
-    assert(not manager:submit(signer, intent(), delayed).published, "unobserved mined work was submitted twice")
+    assert(not manager:submit(intent(), delayed).published, "unobserved mined work was submitted twice")
     assert(rpc("eth_getTransactionReceipt", { first.candidate.hash }) == json.null)
-    assert(manager:idle() and manager:nonce(signer.address) == 1)
+    assert(manager:idle() and manager:nonce() == 1)
 end
 print("PRT transactions: gas surge, same-nonce replacement, and journal reload passed.")
 
@@ -143,7 +143,7 @@ do
     mine(2, 50000000000)
     local capped = submit(manager, intent())
     assert(capped.blocked == "fee_ceiling" and not capped.published)
-    assert(not manager:idle() and manager:nonce(signer.address) == 0)
+    assert(not manager:idle() and manager:nonce() == 0)
     mine(1, 1000000000)
     if not manager:receipt("work") then
         local resumed = assert(submit(manager, intent()).candidate)
@@ -163,13 +163,14 @@ do
     local publish = chain.publish
     function chain.publish(_, raw)
         local saved = assert(json.decode(fs.read_file(args.path)))
-        local candidates = saved.accounts[signer.address].nonces["0"].candidates
+        assert(saved.first_nonce == 0, "the journal does not start at the first nonce")
+        local candidates = saved.records[1].candidates
         assert(candidates[#candidates].raw == raw, "publication preceded persistence")
         assert(not fs.read_file(args.path):find("wallets", 1, true), "journal contains signer configuration")
         return nil, { code = -32000, message = "replacement transaction underpriced" }
     end
     local rejected = submit(manager, intent())
-    assert(rejected.published and rejected.publication_error == -32000 and manager:nonce(signer.address) == 0)
+    assert(rejected.published and rejected.publication_error == -32000 and manager:nonce() == 0)
     chain.publish = publish
     mine(2)
     local retried = submit(manager, intent()).candidate
@@ -209,7 +210,7 @@ do
 end
 
 -- A reorg can reopen MULTIPLE previously consumed nonces. Loading the journal
--- must recover high_water, then overwrite each nonce before calling it idle.
+-- must recover every nonce it records, then overwrite each before calling it idle.
 do
     local manager, args = fresh()
     local rewind = rpc("evm_snapshot", {})
@@ -230,7 +231,7 @@ do
     local cancel1 = submit(manager, nil).candidate
     assert(cancel1.nonce == 1)
     mine()
-    assert(manager:idle() and manager:nonce(signer.address) == 2)
+    assert(manager:idle() and manager:nonce() == 2)
 end
 
 -- The stored journal keeps the nonces a reorg can still reopen, and forgets them once their
@@ -238,13 +239,13 @@ end
 do
     local manager, args = fresh()
     local function stored_nonces()
-        local account = json.decode(fs.read_file(args.path)).accounts[signer.address]
+        local state = json.decode(fs.read_file(args.path))
         local nonces = {}
-        for nonce in pairs(account.nonces) do
-            nonces[#nonces + 1] = nonce
+        for position, record in ipairs(state.records) do
+            assert(record.candidates[1].nonce == state.first_nonce + position - 1, "records out of nonce order")
+            nonces[#nonces + 1] = state.first_nonce + position - 1
         end
-        table.sort(nonces)
-        return table.concat(nonces, ","), account.first_nonce
+        return table.concat(nonces, ","), state.first_nonce
     end
     local first = submit(manager, intent("one")).candidate
     mine()
@@ -260,7 +261,7 @@ do
     manager = transactions.new(args)
     assert(not manager:idle())
     mine()
-    assert(manager:idle() and manager:nonce(signer.address) == 3)
+    assert(manager:idle() and manager:nonce() == 3)
 end
 print("PRT transactions: immediate cancellation, older-candidate race, and multi-nonce reorg recovery passed.")
 
@@ -275,7 +276,7 @@ do
     assert(not pcall(submit, manager, intent()))
     chain.publish = publish
     manager = transactions.new(args)
-    assert(not manager:idle() and manager:nonce(signer.address) == 0)
+    assert(not manager:idle() and manager:nonce() == 0)
     mine(2)
     local resumed = submit(manager, intent()).candidate
     assert(resumed.nonce == 0)

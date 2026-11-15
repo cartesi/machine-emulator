@@ -1304,7 +1304,7 @@ do
         transactions = {
             receipt = function() end,
             pending = function() end,
-            submit = function(_, _, request)
+            submit = function(_, request)
                 submitted[#submitted + 1] = request.key
                 return { rejected = { code = 3, message = "fixture revert" } }
             end,
@@ -2021,7 +2021,7 @@ do
             return replacement
         end
         local cancellations = 0
-        function checker.transactions.submit(_, _, candidate)
+        function checker.transactions.submit(_, candidate)
             assert(candidate == nil, "a disagreeing result was submitted for acceptance")
             cancellations = cancellations + 1
             return { published = true }
@@ -2260,10 +2260,11 @@ do
     local jobs = {}
     local publisher = {
         receipt = function() end,
-        pending = function(_, address)
-            return address == "alice" and pending or nil
+        -- The journal belongs to the bridge's signer, alice
+        pending = function()
+            return pending
         end,
-        submit = function(_, _, intent)
+        submit = function(_, intent)
             calls[#calls + 1] = intent and intent.key or "cancel"
             if not intent then
                 return { published = true }
@@ -2335,7 +2336,7 @@ do
         return { signer = signer, to = "root", data = "0x" }
     end
     client.prepared, client.rejected = {}, {}
-    function publisher.submit(_, _, intent)
+    function publisher.submit(_, intent)
         calls[#calls + 1] = intent and intent.key or "cancel"
         return { waiting = true }
     end
@@ -2356,7 +2357,7 @@ do
         pending = function()
             return pending
         end,
-        submit = function(_, _, intent)
+        submit = function(_, intent)
             calls[#calls + 1] = intent and intent.key or "cancel"
             return { waiting = true }
         end,

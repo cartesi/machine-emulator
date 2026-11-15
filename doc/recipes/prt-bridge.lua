@@ -738,7 +738,7 @@ function methods:attempt(job, snapshot)
     if proof_failure then
         result = { rejected = proof_failure }
     else
-        result = self.transactions:submit(transaction.signer, {
+        result = self.transactions:submit({
             key = job.key,
             kind = job.kind,
             first = current.first,
@@ -764,7 +764,7 @@ function methods:attempt(job, snapshot)
 end
 
 function methods:cancel(snapshot)
-    local result = self.transactions:submit(self.signer, nil, snapshot)
+    local result = self.transactions:submit(nil, snapshot)
     self:report_blocked(result)
     return result
 end
@@ -790,7 +790,7 @@ function methods:tick()
     -- A settled epoch with no jobs left, including the signer's bond recoveries, is finished once its
     -- settlement is irreversible and none of its transactions is pending. Another submitter's bond can remain.
     if #jobs == 0 and self.retirement_policy and snapshot.settled then
-        local candidate = self.transactions:pending(self.signer.address)
+        local candidate = self.transactions:pending()
         if not (candidate and candidate.context and candidate.context.epoch == tostring(self.epoch)) then
             local irreversible = self.chain:head(self.retirement_policy)
             self.finished = eth.small(snapshot.settled.log.blockNumber) <= irreversible
@@ -803,7 +803,7 @@ function methods:tick()
             table.insert(due, job)
         end
     end
-    local candidate = self.transactions:pending(self.signer.address)
+    local candidate = self.transactions:pending()
     if candidate then
         next_block = snapshot.tip + 1
         -- Every epoch's bridge shares the signer's nonce. Another epoch's pending transaction is left alone

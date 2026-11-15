@@ -1,5 +1,6 @@
--- One exclusive account per signer. Events decide which work is useful;
--- this journal owns signed candidates, nonce reuse, and bounded replacement.
+-- The journal of one signer's exclusive account. Events decide which work is useful;
+-- this journal owns signed candidates, nonce reuse, and bounded replacement. It keeps one record
+-- per nonce it has not forgotten, in nonce order from first_nonce.
 local json = require("dkjson")
 local fs = require("cartesi.filesystem")
 local eth = require("prt-ethereum")
@@ -31,22 +32,34 @@ function methods:store()
     fs.sync_directory(fs.get_parent_directory(self.path))
 end
 
-function methods:nonce(address, block)
-    local count, failure = self.chain:rpc("eth_getTransactionCount", { address, block or "latest" })
+function methods:nonce(block)
+    local count, failure = self.chain:rpc("eth_getTransactionCount", { self.address, block or "latest" })
     return eth.small(assert(count, failure and json.encode(failure)))
+end
+
+-- The candidates signed for a job, in signing order.
+local function job_candidates(self, key)
+    local candidates = {}
+    for _, record in ipairs(self.state.records) do
+        for _, candidate in ipairs(record.candidates) do
+            if candidate.job == key then
+                candidates[#candidates + 1] = candidate
+            end
+        end
+    end
+    return candidates
 end
 
 -- A nonce is settled once one of its candidates has a canonical receipt at or below both the
 -- finalized block and the observation head. No reorg can reopen it, and its receipts no longer hold
 -- back a resend, so the journal forgets it. The account is exclusive, so its nonces settle in order.
-local function forget_settled(self, address, observation)
-    local account = self.state.accounts[address]
+local function forget_settled(self, observation)
+    local state = self.state
     local finalized = assert(self.chain:rpc("eth_getBlockByNumber", { "finalized", false }))
     local settled_block = math.min(eth.small(finalized.number), observation.head)
-    while account.first_nonce <= account.high_water do
-        local key = tostring(account.first_nonce)
+    while #state.records > 0 do
         local settled = false
-        for _, candidate in ipairs(account.nonces[key].candidates) do
+        for _, candidate in ipairs(state.records[1].candidates) do
             local receipt = assert(self.chain:rpc("eth_getTransactionReceipt", { candidate.hash }))
             if receipt ~= json.null then
                 local number = eth.small(receipt.blockNumber)
@@ -59,51 +72,31 @@ local function forget_settled(self, address, observation)
         if not settled then
             return
         end
-        for _, candidate in ipairs(account.nonces[key].candidates) do
-            local candidates = candidate.job and self.jobs[candidate.job]
-            if candidates then
-                for index = #candidates, 1, -1 do
-                    if candidates[index] == candidate then
-                        table.remove(candidates, index)
-                    end
-                end
-                if #candidates == 0 then
-                    self.jobs[candidate.job] = nil
-                end
-            end
-        end
-        account.nonces[key] = nil
-        account.first_nonce = account.first_nonce + 1
+        table.remove(state.records, 1)
+        state.first_nonce = state.first_nonce + 1
     end
 end
 
 -- Never allocate past the current chain nonce, even when pending RPC reports
--- later candidates. A reorg can resurrect every nonce up to high_water.
-local function nonce_record(account, nonce)
-    assert(nonce >= account.first_nonce, "signer nonce moved before its journal; stop and reconcile the account")
-    assert(nonce <= account.high_water + 1, "exclusive signer nonce was consumed outside its journal")
-    if nonce <= account.high_water then
-        return assert(account.nonces[tostring(nonce)], "missing owned nonce")
+-- later candidates. A reorg can resurrect every nonce the journal still records.
+local function nonce_record(state, nonce)
+    if not state.first_nonce then
+        return nil
     end
+    local index = nonce - state.first_nonce + 1
+    assert(index >= 1, "signer nonce moved before its journal; stop and reconcile the account")
+    assert(index <= #state.records + 1, "exclusive signer nonce was consumed outside its journal")
+    return state.records[index]
 end
 
 -- Expose the current signed action, not the journal's nonce-slot structure.
-function methods:pending(address)
-    local account = self.state.accounts[address:lower()]
-    if not account then
-        return nil
-    end
-    local record = nonce_record(account, self:nonce(address))
+function methods:pending()
+    local record = nonce_record(self.state, self:nonce())
     return record and record.candidates[#record.candidates]
 end
 
 function methods:idle()
-    for address in pairs(self.state.accounts) do
-        if self:pending(address) then
-            return false
-        end
-    end
-    return true
+    return not self:pending()
 end
 
 -- Query every candidate for this job: a replaced transaction can still win.
@@ -111,7 +104,7 @@ end
 -- catches up. Neither receipt marks the job complete.
 function methods:receipt(key)
     local latest
-    for _, candidate in ipairs(self.jobs[key] or {}) do
+    for _, candidate in ipairs(job_candidates(self, key)) do
         local receipt = assert(self.chain:rpc("eth_getTransactionReceipt", { candidate.hash }))
         if receipt ~= json.null then
             assert(receipt.transactionHash:lower() == candidate.hash, "receipt transaction mismatch")
@@ -129,7 +122,7 @@ end
 -- out of gas consumes the whole limit, which tells it apart from a revert the contract's state caused.
 local function get_exhausted_gas(self, key, receipt)
     if receipt and eth.small(receipt.status) == 0 then
-        for _, candidate in ipairs(self.jobs[key]) do
+        for _, candidate in ipairs(job_candidates(self, key)) do
             if candidate.hash == receipt.transactionHash:lower() and eth.small(receipt.gasUsed) == candidate.gas then
                 return candidate.gas
             end
@@ -156,15 +149,14 @@ end
 -- intent is either the currently eligible job or nil (cancel obsolete work).
 -- A call publishes at most once and never waits for mining. Caller must supply
 -- a fresh, canonical observation and must revalidate jobs on every tick.
-function methods:submit(signer, intent, observation)
-    local address = signer.address:lower()
+function methods:submit(intent, observation)
+    local signer, address, state = self.signer, self.address, self.state
     local block = assert(self.chain:rpc("eth_getBlockByNumber", { "latest", false }))
     local tip = eth.small(block.number)
-    local nonce = self:nonce(address, { blockHash = block.hash, requireCanonical = true })
-    local account = self.state.accounts[address]
-    local record = account and nonce_record(account, nonce)
-    if not account then
-        assert(self:nonce(address, "pending") == nonce, "exclusive signer already has untracked pending transactions")
+    local nonce = self:nonce({ blockHash = block.hash, requireCanonical = true })
+    local record = nonce_record(state, nonce)
+    if not state.first_nonce then
+        assert(self:nonce("pending") == nonce, "exclusive signer already has untracked pending transactions")
     end
     local previous = record and record.candidates[#record.candidates]
     if not intent and not previous then
@@ -184,8 +176,7 @@ function methods:submit(signer, intent, observation)
     if previous and previous.job == (intent and intent.key) then
         -- A changed branch may need immediate republication at an earlier
         -- height; never wait for the old branch's block count to catch up.
-        local attempt = assert(record.last_attempt)
-        if self.chain:is_canonical(attempt.block, attempt.block_hash) and tip - attempt.block < self.bump_blocks then
+        if self.chain:is_canonical(previous.block, previous.block_hash) and tip - previous.block < self.bump_blocks then
             return { waiting = true }
         end
     end
@@ -247,7 +238,7 @@ function methods:submit(signer, intent, observation)
     assert(estimate <= gas_limit, "estimated transaction exceeds block gas limit")
     gas = math.min(math.max(estimate * 2, (exhausted_gas or 0) * 2), gas_limit)
     local candidate = {
-        chain_id = self.state.chain_id,
+        chain_id = state.chain_id,
         nonce = nonce,
         gas = gas,
         to = to,
@@ -279,22 +270,17 @@ function methods:submit(signer, intent, observation)
     if current_hash ~= block.hash or not self.chain:is_canonical(observation.head, observation.hash) then
         return { waiting = true }
     end
-    if not account then
-        account = { first_nonce = nonce, high_water = nonce, nonces = {} }
-        self.state.accounts[address] = account
+    if not state.first_nonce then
+        state.first_nonce = nonce
     end
-    record = record or { candidates = {} }
-    account.nonces[tostring(nonce)] = record
-    account.high_water = math.max(account.high_water, nonce)
-    record.last_attempt = { block = tip, block_hash = block.hash }
+    if not record then
+        record = { candidates = {} }
+        state.records[#state.records + 1] = record
+    end
     record.candidates[#record.candidates + 1] = candidate
-    if candidate.job then
-        self.jobs[candidate.job] = self.jobs[candidate.job] or {}
-        table.insert(self.jobs[candidate.job], candidate)
-    end
     -- The store precedes EVERY publication, including replacements/cancels.
     -- Persist all unsettled candidates, because network acceptance is not consensus.
-    forget_settled(self, address, observation)
+    forget_settled(self, observation)
     self:store()
     local hash, publication_failure = self.chain:publish(candidate.raw)
     if hash then
@@ -310,16 +296,17 @@ function methods:submit(signer, intent, observation)
 end
 
 function M.new(args)
-    assert(args.chain and args.path)
+    assert(args.chain and args.path and args.signer)
     local self = setmetatable({
         chain = args.chain,
         path = args.path,
+        signer = args.signer,
+        address = args.signer.address:lower(),
         bump_blocks = args.bump_blocks or 3,
         bump_percent = args.bump_percent or 15,
         min_priority_fee = quantity(args.min_priority_fee or "1000000000"),
         max_priority_fee = quantity(args.max_priority_fee or "10000000000"),
         max_fee = quantity(args.max_fee or "100000000000"),
-        jobs = {},
     }, { __index = methods })
     assert(math.type(self.bump_blocks) == "integer" and self.bump_blocks > 0, "invalid fee bump interval")
     assert(
@@ -340,37 +327,23 @@ function M.new(args)
         file:close()
         local state, position, err = json.decode(data)
         assert(not err and state and not data:sub(position):find("%S"), "invalid transaction journal")
-        assert(
-            state.version == 1 and state.chain_id == chain_id and state.genesis == genesis,
-            "transaction journal chain mismatch"
-        )
-        self.state = state
-        for _, account in pairs(state.accounts) do
-            for nonce = account.first_nonce, account.high_water do
-                assert(account.nonces[tostring(nonce)], "missing owned nonce in journal")
-            end
-            for nonce, record in pairs(account.nonces) do
+        assert(state.version == 2, "unsupported transaction journal version")
+        assert(state.chain_id == chain_id and state.genesis == genesis, "transaction journal chain mismatch")
+        assert(state.address == self.address, "transaction journal belongs to another signer")
+        assert(type(state.records) == "table" and (state.first_nonce ~= nil or #state.records == 0), "invalid journal")
+        for index, record in ipairs(state.records) do
+            assert(#record.candidates > 0, "invalid nonce journal")
+            for _, candidate in ipairs(record.candidates) do
                 assert(
-                    tonumber(nonce) >= account.first_nonce
-                        and tonumber(nonce) <= account.high_water
-                        and #record.candidates > 0,
-                    "invalid nonce journal"
+                    candidate.nonce == state.first_nonce + index - 1 and candidate.chain_id == chain_id,
+                    "invalid journal candidate"
                 )
-                for _, candidate in ipairs(record.candidates) do
-                    assert(
-                        candidate.nonce == tonumber(nonce) and candidate.chain_id == chain_id,
-                        "invalid journal candidate"
-                    )
-                    if candidate.job then
-                        self.jobs[candidate.job] = self.jobs[candidate.job] or {}
-                        table.insert(self.jobs[candidate.job], candidate)
-                    end
-                end
             end
         end
+        self.state = state
     else
         assert(open_code == 2, "cannot read transaction journal")
-        self.state = { version = 1, chain_id = chain_id, genesis = genesis, accounts = {} }
+        self.state = { version = 2, chain_id = chain_id, genesis = genesis, address = self.address, records = {} }
     end
     return self
 end

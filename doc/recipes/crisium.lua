@@ -365,6 +365,7 @@ local first_epoch = math.max(cmdline.first_epoch, oldest_checkpoint or 0)
 local transactions = validator
     and require("prt-transactions").new({
         chain = chain,
+        signer = signer,
         path = cmdline.state .. "/journal.json",
         bump_blocks = cmdline.bump_blocks,
         bump_percent = cmdline.bump_percent,

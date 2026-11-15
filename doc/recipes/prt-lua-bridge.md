@@ -480,8 +480,9 @@ synced, and only then are the raw bytes published with `eth_sendRawTransaction`.
 A crash therefore never leaves a broadcast transaction unrecorded, and a
 relaunched player reuses the recorded nonce instead of allocating another. A
 nonce leaves the journal once one of its candidates has a receipt at or below
-both the finalized block and the observed block. The journal also keeps the
-highest nonce ever published, never lowered.
+both the finalized block and the observed block. The journal belongs to the
+player's signer and records its nonces in order from the oldest it has not
+forgotten, so the highest nonce ever published is never lowered.
 
 Nonce reconciliation reads the current state, not the delayed observation. A
 tracked nonce below the account nonce was consumed. A tracked nonce equal to it

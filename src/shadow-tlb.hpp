@@ -90,7 +90,7 @@ static_assert((UINT64_C(1) << SHADOW_TLB_SLOT_LOG2_SIZE) == SHADOW_TLB_SLOT_SIZE
 using shadow_tlb_set = std::array<shadow_tlb_slot, TLB_SET_SIZE>;
 
 /// \brief Shadow TLB memory layout
-using shadow_tlb_state = std::array<shadow_tlb_set, TLB_LAST_ + 1>; // one set for code, one for read and one for write
+using shadow_tlb_state = std::array<shadow_tlb_set, TLB_NUM_SETS>; // one set for code, one for read and one for write
 
 static_assert(AR_SHADOW_TLB_LENGTH >= sizeof(shadow_tlb_state), "TLB state must fit in TLB shadow");
 

@@ -349,8 +349,8 @@ end
 -- Match clocks
 --
 -- Each claim carries a clock, its remaining allowance in blocks, and the referee runs the two
--- clocks of a match against each other. Expiry is inclusive: a deadline is the first block at
--- which a clock has timed out, so a response must arrive before it.
+-- clocks of a match against each other. Deadlines are exclusive, as in the transport. A deadline
+-- is the first block at which a clock has timed out, so a response must arrive before it.
 ------------------------------------------------------------
 
 -- docs:begin match_clocks

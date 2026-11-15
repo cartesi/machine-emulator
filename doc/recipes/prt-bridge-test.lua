@@ -1790,9 +1790,8 @@ do
                             return nil
                         end
                     end
-                    local pass = sentinel and checking.watch or checking.tick
                     for _ = 1, 2 do
-                        pass(checking)
+                        checking:tick()
                     end
                     local reports = checking.player.reports
                     if winner == side then

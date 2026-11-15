@@ -520,8 +520,7 @@ local function pass()
     -- ticks first and takes the signer's next nonce before them.
     for i = #disputes, 1, -1 do
         local dispute = disputes[i]
-        local step = dispute.sentinel and dispute.watch or dispute.tick
-        local snapshot, published, next_block = measure("tick", step, dispute)
+        local snapshot, published, next_block = measure("tick", dispute.tick, dispute)
         -- A rejected observation leaves the bridge to try again at the same tip.
         status.retry = status.retry or snapshot == nil
         status.published = status.published or published

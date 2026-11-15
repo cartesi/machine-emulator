@@ -1018,13 +1018,14 @@ function M.new(args)
     return new(args)
 end
 
--- A sentinel's bridge, with a player but no signer or journal. It computes the honest claims and
--- watches instead of ticking, and reports what a validator should have done but has not.
+-- A sentinel's bridge, with a player but no signer or journal. It computes the honest claims, and its
+-- tick watches instead of publishing, reporting what a validator should have done but has not.
 function M.new_sentinel(args)
     assert(args.geometry, "missing factory geometry")
     assert(args.player and args.label, "missing player or label")
     local sentinel = new(args)
     sentinel.sentinel = true
+    sentinel.tick = methods.watch
     sentinel.warning_blocks = args.warning_blocks or 10
     assert(math.type(sentinel.warning_blocks) == "integer" and sentinel.warning_blocks >= 0, "invalid warning blocks")
     return sentinel

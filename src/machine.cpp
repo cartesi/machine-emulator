@@ -2072,6 +2072,12 @@ void machine::write_word(uint64_t paddr, uint64_t val) {
     ar.get_dirty_page_tree().mark_dirty_page_and_up(offset);
 }
 
+void machine::check_uarch_reset() const {
+    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
+        throw std::runtime_error{"microarchitecture is not reset"};
+    }
+}
+
 void machine::check_cmio_response_revert_root_hash(uint16_t reason,
     const std::optional<const_machine_hash_view> &revert_root_hash) const {
     if (reason == HTIF_YIELD_REASON_ADVANCE_STATE) {
@@ -2288,9 +2294,7 @@ interpreter_break_reason machine::get_state_break_reason(interpreter_break_reaso
 }
 
 interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::string &filename) {
-    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
-        throw std::runtime_error{"microarchitecture is not reset"};
-    }
+    check_uarch_reset();
     auto root_hash_before = get_root_hash();
     init_hot_tlb_contents();
     record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
@@ -2332,9 +2336,7 @@ interpreter_break_reason machine::run(uint64_t mcycle_end) {
     if (mcycle_end < mcycle) {
         throw std::invalid_argument{"mcycle is past"};
     }
-    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
-        throw std::invalid_argument{"microarchitecture is not reset"};
-    }
+    check_uarch_reset();
     const state_access a(*this);
     return get_state_break_reason(interpret_with_console(a, m_console, mcycle_end));
 }
@@ -2449,9 +2451,7 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
     if (!update_hash_tree()) {
         throw std::runtime_error{"update hash tree failed"};
     }
-    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
-        throw std::runtime_error{"microarchitecture is not reset"};
-    }
+    check_uarch_reset();
 
     // Initialize the phase unchanged and report the machine's current break reason. The loop
     // updates the phase if mcycle advances and collects once even when already at a fixed point.
@@ -2620,9 +2620,7 @@ machine_hashes machine::collect_mcycle_bundle(uint64_t bundle_offset, uint64_t l
     if (m_r.soft_yield) {
         throw std::runtime_error{"cannot collect hashes when soft yield is enabled"};
     }
-    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
-        throw std::runtime_error{"microarchitecture is not reset"};
-    }
+    check_uarch_reset();
 
     // Reserve the result before running, so an oversized bundle fails without advancing the machine
     machine_hashes hashes;
@@ -2778,9 +2776,7 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
     if (!update_hash_tree()) {
         throw std::runtime_error{"update hash tree failed"};
     }
-    if (read_reg(reg::uarch_cycle) != 0 || read_reg(reg::uarch_halt) != 0) {
-        throw std::runtime_error{"microarchitecture is not reset"};
-    }
+    check_uarch_reset();
     // The reset that closes each mcycle only restores the uarch words written during it
     if (get_node_hash(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, skip_hash_tree_update) !=
         get_uarch_pristine_hash()) {

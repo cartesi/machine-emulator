@@ -153,6 +153,9 @@ private:
     void check_cmio_response_revert_root_hash(uint16_t reason,
         const std::optional<const_machine_hash_view> &revert_root_hash) const;
 
+    /// \brief Checks that the microarchitecture is reset, neither halted nor partway through an mcycle.
+    void check_uarch_reset() const;
+
     /// \brief Checks if the machine has VirtIO devices.
     /// \returns True if at least one VirtIO device is present.
     bool has_virtio_devices() const;

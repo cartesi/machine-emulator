@@ -1918,19 +1918,16 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
         throw std::invalid_argument{"virtual memory range wraps around the address space"};
     }
     // copy page by page, because we need to perform address translation again for each page
-    for (uint64_t chunk_offset = 0; chunk_offset < length;) {
-        const uint64_t vaddr = vaddr_start + chunk_offset;
-        const uint64_t vaddr_page = vaddr & ~(AR_PAGE_SIZE - 1);
-        uint64_t paddr_page = 0;
-        if (cartesi::translate_virtual_address<state_access, pte_update_mode::skip_update>(a, &paddr_page, vaddr_page,
-                PTE_XWR_R_SHIFT) != translation_result::success) {
-            throw std::domain_error{"page fault"};
-        }
-        const uint64_t offset = vaddr - vaddr_page;
-        const uint64_t chunk_length = std::min<uint64_t>(AR_PAGE_SIZE - offset, length - chunk_offset);
-        read_memory(paddr_page + offset, data + chunk_offset, chunk_length);
-        chunk_offset += chunk_length;
-    }
+    foreach_aligned_chunk(vaddr_start, length, AR_PAGE_SIZE,
+        [this, &a, vaddr_start, data](uint64_t vaddr, uint64_t chunk_length) {
+            const uint64_t vaddr_page = vaddr & ~(AR_PAGE_SIZE - 1);
+            uint64_t paddr_page = 0;
+            if (cartesi::translate_virtual_address<state_access, pte_update_mode::skip_update>(a, &paddr_page,
+                    vaddr_page, PTE_XWR_R_SHIFT) != translation_result::success) {
+                throw std::domain_error{"page fault"};
+            }
+            read_memory(paddr_page + (vaddr - vaddr_page), data + (vaddr - vaddr_start), chunk_length);
+        });
 }
 
 void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, uint64_t length) {
@@ -1945,21 +1942,18 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
         throw std::invalid_argument{"virtual memory range wraps around the address space"};
     }
     // copy page by page, because we need to perform address translation again for each page
-    for (uint64_t chunk_offset = 0; chunk_offset < length;) {
-        const uint64_t vaddr = vaddr_start + chunk_offset;
-        const uint64_t vaddr_page = vaddr & ~(AR_PAGE_SIZE - 1);
-        uint64_t paddr_page = 0;
-        // perform address translation using read access mode,
-        // so we can write any reachable virtual memory range
-        if (cartesi::translate_virtual_address<state_access, pte_update_mode::skip_update>(a, &paddr_page, vaddr_page,
-                PTE_XWR_R_SHIFT) != translation_result::success) {
-            throw std::domain_error{"page fault"};
-        }
-        const uint64_t offset = vaddr - vaddr_page;
-        const uint64_t chunk_length = std::min<uint64_t>(AR_PAGE_SIZE - offset, length - chunk_offset);
-        write_memory(paddr_page + offset, data + chunk_offset, chunk_length);
-        chunk_offset += chunk_length;
-    }
+    foreach_aligned_chunk(vaddr_start, length, AR_PAGE_SIZE,
+        [this, &a, vaddr_start, data](uint64_t vaddr, uint64_t chunk_length) {
+            const uint64_t vaddr_page = vaddr & ~(AR_PAGE_SIZE - 1);
+            uint64_t paddr_page = 0;
+            // perform address translation using read access mode,
+            // so we can write any reachable virtual memory range
+            if (cartesi::translate_virtual_address<state_access, pte_update_mode::skip_update>(a, &paddr_page,
+                    vaddr_page, PTE_XWR_R_SHIFT) != translation_result::success) {
+                throw std::domain_error{"page fault"};
+            }
+            write_memory(paddr_page + (vaddr - vaddr_page), data + (vaddr - vaddr_start), chunk_length);
+        });
 }
 
 uint64_t machine::translate_virtual_address(uint64_t vaddr) {

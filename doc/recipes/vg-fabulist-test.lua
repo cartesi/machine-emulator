@@ -33,7 +33,7 @@ local function run(initial_hash, paths, delegate)
             end
             local response = vgu.answer_event(honest, line)
             if delegate and wire.operation == "reveal_bisection" then
-                return { id = wire.id, skip = true }
+                return { id = wire.id }
             end
             return response
         end, true)

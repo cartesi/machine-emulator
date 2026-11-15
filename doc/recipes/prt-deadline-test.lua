@@ -738,11 +738,6 @@ return function(run_with_server, new_test_player)
     local invalid_logs = { step_log = machine:log_step_uarch() }
     assert(not pcall(cartesi.machine.verify_step_uarch, cartesi.machine, initial, invalid_logs.step_log))
     local geometry = { mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }
-    local max_allowance = 4
-    -- Every claim joins one block after its tournament opens, and a uarch tournament inherits
-    -- the remaining mcycle clock, so each level's clocks are one block shorter than the last.
-    local mcycle_clock = max_allowance - 1
-    local uarch_clock = mcycle_clock - 1
 
     -- Narration remains outside the referee. Capture semantic reports so each
     -- fixture can assert its outcome without writing walkthrough artifacts.
@@ -758,6 +753,13 @@ return function(run_with_server, new_test_player)
     end
 
     local function scenario(mode)
+        -- Every claim joins one block after its tournament opens, and a uarch tournament inherits
+        -- the remaining mcycle clock, so each level's clocks are one block shorter than the last.
+        -- A prompt answer needs a clock of at least two blocks, which a uarch claim posted one
+        -- block late only keeps with a larger allowance.
+        local max_allowance = mode == "later_deadline" and 5 or 4
+        local mcycle_clock = max_allowance - 1
+        local uarch_clock = mcycle_clock - 1
         reports = {}
         local settlement_requests, proof_checks = {}, 0
         local opening_blocks, unrelated_responses, invalid_proofs = {}, 0, 0
@@ -778,6 +780,8 @@ return function(run_with_server, new_test_player)
             finals[3], finals[4] = keccak("third final"), keccak("fourth final")
         elseif mode == "uarch_inactive" then
             finals[3], finals[4] = after, after
+        elseif mode == "earliest_post" then
+            finals[3] = after
         end
         for index, final in ipairs(finals) do
             local player = new_test_player(geometry, nil, "fixture" .. index)
@@ -818,6 +822,25 @@ return function(run_with_server, new_test_player)
                 return cartesi.tohex(a) < cartesi.tohex(b)
             end)
             assert(inactive[1] ~= inactive[2])
+        end
+        -- A prompt answer lands one block after its request, and a late one a block later.
+        local function answer_late(player, name)
+            local answer = player.event_handler[name]
+            player.event_handler[name] = function(self, ...)
+                local response = answer(self, ...)
+                return prtu.schedule_response(self, current_server:get_time() + 2, function()
+                    return response
+                end)
+            end
+        end
+        if mode == "earliest_post" then
+            -- Slot 3 posts slot 1's claim on time, so the claim's clock starts at its post.
+            answer_late(players[1], "commit_mcycle_claim")
+        elseif mode == "later_deadline" then
+            -- Slot 2's uarch claim joins late, so its clock is one block shorter. Its proof lands
+            -- at its own deadline, which is before the other claim's.
+            answer_late(players[2], "commit_uarch_claim")
+            answer_late(players[2], "prove_state_transition")
         end
         -- Determine the bracket without relying on connection order.
         local roots = { players[1]:new_mcycle_tree():get_root_hash(), players[2]:new_mcycle_tree():get_root_hash() }
@@ -991,6 +1014,8 @@ return function(run_with_server, new_test_player)
                             or ((mode == "eliminate" or mode == "concurrent") and opening)
                             or (mode == "leaf_expiry" and request == "prove_state_transition")
                             or (mode == "uarch_inactive" and index >= 3 and opening and committed_uarch)
+                            or (mode == "earliest_post" and index ~= 2 and opening)
+                            or (mode == "later_deadline" and index == 1 and request == "prove_state_transition")
                         then
                             return cartesi.tojson({ id = event.id }, -1)
                         end
@@ -1055,7 +1080,7 @@ return function(run_with_server, new_test_player)
                 eliminated = eliminated + 1
             end
         end
-        if mode == "timeout" or mode == "timeout_seal" or mode == "timeout_advanced" then
+        if mode == "timeout" or mode == "timeout_seal" or mode == "timeout_advanced" or mode == "earliest_post" then
             local winner_index = mode == "timeout_advanced" and first or 3 - first
             assert(winner and winner.computation_hash == roots[winner_index] and timeouts == 1)
         elseif mode == "eliminate" or mode == "concurrent" then
@@ -1068,7 +1093,13 @@ return function(run_with_server, new_test_player)
         else
             assert(winner and winner.final_state_hash == after, "wrong uarch winner propagated")
         end
-        if mode == "proof" or mode == "invalid_proof" or mode == "leaf_expiry" or mode == "uarch_inactive" then
+        if
+            mode == "proof"
+            or mode == "invalid_proof"
+            or mode == "leaf_expiry"
+            or mode == "uarch_inactive"
+            or mode == "later_deadline"
+        then
             assert(proof_checks == 1)
         end
         if mode == "invalid_proof" then
@@ -1086,6 +1117,7 @@ return function(run_with_server, new_test_player)
             concurrent = 4,
             uarch_inactive = 2,
             leaf_expiry = 1,
+            earliest_post = 1,
         }
         local request_count = 0
         for _ in pairs(settlement_requests) do
@@ -1108,6 +1140,8 @@ return function(run_with_server, new_test_player)
         "proof",
         "invalid_proof",
         "leaf_expiry",
+        "earliest_post",
+        "later_deadline",
     }) do
         assert(scenario(mode) == scenario(mode), "the protocol trace was not reproducible")
     end

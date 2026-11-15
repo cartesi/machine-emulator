@@ -103,9 +103,13 @@ end
 -- when it exits. Stopping the supervisors stops the players.
 local recipes_directory = assert(os.getenv("RECIPES_DIR"), "missing RECIPES_DIR")
 local supervisors = {}
+-- A process may already be gone when it is killed
+local try_kill = util.protect(function(...)
+    return command.run({ "kill", ... })
+end)
 local function stop_players()
     for _, pid in ipairs(supervisors) do
-        pcall(command.run, { "kill", pid })
+        try_kill(pid)
     end
 end
 local _ <close> = setmetatable({}, { __close = stop_players })
@@ -244,10 +248,6 @@ end
 
 -- With PRT_TEST_SENTINEL=stop-honest, the honest player and its supervisor are stopped for good, and the
 -- orchestrator no longer waits for it.
--- A process may already be gone when it is killed
-local try_kill = util.protect(function(...)
-    return command.run({ "kill", ... })
-end)
 local function stop_honest()
     local honest = players[1]
     if test_sentinel ~= "stop-honest" or stopped[honest.label] then
@@ -444,20 +444,24 @@ local function narrate(session, snapshot)
     session.story = table.concat(lines)
 end
 
+-- A failed mining request is reported with how long it took, whether it raised or the node refused it
+local try_mine = util.protect(function(blocks)
+    return miner:rpc("anvil_mine", { string.format("0x%x", blocks) })
+end)
 local function mine_to(number)
     local tip = chain:head()
     if number > tip then
         local start = socket.gettime()
-        local ok, result, failure = pcall(miner.rpc, miner, "anvil_mine", { string.format("0x%x", number - tip) })
+        local result, failure = try_mine(number - tip)
         assert(
-            ok and result,
+            result,
             string.format(
                 "mining %d blocks after block %d failed after %.1f s, at %s: %s",
                 number - tip,
                 tip,
                 socket.gettime() - start,
                 os.date("!%H:%M:%S"),
-                tostring(ok and failure and json.encode(failure) or result)
+                tostring(type(failure) == "table" and json.encode(failure) or failure)
             )
         )
     end

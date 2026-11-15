@@ -3,6 +3,7 @@
 -- head, or the newest block holding a fetched log. Logs after it are dropped and fetched again,
 -- so a reorg costs a refetch of the replaced blocks only.
 local eth = require("prt-ethereum")
+local util = require("cartesi.util")
 local M = {}
 local methods = {}
 
@@ -72,6 +73,9 @@ local MAX_ADDRESSES_PER_REQUEST = 128
 -- is the whole range. A failed request halves the page and a successful one doubles it. A failure
 -- on a single block splits the addresses, and on a single address it is raised. Each page is
 -- recorded as it arrives, so a failure keeps the pages already fetched.
+local try_logs = util.protect(function(chain, ...)
+    return chain:logs(...)
+end)
 local function fetch(self, addresses, fetched, topics)
     local requested = {}
     for _, address in ipairs(addresses) do
@@ -81,8 +85,8 @@ local function fetch(self, addresses, fetched, topics)
     while fetched < self.head do
         local last_block = math.min(fetched + page, self.head)
         local selected = #addresses == 1 and addresses[1] or addresses
-        local ok, result = pcall(self.chain.logs, self.chain, selected, last_block, fetched + 1, topics)
-        if ok then
+        local result, err = try_logs(self.chain, selected, last_block, fetched + 1, topics)
+        if result then
             for _, log in ipairs(result) do
                 assert(is_quantity(log.blockNumber) and is_quantity(log.logIndex), "log position is not a quantity")
                 -- A log of a single address is its own, and the caller checks it
@@ -103,7 +107,7 @@ local function fetch(self, addresses, fetched, topics)
             fetch(self, table.move(addresses, half + 1, #addresses, 1, {}), fetched, topics)
             return
         else
-            error(result, 0)
+            error(err, 0)
         end
     end
 end

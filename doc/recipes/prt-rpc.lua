@@ -2,6 +2,7 @@
 local json = require("dkjson")
 local socket = require("socket")
 local evmu = require("cartesi.evmu")
+local util = require("cartesi.util")
 
 local M = {}
 local methods = {}
@@ -65,6 +66,9 @@ local function close_connection(self)
     end
 end
 
+-- A failed exchange leaves the connection in an unknown state, so it is closed before raising
+local try_exchange = util.protect(M.exchange)
+
 -- Posts a request over the chain's persistent connection. An idle connection is readable only if
 -- the node closed it, so a readable one is replaced before the request is sent. A request is never
 -- sent twice, since after a failure the node may have acted on it or not, and only observing the
@@ -77,11 +81,13 @@ local function post(self, body)
         self.connection = assert(socket.connect(self.host, self.port))
         self.connection:settimeout(self.timeout or nil)
     end
-    local ok, status, data, closing = pcall(M.exchange, self.connection, self.host_header, self.path, body)
-    if not ok or closing then
+    local status, data, closing = try_exchange(self.connection, self.host_header, self.path, body)
+    if not status or closing then
         close_connection(self)
     end
-    assert(ok, ok or "RPC HTTP failure: " .. tostring(status))
+    if not status then
+        error("RPC HTTP failure: " .. tostring(data), 0)
+    end
     return status, data
 end
 

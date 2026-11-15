@@ -3,6 +3,7 @@
 -- owner request must come over the owner's connection. Game schemas, reply validity, and
 -- narration remain with each game. Response payloads stay as JSON strings until delivery.
 local cartesi = require("cartesi")
+local util = require("cartesi.util")
 local socket = require("socket")
 local new_clock = require("game-clock")
 local new_response_queue = require("game-response-queue")
@@ -215,6 +216,11 @@ end
 -- is handled here and kept out of the client-loop snippet. Besides a payload, a handler returns
 -- "nothing" to answer without a payload and "done" to leave the game. Both are sent as the
 -- reply's value, and "done" ends the client loop.
+local request_guard = {
+    __close = function(self)
+        client_requests[self.client] = nil
+    end,
+}
 local function answer_event(client, line, protocol)
     local envelope = cartesi.fromjson(line)
     local event = assert(protocol.events[envelope.operation], "unknown event")
@@ -238,12 +244,9 @@ local function answer_event(client, line, protocol)
             protocol = protocol,
             block = wire_event.block,
         }
-        local ok
-        ok, value = pcall(handler, client, table.unpack(wire_event.arguments or {}))
-        client_requests[client] = nil
-        if not ok then
-            error(value, 0)
-        end
+        -- The request is forgotten when the handler returns or raises
+        local _ <close> = setmetatable({ client = client }, request_guard)
+        value = handler(client, table.unpack(wire_event.arguments or {}))
     end
     local special = value == "nothing" or value == "done"
     if not special and event ~= protocol.events.advance_time then
@@ -543,6 +546,9 @@ local function announce(self, connection, message)
     end
 end
 
+-- Players send arbitrary text, so decoding their lines and responses can fail
+local try_fromjson = util.protect(cartesi.fromjson)
+
 -- Adopts a connection with a writer for bytes and a reader for its current
 -- request. The first line announces the player or initial phase-closer role.
 function server_meta.__index.adopt(self, sock)
@@ -566,8 +572,8 @@ function server_meta.__index.adopt(self, sock)
             local line, err = receive_line(self.dispatcher, connection)
             assert(line, "unexpected connection loss: " .. tostring(err))
             trace_wire(protocol, "from player", nil, line)
-            local ok, message = pcall(cartesi.fromjson, line)
-            if not ok or type(message) ~= "table" then
+            local message = try_fromjson(line)
+            if type(message) ~= "table" then
                 close_connection(self, connection)
                 return
             end
@@ -920,6 +926,11 @@ local function entry_less(a, b)
     return a.match_order < b.match_order or (a.match_order == b.match_order and a.order < b.order)
 end
 
+-- Referee validators raise to reject a response
+local try_accept_response = util.protect(function(future, ...)
+    return future.accept_response(...)
+end)
+
 -- A response ID selects its original event schema and referee validator. A response whose
 -- future has closed is stale and ignored.
 local function accept_scheduled_response(self, response)
@@ -937,22 +948,23 @@ local function accept_scheduled_response(self, response)
     then
         return
     end
-    local ok, decoded
+    -- JSON null decodes to nil, so a failure is told by its error
+    local decoded, err = nil, "response value is not a string"
     if type(response.value) == "string" then
-        ok, decoded = pcall(cartesi.fromjson, response.value, future.event.response_schema, protocol.schemas)
+        decoded, err = try_fromjson(response.value, future.event.response_schema, protocol.schemas)
     end
-    if not ok then
+    if err then
         if future.kind == "request_all" and not future.retry_rejected then
             future.pending[response.connection] = nil
         end
         return
     end
     local received_at = self:get_time()
-    local accepted, value = true, decoded
+    local value = decoded
     if future.accept_response then
-        accepted, value = pcall(future.accept_response, decoded, response.connection, received_at)
+        value = try_accept_response(future, decoded, response.connection, received_at)
     end
-    if accepted and (not future.accept_response or value) then
+    if not future.accept_response or value then
         if future.kind == "request_all" then
             future.accepted_replies[#future.accepted_replies + 1] = {
                 value = value,
@@ -1151,14 +1163,20 @@ local function close_referee(self, main)
     end
 end
 
+-- Closing what an error left behind can fail again, and cleanup continues regardless
+local try_close_referee = util.protect(function(dispatcher, referee)
+    return dispatcher:close(referee)
+end)
+local try_close_coroutine = util.protect(coroutine.close)
+
 -- Cleanup also runs when a referee or transport coroutine raises an error.
 function server_meta.__index.close(self)
     if self.referee then
-        pcall(self.dispatcher.close, self.dispatcher, self.referee)
+        try_close_referee(self.dispatcher, self.referee)
     end
     for cortn in pairs(self.dispatcher.parents) do
         if coroutine.status(cortn) ~= "running" then
-            pcall(coroutine.close, cortn)
+            try_close_coroutine(cortn)
         end
     end
     for entry in pairs(self.active) do

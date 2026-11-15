@@ -6,6 +6,7 @@ local eth = require("prt-ethereum")
 local rpc_client = require("prt-rpc")
 local log_history = require("prt-log-history")
 local cartesi = require("cartesi")
+local util = require("cartesi.util")
 local prt = require("prt")
 local M = {}
 local methods = {}
@@ -520,6 +521,10 @@ function methods:jobs(snapshot)
     return jobs
 end
 
+-- A player's proof may not verify, which is reported rather than raised
+local try_verify_transition = util.protect(eth.verify_transition)
+local try_validity_proof = util.protect(eth.validity_proof)
+
 function methods:prepare(job)
     local context, event = job.context, job.event
     local player, kind = self.player, job.kind
@@ -581,9 +586,9 @@ function methods:prepare(job)
         end
         local input_data = self.inputs[input + 1]
         local proof = eth.transition_proof(response, cycle, input_data)
-        local ok, obtained = pcall(eth.verify_transition, response, cycle, input_data, event.agreeState)
+        local obtained, err = try_verify_transition(response, cycle, input_data, event.agreeState)
         local expected = claim.root == event.one and event.finalStateOne or event.finalStateTwo
-        proof_check = { valid = ok and obtained == expected, obtained = tostring(obtained), expected = expected }
+        proof_check = { valid = obtained == expected, obtained = tostring(obtained or err), expected = expected }
         args = { id, claim.children[1], claim.children[2], proof }
     elseif kind == "winMatchByTimeout" then
         local response = payload(self, player.event_handler.win_match_by_timeout(player, assert(eth.raw(job.root))))
@@ -605,9 +610,9 @@ function methods:prepare(job)
         if not response then
             return nil
         end
-        local ok, proof = pcall(eth.validity_proof, response, claim.final_state)
-        if not ok then
-            self.terminal = "Winning machine state cannot be staged: " .. tostring(proof)
+        local proof, err = try_validity_proof(response, claim.final_state)
+        if not proof then
+            self.terminal = "Winning machine state cannot be staged: " .. tostring(err)
             self:report_once(
                 job.key,
                 "staging_proof_failed",

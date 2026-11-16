@@ -70,27 +70,15 @@ end
 describe("minstret", function()
     for _, case in ipairs(cases) do
         it(case.name, function()
-            local native <close> = create_machine(case)
-            local initial_hash = native:get_root_hash()
-            expect.equal(native:run(case.mcycle), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
-            expect_result(native, case)
-            local expected_hash = native:get_root_hash()
-
-            local logged <close> = create_machine(case)
-            local _ <close>, filename = tests_util.scope_temp_pathname()
-            expect.equal(logged:log_step(case.mcycle, filename), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
-            expect.equal(logged:verify_step(initial_hash, filename, case.mcycle), expected_hash)
-
-            -- Each run_uarch executes one mcycle, and each reset is logged and verified
-            local uarch <close> = create_machine(case)
-            for _ = 1, case.mcycle do
-                expect.equal(uarch:run_uarch(math.maxinteger), cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
-                local before_reset = uarch:get_root_hash()
-                local log = uarch:log_reset_uarch()
-                expect.equal(uarch:verify_reset_uarch(before_reset, log), uarch:get_root_hash())
-            end
-            expect.equal(uarch:get_root_hash(), expected_hash)
-            expect_result(uarch, case)
+            tests_util.expect_all_paths_agree(
+                function()
+                    return create_machine(case)
+                end,
+                case.mcycle,
+                function(machine)
+                    expect_result(machine, case)
+                end
+            )
         end)
     end
 end)

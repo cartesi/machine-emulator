@@ -120,23 +120,15 @@ describe("page tables outside RAM", function()
                 local _ <close>, data_filename =
                     filesystem.write_scope_temp_file(root .. string.rep("\0", 4096 - #root))
 
-                local native <close> = create_machine(access, table_case, data_filename)
-                local initial_hash = native:get_root_hash()
-                expect.equal(native:run(1), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
-                expect_result(native, access, table_case)
-                local expected_hash = native:get_root_hash()
-
-                local logged <close> = create_machine(access, table_case, data_filename)
-                local _ <close>, filename = tests_util.scope_temp_pathname()
-                expect.equal(logged:log_step(1, filename), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
-                expect.equal(logged:verify_step(initial_hash, filename, 1), expected_hash)
-
-                local uarch <close> = create_machine(access, table_case, data_filename)
-                expect.equal(uarch:run_uarch(math.maxinteger), cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
-                local before_reset = uarch:get_root_hash()
-                local log = uarch:log_reset_uarch()
-                expect.equal(uarch:verify_reset_uarch(before_reset, log), expected_hash)
-                expect_result(uarch, access, table_case)
+                tests_util.expect_all_paths_agree(
+                    function()
+                        return create_machine(access, table_case, data_filename)
+                    end,
+                    1,
+                    function(machine)
+                        expect_result(machine, access, table_case)
+                    end
+                )
             end)
         end
     end

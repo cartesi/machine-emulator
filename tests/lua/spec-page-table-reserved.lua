@@ -105,23 +105,15 @@ describe("reserved bits in non-leaf page-table entries", function()
     for _, r in ipairs(reserved) do
         for _, access in ipairs({ "fetch", "load", "store" }) do
             it(access .. " through a non-leaf entry with " .. r.name, function()
-                local native <close> = create_machine(access, r.bit)
-                local initial_hash = native:get_root_hash()
-                expect.equal(native:run(1), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
-                expect_result(native, access, r.bit)
-                local expected_hash = native:get_root_hash()
-
-                local logged <close> = create_machine(access, r.bit)
-                local _ <close>, filename = tests_util.scope_temp_pathname()
-                expect.equal(logged:log_step(1, filename), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
-                expect.equal(logged:verify_step(initial_hash, filename, 1), expected_hash)
-
-                local uarch <close> = create_machine(access, r.bit)
-                expect.equal(uarch:run_uarch(math.maxinteger), cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
-                local before_reset = uarch:get_root_hash()
-                local log = uarch:log_reset_uarch()
-                expect.equal(uarch:verify_reset_uarch(before_reset, log), expected_hash)
-                expect_result(uarch, access, r.bit)
+                tests_util.expect_all_paths_agree(
+                    function()
+                        return create_machine(access, r.bit)
+                    end,
+                    1,
+                    function(machine)
+                        expect_result(machine, access, r.bit)
+                    end
+                )
             end)
         end
     end

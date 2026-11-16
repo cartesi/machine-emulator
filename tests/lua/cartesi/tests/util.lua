@@ -17,6 +17,7 @@
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
 local filesystem = require("cartesi.filesystem")
+local expect = require("cartesi.third-party.lester").expect
 
 local ROOT_LOG2_SIZE = 64
 local PAGE_LOG2_SIZE = 12
@@ -289,6 +290,32 @@ function tests_util.scope_temp_pathname(suffix)
         filesystem.remove_directory(directory)
     end),
         path
+end
+
+-- Runs a machine natively, by log_step and verify_step, and in the microarchitecture, where each uarch run
+-- executes one mcycle and each reset is logged and verified. All three must reach the same root hash.
+-- new_machine() returns a fresh machine, and check_result(machine) checks the state it reached.
+function tests_util.expect_all_paths_agree(new_machine, mcycle_count, check_result)
+    local native <close> = new_machine()
+    local initial_hash = native:get_root_hash()
+    expect.equal(native:run(mcycle_count), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+    check_result(native)
+    local expected_hash = native:get_root_hash()
+
+    local logged <close> = new_machine()
+    local _ <close>, filename = tests_util.scope_temp_pathname()
+    expect.equal(logged:log_step(mcycle_count, filename), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+    expect.equal(logged:verify_step(initial_hash, filename, mcycle_count), expected_hash)
+
+    local uarch <close> = new_machine()
+    for _ = 1, mcycle_count do
+        expect.equal(uarch:run_uarch(math.maxinteger), cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
+        local before_reset = uarch:get_root_hash()
+        local log = uarch:log_reset_uarch()
+        expect.equal(uarch:verify_reset_uarch(before_reset, log), uarch:get_root_hash())
+    end
+    expect.equal(uarch:get_root_hash(), expected_hash)
+    check_result(uarch)
 end
 
 return tests_util

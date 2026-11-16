@@ -27,14 +27,14 @@ namespace cartesi {
 /// \brief Probe RAM, then binary-search the sorted nonempty PMA tail.
 /// Empty suffix entries compare as +infinity. A miss selects the synthetic empty
 /// PMA entry at PMA_MAX. The caller constructs and validates the selected address range.
-template <typename T, typename ENTRY>
-uint64_t find_pma_index(uint64_t paddr, ENTRY entry) {
+template <typename ENTRY>
+uint64_t find_pma_index(uint64_t paddr, uint64_t size, ENTRY entry) {
     const auto ram_entry = entry(PMA_RAM_INDEX);
     const uint64_t ram_start = ram_entry.istart & PMA_ISTART_START_MASK;
     if (ram_entry.ilength == 0) [[unlikely]] {
         return PMA_RAM_INDEX;
     }
-    if (paddr >= ram_start && ram_entry.ilength >= sizeof(T) && paddr - ram_start <= ram_entry.ilength - sizeof(T)) {
+    if (paddr >= ram_start && ram_entry.ilength >= size && paddr - ram_start <= ram_entry.ilength - size) {
         return PMA_RAM_INDEX;
     }
     uint64_t lower = 1;
@@ -45,7 +45,7 @@ uint64_t find_pma_index(uint64_t paddr, ENTRY entry) {
         const uint64_t start = current.istart & PMA_ISTART_START_MASK;
         if (current.ilength == 0 || paddr < start) {
             upper = index;
-        } else if (current.ilength >= sizeof(T) && paddr - start <= current.ilength - sizeof(T)) {
+        } else if (current.ilength >= size && paddr - start <= current.ilength - size) {
             return index;
         } else {
             lower = index + 1;

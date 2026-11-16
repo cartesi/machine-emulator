@@ -100,7 +100,7 @@ ifeq ($(slirp),yes)
 LIBCARTESI_LIBS+=$(SLIRP_LIB)
 endif
 
-all: $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api $(BUILDDIR)/test-uarch-pma-cache $(BUILDDIR)/test-step-log
+all: $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api $(BUILDDIR)/test-find-pma $(BUILDDIR)/test-step-log
 
 ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a:
 	$(info libcartesi.a and/or libcartesi_hash_tree.a were not found! Build them first.)
@@ -115,10 +115,9 @@ $(BUILDDIR)/test-machine-c-jsonrpc-api: test-machine-c-jsonrpc-api.o ../../src/l
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-test-uarch-pma-cache.o: CXXFLAGS += -I../../uarch
-test-uarch-pma-cache.o: ../../uarch/uarch-pma-cache.hpp ../../src/lazy-address-ranges.hpp ../../src/find-pma.hpp
+test-find-pma.o: ../../src/lazy-address-ranges.hpp ../../src/find-pma.hpp
 
-$(BUILDDIR)/test-uarch-pma-cache: test-uarch-pma-cache.o ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
+$(BUILDDIR)/test-find-pma: test-find-pma.o ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
 
 test-step-log.o: CXXFLAGS += -I../../third-party/llvm-flang-uint128
@@ -154,6 +153,6 @@ clean-objs:
 
 clean: clean-tidy clean-objs
 	@rm -f $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api
-	@rm -f $(BUILDDIR)/test-uarch-pma-cache $(BUILDDIR)/test-step-log
+	@rm -f $(BUILDDIR)/test-find-pma $(BUILDDIR)/test-step-log
 
 .SUFFIXES:

@@ -502,11 +502,15 @@ public:
     }
 
 protected:
-    // Default implementation. The uarch bridge overrides it with a cache of recent hits.
     template <typename T>
     auto &do_find_pma(uint64_t paddr, uint64_t &index) const {
-        index = find_pma_index<T>(paddr, [this](uint64_t i) { return read_pma_entry(i); });
+        index = find_pma_index(paddr, sizeof(T));
         return read_pma(index);
+    }
+
+private:
+    uint64_t find_pma_index(uint64_t paddr, uint64_t size) const {
+        return cartesi::find_pma_index(paddr, size, [this](uint64_t i) { return read_pma_entry(i); });
     }
 };
 

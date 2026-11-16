@@ -23,6 +23,7 @@
 #include "i-accept-scoped-notes.hpp"
 #include "i-prefer-shadow-state.hpp"
 #include "i-state-access.hpp"
+#include "lazy-address-ranges.hpp"
 #include "machine-reg.hpp"
 #include "pmas.hpp"
 #include "riscv-constants.hpp"
@@ -30,7 +31,6 @@
 #include "uarch-constants.hpp"
 #include "uarch-defines.h"
 #include "uarch-ecall.hpp"
-#include "uarch-pma-cache.hpp"
 #include "uarch-strict-aliasing.hpp"
 
 namespace cartesi {
@@ -51,10 +51,10 @@ class uarch_bridge_state_access :
     public i_prefer_shadow_state<uarch_bridge_state_access> {
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
-    uarch_pma_cache &m_pmas;
+    lazy_address_ranges &m_ranges;
 
 public:
-    explicit uarch_bridge_state_access(uarch_pma_cache &pmas) : m_pmas(pmas) {}
+    explicit uarch_bridge_state_access(lazy_address_ranges &ranges) : m_ranges(ranges) {}
     uarch_bridge_state_access(const uarch_bridge_state_access &other) = default;
     uarch_bridge_state_access(uarch_bridge_state_access &&other) = default;
     uarch_bridge_state_access &operator=(const uarch_bridge_state_access &other) = delete;
@@ -118,7 +118,6 @@ private:
 
     template <typename T, typename A>
     void do_write_memory_word(uint64_t paddr, uint64_t /* pma_index */, T val) const {
-        m_pmas.invalidate_on_write(paddr);
         ua_aliased_aligned_write<T, A>(paddr, val);
     }
 
@@ -139,16 +138,18 @@ private:
     }
 
     address_range &do_read_pma(uint64_t index) const {
-        return m_pmas.read(index, bridge_read_pma_entry, abort_pma);
-    }
-
-    template <typename T>
-    address_range &do_find_pma(uint64_t paddr, uint64_t &index) const {
-        return m_pmas.find<T>(paddr, index, bridge_read_pma_entry, abort_pma);
+        if (index >= PMA_MAX) [[unlikely]] {
+            return m_ranges.get_sentinel();
+        }
+        const auto entry = bridge_read_pma_entry(index);
+        return m_ranges.get_or_create(index, entry.istart, entry.ilength, abort_pma);
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     pmas_entry do_read_pma_entry(uint64_t index) const {
+        if (const auto *ar = m_ranges.get(index)) {
+            return {.istart = ar->get_istart(), .ilength = ar->get_length()};
+        }
         return bridge_read_pma_entry(index);
     }
 

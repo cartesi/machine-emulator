@@ -19,9 +19,9 @@
 
 #include "compiler-defines.hpp"
 #include "interpret.hpp"
+#include "lazy-address-ranges.hpp"
 #include "uarch-bridge-state-access.hpp"
 #include "uarch-ecall.hpp"
-#include "uarch-pma-cache.hpp"
 
 #include <cstdint>
 
@@ -34,18 +34,18 @@ extern template interpreter_break_reason interpret(uarch_bridge_state_access a, 
 
 } // namespace cartesi
 
-// PMA lookups of the mcycle being advanced. Guest RAM returns to its pristine contents before every
-// mcycle, so the cache starts empty each time. Each guest instruction and each page touched is paid for
-// in the proof: page-aligned, the cache occupies one page, and constant-initialized at namespace scope,
-// it needs no initialization or destructor registration at run time.
-static_assert(sizeof(uarch_pma_cache) <= AR_PAGE_SIZE);
+// Address ranges of the machine whose mcycle is being advanced. Guest RAM returns to its pristine contents
+// before every mcycle, so each one starts with no range created. Each guest instruction and each page
+// touched is paid for in the proof: page-aligned, the ranges occupy one page, and constant-initialized at
+// namespace scope, they need no initialization or destructor registration at run time.
+static_assert(sizeof(lazy_address_ranges) <= AR_PAGE_SIZE);
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-alignas(AR_PAGE_SIZE) static constinit uarch_pma_cache pmas;
+alignas(AR_PAGE_SIZE) static constinit lazy_address_ranges ranges;
 
 /// \brief  Advances one mcycle by executing the "big machine interpreter" compiled to the uarch
 /// \return This function never returns
 extern "C" NO_RETURN void interpret_next_mcycle_with_uarch() {
-    const uarch_bridge_state_access a(pmas);
+    const uarch_bridge_state_access a(ranges);
     const uint64_t mcycle_end = a.read_mcycle() + 1;
     interpret(a, mcycle_end);
     // Finished executing a whole mcycle: halt the uarch

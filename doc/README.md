@@ -11283,8 +11283,8 @@ They show that the machine yielded manually with `RX_ACCEPTED`, and they
 authenticate the CMIO TX-buffer word that holds the root. The referee
 then accepts output proofs against that root, and the player chooses
 which output to offer. An epoch without outputs still settles its
-outputs root. The referee waits for output proofs indefinitely, so the
-example’s script stops the server once the chosen output has been
+outputs Merkle root. The referee waits for output proofs indefinitely,
+so the example’s script stops the server once the chosen output has been
 proved.
 
 The verdict settles the epoch:

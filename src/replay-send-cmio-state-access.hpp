@@ -136,6 +136,12 @@ private:
         if (access.get_type() != access_type::read) {
             throw std::invalid_argument{"expected " + access_to_report() + " to read " + text};
         }
+        if (access.get_written().has_value()) {
+            throw std::invalid_argument{"unexpected written data in " + access_to_report() + " read access to " + text};
+        }
+        if (access.get_written_hash().has_value()) {
+            throw std::invalid_argument{"unexpected written hash in " + access_to_report() + " read access to " + text};
+        }
         if (access.get_address() != paligned) {
             std::ostringstream err;
             err << "expected " << access_to_report() << " to read " << text << " address 0x" << std::hex << paligned

@@ -499,6 +499,23 @@ describe("verify_send_cmio_response", function()
                 log.accesses[1].sibling_hashes[1] = bad_hash
             end)
         end)
+
+        -- An advance-state response reads iflags.Y, htif.tohost and mcycle, and no read carries written data
+        for index, text in ipairs({ "iflags.Y", "htif.tohost", "mcycle" }) do
+            local ordinal = ({ "1st", "2nd", "3rd" })[index]
+            for _, field in ipairs({ { "written", "read", "data" }, { "written_hash", "read_hash", "hash" } }) do
+                local name, source, what = table.unpack(field)
+                it("should reject " .. name .. " on the read of " .. text, function()
+                    cmio_should_fail(
+                        string.format("unexpected written %s in %s access read access to %s", what, ordinal, text),
+                        function(log)
+                            log.accesses[index][name] = log.accesses[index][source]
+                        end,
+                        { advance = true }
+                    )
+                end)
+            end
+        end
     end)
 
     describe("check_write_memory_with_padding (advance-state access 5: write revert root hash)", function()

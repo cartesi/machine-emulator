@@ -908,7 +908,7 @@ end
 -- A settled epoch waits for the signer's own bond recovery, but not another submitter's. It finishes
 -- only once the settling seal is irreversible and no transaction of the epoch is pending.
 for _, submitter in ipairs({ "alice", "bob" }) do
-    local irreversible, pending = 4, nil
+    local pending
     local retiring = bridge.new({
         geometry = geometry,
         transactions = {
@@ -920,10 +920,10 @@ for _, submitter in ipairs({ "alice", "bob" }) do
                 return { blockNumber = "0xb" }
             end,
         },
+        -- The irreversible head comes with the observation, so a tick does not ask the node again
         chain = {
-            head = function(_, policy)
-                assert(policy == "finalized", "retirement used another policy")
-                return irreversible
+            head = function()
+                error("a tick queried the head")
             end,
         },
         abi = {},
@@ -954,6 +954,7 @@ for _, submitter in ipairs({ "alice", "bob" }) do
         head = 10,
         tip = 10,
         tip_hash = "block10",
+        irreversible = 4,
         order = { root },
         events = {},
         staged = {},
@@ -970,16 +971,16 @@ for _, submitter in ipairs({ "alice", "bob" }) do
     if submitter == "alice" then
         local jobs = retiring:jobs(view)
         assert(#jobs == 1 and jobs[1].kind == "tryRecoveringBond", "the signer's bond has no recovery job")
-        irreversible = 5
+        view.irreversible = 5
         retiring:tick()
         assert(not retiring.finished, "an epoch with the signer's bond still unrecovered finished")
         view.recovered.root = true
-        irreversible = 4
+        view.irreversible = 4
     end
     assert(#retiring:jobs(view) == 0, "a recovered or another submitter's bond left a job")
     retiring:tick()
     assert(not retiring.finished, "a settlement that is not yet irreversible finished the epoch")
-    irreversible, pending = 5, { context = { epoch = "2" } }
+    view.irreversible, pending = 5, { context = { epoch = "2" } }
     retiring:tick()
     assert(not retiring.finished, "an epoch with a pending transaction finished")
     pending = nil

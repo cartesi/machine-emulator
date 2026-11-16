@@ -191,6 +191,7 @@ function methods:observe()
         hash = hash,
         tip = tip,
         tip_hash = tip_hash,
+        irreversible = irreversible,
         ready = sealed,
         contexts = contexts,
         order = order,
@@ -273,9 +274,21 @@ local function build_claim(self, context)
     return claim, response ~= nil
 end
 
+-- The epoch's settlement is irreversible once the observation's head under the retirement policy reached it
+local function settled_irreversibly(snapshot)
+    return snapshot.settled ~= nil
+        and snapshot.irreversible ~= nil
+        and eth.small(snapshot.settled.log.blockNumber) <= snapshot.irreversible
+end
+
+-- A tournament accepts joins in blocks before its start instant plus its allowance
+local function joining_deadline(descriptor)
+    return eth.small(descriptor.startInstant) + eth.small(descriptor.allowance)
+end
+
 local function can_join(self, context, snapshot)
-    local event, d = context.creation, context.descriptor
-    return snapshot.tip + 1 < eth.small(d.startInstant) + eth.small(d.allowance)
+    local event = context.creation
+    return snapshot.tip + 1 < joining_deadline(context.descriptor)
         and not snapshot.deleted[context.parent_match]
         and (
             not context.parent
@@ -326,7 +339,7 @@ function methods:update_claims(snapshot)
                 computed = true
             else
                 local claim, built = build_claim(self, context)
-                local deadline = eth.small(context.descriptor.startInstant) + eth.small(context.descriptor.allowance)
+                local deadline = joining_deadline(context.descriptor)
                 -- The head must include the last eligible join block before an absent join is conclusive.
                 -- Scheduling still uses the live tip, which can already be past the joining window.
                 if claim then
@@ -423,8 +436,8 @@ function methods:jobs(snapshot)
         }
     end
     for _, context in ipairs(snapshot.order) do
-        local event, d = context.creation, context.descriptor
-        local close = eth.small(d.startInstant) + eth.small(d.allowance)
+        local event = context.creation
+        local close = joining_deadline(context.descriptor)
         local claim = self.claims[context.address]
         if claim and can_join(self, context, snapshot) and not context.joined[claim.root] then
             add("joinTournament", context, event, 0, close, claim.root)
@@ -469,11 +482,10 @@ function methods:jobs(snapshot)
         end
     end
     for _, context in ipairs(snapshot.order) do
-        local standing, d = context.standing, context.descriptor
+        local standing = context.standing
         if not standing or eth.small(standing.matchCount) == 0 then
             local event = standing or context.creation
-            local result_at = standing and eth.small(standing.resultAt)
-                or eth.small(d.startInstant) + eth.small(d.allowance)
+            local result_at = standing and eth.small(standing.resultAt) or joining_deadline(context.descriptor)
             local candidate = standing and standing.dangling or eth.zero
             if context.parent and not snapshot.deleted[context.parent_match] then
                 local expires = candidate ~= eth.zero and eth.small(standing.winnerExpiresAt) or result_at
@@ -794,11 +806,10 @@ function methods:tick()
     local jobs = self:jobs(snapshot)
     -- A settled epoch with no jobs left, including the signer's bond recoveries, is finished once its
     -- settlement is irreversible and none of its transactions is pending. Another submitter's bond can remain.
-    if #jobs == 0 and self.retirement_policy and snapshot.settled then
+    if #jobs == 0 and settled_irreversibly(snapshot) then
         local candidate = self.transactions:pending()
         if not (candidate and candidate.context and candidate.context.epoch == tostring(self.epoch)) then
-            local irreversible = self.chain:head(self.retirement_policy)
-            self.finished = eth.small(snapshot.settled.log.blockNumber) <= irreversible
+            self.finished = true
         end
     end
     table.sort(jobs, job_less)
@@ -949,8 +960,8 @@ function methods:watch()
         tip = math.max(tip, snapshot.tip + 1)
         next_block = math.min(next_block or tip, tip)
     end
-    if snapshot.settled and self.retirement_policy then
-        self.finished = eth.small(snapshot.settled.log.blockNumber) <= self.chain:head(self.retirement_policy)
+    if settled_irreversibly(snapshot) then
+        self.finished = true
     end
     return snapshot, false, next_block
 end

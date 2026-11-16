@@ -2188,6 +2188,13 @@ function player_meta.__index:report_anomaly(kind, fmt, ...)
     io.stderr:write(string.format("%s: %s %s\n", self.label, kind, message))
 end
 
+-- Reports an outputs Merkle root that differs from the root of the player's outputs frontier
+function player_meta.__index:check_outputs_merkle_root(outputs_merkle_root, fmt, ...)
+    if outputs_merkle_root ~= hash_tree.frontier_get_root_hash(self.outputs_frontier) then
+        self:report_anomaly("outputs_merkle_root_mismatch", fmt, ...)
+    end
+end
+
 -- Proves the epoch's last output, the only one the player keeps. Other indices are no offer.
 function player_meta.__index:prove_output(output_index)
     assert(math.type(output_index) == "integer", "invalid output index")
@@ -2282,13 +2289,8 @@ local function open_epoch(self)
     local machine = self.epoch_pair.machine
     self.epoch_builder = self:new_mcycle_computation_hash_builder()
     self.epoch_builder:begin_epoch(machine)
-    if
-        machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE)
-        ~= hash_tree.frontier_get_root_hash(self.previous_outputs_frontier)
-    then
-        self:report_anomaly("outputs_merkle_root_mismatch", "at the epoch's start")
-    end
     self.outputs_frontier = hash_tree.frontier_copy(self.previous_outputs_frontier)
+    self:check_outputs_merkle_root(machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE), "at the epoch's start")
 end
 
 -- A forked player runs on forked servers.

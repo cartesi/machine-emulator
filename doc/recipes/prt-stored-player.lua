@@ -486,9 +486,7 @@ end
 -- Writes the files load_epoch_checkpoint reads next to the final machine stored in a checkpoint directory.
 local function store_checkpoint_files(self, directory)
     local outputs_root = self.outputs_merkle_root_proof.tx_buffer_data
-    if outputs_root ~= hash_tree.frontier_get_root_hash(self.outputs_frontier) then
-        self:report_anomaly("outputs_merkle_root_mismatch", "at the epoch's end")
-    end
+    self:check_outputs_merkle_root(outputs_root, "at the epoch's end")
     hash_tree.frontier_store(self.outputs_frontier, directory .. "/outputs-frontier.json")
     fs.write_durable_file(cartesi.tojson({
         version = 2,
@@ -891,12 +889,9 @@ local function reopen_epoch_directory(self)
     local forests_directory = directory .. "/forests"
     if state.epoch_builder then
         self.epoch_pair = new_stored_machine_pair(new_stored_machine(root_hash, machine_directory), machine_directory)
-        if
-            not self.epoch_stopped
-            and self.epoch_pair.machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE)
-                ~= hash_tree.frontier_get_root_hash(self.outputs_frontier)
-        then
-            self:report_anomaly("outputs_merkle_root_mismatch", "at input %d", self.input_count)
+        if not self.epoch_stopped then
+            local outputs_merkle_root = self.epoch_pair.machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE)
+            self:check_outputs_merkle_root(outputs_merkle_root, "at input %d", self.input_count)
         end
         local builder = self:new_mcycle_computation_hash_builder()
         builder.frontier = hash_tree.frontier_forest_load(
@@ -917,9 +912,7 @@ local function reopen_epoch_directory(self)
     remove_agreed_directories(directory)
     self.final_state_hash = root_hash
     self.outputs_merkle_root_proof = state.outputs_merkle_root_proof
-    if self.outputs_merkle_root_proof.tx_buffer_data ~= hash_tree.frontier_get_root_hash(self.outputs_frontier) then
-        self:report_anomaly("outputs_merkle_root_mismatch", "at the epoch's end")
-    end
+    self:check_outputs_merkle_root(self.outputs_merkle_root_proof.tx_buffer_data, "at the epoch's end")
     self.mcycle_forest =
         hash_tree.frontier_forest_load(forests_directory .. "/mcycle", directory .. "/" .. state.mcycle_forest)
     local mcycle_tree = self:new_mcycle_tree()

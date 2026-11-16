@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed `--revert-mode=stored` to remove `<directory>.revert` on a clean exit
 - Changed `receive_cmio_request` to clamp a declared data length to the CMIO tx buffer instead of failing
 - Changed the PRT player to report an outputs Merkle root mismatch instead of failing
+- Changed `run` to report a microarchitecture that is not reset as a runtime error
 
 ### Removed
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`

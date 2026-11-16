@@ -179,7 +179,8 @@ local continued <close> = stored_player.new_stored_player(
 continued.event_handler.epoch_sealed(continued, 0)
 local _, _, continuation = stored_player.load_epoch_checkpoint("continuation-checkpoint")
 assert(
-    continuation.final_state_hash == manifest.final_state_hash and continuation.outputs_root == manifest.outputs_root,
+    continuation.final_state_hash == manifest.final_state_hash
+        and continuation.outputs_merkle_root == manifest.outputs_merkle_root,
     "an epoch without outputs changed the checkpoint"
 )
 print("PRT proof tests passed.")

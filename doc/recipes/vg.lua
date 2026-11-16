@@ -944,7 +944,7 @@ local function settle_dispute(tournament)
 end
 -- docs:end settle_dispute
 
--- Establish the outputs root, then accept distinct player-selected outputs until
+-- Establish the outputs Merkle root, then accept distinct player-selected outputs until
 -- the runner stops the game. Output offers are permissionless after settlement.
 -- docs:begin wait_for_outputs
 local function wait_for_outputs(final_state_hash)

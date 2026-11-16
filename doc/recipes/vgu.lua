@@ -181,7 +181,7 @@ local schemas = {
     Log = { send_cmio_log = "AccessLog", step_log = "AccessLog", reset_uarch_log = "AccessLog" },
     Transition = { items = { "Default", "Default", "Default" } },
     Hash = { items = { "Base64" } },
-    OutputsRoot = {
+    OutputsMerkleRoot = {
         iflags_y_data = "Base64",
         iflags_y_proof = "Proof",
         htif_tohost_data = "Base64",
@@ -199,7 +199,7 @@ local events = {
     dispute_started = define_event("dispute_started", "Empty"),
     reveal_bisection = define_event("reveal_bisection", "Bisection", "Base64"),
     prove_state_transition = define_event("prove_state_transition", "Transition", "Log"),
-    prove_outputs_merkle_root = define_event("prove_outputs_merkle_root", "Hash", "OutputsRoot"),
+    prove_outputs_merkle_root = define_event("prove_outputs_merkle_root", "Hash", "OutputsMerkleRoot"),
     prove_output = define_event("prove_output", "Hash", "Output"),
 }
 local protocol = transport.new_protocol(events, schemas, "VERIFICATION_GAME_TRACE")

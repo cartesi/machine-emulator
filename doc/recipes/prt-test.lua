@@ -28,19 +28,19 @@ local keccak = cartesi.keccak256
 local LOG2_BUNDLE_MCYCLE_COUNT = prt.LOG2_BUNDLE_MCYCLE_COUNT
 local LOG2_BUNDLE_UARCH_CYCLE_COUNT = prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT
 
-local function new_fake_machine(root_hash, mcycle, counts, outputs_root)
+local function new_fake_machine(root_hash, mcycle, counts, outputs_merkle_root)
     counts = counts or { live = 0 }
     counts.live = counts.live + 1
     local machine = {
         root_hash = root_hash,
         mcycle = mcycle or 0,
         counts = counts,
-        outputs_root = outputs_root
+        outputs_merkle_root = outputs_merkle_root
             or hash_tree.frontier_get_root_hash(hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")),
     }
     function machine:fork_server()
         assert(not self.fail_clone, "injected clone failure")
-        return new_fake_machine(self.root_hash, self.mcycle, counts, self.outputs_root)
+        return new_fake_machine(self.root_hash, self.mcycle, counts, self.outputs_merkle_root)
     end
     function machine.set_cleanup_call() end
     function machine.get_server_address()
@@ -75,7 +75,7 @@ local function new_fake_machine(root_hash, mcycle, counts, outputs_root)
     function machine:swap(other)
         self.root_hash, other.root_hash = other.root_hash, self.root_hash
         self.mcycle, other.mcycle = other.mcycle, self.mcycle
-        self.outputs_root, other.outputs_root = other.outputs_root, self.outputs_root
+        self.outputs_merkle_root, other.outputs_merkle_root = other.outputs_merkle_root, self.outputs_merkle_root
         self.shutdown, other.shutdown = other.shutdown, self.shutdown
     end
     function machine.run()
@@ -89,7 +89,7 @@ local function new_fake_machine(root_hash, mcycle, counts, outputs_root)
     end
     function machine:read_memory(address)
         if address == cartesi.AR_CMIO_TX_BUFFER_START then
-            return self.outputs_root
+            return self.outputs_merkle_root
         end
         return string.rep("\0", 32)
     end
@@ -918,7 +918,7 @@ for _, previous_count in ipairs({ 0, 3 }) do
     assert(hash_tree.frontier_get_leaf_count(player.outputs_frontier) == previous_count + #outputs)
     local expected_root = hash_tree.frontier_get_root_hash(player.outputs_frontier)
     -- A well-behaved application holds the root of its outputs when the epoch seals
-    player.epoch_pair.machine.outputs_root = expected_root
+    player.epoch_pair.machine.outputs_merkle_root = expected_root
     local completed_frontier = player.outputs_frontier
     local clone = player.new_machine_pair_at_epoch_input_offset
     player.new_machine_pair_at_epoch_input_offset = function()
@@ -952,7 +952,7 @@ do
     local send = machine.send_cmio_response
     function machine:send_cmio_response(...)
         send(self, ...)
-        self.outputs_root = keccak("not the outputs root")
+        self.outputs_merkle_root = keccak("not the outputs Merkle root")
     end
     -- The fake machine takes the delivered input as its root hash
     player.event_handler.input_added(player, 0, fixture_input(keccak("input")))
@@ -1005,7 +1005,7 @@ do
                 return cartesi.HTIF_YIELD_CMD_MANUAL,
                     rejected and cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED
                         or cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED,
-                    machine.outputs_root
+                    machine.outputs_merkle_root
             end
         end
         function builder.run(_, machine)
@@ -1013,7 +1013,7 @@ do
             if cursor <= #outputs then
                 return cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY
             end
-            machine.outputs_root = hash_tree.frontier_get_root_hash(expected)
+            machine.outputs_merkle_root = hash_tree.frontier_get_root_hash(expected)
             return cartesi.BREAK_REASON_YIELDED_MANUALLY
         end
         return builder
@@ -2990,7 +2990,7 @@ if arg[1] then
             assert(manifest.output_count > 0, "the fixture produced no outputs")
             local response = reopened.event_handler.prove_output(reopened)
             assert(response.output_index == manifest.output_count - 1, "the offer is not the last output")
-            assert(response.output_proof.root_hash == cartesi.fromhex(manifest.outputs_root))
+            assert(response.output_proof.root_hash == cartesi.fromhex(manifest.outputs_merkle_root))
             hash_tree.verify_slice(response.output_proof)
             sealed.output = encode_response(response, "OutputProof")
             sealed.output_count = manifest.output_count
@@ -4188,9 +4188,9 @@ do
         evmu.raw(""),
     }):sub(1, 4)
     local frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
-    local initial_outputs_root = hash_tree.frontier_get_root_hash(frontier)
+    local initial_outputs_merkle_root = hash_tree.frontier_get_root_hash(frontier)
     hash_tree.frontier_push_back(frontier, keccak(output))
-    local final_outputs_root = hash_tree.frontier_get_root_hash(frontier)
+    local final_outputs_merkle_root = hash_tree.frontier_get_root_hash(frontier)
     local template_directory = temporary_directory .. "/delegate-template"
     local epoch_directory = fs.create_temporary_directory(temporary_directory, "delegate-epoch-")
     local _ <close> = setmetatable({}, {
@@ -4215,7 +4215,7 @@ do
             | #output
     )
     for i = 0, 3 do
-        template:write_reg("x" .. (14 + i), (string.unpack("<I8", final_outputs_root, 8 * i + 1)))
+        template:write_reg("x" .. (14 + i), (string.unpack("<I8", final_outputs_merkle_root, 8 * i + 1)))
     end
     local accepted = (cartesi.HTIF_DEV_YIELD << 56)
         | (cartesi.HTIF_YIELD_CMD_MANUAL << 48)
@@ -4228,7 +4228,7 @@ do
             "<I4I4I4I4I4I4I4",
             0x00b52023, -- sw a1,0(a0): selector to TX buffer
             0x00d63023, -- sd a3,0(a2): automatic output yield
-            0x00e53023, -- sd a4,0(a0): outputs root, word 0
+            0x00e53023, -- sd a4,0(a0): outputs Merkle root, word 0
             0x00f53423, -- sd a5,8(a0): word 1
             0x01053823, -- sd a6,16(a0): word 2
             0x01153c23, -- sd a7,24(a0): word 3
@@ -4237,7 +4237,7 @@ do
     )
     template:write_reg("iflags_Y", 1)
     template:write_reg("htif_tohost", accepted)
-    template:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, initial_outputs_root)
+    template:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, initial_outputs_merkle_root)
     local contract = {
         geometry = prt.new_geometry(10),
         initial_state_hash = template:get_root_hash(),
@@ -4276,7 +4276,7 @@ do
             reopened.event_handler.epoch_sealed(reopened, 1)
         end
         local proof = reopened:prove_output(0)
-        assert(proof.output_data == output and proof.output_proof.root_hash == final_outputs_root)
+        assert(proof.output_data == output and proof.output_proof.root_hash == final_outputs_merkle_root)
         hash_tree.verify_slice(proof.output_proof)
         assert(reopened.final_state_hash == final_state)
         assert(#reports == 1, "reopening, redelivery, replay or proving repeated the output report")

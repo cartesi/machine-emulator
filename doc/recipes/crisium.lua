@@ -461,7 +461,7 @@ local function open_epochs()
             epoch = next_epoch,
             input_begin = previous_seal and eth.small(previous_seal.inputIndexUpperBound) or 0,
             initial_hash = eth.hex(dapp.initial_state_hash),
-            previous_outputs_root = previous_seal and manifest.outputs_root or eth.zero,
+            previous_outputs_merkle_root = previous_seal and manifest.outputs_merkle_root or eth.zero,
             geometry = geometry,
             player = new_player(
                 dapp,

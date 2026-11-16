@@ -647,7 +647,7 @@ local function play(session)
                     "settled machine differs from checkpoint"
                 )
                 assert(
-                    snapshot.settled.outputsMerkleRoot == manifest.outputs_root,
+                    snapshot.settled.outputsMerkleRoot == manifest.outputs_merkle_root,
                     "settled outputs differ from checkpoint"
                 )
                 io.stderr:write(
@@ -724,7 +724,8 @@ local _, _, manifest = stored_player.load_epoch_checkpoint(get_checkpoint_direct
 assert(manifest.output_count == 5, "calculator output history did not continue")
 local _, _, watched = stored_player.load_epoch_checkpoint("players/sentinel/checkpoints/epoch-" .. (second.epoch + 1))
 assert(
-    watched.final_state_hash == manifest.final_state_hash and watched.outputs_root == manifest.outputs_root,
+    watched.final_state_hash == manifest.final_state_hash
+        and watched.outputs_merkle_root == manifest.outputs_merkle_root,
     "the sentinel computed another final state"
 )
 -- The default anomaly handler prints each anomaly as a line starting with the player's label

@@ -6014,7 +6014,7 @@ The winning claim commits to the epoch's final state hash, which in turn commits
 As in the verification game, the referee first establishes that root from the final state (`wait_for_outputs`), using the three machine-validity proofs Dave uses.
 They show that the machine yielded manually with `RX_ACCEPTED`, and they authenticate the CMIO TX-buffer word that holds the root.
 The referee then accepts output proofs against that root, and the player chooses which output to offer.
-An epoch without outputs still settles its outputs root.
+An epoch without outputs still settles its outputs Merkle root.
 The referee waits for output proofs indefinitely, so the example's script stops the server once the chosen output has been proved.
 
 The verdict settles the epoch:

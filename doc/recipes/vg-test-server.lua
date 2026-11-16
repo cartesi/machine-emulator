@@ -46,7 +46,7 @@ return function(protocol, scenario)
         function server:request_first_valid(audience, event, arguments, accept)
             local future = request_first_valid(self, audience, event, arguments, accept)
             if event == vgu.EVENTS.prove_outputs_merkle_root then
-                observe_result(future, results, "outputs_root")
+                observe_result(future, results, "outputs_merkle_root")
             elseif event == vgu.EVENTS.prove_output then
                 observe_result(future, results, "output")
             end

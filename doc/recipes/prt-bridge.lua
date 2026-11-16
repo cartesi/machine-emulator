@@ -296,15 +296,15 @@ local function can_join(self, context, snapshot)
         )
 end
 
--- A staged result must agree with both the computed final state and the outputs root that machine
+-- A staged result must agree with both the computed final state and the outputs Merkle root that machine
 -- holds. Missing local data leaves the comparison unknown, which cannot authorize acceptance.
 local function check_staged_result(self, staged, claim)
     if not staged or not claim then
         return nil
     end
     local response = payload(self, self.player.event_handler.prove_outputs_merkle_root(self.player))
-    local outputs_root = response and eth.hex(response.tx_buffer_data)
-    local outputs_match = outputs_root and staged.stagedPostEpochOutputsMerkleRoot == outputs_root
+    local outputs_merkle_root = response and eth.hex(response.tx_buffer_data)
+    local outputs_match = outputs_merkle_root and staged.stagedPostEpochOutputsMerkleRoot == outputs_merkle_root
     local matches = staged.stagedPostEpochMachineStateHash == claim.final_state and outputs_match
     if matches == false then
         self:report_once(
@@ -315,7 +315,7 @@ local function check_staged_result(self, staged, claim)
             staged.stagedPostEpochMachineStateHash,
             staged.stagedPostEpochOutputsMerkleRoot,
             claim.final_state,
-            outputs_root or "unavailable"
+            outputs_merkle_root or "unavailable"
         )
     end
     return matches

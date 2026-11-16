@@ -240,7 +240,7 @@ directory, and a player in memory keeps the bytes. The bytes include the
 substitutes a forged input.
 
 On `EpochSealed`, the listener checks the initial machine hash, the preceding
-outputs root, and both input bounds against what it processed. It seals the
+outputs Merkle root, and both input bounds against what it processed. It seals the
 player with `epoch_sealed(input_count)` and then starts the dispute bridge. A
 relaunched process delivers every input and the seal again from the chain, and
 the player ignores the ones it already applied. A changed input history aborts. Once sealed, the listener only checks
@@ -253,7 +253,7 @@ A checkpoint is the machine the next epoch starts from. Each
 `checkpoints/epoch-N/` holds the stored machine, `outputs-frontier.json` (the
 outputs frontier in the format of the `cartesi-machine` `outputs_frontier`
 option), and `epoch.json` (the format version, the initial and final machine
-hashes, the outputs root and count, the input count, and the period geometry).
+hashes, the outputs Merkle root and count, the input count, and the period geometry).
 The outputs frontier lets the next epoch continue the output history. An epoch
 without outputs leaves it unchanged, and the template's checkpoint holds an
 empty one.
@@ -280,7 +280,7 @@ local player <close> = stored_player.new_stored_player(
 checks the machine hash and binds the frontier's root to the machine's CMIO TX
 buffer. The demo checks that every accepted epoch matches the next checkpoint,
 and the proof tests seal an empty continuation of a calculator checkpoint and
-check that its machine and outputs root are unchanged.
+check that its machine and outputs Merkle root are unchanged.
 
 ## Observing the dispute
 
@@ -440,7 +440,7 @@ the tip changes, so one reverting call cannot block the others.
 ## Proofs
 
 The bridge calls the player's handlers for claims, node openings, divergence
-seals, transition proofs, and outputs-root proofs, and `prt-ethereum.lua`
+seals, transition proofs, and outputs Merkle root proofs, and `prt-ethereum.lua`
 converts their results into ABI arguments. `CartesiStateTransition` interprets a
 leaf coordinate as one transition, with `agreeState` as its predecessor, and the
 witness carries the player's logs in the order the verifier consumes them.
@@ -563,14 +563,14 @@ error, and continues.
 | `unprovable_output` | An output does not prove against the root the settled machine holds |
 | `execution_stopped` | The machine halted, reached its cycle limit, or yielded an exception or an unexpected manual reason. Reported with the input offset and cause when the epoch first stops, and once on each reopening of a stopped epoch without the original input or cause. Later skipped inputs and proof replay do not repeat the report; the player continues defending its claim |
 | `uarch_claim_failed` | Building a uarch claim failed during replay, storage, RPC operations or uarch execution. The player reports the failure once per period and retries on subsequent requests. A successful construction clears the reporting state |
-| `staging_proof_failed` | The winning state's outputs-root validity proof failed local validation. Reports the epoch, tournament and failure before the existing terminal stop |
+| `staging_proof_failed` | The winning state's outputs Merkle root validity proof failed local validation. Reports the epoch, tournament and failure before the existing terminal stop |
 | `transition_verification_mismatch` | Native verification and Solidity simulation at the canonical observed block disagree on acceptance of a leaf proof. Reports the epoch, tournament, block, both decisions, expected state and native result before the existing assertion stops execution. RPC failures and rejected observations are not classified as disagreements |
 | `falling_behind` | More inputs are pending than the gap between the machine cache's boundaries |
 | `unjoined_claim` | A tournament's joining window closed without the player's commitment |
 | `conflicting_claim` | An observed `CommitmentJoined` differs from the locally computed commitment. Validators and sentinels report the tournament and both commitments, even if the local claim can no longer join. Reported once per join log per process; a replacement log after a reorg or a restart can report again |
 | `sentry_claim_mismatch` | A registered sentry's `SentryClaim` for this consensus and epoch differs from the locally computed final machine state. Validators and sentinels report the epoch, sentry address, and both hashes once per claim log per process, even if the local claim did not join. A replacement log after a reorg or a restart can report again |
 | `sentry_claim_missing` | A Lua sentinel observes an unsettled epoch staged for at least `--warning-blocks` blocks and a registered sentry has not claimed. Reports the epoch, sentry ID and current address once per staging log and sentry ID per process. A replacement staging log after a reorg or a restart can report again |
-| `staged_tournament_result_mismatch` | An observed `EpochStaged` has a machine-state hash or outputs root that differs from local execution. Reports the epoch and compared hashes once per staging log per process, including after restart, even if the local claim did not join. A replacement staging log after a reorg can report again |
+| `staged_tournament_result_mismatch` | An observed `EpochStaged` has a machine-state hash or outputs Merkle root that differs from local execution. Reports the epoch and compared hashes once per staging log per process, including after restart, even if the local claim did not join. A replacement staging log after a reorg can report again |
 | `fee_ceiling` | A pending transaction reached the fee ceiling, and keeps its nonce |
 | `insufficient_funds` | The account cannot pay a transaction's value or its value plus gas at the fee cap |
 | `deadline_near` | A sentinel's expected action, such as the honest commitment's answer to a match, is still missing and its window ends within the warning blocks |
@@ -583,7 +583,7 @@ report the same failure again. Reporting preserves the verification checks and
 stopping behavior; a failed proof is not published.
 
 The bridge schedules `acceptStagedTournamentResult` only after both staged hashes
-match the local result. The expected outputs root comes from the machine's outputs
+match the local result. The expected outputs Merkle root comes from the machine's outputs
 proof. Missing local data does not authorize acceptance. Each observation recomputes
 the comparison; a prepared acceptance is checked again before publication, and a
 pending acceptance that becomes ineligible follows the existing cancellation path.
@@ -617,7 +617,7 @@ the Docker VM's memory before the demo ends.
 The harness narrates the contract events into `story.txt` through a bridge of
 its own that has no player or signer. Each commitment is labeled with the player
 whose account joined it. An epoch succeeds when the winning commitment is the
-one the honest player's account joined, the accepted machine and outputs root
+one the honest player's account joined, the accepted machine and outputs Merkle root
 match `checkpoints/epoch-N+1/`, no account has anything pending, and the root
 bond has been recovered.
 
@@ -625,7 +625,7 @@ The harness also runs a sentinel next to the players. It has no account, and it
 computes its own checkpoints in `players/sentinel/checkpoints/` from the
 template on. A story run requires the sentinel to report conflicting claims and
 no other anomalies; a smoke run, which has no opponents, requires no anomalies.
-Its last checkpoint must have the honest player's final state and outputs root.
+Its last checkpoint must have the honest player's final state and outputs Merkle root.
 
 With `PRT_TEST_SENTINEL` set to a drill, the honest side fails on purpose, and
 the run succeeds as soon as the sentinel reports the drill's anomalies. With

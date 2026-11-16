@@ -825,7 +825,7 @@ local function accumulating(policy, first_input_block)
         epoch = 2,
         input_begin = 3,
         initial_hash = hash,
-        previous_outputs_root = hash,
+        previous_outputs_merkle_root = hash,
         player = player,
         signer = {},
         label = "fixture",
@@ -1921,12 +1921,12 @@ do
     -- Acceptance requires an explicit match, whether or not the local claim joined the tournament.
     local outputs = cartesi.keccak256("outputs")
     local other_hash = eth.hex(cartesi.keccak256("other result"))
-    local function staged_view(state_hash, outputs_root, block_hash)
+    local function staged_view(state_hash, outputs_merkle_root, block_hash)
         local view = new_view("bob")
         view.ready = true
         view.staged = {
             stagedPostEpochMachineStateHash = state_hash,
-            stagedPostEpochOutputsMerkleRoot = outputs_root,
+            stagedPostEpochOutputsMerkleRoot = outputs_merkle_root,
             log = { blockHash = block_hash, blockNumber = "0x14", logIndex = "0x0" },
         }
         return view
@@ -1949,8 +1949,8 @@ do
     for _, sentinel in ipairs({ false, true }) do
         for _, changed in ipairs({ "neither", "state", "outputs", "both" }) do
             local state_hash = (changed == "state" or changed == "both") and other_hash or root_claim.final_state
-            local outputs_root = (changed == "outputs" or changed == "both") and other_hash or eth.hex(outputs)
-            local view = staged_view(state_hash, outputs_root, "staging")
+            local outputs_merkle_root = (changed == "outputs" or changed == "both") and other_hash or eth.hex(outputs)
+            local view = staged_view(state_hash, outputs_merkle_root, "staging")
             local checker = staged_client(sentinel)
             assert(not acceptance(checker, view), "acceptance scheduled before comparing the staged result")
             for _ = 1, 2 do
@@ -1963,7 +1963,7 @@ do
                 local anomaly = checker.player.reports[1]
                 assert(anomaly.kind == "staged_tournament_result_mismatch")
                 assert(anomaly.message:find("at epoch 7:", 1, true))
-                for _, value in ipairs({ state_hash, outputs_root, root_claim.final_state, eth.hex(outputs) }) do
+                for _, value in ipairs({ state_hash, outputs_merkle_root, root_claim.final_state, eth.hex(outputs) }) do
                     assert(anomaly.message:find(value, 1, true), "staging report omitted a compared hash")
                 end
             end

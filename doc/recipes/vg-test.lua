@@ -725,7 +725,7 @@ do
     local a <close> = vg.new_player(initial_hash, "honest 1")
     local b <close> = vg.new_player(initial_hash, "honest 2")
     local empty = run_game({ a, b }, {})
-    assert(empty.final_state_hash == initial_hash and empty.outputs_root and not empty.output)
+    assert(empty.final_state_hash == initial_hash and empty.outputs_merkle_root and not empty.output)
 end
 
 -- Validate terminal logs directly at input inclusion, an ordinary step, and the

@@ -485,14 +485,14 @@ end
 
 -- Writes the files load_epoch_checkpoint reads next to the final machine stored in a checkpoint directory.
 local function store_checkpoint_files(self, directory)
-    local outputs_root = self.outputs_merkle_root_proof.tx_buffer_data
-    self:check_outputs_merkle_root(outputs_root, "at the epoch's end")
+    local outputs_merkle_root = self.outputs_merkle_root_proof.tx_buffer_data
+    self:check_outputs_merkle_root(outputs_merkle_root, "at the epoch's end")
     hash_tree.frontier_store(self.outputs_frontier, directory .. "/outputs-frontier.json")
     fs.write_durable_file(cartesi.tojson({
         version = 2,
         initial_state_hash = cartesi.tohex(self.dapp_contract.initial_state_hash),
         final_state_hash = cartesi.tohex(self.final_state_hash),
-        outputs_root = cartesi.tohex(outputs_root),
+        outputs_merkle_root = cartesi.tohex(outputs_merkle_root),
         output_count = hash_tree.frontier_get_leaf_count(self.outputs_frontier),
         input_count = self.input_count,
         log2_mcycles_per_period = self.geometry.log2_mcycles_per_period,
@@ -546,13 +546,13 @@ local function store_first_epoch_checkpoint(template_directory, geometry, direct
     cartesi.machine:clone_stored(template_directory, temporary_directory)
     cartesi.machine:sync_stored(temporary_directory)
     local outputs_frontier = new_outputs_frontier()
-    local outputs_root = hash_tree.frontier_get_root_hash(outputs_frontier)
+    local outputs_merkle_root = hash_tree.frontier_get_root_hash(outputs_frontier)
     local template_hash
     do
         local machine <close> = cartesi.machine(temporary_directory)
         assert_rolling_template(machine)
         assert(
-            machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE) == outputs_root,
+            machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE) == outputs_merkle_root,
             "template machine has an output history"
         )
         template_hash = machine:get_root_hash()
@@ -562,7 +562,7 @@ local function store_first_epoch_checkpoint(template_directory, geometry, direct
         version = 2,
         initial_state_hash = cartesi.tohex(template_hash),
         final_state_hash = cartesi.tohex(template_hash),
-        outputs_root = cartesi.tohex(outputs_root),
+        outputs_merkle_root = cartesi.tohex(outputs_merkle_root),
         output_count = 0,
         input_count = 0,
         log2_mcycles_per_period = geometry.log2_mcycles_per_period,

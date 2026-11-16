@@ -3523,7 +3523,7 @@ local function initialize_cmio_output_proofs(advance, previous_frontier, history
     end
 end
 
--- The latest frontier is sufficient for checking each accept's outputs root.
+-- The latest frontier is sufficient for checking each accept's outputs Merkle root.
 -- With no frontier or previous proof, the caller is starting an empty output tree.
 local function initialize_cmio_outputs(advance)
     local previous_frontier

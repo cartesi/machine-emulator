@@ -64,7 +64,7 @@ function methods:poll()
             assert(not self.dispute, "epoch sealed twice")
             assert(event.initialMachineStateHash == self.initial_hash, "sealed initial state differs from checkpoint")
             assert(
-                event.outputsMerkleRoot == self.previous_outputs_root,
+                event.outputsMerkleRoot == self.previous_outputs_merkle_root,
                 "sealed output history differs from checkpoint"
             )
             assert(eth.small(event.inputIndexLowerBound) == self.input_begin, "sealed lower input bound mismatch")
@@ -127,7 +127,7 @@ function M.new(args)
         epoch = args.epoch,
         input_begin = args.input_begin,
         initial_hash = args.initial_hash,
-        previous_outputs_root = args.previous_outputs_root,
+        previous_outputs_merkle_root = args.previous_outputs_merkle_root,
         geometry = args.geometry,
         player = args.player,
         signer = args.signer,

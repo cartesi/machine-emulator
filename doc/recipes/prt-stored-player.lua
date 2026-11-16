@@ -96,9 +96,11 @@ local function clone_loaded_directory(machine, directory, clone_directory)
     return clone:move()
 end
 
--- Removes a stored machine that a crash or an earlier pair may have left, possibly incomplete.
+-- Removes a stored machine that a crash or an earlier pair may have left, possibly incomplete, if there is one.
 local function remove_leftover_stored_machine(directory)
-    cartesi.machine:remove_stored(directory, cartesi.REMOVE_FORCED)
+    if fs.exists(directory) then
+        cartesi.machine:remove_stored(directory, cartesi.REMOVE_FORCED)
+    end
 end
 
 -- A stored pair runs its machine on the backing stores of its directory and keeps a synced copy of the
@@ -196,9 +198,7 @@ end
 function stored_machine_cache_methods:new_machine_pair_from_entry(entry)
     local directory = self.epoch_directory .. "/pair"
     for _, leftover in ipairs({ directory, directory .. ".revert" }) do
-        if fs.exists(leftover) then
-            remove_leftover_stored_machine(leftover)
-        end
+        remove_leftover_stored_machine(leftover)
     end
     cartesi.machine:clone_stored(entry.directory, directory)
     local clone <close> = new_temporary_stored_machine(directory)
@@ -509,9 +509,7 @@ local function store_next_epoch_checkpoint(self, machine, directory)
         return
     end
     local temporary_directory = directory .. ".tmp"
-    if fs.exists(temporary_directory) then
-        remove_leftover_stored_machine(temporary_directory)
-    end
+    remove_leftover_stored_machine(temporary_directory)
     machine:store(temporary_directory)
     machine:sync_stored(temporary_directory)
     store_checkpoint_files(self, temporary_directory)
@@ -536,9 +534,7 @@ function stored_player_methods:seal_epoch_state(pair)
         mcycle_forest = MCYCLE_FOREST_FILE,
     })
     -- A sealed epoch no longer needs the backup
-    if fs.exists(pair.directory .. ".revert") then
-        remove_leftover_stored_machine(pair.directory .. ".revert")
-    end
+    remove_leftover_stored_machine(pair.directory .. ".revert")
 end
 
 -- Stores the checkpoint epoch 0 starts from (the template machine with an empty output history) the
@@ -548,9 +544,7 @@ local function store_first_epoch_checkpoint(template_directory, geometry, direct
         return
     end
     local temporary_directory = directory .. ".tmp"
-    if fs.exists(temporary_directory) then
-        remove_leftover_stored_machine(temporary_directory)
-    end
+    remove_leftover_stored_machine(temporary_directory)
     cartesi.machine:clone_stored(template_directory, temporary_directory)
     cartesi.machine:sync_stored(temporary_directory)
     local outputs_frontier = new_outputs_frontier()
@@ -633,9 +627,7 @@ local function remove_epoch_files(checkpoint_directory, epoch_directory)
     if fs.exists(epoch_directory) then
         remove_epoch_directory(epoch_directory)
     end
-    if fs.exists(removed_directory) then
-        remove_leftover_stored_machine(removed_directory)
-    end
+    remove_leftover_stored_machine(removed_directory)
 end
 
 -- Creates the layout of an epoch directory without a state.json.
@@ -668,16 +660,12 @@ local function revert_interrupted_input(directory, root_hash)
     local machine_directory = directory .. "/machine"
     local backup_directory = machine_directory .. ".revert"
     if get_stored_root_hash(backup_directory) == root_hash then
-        if fs.exists(machine_directory) then
-            remove_leftover_stored_machine(machine_directory)
-        end
+        remove_leftover_stored_machine(machine_directory)
         cartesi.machine:clone_stored(backup_directory, machine_directory)
         return
     end
     assert(get_stored_root_hash(machine_directory) == root_hash, "the epoch machine does not match its state")
-    if fs.exists(backup_directory) then
-        remove_leftover_stored_machine(backup_directory)
-    end
+    remove_leftover_stored_machine(backup_directory)
     cartesi.machine:clone_stored(machine_directory, backup_directory)
     cartesi.machine:sync_stored(backup_directory)
 end
@@ -704,9 +692,7 @@ local function remove_epoch_leftovers(directory, state, machine_cache)
         end
     end
     for _, leftover in ipairs({ "pair", "pair.revert" }) do
-        if fs.exists(directory .. "/" .. leftover) then
-            remove_leftover_stored_machine(directory .. "/" .. leftover)
-        end
+        remove_leftover_stored_machine(directory .. "/" .. leftover)
     end
     local named = {}
     for _, name in pairs(get_state_files(state)) do
@@ -758,9 +744,7 @@ end
 
 local function remove_agreed_directories(directory)
     for _, name in ipairs({ "/agreed", "/agreed.revert" }) do
-        if fs.exists(directory .. name) then
-            remove_leftover_stored_machine(directory .. name)
-        end
+        remove_leftover_stored_machine(directory .. name)
     end
 end
 
@@ -929,9 +913,7 @@ local function reopen_epoch_directory(self)
         return
     end
     -- A sealed epoch no longer needs the backup
-    if fs.exists(machine_directory .. ".revert") then
-        remove_leftover_stored_machine(machine_directory .. ".revert")
-    end
+    remove_leftover_stored_machine(machine_directory .. ".revert")
     remove_agreed_directories(directory)
     self.final_state_hash = root_hash
     self.outputs_merkle_root_proof = state.outputs_merkle_root_proof

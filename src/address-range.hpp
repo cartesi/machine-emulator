@@ -154,7 +154,7 @@ public:
 
     /// \brief Test if address range is occupied by memory
     /// \returns True if and only if range is occupied by memory
-    /// \details In this case, get_host_memory() is guaranteed not to return nullptr.
+    /// \details When a machine owns the range, get_host_memory() is then guaranteed not to return nullptr.
     constexpr bool is_memory() const noexcept {
         return (m_istart & PMA_ISTART_M_MASK) != 0;
     }

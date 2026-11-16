@@ -199,10 +199,40 @@ void created_range_cases() {
     require(access.read_pma(PMA_MAX).is_empty());
 }
 
+void boundary_cases() {
+    pmas_state entries{};
+    entries[0] = {.istart = 0x8000 | 0xfd, .ilength = 0x2000};
+    entries[1] = {.istart = 0x2000 | 0xfd, .ilength = 0x3000};
+    replayer_access access{entries};
+    uint64_t index = UINT64_MAX;
+    find_pma<uint64_t>(access, 0x4ff8, index);
+    require(index == 1);
+    // An access that runs past the end of a range misses it; a narrower one at the same address does not.
+    find_pma<uint64_t>(access, 0x4ffc, index);
+    require(index == PMA_MAX);
+    find_pma<uint8_t>(access, 0x4ffc, index);
+    require(index == 1);
+}
+
+void overlapping_cases() {
+    // Not a table a machine produces. RAM is probed first whatever was looked up before.
+    pmas_state entries{};
+    entries[0] = {.istart = 0x8000 | 0xfd, .ilength = 0x1000};
+    entries[1] = {.istart = 0x7000 | 0xfd, .ilength = 0x2000};
+    replayer_access access{entries};
+    uint64_t index = UINT64_MAX;
+    find_pma<uint32_t>(access, 0x7000, index);
+    require(index == 1);
+    find_pma<uint64_t>(access, 0x8000, index);
+    require(index == 0);
+}
+
 } // namespace
 
 int main() {
     differential_cases();
+    boundary_cases();
+    overlapping_cases();
     malformed_cases();
     created_range_cases();
     std::printf("%llu PMA lookups matched the linear reference; malformed entries and created ranges checked\n",

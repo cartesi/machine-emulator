@@ -890,18 +890,20 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
 #endif
     // Done initializing, so we fork
     const auto pid = fork();
+#if defined(HAVE_OPENMP) && defined(_LIBCPP_VERSION)
+    // omp_pause_hard deinitializes OpenMP but, on libc++, its atexit handler persists after fork.
+    // Force re-initialization on both sides, so the atexit handler frees each process's own resources instead
+    // of double-freeing. A server that was itself forked re-registers only on a full initialization, which a
+    // later serial hash update does not perform.
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-volatile)
+    volatile int omp_reinit = omp_get_max_threads();
+    (void) omp_reinit;
+#endif
     if (pid == 0) { // Child process and fork() succeeded
 #ifdef CODE_COVERAGE
         // Record only execution after the fork in the child. The coverage runtime
         // serializes its update of the shared .gcda files when the process exits.
         __gcov_reset();
-#endif
-#if defined(HAVE_OPENMP) && defined(_LIBCPP_VERSION)
-        // omp_pause_hard deinitializes OpenMP but, on libc++, its atexit handler persists after fork.
-        // Force re-initialization so the atexit handler frees the child's own resources instead of double-freeing.
-        // NOLINTNEXTLINE(cppcoreguidelines-avoid-volatile)
-        volatile int omp_reinit = omp_get_max_threads();
-        (void) omp_reinit;
 #endif
         // Notify to ASIO that we are the child
         session->handler->ioc.notify_fork(asio::io_context::fork_child);

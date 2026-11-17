@@ -4945,43 +4945,50 @@ produces the output
 
 ## Verification game
 
-The question now becomes: How can the blockchain identify the honest party when there are potentially multiple opinions on the final state hash of a Cartesi Machine, for a computation the blockchain itself is unable to perform?
-Cartesi Rollups is based on *fraud proofs*, a group of approaches through which an honest party can demonstrate to a computationally limited referee that a dishonest party has not performed a well-specified computation correctly.
-The [verification game](https://doi.org/10.1016/j.ic.2013.03.003) technique, on which our original [whitepaper](https://cartesi.io/cartesi_whitepaper.pdf) builds, is a well-established fraud proof strategy.
+Several parties may claim different final state hashes for the same computation.
+The blockchain cannot perform that computation itself to decide which claim is correct.
+Cartesi Rollups therefore relies on *fraud proofs*.
+Fraud proofs are approaches through which an honest party can show a computationally limited referee that a dishonest party has not performed a well-specified computation correctly.
+The [verification game](https://doi.org/10.1016/j.ic.2013.03.003) is one such approach.
+Our original [whitepaper](https://cartesi.io/cartesi_whitepaper.pdf) builds on it.
 
-The approach assumes that at least one player is honest and responds within the allotted time.
-It proceeds as follows.
-Initially, the referee and all parties agree on the state hash before the computation.
-The dispute starts after each interested party has had a chance to send to the referee its proposed state hash after the computation.
-The referee then guides the parties in a dispute that ends when all surviving parties agree on the same state hash after.
+Initially, the referee and all players agree on the state hash before the computation.
+Each player then sends the referee its *claim*, the state hash it obtained after the computation.
 The dispute proceeds in rounds.
-In each round, the referee progressively bisects the computation until it isolates a single state transition that is not unanimous.
-The bisection starts by considering an interval that covers an entire computation.
-At each iteration, all surviving players must send to the referee a tentative midpoint state hash for the current interval.
-If the midpoint state hash is unanimous, the referee narrows the interval to its second half.
-If it is not unanimous, it narrows the interval to its first half.
-The invariant preserved is that the interval always starts at a state all players agree on and always ends at a state for which there is at least one disagreement.
-Bisection eventually leads to an interval that consists of a single state transition.
-All players must now send proofs that the state indeed transitions to their chosen state hash after.
-By construction, valid proofs starting from the agreed state hash can reach only one resulting state hash.
-Therefore, the referee eliminates at least one player per round.
-When all remaining players agree on the state hash after the computation, the dispute ends.
+Each round isolates a single state transition on which the surviving players do not all agree.
 
-The `vg.lua` script applies this strategy to an entire epoch of a Rolling Cartesi Machine.
-Its referee stands in for contracts that Cartesi deploys to the blockchain.
-It mediates the dispute over the result players obtained by feeding the epoch's inputs to the machine off-chain.
-Referee and players are run in separate processes, and communicate via the network.
-The referee requests and the players' responses that go through the wire represent blockchain events and transactions, respectively.
+A round starts with an interval that covers the entire computation.
+At each step, every surviving player sends the referee its state hash at the midpoint of the interval.
+If all midpoint hashes are equal, the referee narrows the interval to its second half.
+Otherwise, the referee narrows the interval to its first half.
+Therefore, the interval always starts at a state all players agree on.
+It always ends at a state on which at least one player disagrees.
+Bisection ends when the interval covers a single state transition.
+
+Every surviving player then sends a proof that the agreed state transitions to its own state hash at the end of the interval.
+Valid proofs that start from the agreed state hash can reach only one state hash.
+Since the players disagree on the state hash at the end of the interval, at least one of them cannot produce a valid proof.
+The referee eliminates every player whose proof fails.
+Each round therefore eliminates at least one player.
+The dispute ends when all remaining players agree on the state hash after the computation.
+That hash is the correct one if at least one player is honest and responds within the allotted time.
 
 The state an epoch starts from is settled.
-It is either the stored [template hash](#rolling-cartesi-machine-templates) at genesis or the settled state hash of the previous epoch.
-All advance-state inputs in an epoch are posted to the blockchain.
-The referee therefore knows the agreed initial state hash and the contents of every input in the epoch.
-In `vg.lua`, the inputs are represented by files.
-The events generated by the blockchain throughout an epoch are represented by the following code:
+It is either the stored [template hash](#rolling-cartesi-machine-templates) at genesis, or the settled state hash of the previous epoch.
+All advance-state inputs of the epoch are posted to the blockchain.
+The referee therefore knows the initial state hash and the contents of every input.
+
+The `vg.lua` script applies this method to an entire epoch of a Rolling Cartesi Machine.
+Its referee stands in for the contracts Cartesi deploys to the blockchain.
+The players obtain their claims by feeding the epoch's inputs to the machine off-chain.
+The referee and the players run in separate processes and communicate over the network.
+The requests of the referee represent blockchain events.
+The responses of the players represent transactions.
+In `vg.lua`, the inputs are files.
+The function `run_epoch` announces each input of the epoch to the players and then seals the epoch.
 ```{.lua key=vg_run_epoch include=vg.lua/run_epoch title="vg.lua run_epoch"}
 ```
-The function `notify_all(<subscribers>, <event>, <arguments>)` notifies all `<subscribers>` (i.e., the interested parties) of a given `<event>` with associated `<arguments>`.
+The function `notify_all(<subscribers>, <event>, <arguments>)` sends `<event>` with its `<arguments>` to every one of the `<subscribers>`, the players that follow the epoch.
 
 
 ### The state transition function

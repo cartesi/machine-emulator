@@ -4947,11 +4947,19 @@ produces the output
 
 A *computation hash* is the root of a Merkle tree whose leaves are the machine state hashes sampled at periodic intervals during a computation.
 (It is the basis for the [permissionless refereed tournament](#permissionless-refereed-tournament).)
-The two kinds `cartesi-machine` computes, introduced under [Computation hashes](#computation-hashes), are the *mcycle computation hash*, over an entire epoch with one leaf every 2<sup>p</sup> mcycles and the initial state implicit, and the *uarch cycle computation hash*, over one of those periods with one leaf after each uarch transition.
+The two kinds `cartesi-machine` computes, introduced under [Computation hashes](#computation-hashes), are the *mcycle computation hash* and the *uarch cycle computation hash*.
+The mcycle computation hash covers an entire epoch, and includes one state hash as a leaf every 2<sup>p</sup> mcycles, with the initial state hash implicit.
+The uarch cycle computation hash covers one period between two consecutive leaves of the mcycle computation hash.
+It includes one state hash as a leaf for every uarch state transition within the period.
 
-An epoch spans 2<sup>[]{replace=rollup_constants/log2_max_advance_states_per_epoch code=no}</sup> inputs, each input owns 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup> mcycles counted from the state that receives it, and each mcycle expands into 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch transitions.
-A machine stopped at a manual yield, halt, or mcycle overflow no longer advances, so past the last mcycle an input uses it sits at a fixed point, and so does the epoch past its last input.
-The leaves past a stop repeat its state hash (the reverted state hash when an input was rejected) to the end of the input's span, and the leaves past the last input repeat the epoch's final state hash.
+An epoch spans 2<sup>[]{replace=rollup_constants/log2_max_advance_states_per_epoch code=no}</sup> inputs.
+Each input can have at most 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup> mcycles counted from the state that receives it.
+A machine stopped at a manual yield, halt, or mcycle overflow no longer advances.
+Therefore, past the last mcycle an input uses, the machine sits at a fixed point.
+The leaves past that point repeat the last state hash to the end of the span the input occupies.
+When the input was rejected, the leaves repeat the reverted state hash instead.
+Likewise, an epoch does not advance past its last input.
+The leaves past the last input repeat the epoch's final state hash until the tree is complete.
 The uarch cycle computation hash is analogous.
 Each mcycle of the period owns 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> leaves.
 The uarch executes one instruction of the main processor in a number of uarch cycles and then halts.
@@ -4960,114 +4968,178 @@ The halted state fills the leaves that follow.
 The last leaf is the state hash after the uarch reset.
 Every one of these transitions is one the blockchain can verify.
 Once the machine stops inside the period, the uarch starts every remaining mcycle from a state in which the main processor is at a fixed point.
-It executes only the uarch cycles needed to notice this and halts, and the reset then moves the state back to where it started.
-The leaves of that mcycle form a tail that repeats for every mcycle the machine stays at the fixed point, to the end of the period.
+The uarch executes only the uarch cycles needed to notice this and halts.
+The reset then moves the state back to where it started.
+The leaves of that mcycle form a tail that repeats for every remaining mcycle to the end of the period.
 
-When only the computation hash itself matters, the frontier of [The hash tree frontier](#the-hash-tree-frontier) is enough, with `frontier_pad_back` folding in each run of repeated leaves, and this is what `cartesi-machine` uses internally.
-The [permissionless refereed tournament](#permissionless-refereed-tournament), however, must later reveal any leaf of a committed tree, along with the siblings on its path, and a frontier has collapsed everything to the left of its last leaf into root hashes.
-That calls for a data structure that captures the repetitions at the fixed points while keeping every node reachable.
+When only the computation hash itself matters, the frontier of [The hash tree frontier](#the-hash-tree-frontier) is enough.
+Its `frontier_pad_back` method can add runs of repeated leaves.
+(This is what `cartesi-machine` uses internally.)
+The [permissionless refereed tournament](#permissionless-refereed-tournament), however, must later access individual leaves in the corresponding tree, along with the siblings on their paths.
+Since the frontier has collapsed everything to the left of its last leaf into root hashes, we need a new data structure that captures the repetitions at the fixed points while keeping every node accessible.
 
 ### Fixed-point trees
 
-The frontier pads the leaves it has not reached with a single repeated value.
-For the outputs Merkle tree that value is the pristine leaf, but as [The hash tree frontier](#the-hash-tree-frontier) noted, any other hash serves as well.
-Representing a run of repetitions compactly, while keeping every node reachable, calls for a recursive structure.
+The function `frontier_pad_back` appends any number of copies of one hash to a frontier, with a cost proportional to the height of the tree.
+This is possible because the root of a subtree whose leaves all repeat one hash depends only on that hash and on the height of the subtree.
+A fixed-point tree uses the same fact to store a run of repeated leaves that follows distinct leaves.
+The run costs one stored entry per level, whatever its length.
+Unlike the frontier, the tree keeps every one of its nodes accessible.
 
-A *complete tree* of height *h* covers 2<sup>*h*</sup> leaves and has a hash for every one of its nodes.
-The simplest complete tree is a raw hash, the root hash of a subtree whose other nodes are unknown.
-A raw hash is *opaque*, since nothing below it can be read.
-A run of repetitions is captured by a *fixed-point tree*.
-It is built over a sequence of complete trees of equal height, its *base values*, and the last of them repeats to fill the tree.
-Two complete trees of equal height that were built separately are joined as the left and right children of a *mixed tree*.
-A fixed-point or mixed tree can be descended into, down to its base values and children and through them, until a query reaches its target or an opaque hash.
+A *value* of height *h* stands for a complete subtree of 2<sup>*h*</sup> leaves.
+All of those leaves are determined, even when none of them is accessible from the value.
+The simplest value is a *raw hash*, whose only accessible node is its root.
+A raw hash is *opaque*, since its leaves are determined but not accessible.
+A *fixed-point tree* is built over a sequence of values of equal height, its *base values*.
+A value is a raw hash or a *tree*, meaning a fixed-point tree or a mixed tree.
+The last base value repeats to fill the tree.
 
 A fixed-point tree is a table with one array per level.
-The first array holds its base values, and each array above holds the hashes of the parents of the one below.
-A node is found by its index within its level, so the tree needs no child pointers.
-The rule that keeps the tree small is that reading past the end of a level returns its last stored entry.
-The last entry therefore stands for every position after it.
+The first array holds the base values.
+Each array above holds the hashes of the parents of the entries in the array below.
+A node is found by its index within its level.
+Therefore, the tree needs no child pointers.
+Each level stores its entries up to and including the first repeated one.
+Reading past the end of a level returns its last stored entry.
+The last stored entry therefore stands for every position after it.
 
-The constructor is `new_fixed_point_tree`:
+The constructor is `new_fixed_point_tree`.
 ```{.lua replace=proof_module/source/new_fixed_point_tree title="hash-tree.lua (excerpt)"}
 ```
-In the excerpt, `<values>` holds the base values starting at `<first>`, `<base_height>` is their height, and `<log2_count>` is the number of levels built above them.
-The helper `get_or_last` reads the entry at a 0-based index of a level, returning the last stored entry for any index past the end.
-The helper `get_value_hash` returns the hash of a value, the value itself when it is a raw hash and its root hash when it is a tree.
-Each level stores the distinct parents of its children plus the first repeated one.
-With *n* stored children, the explicit pairs give the first *n*/2 parents, rounded down.
-The next parent pairs the last child with itself (when *n* is even), or the unpaired last child with its implicit copy (when *n* is odd).
-Either way it is the root of an all-repeated subtree, and every parent after it is the same hash.
-That is why each level stores at most *n*/2 parents, rounded down, plus one.
-Whenever a level ends in a repeated suffix, its last entry is the repeated value doubled once per level, exactly as pristine padding doubles in the frontier.
-A repeated suffix of any length thus costs one hash per level.
+In the excerpt, the base values start at index `<first>` of `<values>`.
+Their height is `<base_height>`.
+The tree has `<log2_count>` levels above them.
+The helper `get_or_last` reads the entry at a 0-based index of a level.
+It returns the last stored entry for any index past the end.
+The helper `get_value_hash` returns the hash of a value.
+For a raw hash, that is the raw hash itself, and for a tree, it is the root hash.
+
+Take a level with *n* stored children.
+Its first *n*/2 parents (rounded down) come from pairs of stored children.
+The next parent combines two copies of the last stored child.
+That parent is the root of an all-repeated subtree.
+Every parent after it has the same hash.
+Therefore, the level above stores at most *n*/2 parents (rounded down) plus one.
+It never stores more entries than the level has nodes.
+A repeated suffix of any length thus costs one stored entry per level.
 
 ![Fixed-point tree storing the distinct nodes and the first repeated node at each level](images/fixed-point-tree.svg)
 
-The figure shows a fixed-point tree of height four over five distinct leaves, followed by a sixth that repeats over the remaining ten positions.
+The figure shows a fixed-point tree of height four over five distinct leaves.
+A sixth leaf follows and repeats over the remaining ten positions.
 Stored hashes are filled and implicit ones are outlined.
-Distinct nodes are blue, and the first repeated node of each level below the root, the root of an all-repeated subtree, is gray.
-The tree stores 16 of its 31 nodes, six leaves, then four, three, two, and finally the root.
+Distinct nodes are blue.
+The first repeated node of each level below the root is gray.
+The tree stores 16 of its 31 nodes (6, 4, 3, 2, and 1, from the leaves up).
 
-A mixed tree is the simpler form:
+A fixed-point tree holds a single run of repeated leaves, at its end.
+The leaves of a computation hash contain many runs, for instance one after each input stops.
+Trees over neighboring spans must therefore be joined.
+A *mixed tree* joins two values of equal height as its left and right children.
+It does not change either one.
+The constructor is `new_mixed_tree`.
 ```{.lua replace=proof_module/source/new_mixed_tree title="hash-tree.lua (excerpt)"}
 ```
-It joins two neighboring complete trees that were built separately, without changing either one, as the next section shows.
+
+Both kinds of tree are descended from the root.
+At a mixed tree, a query chooses a child.
+At a fixed-point tree, it indexes the levels down to a base value, and continues into that base value.
+The descent ends at its target or at an opaque hash.
+An opaque hash is where determined but inaccessible nodes begin.
+This is the access to individual leaves and siblings that the frontier lacks.
+[Frontier forests](#frontier-forests) builds on it.
 
 ### Frontier forests
 
-The [frontier](#the-hash-tree-frontier) answers two questions, the root hash of the tree and the proofs of a batch of new leaves.
-It cannot answer anything about an arbitrary node, because every complete subtree to the left of the batch has been collapsed into its root hash.
-Neither the hash of a node inside it nor the siblings on that node's path can be recovered later.
-These are exactly the queries the verification game needs.
-A *frontier forest* answers them.
-It has the same level array as a frontier, with the same binary carry, but each occupied level holds the complete tree standing there rather than only its root hash.
+A *frontier forest* is a frontier whose levels hold values.
+A level can therefore keep a tree instead of only its root hash.
+The forest uses the same level array and the same binary carry as the [frontier](#the-hash-tree-frontier).
+Each level is either empty or holds a value.
+A raw hash is stored as the hash itself.
+A fixed-point tree holds one array per level, as described under [Fixed-point trees](#fixed-point-trees).
+A mixed tree holds its two children, each a value.
+Every tree also records its height and its root hash.
+Besides its levels, a forest holds its pending values and its leaf count, described below.
+A forest is *full* when it has received all of its leaves.
+Its top level then holds a single value, and every other level is empty.
 
-The constructor is `frontier_forest`, which takes the same height and hash type as `frontier` and returns an empty forest.
-Like `frontier`, it also accepts a proof of the last appended leaf instead of a height, verifies it, and restores coverage through that leaf.
-The forest retains the authenticated path within its completed subtrees, so queries can recover it once the forest is full.
-Sibling subtrees remain opaque, and the leaves after the target are supplied by subsequent appends.
-Three functions append to it, mirroring `frontier_push_back`, `frontier_append`, and `frontier_pad_back`.
-The function `frontier_forest_push_back` appends one value, `frontier_forest_append` appends raw hashes in a half-open range with the same defaults as `frontier_append`, and `frontier_forest_pad_back` appends a number of copies of one value, or fills the rest of the forest when the count is omitted.
-Each also takes the height of what it appends.
-A value is a raw hash, standing for a subtree of that height, or a full forest, which keeps its own height and all of its nodes.
-A full forest goes in as the complete tree at its top level, which can then become a base value of a fixed-point tree.
-Appending a full forest is how small trees, built separately, nest into a larger one.
+The constructor is `frontier_forest`.
+It takes the height of the forest and a hash type, as `frontier` does, and returns an empty forest.
+Three functions append to a forest, mirroring `frontier_push_back`, `frontier_append`, and `frontier_pad_back`.
+The function `frontier_forest_push_back` appends one value.
+The function `frontier_forest_append` appends raw hashes in a half-open range, with the same defaults as `frontier_append`.
+The function `frontier_forest_pad_back` appends a number of copies of one value.
+When the count is omitted, it fills the rest of the forest.
+The value argument of `frontier_forest_push_back` and `frontier_forest_pad_back` is a raw hash or a full forest.
+Each function also takes the height of the values it appends.
+A raw hash appended at height *b* is a value of height *b*, and it is opaque.
+
+A full forest enters as the value at its top level.
+The forest object itself is not kept.
+That value can then become a base value of a fixed-point tree.
+This is how values built separately nest into a larger one.
+When `frontier_forest_pad_back` repeats a full forest, every copy reads the same value.
+Therefore, its nodes are accessible at every repetition.
 
 Appended values do not go into the levels right away.
-They accumulate in a pending array of equal-height values, together with a count of how many more times its last value repeats, so a repetition of any length costs one stored value:
+They accumulate as *pending values*, all of the height given with the appends.
+A count records how many more times the last pending value repeats.
+Therefore, a repetition of any length costs one pending value and one count.
 ```{.lua replace=proof_module/source/frontier_forest_pad_back title="hash-tree.lua (excerpt)"}
 ```
-A raw hash and a forest never merge, even when their roots agree, because that would discard the forest's nodes.
-Since pending values are not yet represented by any level, the forest tracks its leaf count explicitly.
+Since pending values are in no level yet, the forest tracks its leaf count explicitly.
+The function `frontier_forest_get_leaf_count` returns it.
 
-The pending values are materialized by `forest_flush` when a value of a different height arrives, when a repetition is followed by anything other than another copy pushed or padded back, or when the forest becomes full:
+The function `forest_flush` moves the pending values into the levels.
+It runs when an append cannot extend the pending values, and when the forest becomes full.
+An append cannot extend them when it has a different height.
+It also cannot extend them when it follows a repetition with anything other than another copy of the repeated value.
 ```{.lua replace=proof_module/source/forest_flush title="hash-tree.lua (excerpt)"}
 ```
-Like `frontier_append`, it splits the pending range into maximal aligned complete subtrees, each the largest that starts where the materialized leaves end and fits the values left.
-Each subtree becomes a fixed-point tree, so a repeated suffix stays one value per level.
-A pending value that is already a complete tree of the right size is used as is.
-Each subtree is then folded into the levels by the binary carry, and whenever the carry finds a level occupied, the two trees are joined into a mixed tree.
+Like `frontier_append`, it splits the pending values into maximal aligned subtrees.
+Each subtree is the largest that starts where the leaves in the levels end and fits in the pending values left.
+A subtree that spans more than one position becomes a fixed-point tree, with the pending values as its base values.
+A subtree that spans a single position is the pending value at that position.
+The binary carry then folds each subtree into the levels.
+Whenever the carry finds a level occupied, it joins the two values into a mixed tree.
 
-Once full, the forest answers every query from its top level.
+Like `frontier`, the constructor also accepts the proof of the last appended leaf instead of a height.
+It verifies the proof and restores the forest as it stood after that leaf.
+The level that covers the leaf holds mixed trees along the path of the leaf, so the leaf is accessible.
+The siblings on that path, and the values in the levels above, are raw hashes.
+Therefore, they are opaque.
+Appends then continue after that leaf.
+
+Queries need a full forest.
 The function `frontier_forest_get_root_hash` returns the root hash in constant time.
-The function `frontier_forest_get_node_hash` returns the hash of a node, identified by its first covered leaf and its height, with the position aligned to the node size.
-The function `frontier_forest_get_siblings` returns the siblings on that node's path, from the node upward:
+The function `frontier_forest_get_node_hash` returns the hash of a node.
+The node is given by its first leaf and its height, and its first leaf must be aligned to its size.
+The function `frontier_forest_get_siblings` returns the siblings on the path of a node, from the node upward.
 ```{.lua replace=proof_module/source/frontier_forest_get_siblings title="hash-tree.lua (excerpt)"}
 ```
-Both descend from the root in a single pass, going left or right at mixed trees and indexing levels in fixed-point trees, where a position past the stored entries reads the last one.
-The optional `<into>` array receives the siblings after any already there, so a caller can prove a node across two stacked forests by collecting the inner forest's siblings and then the outer forest's.
-A query that reaches a raw hash above its target cannot go further, and both functions return `nil` and an error message.
+When given, `<into>` receives the siblings after any it already holds.
+Both functions descend from the root as described under [Fixed-point trees](#fixed-point-trees).
+When the descent reaches an opaque hash above its target, both functions return `nil` and an error message.
+The caller can then expand the opaque hash and query again.
 
-Such a raw hash can be opened later with `frontier_forest_expand_leaf`:
+The function `frontier_forest_expand_leaf` expands an opaque hash.
 ```{.lua replace=proof_module/source/frontier_forest_expand_leaf title="hash-tree.lua (excerpt)"}
 ```
-It fills in the subtree at `<position>` using a full forest of the same height, after checking that their root hashes match.
-Any branches already known at that position are retained.
-No ancestor hash changes, so the forest's root is unaffected.
-When the opaque hash is the repeated last value of a fixed-point tree, every repetition reads the same entry, so all of them share the expansion.
-A forest stored with `frontier_forest_store` keeps its trees in a directory, one file per tree named by its hash, and `frontier_forest_load` reopens it.
-Queries and expansions then load the stored tree in place of a raw hash when they reach one, and an expansion also stores its new trees there.
-A stored or loaded forest cannot be appended to another forest or used in an expansion, since some of its trees may exist only as files in its own directory.
+It replaces the value at `<position>` with the value at the top level of a full forest of the same height.
+It first checks that the two root hashes match.
+Nodes already accessible at that position stay accessible.
+No ancestor hash changes, so the root hash of the forest is unaffected.
+When the opaque hash is the repeated last base value of a fixed-point tree, every copy reads the same entry.
+Therefore, all copies share the expansion.
+
+The call `frontier_forest_store(<forest>, <directory>, <frontier_path>)` stores a forest.
+Its trees go into `<directory>`, and its levels go into the file `<frontier_path>`.
+The call `frontier_forest_load(<directory>, <frontier_path>)` reopens a stored forest.
+A stored or loaded forest keeps its directory, and later expansions are stored there as well.
+Each forest needs a directory of its own.
+Two forests that share a directory can overwrite each other's stored trees.
+The implementation does not check this.
+A stored or loaded forest cannot be appended to another forest or passed to `frontier_forest_expand_leaf`.
 
 ## Verification game
 

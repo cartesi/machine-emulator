@@ -178,7 +178,6 @@ local schemas = {
     InputAdded = { items = { "Default", "Default" } },
     EpochSealed = { items = { "Default" } },
     Bisection = { items = { "Default", "Default" } },
-    Log = { send_cmio_log = "AccessLog", step_log = "AccessLog", reset_uarch_log = "AccessLog" },
     Transition = { items = { "Default", "Default", "Default" } },
     Hash = { items = { "Base64" } },
     OutputsMerkleRoot = {
@@ -198,7 +197,7 @@ local events = {
     commit_claim = define_event("commit_claim", "Empty", "Base64"),
     dispute_started = define_event("dispute_started", "Empty"),
     reveal_bisection = define_event("reveal_bisection", "Bisection", "Base64"),
-    prove_state_transition = define_event("prove_state_transition", "Transition", "Log"),
+    prove_state_transition = define_event("prove_state_transition", "Transition", "StateTransitionProof"),
     prove_outputs_merkle_root = define_event("prove_outputs_merkle_root", "Hash", "OutputsMerkleRoot"),
     prove_output = define_event("prove_output", "Hash", "Output"),
 }

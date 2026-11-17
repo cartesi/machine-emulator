@@ -302,11 +302,7 @@ local SCHEMA_DICT = {
     CommitUarchClaimEvent = { items = { "Default", "Default", "NextStateHashes" } },
     CommitUarchClaimResponse = "Claim",
     ProveStateTransitionEvent = { items = { "Default", "Default", "Default" } },
-    ProveStateTransitionResponse = {
-        send_cmio_log = "AccessLog",
-        step_log = "AccessLog",
-        reset_uarch_log = "AccessLog",
-    },
+    ProveStateTransitionResponse = "StateTransitionProof",
     ProveOutputsMerkleRootEvent = { items = { "Base64" } },
     ProveOutputsMerkleRootResponse = {
         iflags_y_data = "Base64",

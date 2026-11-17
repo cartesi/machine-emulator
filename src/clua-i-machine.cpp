@@ -652,6 +652,12 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) {
                 }},
             {"AccessLogType", nlohmann::json::object()},
             {"NoteArray", {{"items", "Default"}}},
+            {"StateTransitionProof",
+                {
+                    {"send_cmio_log", "AccessLog"},
+                    {"step_log", "AccessLog"},
+                    {"reset_uarch_log", "AccessLog"},
+                }},
             {"McycleRootHashes",
                 {
                     {"hashes", "Base64Array"},

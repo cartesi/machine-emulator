@@ -3981,6 +3981,212 @@ dofile(%q)
     end)
 
     -- -------------------------------------------------------------------------
+    -- State transition proofs at every kind of position
+    --
+    -- What: --log-state-transition writes the proof of the state transition at a
+    --       position of the epoch. The referee's verification of the proof reaches
+    --       the hash the option prints after the transition, and the hashes agree
+    --       with the boundaries of the epoch.
+    -- How:  Advance an epoch whose input 1 rejects once with the
+    --       print_input_state_hashes sub-key to locate the input boundaries and
+    --       the yielding instructions. Then log the transitions at a delivery, at
+    --       an ordinary step, at the resets that close the accepting and the
+    --       rejecting instructions, past a fixed point, and past the last input.
+    --       Verify each proof as the referee does, and compare its hashes with the
+    --       boundaries. The reset that closes the rejecting instruction must
+    --       return the input's boundary, and the reset past the last input must
+    --       return the final state.
+    -- -------------------------------------------------------------------------
+    it("state transition proofs at every kind of position", function()
+        local _ <close>, address = scope_spawned_server()
+        local _ <close>, prefix = tests_util.scope_temp_pathname()
+        local _ <close> = tests_util.scope_exit(function()
+            for i = 0, 2 do
+                os.remove(prefix .. "-stin-" .. i .. ".bin")
+            end
+            os.remove(prefix .. "-stp.json")
+            os.remove(prefix .. "-stp.lua")
+        end)
+        local payloads = { [0] = "ok", "reject-me", "also-ok" }
+        for i = 0, 2 do
+            filesystem.write_file(encode_advance(i, payloads[i]), prefix .. "-stin-" .. i .. ".bin")
+        end
+        local advance = "--cmio-advance-state=input:"
+            .. prefix
+            .. "-stin-%i.bin,input_file_index_end:3,"
+            .. "output:,rejected_output:,output_proof:,report:,"
+            .. "outputs_merkle_root:,outputs_merkle_root_proof:"
+        local _ <close>, template = scope_stored_dirname()
+        run_ok({
+            "--store=" .. template,
+            "--assert-rolling-template",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1",
+        })
+        local function run_epoch(extra)
+            return run_ok({
+                "--remote-address=" .. address,
+                "--load=" .. template,
+                "--console-io=output_destination:to_null",
+                "--no-init-splash",
+                advance .. (extra.advance or ""),
+                extra.option,
+            })
+        end
+
+        -- Each boundary is the hash printed right after "Before input <i>". The instruction
+        -- that yields is the one before the mcycle its yield reports.
+        local _, log = run_epoch({ advance = ",print_input_state_hashes", option = "--final-hash" })
+        local boundaries = {}
+        for i = 0, 2 do
+            local mcycle, hash = log:match("Before input " .. i .. "\n(%d+): (0x%x+)")
+            assert(mcycle, "could not locate the boundary of input " .. i)
+            boundaries[i] = { mcycle = tonumber(mcycle), hash = cartesi.fromhex(hash) }
+        end
+        local function yield_offset(i, reason)
+            local segment = log:match("Before input " .. i .. "\n(.-)Before input " .. (i + 1))
+            local cycles = tonumber(assert(segment:match("Manual yield " .. reason .. "[^\n]*\nCycles: (%d+)")))
+            return cycles - 1 - boundaries[i].mcycle
+        end
+        local accept_offset = yield_offset(0, "rx%-accepted")
+        local reject_offset = yield_offset(1, "rx%-rejected")
+        -- --final-hash prints the last hash of the log.
+        local final_hash
+        for hash in log:gmatch("\n%d+: (0x%x+)") do
+            final_hash = cartesi.fromhex(hash)
+        end
+        assert(final_hash, "could not locate the final hash")
+
+        -- Logs the transition at a position and verifies its proof as the referee does.
+        -- Returns the hashes printed before and after the transition.
+        local function log_and_verify(epoch_input_offset, input_mcycle_offset, uarch_cycle, format)
+            local filename = prefix .. "-stp." .. (format or "json")
+            local _, err = run_epoch({
+                option = string.format(
+                    "--log-state-transition=epoch_input_offset:%d,input_mcycle_offset:%d,uarch_cycle:%d,filename:%s",
+                    epoch_input_offset,
+                    input_mcycle_offset,
+                    uarch_cycle,
+                    filename
+                ),
+            })
+            local before = cartesi.fromhex(assert(err:match("\nBefore: (0x%x+)")))
+            local after = cartesi.fromhex(assert(err:match("\nAfter: (0x%x+)")))
+            local proof
+            if format == "lua" then
+                proof = assert(load(filesystem.read_file(filename), filename, "t", {}))()
+            else
+                proof = cartesi.fromjson(filesystem.read_file(filename), "StateTransitionProof")
+            end
+            local obtained = before
+            if input_mcycle_offset == 0 and uarch_cycle == 0 and epoch_input_offset <= 2 then
+                local input_data = filesystem.read_file(prefix .. "-stin-" .. epoch_input_offset .. ".bin")
+                obtained = cartesi.machine:verify_send_cmio_response(
+                    cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+                    input_data,
+                    obtained,
+                    proof.send_cmio_log,
+                    before
+                )
+            else
+                expect.falsy(proof.send_cmio_log)
+            end
+            obtained = cartesi.machine:verify_step_uarch(obtained, proof.step_log)
+            if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
+                obtained = cartesi.machine:verify_reset_uarch(obtained, proof.reset_uarch_log)
+            else
+                expect.falsy(proof.reset_uarch_log)
+            end
+            expect.equal(cartesi.tohex(obtained), cartesi.tohex(after))
+            return before, after
+        end
+
+        local LAST_MCYCLE = (1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE) - 1
+        local LAST_INPUT = (1 << ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH) - 1
+        local UARCH_CYCLE_MAX = cartesi.UARCH_CYCLE_MAX
+        -- The delivery of input 1 starts from its boundary.
+        local before = log_and_verify(1, 0, 0)
+        expect.equal(cartesi.tohex(before), cartesi.tohex(boundaries[1].hash))
+        -- An ordinary step carries neither a delivery nor a reset.
+        log_and_verify(0, 3, 5)
+        -- The reset that closes the accepting instruction of input 0 reaches the next boundary.
+        local _, after = log_and_verify(0, accept_offset, UARCH_CYCLE_MAX)
+        expect.equal(cartesi.tohex(after), cartesi.tohex(boundaries[1].hash))
+        -- The reset that closes the rejecting instruction of input 1 reverts to its boundary.
+        _, after = log_and_verify(1, reject_offset, UARCH_CYCLE_MAX)
+        expect.equal(cartesi.tohex(after), cartesi.tohex(boundaries[1].hash))
+        -- Past the fixed point of the rejected input, the transitions start from its boundary.
+        _, after = log_and_verify(1, LAST_MCYCLE, UARCH_CYCLE_MAX)
+        expect.equal(cartesi.tohex(after), cartesi.tohex(boundaries[2].hash))
+        -- Past the last input, there is nothing to deliver, and the transitions start from the
+        -- final state.
+        log_and_verify(5, 0, 0)
+        _, after = log_and_verify(LAST_INPUT, LAST_MCYCLE, UARCH_CYCLE_MAX, "lua")
+        expect.equal(cartesi.tohex(after), cartesi.tohex(final_hash))
+        -- As with computation hashes, --revert-mode=none aborts at the first rejection.
+        run_fail({
+            "--load=" .. template,
+            "--console-io=output_destination:to_null",
+            "--no-init-splash",
+            "--revert-mode=none",
+            advance,
+            "--log-state-transition=epoch_input_offset:2,input_mcycle_offset:0,uarch_cycle:0,filename:"
+                .. prefix
+                .. "-stp.json",
+        }, "rollback did not restore the input boundary")
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- State transition proof option errors
+    --
+    -- What: --log-state-transition refuses positions outside the epoch and
+    --       options it cannot run with.
+    -- How:  Run each invalid combination and match the error message.
+    -- -------------------------------------------------------------------------
+    it("state transition proof option errors", function()
+        local position = "--log-state-transition=epoch_input_offset:0,input_mcycle_offset:0,uarch_cycle:0"
+        local advance = "--cmio-advance-state=input_file_index_end:0"
+        local base = { "--max-mcycle=0", "--no-init-splash", "--quiet" }
+        local function fail(flags, pattern)
+            for _, flag in ipairs(base) do
+                flags[#flags + 1] = flag
+            end
+            run_fail(flags, pattern)
+        end
+        fail({ position }, "%-%-log%-state%-transition requires %-%-cmio%-advance%-state")
+        fail({ advance, "--log-state-transition=epoch_input_offset:0,input_mcycle_offset:0" }, "need uarch_cycle")
+        fail({
+            advance,
+            "--log-state-transition=epoch_input_offset:"
+                .. (1 << ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH)
+                .. ",input_mcycle_offset:0,uarch_cycle:0",
+        }, "epoch_input_offset past the inputs of an epoch")
+        fail({
+            advance,
+            "--log-state-transition=epoch_input_offset:0,input_mcycle_offset:"
+                .. (1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
+                .. ",uarch_cycle:0",
+        }, "input_mcycle_offset past the mcycles of an input")
+        fail({
+            advance,
+            "--log-state-transition=epoch_input_offset:0,input_mcycle_offset:0,uarch_cycle:"
+                .. (cartesi.UARCH_CYCLE_MAX + 1),
+        }, "uarch_cycle past UARCH_CYCLE_MAX")
+        fail({
+            "--cmio-advance-state=input_file_index_end:0,begin_epoch:false,next_input_offset:2",
+            "--log-state-transition=epoch_input_offset:1,input_mcycle_offset:0,uarch_cycle:0",
+        }, "epoch_input_offset precedes next_input_offset")
+        fail(
+            { advance, position, "--uarch-cycle-computation-hash=log2_mcycle_period:10,mcycle_period_index:0" },
+            "cannot be combined with computation hashes"
+        )
+        fail({ advance, position, "--log-step-uarch" }, "after the last advance state input")
+    end)
+
+    -- -------------------------------------------------------------------------
     -- Uarch cycle computation hash of an epoch with no inputs
     --
     -- What: An epoch that receives no inputs repeats the no-op uarch period of

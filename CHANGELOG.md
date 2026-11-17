@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `clear_hash_tree` to the C, Lua, and JSON-RPC APIs
 - Added the `clear_hash_tree` runtime option
 - Added the `--clear-hash-tree` command-line option
+- Added the `--log-state-transition` command-line option
+- Added the `StateTransitionProof` Lua JSON schema
 - Added the `cartesi.filesystem` Lua module
 - Added `exists`, `create_directory`, and `list_directory` to `cartesi.filesystem`
 - Added `clone_file` and `truncate_file` to `cartesi.filesystem`

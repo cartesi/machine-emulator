@@ -638,44 +638,6 @@ where options are:
     starting from a later input. no epoch files are required for uarch computation hashes.
     uarch computation hashes cannot resume a partially computed period.
 
-  --log-state-transition=<key>:<value>[,<key>:<value>[,...]...]
-    write the proof of the state transition at one position of the epoch. requires
-    --cmio-advance-state. excludes computation hashes, --cmio-inspect-state, and the
-    options that modify the machine after the last advance state input.
-
-    <key>:<value> is one of
-        epoch_input_offset:<number>
-        input_mcycle_offset:<number>
-        uarch_cycle:<number>
-        filename:<filename>
-        format:<lua|json>
-
-        epoch_input_offset (required)
-        zero-based input of the epoch, below 2^ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH.
-        must not precede next_input_offset in --cmio-advance-state.
-
-        input_mcycle_offset (required)
-        mcycle counted from the state that receives the input, below
-        2^ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE.
-
-        uarch_cycle (required)
-        uarch cycle within that mcycle, at most UARCH_CYCLE_MAX.
-
-        filename (optional)
-        redirects the proof to a file. when omitted, the proof is printed to stdout.
-
-        format:<lua|json> (optional)
-        selects the output format. when omitted, it is inferred from the
-        filename extension (.json/.lua), defaulting to Lua.
-
-    the proof holds step_log, the access log of the uarch step at the position. at the
-    first uarch cycle of an input, it also holds send_cmio_log, the access log of the
-    input's delivery before the step. at UARCH_CYCLE_MAX, it also holds reset_uarch_log,
-    the access log of the uarch reset after the step. inputs before the target run to their
-    fixed points, and rejected inputs revert. past a fixed point, or past the last input,
-    the transition starts from the state where the machine stopped. the hashes before and
-    after the transition are printed to stderr.
-
   --cmio-inspect-state=<key>:<value>[,<key>:<value>[,...]...]
     inspect the state of the machine with a query.
     the query happens after the end of --cmio-advance-state.
@@ -1072,6 +1034,41 @@ where options are:
 
   --log-reset-uarch
     reset the microarchitecture state and print the access log.
+
+  --log-state-transition=<key>:<value>[,<key>:<value>[,...]...]
+    log and save the state transition at a position of the epoch. requires
+    --cmio-advance-state. excludes --mcycle-computation-hash,
+    --uarch-cycle-computation-hash, --cmio-inspect-state, --log-step,
+    --log-step-uarch, --log-reset-uarch, --max-uarch-cycle, --gdb, and
+    resumable:true in --cmio-advance-state.
+
+    <key>:<value> is one of
+        epoch_input_offset:<number>
+        input_mcycle_offset:<number>
+        uarch_cycle:<number>
+        filename:<filename>
+        format:<lua|json>
+
+        epoch_input_offset (required)
+        zero-based input within the epoch (0 to 2^24-1). must not precede
+        next_input_offset in --cmio-advance-state.
+
+        input_mcycle_offset (required)
+        mcycle counted from the state that receives the input (0 to 2^48-1).
+
+        uarch_cycle (required)
+        uarch cycle within that mcycle (0 to 2^20-1).
+
+        filename (optional)
+        redirects the proof to a file. when omitted, the proof is printed
+        to stdout.
+
+        format:<lua|json> (optional)
+        selects the output format. when omitted, it is inferred from the
+        filename extension (.json/.lua), defaulting to Lua.
+
+    the proof holds the access logs of the transition. like --log-step,
+    the root hash is printed before and after the transition.
 
   --auto-reset-uarch
     reset uarch automatically after halt.
@@ -4617,119 +4614,120 @@ end
 -- revert of a rejected input, leaves the state every later mcycle of the input starts from. A target
 -- past the last input starts from the state where the epoch stopped. The builder sets done once it
 -- has written the proof, and the epoch stops there.
+local state_transition_builder_meta = { __index = {} }
+
+state_transition_builder_meta.__index.persist_epoch_state = null_computation_hash_noop
+state_transition_builder_meta.__index.check_revert = computation_hash_check_revert
+
+-- Announces the transition and prints the root hash before it, as --log-step does.
+function state_transition_builder_meta.__index:report_before(runner)
+    local transition = self.transition
+    stderr(
+        "Logging state transition at input %u, mcycle %u, uarch cycle %u to %s\n",
+        transition.epoch_input_offset,
+        transition.input_mcycle_offset,
+        transition.uarch_cycle,
+        transition.filename or "stdout"
+    )
+    print_root_hash(runner, stderr_unsilenceable)
+end
+
+-- Prints the root hash after the transition, as --log-step does, and writes the proof.
+function state_transition_builder_meta.__index:save_proof(runner, proof)
+    print_root_hash(runner, stderr_unsilenceable)
+    local transition = self.transition
+    local data = serialize_proof(proof, transition.format, "StateTransitionProof")
+    if transition.filename then
+        fs.write_file(data, transition.filename)
+    else
+        io.stdout:write(data)
+    end
+    self.done = true
+end
+
+-- Logs the state transition at the target uarch cycle of the mcycle the machine is at: the
+-- uarch step, and the uarch reset after the step at UARCH_CYCLE_MAX. The reset that closes an
+-- instruction that rejected its input reaches the state recorded in the revert root hash. The
+-- machine only resets its uarch, so the host reverts it, as it does for any rejected input.
+function state_transition_builder_meta.__index:log_state_transition(runner)
+    local uarch_cycle = self.transition.uarch_cycle
+    runner:run_uarch(uarch_cycle)
+    self:report_before(runner)
+    local proof = { step_log = runner:log_step_uarch() }
+    if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
+        proof.reset_uarch_log = runner:log_reset_uarch()
+        local break_reason = runner:run(runner:read_reg("mcycle"))
+        if is_yielded_manual(break_reason) and is_rx_rejected(get_and_print_yield(runner)) then
+            backup:revert()
+            self:check_revert(self.revert_root_hash, runner:get_root_hash())
+        end
+    end
+    self:save_proof(runner, proof)
+end
+
+function state_transition_builder_meta.__index.begin_epoch()
+    assert(
+        initial_config.processor.registers.iunrep == 0,
+        "state transition proof is meaningless in unreproducible mode"
+    )
+end
+
+-- At the first uarch cycle of the target input, the transition delivers the input before its
+-- step. Otherwise, record the absolute mcycle the target input must reach.
+function state_transition_builder_meta.__index:begin_input(runner, input_file_index, revert_root_hash)
+    local transition = self.transition
+    if self.next_input_offset ~= transition.epoch_input_offset then return end
+    self.revert_root_hash = revert_root_hash
+    if transition.input_mcycle_offset == 0 and transition.uarch_cycle == 0 then
+        local data = read_cmio_input(self.advance, input_file_index)
+        self:report_before(runner)
+        local proof = {
+            send_cmio_log = runner:log_send_cmio_response(
+                cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+                data,
+                revert_root_hash
+            ),
+            step_log = runner:log_step_uarch(),
+        }
+        self:save_proof(runner, proof)
+        return
+    end
+    self.input_mcycle_target = usaturating_add(runner:read_reg("mcycle"), transition.input_mcycle_offset, MCYCLE_MAX)
+end
+
+-- Run plainly, except that the target input stops at its target mcycle to log the transition.
+function state_transition_builder_meta.__index:run(runner, mcycle_end)
+    local input_mcycle_target = self.input_mcycle_target
+    if not input_mcycle_target then return runner:run(mcycle_end) end
+    local break_reason = runner:run(umin(input_mcycle_target, mcycle_end))
+    if is_target_mcycle(break_reason) and runner:read_reg("mcycle") == input_mcycle_target then
+        self.input_mcycle_target = nil
+        self:log_state_transition(runner)
+    end
+    return break_reason
+end
+
+-- The target input stopped before its target mcycle. The machine now holds the fixed-point
+-- state, reverted if the input was rejected, that every later mcycle of the input starts from.
+function state_transition_builder_meta.__index:end_input(runner)
+    if self.input_mcycle_target then
+        self.input_mcycle_target = nil
+        self:log_state_transition(runner)
+    end
+    self.next_input_offset = self.next_input_offset + 1
+end
+
+-- The epoch ended before the target input. The target starts from the epoch's final state.
+function state_transition_builder_meta.__index:end_epoch(runner)
+    if not self.done then self:log_state_transition(runner) end
+end
+
 local function new_state_transition_builder(advance, transition)
-    local builder = {
+    return setmetatable({
         advance = advance,
         transition = transition,
         next_input_offset = advance.next_input_offset,
-        persist_epoch_state = null_computation_hash_noop,
-        check_revert = computation_hash_check_revert,
-    }
-
-    -- Writes the proof and prints the state hashes before and after the transition. The hash
-    -- after is the one the referee obtains by verifying the proof. After the reset that closes an
-    -- instruction that rejected its input, it is the recorded revert root hash, not the root hash
-    -- of the machine, which the host has yet to revert.
-    function builder:save_proof(hash_before, proof, input_data, revert_root_hash)
-        local hash_after = hash_before
-        if proof.send_cmio_log then
-            hash_after = cartesi.machine:verify_send_cmio_response(
-                cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-                input_data,
-                hash_after,
-                proof.send_cmio_log,
-                revert_root_hash
-            )
-        end
-        hash_after = cartesi.machine:verify_step_uarch(hash_after, proof.step_log)
-        if proof.reset_uarch_log then
-            hash_after = cartesi.machine:verify_reset_uarch(hash_after, proof.reset_uarch_log)
-        end
-        stderr(
-            "\nState transition at input %d, mcycle %d, uarch cycle %d\n",
-            transition.epoch_input_offset,
-            transition.input_mcycle_offset,
-            transition.uarch_cycle
-        )
-        stderr("Before: %s\n", cartesi.tohex(hash_before))
-        stderr("After: %s\n", cartesi.tohex(hash_after))
-        local data = serialize_proof(proof, transition.format, "StateTransitionProof")
-        if transition.filename then
-            stderr("Storing %s\n", transition.filename)
-            fs.write_file(data, transition.filename)
-        else
-            io.stdout:write(data)
-        end
-        self.done = true
-    end
-
-    -- Logs the uarch step at the target uarch cycle of the mcycle the machine is at, and the
-    -- uarch reset after the step at UARCH_CYCLE_MAX.
-    function builder:log_step(runner)
-        runner:run_uarch(transition.uarch_cycle)
-        local hash_before = runner:get_root_hash()
-        local proof = { step_log = runner:log_step_uarch() }
-        if transition.uarch_cycle == cartesi.UARCH_CYCLE_MAX then proof.reset_uarch_log = runner:log_reset_uarch() end
-        self:save_proof(hash_before, proof)
-    end
-
-    function builder.begin_epoch()
-        assert(
-            initial_config.processor.registers.iunrep == 0,
-            "state transition proof is meaningless in unreproducible mode"
-        )
-    end
-
-    -- At the first uarch cycle of the target input, the transition delivers the input before
-    -- its step. Otherwise, record the absolute mcycle the target input must reach.
-    function builder:begin_input(runner, input_file_index, revert_root_hash)
-        if self.next_input_offset ~= transition.epoch_input_offset then return end
-        if transition.input_mcycle_offset == 0 and transition.uarch_cycle == 0 then
-            local data = read_cmio_input(advance, input_file_index)
-            local hash_before = runner:get_root_hash()
-            local proof = {
-                send_cmio_log = runner:log_send_cmio_response(
-                    cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-                    data,
-                    revert_root_hash
-                ),
-                step_log = runner:log_step_uarch(),
-            }
-            self:save_proof(hash_before, proof, data, revert_root_hash)
-            return
-        end
-        self.input_mcycle_target =
-            usaturating_add(runner:read_reg("mcycle"), transition.input_mcycle_offset, MCYCLE_MAX)
-    end
-
-    -- Run plainly, except that the target input stops at its target mcycle to log the transition.
-    function builder:run(runner, mcycle_end)
-        local input_mcycle_target = self.input_mcycle_target
-        if not input_mcycle_target then return runner:run(mcycle_end) end
-        local break_reason = runner:run(umin(input_mcycle_target, mcycle_end))
-        if is_target_mcycle(break_reason) and runner:read_reg("mcycle") == input_mcycle_target then
-            self.input_mcycle_target = nil
-            self:log_step(runner)
-        end
-        return break_reason
-    end
-
-    -- The target input stopped before its target mcycle. The machine now holds the fixed-point
-    -- state, reverted if the input was rejected, that every later mcycle of the input starts from.
-    function builder:end_input(runner)
-        if self.input_mcycle_target then
-            self.input_mcycle_target = nil
-            self:log_step(runner)
-        end
-        self.next_input_offset = self.next_input_offset + 1
-    end
-
-    -- The epoch ended before the target input. The target starts from the epoch's final state.
-    function builder:end_epoch(runner)
-        if not self.done then self:log_step(runner) end
-    end
-
-    return builder
+    }, state_transition_builder_meta)
 end
 
 -- An epoch that does not compute a hash delegates execution to the runner and skips builder

@@ -4026,20 +4026,29 @@ dofile(%q)
             "--",
             "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1",
         })
+        -- Every run also prints the hash of the machine where it stops.
         local function run_epoch(extra)
             return run_ok({
                 "--remote-address=" .. address,
                 "--load=" .. template,
                 "--console-io=output_destination:to_null",
                 "--no-init-splash",
+                "--final-hash",
                 advance .. (extra.advance or ""),
                 extra.option,
             })
         end
+        local function get_final_hash(log)
+            local final_hash
+            for hash in log:gmatch("\n%d+: (0x%x+)") do
+                final_hash = cartesi.fromhex(hash)
+            end
+            return assert(final_hash, "could not locate the final hash")
+        end
 
         -- Each boundary is the hash printed right after "Before input <i>". The instruction
         -- that yields is the one before the mcycle its yield reports.
-        local _, log = run_epoch({ advance = ",print_input_state_hashes", option = "--final-hash" })
+        local _, log = run_epoch({ advance = ",print_input_state_hashes" })
         local boundaries = {}
         for i = 0, 2 do
             local mcycle, hash = log:match("Before input " .. i .. "\n(%d+): (0x%x+)")
@@ -4053,12 +4062,7 @@ dofile(%q)
         end
         local accept_offset = yield_offset(0, "rx%-accepted")
         local reject_offset = yield_offset(1, "rx%-rejected")
-        -- --final-hash prints the last hash of the log.
-        local final_hash
-        for hash in log:gmatch("\n%d+: (0x%x+)") do
-            final_hash = cartesi.fromhex(hash)
-        end
-        assert(final_hash, "could not locate the final hash")
+        local final_hash = get_final_hash(log)
 
         -- Logs the transition at a position and verifies its proof as the referee does.
         -- Returns the hashes printed before and after the transition.
@@ -4073,8 +4077,10 @@ dofile(%q)
                     filename
                 ),
             })
-            local before = cartesi.fromhex(assert(err:match("\nBefore: (0x%x+)")))
-            local after = cartesi.fromhex(assert(err:match("\nAfter: (0x%x+)")))
+            -- Like --log-step, the option prints the root hash before and after the transition.
+            local logged = assert(err:match("Logging state transition[^\n]*\n(.*)"))
+            local before, after = logged:match("%d+: (0x%x+)\n.-%d+: (0x%x+)\n")
+            before, after = cartesi.fromhex(assert(before)), cartesi.fromhex(assert(after))
             local proof
             if format == "lua" then
                 proof = assert(load(filesystem.read_file(filename), filename, "t", {}))()
@@ -4101,6 +4107,8 @@ dofile(%q)
                 expect.falsy(proof.reset_uarch_log)
             end
             expect.equal(cartesi.tohex(obtained), cartesi.tohex(after))
+            -- The machine stops in the state the transition reaches, reverted after a rejection.
+            expect.equal(cartesi.tohex(get_final_hash(err)), cartesi.tohex(after))
             return before, after
         end
 

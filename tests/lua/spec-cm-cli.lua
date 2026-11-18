@@ -4006,6 +4006,8 @@ dofile(%q)
             end
             os.remove(prefix .. "-stp.json")
             os.remove(prefix .. "-stp.lua")
+            os.remove(prefix .. "-before.bin")
+            os.remove(prefix .. "-after.bin")
         end)
         local payloads = { [0] = "ok", "reject-me", "also-ok" }
         for i = 0, 2 do
@@ -4124,8 +4126,23 @@ dofile(%q)
         local _, after = log_and_verify(0, accept_offset, UARCH_CYCLE_MAX)
         expect.equal(cartesi.tohex(after), cartesi.tohex(boundaries[1].hash))
         -- The reset that closes the rejecting instruction of input 1 reverts to its boundary.
-        _, after = log_and_verify(1, reject_offset, UARCH_CYCLE_MAX)
-        expect.equal(cartesi.tohex(after), cartesi.tohex(boundaries[1].hash))
+        local reject_before, reject_after = log_and_verify(1, reject_offset, UARCH_CYCLE_MAX)
+        expect.equal(cartesi.tohex(reject_after), cartesi.tohex(boundaries[1].hash))
+        -- Given state_hash_before and state_hash_after, the option writes the raw hashes instead of printing them.
+        local _, err = run_epoch({
+            option = string.format(
+                "--log-state-transition=epoch_input_offset:1,input_mcycle_offset:%d,uarch_cycle:%d,filename:%s,"
+                    .. "state_hash_before:%s,state_hash_after:%s",
+                reject_offset,
+                UARCH_CYCLE_MAX,
+                prefix .. "-stp.lua",
+                prefix .. "-before.bin",
+                prefix .. "-after.bin"
+            ),
+        })
+        expect.falsy(err:match("Logging state transition[^\n]*\n%d+: 0x"))
+        expect.equal(cartesi.tohex(filesystem.read_file(prefix .. "-before.bin")), cartesi.tohex(reject_before))
+        expect.equal(cartesi.tohex(filesystem.read_file(prefix .. "-after.bin")), cartesi.tohex(reject_after))
         -- Past the fixed point of the rejected input, the transitions start from its boundary.
         _, after = log_and_verify(1, LAST_MCYCLE, UARCH_CYCLE_MAX)
         expect.equal(cartesi.tohex(after), cartesi.tohex(boundaries[2].hash))

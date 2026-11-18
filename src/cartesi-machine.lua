@@ -1048,6 +1048,8 @@ where options are:
         uarch_cycle:<number>
         filename:<filename>
         format:<lua|json>
+        state_hash_before:<filename>
+        state_hash_after:<filename>
 
         epoch_input_offset (required)
         zero-based input within the epoch (0 to 2^24-1). must not precede
@@ -1066,6 +1068,14 @@ where options are:
         format:<lua|json> (optional)
         selects the output format. when omitted, it is inferred from the
         filename extension (.json/.lua), defaulting to Lua.
+
+        state_hash_before (optional)
+        writes the raw state hash before the transition to this file
+        instead of printing it.
+
+        state_hash_after (optional)
+        writes the raw state hash after the transition to this file
+        instead of printing it.
 
     the proof holds the access logs of the transition. like --log-step,
     the root hash is printed before and after the transition.
@@ -2194,6 +2204,8 @@ options = {
             uarch_cycle = "number",
             filename = "file",
             format = { lua = "lua", json = "json" },
+            state_hash_before = "file",
+            state_hash_after = "file",
         },
     },
     {
@@ -4608,13 +4620,21 @@ function state_transition_builder_meta.__index:report_before(runner)
         transition.uarch_cycle,
         transition.filename or "stdout"
     )
-    print_root_hash(runner, stderr_unsilenceable)
+    if transition.state_hash_before then
+        fs.write_file(runner:get_root_hash(), transition.state_hash_before)
+    else
+        print_root_hash(runner, stderr_unsilenceable)
+    end
 end
 
 -- Prints the root hash after the transition, as --log-step does, and writes the proof.
 function state_transition_builder_meta.__index:save_proof(runner, proof)
-    print_root_hash(runner, stderr_unsilenceable)
     local transition = self.transition
+    if transition.state_hash_after then
+        fs.write_file(runner:get_root_hash(), transition.state_hash_after)
+    else
+        print_root_hash(runner, stderr_unsilenceable)
+    end
     local data = serialize_proof(proof, transition.format, "StateTransitionProof")
     if transition.filename then
         fs.write_file(data, transition.filename)

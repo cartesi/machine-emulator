@@ -634,9 +634,11 @@ local function play(session)
                     not test_restart or session.epoch ~= 2 or restarts["after a removal"],
                     "never restarted after a removal"
                 )
+                -- The fabulist posts the honest claim, so it may join that claim before the honest player
                 local joined = standing and context.joined[standing.dangling]
+                local submitter = joined and labels[joined.submitter]
                 assert(
-                    joined and labels[joined.submitter] == "honest",
+                    submitter == "honest" or submitter == "fabulist",
                     "winning commitment differs from the honest claim"
                 )
                 local _, _, manifest = stored_player.load_epoch_checkpoint(get_checkpoint_directory(session.epoch + 1))

@@ -297,13 +297,17 @@ local function new_tamperer(
                 end
                 return collected
             end
-            -- The uarch steps of the instruction go through run_uarch, which forges.
-            local hashes = bundle_uarch_cycles(collect_instruction_uarch_cycles(machine), bundle_height)
-            return {
-                hashes = hashes,
-                mcycle_hash_offsets = { 1, #hashes + 1 },
-                break_reason = cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY,
-            }
+            -- The uarch steps of the instruction go through run_uarch, which forges. An instruction that
+            -- halts before the given uarch cycle is forged after the reset, as a main processor run does.
+            local hashes =
+                bundle_uarch_cycles(collect_instruction_uarch_cycles(machine, forge_after_notice), bundle_height)
+            local break_reason = cartesi.BREAK_REASON_YIELDED_SOFTLY
+            if machine:read_reg("iflags_X") ~= 0 then
+                break_reason = cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY
+            elseif notice_mcycle + 1 == target then
+                break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
+            end
+            return { hashes = hashes, mcycle_hash_offsets = { 1, #hashes + 1 }, break_reason = break_reason }
         end,
         run_uarch = function(machine, uarch_cycle_end)
             local notice_mcycle = get_notice_mcycle(machine)

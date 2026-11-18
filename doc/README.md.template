@@ -1717,7 +1717,7 @@ An abbreviated log shows the six inputs advancing in the same invocation
 
 ### Computation hashes
 
-```{.lua key=rollup_constants replace=null outputs=log2_max_advance_states_per_epoch,log2_max_mcycles_per_advance_state,log2_max_uarch_cycles_per_mcycle,log2_mcycle_leaves,log2_uarch_leaves}
+```{.lua key=rollup_constants replace=null outputs=log2_max_advance_states_per_epoch,log2_max_mcycles_per_advance_state,log2_max_uarch_cycles_per_mcycle,log2_mcycle_leaves,log2_uarch_leaves,last_input_mcycle_offset,last_uarch_cycle}
 local cartesi = require("cartesi")
 local fs = require("cartesi.filesystem")
 -- tree heights for the 2^10-mcycle period the examples use
@@ -1731,6 +1731,8 @@ fs.write_file(tostring(cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE), "log2
 fs.write_file(tostring(cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE), "log2_max_uarch_cycles_per_mcycle")
 fs.write_file(tostring(log2_mcycle_leaves), "log2_mcycle_leaves")
 fs.write_file(tostring(log2_uarch_leaves), "log2_uarch_leaves")
+fs.write_file(tostring((1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE) - 1), "last_input_mcycle_offset")
+fs.write_file(tostring((1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) - 1), "last_uarch_cycle")
 ```
 
 A *computation hash* is the root of a Merkle tree whose leaves are the machine state hashes sampled at periodic intervals during a computation.
@@ -3197,8 +3199,34 @@ The command-line utility combines the samples of either method into a computatio
 
 During verification, the blockchain mediates a [*verification game*](#verification-game) between the disputing parties.
 In brief, the parties agree on an initial state hash but claim different final state hashes.
-The game first narrows down the disagreement to the first main-processor instruction that deviates, and within it the first uarch instruction that deviates.
-After that, the honest party submits an access log, with Merkle-tree proofs for every value read from or written to the state, which the blockchain uses to identify the honest party.
+The game narrows the disagreement down to a single state transition.
+
+A state transition sits at a position given by three numbers.
+The first is the input within the epoch.
+The second is the mcycle, counted from the state that receives the input.
+The third is the uarch cycle within that mcycle.
+The blockchain does not know, a priori, how many inputs an epoch will have, how many mcycles each input will need, or how many uarch cycles each mcycle will take.
+Positions therefore cannot depend on these.
+Instead, each level has a maximum.
+An epoch has 2<sup>[]{replace=rollup_constants/log2_max_advance_states_per_epoch code=no}</sup> inputs, an input has 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup> mcycles, and an mcycle has 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch cycles.
+The `cartesi` module exports their base 2 logarithms as `ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH`, `ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE`, and `ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE`.
+Every position therefore has a state, whether or not the computation reaches it.
+
+Each state transition executes one uarch step.
+The uarch executes one instruction of the main processor in a number of uarch cycles and then halts.
+The halted state repeats until the last uarch cycle of the mcycle.
+At the first uarch cycle of an input, the transition delivers the input before its step.
+At the last uarch cycle of an mcycle, the transition resets the uarch after its step.
+When an instruction rejects its input, the state after the reset that closes it is the state the machine had before the input was delivered.
+
+Past the fixed point of an input, the main machine no longer changes at mcycle boundaries.
+Within each later mcycle, the uarch spends a few uarch cycles noticing the fixed point, stays halted until the last uarch cycle, and then resets back to the fixed-point state.
+The same 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch states therefore repeat in every later mcycle.
+Once the epoch is sealed, the blockchain knows its last input and feeds no input past it.
+The state after the last input is therefore the final fixed point of the whole epoch.
+
+The honest party proves a state transition with access logs.
+An access log records every value the operation reads from or writes to the state, each with a Merkle-tree proof.
 
 To obtain the access log for a specific uarch instruction in the execution of a Cartesi Machine instance, first advance to the last agreed `<mcycle>` using `machine:run(<mcycle>)`.
 Then advance the uarch to the last agreed `<uarch_cycle>` using `machine:run_uarch(<uarch_cycle>)`.
@@ -3277,7 +3305,7 @@ For `"write"` accesses, `written_hash` contains the hash of the written data.
 The `read` and `written` fields carry the data itself.
 For accesses at or above the 32-byte hash-tree leaf granularity (`log2_size >= 5`), each field is exactly `2^log2_size` bytes long.
 For sub-leaf accesses (`log2_size < 5`, typically `log2_size = 3` for an 8-byte word), the field contains the entire enclosing aligned 32-byte tree leaf.
-The `proof` field is used when [verifying state transitions](#verifying-state-transitions).
+The `proof` field is used when [verifying uarch step logs](#verifying-uarch-step-logs).
 
 #### Inspecting access logs
 
@@ -3317,7 +3345,7 @@ The material is beyond the scope of this document.
 This particular example, however, was hand-picked for illustration purposes.
 The uarch step being executed is the ECALL micro-instruction that asks the emulator to print a line-feed (`0x0a`) to the console, completing the row `       \    / CARTESI` in the splash screen.
 
-#### Verifying state transitions
+#### Verifying uarch step logs
 
 Each access carries a `proof` field.
 Using the known state hash before the access, it is possible to verify that the `read` value was indeed the value stored at `address` in the machine state.
@@ -3326,14 +3354,14 @@ Doing this for each access in sequence yields the state hash at the end of the s
 
 The method `machine:verify_step_uarch(<state_hash_before>, <access_log>)` performs this verification, additionally checking that the accesses correspond to the operation of the Cartesi Machine uarch starting from `<state_hash_before>`.
 It returns the state hash at the end of the step, for the caller to compare against the state hash under dispute.
-Note there is no need for a Cartesi Machine instance to verify a transition: all required state information is in the access log.
+Note there is no need for a Cartesi Machine instance to verify a uarch step log: all required state information is in the access log.
 
-The following script illustrates the verification of a state transition.
+The following script illustrates the verification of a uarch step log.
 
 ```{.lua key=verify_uarch_step_source include=verify-uarch-step.lua title="verify-uarch-step.lua"}
 ```
 
-Running the script without arguments accepts the valid state transition:
+Running the script without arguments accepts the valid uarch step log:
 ```{.bash key=verify_uarch_step_run vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
@@ -3347,7 +3375,7 @@ lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles"
 ```
 
 The script is much more interesting when the argument is used to &ldquo;mess&rdquo; with the access log before verification.
-For example, changing the address of access #7 (the write to `uarch.pc`) causes the program to reject the state transition proof:
+For example, changing the address of access #7 (the write to `uarch.pc`) causes the program to reject the uarch step log:
 ```{.bash key=verify_uarch_step_mess_address vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
@@ -3401,7 +3429,197 @@ lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" 'local a 
 ```{replace=verify_uarch_step_mess_target_hash/stderr}
 ```
 
-In a nutshell, only valid state transitions are accepted by the `machine:verify_step_uarch()` method.
+In a nutshell, only logs of valid uarch steps are accepted by the `machine:verify_step_uarch()` method.
+
+Two other methods collect logs in the same format.
+The method `machine:log_send_cmio_response(<reason>, <data>, <revert_root_hash>)` sends a response to the machine, as `machine:send_cmio_response()` does, and logs its accesses.
+The method `machine:log_reset_uarch()` resets the uarch and logs its accesses.
+The method `machine:verify_send_cmio_response(<reason>, <data>, <state_hash_before>, <access_log>, <revert_root_hash>)` verifies the first log.
+The method `machine:verify_reset_uarch(<state_hash_before>, <access_log>)` verifies the second.
+Like `machine:verify_step_uarch()`, each returns the state hash after the logged operation.
+Together with uarch step logs, these logs allow the verification of any state transition of a Rolling Cartesi Machine.
+
+#### Verifying state transitions
+
+The command-line option `--log-state-transition` logs the state transition at a position of an epoch that `--cmio-advance-state` runs.
+Its `epoch_input_offset`, `input_mcycle_offset`, and `uarch_cycle` sub-keys give the position.
+The proof always holds the uarch step log.
+At the first uarch cycle of an input, it also holds the log of the delivery.
+At the last uarch cycle of an mcycle, it also holds the log of the reset.
+These are the logs the blockchain receives.
+The `state_hash_before` and `state_hash_after` sub-keys save the state hashes before and after the transition.
+
+The examples that follow show proofs of four state transitions, one of each kind.
+Each example starts from the rolling calculator template and processes the three inputs of its [first epoch](#rolling-cartesi-machines).
+Recall that the calculator rejects input 1.
+As under [Computation hashes](#computation-hashes), the command runs against a `cartesi-jsonrpc-machine` server.
+The server lets it revert the rejected input.
+
+The first proof is of the delivery of input 2, at the first uarch cycle of the input.
+```{.bash key=transition_delivery vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,port->ports/transition_delivery outputs=delivery-proof.lua,delivery-before.bin,delivery-after.bin replace=source/client}
+rm -f rolling-calculator-template
+ln -sf "$tmpl" rolling-calculator-template
+ln -sf $rolling_calc_encode/input-[012].bin .
+{
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:$port
+} > /dev/null 2>&1 &
+while ! netstat -ant 2>&1 | grep '\<$port\>' | grep -q LISTEN; do sleep 1; done
+{
+# docs:begin client
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:$port \
+    --remote-shutdown \
+    --load=rolling-calculator-template \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
+    --log-state-transition=epoch_input_offset:2,input_mcycle_offset:0,uarch_cycle:0,filename:delivery-proof.lua,state_hash_before:delivery-before.bin,state_hash_after:delivery-after.bin
+# docs:end client
+} > client 2>&1
+```
+
+```{.bash key=rolling_calc_after_input_0 vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,port->ports/rolling_calc_after_input_0 outputs=rolling-calculator-after-input-0,after-input-0-state-hash.bin replace=null}
+rm -f rolling-calculator-template
+ln -sf "$tmpl" rolling-calculator-template
+ln -sf $rolling_calc_encode/input-0.bin .
+rm -rf rolling-calculator-after-input-0
+{
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:$port
+} > /dev/null 2>&1 &
+while ! netstat -ant 2>&1 | grep '\<$port\>' | grep -q LISTEN; do sleep 1; done
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:$port \
+    --remote-shutdown \
+    --load=rolling-calculator-template \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:1 \
+    --final-hash=after-input-0-state-hash.bin \
+    --store=rolling-calculator-after-input-0 > client 2>&1
+```
+```{.bash key=transition_notice_mcycle vars=machine->rolling_calc_after_input_0/rolling-calculator-after-input-0/path,rolling_calc_encode replace=null}
+ln -sfn "$machine" rolling-calculator-after-input-0
+ln -sf $rolling_calc_encode/input-2.bin .
+lua5.4 $RECIPES_DIR/find-yield.lua input-2.bin HTIF_YIELD_CMD_AUTOMATIC HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT > /dev/null
+```
+```{.bash key=transition_notice_uarch_cycle vars=machine->rolling_calc_after_input_0/rolling-calculator-after-input-0/path,rolling_calc_encode,mcycle->transition_notice_mcycle/stderr replace=null}
+ln -sfn "$machine" rolling-calculator-after-input-0
+ln -sf $rolling_calc_encode/input-2.bin .
+lua5.4 $RECIPES_DIR/find-uarch-tohost-sd.lua input-2.bin $mcycle > /dev/null
+```
+
+The second proof is of the uarch step that emits the notice of input 2.
+In input 2, the main processor instruction about to execute at mcycle []{replace=transition_notice_mcycle/stderr code=no} is the one that yields automatically to emit the notice.
+That single main processor instruction expands into many uarch instructions.
+The one that issues the yield is the `sd` that writes to `htif.tohost`, at uarch cycle []{replace=transition_notice_uarch_cycle/stderr code=no}.
+```{.bash key=transition_notice vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mcycle->transition_notice_mcycle/stderr,ucycle->transition_notice_uarch_cycle/stderr,port->ports/transition_notice outputs=notice-proof.lua,notice-before.bin,notice-after.bin replace=source/client}
+rm -f rolling-calculator-template
+ln -sf "$tmpl" rolling-calculator-template
+ln -sf $rolling_calc_encode/input-[012].bin .
+{
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:$port
+} > /dev/null 2>&1 &
+while ! netstat -ant 2>&1 | grep '\<$port\>' | grep -q LISTEN; do sleep 1; done
+{
+# docs:begin client
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:$port \
+    --remote-shutdown \
+    --load=rolling-calculator-template \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
+    --log-state-transition=epoch_input_offset:2,input_mcycle_offset:$mcycle,uarch_cycle:$ucycle,filename:notice-proof.lua,state_hash_before:notice-before.bin,state_hash_after:notice-after.bin
+# docs:end client
+} > client 2>&1
+```
+
+```{.bash key=transition_rejection_mcycle vars=machine->rolling_calc_after_input_0/rolling-calculator-after-input-0/path,rolling_calc_encode replace=null}
+ln -sfn "$machine" rolling-calculator-after-input-0
+ln -sf $rolling_calc_encode/input-1.bin .
+lua5.4 $RECIPES_DIR/find-yield.lua input-1.bin HTIF_YIELD_CMD_MANUAL HTIF_YIELD_MANUAL_REASON_RX_REJECTED > /dev/null
+```
+
+The third proof is of the reset that closes the instruction with which the calculator rejects input 1.
+In input 1, that instruction is about to execute at mcycle []{replace=transition_rejection_mcycle/stderr code=no}.
+Its reset comes at the last uarch cycle, []{replace=rollup_constants/last_uarch_cycle code=no}.
+```{.bash key=transition_rejection vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mcycle->transition_rejection_mcycle/stderr,ucycle->rollup_constants/last_uarch_cycle,after_input_0->rolling_calc_after_input_0/after-input-0-state-hash.bin/path,port->ports/transition_rejection outputs=rejection-proof.lua,rejection-before.bin,rejection-after.bin replace=source/client}
+rm -f rolling-calculator-template
+ln -sf "$tmpl" rolling-calculator-template
+ln -sf $rolling_calc_encode/input-[012].bin .
+{
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:$port
+} > /dev/null 2>&1 &
+while ! netstat -ant 2>&1 | grep '\<$port\>' | grep -q LISTEN; do sleep 1; done
+{
+# docs:begin client
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:$port \
+    --remote-shutdown \
+    --load=rolling-calculator-template \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
+    --log-state-transition=epoch_input_offset:1,input_mcycle_offset:$mcycle,uarch_cycle:$ucycle,filename:rejection-proof.lua,state_hash_before:rejection-before.bin,state_hash_after:rejection-after.bin
+# docs:end client
+} > client 2>&1
+cmp rejection-after.bin "$after_input_0"
+```
+After logging the reset, the command reverts the machine, as a host does after any rejection.
+The state hash it saves after the transition is therefore the one the machine had before input 1.
+
+The fourth proof is far past the last input, at the last uarch cycle of the last mcycle of input 65535.
+```{.bash key=transition_padding vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mcycle->rollup_constants/last_input_mcycle_offset,ucycle->rollup_constants/last_uarch_cycle,final_state_hash->rolling_calc_run/epoch-0-state-hash.bin/path,port->ports/transition_padding outputs=padding-proof.lua,padding-before.bin,padding-after.bin replace=source/client}
+rm -f rolling-calculator-template
+ln -sf "$tmpl" rolling-calculator-template
+ln -sf $rolling_calc_encode/input-[012].bin .
+{
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:$port
+} > /dev/null 2>&1 &
+while ! netstat -ant 2>&1 | grep '\<$port\>' | grep -q LISTEN; do sleep 1; done
+{
+# docs:begin client
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:$port \
+    --remote-shutdown \
+    --load=rolling-calculator-template \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
+    --log-state-transition=epoch_input_offset:65535,input_mcycle_offset:$mcycle,uarch_cycle:$ucycle,filename:padding-proof.lua,state_hash_before:padding-before.bin,state_hash_after:padding-after.bin
+# docs:end client
+} > client 2>&1
+cmp padding-after.bin "$final_state_hash"
+```
+The state hash it saves after the transition is the final state hash of the epoch, the same hash the calculator's run saved in `epoch-0-state-hash.bin`.
+
+The script `verify-state-transition.lua` checks a proof as the blockchain does.
+```{.lua key=verify_state_transition_source include=verify-state-transition.lua title="verify-state-transition.lua"}
+```
+It verifies the delivery against the posted input, then the uarch step, then the reset.
+It accepts the proof when the state hash it reaches is the one saved after the transition.
+Running it on the four proofs
+```{.bash key=transition_verify vars=transition_delivery,transition_notice,transition_rejection,transition_padding,rolling_calc_encode,notice_mcycle->transition_notice_mcycle/stderr,notice_ucycle->transition_notice_uarch_cycle/stderr,rejection_mcycle->transition_rejection_mcycle/stderr,last_mcycle->rollup_constants/last_input_mcycle_offset,last_ucycle->rollup_constants/last_uarch_cycle depends=verify_state_transition_source replace=source/cmd}
+ln -sf "$RECIPES_DIR/verify-state-transition.lua" .
+ln -sf $rolling_calc_encode/input-2.bin .
+ln -sf $transition_delivery/delivery-* $transition_notice/notice-* .
+ln -sf $transition_rejection/rejection-* $transition_padding/padding-* .
+{
+# docs:begin cmd
+lua5.4 verify-state-transition.lua delivery-proof.lua \
+    delivery-before.bin delivery-after.bin 0 0 input-2.bin
+lua5.4 verify-state-transition.lua notice-proof.lua \
+    notice-before.bin notice-after.bin $notice_mcycle $notice_ucycle
+lua5.4 verify-state-transition.lua rejection-proof.lua \
+    rejection-before.bin rejection-after.bin $rejection_mcycle $last_ucycle
+lua5.4 verify-state-transition.lua padding-proof.lua \
+    padding-before.bin padding-after.bin $last_mcycle $last_ucycle
+# docs:end cmd
+}
+```
+accepts all four
+```{replace=transition_verify/stderr}
+```
 
 # The guest perspective
 

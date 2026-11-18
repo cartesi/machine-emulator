@@ -24,5 +24,5 @@ if arg[4] then
 end
 
 -- Verify the uarch step access log and check the hash it advances to
-assert(machine:verify_step_uarch(hash_before, log) == hash_after, "state transition rejected")
-io.stderr:write("State transition accepted!\n")
+assert(machine:verify_step_uarch(hash_before, log) == hash_after, "uarch step log rejected")
+io.stderr:write("Uarch step log accepted!\n")

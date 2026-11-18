@@ -75,9 +75,6 @@
   - [Hash-view of outputs](#hash-view-of-outputs)
     - [The hash tree frontier](#the-hash-tree-frontier)
     - [Output verification](#output-verification)
-  - [Hash-view of computation](#hash-view-of-computation)
-    - [Fixed-point trees](#fixed-point-trees)
-    - [Frontier forests](#frontier-forests)
   - [Verification game](#verification-game)
     - [The state transition function](#the-state-transition-function)
     - [The referee](#the-referee)
@@ -85,6 +82,9 @@
     - [Running the game](#running-the-game)
     - [Each player must defend its own
       claim](#each-player-must-defend-its-own-claim)
+  - [Hash-view of computation](#hash-view-of-computation)
+    - [Fixed-point trees](#fixed-point-trees)
+    - [Frontier forests](#frontier-forests)
   - [Permissionless refereed
     tournament](#permissionless-refereed-tournament)
     - [Computation hashes with
@@ -5697,11 +5697,44 @@ either method into a computation hash with the frontier helpers of the
 During verification, the blockchain mediates a [*verification
 game*](#verification-game) between the disputing parties. In brief, the
 parties agree on an initial state hash but claim different final state
-hashes. The game first narrows down the disagreement to the first
-main-processor instruction that deviates, and within it the first uarch
-instruction that deviates. After that, the honest party submits an
-access log, with Merkle-tree proofs for every value read from or written
-to the state, which the blockchain uses to identify the honest party.
+hashes. The game narrows the disagreement down to a single state
+transition.
+
+A state transition sits at a position given by three numbers. The first
+is the input within the epoch. The second is the mcycle, counted from
+the state that receives the input. The third is the uarch cycle within
+that mcycle. The blockchain does not know, a priori, how many inputs an
+epoch will have, how many mcycles each input will need, or how many
+uarch cycles each mcycle will take. Positions therefore cannot depend on
+these. Instead, each level has a maximum. An epoch has 2<sup>24</sup>
+inputs, an input has 2<sup>48</sup> mcycles, and an mcycle has
+2<sup>20</sup> uarch cycles. The `cartesi` module exports their base 2
+logarithms as `ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH`,
+`ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE`, and
+`ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE`. Every position therefore has
+a state, whether or not the computation reaches it.
+
+Each state transition executes one uarch step. The uarch executes one
+instruction of the main processor in a number of uarch cycles and then
+halts. The halted state repeats until the last uarch cycle of the
+mcycle. At the first uarch cycle of an input, the transition delivers
+the input before its step. At the last uarch cycle of an mcycle, the
+transition resets the uarch after its step. When an instruction rejects
+its input, the state after the reset that closes it is the state the
+machine had before the input was delivered.
+
+Past the fixed point of an input, the main machine no longer changes at
+mcycle boundaries. Within each later mcycle, the uarch spends a few
+uarch cycles noticing the fixed point, stays halted until the last uarch
+cycle, and then resets back to the fixed-point state. The same
+2<sup>20</sup> uarch states therefore repeat in every later mcycle. Once
+the epoch is sealed, the blockchain knows its last input and feeds no
+input past it. The state after the last input is therefore the final
+fixed point of the whole epoch.
+
+The honest party proves a state transition with access logs. An access
+log records every value the operation reads from or writes to the state,
+each with a Merkle-tree proof.
 
 To obtain the access log for a specific uarch instruction in the
 execution of a Cartesi Machine instance, first advance to the last
@@ -5797,7 +5830,7 @@ leaf granularity (`log2_size >= 5`), each field is exactly `2^log2_size`
 bytes long. For sub-leaf accesses (`log2_size < 5`, typically
 `log2_size = 3` for an 8-byte word), the field contains the entire
 enclosing aligned 32-byte tree leaf. The `proof` field is used when
-[verifying state transitions](#verifying-state-transitions).
+[verifying uarch step logs](#verifying-uarch-step-logs).
 
 #### Inspecting access logs
 
@@ -5888,7 +5921,7 @@ step being executed is the ECALL micro-instruction that asks the
 emulator to print a line-feed (`0x0a`) to the console, completing the
 row `\    / CARTESI` in the splash screen.
 
-#### Verifying state transitions
+#### Verifying uarch step logs
 
 Each access carries a `proof` field. Using the known state hash before
 the access, it is possible to verify that the `read` value was indeed
@@ -5903,10 +5936,10 @@ this verification, additionally checking that the accesses correspond to
 the operation of the Cartesi Machine uarch starting from
 `<state_hash_before>`. It returns the state hash at the end of the step,
 for the caller to compare against the state hash under dispute. Note
-there is no need for a Cartesi Machine instance to verify a transition:
-all required state information is in the access log.
+there is no need for a Cartesi Machine instance to verify a uarch step
+log: all required state information is in the access log.
 
-The following script illustrates the verification of a state transition.
+The following script illustrates the verification of a uarch step log.
 
 ``` lua
 -- Load the Cartesi modules
@@ -5935,24 +5968,24 @@ if arg[4] then
 end
 
 -- Verify the uarch step access log and check the hash it advances to
-assert(machine:verify_step_uarch(hash_before, log) == hash_after, "state transition rejected")
-io.stderr:write("State transition accepted!\n")
+assert(machine:verify_step_uarch(hash_before, log) == hash_after, "uarch step log rejected")
+io.stderr:write("Uarch step log accepted!\n")
 ```
 
-Running the script without arguments accepts the valid state transition:
+Running the script without arguments accepts the valid uarch step log:
 
 ``` bash
 lua5.4 verify-uarch-step.lua config-nothing-to-do "44219446" "2248"
 ```
 
 ``` text
-State transition accepted!
+Uarch step log accepted!
 ```
 
 The script is much more interesting when the argument is used to “mess”
 with the access log before verification. For example, changing the
 address of access \#7 (the write to `uarch.pc`) causes the program to
-reject the state transition proof:
+reject the uarch step log:
 
 ``` bash
 lua5.4 verify-uarch-step.lua config-nothing-to-do "44219446" "2248" 'log.accesses[7].address = 0x100'
@@ -6019,8 +6052,168 @@ stack traceback:
 	[C]: in ?
 ```
 
-In a nutshell, only valid state transitions are accepted by the
+In a nutshell, only logs of valid uarch steps are accepted by the
 `machine:verify_step_uarch()` method.
+
+Two other methods collect logs in the same format. The method
+`machine:log_send_cmio_response(<reason>, <data>, <revert_root_hash>)`
+sends a response to the machine, as `machine:send_cmio_response()` does,
+and logs its accesses. The method `machine:log_reset_uarch()` resets the
+uarch and logs its accesses. The method
+`machine:verify_send_cmio_response(<reason>, <data>, <state_hash_before>, <access_log>, <revert_root_hash>)`
+verifies the first log. The method
+`machine:verify_reset_uarch(<state_hash_before>, <access_log>)` verifies
+the second. Like `machine:verify_step_uarch()`, each returns the state
+hash after the logged operation. Together with uarch step logs, these
+logs allow the verification of any state transition of a Rolling Cartesi
+Machine.
+
+#### Verifying state transitions
+
+The command-line option `--log-state-transition` logs the state
+transition at a position of an epoch that `--cmio-advance-state` runs.
+Its `epoch_input_offset`, `input_mcycle_offset`, and `uarch_cycle`
+sub-keys give the position. The proof always holds the uarch step log.
+At the first uarch cycle of an input, it also holds the log of the
+delivery. At the last uarch cycle of an mcycle, it also holds the log of
+the reset. These are the logs the blockchain receives. The
+`state_hash_before` and `state_hash_after` sub-keys save the state
+hashes before and after the transition.
+
+The examples that follow show proofs of four state transitions, one of
+each kind. Each example starts from the rolling calculator template and
+processes the three inputs of its [first
+epoch](#rolling-cartesi-machines). Recall that the calculator rejects
+input 1. As under [Computation hashes](#computation-hashes), the command
+runs against a `cartesi-jsonrpc-machine` server. The server lets it
+revert the rejected input.
+
+The first proof is of the delivery of input 2, at the first uarch cycle
+of the input.
+
+``` bash
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:8090 \
+    --remote-shutdown \
+    --load=rolling-calculator-template \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
+    --log-state-transition=epoch_input_offset:2,input_mcycle_offset:0,uarch_cycle:0,filename:delivery-proof.lua,state_hash_before:delivery-before.bin,state_hash_after:delivery-after.bin
+```
+
+The second proof is of the uarch step that emits the notice of input 2.
+In input 2, the main processor instruction about to execute at mcycle
+42176525 is the one that yields automatically to emit the notice. That
+single main processor instruction expands into many uarch instructions.
+The one that issues the yield is the `sd` that writes to `htif.tohost`,
+at uarch cycle 2545.
+
+``` bash
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:8092 \
+    --remote-shutdown \
+    --load=rolling-calculator-template \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
+    --log-state-transition=epoch_input_offset:2,input_mcycle_offset:42176525,uarch_cycle:2545,filename:notice-proof.lua,state_hash_before:notice-before.bin,state_hash_after:notice-after.bin
+```
+
+The third proof is of the reset that closes the instruction with which
+the calculator rejects input 1. In input 1, that instruction is about to
+execute at mcycle 45220521. Its reset comes at the last uarch cycle,
+1048575.
+
+``` bash
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:8093 \
+    --remote-shutdown \
+    --load=rolling-calculator-template \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
+    --log-state-transition=epoch_input_offset:1,input_mcycle_offset:45220521,uarch_cycle:1048575,filename:rejection-proof.lua,state_hash_before:rejection-before.bin,state_hash_after:rejection-after.bin
+```
+
+After logging the reset, the command reverts the machine, as a host does
+after any rejection. The state hash it saves after the transition is
+therefore the one the machine had before input 1.
+
+The fourth proof is far past the last input, at the last uarch cycle of
+the last mcycle of input 65535.
+
+``` bash
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:8094 \
+    --remote-shutdown \
+    --load=rolling-calculator-template \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
+    --log-state-transition=epoch_input_offset:65535,input_mcycle_offset:281474976710655,uarch_cycle:1048575,filename:padding-proof.lua,state_hash_before:padding-before.bin,state_hash_after:padding-after.bin
+```
+
+The state hash it saves after the transition is the final state hash of
+the epoch, the same hash the calculator’s run saved in
+`epoch-0-state-hash.bin`.
+
+The script `verify-state-transition.lua` checks a proof as the
+blockchain does.
+
+``` lua
+-- Load the Cartesi modules
+local cartesi = require("cartesi")
+local fs = require("cartesi.filesystem")
+
+-- Read the proof, the state hashes before and after the transition, its position, and the posted input (if any)
+local proof = assert(loadfile(assert(arg[1], "missing proof"), "t", {}))()
+local root_hash_before = fs.read_file(assert(arg[2], "missing state hash before"))
+local root_hash_after = fs.read_file(assert(arg[3], "missing state hash after"))
+local input_mcycle_offset = assert(tonumber(arg[4]), "missing input_mcycle_offset")
+local uarch_cycle = assert(tonumber(arg[5]), "missing uarch_cycle")
+local input_data = arg[6] and fs.read_file(arg[6])
+
+-- Verify the logs the transition at this position requires, as the blockchain does
+local obtained_root_hash = root_hash_before
+if input_mcycle_offset == 0 and uarch_cycle == 0 and input_data then
+    obtained_root_hash = cartesi.machine:verify_send_cmio_response(
+        cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+        input_data,
+        root_hash_before,
+        proof.send_cmio_log,
+        root_hash_before
+    )
+end
+obtained_root_hash = cartesi.machine:verify_step_uarch(obtained_root_hash, proof.step_log)
+if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
+    obtained_root_hash = cartesi.machine:verify_reset_uarch(obtained_root_hash, proof.reset_uarch_log)
+end
+
+-- Check the state hash the transition reaches
+assert(obtained_root_hash == root_hash_after, "state transition rejected")
+io.stderr:write("State transition accepted!\n")
+```
+
+It verifies the delivery against the posted input, then the uarch step,
+then the reset. It accepts the proof when the state hash it reaches is
+the one saved after the transition. Running it on the four proofs
+
+``` bash
+lua5.4 verify-state-transition.lua delivery-proof.lua \
+    delivery-before.bin delivery-after.bin 0 0 input-2.bin
+lua5.4 verify-state-transition.lua notice-proof.lua \
+    notice-before.bin notice-after.bin 42176525 2545
+lua5.4 verify-state-transition.lua rejection-proof.lua \
+    rejection-before.bin rejection-after.bin 45220521 1048575
+lua5.4 verify-state-transition.lua padding-proof.lua \
+    padding-before.bin padding-after.bin 281474976710655 1048575
+```
+
+accepts all four
+
+``` text
+State transition accepted!
+State transition accepted!
+State transition accepted!
+State transition accepted!
+```
 
 # The guest perspective
 
@@ -6918,23 +7111,23 @@ Then run the server and client, instantiating the machine directly from
 
 ``` bash
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8090
+    --server-address=127.0.0.1:8095
 ```
 
 ``` bash
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8090
+    --server-address=127.0.0.1:8095
 ```
 
 From a different shell into the same container, run the client
 
 ``` bash
 while ! cartesi-machine \
-    --remote-address=127.0.0.1:8090 \
+    --remote-address=127.0.0.1:8095 \
     --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8090 \
+    --remote-address=127.0.0.1:8095 \
     --remote-shutdown \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:2,print_input_state_hashes \
     --cmio-inspect-state=print_query_state_hashes \
@@ -6953,7 +7146,7 @@ the inspect-state request is processed.
 The client shell shows
 
 ``` text
-Connected to JSONRPC remote cartesi machine at '127.0.0.1:8090'
+Connected to JSONRPC remote cartesi machine at '127.0.0.1:8095'
 
 Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 55753466
@@ -6991,7 +7184,7 @@ Cycles: 57887906
 
 After query
 57885460: 0x95ef94d242b2c85ce57ff787b1d7d99964fe6ae892f24f5a0520b44cc5d62ee1
-Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8090'
+Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8095'
 ```
 
 As expected, the yields and state hashes shown here follow the same
@@ -9006,414 +9199,59 @@ produces the output
 output 0 verified against the machine state hash
 ```
 
-## Hash-view of computation
-
-A *computation hash* is the root of a Merkle tree whose leaves are the
-machine state hashes sampled at periodic intervals during a computation.
-(It is the basis for the [permissionless refereed
-tournament](#permissionless-refereed-tournament).) The two kinds
-`cartesi-machine` computes, introduced under [Computation
-hashes](#computation-hashes), are the *mcycle computation hash*, over an
-entire epoch with one leaf every 2<sup>p</sup> mcycles and the initial
-state implicit, and the *uarch cycle computation hash*, over one of
-those periods with one leaf after each uarch transition.
-
-An epoch spans 2<sup>24</sup> inputs, each input owns 2<sup>48</sup>
-mcycles counted from the state that receives it, and each mcycle expands
-into 2<sup>20</sup> uarch transitions. A machine stopped at a manual
-yield, halt, or mcycle overflow no longer advances, so past the last
-mcycle an input uses it sits at a fixed point, and so does the epoch
-past its last input. The leaves past a stop repeat its state hash (the
-reverted state hash when an input was rejected) to the end of the
-input’s span, and the leaves past the last input repeat the epoch’s
-final state hash. The uarch cycle computation hash is analogous. Each
-mcycle of the period owns 2<sup>20</sup> leaves. The uarch executes one
-instruction of the main processor in a number of uarch cycles and then
-halts. The first leaves of the mcycle are the state hashes after each of
-these uarch cycles. The halted state fills the leaves that follow. The
-last leaf is the state hash after the uarch reset. Every one of these
-transitions is one the blockchain can verify. Once the machine stops
-inside the period, the uarch starts every remaining mcycle from a state
-in which the main processor is at a fixed point. It executes only the
-uarch cycles needed to notice this and halts, and the reset then moves
-the state back to where it started. The leaves of that mcycle form a
-tail that repeats for every mcycle the machine stays at the fixed point,
-to the end of the period.
-
-When only the computation hash itself matters, the frontier of [The hash
-tree frontier](#the-hash-tree-frontier) is enough, with
-`frontier_pad_back` folding in each run of repeated leaves, and this is
-what `cartesi-machine` uses internally. The [permissionless refereed
-tournament](#permissionless-refereed-tournament), however, must later
-reveal any leaf of a committed tree, along with the siblings on its
-path, and a frontier has collapsed everything to the left of its last
-leaf into root hashes. That calls for a data structure that captures the
-repetitions at the fixed points while keeping every node reachable.
-
-### Fixed-point trees
-
-The frontier pads the leaves it has not reached with a single repeated
-value. For the outputs Merkle tree that value is the pristine leaf, but
-as [The hash tree frontier](#the-hash-tree-frontier) noted, any other
-hash serves as well. Representing a run of repetitions compactly, while
-keeping every node reachable, calls for a recursive structure.
-
-A *complete tree* of height *h* covers 2<sup>*h*</sup> leaves and has a
-hash for every one of its nodes. The simplest complete tree is a raw
-hash, the root hash of a subtree whose other nodes are unknown. A raw
-hash is *opaque*, since nothing below it can be read. A run of
-repetitions is captured by a *fixed-point tree*. It is built over a
-sequence of complete trees of equal height, its *base values*, and the
-last of them repeats to fill the tree. Two complete trees of equal
-height that were built separately are joined as the left and right
-children of a *mixed tree*. A fixed-point or mixed tree can be descended
-into, down to its base values and children and through them, until a
-query reaches its target or an opaque hash.
-
-A fixed-point tree is a table with one array per level. The first array
-holds its base values, and each array above holds the hashes of the
-parents of the one below. A node is found by its index within its level,
-so the tree needs no child pointers. The rule that keeps the tree small
-is that reading past the end of a level returns its last stored entry.
-The last entry therefore stands for every position after it.
-
-The constructor is `new_fixed_point_tree`:
-
-``` lua
-local function new_fixed_point_tree(hash_function, base_height, log2_count, values, first)
-    first = math.min(first, #values)
-    local tree = { table.move(values, first, math.min(first + (1 << log2_count) - 1, #values), 1, {}) }
-    for relative_height = 1, log2_count do
-        local children = tree[relative_height]
-        local parents = {}
-        for i = 1, math.min((#children >> 1) + 1, 1 << (log2_count - relative_height)) do
-            local left = get_or_last(children, 2 * i - 2)
-            local right = get_or_last(children, 2 * i - 1)
-            parents[i] = hash_function(get_value_hash(left), get_value_hash(right))
-        end
-        tree[relative_height + 1] = parents
-    end
-    tree.kind = "fixed_point"
-    tree.height = base_height + log2_count
-    tree.base_height = base_height
-    tree.hash = get_value_hash(tree[#tree][1])
-    return tree
-end
-```
-
-In the excerpt, `<values>` holds the base values starting at `<first>`,
-`<base_height>` is their height, and `<log2_count>` is the number of
-levels built above them. The helper `get_or_last` reads the entry at a
-0-based index of a level, returning the last stored entry for any index
-past the end. The helper `get_value_hash` returns the hash of a value,
-the value itself when it is a raw hash and its root hash when it is a
-tree. Each level stores the distinct parents of its children plus the
-first repeated one. With *n* stored children, the explicit pairs give
-the first *n*/2 parents, rounded down. The next parent pairs the last
-child with itself (when *n* is even), or the unpaired last child with
-its implicit copy (when *n* is odd). Either way it is the root of an
-all-repeated subtree, and every parent after it is the same hash. That
-is why each level stores at most *n*/2 parents, rounded down, plus one.
-Whenever a level ends in a repeated suffix, its last entry is the
-repeated value doubled once per level, exactly as pristine padding
-doubles in the frontier. A repeated suffix of any length thus costs one
-hash per level.
-
-<figure>
-<img src="images/fixed-point-tree.svg"
-alt="Fixed-point tree storing the distinct nodes and the first repeated node at each level" />
-<figcaption aria-hidden="true">Fixed-point tree storing the distinct
-nodes and the first repeated node at each level</figcaption>
-</figure>
-
-The figure shows a fixed-point tree of height four over five distinct
-leaves, followed by a sixth that repeats over the remaining ten
-positions. Stored hashes are filled and implicit ones are outlined.
-Distinct nodes are blue, and the first repeated node of each level below
-the root, the root of an all-repeated subtree, is gray. The tree stores
-16 of its 31 nodes, six leaves, then four, three, two, and finally the
-root.
-
-A mixed tree is the simpler form:
-
-``` lua
-local function new_mixed_tree(hash_function, height, left, right)
-    return {
-        kind = "mixed",
-        height = height,
-        left = left,
-        right = right,
-        hash = hash_function(get_value_hash(left), get_value_hash(right)),
-    }
-end
-```
-
-It joins two neighboring complete trees that were built separately,
-without changing either one, as the next section shows.
-
-### Frontier forests
-
-The [frontier](#the-hash-tree-frontier) answers two questions, the root
-hash of the tree and the proofs of a batch of new leaves. It cannot
-answer anything about an arbitrary node, because every complete subtree
-to the left of the batch has been collapsed into its root hash. Neither
-the hash of a node inside it nor the siblings on that node’s path can be
-recovered later. These are exactly the queries the verification game
-needs. A *frontier forest* answers them. It has the same level array as
-a frontier, with the same binary carry, but each occupied level holds
-the complete tree standing there rather than only its root hash.
-
-The constructor is `frontier_forest`, which takes the same height and
-hash type as `frontier` and returns an empty forest. Like `frontier`, it
-also accepts a proof of the last appended leaf instead of a height,
-verifies it, and restores coverage through that leaf. The forest retains
-the authenticated path within its completed subtrees, so queries can
-recover it once the forest is full. Sibling subtrees remain opaque, and
-the leaves after the target are supplied by subsequent appends. Three
-functions append to it, mirroring `frontier_push_back`,
-`frontier_append`, and `frontier_pad_back`. The function
-`frontier_forest_push_back` appends one value, `frontier_forest_append`
-appends raw hashes in a half-open range with the same defaults as
-`frontier_append`, and `frontier_forest_pad_back` appends a number of
-copies of one value, or fills the rest of the forest when the count is
-omitted. Each also takes the height of what it appends. A value is a raw
-hash, standing for a subtree of that height, or a full forest, which
-keeps its own height and all of its nodes. A full forest goes in as the
-complete tree at its top level, which can then become a base value of a
-fixed-point tree. Appending a full forest is how small trees, built
-separately, nest into a larger one.
-
-Appended values do not go into the levels right away. They accumulate in
-a pending array of equal-height values, together with a count of how
-many more times its last value repeats, so a repetition of any length
-costs one stored value:
-
-``` lua
-local function frontier_forest_pad_back(forest, value, count, value_height)
-    assert(count == nil or (math.type(count) == "integer" and count >= 0), "invalid pad count")
-    if count == 0 then return end
-    value, value_height = normalize_forest_value(forest, value, value_height)
-    assert_forest_can_append(forest, value_height, count or 0)
-    count = count or (((1 << forest.height) - forest.leaf_count) >> value_height)
-    if count == 0 then return end
-    if should_flush_pending_value(forest.pending, value, value_height) then forest_flush(forest, value_height) end
-    if forest.pending.pad_count > 0 then
-        forest.pending.pad_count = forest.pending.pad_count + count
-    elseif count == 1 then
-        forest.pending.values[#forest.pending.values + 1] = value
-    elseif forest.pending.values[#forest.pending.values] == value then
-        forest.pending.pad_count = count
-    else
-        forest.pending.values[#forest.pending.values + 1] = value
-        forest.pending.pad_count = count - 1
-    end
-    forest.leaf_count = forest.leaf_count + (count << value_height)
-    if forest.leaf_count == (1 << forest.height) then forest_flush(forest) end
-end
-```
-
-A raw hash and a forest never merge, even when their roots agree,
-because that would discard the forest’s nodes. Since pending values are
-not yet represented by any level, the forest tracks its leaf count
-explicitly.
-
-The pending values are materialized by `forest_flush` when a value of a
-different height arrives, when a repetition is followed by anything
-other than another copy pushed or padded back, or when the forest
-becomes full:
-
-``` lua
-local function forest_flush(forest, next_height)
-    local pending = forest.pending
-    local height = pending.height
-    local values = pending.values
-    local pad_count = pending.pad_count
-    pending.height = next_height
-    pending.values = {}
-    pending.pad_count = 0
-    if not height then return end
-    local first_level = height + 1
-    local offset = 0
-    local count = #values + pad_count
-    while count > 0 do
-        local added_height = 0
-        local subtree_count = 1
-        while not forest[first_level + added_height] and subtree_count <= (count >> 1) do
-            added_height = added_height + 1
-            subtree_count = subtree_count << 1
-        end
-        local subtree = get_or_last(values, offset)
-        if added_height > 0 then
-            subtree = new_fixed_point_tree(forest.hash_function, height, added_height, values, offset + 1)
-        end
-        local level = first_level + added_height
-        while forest[level] do
-            assert(level < #forest, "too many leaves")
-            subtree = new_mixed_tree(forest.hash_function, level, forest[level], subtree)
-            forest[level] = false
-            level = level + 1
-        end
-        forest[level] = subtree
-        offset = offset + subtree_count
-        count = count - subtree_count
-    end
-end
-```
-
-Like `frontier_append`, it splits the pending range into maximal aligned
-complete subtrees, each the largest that starts where the materialized
-leaves end and fits the values left. Each subtree becomes a fixed-point
-tree, so a repeated suffix stays one value per level. A pending value
-that is already a complete tree of the right size is used as is. Each
-subtree is then folded into the levels by the binary carry, and whenever
-the carry finds a level occupied, the two trees are joined into a mixed
-tree.
-
-Once full, the forest answers every query from its top level. The
-function `frontier_forest_get_root_hash` returns the root hash in
-constant time. The function `frontier_forest_get_node_hash` returns the
-hash of a node, identified by its first covered leaf and its height,
-with the position aligned to the node size. The function
-`frontier_forest_get_siblings` returns the siblings on that node’s path,
-from the node upward:
-
-``` lua
-local function frontier_forest_get_siblings(forest, position, height, into)
-    local top = forest.height + 1
-    assert(forest[top], "the forest is not full")
-    assert_valid_forest_node(forest, position, height)
-    local siblings = {}
-    local node, err = descend_tree(forest, forest, top, forest.height, position, height, siblings)
-    if not node then return nil, err end
-    into = into or {}
-    for i = #siblings, 1, -1 do
-        into[#into + 1] = siblings[i]
-    end
-    return into
-end
-```
-
-Both descend from the root in a single pass, going left or right at
-mixed trees and indexing levels in fixed-point trees, where a position
-past the stored entries reads the last one. The optional `<into>` array
-receives the siblings after any already there, so a caller can prove a
-node across two stacked forests by collecting the inner forest’s
-siblings and then the outer forest’s. A query that reaches a raw hash
-above its target cannot go further, and both functions return `nil` and
-an error message.
-
-Such a raw hash can be opened later with `frontier_forest_expand_leaf`:
-
-``` lua
-local function frontier_forest_expand_leaf(forest, position, subtree)
-    local container, key, container_height = forest, forest.height + 1, forest.height
-    assert(container[key], "the forest is not full")
-    assert(is_forest(subtree), "the subtree is not a forest")
-    local replacement, height = normalize_forest_value(forest, subtree)
-    assert_valid_forest_node(forest, position, height)
-    -- An opaque replacement exposes no descendants, and accepting one could introduce a cycle
-    -- when it references the leaf being expanded.
-    assert(is_tree(replacement), "the replacement leaf is opaque")
-    while true do
-        local tree = load_value(forest, container, key, container_height)
-        if container_height == height then
-            assert(get_value_hash(tree) == replacement.hash, "leaf hash mismatch")
-            merge_node(
-                forest,
-                { container = { replacement }, key = 1, height = height },
-                { container = container, key = key, height = height }
-            )
-            if forest.directory then store_expansion(forest, replacement) end
-            container[key] = replacement
-            return
-        end
-        assert(is_tree(tree) and container_height > height, "leaf height mismatch")
-        if tree.kind == "mixed" then
-            local half = 1 << (tree.height - 1)
-            if position < half then
-                key = "left"
-            else
-                key, position = "right", position - half
-            end
-            container, container_height = tree, tree.height - 1
-        else
-            local values = tree[1]
-            container, key, container_height =
-                values, math.min((position >> tree.base_height) + 1, #values), tree.base_height
-            position = position & ((1 << tree.base_height) - 1)
-        end
-    end
-end
-```
-
-It fills in the subtree at `<position>` using a full forest of the same
-height, after checking that their root hashes match. Any branches
-already known at that position are retained. No ancestor hash changes,
-so the forest’s root is unaffected. When the opaque hash is the repeated
-last value of a fixed-point tree, every repetition reads the same entry,
-so all of them share the expansion. A forest stored with
-`frontier_forest_store` keeps its trees in a directory, one file per
-tree named by its hash, and `frontier_forest_load` reopens it. Queries
-and expansions then load the stored tree in place of a raw hash when
-they reach one, and an expansion also stores its new trees there. A
-stored or loaded forest cannot be appended to another forest or used in
-an expansion, since some of its trees may exist only as files in its own
-directory.
-
 ## Verification game
 
-The question now becomes: How can the blockchain identify the honest
-party when there are potentially multiple opinions on the final state
-hash of a Cartesi Machine, for a computation the blockchain itself is
-unable to perform? Cartesi Rollups is based on *fraud proofs*, a group
-of approaches through which an honest party can demonstrate to a
-computationally limited referee that a dishonest party has not performed
-a well-specified computation correctly. The [verification
-game](https://doi.org/10.1016/j.ic.2013.03.003) technique, on which our
-original [whitepaper](https://cartesi.io/cartesi_whitepaper.pdf) builds,
-is a well-established fraud proof strategy.
+Several parties may claim different final state hashes for the same
+computation. The blockchain cannot perform that computation itself to
+decide which claim is correct. Cartesi Rollups therefore relies on
+*fraud proofs*. Fraud proofs are approaches through which an honest
+party can show a computationally limited referee that a dishonest party
+has not performed a well-specified computation correctly. The
+[verification game](https://doi.org/10.1016/j.ic.2013.03.003) is one
+such approach. Our original
+[whitepaper](https://cartesi.io/cartesi_whitepaper.pdf) builds on it.
 
-The approach assumes that at least one player is honest and responds
-within the allotted time. It proceeds as follows. Initially, the referee
-and all parties agree on the state hash before the computation. The
-dispute starts after each interested party has had a chance to send to
-the referee its proposed state hash after the computation. The referee
-then guides the parties in a dispute that ends when all surviving
-parties agree on the same state hash after. The dispute proceeds in
-rounds. In each round, the referee progressively bisects the computation
-until it isolates a single state transition that is not unanimous. The
-bisection starts by considering an interval that covers an entire
-computation. At each iteration, all surviving players must send to the
-referee a tentative midpoint state hash for the current interval. If the
-midpoint state hash is unanimous, the referee narrows the interval to
-its second half. If it is not unanimous, it narrows the interval to its
-first half. The invariant preserved is that the interval always starts
-at a state all players agree on and always ends at a state for which
-there is at least one disagreement. Bisection eventually leads to an
-interval that consists of a single state transition. All players must
-now send proofs that the state indeed transitions to their chosen state
-hash after. By construction, valid proofs starting from the agreed state
-hash can reach only one resulting state hash. Therefore, the referee
-eliminates at least one player per round. When all remaining players
-agree on the state hash after the computation, the dispute ends.
+Initially, the referee and all players agree on the state hash before
+the computation. Each player then sends the referee its *claim*, the
+state hash it obtained after the computation. The dispute proceeds in
+rounds. Each round isolates a single state transition on which the
+surviving players do not all agree.
 
-The `vg.lua` script applies this strategy to an entire epoch of a
-Rolling Cartesi Machine. Its referee stands in for contracts that
-Cartesi deploys to the blockchain. It mediates the dispute over the
-result players obtained by feeding the epoch’s inputs to the machine
-off-chain. Referee and players are run in separate processes, and
-communicate via the network. The referee requests and the players’
-responses that go through the wire represent blockchain events and
-transactions, respectively.
+A round starts with an interval that covers the entire computation. At
+each step, every surviving player sends the referee its state hash at
+the midpoint of the interval. If all midpoint hashes are equal, the
+referee narrows the interval to its second half. Otherwise, the referee
+narrows the interval to its first half. Therefore, the interval always
+starts at a state all players agree on. It always ends at a state on
+which at least one player disagrees. Bisection ends when the interval
+covers a single state transition.
+
+Every surviving player then sends a proof that the agreed state
+transitions to its own state hash at the end of the interval. Valid
+proofs that start from the agreed state hash can reach only one state
+hash. Since the players disagree on the state hash at the end of the
+interval, at least one of them cannot produce a valid proof. The referee
+eliminates every player whose proof fails. Each round therefore
+eliminates at least one player. The dispute ends when all remaining
+players agree on the state hash after the computation. That hash is the
+correct one if at least one player is honest and responds within the
+allotted time.
 
 The state an epoch starts from is settled. It is either the stored
-[template hash](#rolling-cartesi-machine-templates) at genesis or the
-settled state hash of the previous epoch. All advance-state inputs in an
-epoch are posted to the blockchain. The referee therefore knows the
-agreed initial state hash and the contents of every input in the epoch.
-In `vg.lua`, the inputs are represented by files. The events generated
-by the blockchain throughout an epoch are represented by the following
-code:
+[template hash](#rolling-cartesi-machine-templates) at genesis, or the
+settled state hash of the previous epoch. All advance-state inputs of
+the epoch are posted to the blockchain. The referee therefore knows the
+initial state hash and the contents of every input.
+
+The `vg.lua` script applies this method to an entire epoch of a Rolling
+Cartesi Machine. Its referee stands in for the contracts Cartesi deploys
+to the blockchain. The players obtain their claims by feeding the
+epoch’s inputs to the machine off-chain. The referee and the players run
+in separate processes and communicate over the network. The requests of
+the referee represent blockchain events. The responses of the players
+represent transactions. In `vg.lua`, the inputs are files. The function
+`run_epoch` announces each input of the epoch to the players and then
+seals the epoch.
 
 ``` lua
 local function run_epoch(dapp_contract, subscribers)
@@ -9424,9 +9262,9 @@ local function run_epoch(dapp_contract, subscribers)
 end
 ```
 
-The function `notify_all(<subscribers>, <event>, <arguments>)` notifies
-all `<subscribers>` (i.e., the interested parties) of a given `<event>`
-with associated `<arguments>`.
+The function `notify_all(<subscribers>, <event>, <arguments>)` sends
+`<event>` with its `<arguments>` to every one of the `<subscribers>`,
+the players that follow the epoch.
 
 ### The state transition function
 
@@ -10088,7 +9926,7 @@ epoch’s input files. These files represent the inputs posted to the
 blockchain:
 
 ``` bash
-lua5.4 vg.lua referee 127.0.0.1:8091 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" \
+lua5.4 vg.lua referee 127.0.0.1:8096 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" \
     input-0.bin input-1.bin input-2.bin
 ```
 
@@ -10096,7 +9934,7 @@ Then connect the honest player, which processes the inputs announced by
 the referee:
 
 ``` bash
-lua5.4 vg.lua honest 127.0.0.1:8091 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5"
+lua5.4 vg.lua honest 127.0.0.1:8096 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5"
 ```
 
 The first dishonest player is the forger, which substitutes
@@ -10105,21 +9943,21 @@ whereas the posted input asks for `2^2048`. All other fields remain the
 same:
 
 ``` bash
-lua5.4 vg-dishonest.lua forger 127.0.0.1:8091 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" 2 fake-input-2.bin
+lua5.4 vg-dishonest.lua forger 127.0.0.1:8096 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" 2 fake-input-2.bin
 ```
 
 The second is the tamperer, which processes the posted inputs but
 corrupts memory at mcycle offset 100 within input 2:
 
 ``` bash
-lua5.4 vg-dishonest.lua tamperer 127.0.0.1:8091 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" 2 100
+lua5.4 vg-dishonest.lua tamperer 127.0.0.1:8096 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" 2 100
 ```
 
 The third is the no-rollback player, which keeps the rejecting machine
 when input 1 finishes instead of restoring the pre-input snapshot:
 
 ``` bash
-lua5.4 vg-dishonest.lua no-rollback 127.0.0.1:8091 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5"
+lua5.4 vg-dishonest.lua no-rollback 127.0.0.1:8096 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5"
 ```
 
 All four players start from the same machine state, but reach different
@@ -10288,7 +10126,7 @@ original claims differ.
 Start the referee as before:
 
 ``` bash
-lua5.4 vg.lua referee 127.0.0.1:8092 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" \
+lua5.4 vg.lua referee 127.0.0.1:8097 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" \
     input-0.bin input-1.bin input-2.bin
 ```
 
@@ -10297,17 +10135,17 @@ but lets its first bisection request time out, relying on the other
 player claiming the same hash:
 
 ``` bash
-lua5.4 vg-dishonest.lua idle 127.0.0.1:8092 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5"
+lua5.4 vg-dishonest.lua idle 127.0.0.1:8097 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5"
 ```
 
 Connect the adversary’s two players:
 
 ``` bash
-lua5.4 vg-dishonest.lua forger 127.0.0.1:8092 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" 2 fake-input-2.bin
+lua5.4 vg-dishonest.lua forger 127.0.0.1:8097 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" 2 fake-input-2.bin
 ```
 
 ``` bash
-lua5.4 vg-dishonest.lua fabulist 127.0.0.1:8092 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" \
+lua5.4 vg-dishonest.lua fabulist 127.0.0.1:8097 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" \
     2 fake-input-2.bin "0x988172d698f1e7745466c5950ae72a6553145bd4df3c657844ca29a6c28b626b"
 ```
 
@@ -10354,7 +10192,7 @@ Now repeat the game, replacing the idle player with the ordinary honest
 player:
 
 ``` bash
-lua5.4 vg.lua honest 127.0.0.1:8093 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5"
+lua5.4 vg.lua honest 127.0.0.1:8098 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5"
 ```
 
 It submits that same correct final hash and answers the referee for
@@ -10391,6 +10229,383 @@ claim throughout the dispute within the allotted time.
 The next section introduces computation hash commitments, which let
 anyone defend a claim, and a tournament that settles large numbers of
 claims efficiently.
+
+## Hash-view of computation
+
+A *computation hash* is the root of a Merkle tree whose leaves are the
+machine state hashes sampled at periodic intervals during a computation.
+(It is the basis for the [permissionless refereed
+tournament](#permissionless-refereed-tournament).) The two kinds
+`cartesi-machine` computes, introduced under [Computation
+hashes](#computation-hashes), are the *mcycle computation hash* and the
+*uarch cycle computation hash*. The mcycle computation hash covers an
+entire epoch, and includes one state hash as a leaf every 2<sup>p</sup>
+mcycles, with the initial state hash implicit. The uarch cycle
+computation hash covers one period between two consecutive leaves of the
+mcycle computation hash. It includes one state hash as a leaf for every
+uarch state transition within the period.
+
+An epoch spans 2<sup>24</sup> inputs. Each input can have at most
+2<sup>48</sup> mcycles counted from the state that receives it. A
+machine stopped at a manual yield, halt, or mcycle overflow no longer
+advances. Therefore, past the last mcycle an input uses, the machine
+sits at a fixed point. The leaves past that point repeat the last state
+hash to the end of the span the input occupies. When the input was
+rejected, the leaves repeat the reverted state hash instead. Likewise,
+an epoch does not advance past its last input. The leaves past the last
+input repeat the epoch’s final state hash until the tree is complete.
+The uarch cycle computation hash is analogous. Each mcycle of the period
+owns 2<sup>20</sup> leaves. The uarch executes one instruction of the
+main processor in a number of uarch cycles and then halts. The first
+leaves of the mcycle are the state hashes after each of these uarch
+cycles. The halted state fills the leaves that follow. The last leaf is
+the state hash after the uarch reset. Every one of these transitions is
+one the blockchain can verify. Once the machine stops inside the period,
+the uarch starts every remaining mcycle from a state in which the main
+processor is at a fixed point. The uarch executes only the uarch cycles
+needed to notice this and halts. The reset then moves the state back to
+where it started. The leaves of that mcycle form a tail that repeats for
+every remaining mcycle to the end of the period.
+
+When only the computation hash itself matters, the frontier of [The hash
+tree frontier](#the-hash-tree-frontier) is enough. Its
+`frontier_pad_back` method can add runs of repeated leaves. (This is
+what `cartesi-machine` uses internally.) The [permissionless refereed
+tournament](#permissionless-refereed-tournament), however, must later
+access individual leaves in the corresponding tree, along with the
+siblings on their paths. Since the frontier has collapsed everything to
+the left of its last leaf into root hashes, we need a new data structure
+that captures the repetitions at the fixed points while keeping every
+node accessible.
+
+### Fixed-point trees
+
+The function `frontier_pad_back` appends any number of copies of one
+hash to a frontier, with a cost proportional to the height of the tree.
+This is possible because the root of a subtree whose leaves all repeat
+one hash depends only on that hash and on the height of the subtree. A
+fixed-point tree uses the same fact to store a run of repeated leaves
+that follows distinct leaves. The run costs one stored entry per level,
+whatever its length. Unlike the frontier, the tree keeps every one of
+its nodes accessible.
+
+A *value* of height *h* stands for a complete subtree of 2<sup>*h*</sup>
+leaves. All of those leaves are determined, even when none of them is
+accessible from the value. The simplest value is a *raw hash*, whose
+only accessible node is its root. A raw hash is *opaque*, since its
+leaves are determined but not accessible. A *fixed-point tree* is built
+over a sequence of values of equal height, its *base values*. A value is
+a raw hash or a *tree*, meaning a fixed-point tree or a mixed tree. The
+last base value repeats to fill the tree.
+
+A fixed-point tree is a table with one array per level. The first array
+holds the base values. Each array above holds the hashes of the parents
+of the entries in the array below. A node is found by its index within
+its level. Therefore, the tree needs no child pointers. Each level
+stores its entries up to and including the first repeated one. Reading
+past the end of a level returns its last stored entry. The last stored
+entry therefore stands for every position after it.
+
+The constructor is `new_fixed_point_tree`.
+
+``` lua
+local function new_fixed_point_tree(hash_function, base_height, log2_count, values, first)
+    first = math.min(first, #values)
+    local tree = { table.move(values, first, math.min(first + (1 << log2_count) - 1, #values), 1, {}) }
+    for relative_height = 1, log2_count do
+        local children = tree[relative_height]
+        local parents = {}
+        for i = 1, math.min((#children >> 1) + 1, 1 << (log2_count - relative_height)) do
+            local left = get_or_last(children, 2 * i - 2)
+            local right = get_or_last(children, 2 * i - 1)
+            parents[i] = hash_function(get_value_hash(left), get_value_hash(right))
+        end
+        tree[relative_height + 1] = parents
+    end
+    tree.kind = "fixed_point"
+    tree.height = base_height + log2_count
+    tree.base_height = base_height
+    tree.hash = get_value_hash(tree[#tree][1])
+    return tree
+end
+```
+
+In the excerpt, the base values start at index `<first>` of `<values>`.
+Their height is `<base_height>`. The tree has `<log2_count>` levels
+above them. The helper `get_or_last` reads the entry at a 0-based index
+of a level. It returns the last stored entry for any index past the end.
+The helper `get_value_hash` returns the hash of a value. For a raw hash,
+that is the raw hash itself, and for a tree, it is the root hash.
+
+Take a level with *n* stored children. Its first *n*/2 parents (rounded
+down) come from pairs of stored children. The next parent combines two
+copies of the last stored child. That parent is the root of an
+all-repeated subtree. Every parent after it has the same hash.
+Therefore, the level above stores at most *n*/2 parents (rounded down)
+plus one. It never stores more entries than the level has nodes. A
+repeated suffix of any length thus costs one stored entry per level.
+
+<figure>
+<img src="images/fixed-point-tree.svg"
+alt="Fixed-point tree storing the distinct nodes and the first repeated node at each level" />
+<figcaption aria-hidden="true">Fixed-point tree storing the distinct
+nodes and the first repeated node at each level</figcaption>
+</figure>
+
+The figure shows a fixed-point tree of height four over five distinct
+leaves. A sixth leaf follows and repeats over the remaining ten
+positions. Stored hashes are filled and implicit ones are outlined.
+Distinct nodes are blue. The first repeated node of each level below the
+root is gray. The tree stores 16 of its 31 nodes (6, 4, 3, 2, and 1,
+from the leaves up).
+
+A fixed-point tree holds a single run of repeated leaves, at its end.
+The leaves of a computation hash contain many runs, for instance one
+after each input stops. Trees over neighboring spans must therefore be
+joined. A *mixed tree* joins two values of equal height as its left and
+right children. It does not change either one. The constructor is
+`new_mixed_tree`.
+
+``` lua
+local function new_mixed_tree(hash_function, height, left, right)
+    return {
+        kind = "mixed",
+        height = height,
+        left = left,
+        right = right,
+        hash = hash_function(get_value_hash(left), get_value_hash(right)),
+    }
+end
+```
+
+Both kinds of tree are descended from the root. At a mixed tree, a query
+chooses a child. At a fixed-point tree, it indexes the levels down to a
+base value, and continues into that base value. The descent ends at its
+target or at an opaque hash. An opaque hash is where determined but
+inaccessible nodes begin. This is the access to individual leaves and
+siblings that the frontier lacks. [Frontier forests](#frontier-forests)
+builds on it.
+
+### Frontier forests
+
+A *frontier forest* is a frontier whose levels hold values. A level can
+therefore keep a tree instead of only its root hash. The forest uses the
+same level array and the same binary carry as the
+[frontier](#the-hash-tree-frontier). Each level is either empty or holds
+a value. A raw hash is stored as the hash itself. A fixed-point tree
+holds one array per level, as described under [Fixed-point
+trees](#fixed-point-trees). A mixed tree holds its two children, each a
+value. Every tree also records its height and its root hash. Besides its
+levels, a forest holds its pending values and its leaf count, described
+below. A forest is *full* when it has received all of its leaves. Its
+top level then holds a single value, and every other level is empty.
+
+The constructor is `frontier_forest`. It takes the height of the forest
+and a hash type, as `frontier` does, and returns an empty forest. Three
+functions append to a forest, mirroring `frontier_push_back`,
+`frontier_append`, and `frontier_pad_back`. The function
+`frontier_forest_push_back` appends one value. The function
+`frontier_forest_append` appends raw hashes in a half-open range, with
+the same defaults as `frontier_append`. The function
+`frontier_forest_pad_back` appends a number of copies of one value. When
+the count is omitted, it fills the rest of the forest. The value
+argument of `frontier_forest_push_back` and `frontier_forest_pad_back`
+is a raw hash or a full forest. Each function also takes the height of
+the values it appends. A raw hash appended at height *b* is a value of
+height *b*, and it is opaque.
+
+A full forest enters as the value at its top level. The forest object
+itself is not kept. That value can then become a base value of a
+fixed-point tree. This is how values built separately nest into a larger
+one. When `frontier_forest_pad_back` repeats a full forest, every copy
+reads the same value. Therefore, its nodes are accessible at every
+repetition.
+
+Appended values do not go into the levels right away. They accumulate as
+*pending values*, all of the height given with the appends. A count
+records how many more times the last pending value repeats. Therefore, a
+repetition of any length costs one pending value and one count.
+
+``` lua
+local function frontier_forest_pad_back(forest, value, count, value_height)
+    assert(count == nil or (math.type(count) == "integer" and count >= 0), "invalid pad count")
+    if count == 0 then return end
+    value, value_height = normalize_forest_value(forest, value, value_height)
+    assert_forest_can_append(forest, value_height, count or 0)
+    count = count or (((1 << forest.height) - forest.leaf_count) >> value_height)
+    if count == 0 then return end
+    if should_flush_pending_value(forest.pending, value, value_height) then forest_flush(forest, value_height) end
+    if forest.pending.pad_count > 0 then
+        forest.pending.pad_count = forest.pending.pad_count + count
+    elseif count == 1 then
+        forest.pending.values[#forest.pending.values + 1] = value
+    elseif forest.pending.values[#forest.pending.values] == value then
+        forest.pending.pad_count = count
+    else
+        forest.pending.values[#forest.pending.values + 1] = value
+        forest.pending.pad_count = count - 1
+    end
+    forest.leaf_count = forest.leaf_count + (count << value_height)
+    if forest.leaf_count == (1 << forest.height) then forest_flush(forest) end
+end
+```
+
+Since pending values are in no level yet, the forest tracks its leaf
+count explicitly. The function `frontier_forest_get_leaf_count` returns
+it.
+
+The function `forest_flush` moves the pending values into the levels. It
+runs when an append cannot extend the pending values, and when the
+forest becomes full. An append cannot extend them when it has a
+different height. It also cannot extend them when it follows a
+repetition with anything other than another copy of the repeated value.
+
+``` lua
+local function forest_flush(forest, next_height)
+    local pending = forest.pending
+    local height = pending.height
+    local values = pending.values
+    local pad_count = pending.pad_count
+    pending.height = next_height
+    pending.values = {}
+    pending.pad_count = 0
+    if not height then return end
+    local first_level = height + 1
+    local offset = 0
+    local count = #values + pad_count
+    while count > 0 do
+        local added_height = 0
+        local subtree_count = 1
+        while not forest[first_level + added_height] and subtree_count <= (count >> 1) do
+            added_height = added_height + 1
+            subtree_count = subtree_count << 1
+        end
+        local subtree = get_or_last(values, offset)
+        if added_height > 0 then
+            subtree = new_fixed_point_tree(forest.hash_function, height, added_height, values, offset + 1)
+        end
+        local level = first_level + added_height
+        while forest[level] do
+            assert(level < #forest, "too many leaves")
+            subtree = new_mixed_tree(forest.hash_function, level, forest[level], subtree)
+            forest[level] = false
+            level = level + 1
+        end
+        forest[level] = subtree
+        offset = offset + subtree_count
+        count = count - subtree_count
+    end
+end
+```
+
+Like `frontier_append`, it splits the pending values into maximal
+aligned subtrees. Each subtree is the largest that starts where the
+leaves in the levels end and fits in the pending values left. A subtree
+that spans more than one position becomes a fixed-point tree, with the
+pending values as its base values. A subtree that spans a single
+position is the pending value at that position. The binary carry then
+folds each subtree into the levels. Whenever the carry finds a level
+occupied, it joins the two values into a mixed tree.
+
+Like `frontier`, the constructor also accepts the proof of the last
+appended leaf instead of a height. It verifies the proof and restores
+the forest as it stood after that leaf. The level that covers the leaf
+holds mixed trees along the path of the leaf, so the leaf is accessible.
+The siblings on that path, and the values in the levels above, are raw
+hashes. Therefore, they are opaque. Appends then continue after that
+leaf.
+
+Queries need a full forest. The function `frontier_forest_get_root_hash`
+returns the root hash in constant time. The function
+`frontier_forest_get_node_hash` returns the hash of a node. The node is
+given by its first leaf and its height, and its first leaf must be
+aligned to its size. The function `frontier_forest_get_siblings` returns
+the siblings on the path of a node, from the node upward.
+
+``` lua
+local function frontier_forest_get_siblings(forest, position, height, into)
+    local top = forest.height + 1
+    assert(forest[top], "the forest is not full")
+    assert_valid_forest_node(forest, position, height)
+    local siblings = {}
+    local node, err = descend_tree(forest, forest, top, forest.height, position, height, siblings)
+    if not node then return nil, err end
+    into = into or {}
+    for i = #siblings, 1, -1 do
+        into[#into + 1] = siblings[i]
+    end
+    return into
+end
+```
+
+When given, `<into>` receives the siblings after any it already holds.
+Both functions descend from the root as described under [Fixed-point
+trees](#fixed-point-trees). When the descent reaches an opaque hash
+above its target, both functions return `nil` and an error message. The
+caller can then expand the opaque hash and query again.
+
+The function `frontier_forest_expand_leaf` expands an opaque hash.
+
+``` lua
+local function frontier_forest_expand_leaf(forest, position, subtree)
+    local container, key, container_height = forest, forest.height + 1, forest.height
+    assert(container[key], "the forest is not full")
+    assert(is_forest(subtree), "the subtree is not a forest")
+    local replacement, height = normalize_forest_value(forest, subtree)
+    assert_valid_forest_node(forest, position, height)
+    -- An opaque replacement exposes no descendants, and accepting one could introduce a cycle
+    -- when it references the leaf being expanded.
+    assert(is_tree(replacement), "the replacement leaf is opaque")
+    while true do
+        local tree = load_value(forest, container, key, container_height)
+        if container_height == height then
+            assert(get_value_hash(tree) == replacement.hash, "leaf hash mismatch")
+            merge_node(
+                forest,
+                { container = { replacement }, key = 1, height = height },
+                { container = container, key = key, height = height }
+            )
+            if forest.directory then store_expansion(forest, replacement) end
+            container[key] = replacement
+            return
+        end
+        assert(is_tree(tree) and container_height > height, "leaf height mismatch")
+        if tree.kind == "mixed" then
+            local half = 1 << (tree.height - 1)
+            if position < half then
+                key = "left"
+            else
+                key, position = "right", position - half
+            end
+            container, container_height = tree, tree.height - 1
+        else
+            local values = tree[1]
+            container, key, container_height =
+                values, math.min((position >> tree.base_height) + 1, #values), tree.base_height
+            position = position & ((1 << tree.base_height) - 1)
+        end
+    end
+end
+```
+
+It replaces the value at `<position>` with the value at the top level of
+a full forest of the same height. It first checks that the two root
+hashes match. Nodes already accessible at that position stay accessible.
+No ancestor hash changes, so the root hash of the forest is unaffected.
+When the opaque hash is the repeated last base value of a fixed-point
+tree, every copy reads the same entry. Therefore, all copies share the
+expansion.
+
+The call `frontier_forest_store(<forest>, <directory>, <frontier_path>)`
+stores a forest. Its trees go into `<directory>`, and its levels go into
+the file `<frontier_path>`. The call
+`frontier_forest_load(<directory>, <frontier_path>)` reopens a stored
+forest. A stored or loaded forest keeps its directory, and later
+expansions are stored there as well. Each forest needs a directory of
+its own. Two forests that share a directory can overwrite each other’s
+stored trees. The implementation does not check this. A stored or loaded
+forest cannot be appended to another forest or passed to
+`frontier_forest_expand_leaf`.
 
 ## Permissionless refereed tournament
 
@@ -11081,7 +11296,7 @@ the inputs to the players through `run_epoch`, so the files must stay
 readable from each player’s working directory while the example runs.
 
 ``` bash
-lua5.4 prt.lua referee 127.0.0.1:8094 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" \
+lua5.4 prt.lua referee 127.0.0.1:8099 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" \
     input-0.bin input-1.bin input-2.bin
 ```
 
@@ -11090,23 +11305,23 @@ role arguments. Input filenames arrive from the referee, and no argument
 names the number of players or their order:
 
 ``` bash
-lua5.4 prt.lua honest 127.0.0.1:8094 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5"
+lua5.4 prt.lua honest 127.0.0.1:8099 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5"
 ```
 
 ``` bash
-lua5.4 prt-dishonest.lua quitter 127.0.0.1:8094 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5"
+lua5.4 prt-dishonest.lua quitter 127.0.0.1:8099 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5"
 ```
 
 ``` bash
-lua5.4 prt-dishonest.lua forger 127.0.0.1:8094 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" 2 forged-input-2.bin
+lua5.4 prt-dishonest.lua forger 127.0.0.1:8099 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" 2 forged-input-2.bin
 ```
 
 ``` bash
-lua5.4 prt-dishonest.lua tamperer 127.0.0.1:8094 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" 0 100
+lua5.4 prt-dishonest.lua tamperer 127.0.0.1:8099 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" 0 100
 ```
 
 ``` bash
-lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8094 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" 2 2000
+lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8099 "0xc70a3770391e4fbef90b4ed8622de77222a12437aaec2fea5836df33ff92e9b5" 2 2000
 ```
 
 The eight players commit claims, each narrated with the label of the

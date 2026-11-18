@@ -335,7 +335,7 @@ do
     fails({ "--input-policy=latest" }, "observation policy must be")
     fails({ "--dispute-policy=-1" }, "observation policy must be")
     fails({ "--mode=other" }, "invalid mode: other")
-    fails({ "--kind=quitter" }, "a sentinel computes only honest claims")
+    fails({ "--kind=vandal" }, "a sentinel computes only honest claims")
     -- All supported options pass dispatch, including values with '=' and fees outside Lua's range.
     -- No handler module or signer is loaded until the required options have been checked.
     fails({
@@ -346,7 +346,7 @@ do
         "--mode=validator",
         "--keystore=key",
         "--password-file=password",
-        "--kind=tamperer:1:2",
+        "--kind=tamperer:1:2:3:42",
         "--label=label=one",
         "--first-epoch=0",
         "--keep-epochs=0",

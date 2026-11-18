@@ -39,14 +39,13 @@ local factory, input_box = deployment.factory, deployment.input_box
 local app, consensus, staging_period = deployment.app, deployment.consensus, deployment.staging_period
 -- Each player signs with the same account in every epoch, so its journal follows one account.
 local SIGNER_INDICES = {
-    quitter = 1,
+    vandal = 1,
     tamperer = 2,
     fabulist = 3,
-    fixed_fabulist = 4,
     forger = 5,
     honest = 6,
-    quitter_1 = 7,
-    quitter_2 = 8,
+    vandal_1 = 7,
+    vandal_2 = 8,
 }
 -- The account of every player, and the player each account belongs to.
 local signers, labels = {}, {}
@@ -80,13 +79,12 @@ stored_player.store_first_epoch_checkpoint(initial_hash, geometry, get_checkpoin
 local players = { { label = "honest", kind = "honest", first_epoch = 0 } }
 if mode ~= "smoke" then
     for _, player in ipairs({
-        { label = "quitter", kind = "quitter" },
-        { label = "tamperer", kind = "tamperer:0:100" },
-        { label = "fabulist", kind = "fabulist:2:2000" },
-        { label = "fixed_fabulist", kind = "fabulist:2:60000" },
+        { label = "vandal", kind = "vandal" },
+        { label = "tamperer", kind = "tamperer:2:" .. (fs.read_file("input-2-notice"):gsub(" ", ":")) .. ":42" },
+        { label = "fabulist", kind = "fabulist:2:forged-input-2.bin" },
         { label = "forger", kind = "forger:2:forged-input-2.bin" },
-        { label = "quitter_1", kind = "quitter" },
-        { label = "quitter_2", kind = "quitter" },
+        { label = "vandal_1", kind = "vandal" },
+        { label = "vandal_2", kind = "vandal" },
     }) do
         player.first_epoch, player.cleanup = 1, "no"
         players[#players + 1] = player

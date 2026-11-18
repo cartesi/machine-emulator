@@ -553,60 +553,6 @@ do
     end
 end
 
--- Tamperer bundle replay resumes intermediate yields before applying corruption. A fixed
--- point reached before the tamper point instead supplies the unchanged padding state.
-for _, stop in ipairs({
-    cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
-    cartesi.BREAK_REASON_YIELDED_MANUALLY,
-    cartesi.BREAK_REASON_HALTED,
-    cartesi.BREAK_REASON_MCYCLE_OVERFLOW,
-}) do
-    for _, bundle_offset in ipairs({ 1, 2 }) do
-        local player = dishonest.new_tamperer(nil, nil, 0, 1)
-        local log2_period = player.geometry.log2_mcycles_per_period
-        local bundle_span = 1 << (log2_period + LOG2_BUNDLE_MCYCLE_COUNT)
-        local owner <close> = player:new_machine_pair_at_epoch_input_offset(0)
-        local machine = owner.machine
-        player:new_null_computation_hash_builder():begin_input(machine, 0, 0)
-        local native = machine.machine
-        local reached = stop == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
-        local runs, writes, collections = 0, 0, 0
-        function native:read_reg(name)
-            return name == "mcycle" and self.mcycle or 0
-        end
-        function native:run(target)
-            assert(target == bundle_span, "replay changed the tamper point")
-            runs = runs + 1
-            assert(runs <= 3, "replay resumed a fixed point")
-            if runs < 3 then
-                self.mcycle = runs * (bundle_span // 4)
-                return runs == 1 and cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY or cartesi.BREAK_REASON_YIELDED_SOFTLY
-            end
-            self.mcycle = reached and target or 3 * (bundle_span // 4)
-            return stop
-        end
-        function native.get_initial_config()
-            return { ram = { length = 4096 } }
-        end
-        function native:write_memory(address, data)
-            assert(self.mcycle == bundle_span and address == cartesi.AR_RAM_START + 4096 - 8 and data == "CORRUPT!")
-            writes = writes + 1
-        end
-        function native:collect_mcycle_bundle(offset, period, height)
-            collections = collections + 1
-            assert(runs == 3, "bundle collection bypassed an intermediate yield")
-            assert(period == log2_period and height == LOG2_BUNDLE_MCYCLE_COUNT)
-            assert(writes == (reached and 1 or 0), "bundle collection lost or invented corruption")
-            if reached then
-                assert(self.mcycle + offset * bundle_span == bundle_offset * bundle_span, "replay shifted the bundle")
-            end
-            return { keccak("collected bundle") }
-        end
-        local hashes = machine:collect_mcycle_bundle(bundle_offset, log2_period, LOG2_BUNDLE_MCYCLE_COUNT)
-        assert(collections == 1 and hashes[1] == keccak("collected bundle"), "replay lost the collected hashes")
-    end
-end
-
 -- Uarch replay uses the null input driver, including rollback before collection when
 -- rejection precedes the selected mcycle. The bundle is the whole mcycle, collected compressed:
 -- its transient leaves, halt padding, and the reset-ending leaf.
@@ -1217,7 +1163,6 @@ do
     local geometry = prt.new_geometry(10)
     local input_hash, forged_hash = keccak("input"), keccak("forged")
     local forged_path, _ <close> = new_input_file(forged_hash)
-    local last_input = (1 << cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH) - 1
     for _, case in ipairs({
         {
             make = function(cache)
@@ -1233,29 +1178,29 @@ do
         },
         {
             make = function(cache)
-                return dishonest.new_tamperer(geometry, cache, 0, 100)
+                return dishonest.new_tamperer(geometry, cache, 0, 100, 0, "42")
             end,
             final_hash = input_hash,
         },
         {
             make = function(cache)
-                return dishonest.new_fabulist(geometry, cache, last_input, geometry.periods_per_input - 1)
+                return dishonest.new_fabulist(geometry, cache, 0, forged_path)
             end,
-            final_hash = keccak("fabulist"),
+            final_hash = input_hash,
         },
         {
             make = function(cache)
-                return dishonest.new_quitter(geometry, cache)
+                return dishonest.new_vandal(geometry, cache)
             end,
-            final_hash = keccak("quitter"),
-            quitter = true,
+            final_hash = keccak("vandal"),
+            vandal = true,
         },
         {
             make = function(cache)
-                return dishonest.new_quitter(geometry, cache, "custom quitter")
+                return dishonest.new_vandal(geometry, cache, "custom vandal")
             end,
-            final_hash = keccak("custom quitter"),
-            quitter = true,
+            final_hash = keccak("custom vandal"),
+            vandal = true,
         },
     }) do
         local cache <close> = prt.new_forked_machine_cache(new_fake_machine(keccak("initial")))
@@ -1270,14 +1215,14 @@ do
         assert(proof.target_hash == case.final_hash, player.label .. " claimed the wrong final state")
         assert(proof.root_hash == keccak(claim.computation_hash_left, claim.computation_hash_right))
         hash_tree.verify_slice(proof)
-        if case.quitter then
+        if case.vandal then
             local expected_root = case.final_hash
             for _ = 1, geometry.mcycle_height do
                 expected_root = keccak(expected_root, expected_root)
             end
             assert(
                 proof.root_hash == expected_root and player.event_handler.reveal_bisection(player) == "done",
-                "quitter did not post its fabricated claim and leave"
+                "vandal did not post its fabricated claim and leave"
             )
         end
     end
@@ -1594,7 +1539,7 @@ end
 -- be represented explicitly. Exercise this before the slower real-machine checks.
 do
     local cache <close> = prt.new_forked_machine_cache(new_fake_machine(keccak("initial")))
-    dishonest.new_tamperer(prt.new_geometry(10), cache, 0, 100)
+    dishonest.new_tamperer(prt.new_geometry(10), cache, 0, 100, 0, "42")
     local owner <close> = cache:nearest_not_past_epoch_input_offset(0)
     local machine = owner.machine
     machine.state.epoch_input_offset = 0
@@ -2543,48 +2488,9 @@ if arg[1] then
         assert(pair.backup_machine and pair.machine:get_root_hash() ~= initial_state_hash)
     end
 
-    -- A tamperer corrupts its machine at a fixed point of the first input. Replay from a cached
-    -- boundary must apply the same corruption again, so bundle collection matches an uncached build.
-    local tamperer_inputs, tamperer_cache <close> = new_test_cache(dapp_contract, 64, 1)
-    local tamperer = dishonest.new_tamperer(dapp_contract.geometry, tamperer_cache, 0, 100)
-    seed_inputs(tamperer, tamperer_inputs)
-    local tampered_tree = new_mcycle_tree(tamperer)
-    tampered_tree:get_proof(tamperer, 99 << tampered_tree.bundle_height)
-    tampered_tree:get_proof(tamperer, 100 << tampered_tree.bundle_height)
-    local uncached_tamperer_inputs, uncached_tamperer_cache <close> = new_test_cache(dapp_contract, 1)
-    local uncached_tamperer = dishonest.new_tamperer(dapp_contract.geometry, uncached_tamperer_cache, 0, 100)
-    seed_inputs(uncached_tamperer, uncached_tamperer_inputs)
-    local uncached_tampered_tree = new_mcycle_tree(uncached_tamperer)
-    assert(uncached_tampered_tree:get_root_hash() == tampered_tree:get_root_hash(), "cache changed the tampered claim")
-    uncached_tampered_tree:get_proof(uncached_tamperer, 100 << uncached_tampered_tree.bundle_height)
-    local tampered_first_leaf = 100 << LOG2_BUNDLE_MCYCLE_COUNT
-    for leaf = tampered_first_leaf, tampered_first_leaf + (1 << LOG2_BUNDLE_MCYCLE_COUNT) - 1 do
-        assert(
-            uncached_tampered_tree:get_node_hash(uncached_tamperer, leaf, 0)
-                == tampered_tree:get_node_hash(tamperer, leaf, 0),
-            "cache changed replay out of the tamper point"
-        )
-    end
-
-    -- Fabulist run can collect a bundle synchronously while the outer input is still running. Both
-    -- executions have outstanding snapshots, even though this is a single player process.
-    do
-        local fabulist_inputs, fabulist_cache <close> = new_test_cache(dapp_contract)
-        local fabulist = dishonest.new_fabulist(dapp_contract.geometry, fabulist_cache, 0, 16)
-        seed_inputs(fabulist, fabulist_inputs)
-        local nested = 0
-        local collect = fabulist.collect_mcycle_bundle
-        function fabulist:collect_mcycle_bundle(...)
-            assert(not self.epoch_pair, "outer execution was not scoped")
-            nested = nested + 1
-            return collect(self, ...)
-        end
-        local tree = new_mcycle_tree(fabulist)
-        assert(nested > 0, "fabulist did not collect a nested bundle")
-        tree:get_proof(fabulist, 1 << tree.bundle_height)
-        assert(tree:get_node_hash(fabulist, 16, 0) == keccak("fabulist"), "nested collection lost the fabricated leaf")
-        assert(not fabulist.epoch_pair, "nested collection retained the epoch pair")
-    end
+    -- The machines of a tamperer carry private strategy state through the cache.
+    local _, tamperer_cache <close> = new_test_cache(dapp_contract, 64, 1)
+    dishonest.new_tamperer(dapp_contract.geometry, tamperer_cache, 0, 100, 0, "42")
 
     -- Bundle collection is a read of the committed claim. It must not replace build entries with
     -- speculative machines from an input whose committed suffix is its revert state.
@@ -3491,23 +3397,6 @@ if arg[1] then
         local pair <close> = player:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
         return pair.machine:get_root_hash()
     end
-    -- This fabricated leaf is beyond the last input, so end_epoch must insert it even when
-    -- bundle collection never calls run. Opening the bundle also authenticates the returned subtree.
-    do
-        local fabulist_inputs, fabulist_cache <close> = new_test_cache(dapp_contract)
-        local fabulist = dishonest.new_fabulist(dapp_contract.geometry, fabulist_cache, #inputs, 16)
-        seed_inputs(fabulist, fabulist_inputs)
-        local tree = new_mcycle_tree(fabulist)
-        local leaf = #inputs * dapp_contract.geometry.periods_per_input + 16
-        local bundle = leaf >> LOG2_BUNDLE_MCYCLE_COUNT
-        tree:get_proof(fabulist, bundle << tree.bundle_height)
-        honest_tree:get_proof(honest, bundle << honest_tree.bundle_height)
-        assert(tree:get_node_hash(fabulist, leaf, 0) == keccak("fabulist"), "epoch padding lost the fabricated leaf")
-        assert(
-            tree:get_node_hash(fabulist, leaf + 1, 0) == honest_tree:get_node_hash(honest, leaf + 1, 0),
-            "epoch padding changed a neighboring leaf"
-        )
-    end
     for _, bundle_index in ipairs({
         0,
         99,
@@ -4285,7 +4174,16 @@ end
 
 -- Constructor-time reports reach the supplied handler, including through the dishonest constructors.
 -- A handler failure still falls back to stderr and allows construction to finish.
-for _, kind in ipairs({ "honest", "forger", "tamperer", "fabulist", "quitter", "failing handler" }) do
+for _, kind in ipairs({
+    "honest",
+    "forger",
+    "tamperer",
+    "fabulist",
+    "vandal",
+    "idle",
+    "no-rollback",
+    "failing handler",
+}) do
     local cache =
         prt.new_forked_machine_cache(new_fake_machine(keccak("fixture initial"), nil, nil, keccak("wrong root")))
     local received = {}
@@ -4304,10 +4202,16 @@ for _, kind in ipairs({ "honest", "forger", "tamperer", "fabulist", "quitter", "
     local started, player = pcall(function()
         if kind == "forger" then
             return dishonest.new_forger(nil, cache, 0, "unused", kind, nil, handler)
-        elseif kind == "tamperer" or kind == "fabulist" then
-            return dishonest["new_" .. kind](nil, cache, 0, 0, kind, nil, handler)
-        elseif kind == "quitter" then
-            return dishonest.new_quitter(nil, cache, kind, nil, handler)
+        elseif kind == "tamperer" then
+            return dishonest.new_tamperer(nil, cache, 0, 0, 0, "42", kind, nil, handler)
+        elseif kind == "fabulist" then
+            return dishonest.new_fabulist(nil, cache, 0, "unused", kind, nil, handler)
+        elseif kind == "vandal" then
+            return dishonest.new_vandal(nil, cache, kind, nil, handler)
+        elseif kind == "idle" then
+            return dishonest.new_idle(nil, cache, kind, nil, handler)
+        elseif kind == "no-rollback" then
+            return dishonest.new_no_rollback(nil, cache, kind, nil, handler)
         end
         return new_test_player(nil, cache, kind, nil, handler)
     end)

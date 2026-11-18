@@ -33,7 +33,7 @@ cd "$run_dir"
 echo "PRT chain artifacts: $run_dir"
 initial_hash=$(cat "$fixture/initial-hash")
 ln -s "$fixture/rolling-calculator-template" "$initial_hash"
-cp "$fixture/forged-input-2.bin" .
+cp "$fixture/forged-input-2.bin" "$fixture/input-2-notice" .
 mkdir wallets
 chmod 700 wallets
 umask 077

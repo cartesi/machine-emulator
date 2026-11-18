@@ -4,7 +4,7 @@
 --   vg-dishonest.lua fabulist <address> <initial-hash> <input-index> <private-file> <claimed-hash>
 --   vg-dishonest.lua tamperer <address> <initial-hash> <input-index> <mcycle-offset> <uarch-cycle> <answer>
 --   vg-dishonest.lua no-rollback <address> <initial-hash>
---   vg-dishonest.lua quitter <address> <initial-hash>
+--   vg-dishonest.lua vandal <address> <initial-hash>
 --   vg-dishonest.lua idle <address> <initial-hash>
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
@@ -194,8 +194,8 @@ local function acknowledge() end
 local function leave()
     return "done"
 end
--- The quitter posts a fabricated claim, then leaves at the next event.
-local quitter_events = setmetatable({
+-- The vandal posts a fabricated claim, then leaves at the next event.
+local vandal_events = setmetatable({
     input_added = acknowledge,
     epoch_sealed = acknowledge,
     commit_claim = function()
@@ -206,10 +206,10 @@ local quitter_events = setmetatable({
         return leave
     end,
 })
-local function close_quitter() end
-local quitter_meta = { __close = close_quitter }
-local function new_quitter()
-    return setmetatable({ label = "quitter", event_handler = quitter_events }, quitter_meta)
+local function close_vandal() end
+local vandal_meta = { __close = close_vandal }
+local function new_vandal()
+    return setmetatable({ label = "vandal", event_handler = vandal_events }, vandal_meta)
 end
 local roles = {
     new_forger = new_forger,
@@ -217,7 +217,7 @@ local roles = {
     new_idle = new_idle,
     new_tamperer = new_tamperer,
     new_no_rollback = new_no_rollback,
-    new_quitter = new_quitter,
+    new_vandal = new_vandal,
 }
 if ... == "vg-dishonest" then
     return roles
@@ -241,8 +241,8 @@ elseif role == "tamperer" then
     )
 elseif role == "no-rollback" then
     selected = new_no_rollback(initial_hash)
-elseif role == "quitter" then
-    selected = new_quitter()
+elseif role == "vandal" then
+    selected = new_vandal()
 else
     error("unknown role: " .. role)
 end

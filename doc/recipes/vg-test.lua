@@ -283,13 +283,13 @@ print("vg-test: terminal proofs eliminate unsupported endpoints ok")
 
 if arg[1] ~= "execution" then
     local roles = require("vg-dishonest")
-    for _, role in ipairs({ "forger", "tamperer", "quitter" }) do
+    for _, role in ipairs({ "forger", "tamperer", "vandal" }) do
         for honest_index = 1, 2 do
             local honest <close> = vg.new_player(initial_hash)
             local opponent <close> = role == "forger" and roles.new_forger(initial_hash, 2, "forged-input-2.bin")
                 or role == "tamperer" and new_tamperer(roles, 0)
-                or roles.new_quitter()
-            if role ~= "quitter" then
+                or roles.new_vandal()
+            if role ~= "vandal" then
                 replay_test.measure(honest)
                 replay_test.measure(opponent)
             end
@@ -300,7 +300,7 @@ if arg[1] ~= "execution" then
                 role .. " defeated the honest player"
             )
             assert(result.final_state_hash == honest.final_state_hash and result.output)
-            if role ~= "quitter" then
+            if role ~= "vandal" then
                 assert(honest.replay_counts.rounds == 1)
             end
             print("vg-test: honest player " .. honest_index .. " defeats " .. role)

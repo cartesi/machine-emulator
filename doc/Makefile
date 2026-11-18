@@ -385,7 +385,7 @@ $(GAME_TEST_DIR)/prt-run/verdict: $(GAME_TEST_DIR)/initial-hash
 
 test-prt-repeat: $(GAME_TEST_DIR)/prt-run/verdict
 	bash $(RECIPES_DIR)/prt-repeat-test.sh $(GAME_TEST_DIR)/rolling-calculator-template \
-	    $(GAME_TEST_DIR) $(GAME_TEST_DIR)/prt-run
+	    $(GAME_TEST_DIR) $(GAME_TEST_DIR)/input-2-notice $(GAME_TEST_DIR)/prt-run
 else
 test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat:
 	$(MAKE) docs-image-exec CONTAINER_COMMAND="make $@ RECIPE_TEST_ENV=yes"

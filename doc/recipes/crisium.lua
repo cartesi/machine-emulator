@@ -20,8 +20,8 @@
 --     --dave=DIRECTORY [OPTION...]
 -- A validator also takes --mode=validator --keystore=FILE --password-file=FILE --kind=KIND.
 --
--- KIND is honest, or one of the scripted adversaries quitter, tamperer:INPUT:BUNDLE,
--- fabulist:INPUT:LEAF, and forger:INPUT:FILE. A sentinel computes honest claims and takes no KIND.
+-- KIND is honest, or one of the scripted adversaries vandal, tamperer:INPUT:MCYCLE:UARCH_CYCLE:ANSWER,
+-- fabulist:INPUT:FILE, and forger:INPUT:FILE. A sentinel computes honest claims and takes no KIND.
 -- The options are --label=NAME, --first-epoch=N,
 -- --keep-epochs=N, --cleanup=no, --input-policy=POLICY, --dispute-policy=POLICY,
 -- --status-file=FILE, --ws=URL (the node's WebSocket endpoint, which pushes new block headers),
@@ -391,14 +391,23 @@ local function new_player(dapp, outputs_frontier, epoch_directory, checkpoint_di
             checkpoint_directory,
             anomaly_handler
         )
-    elseif kind == "quitter" then
-        player = dishonest.new_quitter(dapp, label, outputs_frontier, anomaly_handler)
+    elseif kind == "vandal" then
+        player = dishonest.new_vandal(dapp, label, outputs_frontier, anomaly_handler)
     elseif kind == "tamperer" then
-        player =
-            dishonest.new_tamperer(dapp, tonumber(first), tonumber(second), label, outputs_frontier, anomaly_handler)
+        local mcycle_offset, uarch_cycle, answer = second:match("^(%d+):(%d+):(.+)$")
+        assert(answer, "invalid tamperer kind: " .. cmdline.kind)
+        player = dishonest.new_tamperer(
+            dapp,
+            tonumber(first),
+            tonumber(mcycle_offset),
+            tonumber(uarch_cycle),
+            answer,
+            label,
+            outputs_frontier,
+            anomaly_handler
+        )
     elseif kind == "fabulist" then
-        player =
-            dishonest.new_fabulist(dapp, tonumber(first), tonumber(second), label, outputs_frontier, anomaly_handler)
+        player = dishonest.new_fabulist(dapp, tonumber(first), second, label, outputs_frontier, anomaly_handler)
     elseif kind == "forger" then
         player = dishonest.new_forger(dapp, tonumber(first), second, label, outputs_frontier, anomaly_handler)
     else

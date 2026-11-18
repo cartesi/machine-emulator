@@ -5,7 +5,7 @@ set -euo pipefail
 work=$(mktemp -d)
 # Removes only the exact names this test creates, so a leftover file makes rmdir fail.
 cleanup() {
-    cd "$work" && rm -f bin/lua5.4 bin/netstat referee.log player.log early-referee.log early-player.log &&
+    cd "$work" && rm -f bin/lua5.4 bin/netstat notice referee.log player.log early-referee.log early-player.log &&
         rmdir bin && cd / && rmdir "$work" || exit 1
 }
 trap cleanup EXIT
@@ -35,10 +35,11 @@ if [ "$1" = -ant ] && [[ "$FAIL_ROLE" = *player ]]; then
 fi
 EOF
 chmod +x "$work/bin/lua5.4" "$work/bin/netstat"
+printf '1 2' > "$work/notice"
 for role in referee player early-referee early-player; do
     status=0
     FAIL_ROLE=$role PATH="$work/bin:$PATH" timeout 10 bash "$RECIPES_DIR/prt-repeat-test.sh" \
-        "$work/template" "$work/inputs" "$work/recording" > "$work/$role.log" 2>&1 || status=$?
+        "$work/template" "$work/inputs" "$work/notice" "$work/recording" > "$work/$role.log" 2>&1 || status=$?
     case $role in
         referee) expected=42; message='deliberate referee failure';;
         player) expected=43; message='deliberate player failure';;

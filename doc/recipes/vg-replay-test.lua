@@ -1,4 +1,5 @@
 -- Replay accounting and boundary regressions, run by vg-test.lua.
+local cartesi = require("cartesi")
 local socket = require("socket")
 local util = require("cartesi.util")
 local vg = require("vg")
@@ -246,7 +247,7 @@ local function run(initial_hash, paths)
     local agreed = origin
     -- Successive agreements, including the final base and unposted padding,
     -- answer from input base hashes without a tentative pair.
-    for _, index in ipairs({ 1, 2, #paths, #paths + 1, (1 << 16) - 1 }) do
+    for _, index in ipairs({ 1, 2, #paths, #paths + 1, (1 << cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH) - 1 }) do
         local tentative = position(index)
         local expected = player.state_hashes_before_inputs[math.min(index, #paths)]
         assert(player.event_handler.reveal_bisection(player, agreed, tentative) == expected)
@@ -348,7 +349,7 @@ local function run(initial_hash, paths)
     local empty <close> = measure(vg.new_player(initial_hash))
     empty.event_handler.epoch_sealed(empty)
     empty.event_handler.dispute_started(empty)
-    for _, index in ipairs({ 1, (1 << 16) - 1 }) do
+    for _, index in ipairs({ 1, (1 << cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH) - 1 }) do
         assert(empty.event_handler.reveal_bisection(empty, origin, position(index)) == initial_hash)
         assert(not empty.tentative_pair)
     end

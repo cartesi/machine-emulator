@@ -232,7 +232,10 @@ for _, case in ipairs({
                 uarch_cycle
             )
                 if case.last then
-                    assert(epoch_input_offset == (1 << 16) - 1 and input_mcycle_offset == (1 << 48) - 1)
+                    assert(
+                        epoch_input_offset == (1 << cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH) - 1
+                            and input_mcycle_offset == (1 << 48) - 1
+                    )
                     assert(uarch_cycle == cartesi.UARCH_CYCLE_MAX)
                 else
                     assert(

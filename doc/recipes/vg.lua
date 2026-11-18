@@ -18,10 +18,10 @@ local ANYONE = nil
 local FOREVER = nil
 local story = vgu.story
 local addresses = vgu.addresses
-local LOG2_INPUTS_PER_EPOCH = 16
+local LOG2_MAX_ADVANCE_STATES_PER_EPOCH = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
 local LOG2_MAX_MCYCLES_PER_ADVANCE_STATE = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 local LOG2_MAX_UARCH_CYCLES_PER_MCYCLE = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-local INPUTS_PER_EPOCH = 1 << LOG2_INPUTS_PER_EPOCH
+local MAX_ADVANCE_STATES_PER_EPOCH = 1 << LOG2_MAX_ADVANCE_STATES_PER_EPOCH
 local MAX_MCYCLES_PER_ADVANCE_STATE = 1 << LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
 local DEFAULT_MACHINE_CACHE_CAPACITY = 8
@@ -925,7 +925,7 @@ local function settle_dispute(tournament)
         local interval = {
             agreed_position = { epoch_input_offset = 0, input_mcycle_offset = 0, uarch_cycle = 0 },
             extent = {
-                log2_input_count = LOG2_INPUTS_PER_EPOCH,
+                log2_input_count = LOG2_MAX_ADVANCE_STATES_PER_EPOCH,
                 log2_mcycle_count = LOG2_MAX_MCYCLES_PER_ADVANCE_STATE,
                 log2_uarch_cycle_count = LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
             },
@@ -1027,7 +1027,7 @@ end
 -- The deployed contract fixes the epoch's initial state, inputs, and clock settings.
 -- Input events carry paths; proof verification trusts the contract's own input bytes.
 local function new_dapp_contract(initial_state_hash, input_paths)
-    assert(#initial_state_hash == 32 and #input_paths <= INPUTS_PER_EPOCH, "invalid epoch")
+    assert(#initial_state_hash == 32 and #input_paths <= MAX_ADVANCE_STATES_PER_EPOCH, "invalid epoch")
     return {
         initial_state_hash = initial_state_hash,
         input_paths = input_paths,

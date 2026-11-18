@@ -3,6 +3,10 @@ local vg = require("vg")
 local vgu = require("vgu")
 local run_with_server = require("vg-test-server")
 local hash = cartesi.keccak256("clock fixture")
+-- Bisection rounds that end the input, mcycle, and uarch cycle coordinates.
+local INPUT_ROUNDS = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+local MCYCLE_ROUNDS = INPUT_ROUNDS + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+local ROUNDS = MCYCLE_ROUNDS + cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
 
 local function empty_response()
     return "nothing"
@@ -154,13 +158,26 @@ end
 -- Both players receive every bisection request, including the last tentative position of
 -- each coordinate. Both survivors must then offer their transition proofs.
 -- Proof-time failures also exercise the last transition and alternating halves.
-for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
-    for failed_player = 0, (failed_round <= 84 and 2 or 0) do
+for _, failed_round in ipairs({
+    1,
+    INPUT_ROUNDS,
+    INPUT_ROUNDS + 1,
+    MCYCLE_ROUNDS,
+    MCYCLE_ROUNDS + 1,
+    ROUNDS,
+    ROUNDS + 1,
+    ROUNDS + 2,
+}) do
+    for failed_player = 0, (failed_round <= ROUNDS and 2 or 0) do
         local rounds, proofs = { 0, 0 }, 0
         local target = {
-            epoch_input_offset = failed_round == 85 and (1 << 16) - 1 or failed_round == 86 and 0xa55a or 0,
-            input_mcycle_offset = failed_round == 85 and (1 << 48) - 1 or failed_round == 86 and 0xa55aa55aa55a or 0,
-            uarch_cycle = failed_round == 85 and (1 << 20) - 1 or failed_round == 86 and 0xa55aa or 0,
+            epoch_input_offset = failed_round == ROUNDS + 1 and (1 << INPUT_ROUNDS) - 1
+                or failed_round == ROUNDS + 2 and 0xa55aa5
+                or 0,
+            input_mcycle_offset = failed_round == ROUNDS + 1 and (1 << 48) - 1
+                or failed_round == ROUNDS + 2 and 0xa55aa55aa55a
+                or 0,
+            uarch_cycle = failed_round == ROUNDS + 1 and (1 << 20) - 1 or failed_round == ROUNDS + 2 and 0xa55aa or 0,
         }
         local claims = { hash, cartesi.keccak256("other claim") }
         local dapp_contract = vg.new_dapp_contract(hash, {})
@@ -175,17 +192,22 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                 function client.event_handler:reveal_bisection(agreed_position, tentative_position)
                     rounds[index] = rounds[index] + 1
                     local round = rounds[index]
-                    assert(round <= 84, "bisection continued past the leaf")
-                    local coordinate = round <= 16 and "epoch_input_offset"
-                        or round <= 64 and "input_mcycle_offset"
+                    assert(round <= ROUNDS, "bisection continued past the leaf")
+                    local coordinate = round <= INPUT_ROUNDS and "epoch_input_offset"
+                        or round <= MCYCLE_ROUNDS and "input_mcycle_offset"
                         or "uarch_cycle"
-                    local remaining = (round <= 16 and 16 or round <= 64 and 64 or 84) - round + 1
+                    local coordinate_rounds = round <= INPUT_ROUNDS and INPUT_ROUNDS
+                        or round <= MCYCLE_ROUNDS and MCYCLE_ROUNDS
+                        or ROUNDS
+                    local remaining = coordinate_rounds - round + 1
                     local lo = (target[coordinate] >> remaining) << remaining
                     local tentative_offset = lo + (1 << (remaining - 1))
                     local expected = {
-                        epoch_input_offset = round <= 16 and lo or target.epoch_input_offset,
-                        input_mcycle_offset = round <= 16 and 0 or round <= 64 and lo or target.input_mcycle_offset,
-                        uarch_cycle = round <= 64 and 0 or lo,
+                        epoch_input_offset = round <= INPUT_ROUNDS and lo or target.epoch_input_offset,
+                        input_mcycle_offset = round <= INPUT_ROUNDS and 0
+                            or round <= MCYCLE_ROUNDS and lo
+                            or target.input_mcycle_offset,
+                        uarch_cycle = round <= MCYCLE_ROUNDS and 0 or lo,
                     }
                     for field, offset in pairs(expected) do
                         assert(agreed_position[field] == offset, "wrong agreed position")
@@ -205,14 +227,14 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
                     uarch_cycle
                 )
                     proofs = proofs + 1
-                    assert(rounds[1] == 84 and rounds[2] == 84)
+                    assert(rounds[1] == ROUNDS and rounds[2] == ROUNDS)
                     assert(
                         epoch_input_offset == target.epoch_input_offset
                             and input_mcycle_offset == target.input_mcycle_offset
                             and uarch_cycle == target.uarch_cycle,
                         "wrong transition coordinates"
                     )
-                    if failed_round == 85 then
+                    if failed_round == ROUNDS + 1 then
                         return vgu.schedule_response(self, math.maxinteger, empty_response)
                     end
                     return "nothing" -- Rejected; no valid proof arrives before the deadline.
@@ -227,9 +249,9 @@ for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
             end)
             vg.new_referee(dapp_contract):run(server)
         end)
-        local last = math.min(failed_round, 84)
+        local last = math.min(failed_round, ROUNDS)
         assert(rounds[1] == last and rounds[2] == last, "requested another tentative position after settlement")
-        assert(proofs == (failed_round > 84 and 2 or 0))
+        assert(proofs == (failed_round > ROUNDS and 2 or 0))
         if failed_player == 0 then
             assert(not results.winner and not results.final_state_hash)
             assert(not next(results.players))

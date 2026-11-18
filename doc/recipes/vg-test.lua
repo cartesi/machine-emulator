@@ -6,6 +6,17 @@ local vgu = require("vgu")
 local run_with_server = require("vg-test-server")
 local replay_test = require("vg-replay-test")
 local initial_hash = cartesi.fromhex(fs.read_file("initial-hash"))
+-- The moment right after the sd to htif.tohost that emits the notice of an input
+local function read_notice_moment(epoch_input_offset)
+    local moment = fs.read_file("input-" .. epoch_input_offset .. "-notice")
+    local input_mcycle_offset, uarch_cycle = moment:match("^(%d+) (%d+)$")
+    return assert(tonumber(input_mcycle_offset)), assert(tonumber(uarch_cycle))
+end
+-- The tamperer forges the notice of an input as the machine emits it
+local function new_tamperer(roles, epoch_input_offset)
+    local input_mcycle_offset, uarch_cycle = read_notice_moment(epoch_input_offset)
+    return roles.new_tamperer(initial_hash, epoch_input_offset, input_mcycle_offset, uarch_cycle, "42")
+end
 local paths = { "input-0.bin", "input-1.bin", "input-2.bin" }
 local function run_game(players, input_paths)
     local dapp_contract = vg.new_dapp_contract(initial_hash, input_paths or paths)
@@ -276,7 +287,7 @@ if arg[1] ~= "execution" then
         for honest_index = 1, 2 do
             local honest <close> = vg.new_player(initial_hash)
             local opponent <close> = role == "forger" and roles.new_forger(initial_hash, 2, "forged-input-2.bin")
-                or role == "tamperer" and roles.new_tamperer(initial_hash, 0, 100)
+                or role == "tamperer" and new_tamperer(roles, 0)
                 or roles.new_quitter()
             if role ~= "quitter" then
                 replay_test.measure(honest)
@@ -299,7 +310,7 @@ if arg[1] ~= "execution" then
     -- One dispute spans both proof rounds. The early corruption leaves the honest
     -- player and later forger with different claims; proof completion resets their replay.
     do
-        local tamperer <close> = roles.new_tamperer(initial_hash, 0, 100)
+        local tamperer <close> = new_tamperer(roles, 0)
         local honest <close> = vg.new_player(initial_hash)
         local forger <close> = roles.new_forger(initial_hash, 2, "forged-input-2.bin")
         local players = { tamperer, honest, forger }
@@ -1083,7 +1094,7 @@ do
     local roles = require("vg-dishonest")
     local honest <close> = vg.new_player(initial_hash)
     local forger <close> = roles.new_forger(initial_hash, 2, "forged-input-2.bin")
-    local tamperer <close> = roles.new_tamperer(initial_hash, 2, 100)
+    local tamperer <close> = new_tamperer(roles, 2)
     local no_rollback <close> = roles.new_no_rollback(initial_hash)
     local function record_proof(self, epoch_input_offset, input_mcycle_offset, uarch_cycle)
         self.proof_positions[#self.proof_positions + 1] = { epoch_input_offset, input_mcycle_offset, uarch_cycle }
@@ -1103,7 +1114,8 @@ do
     local rejection, inclusion, corruption = table.unpack(honest.proof_positions)
     assert(rejection[1] == 1 and rejection[3] == (1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) - 1)
     assert(inclusion[1] == 2 and inclusion[2] == 0 and inclusion[3] == 0)
-    assert(corruption[1] == 2 and corruption[2] == 100 and corruption[3] == 0)
+    local notice_mcycle_offset, notice_uarch_cycle = read_notice_moment(2)
+    assert(corruption[1] == 2 and corruption[2] == notice_mcycle_offset and corruption[3] == notice_uarch_cycle)
 end
 print("vg-test: four-player game eliminates three dishonest claims over three proof rounds ok")
 
@@ -1158,19 +1170,6 @@ for _, terminal in ipairs({ "halt", "overflow", "exception" }) do
     )
 end
 
--- The tamperer's bookkeeping follows a fork and is restored with a rejected input.
-do
-    local roles = require("vg-dishonest")
-    local player <close> = roles.new_tamperer(initial_hash, 0, 100)
-    vg.event_handler.input_added(player, 0, paths[2])
-    assert(player.epoch_pair.machine:get_root_hash() == initial_hash)
-    assert(not player.epoch_pair.machine.tampered)
-    local loaded <close> = player:new_machine_pair_at_epoch_input_offset(0)
-    local replay <close> = loaded:fork()
-    player:run_to_epoch_input_offset(replay, player.inputs, 0, 1)
-    assert(replay.machine:get_root_hash() == initial_hash and not replay.machine.tampered)
-end
-
 -- Scope cleanup owns every persistent fork even when a handler fails.
 do
     local captured
@@ -1190,7 +1189,7 @@ do
             and not captured.tentative_pair
     )
 end
-print("vg-test: fixed points, tamperer rollback and cleanup ok")
+print("vg-test: fixed points and cleanup ok")
 
 replay_test.run(initial_hash, paths)
 

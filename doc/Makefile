@@ -359,7 +359,8 @@ test-prt-protocol:
 	    lua5.4 $(RECIPES_DIR)/game-transport-test.lua && \
 	    lua5.4 $(RECIPES_DIR)/vg-clock-test.lua
 
-$(GAME_TEST_DIR)/initial-hash: $(RECIPES_DIR)/game-test-fixtures.sh $(RECIPES_DIR)/calc.sh
+$(GAME_TEST_DIR)/initial-hash: $(RECIPES_DIR)/game-test-fixtures.sh $(RECIPES_DIR)/calc.sh \
+    $(RECIPES_DIR)/find-yield.lua $(RECIPES_DIR)/find-uarch-tohost-sd.lua
 	mkdir -p $(GAME_TEST_DIR)
 	cd $(GAME_TEST_DIR) && bash $(RECIPES_DIR)/game-test-fixtures.sh
 

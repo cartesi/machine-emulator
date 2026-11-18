@@ -2,12 +2,13 @@ local cartesi = require("cartesi")
 local fs = require("cartesi.filesystem")
 local util = require("cartesi.util")
 
-local input = assert(arg[1], "missing argument: input")
-local cmd = assert(cartesi[assert(arg[2], "missing argument: yield command")], "unknown yield command")
-local reason = assert(cartesi[assert(arg[3], "missing argument: yield reason")], "unknown yield reason")
+local stored = assert(arg[1], "missing argument: machine")
+local input = assert(arg[2], "missing argument: input")
+local cmd = assert(cartesi[assert(arg[3], "missing argument: yield command")], "unknown yield command")
+local reason = assert(cartesi[assert(arg[4], "missing argument: yield reason")], "unknown yield reason")
 
--- The machine stored after input 0, the state that receives input 1 and, since input 1 is rejected, input 2
-local machine = cartesi.machine("rolling-calculator-after-input-0")
+-- The stored machine is the state that receives the input
+local machine = cartesi.machine(stored)
 machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, fs.read_file(input), machine:get_root_hash())
 local input_mcycle_base = machine:read_reg("mcycle")
 

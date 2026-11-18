@@ -30,4 +30,22 @@ encode_input 0 '6*2^1024 + 3*2^512' > input-0.bin
 encode_input 1 'invalid input' > input-1.bin
 encode_input 2 '2^2048' > input-2.bin
 encode_input 2 '2+2048' > forged-input-2.bin
+# The machine after input 0 receives input 2, because the calculator rejects input 1.
+if [ -e rolling-calculator-after-input-0 ]; then
+    lua5.4 -e 'require("cartesi").machine:remove_stored("rolling-calculator-after-input-0")'
+fi
+cartesi-machine --no-init-splash --load=rolling-calculator-template --revert-mode=none \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:1 \
+    --store=rolling-calculator-after-input-0 > after-input-0.log 2>&1
+# Writes the moment right after the sd to htif.tohost that emits the notice of an input,
+# as its mcycle offset and uarch cycle. The finders report on stderr.
+find_notice() {
+    local mcycle uarch_cycle
+    mcycle=$(lua5.4 "$RECIPES_DIR/find-yield.lua" "$1" "$2" \
+        HTIF_YIELD_CMD_AUTOMATIC HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT 2>&1 > /dev/null)
+    uarch_cycle=$(lua5.4 "$RECIPES_DIR/find-uarch-tohost-sd.lua" "$1" "$2" "$mcycle" 2>&1 > /dev/null)
+    printf '%s %s' "$mcycle" "$uarch_cycle"
+}
+find_notice rolling-calculator-template input-0.bin > input-0-notice
+find_notice rolling-calculator-after-input-0 input-2.bin > input-2-notice
 printf '%s' "$initial_hash" > initial-hash

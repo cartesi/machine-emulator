@@ -3,10 +3,11 @@
 -- Each machine waits for its input. Stored trees hold about two hashes per distinct leaf.
 local cartesi = require("cartesi")
 local fs = require("cartesi.filesystem")
+local prt = require("prt")
 
 local HASH_SIZE = 32
 local LOG2_HASH_SIZE = 5
-local LOG2_BUNDLE_MCYCLE_COUNT = 4
+local LOG2_BUNDLE_MCYCLE_COUNT = prt.LOG2_BUNDLE_MCYCLE_COUNT
 
 local log2_period = assert(tonumber(arg[1]), "missing log2 period")
 local sampled_periods_per_input = assert(tonumber(arg[2]), "missing sampled periods per input")
@@ -94,6 +95,7 @@ end
 local mean_uarch_leaves = uarch_leaves // sampled_periods
 
 fs.write_file(tostring(sampled_periods), "sampled_periods")
+fs.write_file(tostring(LOG2_BUNDLE_MCYCLE_COUNT), "log2_bundle_mcycle_count")
 fs.write_file(string.format("%.0f", mcycle_leaves / 1000), "mcycle_distinct_leaves_thousands")
 fs.write_file(tostring(mcycle_bundles), "mcycle_bundles")
 fs.write_file(string.format("%.0f", mean_uarch_leaves / 1000), "uarch_distinct_leaves_thousands")

@@ -180,7 +180,7 @@ end
 function story.report_divergence(match, divergence)
     narrate(
         get_match_stream(match),
-        "The claims diverge at state %d: %s against %s, from the agreed state %s.",
+        "The claims diverge at leaf 0x%x: %s against %s, from the agreed state %s.",
         divergence.leaf_index,
         format_short_hash(divergence.next_state_hashes[1]),
         format_short_hash(divergence.next_state_hashes[2]),

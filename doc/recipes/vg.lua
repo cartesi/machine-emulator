@@ -885,7 +885,7 @@ local function request_state_transitions(tournament, interval)
         { agreed_position.epoch_input_offset, agreed_position.input_mcycle_offset, agreed_position.uarch_cycle },
         function(response, sender, received_at)
             local player = tournament.players[sender]
-            assert(received_at < started_at + player.allowance, "late state transition proof")
+            assert(received_at < started_at + player.allowance, "late state-transition proof")
             local obtained_root_hash = validate_state_transition_response(
                 tournament.dapp_contract,
                 interval.last_agreed_hash,

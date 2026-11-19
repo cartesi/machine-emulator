@@ -404,7 +404,7 @@ end
 -- docs:end settle_timeout
 
 -- Settles a uarch match at the divergent leaf. Returns the state hash reached by the first
--- state transition proof that verifies (the transition is unique), or nil when nobody proves one.
+-- state-transition proof that verifies (the transition is unique), or nil when nobody proves one.
 -- docs:begin settle_uarch_state_hash
 local function settle_uarch_state_hash(tournament, match, state_transition_offset, root_hash_before, next_state_hashes)
     local subscriptions = {
@@ -420,7 +420,7 @@ local function settle_uarch_state_hash(tournament, match, state_transition_offse
         EVENTS.prove_state_transition,
         { tournament.epoch_input_offset, tournament.input_period_offset, state_transition_offset },
         function(response, _, received_at)
-            assert(received_at < eliminable_at, "late state transition proof")
+            assert(received_at < eliminable_at, "late state-transition proof")
             return validate_state_transition_response(
                 tournament.dapp_contract,
                 root_hash_before,
@@ -1731,7 +1731,7 @@ function event_handler.prove_state_transition(self, epoch_input_offset, input_pe
     local machine = pair.machine
     local input_data = self:read_input(epoch_input_offset)
     if state_transition_offset == 0 and input_period_offset == 0 and input_data then
-        -- Logging never fails. A machine that is not waiting for the input logs the no-op delivery.
+        -- Logging never fails. A machine that is not waiting for the input logs the no-op inclusion.
         local send_cmio_log =
             machine:log_send_cmio_response(HTIF_YIELD_REASON_ADVANCE_STATE, input_data, pair.revert_root_hash)
         return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }

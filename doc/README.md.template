@@ -1738,7 +1738,7 @@ fs.write_file(tostring((1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) - 
 
 A *computation hash* is the root of a Merkle tree whose leaves are the machine state hashes sampled at periodic intervals during a computation.
 Where a state hash commits to the machine at one point, a computation hash commits to the whole run of an epoch.
-The dispute resolution protocol described under [Hash-view of computation](#hash-view-of-computation), in the blockchain perspective, is built on it.
+The dispute resolution protocol described under [Permissionless refereed tournament](#permissionless-refereed-tournament), in the blockchain perspective, is built on it.
 The `cartesi-machine` utility computes two kinds while `--cmio-advance-state` feeds an epoch to a Rolling Cartesi Machine.
 An *mcycle computation hash* covers the entire epoch, with one leaf every 2<sup>p</sup> mcycles and the initial state implicit.
 A *uarch cycle computation hash* covers one of these mcycle periods, with one leaf after each uarch cycle.
@@ -3216,15 +3216,16 @@ Every position therefore has a state, whether or not the computation reaches it.
 Each state transition executes one uarch step.
 The uarch executes one instruction of the main processor in a number of uarch cycles and then halts.
 The halted state repeats until the last uarch cycle of the mcycle.
-At the first uarch cycle of an input, the transition delivers the input before its step.
+At the first uarch cycle of an input, the transition includes the input before its step.
 At the last uarch cycle of an mcycle, the transition resets the uarch after its step.
-When an instruction rejects its input, the state after the reset that closes it is the state the machine had before the input was delivered.
+When an instruction rejects its input, the state after the reset that closes it is the state the machine had before the input was included.
 
 Past the fixed point of an input, the main machine no longer changes at mcycle boundaries.
 Within each later mcycle, the uarch spends a few uarch cycles noticing the fixed point, stays halted until the last uarch cycle, and then resets back to the fixed-point state.
 The same 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> uarch states therefore repeat in every later mcycle.
 Once the epoch is sealed, the blockchain knows its last input and feeds no input past it.
 The state after the last input is therefore the final fixed point of the whole epoch.
+Together, these rules define the *state transition function* of Rolling Cartesi Machines.
 
 The honest party proves a state transition with access logs.
 An access log records every value the operation reads from or writes to the state, each with a Merkle-tree proof.
@@ -3445,7 +3446,7 @@ Together with uarch step logs, these logs allow the verification of any state tr
 The command-line option `--log-state-transition` logs the state transition at a position of an epoch that `--cmio-advance-state` runs.
 Its `epoch_input_offset`, `input_mcycle_offset`, and `uarch_cycle` sub-keys give the position.
 The proof always holds the uarch step log.
-At the first uarch cycle of an input, it also holds the log of the delivery.
+At the first uarch cycle of an input, it also holds the log of the inclusion.
 At the last uarch cycle of an mcycle, it also holds the log of the reset.
 These are the logs the blockchain receives.
 The `state_hash_before` and `state_hash_after` sub-keys save the state hashes before and after the transition.
@@ -3456,8 +3457,8 @@ Recall that the calculator rejects input 1.
 As under [Computation hashes](#computation-hashes), the command runs against a `cartesi-jsonrpc-machine` server.
 The server lets it revert the rejected input.
 
-The first proof is of the delivery of input 2, at the first uarch cycle of the input.
-```{.bash key=transition_delivery vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,port->ports/transition_delivery outputs=delivery-proof.lua,delivery-before.bin,delivery-after.bin replace=source/client}
+The first proof is of the inclusion of input 2, at the first uarch cycle of the input.
+```{.bash key=transition_inclusion vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,port->ports/transition_inclusion outputs=inclusion-proof.lua,inclusion-before.bin,inclusion-after.bin replace=source/client}
 rm -f rolling-calculator-template
 ln -sf "$tmpl" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
@@ -3474,7 +3475,7 @@ cartesi-machine \
     --remote-shutdown \
     --load=rolling-calculator-template \
     --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
-    --log-state-transition=epoch_input_offset:2,input_mcycle_offset:0,uarch_cycle:0,filename:delivery-proof.lua,state_hash_before:delivery-before.bin,state_hash_after:delivery-after.bin
+    --log-state-transition=epoch_input_offset:2,input_mcycle_offset:0,uarch_cycle:0,filename:inclusion-proof.lua,state_hash_before:inclusion-before.bin,state_hash_after:inclusion-after.bin
 # docs:end client
 } > client 2>&1
 ```
@@ -3597,18 +3598,18 @@ The state hash it saves after the transition is the final state hash of the epoc
 The script `verify-state-transition.lua` checks a proof as the blockchain does.
 ```{.lua key=verify_state_transition_source include=verify-state-transition.lua title="verify-state-transition.lua"}
 ```
-It verifies the delivery against the posted input, then the uarch step, then the reset.
+It verifies the inclusion against the posted input, then the uarch step, then the reset.
 It accepts the proof when the state hash it reaches is the one saved after the transition.
 Running it on the four proofs
-```{.bash key=transition_verify vars=transition_delivery,transition_notice,transition_rejection,transition_padding,rolling_calc_encode,notice_mcycle->transition_notice_mcycle/stderr,notice_ucycle->transition_notice_uarch_cycle/stderr,rejection_mcycle->transition_rejection_mcycle/stderr,last_mcycle->rollup_constants/last_input_mcycle_offset,last_ucycle->rollup_constants/last_uarch_cycle depends=verify_state_transition_source replace=source/cmd}
+```{.bash key=transition_verify vars=transition_inclusion,transition_notice,transition_rejection,transition_padding,rolling_calc_encode,notice_mcycle->transition_notice_mcycle/stderr,notice_ucycle->transition_notice_uarch_cycle/stderr,rejection_mcycle->transition_rejection_mcycle/stderr,last_mcycle->rollup_constants/last_input_mcycle_offset,last_ucycle->rollup_constants/last_uarch_cycle depends=verify_state_transition_source replace=source/cmd}
 ln -sf "$RECIPES_DIR/verify-state-transition.lua" .
 ln -sf $rolling_calc_encode/input-2.bin .
-ln -sf $transition_delivery/delivery-* $transition_notice/notice-* .
+ln -sf $transition_inclusion/inclusion-* $transition_notice/notice-* .
 ln -sf $transition_rejection/rejection-* $transition_padding/padding-* .
 {
 # docs:begin cmd
-lua5.4 verify-state-transition.lua delivery-proof.lua \
-    delivery-before.bin delivery-after.bin 0 0 input-2.bin
+lua5.4 verify-state-transition.lua inclusion-proof.lua \
+    inclusion-before.bin inclusion-after.bin 0 0 input-2.bin
 lua5.4 verify-state-transition.lua notice-proof.lua \
     notice-before.bin notice-after.bin $notice_mcycle $notice_ucycle
 lua5.4 verify-state-transition.lua rejection-proof.lua \
@@ -5099,7 +5100,8 @@ The [Output proofs](#output-proofs) example uses `frontier_push_back` and `front
 The constructor is `frontier`, which produces the frontier an epoch begins from:
 ```{.lua replace=proof_module/source/frontier title="hash-tree.lua (excerpt)"}
 ```
-It distinguishes two cases with `is_proof`, which checks whether the argument is a proof table rather than a height.
+Its second argument is the hash type, `"keccak256"` or `"sha256"`.
+It distinguishes two cases of its first argument with `is_proof`, which checks whether the argument is a proof table rather than a height.
 Given the tree height, it returns the empty frontier of a genesis epoch, the all-`false` frontier for the given height.
 Given the previous epoch's last output proof instead, it rebuilds the frontier as it stood after that output.
 The last output is the rightmost leaf in the range [0, *c*), so at every level where *c* has a set bit that leaf is a right child, and its proof sibling there is exactly the root hash the frontier stores for that level.
@@ -5393,7 +5395,7 @@ Otherwise, the cache returns the existing pair.
 The method `run_to_position` then advances the returned pair through the remaining inputs, mcycles, and uarch cycles.
 
 The handler for `prove_state_transition` logs the proof that [`verify-state-transition.lua`](#verifying-state-transitions) checks.
-The handler logs the delivery of the input at the first uarch cycle of an input, the uarch step at every position, and the reset at the last uarch cycle.
+The handler logs the inclusion of the input at the first uarch cycle of an input, the uarch step at every position, and the reset at the last uarch cycle.
 ```{.lua key=vg_prove_state_transition include=vg.lua/prove_state_transition title="vg.lua prove_state_transition"}
 ```
 The handler logs the proof from the machine at the agreed position.
@@ -5415,7 +5417,7 @@ The computation starts from the same Rolling Cartesi Machine template and proces
 Recall that the calculator rejects input 1, restoring the state it had before receiving input 1.
 
 An honest player represents the correct computation.
-The honest player processes the posted inputs according to the state transition function of the machine.
+The honest player processes the posted inputs according to the [state transition function](#state-transition-proofs) of the machine.
 The honest player plays against three dishonest players at the same time.
 Each dishonest player misrepresents the computation in a different way.
 The forger substitutes an input.
@@ -5538,7 +5540,7 @@ The referee first collects the claims.
 The bisection moves to the second half of the interval only when the midpoint hashes are unanimous.
 Therefore, each round ends at the earliest position where some surviving player departs from the others.
 The no-rollback player departs first, in input 1.
-The forger departs next, at the delivery of input 2.
+The forger departs next, at the inclusion of input 2.
 The tamperer departs last, later in input 2.
 The rounds eliminate the dishonest players in that order.
 The listings of the rounds show only the first and last three steps of the bisection at each level.
@@ -5559,11 +5561,11 @@ This time the midpoint hashes of the players guide the bisection to input 2.
 ```{replace=vg_run/round_2_elided.txt}
 ```
 Within input 2, the mcycle and uarch cycle bisections both converge to 0.
-The disagreement begins at the delivery of input 2, before the machine executes the first uarch step of the input.
+The disagreement begins at the inclusion of input 2, before the machine executes the first uarch step of the input.
 This is the transition of the [first proof](#verifying-state-transitions).
-The forger can produce valid logs for the input it delivered.
+The forger can produce valid logs for the input it included.
 However, those logs cannot verify against the input the referee holds.
-The honest player and the tamperer both delivered the posted input, so their proofs verify, and the referee eliminates the forger.
+The honest player and the tamperer both included the posted input, so their proofs verify, and the referee eliminates the forger.
 
 A third round isolates the disagreement between the two remaining players.
 ```{replace=vg_run/round_3_elided.txt}
@@ -5572,7 +5574,7 @@ The honest player and the tamperer agree on the state before the `sd` that emits
 They disagree on the state right after the `sd`, where the tamperer replaced the notice.
 This is the transition of the [second proof](#verifying-state-transitions).
 The referee verifies that uarch step from the agreed state hash.
-The tamperer replaced the notice outside the state transition function, so no log can take the agreed state hash to the claim of the tamperer.
+The tamperer replaced the notice outside the [state transition function](#state-transition-proofs), so no log can take the agreed state hash to the claim of the tamperer.
 The proof of the honest player verifies, and the referee eliminates the tamperer.
 
 Only the honest player remains.
@@ -5676,7 +5678,7 @@ The fabulist offers the same proof, which cannot reach the correct final state h
 ```
 ```{replace=vg_sybil_run/verdict.txt}
 ```
-The referee accepted no invalid state transition proof.
+The referee accepted no invalid state-transition proof.
 The Sybils agreed on a false history, and the referee checked a valid state transition within that history.
 This is what can happen when an honest player relies on someone else to defend the correct final state hash.
 The correct hash is present, but no honest player defends it.
@@ -5706,9 +5708,9 @@ while [ ! -s outputs.txt ]; do sleep 1; done
 The honest player submits the same correct final state hash and answers the referee for itself.
 ```{replace=vg_sybil_defended_run/claims.txt}
 ```
-The midpoint hashes of the honest player expose the disagreement at the delivery of input 2, where the Sybils substitute the input.
+The midpoint hashes of the honest player expose the disagreement at the inclusion of input 2, where the Sybils substitute the input.
 This is the transition of the [first proof](#verifying-state-transitions).
-The referee verifies the delivery against the posted input, so both Sybils fail to prove their transitions.
+The referee verifies the inclusion against the posted input, so both Sybils fail to prove their transitions.
 ```{replace=vg_sybil_defended_run/round_1_proofs.txt}
 ```
 ```{replace=vg_sybil_defended_run/verdict.txt}
@@ -5750,7 +5752,7 @@ The reset then moves the state back to where it started.
 The leaves of that mcycle form a tail that repeats for every remaining mcycle to the end of the period.
 
 When only the computation hash itself matters, the frontier of [The hash tree frontier](#the-hash-tree-frontier) is enough.
-Its `frontier_pad_back` method can add runs of repeated leaves.
+The function `frontier_pad_back` can add runs of repeated leaves.
 (This is what `cartesi-machine` uses internally.)
 The [permissionless refereed tournament](#permissionless-refereed-tournament), however, must later access individual leaves in the corresponding tree, along with the siblings on their paths.
 Since the frontier has collapsed everything to the left of its last leaf into root hashes, we need a new data structure that captures the repetitions at the fixed points while keeping every node accessible.
@@ -5948,14 +5950,14 @@ Therefore, each honest player must still make sure that somebody takes every act
 
 The referee pairs the claims in a bracket and runs the matches of a round at the same time.
 Each match eliminates at least one claim.
-Therefore, each round eliminates at least half the claims.
+Therefore, each round eliminates about half the claims.
 
 | | Verification game | Permissionless refereed tournament |
 | --- | --- | --- |
 | A claim | The final state hash | A computation hash over every sampled state |
 | A bisection answer | Computed by advancing a machine to the midpoint | Read from the committed tree |
 | Who may answer | The player that posted the claim | Anybody |
-| A round eliminates | At least one player | At least half the claims |
+| A round eliminates | At least one player | About half the claims |
 
 The dispute runs at two levels, one per cycle counter.
 At the first level, a claim is an *mcycle claim*, the mcycle computation hash of the epoch.
@@ -6100,7 +6102,7 @@ Therefore, the PRT player must be able to produce any node of its claim tree, fo
 
 ```{.lua key=prt_claim_sizes_src include=prt-claim-sizes.lua replace=null}
 ```
-```{.bash key=prt_claim_sizes vars=tmpl->rolling_calc_template/rolling-calculator-template/path,after_input_0->rolling_calc_after_input_0/rolling-calculator-after-input-0/path,rolling_calc_encode depends=prt_claim_sizes_src outputs=sampled_periods,mcycle_distinct_leaves_thousands,mcycle_bundles,uarch_distinct_leaves_thousands,mcycle_full_tree_size,uarch_full_tree_size,mcycle_leaf_forest_size,uarch_leaf_forest_size,mcycle_bundle_forest_size,uarch_bundle_forest_size replace=null}
+```{.bash key=prt_claim_sizes vars=tmpl->rolling_calc_template/rolling-calculator-template/path,after_input_0->rolling_calc_after_input_0/rolling-calculator-after-input-0/path,rolling_calc_encode depends=prt_claim_sizes_src,prt_build_mcycle_claim,prt_runs_node,game_transport_src,game_output_src,game_clock_src,game_response_queue_src outputs=sampled_periods,log2_bundle_mcycle_count,mcycle_distinct_leaves_thousands,mcycle_bundles,uarch_distinct_leaves_thousands,mcycle_full_tree_size,uarch_full_tree_size,mcycle_leaf_forest_size,uarch_leaf_forest_size,mcycle_bundle_forest_size,uarch_bundle_forest_size replace=null}
 lua5.4 "$RECIPES_DIR/prt-claim-sizes.lua" 10 21 \
     "$tmpl" $rolling_calc_encode/input-0.bin \
     "$after_input_0" $rolling_calc_encode/input-1.bin \
@@ -6123,7 +6125,7 @@ The mcycle claim then takes about []{replace=prt_claim_sizes/mcycle_leaf_forest_
 
 The player shrinks its claim trees further by storing bundle roots instead of leaves.
 A *bundle* is a complete subtree of consecutive leaves.
-In an mcycle claim, a bundle spans 2<sup>4</sup> leaves.
+In an mcycle claim, a bundle spans 2<sup>[]{replace=prt_claim_sizes/log2_bundle_mcycle_count code=no}</sup> leaves.
 In a uarch claim, a bundle spans the 2<sup>[]{replace=rollup_constants/log2_max_uarch_cycles_per_mcycle code=no}</sup> leaves of one mcycle.
 The methods `machine:collect_mcycle_root_hashes` and `machine:collect_uarch_cycle_root_hashes` return the bundle roots directly, as the machine runs (see [Computation hashes](#computation-hashes-1)).
 Bundle roots are interior nodes of the claim tree, so the root hash of the tree is unchanged.
@@ -6165,7 +6167,7 @@ When a uarch tournament opens, the player builds its uarch claim the same way.
 The player replays the disputed input from the cache to the end of the period, and pushes one bundle root per mcycle of the period into a new frontier forest.
 ```{.lua key=prt_build_uarch_cycle_computation_hash include=prt.lua/build_uarch_cycle_computation_hash title="prt.lua build_uarch_cycle_computation_hash"}
 ```
-State transition proofs come from a machine positioned at the disputed transition, as in the verification game.
+State-transition proofs come from a machine positioned at the disputed transition, as in the verification game.
 ```{.lua key=prt_prove_state_transition include=prt.lua/prove_state_transition title="prt.lua prove_state_transition"}
 ```
 
@@ -6357,7 +6359,7 @@ The uarch bisection descends to the `sd` that emits the notice, the transition o
 ```
 
 In the final, the honest claim meets the forger in match 5.
-The two claims first differ at the delivery of input 2, the transition of the [first proof](#verifying-state-transitions).
+The two claims first differ at the inclusion of input 2, the transition of the [first proof](#verifying-state-transitions).
 ```{replace=prt_run/match_5_elided}
 ```
 ```{replace=prt_run/match_5_1_elided}
@@ -6390,6 +6392,7 @@ Therefore, the honest mcycle claim survives only if the correct uarch claim ente
 The same two Sybils as in the verification game demonstrate the attack.
 The forger posts the claim of its own computation.
 The fabulist posts the honest mcycle claim.
+Unlike its counterpart in the verification game, it computes that claim itself, because posting and defending a claim takes the tree, not only its root.
 In each uarch tournament, the fabulist posts a uarch claim that follows the computation of the forger, except for its last leaf.
 The last leaf is the honest state hash the period ends at, so the uarch claim joins the honest side of the uarch tournament.
 The idle player computes honestly, posts the honest mcycle claim, and leaves.
@@ -6436,7 +6439,7 @@ Connect the forger, as in the tournament above, and then the fabulist.
 The idle player and the fabulist post the same claim, so the claim enters the tournament once.
 ```{replace=prt_sybil_run/claims}
 ```
-The honest claim meets the claim of the forger, and the two claims first differ in the period that delivers input 2.
+The honest claim meets the claim of the forger, and the two claims first differ in the period that includes input 2.
 The forger and the fabulist each post a uarch claim over that period.
 ```{replace=prt_sybil_run/match_1_elided}
 ```
@@ -6448,7 +6451,7 @@ The proof reaches the state the forger claimed, so the uarch claim of the fabuli
 No uarch claim on the honest side survives, so the honest mcycle claim is eliminated, and the forger wins.
 ```{replace=prt_sybil_run/verdict}
 ```
-The referee accepted no invalid state transition proof.
+The referee accepted no invalid state-transition proof.
 The honest claim was present, but nobody posted the correct uarch claim.
 
 Now repeat the game, replacing the idle player with the honest player.
@@ -6482,16 +6485,16 @@ elide match_1_2
 This time, the honest player also posts the correct uarch claim over the period.
 ```{replace=prt_sybil_defended_run/match_1_elided}
 ```
-The correct uarch claim beats the uarch claims of the forger and of the fabulist, both at the delivery of input 2.
+The correct uarch claim beats the uarch claims of the forger and of the fabulist, both at the inclusion of input 2.
 ```{replace=prt_sybil_defended_run/match_1_1_elided}
 ```
 ```{replace=prt_sybil_defended_run/match_1_2_elided}
 ```
 ```{replace=prt_sybil_defended_run/verdict}
 ```
-The honest player did not have to defend the mcycle claim alone, since the fabulist posted the same claim.
-However, the honest mcycle claim survived only because somebody posted and defended the correct uarch claim.
-Each honest player must make sure that somebody does.
+The fabulist posted the honest mcycle claim too, and that did not help the claim.
+The honest mcycle claim survived only because the honest player posted and defended the correct uarch claim.
+Honest players can collaborate, but each must make sure that at least one of them takes every action the honest claim requires.
 
 The model simplifies Dave in a few ways.
 The referee is one trusted process, where Dave is a family of contracts that the blockchain executes.

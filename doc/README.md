@@ -1663,7 +1663,7 @@ CARTESI_AR_CLINT_LENGTH=786432
 CARTESI_AR_CLINT_START=33554432
 CARTESI_AR_CMIO_RX_BUFFER_LOG2_SIZE=21
 ...
-CARTESI_VERSION_LABEL='-test2'
+CARTESI_VERSION_LABEL='-test4'
 CARTESI_VERSION_MAJOR=0
 CARTESI_VERSION_MINOR=23
 CARTESI_VERSION_NUM=23000
@@ -5503,16 +5503,20 @@ and syncs the affected parent directories before returning.
 storage. A machine loaded from the directory with shared backing stores
 changes its files on any call, including `get_root_hash` and
 `get_proof`, and when it is destroyed, so sync only after destroying
-that machine. A directory used by a machine with sharing holds a valid
-machine only after that machine was destroyed without a crash and the
-directory was synced. If the process stops earlier, discard the
-directory. Where file locks are available, `sync_stored` fails while
-such a machine still uses the directory.
-`machine:remove_stored(<directory>)` removes a stored machine from disk
-and makes the removal durable. All four are also available on
-`cartesi.machine` itself, so a script can manipulate stored machines
-without holding a loaded instance. These functions are the basis for the
-`clone:` and `sync` keys of the command-line utility’s `--load` option.
+that machine. Once a machine loaded from a directory with sharing is
+destroyed, other processes on the same host see a valid machine in that
+directory. The directory is durable only after it is synced as well.
+Before that sync, a clone of the directory is valid only if the
+filesystem clones changes not yet written to disk. If the process stops
+before the machine is destroyed, discard the directory. If the system
+stops, by a crash or power loss, before the sync, also discard it. Where
+file locks are available, `sync_stored` fails while such a machine still
+uses the directory. `machine:remove_stored(<directory>)` removes a
+stored machine from disk and makes the removal durable. All four are
+also available on `cartesi.machine` itself, so a script can manipulate
+stored machines without holding a loaded instance. These functions are
+the basis for the `clone:` and `sync` keys of the command-line utility’s
+`--load` option.
 
 The disk-based driver is the calculator driver from the Rolling Cartesi
 Machine [example](#rolling-cartesi-machines-1), with the fork-based

@@ -571,8 +571,11 @@ CM_API cm_error cm_create_new(const char *config, const char *runtime_config, co
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \returns 0 for success, non zero code for error.
 /// \details With CM_SHARING_CONFIG or CM_SHARING_ALL, the machine changes the shared backing store files in \p dir.
-/// The directory holds a valid machine again only after cm_destroy() succeeds and cm_sync_stored() then succeeds.
-/// If the process stops before that (crash, kill, or power loss), discard the directory.
+/// After cm_destroy() succeeds, processes on the same host see a valid machine in \p dir.
+/// The files are durable only after cm_sync_stored() then succeeds.
+/// Before that sync, a clone of \p dir is valid only if the filesystem clones changes not yet written to disk.
+/// If the process stops before cm_destroy() succeeds, discard the directory.
+/// If the system stops (crash or power loss) before cm_sync_stored() succeeds, also discard the directory.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 CM_API cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_config, cm_sharing_mode sharing);
 

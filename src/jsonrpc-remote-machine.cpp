@@ -1107,7 +1107,11 @@ static json jsonrpc_machine_collect_uarch_cycle_bundle(const json &j, const std:
 /// \returns JSON response object
 static json jsonrpc_machine_destroy_handler(const json &j, const std::shared_ptr<http_session> &session) {
     jsonrpc_check_no_params(j);
-    session->handler->machine.reset();
+    // The machine is deleted even if saving its pending dirty-page marks fails, and the failure is then reported
+    const std::unique_ptr<cartesi::machine> m{std::move(session->handler->machine)};
+    if (m) {
+        m->mark_write_tlb_dirty_pages();
+    }
     return jsonrpc_response_ok(j);
 }
 

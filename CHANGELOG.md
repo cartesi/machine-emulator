@@ -58,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed the PRT player to report an outputs Merkle root mismatch instead of failing
 - Changed `run` to report a microarchitecture that is not reset as a runtime error
 - Changed `collect_mcycle_root_hashes` to track dirty pages through the write TLB, as `get_root_hash` does
+- Changed `cm_destroy` to report a failure to save pending dirty-page marks
 
 ### Removed
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`

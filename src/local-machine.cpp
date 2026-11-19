@@ -17,6 +17,7 @@
 #include "local-machine.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -216,8 +217,10 @@ void local_machine::do_set_runtime_config(const machine_runtime_config &r) {
 }
 
 void local_machine::do_destroy() {
-    delete get_machine();
+    // The machine is deleted even if saving its pending dirty-page marks fails, and the failure is then reported
+    const std::unique_ptr<machine> m{get_machine()};
     m_machine = nullptr;
+    m->mark_write_tlb_dirty_pages();
 }
 
 void local_machine::do_reset_uarch() {

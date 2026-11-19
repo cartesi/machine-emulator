@@ -41,7 +41,6 @@
 #include "algorithm.hpp"
 #include "assert-printf.hpp"
 #include "back-merkle-tree.hpp"
-#include "collect-mcycle-hashes-state-access.hpp"
 #include "collect-uarch-cycle-hashes-state-access.hpp"
 #include "device-state-access.hpp"
 #include "dtb.hpp"
@@ -2461,7 +2460,7 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
     }
     auto &back_tree = result.partial_bundle.value();
 
-    const collect_mcycle_hashes_state_access a(*this);
+    const state_access a(*this);
 
     // Reserve space before entering the loop to minimize dynamic memory allocations,
     // the reserved sizes below are based on empirical benchmarks to balance performance and memory usage,

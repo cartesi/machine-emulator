@@ -97,10 +97,10 @@
 #include "replay-step-state-access.hpp" // IWYU pragma: keep
 #include "zk-runtime.hpp"               // IWYU pragma: export
 #else
-#include "collect-mcycle-hashes-state-access.hpp" // IWYU pragma: keep
-#include "record-step-state-access.hpp"           // IWYU pragma: keep
-#include "replay-step-state-access.hpp"           // IWYU pragma: keep
-#include "state-access.hpp"                       // IWYU pragma: keep
+// Host builds instantiate interpret() for each of these state accessors
+#include "record-step-state-access.hpp" // IWYU pragma: keep
+#include "replay-step-state-access.hpp" // IWYU pragma: keep
+#include "state-access.hpp"             // IWYU pragma: keep
 
 #endif
 
@@ -6479,8 +6479,6 @@ template interpreter_break_reason interpret(state_access a, uint64_t mcycle_end)
 template interpreter_break_reason interpret(record_step_state_access a, uint64_t mcycle_end);
 // Explicit instantiation for replay_step_state_access
 template interpreter_break_reason interpret(replay_step_state_access a, uint64_t mcycle_end);
-// Explicit instantiation for collect_mcycle_hashes_state_access
-template interpreter_break_reason interpret(collect_mcycle_hashes_state_access a, uint64_t mcycle_end);
 #endif // MICROARCHITECTURE
 
 } // namespace cartesi

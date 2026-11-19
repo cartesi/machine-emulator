@@ -2461,8 +2461,7 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
     }
     auto &back_tree = result.partial_bundle.value();
 
-    collect_mcycle_hashes_state_access::context context{};
-    const collect_mcycle_hashes_state_access a(context, *this);
+    const collect_mcycle_hashes_state_access a(*this);
 
     // Reserve space before entering the loop to minimize dynamic memory allocations,
     // the reserved sizes below are based on empirical benchmarks to balance performance and memory usage,
@@ -2471,7 +2470,6 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
     const uint64_t max_result_hashes =
         log2_mcycles_per_result < 64 ? ((mcycle_end - mcycle_start) >> log2_mcycles_per_result) + 1 : 1;
     result.hashes.reserve(std::clamp<uint64_t>(max_result_hashes, 1, 16384));
-    context.dirty_pages.reserve(mcycle_period >= 1024 ? 4096 : std::clamp<uint64_t>(mcycle_period * 4, 16, 4096));
 
     // The first iteration will target the next mcycle_period boundary,
     // but will not exceed mcycle_end if that limit is reached first
@@ -2501,15 +2499,8 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
             continue;
         }
 
-        // Mark dirty pages tracked by the context
-        for (const uint64_t paddr_page : context.dirty_pages) {
-            auto &ar = find_address_range(paddr_page, HASH_TREE_PAGE_SIZE);
-            ar.get_dirty_page_tree().mark_dirty_pages_and_up(paddr_page - ar.get_start(), HASH_TREE_PAGE_SIZE);
-        }
-        context.dirty_pages.clear();
-
         // Update the hash tree and retrieve the current state root hash
-        if (!m_ht.update(m_ars)) {
+        if (!update_hash_tree()) {
             throw std::runtime_error{"update hash tree failed"};
         }
 

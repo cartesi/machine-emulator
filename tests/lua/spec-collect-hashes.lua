@@ -2335,6 +2335,52 @@ describe("collect hashes", function()
     end -- for hash function
 end) -- describe collect hashes
 
+describe("page-table updates while collecting hashes", function()
+    local RAM_START = cartesi.AR_RAM_START
+    local TARGET = RAM_START + 0x5000
+    local TRANSLATED = RAM_START + 0x6000
+    local LEAF = RAM_START + 0x3000
+    local VALUE = 0x0102030405060708
+    local PTE_A = 0x40
+
+    -- A load with MPRV set translates through Sv39 with S-mode privileges. Its leaf PTE starts with
+    -- the A bit clear, so the page walk sets it. That PTE write is the only RAM write of the run, and
+    -- it does not go through the write TLB.
+    local function create_machine()
+        local root, middle = RAM_START + 0x1000, RAM_START + 0x2000
+        local machine = cartesi.machine({
+            ram = { length = 0x10000 },
+            processor = {
+                registers = {
+                    pc = RAM_START,
+                    mstatus = (1 << 17) | (1 << 11), -- MPRV=1, MPP=S
+                    satp = (8 << 60) | (root >> 12), -- Sv39
+                    x10 = TARGET,
+                },
+            },
+        })
+        -- ld a2,0(a0), then jal x0,0
+        machine:write_memory(RAM_START, string.pack("<I4I4", 0x00053603, 0x0000006f))
+        machine:write_memory(root + 2 * 8, string.pack("<I8", ((middle >> 12) << 10) | 1))
+        machine:write_memory(middle, string.pack("<I8", ((LEAF >> 12) << 10) | 1))
+        machine:write_memory(LEAF + 5 * 8, string.pack("<I8", ((TRANSLATED >> 12) << 10) | 0x3)) -- V and R
+        machine:write_memory(TRANSLATED, string.pack("<I8", VALUE))
+        return machine
+    end
+
+    it("should hash the page of a PTE whose A bit a load sets", function()
+        local reference <close> = create_machine()
+        local expected = expect_mcycle_root_hashes(reference, 4, 1, 0)
+        local machine <close> = create_machine()
+        local result = machine:collect_mcycle_root_hashes(4, 0)
+        expect.equal(machine:read_reg("x12"), VALUE)
+        local pte = string.unpack("<I8", machine:read_memory(LEAF + 5 * 8, 8))
+        expect.equal(pte & PTE_A, PTE_A)
+        expect.equal(result.hashes, expected.hashes)
+        expect.equal(machine:get_root_hash(), tests_util.calculate_emulator_hash(machine))
+    end)
+end)
+
 describe("machine-ID registers", function()
     -- Host register writes may change IDs independently of the version check at construction.
     local ids = { mvendorid = cartesi.MVENDORID + 1, marchid = cartesi.MARCHID + 1, mimpid = cartesi.MIMPID + 1 }

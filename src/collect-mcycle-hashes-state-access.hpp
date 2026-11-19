@@ -20,13 +20,10 @@
 #include <cstdint>
 #include <stdexcept>
 
-#include "address-range-constants.hpp"
 #include "address-range.hpp"
 #include "assert-printf.hpp"
-#include "compiler-defines.hpp"
-#include "hash-tree-constants.hpp"
-#include "hash-tree.hpp"
 #include "host-addr.hpp"
+#include "i-accept-dirty-pages.hpp"
 #include "i-accept-scoped-notes.hpp"
 #include "i-state-access.hpp"
 #include "machine.hpp"
@@ -46,41 +43,28 @@ struct i_state_access_fast_addr<collect_mcycle_hashes_state_access> {
 };
 
 /// \class collect_mcycle_hashes_state_access
-/// \brief Tracks dirty pages while executing machine cycles for state root hash collection.
+/// \brief Executes machine cycles for state root hash collection.
+/// \details Pages are marked dirty as in state_access. A page can be written only while it is in the write TLB,
+/// so the machine marks pages when they leave the write TLB, and the collector marks the pages still in it
+/// before each hash tree update.
 // NOLINTNEXTLINE(misc-multiple-inheritance)
 class collect_mcycle_hashes_state_access :
     public i_state_access<collect_mcycle_hashes_state_access>,
-    public i_accept_scoped_notes<collect_mcycle_hashes_state_access> {
+    public i_accept_scoped_notes<collect_mcycle_hashes_state_access>,
+    public i_accept_dirty_pages<collect_mcycle_hashes_state_access> {
 
-public:
-    struct context {
-        hash_tree::dirty_pages_type dirty_pages;
-    };
-
-private:
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     processor_state &m_s; ///< reference to processor state
-    context &m_c;         ///< context for dirty pages
     machine &m_m;         ///< reference to machine
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
     /// \brief Constructor.
-    /// \param c Context receiving dirty pages.
     /// \param m Machine being interpreted.
-    collect_mcycle_hashes_state_access(context &c, machine &m) : m_s(m.get_state()), m_c(c), m_m(m) {}
+    explicit collect_mcycle_hashes_state_access(machine &m) : m_s(m.get_state()), m_m(m) {}
 
 private:
     using fast_addr_type = host_addr;
-    static constexpr uint64_t page_mask = ~(HASH_TREE_PAGE_SIZE - 1);
-
-    NO_INLINE void mark_dirty_word(uint64_t address) const {
-        m_c.dirty_pages.insert(address & page_mask);
-    }
-
-    NO_INLINE void mark_dirty_word(host_addr address, uint64_t pma_index) const {
-        m_c.dirty_pages.insert(m_m.get_paddr(address, pma_index) & page_mask);
-    }
 
     // -----
     // i_state_access interface implementation
@@ -146,15 +130,6 @@ private:
 
     void do_write_mcycle(uint64_t val) const {
         m_s.shadow.registers.mcycle = val;
-
-        // Only mcycle writes mark all registers as dirty.
-        // This is done for efficiency, since the interpreter writes mcycle only when exiting its loop.
-        // Also note that by design it is impossible for the interpreter to write other registers without writing
-        // mcycle.
-        for (uint64_t paddr_page = AR_SHADOW_REGISTERS_START;
-            paddr_page < AR_SHADOW_REGISTERS_START + AR_SHADOW_STATE_LENGTH; paddr_page += HASH_TREE_PAGE_SIZE) {
-            mark_dirty_word(paddr_page);
-        }
     }
 
     uint64_t do_read_mstatus() const {
@@ -461,8 +436,7 @@ private:
     }
 
     template <typename T, typename A>
-    void do_write_memory_word(host_addr haddr, uint64_t pma_index, T val) const {
-        mark_dirty_word(haddr, pma_index);
+    void do_write_memory_word(host_addr haddr, uint64_t /* pma_index */, T val) const {
         aliased_aligned_write<T, A>(haddr, val);
     }
 
@@ -495,8 +469,6 @@ private:
     //??D This is still a bit too complicated for my taste
     template <TLB_set_index SET>
     void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) const {
-        // Marking only one slot field suffices because mark_dirty_word actually marks pages
-        mark_dirty_word(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
         m_m.write_verified_tlb(SET, slot_index, vaddr_page, vh_offset, pma_index);
     }
 
@@ -510,6 +482,15 @@ private:
 
     constexpr const char *do_get_name() const { // NOLINT(readability-convert-member-functions-to-static)
         return "collect_mcycle_hashes_state_access";
+    }
+
+    // -----
+    // i_accept_dirty_pages interface implementation
+    // -----
+    friend i_accept_dirty_pages<collect_mcycle_hashes_state_access>;
+
+    void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
+        m_m.mark_dirty_page(paddr, pma_index);
     }
 };
 

@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed `receive_cmio_request` to clamp a declared data length to the CMIO tx buffer instead of failing
 - Changed the PRT player to report an outputs Merkle root mismatch instead of failing
 - Changed `run` to report a microarchitecture that is not reset as a runtime error
+- Changed `collect_mcycle_root_hashes` to track dirty pages through the write TLB, as `get_root_hash` does
 
 ### Removed
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`

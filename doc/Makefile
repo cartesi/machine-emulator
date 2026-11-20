@@ -502,7 +502,7 @@ README.html: | prepare-readme
 endif
 
 clean:
-	rm -f README.md README.html template.d
+	rm -f README.html template.d
 	rm -f $(RECIPES_DIR)/rootfs-docs.tar
 	rm -f $(ROOTFS_DOCS_KEY) $(ROOTFS_DOCS_KEY)-have
 	rm -f $(RECIPES_DIR)/.rootfs-docs-*

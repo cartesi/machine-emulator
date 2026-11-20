@@ -100,7 +100,7 @@ SRCDIR = $(abspath src)
 TESTSDIR = $(abspath tests)
 DOWNLOADDIR = $(DEPDIR)/downloads
 # risc0 is optional and handled separately to allow clean without risc0 tooling installed
-SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch tests)
+SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch tests doc)
 
 # Pass down received UARCH_DEFS to sub-makefiles
 export UARCH_DEFS

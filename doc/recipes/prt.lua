@@ -4,8 +4,8 @@
 -- A referee, standing in for the Dave contracts on the blockchain, resolves a dispute among
 -- any number of players over the epoch's history. Where the verification game bisected live,
 -- PRT has each player commit upfront to a computation hash, the root of a Merkle tree of
--- machine state hashes sampled along the whole computation, and the dispute walks down the
--- two trees. Claims are what matter, not players: any player may answer any event concerning
+-- machine state hashes sampled along the whole computation, and the dispute bisects the two
+-- computation hashes. Claims are what matter, not players: any player may answer any event concerning
 -- any claim, every answer carries its own proof, and the referee takes the first answer that
 -- verifies. Unanswered openings are followed by timeout-win and elimination requests.
 --
@@ -13,7 +13,7 @@
 -- state hash every 2^p mcycles across the epoch (the mcycle computation hash of
 -- cartesi-machine.lua). When two mcycle claims diverge at a leaf, each side commits to a
 -- uarch claim over that one period, the state hash after every uarch transition of its 2^p
--- instructions (the uarch cycle computation hash), and the walk repeats. The uarch leaf it
+-- instructions (the uarch cycle computation hash), and the bisection repeats. The uarch leaf it
 -- isolates is a single state transition, settled by verifying access logs, exactly as in the
 -- verification games.
 --
@@ -36,11 +36,13 @@
 -- Mcycle and uarch tournaments gather claims from fixed audiences while their allowance of
 -- logical blocks lasts. Wall-clock computation speed does not consume a protocol allowance.
 --
--- The referee, honest player, machines, claim trees, and computation hashes live here.
+-- The referee, honest player, machines, and computation hashes live here.
 -- The shared protocol, referee server, and hidden narration live in prtu.lua.
+-- The stored player, which keeps its epoch in a directory for the bridge, lives in prt-stored-player.lua.
 
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
+local fs = require("cartesi.filesystem")
 local util = require("cartesi.util")
 local prtu = require("prtu")
 local cartesi_jsonrpc = require("cartesi.jsonrpc")
@@ -52,6 +54,7 @@ local WORD_MASK = WORD_SIZE - 1
 local IFLAGS_Y_ADDRESS = cartesi.machine:get_reg_address("iflags_Y")
 local HTIF_TOHOST_ADDRESS = cartesi.machine:get_reg_address("htif_tohost")
 local CMIO_TX_BUFFER_ADDRESS = cartesi.AR_CMIO_TX_BUFFER_START
+local CMIO_TX_BUFFER_LENGTH = 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE
 local LOG2_MAX_ADVANCE_STATES_PER_EPOCH = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
 local LOG2_MAX_MCYCLES_PER_ADVANCE_STATE = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 local LOG2_MAX_UARCH_CYCLES_PER_MCYCLE = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
@@ -79,9 +82,8 @@ local function map(values, transform)
     return result
 end
 
--- Protocol offsets are zero-based and scoped to their epoch, input, or period.
--- Machine mcycle boundaries are absolute counter values. Keep the epoch period offset separate
--- from the uarch transition offset because their combined counter would exceed 64 bits.
+-- Protocol offsets are zero-based and scoped to their epoch, input, or period (mcycle boundaries are
+-- absolute). The epoch period offset and the state transition offset stay separate to fit in 64 bits.
 local function split_epoch_period_offset(periods_per_input, epoch_period_offset)
     return epoch_period_offset // periods_per_input, epoch_period_offset % periods_per_input
 end
@@ -99,21 +101,20 @@ local function combine_input_mcycle_offset(mcycles_per_period, input_period_offs
 end
 
 ------------------------------------------------------------
--- Match walk
+-- Match bisection
 --
--- A match walks two claim trees down to the leaf where they first diverge, the two claims
+-- A match bisects two computation hashes down to the leaf where they first diverge, the two claims
 -- alternating, one response per round, exactly as in Dave's Match.sol. The referee holds one node
 -- to open (`turn_parent_node`) and the other claim's standing left and right children. The on-turn
--- node is located by (`position`, `height`) in the computation tree; `position` is the index
+-- node is located by (`position`, `height`) under the computation hash; `position` is the index
 -- of its first covered state leaf and is aligned to 2^height. The on-turn claim opens its node,
--- exposing the two children and, above the leaves, the two grandchildren of the side the walk
--- descends into. The walk follows the side where the claims first disagree, converging on the
+-- exposing the two children and, above the leaves, the two grandchildren of the side the bisection
+-- descends into. The bisection follows the side where the claims first disagree, converging on the
 -- leftmost divergent leaf, and the turn passes to the opponent each round. These functions are
 -- pure over the match state and response.
 ------------------------------------------------------------
 
--- Seeds a match over two claims of the given tree height. The first claim opens first, so the walk
--- starts with its computation hash as the node to open and the second claim's join-exposed children standing.
+-- Creates a match between two claims of the given height, with the first claim on turn.
 -- docs:begin new_match
 local function new_match(claim1, claim2, height)
     return {
@@ -128,9 +129,8 @@ local function new_match(claim1, claim2, height)
 end
 -- docs:end new_match
 
--- Applies a valid response, descending one height: the on-turn claim's chosen grandchildren become
--- the standing left and right, the other claim's node on the chosen side becomes the next to
--- open, and the turn passes.
+-- Applies a validated bisection response, descending one level toward the leftmost divergent leaf
+-- and passing the turn.
 -- docs:begin advance_bisection
 local function advance_bisection(match, response)
     assert(match.height > 1, "match not bisecting")
@@ -153,7 +153,7 @@ end
 --
 -- The referee holds only what the blockchain would: the agreed initial state hash, the
 -- deployed dapp contract with the epoch's inputs, and the geometry. During a match it
--- tracks one node hash per claim as it walks the two trees down, and each claim's clock, so
+-- tracks one node hash per claim as it bisects the two computation hashes, and each claim's clock, so
 -- it stores nothing of the claims but the path in dispute and the time they have left. It
 -- narrates each claim with the labels that posted it, which never influence protocol state
 -- or ordering.
@@ -163,7 +163,7 @@ end
 -- coroutine of its logic.
 local server
 
--- Blockchain operations; the simulation transport stays outside the algorithm excerpts.
+-- Blockchain operations. The simulation transport stays outside the algorithm excerpts.
 local function notify_all(subscriptions, event, arguments)
     server:notify_all(subscriptions, event, arguments)
 end
@@ -192,14 +192,13 @@ local function run_all(functions)
     return server:run_all(functions)
 end
 
--- The block of the transaction in flight, whether it opens a tournament or carries a response
--- being validated. Windows are measured in logical blocks from it.
+-- Returns the block of the transaction in flight. Windows are measured in logical blocks from it.
 local function current_time()
     return server:get_time()
 end
 
--- Validates a claim: its two children establish the computation hash, and its standard proof
--- places the final state at the tree's last leaf. Returns its normalized referee representation.
+-- Validates a submitted claim (its final state hash proof must target the last leaf) and returns
+-- the referee's representation of it.
 local function validate_claim_response(submitted_claim, height)
     local computation_hash = keccak(submitted_claim.computation_hash_left, submitted_claim.computation_hash_right)
     local final_state_hash_proof = submitted_claim.final_state_hash_proof
@@ -217,49 +216,52 @@ local function validate_claim_response(submitted_claim, height)
     }
 end
 
--- A claim's subscription hash combines its computation hash with its tournament ID.
--- The mcycle tournament's ID is the initial state hash. A uarch tournament's ID is the
--- hash of the two mcycle claims whose match opened it, as Match.sol identifies a match.
--- This keeps holders of equal computation hashes in different tournaments separate.
+-- Separates holders of equal computation hashes in different tournaments. The mcycle tournament's
+-- ID is the initial state hash, and a uarch tournament's ID is the hash of the two mcycle claims
+-- whose match opened it.
 local function subscription_hash(tournament_id, claim)
     return keccak(tournament_id, claim.computation_hash)
 end
 
--- Partitions claim responses by computation hash. The server supplies the join
--- order of their senders, so claims come out in the order their first posters joined,
--- and each sender subscribes to its claim under the given tournament ID.
--- Pairing in join order is what Dave's dangling slot does,
--- and it makes the bracket a function of the claims and of the order the players joined, which
--- the recipe fixes. Each claim's clock starts as the tournament's allowance less the blocks
--- since the tournament opened.
+-- Partitions claim responses by computation hash and subscribes each sender to its claim. A claim joins
+-- at its earliest post, and the bracket pairs claims in join order, ties broken by admission order. Each
+-- clock starts at the tournament's allowance less the blocks from the tournament's opening to the join.
 -- docs:begin partition_claims
 local function partition_claims(responses, order, tournament_id, start_instant, allowance)
     local claims = {}
     local by_hash = {}
-    for _, sender in ipairs(order) do
+    local joins = {}
+    for admission, sender in ipairs(order) do
         local response = responses[sender]
         local claim = by_hash[response.claim.computation_hash]
         if not claim then
             claim = response.claim
-            claim.allowance = allowance - (response.received_at - start_instant)
             by_hash[claim.computation_hash] = claim
             claims[#claims + 1] = claim
+            joins[claim] = { received_at = response.received_at, admission = admission }
+        elseif response.received_at < joins[claim].received_at then
+            joins[claim].received_at = response.received_at
         end
         subscribe_connection(subscription_hash(tournament_id, claim), response.connection)
+    end
+    table.sort(claims, function(a, b)
+        local join_a, join_b = joins[a], joins[b]
+        if join_a.received_at ~= join_b.received_at then
+            return join_a.received_at < join_b.received_at
+        end
+        return join_a.admission < join_b.admission
+    end)
+    for _, claim in ipairs(claims) do
+        claim.allowance = allowance - (joins[claim].received_at - start_instant)
     end
     return claims
 end
 -- docs:end partition_claims
 
--- Verifies the disputed transition's logs on their own, the way the Dave contracts verify
--- them on the blockchain, without ever instantiating a machine. `epoch_period_offset` and
--- `state_transition_offset` are the 64-bit-safe split of CartesiStateTransition.sol's epoch-local
--- counter. The counter picks the form: the transition out of an input boundary includes
--- the input the dapp contract holds (never one a player supplies), the transition closing an
--- instruction verifies a step and then the reset, and every other is an ordinary step. Each
--- verification returns the state hash its log provably advances to, and the chain starts
--- from the agreed state hash. Returns the state hash the logs reach; invalid logs raise an
--- error, which the request dispatcher rejects through its protected validator callback.
+-- Verifies the disputed transition's logs without a machine, as the blockchain does, and returns
+-- the state hash they reach (invalid logs raise an error). The transition out of an input boundary
+-- includes the input the dapp contract holds, and the transition closing an instruction adds the
+-- uarch reset.
 -- docs:begin validate_state_transition_response
 local function validate_state_transition_response(
     dapp_contract,
@@ -302,9 +304,8 @@ local function validate_bisection_response(match, response)
 end
 -- docs:end validate_bisection_response
 
--- Validates a seal-divergence response and returns the normalized divergence. The leaves must
--- open the on-turn node. At leaf zero the agreed state is the tournament's initial state;
--- otherwise the on-turn claim must prove the preceding state against its computation hash.
+-- Validates a seal-divergence response and returns the divergence. Past leaf zero, the on-turn claim
+-- proves the agreed state hash against its computation hash.
 -- docs:begin validate_seal_response
 local function validate_seal_response(tournament, match, response)
     assert(match.height == 1, "match not ready to seal")
@@ -348,8 +349,8 @@ end
 -- Match clocks
 --
 -- Each claim carries a clock, its remaining allowance in blocks, and the referee runs the two
--- clocks of a match against each other. Expiry is inclusive: a deadline is the first block at
--- which a clock has timed out, so a response must arrive before it.
+-- clocks of a match against each other. Deadlines are exclusive, as in the transport. A deadline
+-- is the first block at which a clock has timed out, so a response must arrive before it.
 ------------------------------------------------------------
 
 -- docs:begin match_clocks
@@ -364,13 +365,13 @@ end
 
 -- Requests the waiting claim's response for the timeout-win window, which opens at the on-turn
 -- claim's deadline and closes once the match is eliminable.
-local function emit_schedule_match_timeout_win(tournament, match, responder_deadline, eliminable_at)
+local function emit_win_match_by_timeout(tournament, match, responder_deadline, eliminable_at)
     local other_turn_index = get_other_turn_index(match.turn_index)
     local other_claim = match.claims[other_turn_index]
     return request_first_valid(
         subscription_hash(tournament.id, other_claim),
-        EVENTS.schedule_match_timeout_win,
-        { responder_deadline, other_claim.computation_hash },
+        EVENTS.win_match_by_timeout,
+        { other_claim.computation_hash },
         function(response, _, received_at)
             assert(received_at >= responder_deadline and received_at < eliminable_at, "timeout win outside its window")
             validate_timeout_win_response(response, other_claim.computation_hash)
@@ -380,24 +381,30 @@ local function emit_schedule_match_timeout_win(tournament, match, responder_dead
     )
 end
 
-local function emit_schedule_match_elimination(match, eliminable_at)
-    return request_first_valid(
-        EVERYONE,
-        EVENTS.schedule_match_elimination,
-        { eliminable_at },
-        function(_, sender, received_at)
-            assert(received_at >= eliminable_at, "early elimination")
-            story.report_match_eliminated(match, sender.label)
-            return 0
-        end
-    )
+local function emit_eliminate_match(match, eliminable_at)
+    return request_first_valid(EVERYONE, EVENTS.eliminate_match, {}, function(_, sender, received_at)
+        assert(received_at >= eliminable_at, "early elimination")
+        story.report_match_eliminated(match, sender.label)
+        return 0
+    end)
 end
 
--- Settles a uarch match once the walk isolates the divergent leaf. The referee emits the
--- disputed transition to both claims' holders and takes the first answer that verifies
--- against the agreed state hash. The transition out of the agreed state is unique, so any log
--- that verifies reaches the one true next state hash. Returns that hash, or nil when nobody
--- proves a transition.
+-- Settles a turn whose response did not arrive in time. The waiting claim may win until the
+-- match becomes eliminable, then anyone may eliminate it.
+-- docs:begin settle_timeout
+local function settle_timeout(tournament, match, responder_deadline, eliminable_at)
+    local timeout <close> = emit_win_match_by_timeout(tournament, match, responder_deadline, eliminable_at)
+    local winner = timeout:wait_at_most(eliminable_at)
+    if winner then
+        return winner
+    end
+    local elimination <close> = emit_eliminate_match(match, eliminable_at)
+    return elimination:wait_at_most(FOREVER)
+end
+-- docs:end settle_timeout
+
+-- Settles a uarch match at the divergent leaf. Returns the state hash reached by the first
+-- state-transition proof that verifies (the transition is unique), or nil when nobody proves one.
 -- docs:begin settle_uarch_state_hash
 local function settle_uarch_state_hash(tournament, match, state_transition_offset, root_hash_before, next_state_hashes)
     local subscriptions = {
@@ -407,23 +414,13 @@ local function settle_uarch_state_hash(tournament, match, state_transition_offse
     local start_instant = current_time()
     local deadline_one = start_instant + match.claims[1].allowance
     local deadline_two = start_instant + match.claims[2].allowance
-    local proof_deadline = math.min(deadline_one, deadline_two)
     local eliminable_at = math.max(deadline_one, deadline_two)
-    local elimination <close> = request_first_valid(
-        EVERYONE,
-        EVENTS.schedule_match_elimination,
-        { eliminable_at },
-        function(_, _, received_at)
-            assert(received_at >= eliminable_at, "early elimination")
-            return true
-        end
-    )
     local proof <close> = request_first_valid(
         subscriptions,
         EVENTS.prove_state_transition,
         { tournament.epoch_input_offset, tournament.input_period_offset, state_transition_offset },
         function(response, _, received_at)
-            assert(received_at < proof_deadline, "late state transition proof")
+            assert(received_at < eliminable_at, "late state-transition proof")
             return validate_state_transition_response(
                 tournament.dapp_contract,
                 root_hash_before,
@@ -433,11 +430,23 @@ local function settle_uarch_state_hash(tournament, match, state_transition_offse
             )
         end
     )
-    local obtained_root_hash = proof:wait_at_most(proof_deadline)
+    local obtained_root_hash = proof:wait_at_most(eliminable_at)
     if not obtained_root_hash then
-        elimination:wait_at_least(eliminable_at)
+        wait_until(eliminable_at)
+        local elimination <close> = request_first_valid(
+            EVERYONE,
+            EVENTS.eliminate_match,
+            {},
+            function(_, _, received_at)
+                assert(received_at >= eliminable_at, "early elimination")
+                return true
+            end
+        )
+        elimination:wait_at_most(FOREVER)
     end
+    -- docs:begin null
     story.report_state_transition(tournament, match, state_transition_offset, obtained_root_hash, next_state_hashes)
+    -- docs:end null
     return obtained_root_hash
 end
 -- docs:end settle_uarch_state_hash
@@ -446,10 +455,8 @@ end
 -- matches, which settle against the machine.
 local run_tournament
 
--- Opens the uarch tournament of an mcycle match over the period its claims part ways on, to
--- the holders of the two claims. Its valid claims are restricted to the two contested final
--- states, as validContestedFinalState requires on chain. Its allowance is the larger clock the
--- mcycle match leaves paused, not a fresh one.
+-- Opens the uarch tournament over the period where an mcycle match diverges. Valid claims end in one
+-- of the two contested state hashes, and the allowance is the larger clock the mcycle match leaves paused.
 -- docs:begin open_uarch_tournament
 local function open_uarch_tournament(
     mcycle_tournament,
@@ -495,8 +502,10 @@ local function open_uarch_tournament(
         epoch_input_offset = epoch_input_offset,
         input_period_offset = input_period_offset,
     }
+    -- docs:begin null
     story.report_uarch_tournament(tournament, mcycle_match, agreed_state_hash)
     story.report_claims(tournament, responses, order)
+    -- docs:end null
     return tournament
 end
 -- docs:end open_uarch_tournament
@@ -511,13 +520,6 @@ local function propagate_uarch_result(mcycle_match, winner, next_state_hashes)
         local claim_index = winner.final_state_hash == next_state_hashes[1] and 1 or 2
         assert(winner.final_state_hash == next_state_hashes[claim_index])
         local mcycle_claim = mcycle_match.claims[claim_index]
-        local elimination <close> = request_first_valid(
-            EVERYONE, EVENTS.schedule_uarch_result_elimination, { winner_expires_at },
-            function(_, _, received_at)
-                assert(received_at >= winner_expires_at)
-                return true
-            end
-        )
         local propagation <close> = request_first_valid(
             subscription_hash(mcycle_tournament.id, mcycle_claim),
             EVENTS.propagate_uarch_result, { mcycle_claim.computation_hash },
@@ -529,12 +531,18 @@ local function propagate_uarch_result(mcycle_match, winner, next_state_hashes)
             end
         )
         if not propagation:wait_at_most(winner_expires_at) then
-            elimination:wait_at_least(winner_expires_at)
+            local elimination <close> = request_first_valid(
+                EVERYONE, EVENTS.eliminate_uarch_result, {},
+                function(_, _, received_at)
+                    assert(received_at >= winner_expires_at)
+                    return true
+                end
+            )
+            elimination:wait_at_most(FOREVER)
             -- Both mcycle claims are eliminated despite the uarch tournament having a winner.
             -- Report this expiry separately from a uarch tournament that had no winner.
             return nil
         end
-        -- Leaving the scope cancels the remaining callbacks.
         return winner.final_state_hash
     end
     ]]
@@ -544,10 +552,8 @@ local function propagate_uarch_result(mcycle_match, winner, next_state_hashes)
     return winner and winner.final_state_hash
 end
 
--- Settles an mcycle match once the walk isolates the divergent leaf: the two claims part
--- ways over what the state hash was after one period of one input. A uarch tournament opens
--- over that period, its holders submit uarch claims, and the uarch winner's final state settles
--- the disputed state hash.
+-- Settles an mcycle match at the divergent leaf with a uarch tournament over the disputed period.
+-- The uarch winner's final state hash settles the disputed state hash.
 -- docs:begin settle_mcycle_state_hash
 local function settle_mcycle_state_hash(
     mcycle_tournament,
@@ -572,7 +578,9 @@ end
 -- to the tournament's level-specific settler.
 -- docs:begin settle_divergence
 local function settle_divergence(tournament, match, divergence)
+    -- docs:begin null
     story.report_divergence(match, divergence)
+    -- docs:end null
     local settled_state_hash = tournament:settle_state_hash(
         match,
         divergence.leaf_index,
@@ -597,8 +605,6 @@ local function reveal_divergence(tournament, match)
         local start_instant = current_time()
         local responder_deadline = start_instant + turn_claim.allowance
         local eliminable_at = responder_deadline + match.claims[get_other_turn_index(match.turn_index)].allowance
-        local timeout <close> = emit_schedule_match_timeout_win(tournament, match, responder_deadline, eliminable_at)
-        local elimination <close> = emit_schedule_match_elimination(match, eliminable_at)
         local reveal <close> = request_first_valid(
             subscription_hash(tournament.id, turn_claim),
             EVENTS.reveal_bisection,
@@ -610,11 +616,13 @@ local function reveal_divergence(tournament, match)
         )
         local response = reveal:wait_at_most(responder_deadline)
         if not response then
-            return timeout:wait_at_most(eliminable_at) or elimination:wait_at_least(eliminable_at)
+            return settle_timeout(tournament, match, responder_deadline, eliminable_at)
         end
         charge_turn_time(tournament, match, start_instant)
         advance_bisection(match, response)
+        -- docs:begin null
         story.report_match_progress(match)
+        -- docs:end null
     end
 end
 -- docs:end reveal_divergence
@@ -627,8 +635,6 @@ local function seal_divergence(tournament, match)
     local start_instant = current_time()
     local responder_deadline = start_instant + turn_claim.allowance
     local eliminable_at = responder_deadline + match.claims[get_other_turn_index(match.turn_index)].allowance
-    local timeout <close> = emit_schedule_match_timeout_win(tournament, match, responder_deadline, eliminable_at)
-    local elimination <close> = emit_schedule_match_elimination(match, eliminable_at)
     local seal <close> = request_first_valid(
         subscription_hash(tournament.id, turn_claim),
         EVENTS.seal_divergence,
@@ -640,7 +646,7 @@ local function seal_divergence(tournament, match)
     )
     local divergence = seal:wait_at_most(responder_deadline)
     if not divergence then
-        return nil, timeout:wait_at_most(eliminable_at) or elimination:wait_at_least(eliminable_at)
+        return nil, settle_timeout(tournament, match, responder_deadline, eliminable_at)
     end
     charge_turn_time(tournament, match, start_instant)
     return divergence
@@ -687,17 +693,17 @@ local function pair_claims(tournament, round)
     return matches
 end
 
--- Runs one round: pairs the surviving claims, runs their matches at once, and replaces the
--- tournament's claims with the survivors, an unmatched claim advancing first into the next
--- round. A match that eliminates both sides leaves neither behind. The round is narrated before
--- and after its matches run, in bracket order, so the transcript never depends on finish order.
+-- Replaces the tournament's claims with the survivors of one round, an unmatched claim first.
+-- Narration follows bracket order, so the transcript is independent of the order matches finish.
 -- docs:begin run_round
 local function run_round(tournament, round)
     local claims = tournament.claims
     local matches = pair_claims(tournament, round)
     local unmatched_claim = #claims % 2 == 1 and claims[#claims] or nil
     run_matches(tournament, matches)
+    -- docs:begin null
     story.report_round(tournament, round, matches, unmatched_claim)
+    -- docs:end null
     local surviving_claims = { unmatched_claim } -- unmatched_claim may be nil
     for _, match in ipairs(matches) do
         surviving_claims[#surviving_claims + 1] = match.claims[match.winner] -- match.claims[match.winner] may be nil
@@ -706,8 +712,7 @@ local function run_round(tournament, round)
 end
 -- docs:end run_round
 
--- Runs the tournament, eliminating claims round by round until a single one is left. That is
--- all a tournament is: a reduction of the claims to the one that survives every match.
+-- Returns the claim that survives every round, or nil when none does.
 -- docs:begin run_tournament
 function run_tournament(tournament)
     local round = 0
@@ -752,7 +757,9 @@ local function open_mcycle_tournament(dapp_contract)
         settle_state_hash = settle_mcycle_state_hash,
         claims = claims,
     }
+    -- docs:begin null
     story.report_claims(tournament, responses, order)
+    -- docs:end null
     return tournament
 end
 -- docs:end open_mcycle_tournament
@@ -761,11 +768,8 @@ local output_verifier = require("game-output")
 local validate_outputs_merkle_root_response = output_verifier.validate_outputs_merkle_root_response
 local validate_output_response = output_verifier.validate_output_response
 
--- Waits on the settled final state hash. It first establishes the outputs Merkle root committed
--- by that state, then repeatedly asks for an output and checks each offer against that root.
--- Offers are validated against the settled hash, so anyone may answer. The player chooses which
--- output to offer. An epoch with no output therefore still settles its outputs root without
--- inventing an output.
+-- Settles the outputs Merkle root committed by the final state hash, then accepts each output proven
+-- against it. Anyone may answer, since every offer is validated against the settled hash.
 -- docs:begin wait_for_outputs
 local function wait_for_outputs(final_state_hash)
     local root_proof <close> = request_first_valid(
@@ -791,7 +795,9 @@ local function wait_for_outputs(final_state_hash)
         )
         local output = output_proof:wait_at_most(FOREVER)
         accepted_output_indices[output.output_index] = true
+        -- docs:begin null
         story.report_output(output)
+        -- docs:end null
     end
 end
 -- docs:end wait_for_outputs
@@ -804,27 +810,23 @@ local function run_epoch(dapp_contract, subscribers)
     notify_all(subscribers, EVENTS.epoch_sealed, { #dapp_contract.inputs })
 end
 
--- Seen from the referee, the whole game is short. It opens the mcycle tournament, reduces the
--- claims it opened with, and, if one survives every match, settles the epoch on its result.
--- The mcycle tournament packs what the reduction needs: the agreed initial state hash,
--- the dapp contract whose inputs verification trusts, and the way its matches settle.
--- Everything hard, the accept loop, the wire, the coroutine scheduling, runs underneath, in
--- the referee server this is handed to.
+-- Settles the epoch on the claim that survives the mcycle tournament, if any. The accept loop, wire
+-- protocol, and coroutine scheduling live in the referee server.
 -- docs:begin run_referee
 local function run_referee(dapp_contract)
     local tournament = open_mcycle_tournament(dapp_contract)
     local winner = run_tournament(tournament)
+    -- docs:begin null
     story.report_winner(winner)
+    -- docs:end null
     if winner then
         wait_for_outputs(winner.final_state_hash)
     end
 end
 -- docs:end run_referee
 
--- The dispute geometry the contract fixes at deployment. Its one free parameter is the mcycle
--- period, log2 of the mcycles between two samples of an mcycle claim. The remaining values
--- follow from it and the emulator's rollup constants. The referee and players use this same
--- geometry.
+-- Derives the dispute geometry from the emulator's rollup constants and the log2 of the mcycles
+-- between consecutive state hashes of an mcycle computation hash.
 -- docs:begin new_geometry
 local function new_geometry(log2_mcycles_per_period)
     local mcycle_height = LOG2_MAX_ADVANCE_STATES_PER_EPOCH
@@ -842,23 +844,15 @@ local function new_geometry(log2_mcycles_per_period)
 end
 -- docs:end new_geometry
 
--- Builds the contract context the referee and players read from the chain.
--- The initial state hash is announced at deployment, and the epoch's inputs are all posted
--- to the blockchain, so the contract holds its own copy of every one, the copy that
--- verification trusts over anything a player commits. The geometry is fixed here too, with
--- the documentation's period of 2^10 mcycles, and so are the clocks. A tournament's allowance
--- is four blocks. A claim's clock is that allowance less the blocks since the tournament
--- opened, and a uarch tournament inherits the remaining mcycle clock, so a claim joining a
--- block after either opening has three blocks at the mcycle level and two at the uarch level,
--- the least that lets it see an event in one block and answer in the next under inclusive
--- expiry. The response budget equals the allowance, so no response is ever charged. Input
--- events carry filenames readable by every player; the referee retains its own bytes for
--- verification.
-local function make_dapp_contract(initial_state_hash, input_paths)
+-- The contract keeps its own copy of each input, which verification trusts. Four blocks of allowance
+-- leave a claim that joins each tournament one block late two blocks at the uarch level, the least
+-- that lets it see an event and answer in the next block. The response budget equals the allowance,
+-- so no response is charged.
+local function new_dapp_contract(initial_state_hash, input_paths)
     local max_allowance = 4
     return {
         initial_state_hash = initial_state_hash,
-        inputs = map(input_paths, util.read_file),
+        inputs = map(input_paths, fs.read_file),
         input_paths = input_paths,
         geometry = new_geometry(10),
         max_allowance = max_allowance,
@@ -866,8 +860,7 @@ local function make_dapp_contract(initial_state_hash, input_paths)
     }
 end
 
--- The role's runner simulates the epoch before starting its tournament referee.
--- Construction binds the deployed dapp contract without creating or running the transport.
+-- The runner publishes the epoch and then referees it. Construction leaves the transport untouched.
 local function new_referee(dapp_contract)
     return {
         dapp_contract = dapp_contract,
@@ -896,7 +889,8 @@ end
 ------------------------------------------------------------
 
 local LOG2_BUNDLE_MCYCLE_COUNT = 4
-local LOG2_BUNDLE_UARCH_CYCLE_COUNT = 16
+-- A uarch bundle is one whole mcycle, so a uarch claim stores one hash per mcycle.
+local LOG2_BUNDLE_UARCH_CYCLE_COUNT = LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
 local LOG2_HASHES_PER_COLLECTION = 8
 local LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE = 10 -- assume about 1024 uarch cycles per mcycle
 local MAX_MCYCLES_PER_ADVANCE_STATE = 1 << LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
@@ -954,17 +948,6 @@ local function is_tx_output(yield_reason)
     return yield_reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT
 end
 
--- Check the initial yield through its header registers without reading an output payload.
-local function assert_rolling_template(machine)
-    assert(
-        machine:read_reg("iflags_Y") ~= 0
-            and machine:read_reg("htif_tohost_dev") == cartesi.HTIF_DEV_YIELD
-            and machine:read_reg("htif_tohost_cmd") == cartesi.HTIF_YIELD_CMD_MANUAL
-            and machine:read_reg("htif_tohost_reason") == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED,
-        "initial machine is not waiting on an rx-accepted manual yield"
-    )
-end
-
 -- Returns the yield reason and data.
 local function receive_cmio_request(machine)
     local cmd, reason, data = machine:receive_cmio_request()
@@ -972,8 +955,8 @@ local function receive_cmio_request(machine)
     return reason, data
 end
 
--- Limits each collection call to the mcycle span of 2^LOG2_HASHES_PER_COLLECTION bundle roots,
--- bounding temporary hash storage. Caps the span at MCYCLE_MAX to avoid shift overflow.
+-- Returns the mcycle span of 2^LOG2_HASHES_PER_COLLECTION bundle roots (capped at MCYCLE_MAX), which
+-- bounds the hashes one collection call holds.
 local function mcycle_hashes_collection_chunk_size(log2_period, log2_bundle_mcycle_count)
     local log2_collection_chunk_size = log2_period + log2_bundle_mcycle_count + LOG2_HASHES_PER_COLLECTION
     if log2_collection_chunk_size >= 64 then
@@ -982,32 +965,24 @@ local function mcycle_hashes_collection_chunk_size(log2_period, log2_bundle_mcyc
     return 1 << log2_collection_chunk_size
 end
 
-local function move_machine(machine)
-    local moved = cartesi.new()
-    machine:swap(moved)
-    return moved
-end
-
--- Forks a machine's server. The fork is shut down when the object holding it is closed or
--- collected, so a player leaves no server behind when it exits, even on an error.
+-- The fork shuts down when the object holding it is closed or collected, even on an error.
 local function fork_server(machine)
     local fork = assert(machine:fork_server())
     fork:set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
     return fork
 end
 
--- Loads the initial machine snapshot from content-addressed local storage into a freshly
--- spawned server, and verifies that the stored machine actually has the requested state hash.
--- A spawned server shuts down when its handle is closed or collected, including after an error.
-local function new_machine(initial_state_hash)
+-- Loads the given directory (by default the one named after the state hash) into a spawned server,
+-- rebuilds its hash tree from its contents, and checks its state hash. By default, changes stay in memory.
+local function new_machine(initial_state_hash, directory, sharing)
     local machine <close> = assert(cartesi_jsonrpc.spawn_server("127.0.0.1:0"))
-    machine:load(cartesi.tohex(initial_state_hash))
+    machine:load(directory or cartesi.tohex(initial_state_hash), { clear_hash_tree = true }, sharing)
     assert(machine:get_root_hash() == initial_state_hash, "initial machine snapshot hash mismatch")
-    return move_machine(machine)
+    return machine:move()
 end
 
 -- A machine pair owns its working machine and optional rollback snapshot.
--- Collection state belongs to builders; input execution locals belong to the driver.
+-- Collection state belongs to builders, and input execution locals belong to the driver.
 local function shallow_move(values)
     local moved = {}
     for name, value in pairs(values) do
@@ -1048,32 +1023,35 @@ function machine_pair_methods:commit()
 end
 
 -- docs:begin revert
+-- Another process may take the address once it is released, so the restored server may have to stay where it is
+local try_rebind_server = util.protect(function(machine, address)
+    return machine:rebind_server(address)
+end)
+
 function machine_pair_methods:revert()
     local backup_machine = assert(self.backup_machine, "no snapshot to revert to")
     local address = self.machine:get_server_address()
     self.machine:shutdown_server()
     self.machine:swap(backup_machine)
     self.backup_machine = nil
-    self.machine:rebind_server(address)
+    try_rebind_server(self.machine, address)
     assert(self.machine:get_root_hash() == self.revert_root_hash, "rollback did not restore the input boundary")
 end
 -- docs:end revert
 
-local function new_machine_pair(machine)
+local function new_forked_machine_pair(machine)
     local pair <close> = setmetatable({ machine = machine }, machine_pair_meta)
     pair.revert_root_hash = machine:get_root_hash()
     return pair:move()
 end
 
--- A checkpoint is the machine at an input base, before delivery, indexed by the input. The first
--- checkpoint is the initial machine at input zero and is always retained. The epoch run considers
--- every later input base, and the cache retains a bounded set of forks. When the cache is full,
--- a new checkpoint replaces the first one closer than the input gap to its predecessor. If there
--- is none, the gap doubles, so checkpoints spread across the epoch as it grows.
+-- An entry is the machine at an input boundary, before delivery, and entry zero is always retained.
+-- A new entry in a full cache replaces the first one closer than the input gap to its predecessor.
+-- If there is none, the gap doubles instead, so entries spread across the epoch as it grows.
 local machine_cache_meta = { __index = {} }
 local machine_cache_methods = machine_cache_meta.__index
 
-local function new_machine_cache(initial_machine, capacity, input_gap)
+local function new_forked_machine_cache(initial_machine, capacity, input_gap)
     capacity = capacity or DEFAULT_MACHINE_CACHE_CAPACITY
     input_gap = input_gap or DEFAULT_MACHINE_CACHE_INPUT_GAP
     local cache <close> = setmetatable({
@@ -1081,7 +1059,7 @@ local function new_machine_cache(initial_machine, capacity, input_gap)
         input_gap = input_gap,
         replace_cursor = 2,
         last_epoch_input_offset = 0,
-        checkpoints = { { epoch_input_offset = 0, machine = initial_machine } },
+        entries = { { epoch_input_offset = 0, machine = initial_machine } },
     }, machine_cache_meta)
     assert(math.type(capacity) == "integer" and capacity > 0, "invalid machine cache capacity")
     assert(math.type(input_gap) == "integer" and input_gap > 0, "invalid machine cache input gap")
@@ -1089,10 +1067,10 @@ local function new_machine_cache(initial_machine, capacity, input_gap)
 end
 
 function machine_cache_methods:close()
-    for _, checkpoint in ipairs(self.checkpoints or {}) do
-        checkpoint.machine:shutdown_server()
+    for _, entry in ipairs(self.entries or {}) do
+        entry.machine:shutdown_server()
     end
-    self.checkpoints = nil
+    self.entries = nil
 end
 machine_cache_meta.__close = machine_cache_methods.close
 
@@ -1100,68 +1078,79 @@ function machine_cache_methods:move()
     return setmetatable(shallow_move(self), machine_cache_meta)
 end
 
+-- An entry holds a fork of the machine at its input boundary.
+function machine_cache_methods:new_entry(epoch_input_offset, machine) -- luacheck: ignore 212 self
+    return { epoch_input_offset = epoch_input_offset, machine = fork_server(machine) }
+end
+
+function machine_cache_methods:remove_entry(entry) -- luacheck: ignore 212 self
+    entry.machine:shutdown_server()
+end
+
+function machine_cache_methods:new_machine_pair_from_entry(entry) -- luacheck: ignore 212 self
+    return new_forked_machine_pair(fork_server(entry.machine))
+end
+
 function machine_cache_methods:consider(epoch_input_offset, machine)
-    local checkpoints = assert(self.checkpoints, "machine cache is closed or moved")
-    assert(epoch_input_offset > self.last_epoch_input_offset, "machine checkpoints are not ordered")
+    local entries = assert(self.entries, "machine cache is closed or moved")
+    assert(epoch_input_offset > self.last_epoch_input_offset, "cache entries are not ordered")
     self.last_epoch_input_offset = epoch_input_offset
-    if epoch_input_offset - checkpoints[#checkpoints].epoch_input_offset < self.input_gap then
+    if epoch_input_offset - entries[#entries].epoch_input_offset < self.input_gap then
         return
     end
     local replace_index
-    if #checkpoints == self.capacity then
+    if #entries == self.capacity then
         replace_index = self.replace_cursor
-        while replace_index <= #checkpoints do
-            local previous = checkpoints[replace_index - 1].epoch_input_offset
-            if checkpoints[replace_index].epoch_input_offset - previous < self.input_gap then
+        while replace_index <= #entries do
+            local previous = entries[replace_index - 1].epoch_input_offset
+            if entries[replace_index].epoch_input_offset - previous < self.input_gap then
                 break
             end
             replace_index = replace_index + 1
         end
-        if replace_index > #checkpoints then
+        if replace_index > #entries then
             self.input_gap = self.input_gap << 1
             self.replace_cursor = 2
             return
         end
     end
-    local clone <close> = new_machine_pair(fork_server(machine))
+    entries[#entries + 1] = self:new_entry(epoch_input_offset, machine)
     if replace_index then
-        table.remove(checkpoints, replace_index).machine:shutdown_server()
+        self:remove_entry(table.remove(entries, replace_index))
         self.replace_cursor = replace_index
     end
-    checkpoints[#checkpoints + 1] = { epoch_input_offset = epoch_input_offset, machine = clone.machine }
-    clone.machine = nil
 end
 
-local function find_nearest_checkpoint(cache, epoch_input_offset)
-    local checkpoints = assert(cache.checkpoints, "machine cache is closed or moved")
+local function find_nearest_entry(cache, epoch_input_offset)
+    local entries = assert(cache.entries, "machine cache is closed or moved")
     assert(epoch_input_offset >= 0, "invalid epoch input offset")
     local nearest
-    for _, checkpoint in ipairs(checkpoints) do
-        if checkpoint.epoch_input_offset > epoch_input_offset then
+    for _, entry in ipairs(entries) do
+        if entry.epoch_input_offset > epoch_input_offset then
             break
         end
-        nearest = checkpoint
+        nearest = entry
     end
     return nearest
 end
 
 -- Fork the nearest retained input boundary not past the requested offset.
 function machine_cache_methods:nearest_not_past_epoch_input_offset(epoch_input_offset)
-    local checkpoint = find_nearest_checkpoint(self, epoch_input_offset)
-    local pair <close> = new_machine_pair(fork_server(checkpoint.machine))
-    return pair:move(), checkpoint.epoch_input_offset
+    local entry = find_nearest_entry(self, epoch_input_offset)
+    local pair <close> = self:new_machine_pair_from_entry(entry)
+    return pair:move(), entry.epoch_input_offset
 end
 
--- Take ownership of the received pair and keep it unless a retained checkpoint is strictly nearer.
+-- Take ownership of the received pair and keep it unless a retained entry is strictly nearer.
 function machine_cache_methods:nearer_not_past_epoch_input_offset_or(
     pair,
     pair_epoch_input_offset,
     epoch_input_offset_end
 )
     local received_pair <close> = assert(pair, "missing machine pair")
-    local checkpoint = find_nearest_checkpoint(self, epoch_input_offset_end)
+    local entry = find_nearest_entry(self, epoch_input_offset_end)
     assert(pair_epoch_input_offset <= epoch_input_offset_end, "pair is past desired input")
-    if checkpoint.epoch_input_offset <= pair_epoch_input_offset then
+    if entry.epoch_input_offset <= pair_epoch_input_offset then
         return received_pair:move(), pair_epoch_input_offset
     end
     local advancing_pair <close>, cached_epoch_input_offset =
@@ -1170,10 +1159,8 @@ function machine_cache_methods:nearer_not_past_epoch_input_offset_or(
     return advancing_pair:move(), cached_epoch_input_offset
 end
 
--- Advances through a builder's run(machine, mcycle_end) method until a fixed point or the target mcycle,
--- returning the break reason. A null builder delegates plain replay to the supplied machine.
--- Automatic yields are read from the machine and passed to the optional callback; without one,
--- they are ignored. A terminal manual yield remains unread for the caller to handle.
+-- Runs the builder until a fixed point or mcycle_end and returns the break reason. Automatic yields
+-- go to the optional callback, and a final manual yield stays unread for the caller.
 local function run_to_stop(builder, machine, mcycle_end, on_yield_automatic)
     while true do
         local break_reason = builder:run(machine, mcycle_end)
@@ -1189,17 +1176,32 @@ local function run_to_stop(builder, machine, mcycle_end, on_yield_automatic)
     end
 end
 
--- Retain only accepted outputs and check their cumulative root. Pending outputs from other
--- outcomes are discarded when the input driver returns.
-local function flush_pending_outputs(pending_outputs, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
-    if not outputs or not is_rx_accepted(yield_reason) then
-        return
+-- The proof of an output whose hash is the next to join the outputs frontier.
+local function prove_next_output(outputs_frontier, output_hash)
+    return hash_tree.frontier_next_proofs(outputs_frontier, { output_hash })[1]
+end
+
+-- Retain the last output of an accepted input with its proof, push the input's output hashes, and return
+-- whether their cumulative root is the one the machine holds. Pending output hashes from other outcomes
+-- are discarded when the input driver returns.
+local function flush_pending_outputs(
+    pending_output_hashes,
+    last_output_data,
+    last_output,
+    outputs_frontier,
+    outputs_merkle_root
+)
+    local count = #pending_output_hashes
+    for i = 1, count - 1 do
+        hash_tree.frontier_push_back(outputs_frontier, pending_output_hashes[i])
     end
-    for _, output_data in ipairs(pending_outputs) do
-        outputs[#outputs + 1] = output_data
-        hash_tree.frontier_push_back(outputs_frontier, keccak(output_data))
+    if count > 0 then
+        -- The last output is proven before its hash joins the frontier
+        last_output.output_data = last_output_data
+        last_output.output_proof = prove_next_output(outputs_frontier, pending_output_hashes[count])
+        hash_tree.frontier_push_back(outputs_frontier, pending_output_hashes[count])
     end
-    assert(hash_tree.frontier_get_root_hash(outputs_frontier) == outputs_merkle_root, "outputs Merkle root mismatch")
+    return hash_tree.frontier_get_root_hash(outputs_frontier) == outputs_merkle_root
 end
 
 -- Delivers a posted input, recording the root a rejection reverts to. The machine and
@@ -1210,8 +1212,8 @@ local function load_cmio_input(machine, input_data, revert_root_hash)
     end
 end
 
--- Input preparation is shared by mcycle replay, uarch replay, and native bundle
--- collection. Each invocation begins at the input boundary.
+-- Prepares an input for mcycle replay, uarch replay, and bundle collection alike. Called at the
+-- input boundary, it returns the boundary's mcycle.
 local function begin_input(builder, pair, epoch_input_offset, input_data)
     local machine = pair.machine
     local input_mcycle_base = machine:read_reg("mcycle")
@@ -1236,7 +1238,7 @@ end
 
 -- Plain replay has the same input lifecycle as a sampled run.
 local function noop() end
-local function make_null_computation_hash_builder()
+local function new_null_computation_hash_builder()
     return {
         begin_epoch = noop,
         begin_input = noop,
@@ -1248,21 +1250,67 @@ local function make_null_computation_hash_builder()
     }
 end
 
-local function mcycle_computation_hash_push_collected(builder, collected)
+-- Rejected inputs sample the saved boundary, even when halt takes precedence over the yield.
+local function get_mcycle_sample_hash(machine)
+    if
+        machine:read_reg("iflags_Y") ~= 0
+        and machine:read_reg("htif_tohost_dev") == cartesi.HTIF_DEV_YIELD
+        and machine:read_reg("htif_tohost_cmd") == cartesi.HTIF_YIELD_CMD_MANUAL
+        and is_rx_rejected(machine:read_reg("htif_tohost_reason"))
+    then
+        return machine:read_revert_root_hash()
+    end
+    return machine:get_root_hash()
+end
+
+local function new_mcycle_pad_bundle(state_hash, bundle_height, expected_hash)
+    local bundle = hash_tree.frontier_forest(bundle_height, "keccak256")
+    hash_tree.frontier_forest_pad_back(bundle, state_hash)
+    assert(hash_tree.frontier_forest_get_root_hash(bundle) == expected_hash, "mcycle padding bundle hash mismatch")
+    return bundle
+end
+
+local function mcycle_computation_hash_push_collected(builder, machine, collected)
     local count = #collected.hashes
     local at_fixed_point = is_at_fixed_point(collected.break_reason)
     if at_fixed_point then
         -- The last root describes the fixed-point repetition, not additional coverage.
-        builder.pad_bundle = collected.hashes[count]
         count = count - 1
     end
     assert(
         count <= builder.max_bundles_per_input - builder.input_bundle_count,
         "mcycle collection exceeds the input's bundle capacity"
     )
-    hash_tree.frontier_forest_append(builder.frontier, collected.hashes, 1, count + 1, builder.bundle_height)
+    local final_bundle, pad_bundle
+    if collected.final_bundle_sibling_hashes or at_fixed_point then
+        local state_hash = get_mcycle_sample_hash(machine)
+        if collected.final_bundle_sibling_hashes then
+            final_bundle = hash_tree.frontier_forest({
+                target_address = (1 << builder.bundle_height) - 1,
+                log2_target_size = 0,
+                log2_root_size = builder.bundle_height,
+                target_hash = state_hash,
+                root_hash = collected.hashes[count],
+                sibling_hashes = collected.final_bundle_sibling_hashes,
+            }, "keccak256")
+        end
+        if at_fixed_point then
+            pad_bundle = new_mcycle_pad_bundle(state_hash, builder.bundle_height, collected.hashes[#collected.hashes])
+        end
+    end
+    hash_tree.frontier_forest_append(
+        builder.frontier,
+        collected.hashes,
+        1,
+        final_bundle and count or count + 1,
+        builder.bundle_height
+    )
+    if final_bundle then
+        hash_tree.frontier_forest_push_back(builder.frontier, final_bundle)
+    end
     builder.input_bundle_count = builder.input_bundle_count + count
     if at_fixed_point then
+        builder.pad_bundle = pad_bundle
         local pad_count = builder.max_bundles_per_input - builder.input_bundle_count
         hash_tree.frontier_forest_pad_back(builder.frontier, builder.pad_bundle, pad_count, builder.bundle_height)
         builder.input_bundle_count = builder.max_bundles_per_input
@@ -1275,7 +1323,11 @@ local function mcycle_computation_hash_begin_epoch(builder, machine)
     local collected =
         machine:collect_mcycle_root_hashes(machine:read_reg("mcycle"), builder.log2_period, 0, builder.bundle_height)
     assert(is_at_fixed_point(collected.break_reason), "mcycle computation hash started outside a fixed point")
-    builder.pad_bundle = collected.hashes[#collected.hashes]
+    builder.pad_bundle = new_mcycle_pad_bundle(
+        get_mcycle_sample_hash(machine),
+        builder.bundle_height,
+        collected.hashes[#collected.hashes]
+    )
 end
 
 local function mcycle_computation_hash_begin_input(builder, _, epoch_input_offset)
@@ -1301,7 +1353,7 @@ local function mcycle_computation_hash_run(builder, machine, mcycle_end)
             builder.bundle_height,
             collected.partial_bundle
         )
-        mcycle_computation_hash_push_collected(builder, collected)
+        mcycle_computation_hash_push_collected(builder, machine, collected)
     until not is_target_mcycle(collected.break_reason) or chunk_end == mcycle_end
     builder.mcycle_phase = collected.mcycle_phase
     builder.partial_bundle = collected.partial_bundle
@@ -1319,10 +1371,9 @@ local function mcycle_computation_hash_end_epoch(builder)
     return builder.frontier
 end
 
--- Collect the full epoch as roots of bundles of 2^LOG2_BUNDLE_MCYCLE_COUNT period samples.
--- Per-input counts measure bundles at bundle_height.
--- The forest owns total coverage.
-local function make_mcycle_computation_hash_builder(log2_mcycles_per_period)
+-- Collects the epoch as roots of bundles of 2^LOG2_BUNDLE_MCYCLE_COUNT state hashes. Per-input
+-- counts are in bundles, and the forest tracks total coverage.
+local function new_mcycle_computation_hash_builder(log2_mcycles_per_period)
     local log2_periods_per_input = LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period
     local height = LOG2_MAX_ADVANCE_STATES_PER_EPOCH + log2_periods_per_input
     return {
@@ -1344,9 +1395,8 @@ end
 -- Uarch computation hashes
 ------------------------------------------------------------
 
--- Chooses an mcycle span targeting about 2^LOG2_HASHES_PER_COLLECTION returned hashes.
--- Each mcycle contributes an estimated number of execution bundles plus the all-halted
--- and reset-ending bundles. Always collects at least one mcycle.
+-- Returns an mcycle span of at least one that yields about 2^LOG2_HASHES_PER_COLLECTION hashes,
+-- estimating each mcycle's execution bundles plus its halt and reset bundles.
 local function uarch_hashes_collection_chunk_size(log2_bundle_uarch_cycle_count)
     local cycle_bundle_count = log2_bundle_uarch_cycle_count < LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE
             and (1 << (LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE - log2_bundle_uarch_cycle_count))
@@ -1460,11 +1510,9 @@ local function uarch_computation_hash_begin_epoch(builder)
     builder.mcycle_count = 0
 end
 
--- Before delivery at the selected input's virgin boundary,
--- begin_input saves its uarch tail for rejection; run replays to the selected period and
--- collects roots of bundles of 2^LOG2_BUNDLE_UARCH_CYCLE_COUNT transitions.
--- A fixed point before the selected period supplies its history without reaching the target.
-local function make_uarch_cycle_computation_hash_builder(log2_mcycles_per_period, epoch_period_offset)
+-- begin_input saves the input boundary's uarch tail for rejection, and run collects one bundle root
+-- per mcycle of the selected period. A fixed point before that period supplies its history instead.
+local function new_uarch_cycle_computation_hash_builder(log2_mcycles_per_period, epoch_period_offset)
     local periods_per_input = 1 << (LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period)
     local _, input_period_offset = split_epoch_period_offset(periods_per_input, epoch_period_offset)
     local height = log2_mcycles_per_period + LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
@@ -1486,9 +1534,9 @@ local function make_uarch_cycle_computation_hash_builder(log2_mcycles_per_period
 end
 
 --------------------------------------------------------------------------------
--- Claim trees
+-- Bundled hash trees
 --
--- A claim commits to 2^height leaves. The forest stores bundle roots at their logical
+-- A computation hash commits to 2^height leaves. The forest stores bundle roots at their logical
 -- heights. Opening a bundle reconstructs its individual state hashes and expands its
 -- opaque leaf after verifying the root. Implicit repetitions share the expanded subtree.
 --------------------------------------------------------------------------------
@@ -1496,18 +1544,18 @@ end
 local tree_meta = { __index = {} }
 
 -- Called only after a forest query reports an opaque path at a valid position.
-local function open_bundle(tree, position)
+local function open_bundle(tree, player, position)
     local bundle_index = position >> tree.bundle_height
-    local bundle = tree:collect_bundle(bundle_index)
+    local bundle = tree:collect_bundle(player, bundle_index)
     hash_tree.frontier_forest_expand_leaf(tree.forest, bundle_index << tree.bundle_height, bundle)
 end
 
--- Node hash queries open their bundle only when its contents are needed.
+-- Node hash queries use the given player to open a bundle only when its contents are needed.
 -- docs:begin get_tree_node_hash
-function tree_meta.__index:get_node_hash(position, height)
+function tree_meta.__index:get_node_hash(player, position, height)
     local hash = hash_tree.frontier_forest_get_node_hash(self.forest, position, height)
     if not hash then
-        open_bundle(self, position)
+        open_bundle(self, player, position)
         hash = assert(hash_tree.frontier_forest_get_node_hash(self.forest, position, height))
     end
     return hash
@@ -1518,21 +1566,20 @@ function tree_meta.__index:get_root_hash()
     return hash_tree.frontier_forest_get_root_hash(self.forest)
 end
 
--- A proof query opens its bundle only when the sibling path reaches an opaque hash.
--- The forest authenticates the reconstructed subtree before installing it. Subsequent
--- queries reuse that subtree, including its occurrences in implicit padding.
+-- Opens a bundle only when the sibling path reaches an opaque hash. The forest authenticates the
+-- reconstructed subtree, and later queries reuse it (including in implicit padding).
 -- docs:begin get_proof
-function tree_meta.__index:get_proof(position, height)
+function tree_meta.__index:get_proof(player, position, height)
     height = height or 0
     local siblings = hash_tree.frontier_forest_get_siblings(self.forest, position, height)
     if not siblings then
-        open_bundle(self, position)
+        open_bundle(self, player, position)
         siblings = assert(hash_tree.frontier_forest_get_siblings(self.forest, position, height))
     end
     return {
         target_address = position,
         log2_target_size = height,
-        target_hash = self:get_node_hash(position, height),
+        target_hash = self:get_node_hash(player, position, height),
         log2_root_size = self.height,
         root_hash = self:get_root_hash(),
         sibling_hashes = siblings,
@@ -1541,12 +1588,13 @@ end
 -- docs:end get_proof
 
 -- The two child hashes, opening a bundle only if a node query needs it.
-function tree_meta.__index:get_child_hashes(position, height)
+function tree_meta.__index:get_child_hashes(player, position, height)
     local child_height = height - 1
-    return self:get_node_hash(position, child_height), self:get_node_hash(position + (1 << child_height), child_height)
+    return self:get_node_hash(player, position, child_height),
+        self:get_node_hash(player, position + (1 << child_height), child_height)
 end
 
--- A claim tree of 2^height leaves, with collect_bundle reconstructing one bundle on demand.
+-- The hash tree of 2^height state hashes, with collect_bundle reconstructing one bundle on demand.
 local function new_tree(height, bundle_height, forest, collect_bundle)
     assert(forest.height == height, "the forest does not match the claim height")
     return setmetatable({
@@ -1568,26 +1616,22 @@ end
 
 local event_handler = {}
 
-function event_handler.schedule_match_timeout_win(self, deadline, computation_hash)
-    return prtu.schedule_response(self, deadline, function()
-        local tree = self.trees[computation_hash]
-        local left, right = tree:get_child_hashes(0, tree.height)
-        return { computation_hash_left = left, computation_hash_right = right }
-    end)
+function event_handler.win_match_by_timeout(self, computation_hash)
+    local tree = self.trees[computation_hash]
+    local left, right = tree:get_child_hashes(self, 0, tree.height)
+    return { computation_hash_left = left, computation_hash_right = right }
 end
 
-function event_handler.schedule_match_elimination(self, deadline)
-    return prtu.schedule_response(self, deadline, function()
-        return {}
-    end)
+-- Eliminating a match needs no payload.
+function event_handler.eliminate_match(self) -- luacheck: ignore 212 self
+    return "nothing"
 end
 
--- A claim: the computation hash's two children and the standard proof of its final state,
--- the last leaf. The proof query opens the last stored bundle if needed.
-local function make_claim(tree)
+-- Returns the computation hash's two children and the proof of the final state hash at the last leaf.
+local function new_claim(player, tree)
     local final_leaf_index = (1 << tree.height) - 1
-    local computation_hash_left, computation_hash_right = tree:get_child_hashes(0, tree.height)
-    local final_state_hash_proof = tree:get_proof(final_leaf_index)
+    local computation_hash_left, computation_hash_right = tree:get_child_hashes(player, 0, tree.height)
+    local final_state_hash_proof = tree:get_proof(player, final_leaf_index)
     return {
         computation_hash_left = computation_hash_left,
         computation_hash_right = computation_hash_right,
@@ -1597,21 +1641,20 @@ end
 
 -- The player's opening mcycle claim.
 function event_handler.commit_mcycle_claim(self)
-    local tree = self:make_mcycle_tree()
+    local tree = self:new_mcycle_tree()
     self.trees[tree:get_root_hash()] = tree
-    return make_claim(tree)
+    return new_claim(self, tree)
 end
 
--- Reveals the nodes the referee needs for one bisection advance: the claim's node at
--- (position, height), and the children of the node the walk descends into. Either node can
--- cross into a stored bundle here because the claims alternate turns; crossing reconstructs
--- and authenticates that complete bundle before the walk continues through it.
+-- Returns the children of the node at (position, height) and of the child the bisection descends
+-- into. Either query may open a stored bundle, which is authenticated before use.
+-- docs:begin reveal_bisection
 function event_handler.reveal_bisection(self, computation_hash, position, height, other_left_node)
     local tree = self.trees[computation_hash]
-    local turn_left_node, turn_right_node = tree:get_child_hashes(position, height)
+    local turn_left_node, turn_right_node = tree:get_child_hashes(self, position, height)
     local descend_left = turn_left_node ~= other_left_node
     local child_position = descend_left and position or position + (1 << (height - 1))
-    local turn_next_left_node, turn_next_right_node = tree:get_child_hashes(child_position, height - 1)
+    local turn_next_left_node, turn_next_right_node = tree:get_child_hashes(self, child_position, height - 1)
     return {
         turn_left_node = turn_left_node,
         turn_right_node = turn_right_node,
@@ -1619,19 +1662,19 @@ function event_handler.reveal_bisection(self, computation_hash, position, height
         turn_next_right_node = turn_next_right_node,
     }
 end
+-- docs:end reveal_bisection
 
--- Seals the leftmost divergence: exposes the final leaves and proves the agreed state
--- immediately before them, except at leaf zero where the referee already knows that state.
--- At the first leaf of a bundle, the proof explicitly opens the preceding bundle too.
+-- Returns the two leaves at the divergence and, past leaf zero, a proof of the agreed state hash
+-- before them. At the first leaf of a bundle, the proof opens the preceding bundle.
 function event_handler.seal_divergence(self, computation_hash, position, other_left_node)
     local tree = self.trees[computation_hash]
-    local turn_left_node, turn_right_node = tree:get_child_hashes(position, 1)
+    local turn_left_node, turn_right_node = tree:get_child_hashes(self, position, 1)
     local response = { turn_left_node = turn_left_node, turn_right_node = turn_right_node }
     local descend_left = turn_left_node ~= other_left_node
     local leaf_index = position + (descend_left and 0 or 1)
     if leaf_index ~= 0 then
         local agreed_leaf_index = leaf_index - 1
-        response.agreed_state_hash_proof = tree:get_proof(agreed_leaf_index)
+        response.agreed_state_hash_proof = tree:get_proof(self, agreed_leaf_index)
         assert(
             descend_left or response.agreed_state_hash_proof.target_hash == turn_left_node,
             "right divergence has the wrong agreed state"
@@ -1640,37 +1683,60 @@ function event_handler.seal_divergence(self, computation_hash, position, other_l
     return response
 end
 
--- Joins the uarch tournament over one mcycle period that the player's mcycle claim is
--- disputed in, with a uarch claim whose final state must be one of the two contested values.
--- The player stores the uarch tree by its computation hash alongside its earlier claims.
--- The parent match is suspended until the uarch tournament ends. The epoch input offset
--- and input period offset are zero-based, as the referee counts them. The referee checks
--- that the submitted final state matches one of the contested values.
+-- Building a uarch claim can fail during machine replay, storage or RPC operations, as well as uarch execution.
+local try_new_uarch_tree = util.protect(function(self, epoch_input_offset, input_period_offset)
+    return self:new_uarch_tree(epoch_input_offset, input_period_offset)
+end)
+
+-- Returns a uarch claim over the disputed mcycle period (its final state hash is one of the two
+-- contested values) and keeps its hash tree by computation hash.
 function event_handler.commit_uarch_claim(self, epoch_input_offset, input_period_offset)
-    local tree = self:make_uarch_tree(epoch_input_offset, input_period_offset)
+    -- A restarted bridge may deliver this event again for a claim a reopened player already stored.
+    for _, claim in ipairs(self.uarch_claims) do
+        if claim.epoch_input_offset == epoch_input_offset and claim.input_period_offset == input_period_offset then
+            return new_claim(self, claim.tree)
+        end
+    end
+    -- Retry construction on each request. Remember failures only to avoid repeating their reports.
+    local period_key = string.format("%d:%d", epoch_input_offset, input_period_offset)
+    local tree, err = try_new_uarch_tree(self, epoch_input_offset, input_period_offset)
+    if not tree then
+        if not self.reported_uarch_failures[period_key] then
+            self.reported_uarch_failures[period_key] = true
+            self:report_anomaly(
+                "uarch_claim_failed",
+                "at input %d, period %d: %s",
+                epoch_input_offset,
+                input_period_offset,
+                err
+            )
+        end
+        return "nothing"
+    end
+    self.reported_uarch_failures[period_key] = nil
+    local claim = { epoch_input_offset = epoch_input_offset, input_period_offset = input_period_offset, tree = tree }
+    self.uarch_claims[#self.uarch_claims + 1] = claim
+    self:store_uarch_claim(claim)
     self.trees[tree:get_root_hash()] = tree
-    return make_claim(tree)
+    return new_claim(self, tree)
 end
 
--- The disputed transition's access logs, produced by positioning a fresh fork at the
--- transition and logging it, whatever claim is under dispute. The transition out of an
--- input boundary includes the input, when the epoch has one, before the first uarch step.
--- The transition closing an instruction executes one more step, by then a fixed point, and
--- the reset. Every other transition is an ordinary uarch step.
+-- Returns the access logs of the disputed transition, recorded on a fresh fork. The transition out
+-- of an input boundary also logs the input delivery, and the one closing an instruction also logs
+-- the uarch reset.
 -- docs:begin prove_state_transition
 function event_handler.prove_state_transition(self, epoch_input_offset, input_period_offset, state_transition_offset)
     local period_mcycle_offset, uarch_cycle = split_state_transition_offset(state_transition_offset)
     local pair <close> = self:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
     local machine = pair.machine
-    local path = self.input_paths[epoch_input_offset + 1]
-    local input_data = path and util.read_file(path)
-    if state_transition_offset == 0 and input_period_offset == 0 and path then
-        -- Logging never fails. A machine that is not waiting for the input logs the no-op delivery.
+    local input_data = self:read_input(epoch_input_offset)
+    if state_transition_offset == 0 and input_period_offset == 0 and input_data then
+        -- Logging never fails. A machine that is not waiting for the input logs the no-op inclusion.
         local send_cmio_log =
             machine:log_send_cmio_response(HTIF_YIELD_REASON_ADVANCE_STATE, input_data, pair.revert_root_hash)
         return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
     end
-    local builder = self:make_null_computation_hash_builder()
+    local builder = self:new_null_computation_hash_builder()
     local input_mcycle_offset =
         combine_input_mcycle_offset(self.geometry.mcycles_per_period, input_period_offset, period_mcycle_offset)
     self:run_to_input_mcycle_offset(builder, pair, epoch_input_offset, input_data, input_mcycle_offset)
@@ -1683,10 +1749,8 @@ function event_handler.prove_state_transition(self, epoch_input_offset, input_pe
 end
 -- docs:end prove_state_transition
 
--- A machine leaf proof includes the complete target data, separately from the standard proof
--- that authenticates its hash. Machine registers may sit within a word, so the proof starts at
--- the containing word boundary.
-local function get_machine_leaf(machine, address)
+-- Returns the data and proof of the word that contains the address (registers may sit within a word).
+local function prove_machine_word(machine, address)
     local target_address = address & ~WORD_MASK
     return machine:read_memory(target_address, WORD_SIZE),
         machine:get_proof(target_address, cartesi.HASH_TREE_LOG2_WORD_SIZE)
@@ -1696,9 +1760,9 @@ end
 -- the word whose data is the outputs Merkle root.
 -- docs:begin prove_outputs_merkle_root
 local function get_outputs_merkle_root_proof(machine)
-    local iflags_y_data, iflags_y_proof = get_machine_leaf(machine, IFLAGS_Y_ADDRESS)
-    local htif_tohost_data, htif_tohost_proof = get_machine_leaf(machine, HTIF_TOHOST_ADDRESS)
-    local tx_buffer_data, tx_buffer_proof = get_machine_leaf(machine, CMIO_TX_BUFFER_ADDRESS)
+    local iflags_y_data, iflags_y_proof = prove_machine_word(machine, IFLAGS_Y_ADDRESS)
+    local htif_tohost_data, htif_tohost_proof = prove_machine_word(machine, HTIF_TOHOST_ADDRESS)
+    local tx_buffer_data, tx_buffer_proof = prove_machine_word(machine, CMIO_TX_BUFFER_ADDRESS)
     return {
         iflags_y_data = iflags_y_data,
         iflags_y_proof = iflags_y_proof,
@@ -1716,12 +1780,12 @@ end
 
 -- Offer the last output for this demonstration. The referee supplies no index.
 function event_handler.prove_output(self)
-    return self:prove_output(hash_tree.frontier_get_leaf_count(self.previous_outputs_frontier) - 1)
+    return self:prove_output(hash_tree.frontier_get_leaf_count(self.outputs_frontier) - 1)
 end
 
 local player_meta = { __index = {} }
 
--- The player owns its epoch pair and checkpoints. Temporary pairs own their scopes.
+-- The player owns its epoch pair and entries. Temporary pairs own their scopes.
 function player_meta.__close(self)
     if self.epoch_pair then
         self.epoch_pair:close()
@@ -1736,7 +1800,7 @@ end
 
 -- Transfer construction state out of a <close> local without closing its resources.
 function player_meta.__index:move()
-    local player = setmetatable({}, player_meta)
+    local player = setmetatable({}, getmetatable(self))
     for name, value in pairs(self) do
         player[name] = value
     end
@@ -1747,19 +1811,19 @@ function player_meta.__index:move()
 end
 
 -- Builders use the player's geometry and own only collection state.
-function player_meta.__index:make_mcycle_computation_hash_builder()
-    return make_mcycle_computation_hash_builder(self.geometry.log2_mcycles_per_period)
+function player_meta.__index:new_mcycle_computation_hash_builder()
+    return new_mcycle_computation_hash_builder(self.geometry.log2_mcycles_per_period)
 end
 
-function player_meta.__index:make_uarch_cycle_computation_hash_builder(epoch_period_offset)
-    return make_uarch_cycle_computation_hash_builder(self.geometry.log2_mcycles_per_period, epoch_period_offset)
+function player_meta.__index:new_uarch_cycle_computation_hash_builder(epoch_period_offset)
+    return new_uarch_cycle_computation_hash_builder(self.geometry.log2_mcycles_per_period, epoch_period_offset)
 end
 
-function player_meta.__index:make_null_computation_hash_builder() -- luacheck: ignore 212 self
-    return make_null_computation_hash_builder()
+function player_meta.__index:new_null_computation_hash_builder() -- luacheck: ignore 212 self
+    return new_null_computation_hash_builder()
 end
 
--- Obtain an exact input boundary without exposing checkpoint selection to callers.
+-- Obtain an exact input boundary without exposing entry selection to callers.
 function player_meta.__index:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
     local pair <close>, cached_epoch_input_offset =
         self.machine_cache:nearest_not_past_epoch_input_offset(epoch_input_offset)
@@ -1767,8 +1831,9 @@ function player_meta.__index:new_machine_pair_at_epoch_input_offset(epoch_input_
     return pair:move()
 end
 
--- Run from an input boundary to the requested logical mcycle offset or its fixed point.
--- Outputs remain local until acceptance; there is no continuation across driver calls.
+-- Runs from an input boundary to the input mcycle offset or a fixed point, and returns the break
+-- reason, the manual yield reason, and the input's base mcycle. Outputs stay local until acceptance.
+-- A rejected input is reverted here. Callers commit a completed input once it no longer needs its snapshot.
 -- luacheck: push ignore self
 function player_meta.__index:run_to_input_mcycle_offset(
     builder,
@@ -1776,7 +1841,7 @@ function player_meta.__index:run_to_input_mcycle_offset(
     epoch_input_offset,
     input_data,
     input_mcycle_offset,
-    outputs,
+    last_output,
     outputs_frontier
 )
     if input_mcycle_offset == 0 then
@@ -1784,12 +1849,26 @@ function player_meta.__index:run_to_input_mcycle_offset(
     end
     local machine = pair.machine
     local input_mcycle_base = begin_input(builder, pair, epoch_input_offset, input_data)
-    local pending_outputs = {}
+    local pending_output_hashes, last_output_data = {}, nil
+    -- First four bytes of keccak256("DelegateCallVoucher(address,bytes)"). No ABI decoding is needed.
+    local delegate_call_selector = "\x10\x32\x1e\x8b"
     local on_yield_automatic
-    if outputs then
+    if last_output then
         function on_yield_automatic(yield_reason, output_data)
             if is_tx_output(yield_reason) then
-                pending_outputs[#pending_outputs + 1] = output_data
+                if machine:read_reg("htif_tohost_data") > CMIO_TX_BUFFER_LENGTH then
+                    self:report_anomaly("oversized_output", "at input %d", epoch_input_offset)
+                end
+                if output_data:sub(1, 4) == delegate_call_selector then
+                    self:report_anomaly(
+                        "delegate_call_voucher",
+                        "delegate-call voucher selector at input %d, output %d",
+                        epoch_input_offset,
+                        #pending_output_hashes
+                    )
+                end
+                pending_output_hashes[#pending_output_hashes + 1] = keccak(output_data)
+                last_output_data = output_data
             end
         end
     end
@@ -1798,18 +1877,31 @@ function player_meta.__index:run_to_input_mcycle_offset(
     if not is_at_fixed_point(break_reason) then
         return break_reason, nil, input_mcycle_base
     end
-    local yield_reason, outputs_merkle_root
+    local yield_reason
     if is_yielded_manual(break_reason) then
-        yield_reason, outputs_merkle_root = receive_cmio_request(machine)
+        yield_reason = receive_cmio_request(machine)
     end
     if is_rx_rejected(yield_reason) then
         pair:revert()
     else
-        flush_pending_outputs(pending_outputs, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
+        if last_output and is_rx_accepted(yield_reason) then
+            -- The referee reads the outputs Merkle root from the first word of the tx buffer
+            local outputs_merkle_root = machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE)
+            if
+                not flush_pending_outputs(
+                    pending_output_hashes,
+                    last_output_data,
+                    last_output,
+                    outputs_frontier,
+                    outputs_merkle_root
+                )
+            then
+                self:report_anomaly("outputs_merkle_root_mismatch", "at input %d", epoch_input_offset)
+            end
+        end
         if is_rx_accepted(yield_reason) then
             pair.revert_root_hash = machine:get_root_hash()
         end
-        pair:commit()
     end
     builder:end_input(machine)
     return break_reason, yield_reason, input_mcycle_base
@@ -1838,10 +1930,10 @@ end
 
 -- Replay completed inputs, leaving the target input undelivered.
 function player_meta.__index:run_to_epoch_input_offset(pair, epoch_input_offset_begin, epoch_input_offset_end)
-    local builder = self:make_null_computation_hash_builder()
+    local builder = self:new_null_computation_hash_builder()
     builder:begin_epoch(pair.machine)
-    for epoch_input_offset = epoch_input_offset_begin, math.min(epoch_input_offset_end, #self.input_paths) - 1 do
-        local input_data = util.read_file(self.input_paths[epoch_input_offset + 1])
+    for epoch_input_offset = epoch_input_offset_begin, math.min(epoch_input_offset_end, self.input_count) - 1 do
+        local input_data = self:read_input(epoch_input_offset)
         local break_reason, yield_reason = self:run_to_input_mcycle_offset(
             builder,
             pair,
@@ -1849,69 +1941,150 @@ function player_meta.__index:run_to_epoch_input_offset(pair, epoch_input_offset_
             input_data,
             MAX_MCYCLES_PER_ADVANCE_STATE
         )
-        if not is_rx_accepted(yield_reason) and not is_rx_rejected(yield_reason) then
+        local stopped = not is_rx_accepted(yield_reason) and not is_rx_rejected(yield_reason)
+        if stopped then
             assert(is_at_fixed_point(break_reason), "input stopped outside a fixed point")
+        end
+        pair:commit()
+        if stopped then
             break
         end
     end
     return builder:end_epoch()
 end
 
--- The persistent epoch pair advances once per input. Scope it during execution so
--- errors release the working machine and any pending rollback snapshot immediately.
+-- Records an input and runs it at once.
 function event_handler.input_added(self, epoch_input_offset, path)
+    self:add_pending_input(epoch_input_offset, path)
+    self:run_pending_inputs()
+end
+
+-- Runs one pending input in idle time, and returns whether more remain.
+function event_handler.idle(self)
+    if self:has_pending_input() then
+        self:run_next_input()
+    end
+    return self:has_pending_input()
+end
+
+-- An input is pending from the event that delivers it until it runs. input_count counts the inputs that ran,
+-- and pending_input_count the ones after them, whose bytes store_input keeps until they run.
+function player_meta.__index:add_pending_input(epoch_input_offset, path)
+    local next_epoch_input_offset = self.input_count + self.pending_input_count
+    -- A relaunched player's listener delivers inputs already pending or run again. An input that ran must be the
+    -- one delivered now, or the chain's history changed under the stored epoch.
+    if epoch_input_offset < next_epoch_input_offset then
+        assert(
+            epoch_input_offset >= self.input_count or self:read_input(epoch_input_offset) == fs.read_file(path),
+            "epoch history changed, so restart from a matching checkpoint"
+        )
+        return
+    end
+    assert(self.epoch_pair, "epoch is not open")
+    assert(epoch_input_offset == next_epoch_input_offset, "input events are not ordered")
+    assert(epoch_input_offset < 1 << LOG2_MAX_ADVANCE_STATES_PER_EPOCH, "input offset past the epoch's input limit")
+    self:store_input(epoch_input_offset, path)
+    self.pending_input_count = self.pending_input_count + 1
+end
+
+function player_meta.__index:has_pending_input()
+    return self.pending_input_count > 0
+end
+
+function player_meta.__index:run_pending_inputs()
+    while self:has_pending_input() do
+        self:run_next_input()
+    end
+end
+
+-- Called at each new block, after the idle time of the previous one. More pending inputs than the cache's gap
+-- between boundaries means the player is not keeping up with its inputs. It is reported once each time it starts.
+function player_meta.__index:check_backlog()
+    local behind = self.pending_input_count > self.machine_cache.input_gap
+    if behind and not self.falling_behind then
+        self:report_anomaly(
+            "falling_behind",
+            "at input %d: %d inputs pending",
+            self.input_count,
+            self.pending_input_count
+        )
+    end
+    self.falling_behind = behind
+end
+
+-- Advances the epoch pair over the next pending input. The pair is scoped while it runs, so an error releases
+-- the machine and any rollback snapshot.
+function player_meta.__index:run_next_input()
     local pair <close> = assert(self.epoch_pair, "epoch is not open")
     local builder = self.epoch_builder
     self.epoch_pair, self.epoch_builder = nil, nil
-    assert(epoch_input_offset == #self.input_paths, "input events are not ordered")
-    self.input_paths[epoch_input_offset + 1] = path
+    local epoch_input_offset = self.input_count
+    self.input_count, self.pending_input_count = epoch_input_offset + 1, self.pending_input_count - 1
+    local last_output = {}
     if not self.epoch_stopped then
         local break_reason, yield_reason = self:run_to_input_mcycle_offset(
             builder,
             pair,
             epoch_input_offset,
-            util.read_file(path),
+            self:read_input(epoch_input_offset),
             MAX_MCYCLES_PER_ADVANCE_STATE,
-            self.outputs,
+            last_output,
             self.outputs_frontier
         )
         if not is_rx_accepted(yield_reason) and not is_rx_rejected(yield_reason) then
             assert(is_at_fixed_point(break_reason), "input stopped outside a fixed point")
             self.epoch_stopped = true
+            local cause
+            if is_halted(break_reason) then
+                cause = "machine halted"
+            elseif is_mcycle_overflow(break_reason) then
+                cause = "machine cycle limit reached"
+            elseif yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION then
+                cause = "application exception"
+            else
+                cause = string.format("unexpected manual yield reason %d", yield_reason)
+            end
+            self:report_anomaly("execution_stopped", "at input %d: %s", epoch_input_offset, cause)
         end
     end
-    assert(not pair.backup_machine, "input stopped before completion")
     self.machine_cache:consider(epoch_input_offset + 1, pair.machine)
+    self.output_count = hash_tree.frontier_get_leaf_count(self.outputs_frontier)
+        - hash_tree.frontier_get_leaf_count(self.previous_outputs_frontier)
+    self:commit_epoch_state(pair, builder, last_output)
+    -- The boundary is recorded, so the input no longer needs its snapshot
+    pair:commit()
     self.epoch_pair, self.epoch_builder = pair:move(), builder
 end
 
--- A production bridge would spawn a player for the next epoch at each
--- epoch_sealed event, using this epoch's locally computed final state.
--- It could concurrently drive the dispute with the player spawned at
--- the previous seal. The first player is bootstrapped at construction.
-function event_handler.epoch_sealed(self)
+-- Retain the final machine before closing execution so the next player can
+-- accumulate inputs while this player disputes the sealed epoch.
+function event_handler.epoch_sealed(self, input_count)
+    -- A relaunched player's listener delivers the seal again, which must cover the inputs that ran.
+    if self.mcycle_forest then
+        assert(input_count == nil or input_count == self.input_count, "sealed input count mismatch")
+        return
+    end
+    -- The claim covers every input delivered
+    self:run_pending_inputs()
+    assert(input_count == nil or input_count == self.input_count, "sealed input count mismatch")
     local pair <close> = assert(self.epoch_pair, "epoch is not open")
     self.epoch_pair = nil
-    assert(not pair.backup_machine, "cannot seal an unfinished input")
     self.outputs_merkle_root_proof = get_outputs_merkle_root_proof(pair.machine)
+    self.final_state_hash = pair.machine:get_root_hash()
     local builder = self.epoch_builder
     self.epoch_builder = nil
     self.mcycle_forest = builder:end_epoch()
-    local leaves = map(self.outputs, keccak)
-    self.output_proofs = hash_tree.frontier_next_proofs(self.previous_outputs_frontier, leaves)
-    self.previous_outputs_frontier = self.outputs_frontier
-    self.outputs_frontier = nil
+    self:seal_epoch_state(pair)
 end
 
 -- docs:begin collect_mcycle_bundle
 function player_meta.__index:collect_mcycle_bundle(epoch_input_offset, input_bundle_offset)
     local pair <close> = self:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
     local machine = pair.machine
-    local builder = self:make_null_computation_hash_builder()
+    local builder = self:new_null_computation_hash_builder()
     -- Deliver the input and stay at its boundary. The machine advances to the bundle and pads it
     -- with its fixed-point state hash when the input stops early.
-    local path = self.input_paths[epoch_input_offset + 1]
-    begin_input(builder, pair, epoch_input_offset, path and util.read_file(path))
+    begin_input(builder, pair, epoch_input_offset, self:read_input(epoch_input_offset))
     local hashes = machine:collect_mcycle_bundle(
         input_bundle_offset,
         self.geometry.log2_mcycles_per_period,
@@ -1923,38 +2096,33 @@ function player_meta.__index:collect_mcycle_bundle(epoch_input_offset, input_bun
 end
 -- docs:end collect_mcycle_bundle
 
--- docs:begin build_uarch_claim
-function player_meta.__index:build_uarch_claim(epoch_input_offset, input_period_offset)
+-- docs:begin build_uarch_cycle_computation_hash
+function player_meta.__index:build_uarch_cycle_computation_hash(epoch_input_offset, input_period_offset)
     local pair <close> = self:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
     local machine = pair.machine
-    local builder = self:make_uarch_cycle_computation_hash_builder(
+    local builder = self:new_uarch_cycle_computation_hash_builder(
         combine_epoch_period_offset(self.geometry.periods_per_input, epoch_input_offset, input_period_offset)
     )
     builder:begin_epoch(machine)
-    local path = self.input_paths[epoch_input_offset + 1]
     self:run_to_input_mcycle_offset(
         builder,
         pair,
         epoch_input_offset,
-        path and util.read_file(path),
+        self:read_input(epoch_input_offset),
         (input_period_offset + 1) * self.geometry.mcycles_per_period
     )
     return builder:end_epoch()
 end
--- docs:end build_uarch_claim
+-- docs:end build_uarch_cycle_computation_hash
 
 -- docs:begin collect_uarch_cycle_bundle
-function player_meta.__index:collect_uarch_cycle_bundle(epoch_input_offset, input_period_offset, period_bundle_offset)
+function player_meta.__index:collect_uarch_cycle_bundle(epoch_input_offset, input_period_offset, period_mcycle_offset)
     local pair <close> = self:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
     local machine = pair.machine
     local tail = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0)
     local revert_uarch_tail = tail.hashes
-    local bundles_per_mcycle = 1 << (LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - LOG2_BUNDLE_UARCH_CYCLE_COUNT)
-    local period_mcycle_offset = period_bundle_offset // bundles_per_mcycle
-    local bundle_offset = period_bundle_offset % bundles_per_mcycle
-    local builder = self:make_null_computation_hash_builder()
-    local path = self.input_paths[epoch_input_offset + 1]
-    local input_data = path and util.read_file(path)
+    local builder = self:new_null_computation_hash_builder()
+    local input_data = self:read_input(epoch_input_offset)
     local input_mcycle_offset =
         combine_input_mcycle_offset(self.geometry.mcycles_per_period, input_period_offset, period_mcycle_offset)
     if input_mcycle_offset == 0 then
@@ -1963,112 +2131,211 @@ function player_meta.__index:collect_uarch_cycle_bundle(epoch_input_offset, inpu
         self:run_to_input_mcycle_offset(builder, pair, epoch_input_offset, input_data, input_mcycle_offset)
     end
     -- Replay may already have rolled back a rejected input. Its restored boundary
-    -- supplies the same uarch history as the tail captured before delivery.
-    local hashes = machine:collect_uarch_cycle_bundle(bundle_offset, LOG2_BUNDLE_UARCH_CYCLE_COUNT, revert_uarch_tail)
+    -- supplies the same uarch history as the tail captured before delivery. The mcycle's
+    -- uarch hashes are collected one per uarch cycle until the halt, then pushed as the builder
+    -- pushes every mcycle.
+    local collected =
+        machine:collect_uarch_cycle_root_hashes(usaturating_add(machine:read_reg("mcycle"), 1), 0, revert_uarch_tail)
+    local offsets = collected.mcycle_hash_offsets
     local forest = hash_tree.frontier_forest(LOG2_BUNDLE_UARCH_CYCLE_COUNT, "keccak256")
-    hash_tree.frontier_forest_append(forest, hashes, 1, #hashes + 1)
+    uarch_computation_hash_push_mcycle({ bundle_height = 0 }, forest, collected.hashes, offsets[1], offsets[2])
     return forest
 end
 -- docs:end collect_uarch_cycle_bundle
 
--- Clients may request any accepted output from the sealed epoch by its global index, independently of
--- the output the demonstration offers to the referee. Missing indices are no offer.
+-- The player keeps its inputs and the epoch's last output in memory and commits nothing. A stored player
+-- overrides these methods. The input's bytes are read at once, so its file need not outlive the event.
+function player_meta.__index:store_input(epoch_input_offset, path)
+    self.inputs[epoch_input_offset + 1] = fs.read_file(path)
+end
+
+-- Returns nil past the applied inputs.
+function player_meta.__index:read_input(epoch_input_offset)
+    return self.inputs[epoch_input_offset + 1]
+end
+
+-- Keeps the last output of the latest input, if it had any.
+function player_meta.__index:commit_epoch_state(_, _, last_output)
+    if last_output.output_proof then
+        self.last_output = last_output
+    end
+end
+
+function player_meta.__index:seal_epoch_state() end -- luacheck: ignore 212 self
+
+function player_meta.__index:store_uarch_claim() end -- luacheck: ignore 212 self
+
+-- Reports anomalies the player observes, such as application behavior it defends against but cannot vouch
+-- for (outputs that do not hash to the root the machine holds) or a tournament it could not join. The
+-- message, formatted from fmt and its arguments, says where, such as "at input 3". The player's
+-- anomaly_handler, if set, receives the kind and the message. Without one, or when it raises an error, the
+-- player prints the message after the kind, with the handler's error, and continues.
+local try_handle_anomaly = util.protect(function(handler, kind, message)
+    handler(kind, message)
+    return true
+end)
+
+function player_meta.__index:report_anomaly(kind, fmt, ...)
+    local message = string.format(fmt, ...)
+    local handler = self.anomaly_handler
+    if handler then
+        local handled, err = try_handle_anomaly(handler, kind, message)
+        if handled then
+            return
+        end
+        message = message .. " (anomaly handler failed: " .. tostring(err) .. ")"
+    end
+    io.stderr:write(string.format("%s: %s %s\n", self.label, kind, message))
+end
+
+-- Reports an outputs Merkle root that differs from the root of the player's outputs frontier
+function player_meta.__index:check_outputs_merkle_root(outputs_merkle_root, fmt, ...)
+    if outputs_merkle_root ~= hash_tree.frontier_get_root_hash(self.outputs_frontier) then
+        self:report_anomaly("outputs_merkle_root_mismatch", fmt, ...)
+    end
+end
+
+-- Proves the epoch's last output, the only one the player keeps. Other indices are no offer.
 function player_meta.__index:prove_output(output_index)
     assert(math.type(output_index) == "integer", "invalid output index")
-    local index = output_index - hash_tree.frontier_get_leaf_count(self.previous_outputs_frontier) + #self.outputs + 1
-    if index < 1 or index > #self.outputs then
-        return {}
+    assert(self.mcycle_forest, "epoch is not sealed")
+    local last_output = self.last_output
+    if not last_output or output_index ~= last_output.output_proof.target_address then
+        return "nothing"
+    end
+    -- An output proves only against the root the settled machine holds
+    if last_output.output_proof.root_hash ~= self.outputs_merkle_root_proof.tx_buffer_data then
+        self:report_anomaly("unprovable_output", "at output %d", output_index)
+        return "nothing"
     end
     return {
         output_index = output_index,
-        output_data = self.outputs[index],
-        output_proof = self.output_proofs[index],
+        output_data = last_output.output_data,
+        output_proof = last_output.output_proof,
     }
 end
 
--- A tree asks for bundles by their index under its root. The mcycle claim's root covers the
--- whole epoch, so the collector splits that epoch-wide index into the input holding the bundle
--- and the bundle's offset within that input.
-function player_meta.__index:make_mcycle_tree()
+-- Bundle indices span the epoch, so the collector splits each into an input and a bundle offset in it.
+local function collect_mcycle_tree_bundle(_, player, epoch_bundle_offset)
+    local bundles_per_input = player.geometry.periods_per_input >> LOG2_BUNDLE_MCYCLE_COUNT
+    local epoch_input_offset = epoch_bundle_offset // bundles_per_input
+    local input_bundle_offset = epoch_bundle_offset % bundles_per_input
+    return player:collect_mcycle_bundle(epoch_input_offset, input_bundle_offset)
+end
+
+function player_meta.__index:new_mcycle_tree()
     return new_tree(
         self.geometry.mcycle_height,
         LOG2_BUNDLE_MCYCLE_COUNT,
         self.mcycle_forest,
-        function(_, epoch_bundle_offset)
-            local bundles_per_input = self.geometry.periods_per_input >> LOG2_BUNDLE_MCYCLE_COUNT
-            local epoch_input_offset = epoch_bundle_offset // bundles_per_input
-            local input_bundle_offset = epoch_bundle_offset % bundles_per_input
-            return self:collect_mcycle_bundle(epoch_input_offset, input_bundle_offset)
-        end
+        collect_mcycle_tree_bundle
     )
 end
--- The uarch claim's root covers one period, so the tree's bundle index is already the offset
--- within that period. The input and period come from the tree's construction.
-function player_meta.__index:make_uarch_tree(epoch_input_offset, input_period_offset)
-    return new_tree(
+
+-- Bundles are the mcycles of one period, so a bundle index is an mcycle offset in that period.
+local function collect_uarch_tree_bundle(tree, player, period_mcycle_offset)
+    return player:collect_uarch_cycle_bundle(tree.epoch_input_offset, tree.input_period_offset, period_mcycle_offset)
+end
+
+-- A stored claim supplies its forest.
+function player_meta.__index:new_uarch_tree(epoch_input_offset, input_period_offset, forest)
+    local tree = new_tree(
         self.geometry.uarch_height,
         LOG2_BUNDLE_UARCH_CYCLE_COUNT,
-        self:build_uarch_claim(epoch_input_offset, input_period_offset),
-        function(_, period_bundle_offset)
-            return self:collect_uarch_cycle_bundle(epoch_input_offset, input_period_offset, period_bundle_offset)
-        end
+        forest or self:build_uarch_cycle_computation_hash(epoch_input_offset, input_period_offset),
+        collect_uarch_tree_bundle
     )
+    tree.epoch_input_offset, tree.input_period_offset = epoch_input_offset, input_period_offset
+    return tree
 end
 
 local prt
 
--- Each player owns its input filenames, cache, and open epoch computation.
--- Default event handlers are shared and treated as read-only.
--- The optional proof bootstraps output history after a previous epoch.
-local function new_player(dapp_contract, label, last_output_proof)
-    local self <close> = setmetatable({
+-- A copy of the outputs frontier the previous epochs left, or an empty one at genesis.
+local function new_outputs_frontier(previous_outputs_frontier)
+    if not previous_outputs_frontier then
+        return hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+    end
+    assert(
+        #previous_outputs_frontier == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT + 1
+            and previous_outputs_frontier.hash_function == cartesi.keccak256,
+        "previous_outputs_frontier is not an outputs frontier"
+    )
+    return hash_tree.frontier_copy(previous_outputs_frontier)
+end
+
+-- The fields every player starts with. The optional outputs frontier continues the output history of
+-- a previous epoch. Install the anomaly handler before initialization or reopening can report.
+-- The shared event handlers are read-only.
+local function new_empty_player(meta, dapp_contract, label, previous_outputs_frontier, anomaly_handler)
+    return setmetatable({
         event_handler = event_handler,
+        anomaly_handler = anomaly_handler,
         label = label or "honest",
         dapp_contract = dapp_contract,
         geometry = dapp_contract.geometry,
-        input_paths = {},
+        input_count = 0,
+        pending_input_count = 0,
+        output_count = 0,
         trees = {},
-    }, player_meta)
-    self.epoch_pair = new_machine_pair(prt.new_machine(dapp_contract.initial_state_hash))
+        uarch_claims = {},
+        reported_uarch_failures = {},
+        previous_outputs_frontier = new_outputs_frontier(previous_outputs_frontier),
+    }, meta)
+end
+
+-- Opens the epoch on the player's epoch pair, which must hold the initial machine.
+local function open_epoch(self)
     local machine = self.epoch_pair.machine
-    assert_rolling_template(machine)
-    self.machine_cache = prt.new_machine_cache(fork_server(machine))
-    self.epoch_builder = self:make_mcycle_computation_hash_builder()
+    self.epoch_builder = self:new_mcycle_computation_hash_builder()
     self.epoch_builder:begin_epoch(machine)
-    self.outputs = {}
-    if last_output_proof then
-        assert(
-            last_output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT
-                and last_output_proof.log2_target_size == 0,
-            "last_output_proof is not an outputs proof"
-        )
-    end
-    self.previous_outputs_frontier =
-        hash_tree.frontier(last_output_proof or cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
     self.outputs_frontier = hash_tree.frontier_copy(self.previous_outputs_frontier)
+    self:check_outputs_merkle_root(machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE), "at the epoch's start")
+end
+
+-- A forked player runs on forked servers.
+local function new_forked_player(dapp_contract, label, previous_outputs_frontier, anomaly_handler)
+    local self <close> = new_empty_player(player_meta, dapp_contract, label, previous_outputs_frontier, anomaly_handler)
+    self.inputs = {}
+    self.epoch_pair =
+        new_forked_machine_pair(prt.new_machine(dapp_contract.initial_state_hash, dapp_contract.machine_directory))
+    self.machine_cache = prt.new_forked_machine_cache(fork_server(self.epoch_pair.machine))
+    open_epoch(self)
     return self:move()
 end
 
 prt = {
     LOG2_BUNDLE_MCYCLE_COUNT = LOG2_BUNDLE_MCYCLE_COUNT,
     LOG2_BUNDLE_UARCH_CYCLE_COUNT = LOG2_BUNDLE_UARCH_CYCLE_COUNT,
-    new_player = new_player,
+    DEFAULT_MACHINE_CACHE_INPUT_GAP = DEFAULT_MACHINE_CACHE_INPUT_GAP,
+    new_forked_player = new_forked_player,
+    player_meta = player_meta,
+    event_handler = event_handler,
+    new_empty_player = new_empty_player,
+    open_epoch = open_epoch,
+    new_outputs_frontier = new_outputs_frontier,
+    machine_pair_meta = machine_pair_meta,
+    machine_cache_meta = machine_cache_meta,
+    shallow_move = shallow_move,
+    find_nearest_entry = find_nearest_entry,
+    get_mcycle_sample_hash = get_mcycle_sample_hash,
+    new_mcycle_pad_bundle = new_mcycle_pad_bundle,
     new_tree = new_tree,
     new_machine = new_machine,
-    make_null_computation_hash_builder = make_null_computation_hash_builder,
-    make_mcycle_computation_hash_builder = make_mcycle_computation_hash_builder,
-    make_uarch_cycle_computation_hash_builder = make_uarch_cycle_computation_hash_builder,
+    new_null_computation_hash_builder = new_null_computation_hash_builder,
+    new_mcycle_computation_hash_builder = new_mcycle_computation_hash_builder,
+    new_uarch_cycle_computation_hash_builder = new_uarch_cycle_computation_hash_builder,
     umin = umin,
     usaturating_add = usaturating_add,
     is_target_mcycle = is_target_mcycle,
     is_yielded_manual = is_yielded_manual,
     is_at_fixed_point = is_at_fixed_point,
     uarch_computation_hash_push_mcycle = uarch_computation_hash_push_mcycle,
-    new_machine_cache = new_machine_cache,
-    new_machine_pair = new_machine_pair,
+    new_forked_machine_cache = new_forked_machine_cache,
+    new_forked_machine_pair = new_forked_machine_pair,
     new_match = new_match,
     new_referee = new_referee,
-    make_dapp_contract = make_dapp_contract,
+    new_dapp_contract = new_dapp_contract,
     new_geometry = new_geometry,
     split_epoch_period_offset = split_epoch_period_offset,
     combine_epoch_period_offset = combine_epoch_period_offset,
@@ -2117,7 +2384,7 @@ if role == "referee" then
 elseif role == "honest" then
     local label = take_argument()
     run_role = function(dapp_contract)
-        local player <close> = new_player(dapp_contract, label)
+        local player <close> = new_forked_player(dapp_contract, label)
         prtu.run_client(player, server_address)
     end
     assert(next_argument > #arg, "only the referee takes input files")
@@ -2125,5 +2392,5 @@ else
     error("unknown role: " .. role)
 end
 
-local dapp_contract = make_dapp_contract(initial_state_hash, { take_remaining_arguments() })
+local dapp_contract = new_dapp_contract(initial_state_hash, { take_remaining_arguments() })
 run_role(dapp_contract)

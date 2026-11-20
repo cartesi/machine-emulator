@@ -21,8 +21,10 @@ This exercises the validation error paths in replay-step-state-access.h
 ]]
 
 local cartesi = require("cartesi")
+local filesystem = require("cartesi.filesystem")
 local hash_tree = require("cartesi.hash-tree")
 local lester = require("cartesi.third-party.lester")
+local tests_util = require("cartesi.tests.util")
 lester.parse_args()
 
 local describe, it, expect = lester.describe, lester.it, lester.expect
@@ -47,30 +49,24 @@ local function produce_valid_step_log()
         ram = { length = 0x20000 },
     }, {})
     local root_hash_before = machine:get_root_hash()
-    local log_filename = os.tmpname()
-    os.remove(log_filename) -- log_step requires the file not to exist
+    local _ <close>, log_filename = tests_util.scope_temp_pathname()
     local mcycle_count = 1
     machine:log_step(mcycle_count, log_filename)
     local root_hash_after = machine:get_root_hash()
     -- Read the binary log file
     local f <close> = assert(io.open(log_filename, "rb"))
     local log_data = f:read("a")
-    os.remove(log_filename)
     return root_hash_before, mcycle_count, root_hash_after, log_data
 end
 
 -- Write log_data to a temp file, call verify_step on machine, clean up.
 -- The obtained root hash is compared against root_hash_after on behalf of the caller.
 local function verify_step_with_data(machine, root_hash_before, mcycle_count, root_hash_after, log_data)
-    local log_filename = os.tmpname()
-    local f <close> = assert(io.open(log_filename, "wb"))
-    f:write(log_data)
-    f:close()
+    local _ <close>, log_filename = filesystem.write_scope_temp_file(log_data)
     local ok, err = pcall(function()
         local obtained_root_hash = machine:verify_step(root_hash_before, log_filename, mcycle_count)
         assert(obtained_root_hash == root_hash_after, "obtained root hash does not match root hash after")
     end)
-    os.remove(log_filename)
     return ok, err
 end
 
@@ -320,6 +316,49 @@ local function register_verify_step_tests(machine)
         end)
     end)
 
+    describe("rejected input", function()
+        for _, hash_function in ipairs({ "keccak256", "sha256" }) do
+            it("should authenticate the revert root with " .. hash_function, function()
+                local source <close> = cartesi.machine({
+                    ram = { length = 0x1000 },
+                    hash_tree = { hash_function = hash_function },
+                })
+                local revert_root_hash = source:get_root_hash()
+                source:write_revert_root_hash(revert_root_hash)
+                source:write_reg("iflags_Y", 1)
+                source:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+                source:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+                source:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+                local initial_hash = source:get_root_hash()
+                local _ <close>, filename = tests_util.scope_temp_pathname()
+                source:log_step(1, filename)
+                local file <close> = assert(io.open(filename, "rb"))
+                local data = file:read("a")
+                file:close()
+                expect.truthy(verify_step_with_data(machine, initial_hash, 1, revert_root_hash, data))
+                expect.not_equal(source:get_root_hash(), revert_root_hash)
+
+                local forged_root = string.rep("\xba", HASH_SIZE)
+                local forged = replace_at(data, OFFSET_ROOT_HASH_AFTER, forged_root)
+                expect.falsy(verify_step_with_data(machine, initial_hash, 1, forged_root, forged))
+                -- Changing both the claimed result and its recorded state must still fail
+                -- authentication against the original root supplied by the caller.
+                local revert_address = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START
+                local found = false
+                for i, page in ipairs(parse_pages(data)) do
+                    if page.index == revert_address >> LOG2_PAGE_SIZE then
+                        local offset = OFFSET_FIRST_PAGE + (i - 1) * PAGE_ENTRY_SIZE + 8 + revert_address % PAGE_SIZE
+                        forged = replace_at(forged, offset, forged_root)
+                        found = true
+                        break
+                    end
+                end
+                assert(found, "step log did not include the revert root page")
+                expect.falsy(verify_step_with_data(machine, initial_hash, 1, forged_root, forged))
+            end)
+        end
+    end)
+
     describe("verify_step wrapper: argument validation", function()
         it("should reject root hash before mismatch with log header", function()
             local bad_hash = string.rep("\xba", HASH_SIZE)
@@ -352,8 +391,7 @@ local function register_verify_step_tests(machine)
             local root_hash_before = log_machine:get_root_hash()
 
             -- Produce a valid step log to learn which pages are needed
-            local log_filename = os.tmpname()
-            os.remove(log_filename)
+            local _ <close>, log_filename = tests_util.scope_temp_pathname()
             local mcycle_count = 1
             log_machine:log_step(mcycle_count, log_filename)
             local root_hash_after = log_machine:get_root_hash()
@@ -361,7 +399,6 @@ local function register_verify_step_tests(machine)
             local f <close> = assert(io.open(log_filename, "rb"))
             local log_data = f:read("a")
             f:close()
-            os.remove(log_filename)
 
             -- Parse pages from the valid log
             local pages = parse_pages(log_data)
@@ -407,8 +444,7 @@ local function register_verify_step_tests(machine)
             local config = { ram = { length = 0x20000 } }
             local log_machine <close> = cartesi.machine(config, {})
 
-            local log_filename = os.tmpname()
-            os.remove(log_filename)
+            local _ <close>, log_filename = tests_util.scope_temp_pathname()
             local mcycle_count = 1
             log_machine:log_step(mcycle_count, log_filename)
             local root_hash_after = log_machine:get_root_hash()
@@ -416,7 +452,6 @@ local function register_verify_step_tests(machine)
             local f <close> = assert(io.open(log_filename, "rb"))
             local log_data = f:read("a")
             f:close()
-            os.remove(log_filename)
 
             local pages = parse_pages(log_data)
             local hash_function = string.unpack("<I8", log_data, OFFSET_HASH_FUNCTION + 1)

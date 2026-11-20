@@ -16,15 +16,16 @@
 
 pragma solidity ^0.8.20;
 
-import {Test, console} from "forge-std/Test.sol";
-import {IRiscZeroVerifier} from "risc0/IRiscZeroVerifier.sol";
+import {Test} from "forge-std/Test.sol";
+import {RiscZeroVerifierRouter} from "risc0/RiscZeroVerifierRouter.sol";
+import {RiscZeroGroth16Verifier} from "risc0/groth16/RiscZeroGroth16Verifier.sol";
+import {ControlID} from "risc0/groth16/ControlID.sol";
 import {CartesiStepVerifier} from "../src/CartesiStepVerifier.sol";
 
 contract Groth16VerificationTest is Test {
-    // RISC Zero Verifier Router on Sepolia
-    address constant VERIFIER_ROUTER = 0x925d8331ddc0a1F0d96E68CF073DFE1d92b69187;
     bytes32 constant WRONG_HASH = bytes32(uint256(1));
 
+    RiscZeroVerifierRouter router;
     CartesiStepVerifier stepVerifier;
     bytes seal;
     bytes journal;
@@ -33,7 +34,11 @@ contract Groth16VerificationTest is Test {
     bytes32 rootHashAfter;
 
     function setUp() public {
-        stepVerifier = new CartesiStepVerifier(IRiscZeroVerifier(VERIFIER_ROUTER));
+        RiscZeroGroth16Verifier verifier =
+            new RiscZeroGroth16Verifier(ControlID.CONTROL_ROOT, ControlID.BN254_CONTROL_ID);
+        router = new RiscZeroVerifierRouter(address(this));
+        router.addVerifier(verifier.SELECTOR(), verifier);
+        stepVerifier = new CartesiStepVerifier(router);
         seal = vm.readFileBinary("../test/fixtures/seal.bin");
         journal = vm.readFileBinary("../test/fixtures/journal.bin");
         (rootHashBefore, mcycleCount, rootHashAfter) =
@@ -68,7 +73,6 @@ contract Groth16VerificationTest is Test {
     }
 
     function test_wrongImageIdReverts() public {
-        IRiscZeroVerifier router = IRiscZeroVerifier(VERIFIER_ROUTER);
         bytes32 journalDigest = sha256(journal);
         bytes32 fakeImageId = WRONG_HASH;
 

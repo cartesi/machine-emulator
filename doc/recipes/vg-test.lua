@@ -1,14 +1,25 @@
 -- Run with make -C doc test-vg. This does not parse or render the README.
 local cartesi = require("cartesi")
-local util = require("cartesi.util")
+local fs = require("cartesi.filesystem")
 local vg = require("vg")
 local vgu = require("vgu")
 local run_with_server = require("vg-test-server")
 local replay_test = require("vg-replay-test")
-local initial_hash = cartesi.fromhex(util.read_file("initial-hash"))
+local initial_hash = cartesi.fromhex(fs.read_file("initial-hash"))
+-- The moment right after the sd to htif.tohost that emits the notice of an input
+local function read_notice_moment(epoch_input_offset)
+    local moment = fs.read_file("input-" .. epoch_input_offset .. "-notice")
+    local input_mcycle_offset, uarch_cycle = moment:match("^(%d+) (%d+)$")
+    return assert(tonumber(input_mcycle_offset)), assert(tonumber(uarch_cycle))
+end
+-- The tamperer forges the notice of an input as the machine emits it
+local function new_tamperer(roles, epoch_input_offset)
+    local input_mcycle_offset, uarch_cycle = read_notice_moment(epoch_input_offset)
+    return roles.new_tamperer(initial_hash, epoch_input_offset, input_mcycle_offset, uarch_cycle, "42")
+end
 local paths = { "input-0.bin", "input-1.bin", "input-2.bin" }
 local function run_game(players, input_paths)
-    local dapp_contract = vg.make_dapp_contract(initial_hash, input_paths or paths)
+    local dapp_contract = vg.new_dapp_contract(initial_hash, input_paths or paths)
     local results
     local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
         results = observed
@@ -19,7 +30,7 @@ local function run_game(players, input_paths)
             wait_connections(index)
         end
         run_client({ role = "phase_closer" }, function()
-            return { value = true }
+            return { value = "done" }
         end)
         vg.new_referee(dapp_contract):run(server)
     end)
@@ -43,7 +54,7 @@ print("vg-test: equal claims ok")
 -- can also join after settlement, with different connections supplying the root
 -- and the output. Empty or invalid earlier offers must not suppress their proofs.
 local function empty_offer()
-    return {}
+    return "nothing"
 end
 local empty_handlers = {
     __index = function()
@@ -51,7 +62,7 @@ local empty_handlers = {
     end,
 }
 for _, late_providers in ipairs({ false, true }) do
-    local dapp_contract = vg.make_dapp_contract(initial_hash, {})
+    local dapp_contract = vg.new_dapp_contract(initial_hash, {})
     local settled
     local root_offer = vg.event_handler.prove_outputs_merkle_root(first)
     local output_offer = vg.event_handler.prove_output(first)
@@ -116,7 +127,7 @@ for _, late_providers in ipairs({ false, true }) do
             wait_connections(index)
         end
         run_client({ role = "phase_closer" }, function()
-            return { value = true }
+            return { value = "done" }
         end)
         vg.new_referee(dapp_contract):run(server)
     end)
@@ -130,7 +141,7 @@ print("vg-test: permissionless output providers ok")
 -- Player-selected outputs need not arrive in index order. Repeating an accepted
 -- output leaves the wait suspended until the runner stops the game.
 do
-    local dapp_contract = vg.make_dapp_contract(initial_hash, {})
+    local dapp_contract = vg.new_dapp_contract(initial_hash, {})
     local settled
     local offered, resumed = { 0, 0 }, false
     local last = #first.outputs
@@ -167,7 +178,7 @@ do
             wait_connections(index)
         end
         run_client({ role = "phase_closer" }, function()
-            return { value = true }
+            return { value = "done" }
         end)
         vg.new_referee(dapp_contract):run(server)
         resumed = true
@@ -207,7 +218,7 @@ for _, case in ipairs({
         case.winner == 2 and root_hash_after or cartesi.keccak256("wrong second endpoint"),
     }
     local proofs = {}
-    local dapp_contract = vg.make_dapp_contract(initial_hash, {})
+    local dapp_contract = vg.new_dapp_contract(initial_hash, {})
     local settled
     local server = run_with_server(vgu.protocol, function(server, run_client, wait_connections, observed)
         settled = observed
@@ -232,7 +243,10 @@ for _, case in ipairs({
                 uarch_cycle
             )
                 if case.last then
-                    assert(epoch_input_offset == (1 << 16) - 1 and input_mcycle_offset == (1 << 48) - 1)
+                    assert(
+                        epoch_input_offset == (1 << cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH) - 1
+                            and input_mcycle_offset == (1 << 48) - 1
+                    )
                     assert(uarch_cycle == cartesi.UARCH_CYCLE_MAX)
                 else
                     assert(
@@ -248,7 +262,7 @@ for _, case in ipairs({
             wait_connections(index)
         end
         run_client({ role = "phase_closer" }, function()
-            return { value = true }
+            return { value = "done" }
         end)
         vg.new_referee(dapp_contract):run(server)
     end)
@@ -269,13 +283,13 @@ print("vg-test: terminal proofs eliminate unsupported endpoints ok")
 
 if arg[1] ~= "execution" then
     local roles = require("vg-dishonest")
-    for _, role in ipairs({ "forger", "tamperer", "quitter" }) do
+    for _, role in ipairs({ "forger", "tamperer", "vandal" }) do
         for honest_index = 1, 2 do
             local honest <close> = vg.new_player(initial_hash)
             local opponent <close> = role == "forger" and roles.new_forger(initial_hash, 2, "forged-input-2.bin")
-                or role == "tamperer" and roles.new_tamperer(initial_hash, 0, 100)
-                or roles.new_quitter()
-            if role ~= "quitter" then
+                or role == "tamperer" and new_tamperer(roles, 0)
+                or roles.new_vandal()
+            if role ~= "vandal" then
                 replay_test.measure(honest)
                 replay_test.measure(opponent)
             end
@@ -286,7 +300,7 @@ if arg[1] ~= "execution" then
                 role .. " defeated the honest player"
             )
             assert(result.final_state_hash == honest.final_state_hash and result.output)
-            if role ~= "quitter" then
+            if role ~= "vandal" then
                 assert(honest.replay_counts.rounds == 1)
             end
             print("vg-test: honest player " .. honest_index .. " defeats " .. role)
@@ -296,7 +310,7 @@ if arg[1] ~= "execution" then
     -- One dispute spans both proof rounds. The early corruption leaves the honest
     -- player and later forger with different claims; proof completion resets their replay.
     do
-        local tamperer <close> = roles.new_tamperer(initial_hash, 0, 100)
+        local tamperer <close> = new_tamperer(roles, 0)
         local honest <close> = vg.new_player(initial_hash)
         local forger <close> = roles.new_forger(initial_hash, 2, "forged-input-2.bin")
         local players = { tamperer, honest, forger }
@@ -346,7 +360,7 @@ assert(not pcall(first.new_machine, first, string.rep("\0", 32)))
 assert(vg.usaturating_add(cartesi.MCYCLE_MAX - 2, 3) == cartesi.MCYCLE_MAX)
 assert(vg.usaturating_add(math.maxinteger, 2) == math.mininteger + 1)
 
--- Bootstrap owns the loaded template; later resets fork the initial checkpoint.
+-- Bootstrap owns the loaded template. Later resets fork the initial entry.
 do
     local loads = 0
     local machine = first:new_machine(initial_hash)
@@ -357,7 +371,7 @@ do
             return machine
         end,
     })
-    assert(player.epoch_pair.machine == machine and player.machine_cache.checkpoints[1].machine ~= machine)
+    assert(player.epoch_pair.machine == machine and player.machine_cache.entries[1].machine ~= machine)
     player:reset_bisection()
     assert(loads == 1 and player.agreed_pair.machine ~= machine, "reset reloaded the initial template")
 end
@@ -424,8 +438,41 @@ do
 end
 
 -- Snapshot ownership is consumed by commit or revert; retired servers close immediately.
-do
-    local player <close> = vg.new_player(initial_hash)
+for _, occupied_address in ipairs({ false, true }) do
+    local listener <close> = setmetatable({}, {
+        __close = function(self)
+            if self.socket then
+                self.socket:close()
+            end
+        end,
+    })
+    local overrides
+    if occupied_address then
+        -- As in the CLI rebind regression, keep the server's listening socket open in this
+        -- process. Shutting down the server cannot free the port for the restored machine.
+        local jsonrpc = require("cartesi.jsonrpc")
+        local fcntl = require("posix.fcntl")
+        listener.socket = assert(require("socket").bind("127.0.0.1", 0))
+        local host, port = listener.socket:getsockname()
+        local address = host .. ":" .. port
+        local fd = math.tointeger(listener.socket:getfd())
+        local flags = assert(fcntl.fcntl(fd, fcntl.F_GETFD))
+        assert(fcntl.fcntl(fd, fcntl.F_SETFD, 0))
+        local server_bin = os.getenv("CARTESI_JSONRPC_MACHINE") or "cartesi-jsonrpc-machine"
+        local started = os.execute(string.format("%s --server-fd=%d >/dev/null 2>&1 &", server_bin, fd))
+        assert(fcntl.fcntl(fd, fcntl.F_SETFD, flags))
+        assert(started)
+        overrides = {
+            new_machine = function(_, state_hash)
+                local machine <close> = jsonrpc.connect_server(address)
+                machine:set_cleanup_call(jsonrpc.SHUTDOWN)
+                machine:load(cartesi.tohex(state_hash), { clear_hash_tree = true })
+                assert(machine:get_root_hash() == state_hash)
+                return machine:move()
+            end,
+        }
+    end
+    local player <close> = vg.new_player(initial_hash, nil, nil, overrides)
     local pair = player.epoch_pair
     pair:snapshot()
     local committed = pair.backup_machine
@@ -440,10 +487,17 @@ do
     pair:snapshot()
     local reverted = pair.backup_machine
     local address = pair.machine:get_server_address()
+    local backup_address = pair.backup_machine:get_server_address()
     pair.machine:write_reg("x1", ~pair.machine:read_reg("x1"))
     pair:revert()
     assert(not pair.backup_machine and pair.machine:get_root_hash() == committed_hash)
-    assert(pair.machine:get_server_address() == address, "revert changed the working server address")
+    if occupied_address then
+        assert(pair.machine:get_server_address() == backup_address, "revert lost the backup server's address")
+        assert(pair.machine:get_server_address() ~= address, "revert reused an occupied address")
+        -- Release the retained listener before checking that the displaced server is gone.
+        listener.socket:close()
+        listener.socket = nil
+    end
     assert(not pcall(reverted.get_root_hash, reverted), "revert left the displaced server running")
     assert(not pcall(pair.revert, pair))
     assert(pair.machine:get_root_hash() == committed_hash)
@@ -485,7 +539,7 @@ for _, granularity in ipairs({ "mcycle", "uarch" }) do
     local player <close> = vg.new_player(initial_hash)
     local pair = player.epoch_pair
     pair.machine:write_reg("x1", ~pair.machine:read_reg("x1"))
-    local input = util.read_file(paths[1])
+    local input = fs.read_file(paths[1])
     local ok, err
     if granularity == "mcycle" then
         ok, err = pcall(player.run_to_input_mcycle_offset, player, pair, input, 0, 1)
@@ -608,7 +662,7 @@ end
 do
     local hash_tree = require("cartesi.hash-tree")
     local player <close> = vg.new_player(initial_hash)
-    local input_data = util.read_file(paths[1])
+    local input_data = fs.read_file(paths[1])
     local pair <close> = player:new_machine_pair_at_epoch_input_offset(0)
     local outputs = {}
     local frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
@@ -685,7 +739,7 @@ do
     local a <close> = vg.new_player(initial_hash, "honest 1")
     local b <close> = vg.new_player(initial_hash, "honest 2")
     local empty = run_game({ a, b }, {})
-    assert(empty.final_state_hash == initial_hash and empty.outputs_root and not empty.output)
+    assert(empty.final_state_hash == initial_hash and empty.outputs_merkle_root and not empty.output)
 end
 
 -- Validate terminal logs directly at input inclusion, an ordinary step, and the
@@ -694,7 +748,7 @@ do
     local player <close> = vg.new_player(initial_hash)
     vg.event_handler.input_added(player, 0, paths[2])
     vg.event_handler.epoch_sealed(player, 1)
-    local contract = { inputs = { util.read_file(paths[2]) } }
+    local contract = { inputs = { fs.read_file(paths[2]) } }
     local function verify(machine, input_mcycle_offset, cycle, input, expected)
         local root_hash_before = machine:get_root_hash()
         local logs = {}
@@ -793,10 +847,23 @@ for _, output_count in ipairs({ 0, 2 }) do
     assert(player.previous_outputs_frontier == completed_frontier and not player.outputs_frontier)
     local offer = vg.event_handler.prove_output(player)
     if output_count == 0 then
-        assert(next(offer) == nil and #player.output_proofs == 0)
+        assert(offer == "nothing" and #player.output_proofs == 0)
     else
         assert(offer.output_index == #previous_hashes + output_count - 1)
         assert(require("game-output").validate_output_response(offer, root))
+        -- Bit 63 takes no part in the roll-up, so the same proof under that aliased index must be refused.
+        local aliased_proof = {}
+        for key, value in pairs(offer.output_proof) do
+            aliased_proof[key] = value
+        end
+        aliased_proof.target_address = offer.output_index | (1 << 63)
+        local aliased = {
+            output_index = aliased_proof.target_address,
+            output_data = offer.output_data,
+            output_proof = aliased_proof,
+        }
+        local ok, err = pcall(require("game-output").validate_output_response, aliased, root)
+        assert(not ok and tostring(err):find("output index out of range", 1, true), "aliased output index was accepted")
     end
 end
 
@@ -882,7 +949,7 @@ do
         inputs = {},
         state_hashes_before_inputs = { [0] = initial_hash },
         input_mcycle_lengths = {},
-        -- The gap exceeds every input base, so no checkpoint forks the fake machine.
+        -- The gap exceeds every input base, so no entry forks the fake machine.
         machine_cache = vg.new_machine_cache({ shutdown_server = function() end }, 1, math.maxinteger),
         epoch_pair = new_pair(),
         outputs = {},
@@ -973,7 +1040,7 @@ for _, cheat in ipairs({ "no-rollback", "extra-input", "composite" }) do
                 100,
                 3,
                 vg.player_methods.new_machine(self, initial_state_hash),
-                util.read_file("forged-input-2.bin")
+                fs.read_file("forged-input-2.bin")
             )
         end
         function overrides:new_machine_pair_at_epoch_input_offset(epoch_input_offset)
@@ -982,7 +1049,7 @@ for _, cheat in ipairs({ "no-rollback", "extra-input", "composite" }) do
             pair.snapshot = snapshot_composite
             return pair
         end
-        -- The pair counts its inputs from zero, so it must replay every prefix rather than start at a checkpoint.
+        -- The pair counts its inputs from zero, so it must replay every prefix rather than start at an entry.
         overrides.machine_cache_input_gap = math.maxinteger
     end
     local opponent <close> = cheat == "no-rollback" and require("vg-dishonest").new_no_rollback(initial_hash)
@@ -1027,7 +1094,7 @@ do
     local roles = require("vg-dishonest")
     local honest <close> = vg.new_player(initial_hash)
     local forger <close> = roles.new_forger(initial_hash, 2, "forged-input-2.bin")
-    local tamperer <close> = roles.new_tamperer(initial_hash, 2, 100)
+    local tamperer <close> = new_tamperer(roles, 2)
     local no_rollback <close> = roles.new_no_rollback(initial_hash)
     local function record_proof(self, epoch_input_offset, input_mcycle_offset, uarch_cycle)
         self.proof_positions[#self.proof_positions + 1] = { epoch_input_offset, input_mcycle_offset, uarch_cycle }
@@ -1047,7 +1114,8 @@ do
     local rejection, inclusion, corruption = table.unpack(honest.proof_positions)
     assert(rejection[1] == 1 and rejection[3] == (1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) - 1)
     assert(inclusion[1] == 2 and inclusion[2] == 0 and inclusion[3] == 0)
-    assert(corruption[1] == 2 and corruption[2] == 100 and corruption[3] == 0)
+    local notice_mcycle_offset, notice_uarch_cycle = read_notice_moment(2)
+    assert(corruption[1] == 2 and corruption[2] == notice_mcycle_offset and corruption[3] == notice_uarch_cycle)
 end
 print("vg-test: four-player game eliminates three dishonest claims over three proof rounds ok")
 
@@ -1102,19 +1170,6 @@ for _, terminal in ipairs({ "halt", "overflow", "exception" }) do
     )
 end
 
--- The tamperer's bookkeeping follows a fork and is restored with a rejected input.
-do
-    local roles = require("vg-dishonest")
-    local player <close> = roles.new_tamperer(initial_hash, 0, 100)
-    vg.event_handler.input_added(player, 0, paths[2])
-    assert(player.epoch_pair.machine:get_root_hash() == initial_hash)
-    assert(not player.epoch_pair.machine.tampered)
-    local loaded <close> = player:new_machine_pair_at_epoch_input_offset(0)
-    local replay <close> = loaded:fork()
-    player:run_to_epoch_input_offset(replay, player.inputs, 0, 1)
-    assert(replay.machine:get_root_hash() == initial_hash and not replay.machine.tampered)
-end
-
 -- Scope cleanup owns every persistent fork even when a handler fails.
 do
     local captured
@@ -1134,7 +1189,7 @@ do
             and not captured.tentative_pair
     )
 end
-print("vg-test: fixed points, tamperer rollback and cleanup ok")
+print("vg-test: fixed points and cleanup ok")
 
 replay_test.run(initial_hash, paths)
 

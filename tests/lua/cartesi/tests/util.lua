@@ -16,6 +16,8 @@
 
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
+local filesystem = require("cartesi.filesystem")
+local expect = require("cartesi.third-party.lester").expect
 
 local ROOT_LOG2_SIZE = 64
 local PAGE_LOG2_SIZE = 12
@@ -54,6 +56,11 @@ local tests_util = {
     cmio_path = adjust_path(os.getenv("CARTESI_CMIO_PATH") or get_script_path(4) .. "/build/cmio"),
     step_logs_path = adjust_path(os.getenv("CARTESI_STEP_LOGS_PATH") or get_script_path(4) .. "/build/step-logs"),
     tests_uarch_path = adjust_path(os.getenv("CARTESI_TESTS_UARCH_PATH") or get_script_path(4) .. "/build/uarch"),
+    computation_hash_manifest_schemas = {
+        Manifest = { items = "Case" },
+        Case = { inputs = "Inputs" },
+        Inputs = { items = "Default" },
+    },
 }
 
 local function compute_zero_hash_table(hash_fn)
@@ -92,14 +99,14 @@ tests_util.uarch_programs.default = {
     table.unpack(tests_util.uarch_programs.halt),
 }
 
+-- Writes the program to a temporary file. Returns an owner that removes the file on close, and its path.
 function tests_util.create_test_uarch_program(instructions)
     assert(instructions, "missing instructions")
-    local file_path = os.tmpname()
-    local f <close> = assert(io.open(file_path, "wb"))
+    local words = {}
     for _, insn in pairs(instructions) do
-        f:write(string.pack("I4", insn))
+        words[#words + 1] = string.pack("I4", insn)
     end
-    return file_path
+    return filesystem.write_scope_temp_file(table.concat(words))
 end
 
 function tests_util.make_do_test(build_machine, type, config, runtime_config)
@@ -233,34 +240,6 @@ function tests_util.assert_error(expected_error_text_pattern, fn)
     )
 end
 
--- temporary file
-local temp_file_meta = { __index = {} }
-
-function temp_file_meta.__index:write(...)
-    self.file:write(...)
-end
-
-function temp_file_meta.__index:read_all()
-    self.file:seek("set", 0)
-    return self.file:read("*all")
-end
-
-function temp_file_meta.__index:close()
-    self.file:close()
-    os.remove(self.file_name)
-end
-
-function temp_file_meta:__close()
-    self:close()
-end
-
-function tests_util.new_temp_file()
-    local self = {}
-    self.file_name = os.tmpname()
-    self.file = io.open(self.file_name, "w+")
-    return setmetatable(self, temp_file_meta)
-end
-
 -- Executes a callback when the scope exits.
 -- REMARKS: Use <close> on its returned value to make it behave deterministically.
 function tests_util.scope_exit(callback)
@@ -271,6 +250,44 @@ function tests_util.scope_exit(callback)
         end
     end
     return setmetatable({}, { __gc = do_callback, __close = do_callback })
+end
+
+-- A nonexistent path inside a private temporary directory. Callers remove any nonempty directories
+-- or sibling files they create before this scope closes.
+function tests_util.scope_temp_pathname(suffix)
+    local directory = filesystem.create_temporary_directory(os.getenv("TMPDIR") or "/tmp", "cartesi-test-")
+    local path = directory .. "/temp" .. (suffix or "")
+    return tests_util.scope_exit(function()
+        os.remove(path)
+        filesystem.remove_directory(directory)
+    end),
+        path
+end
+
+-- Runs a machine natively, by log_step and verify_step, and in the microarchitecture, where each uarch run
+-- executes one mcycle and each reset is logged and verified. All three must reach the same root hash.
+-- new_machine() returns a fresh machine, and check_result(machine) checks the state it reached.
+function tests_util.expect_all_paths_agree(new_machine, mcycle_count, check_result)
+    local native <close> = new_machine()
+    local initial_hash = native:get_root_hash()
+    expect.equal(native:run(mcycle_count), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+    check_result(native)
+    local expected_hash = native:get_root_hash()
+
+    local logged <close> = new_machine()
+    local _ <close>, filename = tests_util.scope_temp_pathname()
+    expect.equal(logged:log_step(mcycle_count, filename), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+    expect.equal(logged:verify_step(initial_hash, filename, mcycle_count), expected_hash)
+
+    local uarch <close> = new_machine()
+    for _ = 1, mcycle_count do
+        expect.equal(uarch:run_uarch(math.maxinteger), cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
+        local before_reset = uarch:get_root_hash()
+        local log = uarch:log_reset_uarch()
+        expect.equal(uarch:verify_reset_uarch(before_reset, log), uarch:get_root_hash())
+    end
+    expect.equal(uarch:get_root_hash(), expected_hash)
+    check_result(uarch)
 end
 
 return tests_util

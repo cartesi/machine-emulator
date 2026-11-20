@@ -14,6 +14,7 @@ cartesi-machine --no-init-splash --remote-address=127.0.0.1:0 --remote-spawn --r
 lua5.4 "$RECIPES_DIR/prt-test.lua" "$initial_hash" input-[012].bin mch.bin uch.bin
 mkdir -p "$fixtures/prt-run"
 cp "$fixtures/forged-input-2.bin" "$fixtures/prt-run/"
-bash "$RECIPES_DIR/prt-repeat-test.sh" "$fixtures/rolling-calculator-template" "$fixtures" "$fixtures/prt-run" record
+bash "$RECIPES_DIR/prt-repeat-test.sh" "$fixtures/rolling-calculator-template" "$fixtures" \
+    "$fixtures/input-2-notice" "$fixtures/prt-run" record
 expected=$(lua5.4 -l cartesi -e 'io.write(cartesi.tohex(io.read("a")))' < mch.bin)
 grep -q "Winner computation hash: $expected" "$fixtures/prt-run/verdict"

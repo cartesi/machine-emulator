@@ -17,7 +17,7 @@
 --
 
 --[[
-Converts a LuaCov stats file into a gcov-format .gcov file so that gcovr
+Merges LuaCov stats files into a gcov-format .gcov file so that gcovr
 --use-gcov-files can include Lua coverage alongside C/C++ coverage.
 
 Follows the same conventions as uarch-pcs-to-gcov.lua: writes a .gcov file
@@ -25,63 +25,49 @@ per Lua source into gcov_dir so gcovr picks it up automatically via
 --filter '$(abspath ../src)'.
 
 Usage:
-  lua5.4 luacov-to-gcov.lua <luacov.stats.out> <lua_source_path> <gcov_dir>
+  lua5.4 luacov-to-gcov.lua <lua_source_path> <gcov_dir> [luacov.stats.out ...]
 
-  luacov.stats.out  path to the stats file written by LuaCov
   lua_source_path   path to cartesi-machine.lua (used to read source text)
   gcov_dir          directory where .gcov files land (same as for C++ gcov)
+  luacov.stats.out  paths to the stats files written by LuaCov
 
-If luacov.stats.out does not exist the script exits 0 with a warning,
+If no stats files are supplied the script exits 0 with a warning,
 leaving the rest of the coverage report unaffected.
 --]]
 
-local stats_path = arg[1]
-local lua_source_path = arg[2]
-local gcov_dir = arg[3]
+local lua_source_path = arg[1]
+local gcov_dir = arg[2]
 
 if not lua_source_path or not gcov_dir then
-	io.stderr:write("Usage: lua5.4 luacov-to-gcov.lua <luacov.stats.out> <lua_source_path> <gcov_dir>\n")
+	io.stderr:write("Usage: lua5.4 luacov-to-gcov.lua <lua_source_path> <gcov_dir> [luacov.stats.out ...]\n")
 	os.exit(1)
 end
 
--- Graceful exit when stats file is missing or unset (e.g. coverage not run yet)
-local function file_exists(path)
-	local f = io.open(path, "r")
-	if f then
-		f:close()
-		return true
-	end
-	return false
-end
-
-if not stats_path or stats_path == "" or not file_exists(stats_path) then
-	if stats_path and stats_path ~= "" then
-		io.stderr:write(string.format("luacov-to-gcov: %s not found, skipping Lua coverage merge\n", stats_path))
-	end
+if not arg[3] then
+	io.stderr:write("luacov-to-gcov: no stats files, skipping Lua coverage merge\n")
 	os.exit(0)
 end
 
--- Load LuaCov stats. Returns a table keyed by source path; each value is
--- a table mapping line_number (integer) -> hit_count (integer).
-local stats = require("luacov.stats").load(stats_path)
-if not stats then
-	io.stderr:write(string.format("luacov-to-gcov: failed to load stats from %s\n", stats_path))
-	os.exit(0)
-end
-
--- Find the stats entry whose basename matches cartesi-machine.lua.
+-- Sum line counts across all shards, excluding LuaCov's max/max_hits metadata.
 -- LuaCov may record an absolute or a relative path depending on how the
 -- script was invoked; we match on basename to be robust.
+local stats = require("luacov.stats")
 local target_basename = lua_source_path:match("[^/]+$")
-local line_hits
-for path, hits in pairs(stats) do
-	if path:match("[^/]+$") == target_basename then
-		line_hits = hits
-		break
+local line_hits = {}
+for i = 3, #arg do
+	local data = assert(stats.load(arg[i]), "failed to load LuaCov stats from " .. arg[i])
+	for path, hits in pairs(data) do
+		if path:match("[^/]+$") == target_basename then
+			for line, count in pairs(hits) do
+				if type(line) == "number" then
+					line_hits[line] = (line_hits[line] or 0) + count
+				end
+			end
+		end
 	end
 end
 
-if not line_hits then
+if not next(line_hits) then
 	io.stderr:write(string.format("luacov-to-gcov: no stats entry matching '%s', skipping\n", target_basename))
 	os.exit(0)
 end

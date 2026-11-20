@@ -17,6 +17,7 @@
 #ifndef DENSE_HASH_TREE_HPP
 #define DENSE_HASH_TREE_HPP
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <span>
@@ -77,6 +78,10 @@ public:
     }
 
 private:
+    void do_clear() noexcept override {
+        std::ranges::fill(m_tree, machine_hash{});
+    }
+
     machine_hash_view do_node_hash_view(uint64_t offset, int log2_size) noexcept override {
         if (auto index = to_index(offset, log2_size); index != invalid_index) {
             return machine_hash_view{m_tree[index]};

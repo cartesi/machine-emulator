@@ -16,6 +16,8 @@
 # with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 #
 set -e
-mkdir -m 755 -p /tmp/uarch-riscv-tests-json-logs
-uarch-riscv-tests --output-dir=/tmp/uarch-riscv-tests-json-logs --create-reset-uarch-log --create-send-cmio-response-log --jobs=$(nproc) json-step-logs
-tar -czf uarch-riscv-tests-json-logs.tar.gz -C /tmp uarch-riscv-tests-json-logs
+tmp_dir=$(mktemp -d)
+trap 'rm -rf "$tmp_dir"' EXIT
+mkdir -m 755 "$tmp_dir/uarch-riscv-tests-json-logs"
+uarch-riscv-tests --output-dir="$tmp_dir/uarch-riscv-tests-json-logs" --create-reset-uarch-log --create-send-cmio-response-log --jobs=$(nproc) json-step-logs
+tar -czf uarch-riscv-tests-json-logs.tar.gz -C "$tmp_dir" uarch-riscv-tests-json-logs

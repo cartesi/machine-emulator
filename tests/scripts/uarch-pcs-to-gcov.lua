@@ -177,7 +177,7 @@ for pcs_file in popen("ls %s/*.pcs 2>/dev/null", pcs_dir) do
 end
 
 -- Write PCs to a temp file to avoid command-line length limits
-local tmp = os.tmpname()
+local tmp = (os.getenv("TMPDIR") or "/tmp") .. "/uarch-pcs-to-gcov.pcs"
 local pc_lines = {}
 local n = 0
 for pc in pairs(pcs) do

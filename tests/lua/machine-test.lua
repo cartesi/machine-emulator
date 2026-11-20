@@ -17,6 +17,7 @@
 --
 
 local cartesi = require("cartesi")
+local filesystem = require("cartesi.filesystem")
 local hash_tree = require("cartesi.hash-tree")
 local tests_util = require("cartesi.tests.util")
 local jsonrpc
@@ -348,16 +349,10 @@ tests_util.make_do_test(build_machine, machine_type, {
 })("should replace flash drive and read something", function(machine)
     local rootfs = machine:get_initial_config().flash_drive[1]
     -- Create temp flash file (unique per process so concurrent test runs do not collide)
-    local input_path = os.tmpname()
     local replaced_data = "test data 1234567890"
-    local command = string.format("echo '%s' > ", replaced_data)
-        .. input_path
-        .. " && truncate -s "
-        .. tostring(rootfs.length)
-        .. " "
-        .. input_path
-    local p = assert(io.popen(command))
-    p:close()
+    local flash_data = replaced_data .. "\n"
+    local _ <close>, input_path =
+        filesystem.write_scope_temp_file(flash_data .. string.rep("\0", rootfs.length - #flash_data))
 
     machine:read_memory(rootfs.start, 20)
 
@@ -372,7 +367,6 @@ tests_util.make_do_test(build_machine, machine_type, {
     if read_data ~= replaced_data then
         error(string.format("expected to read %q from replaced drive (got %q)", replaced_data, read_data))
     end
-    os.remove(input_path)
 end)
 
 print("\n\n check for relevant register values after step 1")

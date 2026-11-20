@@ -1,0 +1,1055 @@
+-- Event-driven adapter for the doc/recipes players.
+-- Contracts own pairing, clocks, and results. Claims and prepared proofs survive
+-- observations. The player's transaction journal owns its account's nonces and fees.
+local evmu = require("cartesi.evmu")
+local eth = require("prt-ethereum")
+local rpc_client = require("prt-rpc")
+local log_history = require("prt-log-history")
+local cartesi = require("cartesi")
+local util = require("cartesi.util")
+local prt = require("prt")
+local M = {}
+local methods = {}
+
+local function event_key(event)
+    return log_history.key(event.log)
+end
+
+local function match_key(event)
+    return event.address .. ":" .. event.matchIdHash
+end
+
+-- The event of a log, decoded once. Logs without an event in the ABI are remembered as false.
+local function decode(self, log)
+    local event = self.decoded[log]
+    if event == nil then
+        event = self.abi:event(log) or false
+        self.decoded[log] = event
+    end
+    return event or nil
+end
+
+local function holds(self, address, root)
+    local claim = self.claims and self.claims[address]
+    return claim and claim.root == root and claim or nil
+end
+
+-- Sentry IDs retain their epoch votes across address rotations. Read both the
+-- bitmap and current registry at the same head as the observation's logs.
+local function missing_sentry_claims(self, hash)
+    local block = { blockHash = hash, requireCanonical = true }
+    local function view(name, arguments, types)
+        local result = assert(self.chain:call(self.consensus, self.abi:calldata(name, arguments), block))
+        return evmu.decode_abi(types, assert(eth.raw(result)))[1]
+    end
+    local missing = {}
+    for id = 1, eth.small(view("getNumberOfSentries", {}, "(uint256)")) do
+        if not view("hasSentryClaimedInEpoch", { self.epoch, id }, "(bool)") then
+            missing[#missing + 1] = { id = id, address = view("getSentryById", { id }, "(address)") }
+        end
+    end
+    return missing
+end
+
+function methods:observe()
+    local head, hash, tip, tip_hash = self.chain:head(self.observation_policy)
+    if self.seal_block then
+        assert(self.chain:is_canonical(self.seal_block, self.seal_hash), "stable epoch seal was reorganized")
+    end
+    -- Logs come from the history, which fetches only the blocks it has not seen. A rejected
+    -- observation resets it, so the next one fetches everything again.
+    local history = self.history
+    history:observe(head, hash)
+    local addresses = { self.factory, self.consensus, self.root }
+    local first_blocks =
+        { [self.factory] = self.first_block, [self.consensus] = self.first_block, [self.root] = self.first_block }
+    -- A child whose parent match was deleted is finished, and so is every tournament under it. Once the
+    -- deletion is as irreversible as the inputs, a bridge stops fetching the child, unless the player holds
+    -- one of the match's commitments.
+    local irreversible = self.retirement_policy and self.chain:head(self.retirement_policy)
+    local fetched, finished, logs, contexts, order = {}, {}, {}, {}, {}
+    -- Each round fetches the tournaments the previous one announced, in one request
+    while #addresses > 0 do
+        local announced = {}
+        local fetched_logs = history:get_logs_of(addresses, first_blocks)
+        for _, address in ipairs(addresses) do
+            fetched[address] = true
+            local children, deletions = {}, {}
+            if not history:check(address, fetched_logs[address]) then
+                return nil
+            end
+            for _, log in ipairs(fetched_logs[address]) do
+                logs[#logs + 1] = log
+                local event = decode(self, log)
+                if event and event.name == "NewInnerTournament" then
+                    children[#children + 1] = event
+                elseif event and event.name == "MatchDeleted" then
+                    deletions[event.matchIdHash] = eth.small(log.blockNumber)
+                end
+            end
+            for _, event in ipairs(children) do
+                local child, deleted = event.childTournament, deletions[event.matchIdHash]
+                if
+                    irreversible
+                    and deleted
+                    and deleted <= irreversible
+                    and not holds(self, address, event.one)
+                    and not holds(self, address, event.two)
+                then
+                    finished[child] = true
+                elseif not fetched[child] then
+                    announced[#announced + 1] = child
+                    first_blocks[child] = eth.small(event.log.blockNumber)
+                end
+            end
+        end
+        addresses = announced
+    end
+    logs = history:merge(logs)
+    if not logs then
+        return nil
+    end
+    local matches, deleted, recovered, events, sealed = {}, {}, {}, {}, false
+    local staged, settled
+    for _, log in ipairs(logs) do
+        local event = decode(self, log)
+        if event then
+            events[#events + 1] = event
+            local name = event.name
+            if name == "TournamentCreated" or name == "NewInnerTournament" then
+                local address = event.tournament or event.childTournament
+                if name == "NewInnerTournament" or address == self.root then
+                    assert(not contexts[address], "duplicate tournament creation")
+                    if name == "TournamentCreated" then
+                        assert(event.address == self.factory, "root was not created by the configured factory")
+                        assert(
+                            event.descriptor.initialHash == self.initial_hash
+                                and event.descriptor.baseCycle == evmu.bint(0),
+                            "root computation mismatch"
+                        )
+                    end
+                    local context = {
+                        address = address,
+                        creation = event,
+                        descriptor = event.descriptor,
+                        bond = event.bondValue,
+                        joined = {},
+                        -- Its logs were not fetched
+                        finished = finished[address],
+                    }
+                    if name == "NewInnerTournament" then
+                        assert(contexts[event.address], "child has no observed parent")
+                        context.parent = event.address
+                        context.parent_match = match_key(event)
+                        matches[context.parent_match] = nil
+                    end
+                    contexts[address] = context
+                    order[#order + 1] = context
+                end
+            elseif name == "EpochSealed" then
+                if event.tournament == self.root then
+                    assert(event.address == self.consensus and event.epochNumber == self.epoch, "epoch mismatch")
+                    assert(event.initialMachineStateHash == self.initial_hash, "epoch initial hash mismatch")
+                    sealed = true
+                elseif event.address == self.consensus and event.epochNumber == self.epoch + 1 then
+                    settled = event
+                end
+            elseif name == "MatchCreated" or name == "MatchAdvanced" or name == "LeafMatchSealed" then
+                matches[match_key(event)] = event
+            elseif name == "MatchDeleted" then
+                matches[match_key(event)], deleted[match_key(event)] = nil, true
+            elseif name == "StandingChanged" then
+                assert(contexts[event.address], "standing without creation").standing = event
+            elseif name == "CommitmentJoined" then
+                assert(contexts[event.address], "join without creation").joined[event.commitment] = event
+            elseif name == "BondRecovered" then
+                recovered[event.address] = true
+            elseif name == "EpochStaged" and event.address == self.consensus and event.epochNumber == self.epoch then
+                staged = event
+            end
+        end
+    end
+    local sentry_warning_block, missing
+    if self.sentinel and staged and not settled then
+        sentry_warning_block = eth.small(staged.log.blockNumber) + self.warning_blocks
+        if head >= sentry_warning_block then
+            missing = missing_sentry_claims(self, hash)
+        end
+    end
+    -- This check also covers the contract reads. Failed or orphaned reads never
+    -- produce a partial set of missing-claim reports.
+    if not self.chain:is_canonical(head, hash) then
+        history:reset()
+        return nil
+    end
+    if not self.seal_block or head >= self.seal_block then
+        assert(contexts[self.root], "root creation was not observed")
+        assert(sealed, "epoch seal was not observed")
+    end
+    return {
+        head = head,
+        hash = hash,
+        tip = tip,
+        tip_hash = tip_hash,
+        irreversible = irreversible,
+        ready = sealed,
+        contexts = contexts,
+        order = order,
+        matches = matches,
+        deleted = deleted,
+        recovered = recovered,
+        events = events,
+        logs = logs,
+        staged = staged,
+        settled = settled,
+        sentry_warning_block = sentry_warning_block,
+        missing_sentry_claims = missing,
+    }
+end
+
+-- A handler answers with a payload, "nothing" when it has no payload to give, or "done" when its
+-- player leaves the game. The bridge then stops all of its jobs.
+local function payload(self, response)
+    if response == "done" then
+        self.done = true
+        return nil
+    elseif response == "nothing" then
+        return nil
+    end
+    assert(type(response) ~= "string", "a handler returned an unknown string")
+    return response
+end
+
+local function build_claim(self, context)
+    local geometry = self.geometry
+    local descriptor, response = context.descriptor
+    local height = eth.small(descriptor.height)
+    local key = table.concat({
+        tostring(descriptor.initialHash),
+        tostring(descriptor.baseCycle),
+        tostring(descriptor.height),
+        tostring(descriptor.log2Stride),
+        tostring(descriptor.level),
+        tostring(descriptor.kind),
+    }, ":")
+    local claim = self.computations[key]
+    if not context.parent then
+        assert(
+            height == geometry.mcycle_height
+                and eth.small(descriptor.log2Stride) == geometry.uarch_height
+                and eth.small(descriptor.level) == 0,
+            "root does not match the factory geometry"
+        )
+        if not claim then
+            response = payload(self, self.player.event_handler.commit_mcycle_claim(self.player))
+            if not response then
+                return nil, false
+            end
+        end
+    else
+        assert(
+            height == geometry.uarch_height
+                and eth.small(descriptor.log2Stride) == 0
+                and eth.small(descriptor.level) == 1,
+            "child does not match the factory geometry"
+        )
+        local input, period, offset = eth.coordinates(descriptor.baseCycle, geometry)
+        assert(offset == 0, "child starts inside a period")
+        if not claim then
+            response = payload(self, self.player.event_handler.commit_uarch_claim(self.player, input, period))
+            if not response then
+                return nil, false
+            end
+        end
+    end
+    claim = claim or eth.claim(response, height)
+    if context.parent then
+        local event = context.creation
+        assert(
+            claim.final_state == event.contestedFinalStateOne or claim.final_state == event.contestedFinalStateTwo,
+            "child claim does not defend a contested state"
+        )
+    end
+    self.computations[key] = claim
+    return claim, response ~= nil
+end
+
+-- The epoch's settlement is irreversible once the observation's head under the retirement policy reached it
+local function settled_irreversibly(snapshot)
+    return snapshot.settled ~= nil
+        and snapshot.irreversible ~= nil
+        and eth.small(snapshot.settled.log.blockNumber) <= snapshot.irreversible
+end
+
+-- A tournament accepts joins in blocks before its start instant plus its allowance
+local function joining_deadline(descriptor)
+    return eth.small(descriptor.startInstant) + eth.small(descriptor.allowance)
+end
+
+local function can_join(self, context, snapshot)
+    local event = context.creation
+    return snapshot.tip + 1 < joining_deadline(context.descriptor)
+        and not snapshot.deleted[context.parent_match]
+        and (
+            not context.parent
+            or (not self.done and (holds(self, context.parent, event.one) or holds(self, context.parent, event.two)))
+        )
+end
+
+-- A staged result must agree with both the computed final state and the outputs Merkle root that machine
+-- holds. Missing local data leaves the comparison unknown, which cannot authorize acceptance.
+local function check_staged_result(self, staged, claim)
+    if not staged or not claim then
+        return nil
+    end
+    local response = payload(self, self.player.event_handler.prove_outputs_merkle_root(self.player))
+    local outputs_merkle_root = response and eth.hex(response.tx_buffer_data)
+    local outputs_match = outputs_merkle_root and staged.stagedPostEpochOutputsMerkleRoot == outputs_merkle_root
+    local matches = staged.stagedPostEpochMachineStateHash == claim.final_state and outputs_match
+    if matches == false then
+        self:report_once(
+            event_key(staged),
+            "staged_tournament_result_mismatch",
+            "at epoch %s: staged state %s, outputs %s; local state %s, outputs %s",
+            tostring(self.epoch),
+            staged.stagedPostEpochMachineStateHash,
+            staged.stagedPostEpochOutputsMerkleRoot,
+            claim.final_state,
+            outputs_merkle_root or "unavailable"
+        )
+    end
+    return matches
+end
+
+-- Claims belong to computations. Rebuild tournament bindings from the observed branch, parents first,
+-- keeping computation out of job queries. Cached computations survive changes to these bindings.
+function methods:update_claims(snapshot)
+    local computed = false
+    local local_claims = {}
+    self.claims = {}
+    for _, context in ipairs(snapshot.order) do
+        local event = context.creation
+        local holds_parent = not context.parent
+            or holds(self, context.parent, event.one)
+            or holds(self, context.parent, event.two)
+        if holds_parent and not self.done then
+            if context.finished then
+                -- Observation pruned this child's logs before its parent was bound. Fetch them before
+                -- deciding whether the player holds its child claim.
+                computed = true
+            else
+                local claim, built = build_claim(self, context)
+                local deadline = joining_deadline(context.descriptor)
+                -- The head must include the last eligible join block before an absent join is conclusive.
+                -- Scheduling still uses the live tip, which can already be past the joining window.
+                if claim then
+                    local_claims[context.address] = claim
+                    if snapshot.head + 1 < deadline or context.joined[claim.root] then
+                        self.claims[context.address] = claim
+                    else
+                        self:report_once(context.address, "unjoined_claim", "at tournament %s", context.address)
+                    end
+                end
+                computed = computed or built
+            end
+        end
+    end
+    -- Compare in log order, including computations whose joining window closed without our claim.
+    -- Reports belong to the observed logs, so replacement logs after a reorg can report again.
+    local root_claim = local_claims[self.root]
+    for _, event in ipairs(snapshot.events) do
+        local claim = local_claims[event.address]
+        if event.name == "CommitmentJoined" and claim and event.commitment ~= claim.root then
+            self:report_once(
+                event_key(event),
+                "conflicting_claim",
+                "at %s: observed %s, locally computed %s",
+                event.address,
+                event.commitment,
+                claim.root
+            )
+        elseif event.name == "MatchDeleted" and claim then
+            -- The deletion records a loss even if the missed move's window closed between observations.
+            local side = event.one == claim.root and 1 or event.two == claim.root and 2
+            local winner = eth.small(event.winnerCommitment)
+            if side and winner ~= side then
+                self:report_once(
+                    event_key(event),
+                    "lost_match",
+                    "at %s: local commitment %s %s",
+                    event.address,
+                    claim.root,
+                    winner == 0 and "was eliminated with its opponent" or "lost to its opponent"
+                )
+            end
+        elseif
+            event.name == "SentryClaim"
+            and event.address == self.consensus
+            and event.epochNumber == self.epoch
+            and root_claim
+            and event.postEpochMachineStateHash ~= root_claim.final_state
+        then
+            self:report_once(
+                event_key(event),
+                "sentry_claim_mismatch",
+                "at epoch %s: sentry %s claimed %s, locally computed %s",
+                tostring(self.epoch),
+                event.sentry,
+                event.postEpochMachineStateHash,
+                root_claim.final_state
+            )
+        end
+    end
+    -- This evidence belongs to this observation, not to a binding or a previously staged result.
+    snapshot.staged_result_matches = check_staged_result(self, snapshot.staged, root_claim)
+    return computed
+end
+
+-- Player computation can take many blocks. Refresh before scheduling ANY
+-- transaction, including cancellation, until claims match a fresh observation.
+function methods:refresh()
+    while true do
+        local snapshot = self:observe()
+        if not snapshot or not snapshot.ready or not self:update_claims(snapshot) then
+            return snapshot
+        end
+    end
+end
+
+-- Every job belongs to the bridge's player, and none remains once it leaves. The permissionless
+-- cleanup jobs are derived unless the bridge was created without cleanup.
+function methods:jobs(snapshot)
+    local jobs = {}
+    if self.done then
+        return jobs
+    end
+    local function add(kind, context, event, first, last, root)
+        local key = event_key(event) .. ":" .. kind .. ":" .. self.label
+        jobs[#jobs + 1] = {
+            key = key,
+            kind = kind,
+            context = context,
+            event = event,
+            first = first or 0,
+            last = last or math.maxinteger,
+            root = root,
+        }
+    end
+    for _, context in ipairs(snapshot.order) do
+        local event = context.creation
+        local close = joining_deadline(context.descriptor)
+        local claim = self.claims[context.address]
+        if claim and can_join(self, context, snapshot) and not context.joined[claim.root] then
+            add("joinTournament", context, event, 0, close, claim.root)
+        end
+    end
+    for _, event in ipairs(snapshot.events) do
+        if event.matchIdHash and snapshot.matches[match_key(event)] == event then
+            local context = assert(snapshot.contexts[event.address])
+            local first_timeout
+            local eliminable = eth.small(event.eliminableAt)
+            local timeout_root
+            if event.name == "LeafMatchSealed" then
+                local d1, d2 = eth.small(event.deadlineOne), eth.small(event.deadlineTwo)
+                first_timeout = math.min(d1, d2)
+                timeout_root = d1 > d2 and event.one or event.two
+                local claim = holds(self, context.address, event.one) or holds(self, context.address, event.two)
+                if claim then
+                    add("winLeafMatch", context, event, 0, first_timeout, claim.root)
+                end
+            else
+                local height = event.currentHeight and eth.small(event.currentHeight)
+                    or eth.small(context.descriptor.height)
+                local one_responds = (eth.small(context.descriptor.height) - height) % 2 == 0
+                local responder = one_responds and event.one or event.two
+                timeout_root = one_responds and event.two or event.one
+                first_timeout = eth.small(event.responderDeadline)
+                if holds(self, context.address, responder) then
+                    local kind = height > 1 and "advanceMatch"
+                        or (
+                            eth.small(context.descriptor.kind) == 0 and "sealLeafMatch"
+                            or "sealInnerMatchAndCreateInnerTournament"
+                        )
+                    add(kind, context, event, 0, first_timeout, responder)
+                end
+            end
+            if holds(self, context.address, timeout_root) then
+                add("winMatchByTimeout", context, event, first_timeout, eliminable, timeout_root)
+            end
+            if self.cleanup then
+                add("eliminateMatchByTimeout", context, event, eliminable)
+            end
+        end
+    end
+    for _, context in ipairs(snapshot.order) do
+        local standing = context.standing
+        if not standing or eth.small(standing.matchCount) == 0 then
+            local event = standing or context.creation
+            local result_at = standing and eth.small(standing.resultAt) or joining_deadline(context.descriptor)
+            local candidate = standing and standing.dangling or eth.zero
+            if context.parent and not snapshot.deleted[context.parent_match] then
+                local expires = candidate ~= eth.zero and eth.small(standing.winnerExpiresAt) or result_at
+                if candidate ~= eth.zero then
+                    if holds(self, context.parent, standing.parentCommitment) then
+                        add("winInnerTournament", context, event, result_at, expires, standing.parentCommitment)
+                    end
+                end
+                if self.cleanup then
+                    add("eliminateInnerTournament", context, event, expires)
+                end
+            end
+            local claim = holds(self, context.address, candidate)
+            if claim then
+                if not context.parent and not snapshot.staged then
+                    add("stageTournamentResult", context, event, result_at, nil, candidate)
+                end
+                local joined = context.joined[candidate]
+                -- A sentinel has no signer, so it expects no recovery, which only pays the claimer
+                if
+                    self.signer
+                    and joined
+                    and joined.submitter == self.signer.address
+                    and not snapshot.recovered[context.address]
+                then
+                    add("tryRecoveringBond", context, event, result_at, nil, candidate)
+                end
+            end
+        end
+    end
+    if
+        self.cleanup
+        and snapshot.staged
+        and snapshot.staged_result_matches == true
+        and not snapshot.settled
+        and self.claim_staging_period
+    then
+        add(
+            "acceptStagedTournamentResult",
+            snapshot.contexts[self.root],
+            snapshot.staged,
+            eth.small(snapshot.staged.log.blockNumber) + self.claim_staging_period
+        )
+    end
+    return jobs
+end
+
+-- A player's proof may not verify, which is reported rather than raised
+local try_verify_transition = util.protect(eth.verify_transition)
+local try_validity_proof = util.protect(eth.validity_proof)
+
+function methods:prepare(job)
+    local context, event = job.context, job.event
+    local player, kind = self.player, job.kind
+    local id, address, args, value = { event.one, event.two }, context.address, {}, nil
+    local claim = self.claims and self.claims[address]
+    local proof_check
+    if kind == "joinTournament" then
+        args = { claim.final_state, claim.proof, claim.children[1], claim.children[2] }
+        value = tostring(context.bond)
+    elseif kind == "advanceMatch" then
+        local response = payload(
+            self,
+            player.event_handler.reveal_bisection(
+                player,
+                assert(eth.raw(job.root)),
+                event.segmentStartPosition and eth.small(event.segmentStartPosition) or 0,
+                event.currentHeight and eth.small(event.currentHeight) or eth.small(context.descriptor.height),
+                assert(eth.raw(event.leftNode or event.leftOfTwo))
+            )
+        )
+        if not response then
+            return nil
+        end
+        args = {
+            id,
+            eth.hex(response.turn_left_node),
+            eth.hex(response.turn_right_node),
+            eth.hex(response.turn_next_left_node),
+            eth.hex(response.turn_next_right_node),
+        }
+    elseif kind == "sealLeafMatch" or kind == "sealInnerMatchAndCreateInnerTournament" then
+        local response = payload(
+            self,
+            player.event_handler.seal_divergence(
+                player,
+                assert(eth.raw(job.root)),
+                event.segmentStartPosition and eth.small(event.segmentStartPosition) or 0,
+                assert(eth.raw(event.leftNode or event.leftOfTwo))
+            )
+        )
+        if not response then
+            return nil
+        end
+        local proof = response.agreed_state_hash_proof
+        args = {
+            id,
+            eth.hex(response.turn_left_node),
+            eth.hex(response.turn_right_node),
+            proof and eth.hex(proof.target_hash) or context.descriptor.initialHash,
+            proof and eth.siblings(proof) or {},
+        }
+    elseif kind == "winLeafMatch" then
+        local cycle = context.descriptor.baseCycle
+            + (event.divergencePosition << eth.small(context.descriptor.log2Stride))
+        local input, period, offset = eth.coordinates(cycle, self.geometry)
+        local response = payload(self, player.event_handler.prove_state_transition(player, input, period, offset))
+        if not response then
+            return nil
+        end
+        local input_data = self.inputs[input + 1]
+        local proof = eth.transition_proof(response, cycle, input_data)
+        local obtained, err = try_verify_transition(response, cycle, input_data, event.agreeState)
+        local expected = claim.root == event.one and event.finalStateOne or event.finalStateTwo
+        proof_check = { valid = obtained == expected, obtained = tostring(obtained or err), expected = expected }
+        args = { id, claim.children[1], claim.children[2], proof }
+    elseif kind == "winMatchByTimeout" then
+        local response = payload(self, player.event_handler.win_match_by_timeout(player, assert(eth.raw(job.root))))
+        if not response then
+            return nil
+        end
+        args = { id, eth.hex(response.computation_hash_left), eth.hex(response.computation_hash_right) }
+    elseif kind == "eliminateMatchByTimeout" then
+        args = { id }
+    elseif kind == "winInnerTournament" then
+        claim = assert(self.claims[context.parent])
+        address, args = context.parent, { context.address, claim.children[1], claim.children[2] }
+    elseif kind == "eliminateInnerTournament" then
+        address, args = context.parent, { context.address }
+    elseif kind == "acceptStagedTournamentResult" then
+        address, args = self.consensus, { self.epoch }
+    elseif kind == "stageTournamentResult" then
+        local response = payload(self, player.event_handler.prove_outputs_merkle_root(player))
+        if not response then
+            return nil
+        end
+        local proof, err = try_validity_proof(response, claim.final_state)
+        if not proof then
+            self.terminal = "Winning machine state cannot be staged: " .. tostring(err)
+            self:report_once(
+                job.key,
+                "staging_proof_failed",
+                "at epoch %s, tournament %s: %s",
+                tostring(self.epoch),
+                context.address,
+                self.terminal
+            )
+            return nil
+        end
+        address, args = self.consensus, { self.epoch, proof }
+    else
+        assert(kind == "tryRecoveringBond", "unknown bridge action")
+    end
+    return {
+        signer = self.signer,
+        to = address,
+        data = self.abi:calldata(kind, args),
+        value = value,
+        proof_check = proof_check,
+    }
+end
+
+-- Receipts suppress duplicate publication while their events are still behind
+-- the observation policy. An orphaned receipt never completes or suppresses work.
+function methods:awaiting_observation(job, snapshot)
+    local receipt = self.transactions:receipt(job.key)
+    if receipt then
+        local number = eth.small(receipt.blockNumber)
+        return snapshot.head < number, receipt
+    end
+    return false
+end
+
+-- Reports a transaction the player cannot publish, once each time the reason changes. Observing continues.
+function methods:report_blocked(result)
+    if result.blocked and self.blocked ~= result.blocked then
+        if result.needed then
+            self.player:report_anomaly(
+                result.blocked,
+                "at nonce %d: needs %s wei, has %s wei",
+                result.nonce,
+                result.needed,
+                result.available
+            )
+        else
+            self.player:report_anomaly(result.blocked, "at nonce %d", result.nonce)
+        end
+    end
+    self.blocked = result.blocked
+end
+
+-- A nil result means the observation or job changed: the scheduler must
+-- start over. Otherwise return the transaction outcome and next retry block.
+function methods:attempt(job, snapshot)
+    local transaction = self.prepared[job.key] or self:prepare(job)
+    self.prepared[job.key] = transaction
+    if not transaction then
+        return snapshot, { waiting = true }, snapshot.tip + 1
+    end
+    -- Computation may take many blocks. Rebuild eligibility at
+    -- the configured observation head, then use the real tip
+    -- for the inclusion window, never observation.head + 1.
+    local refreshed = self:refresh()
+    if not refreshed or not refreshed.ready then
+        return refreshed, nil
+    end
+    local current
+    for _, candidate in ipairs(self:jobs(refreshed)) do
+        if candidate.key == job.key and candidate.root == job.root then
+            current = candidate
+            break
+        end
+    end
+    if not current or refreshed.tip + 1 < current.first or refreshed.tip + 1 >= current.last then
+        return refreshed, nil, refreshed.tip + 1
+    end
+    snapshot = refreshed
+    -- Verify the proof against the observed leaf event. A
+    -- later execution-state revert can mean that someone else
+    -- already answered, which is not evidence of a bad proof.
+    local proof_failure
+    if transaction.proof_check then
+        local _, failure = self.chain:simulate(
+            transaction.signer,
+            transaction.to,
+            transaction.data,
+            transaction.value,
+            { blockHash = snapshot.hash, requireCanonical = true }
+        )
+        if not self.chain:is_canonical(snapshot.head, snapshot.hash) then
+            return nil, nil
+        end
+        assert(not failure or failure.code == 3, "proof simulation RPC failure")
+        if transaction.proof_check.valid ~= (failure == nil) then
+            self:report_once(
+                job.key,
+                "transition_verification_mismatch",
+                "at epoch %s, tournament %s, block %s: native accepted=%s, Solidity accepted=%s; "
+                    .. "expected %s, native result %s",
+                tostring(self.epoch),
+                job.context.address,
+                snapshot.hash,
+                tostring(transaction.proof_check.valid),
+                tostring(failure == nil),
+                transaction.proof_check.expected,
+                transaction.proof_check.obtained
+            )
+        end
+        assert(
+            transaction.proof_check.valid == (failure == nil),
+            "native and Solidity transition verification disagree"
+        )
+        if not transaction.proof_check.valid then
+            self.invalid[job.key] = true
+            proof_failure = failure
+        end
+    end
+    local tip = self.chain:head()
+    if
+        tip + 1 < current.first
+        or tip + 1 >= current.last
+        or not self.chain:is_canonical(snapshot.head, snapshot.hash)
+    then
+        return snapshot, nil, tip + 1
+    end
+    local result
+    if proof_failure then
+        result = { rejected = proof_failure }
+    else
+        result = self.transactions:submit({
+            key = job.key,
+            kind = job.kind,
+            first = current.first,
+            last = current.last,
+            to = transaction.to,
+            data = transaction.data,
+            value = transaction.value,
+            context = {
+                epoch = tostring(self.epoch),
+                root = self.root,
+                claim = job.root,
+                tournament = job.context.address,
+                event = event_key(job.event),
+            },
+        }, snapshot)
+    end
+    self:report_blocked(result)
+    if result.rejected then
+        self.rejected[job.key] = snapshot.tip_hash
+        io.stderr:write(self.label, ": ", job.kind, " preflight reverted.\n")
+    end
+    return snapshot, result, tip + 1
+end
+
+function methods:cancel(snapshot)
+    local result = self.transactions:submit(nil, snapshot)
+    self:report_blocked(result)
+    return result
+end
+
+-- Jobs are attempted in order of expiry, earliest first, and by key on equal expiry.
+local function job_less(a, b)
+    if a.last ~= b.last then
+        return a.last < b.last
+    end
+    return a.key < b.key
+end
+
+function methods:tick()
+    local snapshot = self:refresh()
+    if not snapshot then
+        return nil, false
+    end
+    local next_block
+    if not snapshot.ready then
+        return snapshot, false, snapshot.tip + 1
+    end
+    local jobs = self:jobs(snapshot)
+    -- A settled epoch with no jobs left, including the signer's bond recoveries, is finished once its
+    -- settlement is irreversible and none of its transactions is pending. Another submitter's bond can remain.
+    if #jobs == 0 and settled_irreversibly(snapshot) then
+        local candidate = self.transactions:pending()
+        if not (candidate and candidate.context and candidate.context.epoch == tostring(self.epoch)) then
+            self.finished = true
+        end
+    end
+    table.sort(jobs, job_less)
+    local due, preferred, obsolete = {}, nil, false
+    for _, job in ipairs(jobs) do
+        if snapshot.tip + 1 >= job.first and snapshot.tip + 1 < job.last and not self.invalid[job.key] then
+            table.insert(due, job)
+        end
+    end
+    local candidate = self.transactions:pending()
+    if candidate then
+        next_block = snapshot.tip + 1
+        -- Every epoch's bridge shares the signer's nonce. Another epoch's pending transaction is left alone
+        -- until it is mined, so a settled epoch never cancels or outbids the live epoch's moves.
+        if candidate.context and candidate.context.epoch ~= tostring(self.epoch) then
+            return snapshot, false, next_block
+        end
+        local selected = due[1]
+        for _, job in ipairs(due) do
+            if job.key == candidate.job then
+                selected = job
+                break
+            end
+        end
+        if selected then
+            -- Keep working on a useful pending action. Do not oscillate
+            -- between two eligible actions belonging to the same account.
+            preferred = selected.key
+            if selected.key ~= candidate.job then
+                obsolete = true
+            end
+        elseif self:cancel(snapshot).published then
+            return snapshot, true
+        end
+    end
+    for _, job in ipairs(jobs) do
+        local inclusion = snapshot.tip + 1
+        if inclusion >= job.first and inclusion < job.last then
+            local rejected = self.rejected[job.key]
+            local awaiting, receipt = self:awaiting_observation(job, snapshot)
+            if awaiting or rejected == snapshot.tip_hash then
+                local observable = snapshot.tip + 1
+                if awaiting and type(self.observation_policy) == "number" then
+                    observable = eth.small(receipt.blockNumber) + self.observation_policy
+                end
+                next_block = math.min(next_block or observable, observable)
+            end
+            if
+                not self.invalid[job.key]
+                and rejected ~= snapshot.tip_hash
+                and not awaiting
+                and (not preferred or preferred == job.key)
+            then
+                local refreshed, result, retry_at = self:attempt(job, snapshot)
+                if not result then
+                    return refreshed, false, retry_at
+                end
+                if result.published or result.rejected then
+                    return refreshed, true
+                end
+                if refreshed.hash ~= snapshot.hash or refreshed.tip_hash ~= snapshot.tip_hash then
+                    -- Pending-job preference and cancellation decisions belong
+                    -- to the original view. Recompute them after a head change.
+                    return refreshed, false, retry_at
+                end
+                next_block = math.min(next_block or retry_at, retry_at)
+            end
+        elseif inclusion < job.first and job.first < job.last then
+            next_block = math.min(next_block or job.first - 1, job.first - 1)
+        end
+    end
+    -- A due replacement can become unusable during preparation or preflight.
+    -- Its predecessor is still obsolete, so cancel it rather than leave it unattended.
+    if obsolete and self:cancel(snapshot).published then
+        return snapshot, true
+    end
+    return snapshot, false, next_block
+end
+
+-- Reports an anomaly about a subject, such as a job or a match, once.
+function methods:report_once(subject, kind, fmt, ...)
+    local key = subject .. ":" .. kind
+    if not self.reported[key] then
+        self.reported[key] = true
+        self.player:report_anomaly(kind, fmt, ...)
+    end
+end
+
+-- A sentinel's pass. The jobs a validator would publish become expectations, since the honest commitment
+-- must be defended and the epoch settled even when the sentinel signs nothing. A job with a window is
+-- reported as deadline_near once the next block is within warning_blocks of its end, and as
+-- missed_deadline once its window closed, while the events still call for it. A job without an end is
+-- reported as stalled_action once it has been due for warning_blocks. Each job is reported once per kind.
+-- Missing sentry claims are reported after warning_blocks observed blocks since staging, once per
+-- staging log and sentry ID, while the epoch remains unsettled.
+-- The sentinel also returns the next block at which one of these could first apply, so a harness that
+-- mines ahead stops there. The epoch is finished once its settlement is irreversible under the retirement
+-- policy.
+function methods:watch()
+    local snapshot = self:refresh()
+    if not snapshot then
+        return nil, false
+    end
+    if not snapshot.ready then
+        return snapshot, false, snapshot.tip + 1
+    end
+    local inclusion, warning = snapshot.tip + 1, self.warning_blocks
+    local next_block
+    -- The tip at which the next block is the given one
+    local function wake(block)
+        if block > inclusion then
+            next_block = math.min(next_block or block - 1, block - 1)
+        end
+    end
+    for _, job in ipairs(self:jobs(snapshot)) do
+        local where = job.kind .. " at " .. job.context.address
+        if job.last ~= math.maxinteger then
+            if inclusion >= job.last then
+                self:report_once(job.key, "missed_deadline", "%s: its window closed at block %d", where, job.last)
+            elseif inclusion >= job.first and inclusion + warning >= job.last then
+                self:report_once(job.key, "deadline_near", "%s: its window closes at block %d", where, job.last)
+            end
+            wake(job.first)
+            wake(job.last - warning)
+            wake(job.last)
+        elseif inclusion >= job.first + warning then
+            self:report_once(job.key, "stalled_action", "%s: due since block %d", where, job.first)
+        else
+            wake(job.first + warning)
+        end
+    end
+    for _, sentry in ipairs(snapshot.missing_sentry_claims or {}) do
+        self:report_once(
+            event_key(snapshot.staged) .. ":sentry:" .. sentry.id,
+            "sentry_claim_missing",
+            "at epoch %s: sentry %s (ID %d) has not submitted a claim",
+            tostring(self.epoch),
+            sentry.address,
+            sentry.id
+        )
+    end
+    if snapshot.sentry_warning_block and snapshot.head < snapshot.sentry_warning_block then
+        -- Unlike job deadlines, this threshold is measured at the observed head.
+        -- Confirmation tags have no fixed depth, so revisit them at the next tip.
+        local tip = type(self.observation_policy) == "number"
+                and snapshot.sentry_warning_block + self.observation_policy
+            or snapshot.tip + 1
+        tip = math.max(tip, snapshot.tip + 1)
+        next_block = math.min(next_block or tip, tip)
+    end
+    if settled_irreversibly(snapshot) then
+        self.finished = true
+    end
+    return snapshot, false, next_block
+end
+
+-- Reads the claim geometry from the tournament factory. Level 0 is the mcycle claim, whose stride
+-- is one period of uarch cycles, and level 1 the uarch claim, whose stride is one uarch cycle.
+function M.read_geometry(chain, abi, factory)
+    local function view(name, arguments, types)
+        return evmu.decode_abi(types, assert(eth.raw(assert(chain:call(factory, abi:calldata(name, arguments))))))
+    end
+    local level_count = eth.small(view("tournamentLevelCount", {}, "(uint64)")[1])
+    assert(level_count == 2, "the factory does not have two tournament levels")
+    local levels = {}
+    for level = 0, 1 do
+        local parameters = view("tournamentParameters", { level }, "(uint64,uint64,uint64,uint64,uint64,uint64)")
+        levels[level] = { log2step = eth.small(parameters[2]), height = eth.small(parameters[3]) }
+    end
+    local geometry = prt.new_geometry(levels[1].height - cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE)
+    assert(
+        levels[0].height == geometry.mcycle_height
+            and levels[0].log2step == geometry.uarch_height
+            and levels[1].height == geometry.uarch_height
+            and levels[1].log2step == 0,
+        "the factory geometry is not a PRT geometry"
+    )
+    return geometry
+end
+
+local function new(args)
+    assert(args.chain and args.abi and args.root and args.factory and args.consensus)
+    return setmetatable({
+        chain = args.chain,
+        abi = args.abi,
+        root = args.root,
+        factory = args.factory,
+        consensus = args.consensus,
+        transactions = args.transactions,
+        player = args.player,
+        signer = args.signer,
+        label = args.label,
+        claims = {},
+        reported = {},
+        computations = {},
+        cleanup = args.cleanup ~= false,
+        epoch = args.epoch,
+        initial_hash = args.initial_hash,
+        geometry = args.geometry,
+        inputs = args.inputs,
+        claim_staging_period = args.claim_staging_period,
+        observation_policy = rpc_client.policy(args.observation_policy or 4),
+        -- Without a retirement policy the bridge never reports itself finished.
+        retirement_policy = args.retirement_policy and rpc_client.policy(args.retirement_policy),
+        seal_block = args.seal_block,
+        seal_hash = args.seal_hash,
+        -- Logs are fetched from this block, except a child's, which start at its creation.
+        first_block = args.first_block,
+        history = log_history.new(args.chain),
+        -- Weak keys drop an event when the history drops its log.
+        decoded = setmetatable({}, { __mode = "k" }),
+        rejected = {},
+        invalid = {},
+        prepared = {},
+    }, { __index = methods })
+end
+
+function M.new(args)
+    assert(args.geometry, "missing factory geometry")
+    assert(args.transactions, "missing transaction journal")
+    assert(args.player and args.signer and args.label, "missing player, signer, or label")
+    return new(args)
+end
+
+-- A sentinel's bridge, with a player but no signer or journal. It computes the honest claims, and its
+-- tick watches instead of publishing, reporting what a validator should have done but has not.
+function M.new_sentinel(args)
+    assert(args.geometry, "missing factory geometry")
+    assert(args.player and args.label, "missing player or label")
+    local sentinel = new(args)
+    sentinel.sentinel = true
+    sentinel.tick = methods.watch
+    sentinel.warning_blocks = args.warning_blocks or 10
+    assert(math.type(sentinel.warning_blocks) == "integer" and sentinel.warning_blocks >= 0, "invalid warning blocks")
+    return sentinel
+end
+
+-- A bridge with no player, signer, or journal. It only observes, so it is never ticked.
+function M.new_observer(args)
+    return new(args)
+end
+
+return M

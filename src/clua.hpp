@@ -20,6 +20,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <exception>
+#include <tuple>
 #include <utility>
 
 extern "C" {
@@ -30,6 +33,24 @@ extern "C" {
 #include <boost/type_index.hpp>
 
 namespace cartesi {
+
+/// \brief Calls f, converting a C++ exception into a Lua error with the given prefix.
+/// \details Copy the message and leave the catch handler before raising the Lua error, whose longjmp
+/// would otherwise leave the exception alive. Resources that must survive Lua calls still need Lua-managed
+/// storage, because this helper does not unwind C++ objects when Lua raises an error.
+template <typename F>
+decltype(auto) clua_protect(lua_State *L, const char *prefix, F &&f) {
+    char message[1024]{};
+    try {
+        return std::forward<F>(f)();
+    } catch (const std::exception &e) {
+        std::ignore = snprintf(message, sizeof(message), "%s", e.what());
+    } catch (...) {
+        std::ignore = snprintf(message, sizeof(message), "%s", "unknown error");
+    }
+    luaL_error(L, "%s%s", prefix, message);
+    std::unreachable();
+}
 
 #ifdef CLUA_DEBUG_UTILS
 

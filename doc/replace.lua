@@ -114,7 +114,10 @@
 --                       only resources (a bound port, a fixed file path)
 --                       where listing the chain by hand would be brittle.
 --                       Not allowed on include= keys (those have no
---                       executable body to serialize).
+--                       executable body to serialize). Distinct ports/NAME
+--                       values let unrelated examples run in parallel, but
+--                       blocks that share one server still need sequential=
+--                       or depends=.
 --
 --   vars=VAR->REF,...  Path injection and contents substitution. REF forms:
 --                         VAR->K          contents-form: $VAR -> bytes of cache/<K>/both
@@ -126,6 +129,10 @@
 --                       time. Contents-form entries are written to cache/<K>/spec
 --                       and expanded by vars.lua at runner time (producing
 --                       body.run.<ext>). Both forms also add make prereqs.
+--                       A replace=K/source[/<region>] display substitutes K's
+--                       contents-form entries. A contents-form entry with the
+--                       same VAR on the display block overrides K's. K's
+--                       path-form entries are already part of its source.
 --
 --   runner=<name>       Optional, key= blocks only. Overrides the runner (and body
 --                       file extension) that replace.lua would otherwise infer from
@@ -201,6 +208,7 @@
 --   K/path              Cross-block: absolute path of cache/<K>/ directory.
 --   K/<thing>           Cross-block: render K's thing.
 --                       thing is stdout|stderr|both|source[/<region>]|<artifact>.
+--                       K/source[/<region>] substitutes K's vars= (see vars=).
 --                       When K was defined with include=, only the bare K, K/both,
 --                       K/path, K/both/path, K/source, and K/source/<region> forms
 --                       are accepted (K/source selects from the included file's
@@ -250,6 +258,17 @@
 --   inject the value into a block body or a replace=source display, or
 --   replace=globals/NAME to render the value as the block's content
 --   (replace=globals/NAME/path yields the absolute path of the file).
+--
+-- PORTS PSEUDO-KEY
+--
+--   ports/NAME yields a TCP port number for NAME, used like globals/NAME
+--   (vars=VAR->ports/NAME, replace=ports/NAME). NAME must be an identifier.
+--   Ports are allocated sequentially in order of the first appearance of each
+--   distinct NAME in the document. The first gets 8080, the next new NAME gets
+--   8081, and so on. The same NAME always yields the same port. Pandoc() writes
+--   each value to REPLACE_CACHE_DIR/ports/<name>, idempotently. Inserting a new
+--   NAME earlier in the document renumbers every later NAME, and their blocks
+--   rebuild.
 --
 -- DEFAULT-REPLACE METADATA
 --
@@ -303,6 +322,7 @@
 
 local deps_target
 local default_enabled = true -- overridden in Pandoc() from -M default-replace=
+local ports_base = 8080 -- port allocated to the first ports/NAME in the document
 local REPLACE_CACHE_DIR = os.getenv("REPLACE_CACHE_DIR") or error("REPLACE_CACHE_DIR not set")
 local RECIPES_DIR = os.getenv("RECIPES_DIR") or error("RECIPES_DIR not set")
 
@@ -328,6 +348,8 @@ local rules = {} -- list of make rule strings (dry-run only)
 local consumed = {} -- "<key>/<file>" -> true (referenced cache files)
 local no_runner = {} -- key -> lang string (for keys whose runner= is not in LANG_INFO)
 local sequential = {} -- tag -> last-seen key with this sequential= tag (built during collect)
+local ports = {} -- name -> allocated port (built during collect_ports)
+local ports_order = {} -- names in order of first appearance (built during collect_ports)
 
 -- Defined further below, but referenced by define_script above their definition.
 local emit_rule, emit_include_rule
@@ -596,7 +618,7 @@ local function write_idempotent(path, content)
             return
         end
     end
-    os.execute("mkdir -p '" .. path:match("(.*)/") .. "'")
+    pandoc.system.make_directory(path:match("(.*)/"), true)
     f = assert(io.open(path, "w"))
     f:write(content)
     f:close()
@@ -865,14 +887,29 @@ local function cross_read(K, thing, vars_spec, label)
         check_identifier(thing:gsub("%-", "_"), label .. ": globals/" .. thing)
         return read_output(K, thing, label)
     end
-    if thing == "source" then
-        assertf(sources[K], "%s: replace=source: source not stored for '%s'", label, K)
-        return render_source(sources[K], nil, vars_spec, label)
+    -- ports/NAME renders the port allocated to NAME.
+    if K == "ports" then
+        check_identifier(thing, label .. ": ports/" .. thing)
+        assertf(ports[thing], "%s: ports/%s: not allocated", label, thing)
+        return read_output(K, thing, label)
     end
-    if thing:sub(1, 7) == "source/" then
-        local region = thing:sub(8)
+    if thing == "source" or thing:sub(1, 7) == "source/" then
         assertf(sources[K], "%s: replace=source: source not stored for '%s'", label, K)
-        return render_source(sources[K], region, vars_spec, label)
+        -- K's contents-form vars= apply too, unless the display maps the same VAR.
+        local merged, overridden = {}, {}
+        for _, p in ipairs(vars_spec or {}) do
+            merged[#merged + 1] = p
+            if p.kind == "contents" then
+                overridden[p.var] = true
+            end
+        end
+        for _, p in ipairs(pending[K] and pending[K].vars or {}) do
+            if p.kind == "contents" and not overridden[p.var] then
+                merged[#merged + 1] = p
+            end
+        end
+        local region = thing ~= "source" and thing:sub(8) or nil
+        return render_source(sources[K], region, merged, label)
     end
     if thing == "stdout" or thing == "stderr" or thing == "both" then
         return read_output(K, thing, label)
@@ -1114,6 +1151,7 @@ local function collect_codeblock(b)
     end
     check_identifier(key, "key=" .. key)
     assertf(key ~= "globals", "key=globals: 'globals' is a reserved pseudo-key")
+    assertf(key ~= "ports", "key=ports: 'ports' is a reserved pseudo-key")
     assertf(not pending[key], "key=%s: duplicate definition", key)
     local include = b.attr.attributes.include
     local body = b.text
@@ -1170,6 +1208,40 @@ local function collect(blocks)
     pandoc.walk_block(pandoc.Div(blocks), { CodeBlock = collect_codeblock })
 end
 
+-- Allocate ports in order of first appearance of each ports/NAME reference in
+-- enabled vars= and replace= attributes, so the numbering depends only on the
+-- document and not on build order.
+local function collect_ports(blocks)
+    local function use(ref, label)
+        local name = ref:match("^ports/([^/]+)")
+        if not name then
+            return
+        end
+        check_identifier(name, label .. ": ports/" .. name)
+        if not ports[name] then
+            ports_order[#ports_order + 1] = name
+            ports[name] = ports_base + #ports_order - 1
+            assertf(ports[name] <= 65535, "%s: ports/%s: port %d out of range", label, name, ports[name])
+        end
+    end
+    local function scan(el)
+        local attr = el.attr.attributes
+        if not is_enabled(attr) then
+            return
+        end
+        local label = attr.key and "key=" .. attr.key or el.tag
+        if el.tag == "CodeBlock" then
+            for _, p in ipairs(parse_vars(attr.vars)) do
+                use(p.raw, label .. ": vars=" .. p.var)
+            end
+        end
+        if attr.replace then
+            use(attr.replace, label .. ": replace=" .. attr.replace)
+        end
+    end
+    pandoc.Div(blocks):walk({ traverse = "topdown", CodeBlock = scan, Code = scan, Span = scan })
+end
+
 function Pandoc(doc)
     local m = doc.meta["write-user-dependencies"]
     deps_target = m and pandoc.utils.stringify(m) or nil
@@ -1190,6 +1262,14 @@ function Pandoc(doc)
     outputs_t["globals"] = {}
     sources["globals"] = ""
     collect(doc.blocks)
+    collect_ports(doc.blocks)
+    local ports_dir = REPLACE_CACHE_DIR .. "/ports"
+    for _, name in ipairs(ports_order) do
+        write_idempotent(ports_dir .. "/" .. name, tostring(ports[name]))
+    end
+    defined["ports"] = true
+    outputs_t["ports"] = {}
+    sources["ports"] = ""
     doc.blocks = walk_blocks(doc.blocks)
     if deps_target then
         doc.blocks = { pandoc.RawBlock("plain", build_makefile_text()) }

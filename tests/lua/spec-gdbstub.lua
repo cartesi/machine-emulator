@@ -47,7 +47,7 @@ describe("GDB collection", function()
     end)
 
     it("keeps one set of fixed-point entries across repeated continues", function()
-        for _, log2_bundle in ipairs({ 0, 1 }) do
+        for _, log2_bundle in ipairs({ 0, 1, 2 }) do
             local machine <close> = cartesi.machine({ ram = { length = 4096 } })
             local compare_machine <close> = cartesi.machine({ ram = { length = 4096 } })
             -- Overflow inside the collection, then continue twice more and detach at the fixed point.
@@ -68,6 +68,29 @@ describe("GDB collection", function()
                 compare_machine:collect_mcycle_root_hashes(16, 1, 0, log2_bundle)
             )
             expect.equal(machine:read_reg("mcycle"), 5)
+        end
+    end)
+
+    it("returns only the final continue's bundle proof", function()
+        for _, connected in ipairs({ false, true }) do
+            for _, mcycle_end in ipairs({ 5, 6, 8 }) do
+                local machine <close> = cartesi.machine({ ram = { length = 4096 } })
+                local compare_machine <close> = cartesi.machine({ ram = { length = 4096 } })
+                local stub = GDBStub.new(machine)
+                if connected then
+                    stub.conn = {}
+                    stub._pump_session = function(self)
+                        self:_advance(4)
+                        expect.exist(self.collect.final_bundle_sibling_hashes)
+                        return self:_advance(self.mcycle_end)
+                    end
+                end
+                expect.equal(
+                    stub:collect_mcycle_root_hashes(mcycle_end, 1, 0, 1),
+                    compare_machine:collect_mcycle_root_hashes(mcycle_end, 1, 0, 1)
+                )
+                expect.equal(machine:read_reg("mcycle"), mcycle_end)
+            end
         end
     end)
 

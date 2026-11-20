@@ -38,9 +38,12 @@
 #include <system_error>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #ifdef HAVE_FORK
+#include <fcntl.h>
 #include <spawn.h>
+#include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -66,6 +69,7 @@
 #include <json.hpp>
 
 #include "access-log.hpp"
+#include "address-range-constants.hpp"
 #include "address-range-description.hpp"
 #include "back-merkle-tree.hpp"
 #include "base64.hpp"
@@ -75,6 +79,7 @@
 #include "interpret.hpp"
 #include "json-util.hpp"
 #include "jsonrpc-cmio-request.hpp"
+#include "jsonrpc-endpoint.hpp"
 #include "jsonrpc-fork-result.hpp"
 #include "jsonrpc-version.hpp"
 #include "machine-config.hpp"
@@ -128,22 +133,31 @@ static void shutdown_and_close_socket(auto &socket) {
     std::ignore = socket.close(ec);
 }
 
-// Parses an endpoint from an address string in the format "<ip>:<port>"
-static asio::ip::tcp::endpoint parse_endpoint(const std::string &address) {
-    try {
-        const auto colon_pos = address.find_first_of(':');
-        if (colon_pos == std::string::npos) {
-            throw std::runtime_error("missing port number"s);
-        }
-        const std::string host = address.substr(0, colon_pos);
-        const int port = std::stoi(address.substr(colon_pos + 1));
-        if (port <= 0 || port >= 65536) {
-            throw std::runtime_error("invalid port number"s);
-        }
-        return {asio::ip::make_address(host), static_cast<uint16_t>(port)};
-    } catch (const std::exception &e) {
-        throw std::runtime_error("failed to parse endpoint from address \""s + address + "\": "s + e.what());
+// Opens a socket or acceptor that spawned processes do not inherit, which Asio does not do on its own.
+static void open_socket(auto &socket, const tcp &protocol) {
+#ifdef HAVE_FORK
+#ifdef SOCK_CLOEXEC
+    const int fd = ::socket(protocol.family(), protocol.type() | SOCK_CLOEXEC, protocol.protocol());
+#else
+    const int fd = ::socket(protocol.family(), protocol.type(), protocol.protocol());
+    if (fd >= 0 && fcntl(fd, F_SETFD, FD_CLOEXEC) < 0) {
+        const int fcntl_errno = errno;
+        ::close(fd);
+        throw std::system_error{fcntl_errno, std::generic_category(), "unable to set close-on-exec on socket"};
     }
+#endif
+    if (fd < 0) {
+        throw std::system_error{errno, std::generic_category(), "unable to open socket"};
+    }
+    beast::error_code ec;
+    std::ignore = socket.assign(protocol, fd, ec);
+    if (ec) {
+        ::close(fd);
+        throw beast::system_error(ec);
+    }
+#else
+    socket.open(protocol);
+#endif
 }
 
 class expiration {
@@ -172,7 +186,10 @@ public:
 static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &stream, const std::string &remote_address,
     const std::string &post_data, std::chrono::time_point<std::chrono::steady_clock> timeout_at, bool keep_alive) {
     // Determine remote endpoint from remote address
-    const asio::ip::tcp::endpoint remote_endpoint = parse_endpoint(remote_address);
+    const asio::ip::tcp::endpoint remote_endpoint = cartesi::address_to_endpoint(remote_address);
+    if (remote_endpoint.port() == 0) {
+        throw std::invalid_argument{"cannot connect to port 0 of \"" + remote_address + "\""};
+    }
 
     // Set expiration to ms milliseconds into the future, automatically clear it when function exits
     const expiration exp(stream, timeout_at);
@@ -188,6 +205,7 @@ static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &st
 
     // Try to reuse an alive connection to the same endpoint, otherwise connect it
     if (!stream.socket().is_open()) {
+        open_socket(stream.socket(), remote_endpoint.protocol());
         // Connect, we perform an asynchronous operation in order to support timeouts
         stream.async_connect(remote_endpoint, [&](beast::error_code ec) {
             if (ec == beast::error::timeout) {
@@ -440,26 +458,6 @@ jsonrpc_machine::jsonrpc_machine(std::string address) :
 
 #ifdef HAVE_FORK
 
-static boost::asio::ip::tcp::endpoint address_to_endpoint(const std::string &address) {
-    try {
-        const auto pos = address.find_last_of(':');
-        const std::string ip = address.substr(0, pos);
-        const int port = std::stoi(address.substr(pos + 1));
-        if (port < 0 || port > 65535) {
-            throw std::runtime_error{"invalid port"};
-        }
-        return {boost::asio::ip::make_address(ip), static_cast<uint16_t>(port)};
-    } catch (const std::exception &e) {
-        throw std::runtime_error{"invalid endpoint address \"" + address + "\""};
-    }
-}
-
-static std::string endpoint_to_string(const boost::asio::ip::tcp::endpoint &endpoint) {
-    std::ostringstream ss;
-    ss << endpoint;
-    return ss.str();
-}
-
 jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeout_ms, fork_result &spawned) :
     m_ioc(new boost::asio::io_context{1}),
     m_stream(new boost::beast::tcp_stream(*m_ioc)),
@@ -470,10 +468,13 @@ jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeo
         (std::chrono::steady_clock::now() + std::chrono::milliseconds(spawn_timeout_ms)) :
         std::chrono::time_point<std::chrono::steady_clock>::max();
 
-    // Create a TCP acceptor and bind it to the specified address
-    // The acceptor automatically performs open, bind and listen operations
-    boost::asio::ip::tcp::acceptor a(*m_ioc,
-        address_to_endpoint(address)); // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
+    // Create a TCP acceptor, bind it to the specified address, and listen on it
+    const auto endpoint = address_to_endpoint(address);
+    boost::asio::ip::tcp::acceptor a(*m_ioc);
+    open_socket(a, endpoint.protocol());
+    a.set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
+    a.bind(endpoint);
+    a.listen();
 
     // Determine which remote machine binary to use
     const char *bin = getenv("CARTESI_JSONRPC_MACHINE");
@@ -481,16 +482,80 @@ jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeo
         bin = "cartesi-jsonrpc-machine";
     }
 
+    // The child inherits only the standard streams and the acceptor. Our sockets are close-on-exec, and dup2 clears
+    // that flag on the copy, so the acceptor goes to a descriptor other than its own.
+    const int acceptor_fd = a.native_handle();
+    const int child_acceptor_fd = acceptor_fd == STDERR_FILENO + 1 ? STDERR_FILENO + 2 : STDERR_FILENO + 1;
+    posix_spawn_file_actions_t actions{};
+    if (const int error = posix_spawn_file_actions_init(&actions); error != 0) {
+        throw std::system_error{error, std::generic_category(), "posix_spawn_file_actions_init() failed"};
+    }
+    auto actions_destroyer = make_scope_exit([&] { std::ignore = posix_spawn_file_actions_destroy(&actions); });
+    if (const int error = posix_spawn_file_actions_adddup2(&actions, acceptor_fd, child_acceptor_fd); error != 0) {
+        throw std::system_error{error, std::generic_category(), "posix_spawn_file_actions_adddup2() failed"};
+    }
+    posix_spawnattr_t attributes{};
+    if (const int error = posix_spawnattr_init(&attributes); error != 0) {
+        throw std::system_error{error, std::generic_category(), "posix_spawnattr_init() failed"};
+    }
+    auto attributes_destroyer = make_scope_exit([&] { std::ignore = posix_spawnattr_destroy(&attributes); });
+    // The child starts with no signals blocked and with the default actions for the signals that stop it, whatever
+    // the calling thread blocks or handles. Otherwise a caller that blocks SIGTERM leaves us unable to stop the child.
+    sigset_t blocked_signals{};
+    sigemptyset(&blocked_signals);
+    if (const int error = posix_spawnattr_setsigmask(&attributes, &blocked_signals); error != 0) {
+        throw std::system_error{error, std::generic_category(), "posix_spawnattr_setsigmask() failed"};
+    }
+    sigset_t default_signals{};
+    sigemptyset(&default_signals);
+    for (const int signal : {SIGINT, SIGTERM, SIGCHLD}) {
+        sigaddset(&default_signals, signal);
+    }
+    if (const int error = posix_spawnattr_setsigdefault(&attributes, &default_signals); error != 0) {
+        throw std::system_error{error, std::generic_category(), "posix_spawnattr_setsigdefault() failed"};
+    }
+#ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
+    // Other descriptors of the process may lack close-on-exec, so close everything but what the child needs
+    const auto flags =
+        static_cast<int16_t>(POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_CLOEXEC_DEFAULT);
+#else
+    const auto flags = static_cast<int16_t>(POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF);
+#endif
+    if (const int error = posix_spawnattr_setflags(&attributes, flags); error != 0) {
+        throw std::system_error{error, std::generic_category(), "posix_spawnattr_setflags() failed"};
+    }
+#ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
+    for (const int fd : {STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO}) {
+        if (const int error = posix_spawn_file_actions_addinherit_np(&actions, fd); error != 0) {
+            throw std::system_error{error, std::generic_category(), "posix_spawn_file_actions_addinherit_np() failed"};
+        }
+    }
+#endif
+
     // Prepare command-line arguments for the child process
     char server_fd[256] = "";
-    std::ignore = snprintf(server_fd, std::size(server_fd), "--server-fd=%d", a.native_handle());
+    std::ignore = snprintf(server_fd, std::size(server_fd), "--server-fd=%d", child_acceptor_fd);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
     char *const args[] = {const_cast<char *>(bin), server_fd, nullptr};
 
+    // Idle OpenMP threads that spin slow hash-tree updates down on busy hosts. libgomp reads the wait policy only
+    // from the environment at startup, so the child gets a passive one unless the caller chose otherwise.
+    std::vector<char *> child_environ;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    for (char *const *entry = environ; *entry != nullptr; ++entry) {
+        child_environ.push_back(*entry);
+    }
+    static char passive_wait_policy[] = "OMP_WAIT_POLICY=passive";
+    if (getenv("OMP_WAIT_POLICY") == nullptr) {
+        child_environ.push_back(passive_wait_policy);
+    }
+    child_environ.push_back(nullptr);
+
     // Spawn the remote machine as a child process
     pid_t child_pid{};
-    if (posix_spawnp(&child_pid, bin, nullptr, nullptr, args, environ) != 0) {
-        throw std::system_error{errno, std::generic_category(), "posix_spawnp() failed to spawn server process"};
+    if (const int error = posix_spawnp(&child_pid, bin, &actions, &attributes, args, child_environ.data());
+        error != 0) {
+        throw std::system_error{error, std::generic_category(), "posix_spawnp() failed to spawn server process"};
     }
 
 #ifdef CODE_COVERAGE
@@ -621,9 +686,9 @@ i_machine *jsonrpc_machine::do_clone_empty() const {
 }
 
 void jsonrpc_machine::do_create(const machine_config &config, const machine_runtime_config &runtime,
-    const std::string &dir) {
+    const std::string &dir, sharing_mode sharing) {
     bool result = false;
-    request("machine.create", std::tie(config, runtime, dir), result);
+    request("machine.create", std::tie(config, runtime, dir, sharing), result);
 }
 
 jsonrpc_machine::~jsonrpc_machine() {
@@ -719,9 +784,9 @@ void jsonrpc_machine::do_rename_stored(const std::string &from_dir, const std::s
     request("machine.rename_stored", std::tie(from_dir, to_dir), result);
 }
 
-void jsonrpc_machine::do_remove_stored(const std::string &dir) const {
+void jsonrpc_machine::do_remove_stored(const std::string &dir, remove_mode mode) const {
     bool result = false;
-    request("machine.remove_stored", std::tie(dir), result);
+    request("machine.remove_stored", std::tie(dir, mode), result);
 }
 
 void jsonrpc_machine::do_sync_stored(const std::string &dir) const {
@@ -759,6 +824,9 @@ void jsonrpc_machine::emancipate_server() const {
 }
 
 void jsonrpc_machine::do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const {
+    if (data == nullptr && length > 0) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     std::string result;
     request("machine.read_memory", std::tie(address, length), result);
     std::string bin = cartesi::decode_base64(result);
@@ -769,12 +837,18 @@ void jsonrpc_machine::do_read_memory(uint64_t address, unsigned char *data, uint
 }
 
 void jsonrpc_machine::do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) {
+    if (data == nullptr && length > 0) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     bool result = false;
     std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
     request("machine.write_memory", std::tie(address, b64), result);
 }
 
 void jsonrpc_machine::do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) {
+    if (data == nullptr && length > 0) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     std::string result;
     request("machine.read_virtual_memory", std::tie(address, length), result);
     std::string bin = cartesi::decode_base64(result);
@@ -785,6 +859,9 @@ void jsonrpc_machine::do_read_virtual_memory(uint64_t address, unsigned char *da
 }
 
 void jsonrpc_machine::do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) {
+    if (data == nullptr && length > 0) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
     bool result = false;
     std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
     request("machine.write_virtual_memory", std::tie(address, b64), result);
@@ -905,6 +982,11 @@ void jsonrpc_machine::do_write_word(uint64_t address, uint64_t value) {
     request("machine.write_word", std::tie(address, value), result);
 }
 
+void jsonrpc_machine::do_clear_hash_tree() {
+    bool result = false;
+    request("machine.clear_hash_tree", std::tie(), result);
+}
+
 hash_tree_stats jsonrpc_machine::do_get_hash_tree_stats(bool clear) {
     hash_tree_stats result{};
     request("machine.get_hash_tree_stats", std::tie(clear), result);
@@ -969,10 +1051,27 @@ machine_cmio_request jsonrpc_machine::do_receive_cmio_request(std::span<uint8_t>
             !data.empty() ? std::span<const uint8_t>{data.first(result.available_length)} : std::span<const uint8_t>{}};
 }
 
+/// \brief Encodes the data of a cmio response for the server
+/// \param data Response data, which can be NULL when \p length is oversized.
+/// \param length Response data length.
+/// \returns Base64 encoding of the data to send.
+/// \details A response that does not fit in the rx buffer is a no-op that never reads its data, so it is sent as
+/// the shortest such response, which needs no data from the caller and avoids sending data that is discarded.
+static std::string encode_cmio_response_data(const unsigned char *data, uint32_t length) {
+    if (length > AR_CMIO_RX_BUFFER_LENGTH) {
+        const std::vector<unsigned char> oversized(AR_CMIO_RX_BUFFER_LENGTH + 1);
+        return cartesi::encode_base64(std::span<const unsigned char>{oversized});
+    }
+    if (data == nullptr && length > 0) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
+    return cartesi::encode_base64(std::span<const unsigned char>{data, length});
+}
+
 void jsonrpc_machine::do_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
     std::optional<const_machine_hash_view> revert_root_hash) {
     bool result = false;
-    std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
+    std::string b64 = encode_cmio_response_data(data, length);
     if (revert_root_hash.has_value()) {
         auto b64_revert_root_hash = encode_base64(*revert_root_hash);
         request("machine.send_cmio_response", std::tie(reason, b64, b64_revert_root_hash), result);
@@ -985,7 +1084,7 @@ access_log jsonrpc_machine::do_log_send_cmio_response(uint16_t reason, const uns
     const_machine_hash_view revert_root_hash, const access_log::type &log_type) {
     not_default_constructible<access_log> result;
     auto b64_revert_root_hash = encode_base64(revert_root_hash);
-    std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
+    std::string b64 = encode_cmio_response_data(data, length);
     request("machine.log_send_cmio_response", std::tie(reason, b64, b64_revert_root_hash, log_type), result);
     if (!result.has_value()) {
         throw std::runtime_error("jsonrpc server error: missing result");
@@ -1044,7 +1143,7 @@ machine_hash jsonrpc_machine::do_verify_reset_uarch(const_machine_hash_view root
 machine_hash jsonrpc_machine::do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
     const_machine_hash_view root_hash_before, const access_log &log, const_machine_hash_view revert_root_hash) const {
     machine_hash result;
-    std::string b64_data = cartesi::encode_base64(std::span<const unsigned char>{data, length});
+    std::string b64_data = encode_cmio_response_data(data, length);
     auto b64_root_hash_before = encode_base64(root_hash_before);
     auto b64_revert_root_hash = encode_base64(revert_root_hash);
     request("machine.verify_send_cmio_response",

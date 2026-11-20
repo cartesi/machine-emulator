@@ -1,6 +1,7 @@
 -- VG event schemas, transport bindings, and narration.
 local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")
+local fs = require("cartesi.filesystem")
 local util = require("cartesi.util")
 local transport = require("game-transport")
 
@@ -154,15 +155,20 @@ end
 local ADVANCE = "EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, "
     .. "uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)"
 
+-- Outputs are opaque to the referee, so the story narrates only those that decode as notices
+local try_decode_notice = util.protect(function(output_data)
+    return evmu.decode_calldata("Notice(bytes payload)", output_data, "raw")
+end)
+
 function story.report_output(output)
-    local ok, decoded = pcall(evmu.decode_calldata, "Notice(bytes payload)", output.output_data, "raw")
-    if ok then
+    local notice = try_decode_notice(output.output_data)
+    if notice then
         local path = story.output_inputs and story.output_inputs[output.output_index]
         if path then
-            local input = evmu.decode_calldata(ADVANCE, util.read_file(path), "raw")
-            eventf("Output %d of input %q is %q.", output.output_index, input.payload:gsub("%s+$", ""), decoded.payload)
+            local input = evmu.decode_calldata(ADVANCE, fs.read_file(path), "raw")
+            eventf("Output %d of input %q is %q.", output.output_index, input.payload:gsub("%s+$", ""), notice.payload)
         else
-            eventf("Output %d is %q.", output.output_index, decoded.payload)
+            eventf("Output %d is %q.", output.output_index, notice.payload)
         end
     end
 end
@@ -172,10 +178,9 @@ local schemas = {
     InputAdded = { items = { "Default", "Default" } },
     EpochSealed = { items = { "Default" } },
     Bisection = { items = { "Default", "Default" } },
-    Log = { send_cmio_log = "AccessLog", step_log = "AccessLog", reset_uarch_log = "AccessLog" },
     Transition = { items = { "Default", "Default", "Default" } },
     Hash = { items = { "Base64" } },
-    OutputsRoot = {
+    OutputsMerkleRoot = {
         iflags_y_data = "Base64",
         iflags_y_proof = "Proof",
         htif_tohost_data = "Base64",
@@ -192,8 +197,8 @@ local events = {
     commit_claim = define_event("commit_claim", "Empty", "Base64"),
     dispute_started = define_event("dispute_started", "Empty"),
     reveal_bisection = define_event("reveal_bisection", "Bisection", "Base64"),
-    prove_state_transition = define_event("prove_state_transition", "Transition", "Log"),
-    prove_outputs_merkle_root = define_event("prove_outputs_merkle_root", "Hash", "OutputsRoot"),
+    prove_state_transition = define_event("prove_state_transition", "Transition", "StateTransitionProof"),
+    prove_outputs_merkle_root = define_event("prove_outputs_merkle_root", "Hash", "OutputsMerkleRoot"),
     prove_output = define_event("prove_output", "Hash", "Output"),
 }
 local protocol = transport.new_protocol(events, schemas, "VERIFICATION_GAME_TRACE")

@@ -280,15 +280,17 @@ local riscv_tests = {
     { "dont_write_x0.bin", 92 },
     { "mcycle_write.bin", 14 },
     { "lrsc_semantics.bin", 31 },
+    { "sc_checks.bin", 95 },
     { "csr_counters.bin", 737 },
     { "csr_semantics.bin", 378 },
     { "amo.bin", 162 },
     { "access.bin", 97 },
     { "interrupts.bin", 8209 },
     { "mtime_interrupt.bin", 16404 },
+    { "mtime_compare.bin", 98362 },
     { "illegal_insn.bin", 1080 },
     { "version_check.bin", 26 },
-    { "translate_vaddr.bin", 343 },
+    { "translate_vaddr.bin", 349 },
     { "htif_invalid_ops.bin", 109 },
     { "clint_ops.bin", 133 },
     { "shadow_ops.bin", 78 },
@@ -1049,17 +1051,7 @@ local function run_host_and_uarch_machines(host_machine, uarch_machine, ctx, max
 end
 
 local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
-    local log_filename = os.tmpname()
-    local delete_temp = true
-    local deleter = {}
-    setmetatable(deleter, {
-        __gc = function()
-            if delete_temp then
-                os.remove(log_filename)
-            end
-        end,
-    })
-    os.remove(log_filename)
+    local _ <close>, log_filename = tests_util.scope_temp_pathname()
     local root_hash_before = machine:get_root_hash()
     local reference_hash = reference_machine:get_root_hash()
     if root_hash_before ~= reference_hash then

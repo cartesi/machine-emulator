@@ -1,0 +1,30 @@
+diff --git a/prt/contracts/src/arbitration-config/ArbitrationConstants.sol b/prt/contracts/src/arbitration-config/ArbitrationConstants.sol
+index 8cc45c1..0620cc4 100644
+--- a/prt/contracts/src/arbitration-config/ArbitrationConstants.sol
++++ b/prt/contracts/src/arbitration-config/ArbitrationConstants.sol
+@@ -4,6 +4,7 @@
+ pragma solidity ^0.8.17;
+ 
+ library ArbitrationConstants {
++    // Recipe geometry: 2^10 mcycles per root leaf, 2^20 ucycles per mcycle.
+     uint64 constant LEVELS = 2;
+ 
+     /// @notice Wall-clock seconds granted to build one inner tournament's
+@@ -15,7 +16,7 @@ library ArbitrationConstants {
+ 
+     /// @return base-2 stride between adjacent commitment leaves at `level`
+     function log2step(uint64 level) internal pure returns (uint64) {
+-        uint64[LEVELS] memory arr = [uint64(38), uint64(0)];
++        uint64[LEVELS] memory arr = [uint64(30), uint64(0)];
+         return arr[level];
+     }
+ 
+@@ -25,7 +26,7 @@ library ArbitrationConstants {
+     /// meta-cycle coordinate space.
+     /// @return configured commitment-tree height for `level`
+     function height(uint64 level) internal pure returns (uint64) {
+-        uint64[LEVELS] memory arr = [uint64(54), uint64(38)];
++        uint64[LEVELS] memory arr = [uint64(62), uint64(30)];
+         return arr[level];
+     }
+ }

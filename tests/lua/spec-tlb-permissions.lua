@@ -11,8 +11,8 @@ local tests_util = require("cartesi.tests.util")
 local RAM_START = cartesi.AR_RAM_START
 local DRIVE_START = 0x90000000
 local MTVEC = RAM_START + 0x100
-local TLB_CODE, TLB_READ, TLB_WRITE = 0, 1, 2
-local TLB_SET_SIZE, TLB_SLOT_BYTES = 256, 32
+local TLB_CODE, TLB_READ, TLB_WRITE = cartesi.TLB_CODE, cartesi.TLB_READ, cartesi.TLB_WRITE
+local TLB_SET_SIZE, TLB_SLOT_BYTES = cartesi.TLB_SET_SIZE, cartesi.SHADOW_TLB_SLOT_SIZE
 local VALUE = 0x0102030405060708
 local STORE_VALUE = 0x123456789abcdef
 
@@ -121,7 +121,7 @@ describe("shadow TLB permissions", function()
                             expect_access_result(reference, case, before)
 
                             local source <close> = create_machine(case, hash_function, data_filename, true)
-                            local directory = filesystem.temp_pathname()
+                            local _ <close>, directory = tests_util.scope_temp_pathname()
                             local _ <close> = tests_util.scope_exit(function()
                                 if stored then
                                     cartesi.machine:remove_stored(directory)
@@ -148,10 +148,7 @@ describe("shadow TLB permissions", function()
                             local logged <close> = stored and cartesi.machine(directory, {}, cartesi.SHARING_NONE)
                                 or create_machine(case, hash_function, data_filename, true)
                             expect.equal(logged:get_root_hash(), initial_hash)
-                            local filename = filesystem.temp_pathname()
-                            local _ <close> = tests_util.scope_exit(function()
-                                os.remove(filename)
-                            end)
+                            local _ <close>, filename = tests_util.scope_temp_pathname()
                             expect.equal(logged:log_step(1, filename), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
                             expect.equal(logged:get_root_hash(), expected_hash)
                             expect.equal(logged:verify_step(initial_hash, filename, 1), expected_hash)
@@ -237,10 +234,7 @@ describe("MPRV TLB invalidation", function()
                 expect.equal(expected_hash, tests_util.calculate_emulator_hash(native))
 
                 local logged <close> = create_mprv_machine(trap, store)
-                local filename = filesystem.temp_pathname()
-                local _ <close> = tests_util.scope_exit(function()
-                    os.remove(filename)
-                end)
+                local _ <close>, filename = tests_util.scope_temp_pathname()
                 expect.equal(logged:log_step(3, filename), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
                 expect.equal(logged:get_root_hash(), expected_hash)
                 expect.equal(logged:verify_step(initial_hash, filename, 3), expected_hash)

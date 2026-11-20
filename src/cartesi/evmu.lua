@@ -61,7 +61,7 @@ local function fromhex(hex)
     if #hex % 2 ~= 0 then return nil, "hex string length must be even" end
     local invalid
     local data = string.gsub(hex:sub(3), "(..)", function(c)
-        local n = tonumber(c, 16)
+        local n = c:match("^%x%x$") and tonumber(c, 16)
         if not n then
             invalid = c
             n = 0
@@ -124,7 +124,7 @@ local bytes_size_idnot = expect(
 local type_spec = P({
     "type_spec",
 
-    data_location = P("memory") + P("calldata") + P("storage"),
+    data_location = (P("memory") + P("calldata") + P("storage")) * idnot,
 
     type_spec = V("elementary_type_spec") * opsp * V("array_brackets") * opsp * C(V("data_location") ^ -1) * opsp * C(
         identifier ^ -1
@@ -272,9 +272,8 @@ end
 
 -- parsed function signature cache
 -- this avoids repeated parsing of the same function signature
--- a parsed function signature will remain in cache at least as long as a string with that signature exists in Lua
--- once the string is collected, the corresponding parsed signature may be collected too
-local parsed_func_sig_cache = setmetatable({}, { __mode = "k" })
+-- signatures are constants of the calling code or come from contract ABIs, so the cache grows only with the program
+local parsed_func_sig_cache = {}
 
 -- returns a parsed function signature and the corresponding canonic signature
 function _M.parse_func_sig(sig)
@@ -311,10 +310,15 @@ local function mark_dynamic_types(parsed_type_spec)
         parsed_type_spec.static_size = n and 32 or nil
         parsed_type_spec.is_dynamic = (n == nil)
     elseif tn == "array" then
-        mark_dynamic_types(parsed_type_spec.element_type)
-        parsed_type_spec.is_dynamic = parsed_type_spec.element_type.is_dynamic or not parsed_type_spec.size
+        local element = parsed_type_spec.element_type
+        mark_dynamic_types(element)
+        -- Valid ABI types, but unsupported here: their encoded size cannot bound array decoding work.
+        if not element.is_dynamic and element.static_size == 0 then
+            errorf("ABI arrays with zero-size elements are not supported")
+        end
+        parsed_type_spec.is_dynamic = element.is_dynamic or not parsed_type_spec.size
         if not parsed_type_spec.is_dynamic then
-            parsed_type_spec.static_size = parsed_type_spec.size * parsed_type_spec.element_type.static_size
+            parsed_type_spec.static_size = parsed_type_spec.size * element.static_size
         end
     elseif tn == "tuple" then
         -- Tuple is dynamic if any of its components is dynamic
@@ -401,10 +405,26 @@ local function get_raw_expect_raw(s)
     return s
 end
 
+-- Converts an ABI integer without allowing oversized strings to wrap during bint conversion.
+local function check_integer(value)
+    if type(value) == "string" then
+        local digits = value:gsub("^[+-]", "")
+        local max_digits = 78
+        local prefix = digits:sub(1, 2):lower()
+        if prefix == "0x" or prefix == "0b" then
+            max_digits = prefix == "0x" and 64 or 256
+            digits = digits:sub(3)
+        end
+        digits = digits:gsub("^0+", "")
+        assert(#digits <= max_digits, "integer value does not fit in target type")
+    end
+    return assert(bint.new(value), "value not an integer")
+end
+
 -- returns the calldata encoding of an uint 'value'
 local function encoded_uint(value, size)
     size = size or 256
-    value = assert(bint.new(value), "value not an integer")
+    value = check_integer(value)
     assert(bint.eq(value >> size, 0), "integer value does not fit in target type")
     return tobe(value)
 end
@@ -415,7 +435,7 @@ local function append_encoded_uint(output, value, size) tinsert(output, encoded_
 -- appends the calldata parts of an int 'value' into the 'output' table
 local function append_encoded_int(output, value, size)
     size = size or 256
-    value = assert(bint.new(value), "value not an integer")
+    value = check_integer(value)
     local intmax = bint.one() << (size - 1)
     local intmin = (-bint.one()) << (size - 1)
     assert(value >= intmin and value < intmax, "integer value does not fit in target type")
@@ -470,15 +490,29 @@ local function append_encoded_bytes(output, value, size)
     append_padding(output, len)
 end
 
+-- checks that array values form a sequence of the expected size and returns its length
+local function check_array_values(values, parsed_type_spec)
+    local count = 0
+    for i in pairs(values) do
+        if math.type(i) ~= "integer" or i < 1 then errorf("invalid array index %s", tostring(i)) end
+        count = count + 1
+    end
+    for i = 1, count do
+        if values[i] == nil then errorf("missing array element at index %u", i) end
+    end
+    if parsed_type_spec.size and parsed_type_spec.size ~= count then
+        errorf("invalid value count (expected %u, got %u)", parsed_type_spec.size, count)
+    end
+    return count
+end
+
 -- appends the calldata parts of an array 'value' into the 'output' table, tiven its type name 'tn'
 local function append_encoded_array(output, values, tn)
     assert(type(values) == "table" and not bint.isbint(values), "array values not in table")
+    local count = check_array_values(values, tn)
     local dynamic_size = not tn.size
-    if not dynamic_size and tn.size ~= #values then
-        errorf("invalid value count (expected %u, got %u)", tn.size, #values)
-    end
     -- For dynamic arrays, encode length first
-    if dynamic_size then append_encoded_uint(output, #values) end
+    if dynamic_size then append_encoded_uint(output, count) end
     -- Static elements: encode directly
     if not is_dynamic_type(tn.element_type) then
         for _, value in ipairs(values) do
@@ -487,7 +521,7 @@ local function append_encoded_array(output, values, tn)
         return
     end
     -- Dynamic elements: encode offsets first, then data
-    local offset = #values * 32 -- Each offset is 32 bytes
+    local offset = count * 32 -- Each offset is 32 bytes
     local value_parts = {}
     for _, value in ipairs(values) do
         append_encoded_uint(output, offset)
@@ -622,17 +656,40 @@ end
 -- returns the hex-encoded calldata for a 'func_sig' and the corresponpding 'args' table
 function _M.encode_calldata_hex(sig, args) return tohex(_M.encode_calldata(sig, args)) end
 
+-- ABI tuples without a function selector, as used by event data and return values.
+-- Values follow the same conventions as encode_calldata.
+function _M.encode_abi(tuple_spec, args)
+    local parsed = _M.parse_type_spec(tuple_spec)
+    assert(parsed.type_name == "tuple", "expected tuple type")
+    local output = {}
+    append_encoded_tuple(output, args, parsed)
+    return table.concat(output)
+end
+
 _M.encode_hex = tohex
 _M.decode_hex = fromhex
 
 local decode_value -- forward declaration
 
+-- returns the 'len' bytes of 'calldata' at 'offset' and the offset past their padding to a multiple of 32 bytes
+-- 'offset' is always in [0, #calldata], so comparing 'len' with what remains cannot overflow
+local function read_padded(calldata, offset, len, fmt, ...)
+    if len > (#calldata - offset) // 32 * 32 then errorf(fmt, ...) end
+    return calldata:sub(offset + 1, offset + len), offset + ceil32(len)
+end
+
 -- reads a 32-byte word from 'calldata' at 'offset' and returns it as a bint
 local word_padding = string.rep("\0", bint_extra / 8)
 local function read_word(calldata, offset)
-    if offset + 32 > #calldata then errorf("insufficient calldata for 256-bit word at offset %d", offset) end
-    local word = calldata:sub(offset + 1, offset + 32)
+    local word = read_padded(calldata, offset, 32, "insufficient calldata for 256-bit word at offset %d", offset)
     return bint.frombe(word_padding .. word)
+end
+
+-- reads from 'calldata' at 'offset' an offset relative to 'start' and returns the absolute offset
+local function decode_offset(calldata, offset, start, what)
+    local relative_offset = check_lua_uint(read_word(calldata, offset), what)
+    if relative_offset > #calldata - start then errorf("insufficient calldata for %s %d", what, relative_offset) end
+    return start + relative_offset
 end
 
 -- reads a uint value from 'calldata' at 'offset'
@@ -659,6 +716,7 @@ end
 -- reads an address value from 'calldata' at 'offset'
 local function decode_address(calldata, offset, prefer)
     local word = read_word(calldata, offset)
+    assert(bint.eq(word >> 160, 0), "dirty upper bits in address value")
     -- Address is stored in the last 20 bytes of the 32-byte word
     local addr_data = tobe(word):sub(-20)
     if prefer ~= "raw" then addr_data = tohex(addr_data) end
@@ -677,100 +735,85 @@ local function decode_bool(calldata, offset)
     end
 end
 
--- reads a string value from 'calldata' at 'offset'
-local function decode_string(calldata, offset, prefer)
+-- reads the length and the data of a string or dynamic bytes value ('what') from 'calldata' at 'offset'
+local function read_dynamic(calldata, offset, what)
     local length, new_offset = decode_uint(calldata, offset)
-    local len = check_lua_uint(length, "string length")
-    local padded_len = ceil32(len)
-    if new_offset + padded_len > #calldata then errorf("insufficient calldata for string of length %d", len) end
-    local str_data = calldata:sub(new_offset + 1, new_offset + len)
-    if prefer == "hex" then str_data = tohex(str_data) end
-    -- Skip padding
-    return str_data, new_offset + padded_len
+    local len = check_lua_uint(length, what .. " length")
+    return read_padded(calldata, new_offset, len, "insufficient calldata for %s of length %d", what, len)
 end
 
-local function decode_bytes_sized(calldata, offset, size, prefer)
-    -- Fixed-size bytes
-    local padded_len = ceil32(size)
-    if offset + padded_len > #calldata then errorf("insufficient calldata for bytes%d", size) end
-    local bytes_data = calldata:sub(offset + 1, offset + size)
-    if prefer ~= "raw" then bytes_data = tohex(bytes_data) end
-    return bytes_data, offset + padded_len
+-- reads a string value from 'calldata' at 'offset'
+local function decode_string(calldata, offset, prefer)
+    local str_data, new_offset = read_dynamic(calldata, offset, "string")
+    if prefer == "hex" then str_data = tohex(str_data) end
+    return str_data, new_offset
 end
 
 -- reads a bytes value from 'calldata' at 'offset'
 local function decode_bytes(calldata, offset, size, prefer)
-    if not size then
-        -- Dynamic bytes (same as string but return as hex by default)
-        local length, new_offset = decode_uint(calldata, offset)
-        local len = check_lua_uint(length, "bytes length")
-        local padded_len = ceil32(len)
-        if new_offset + padded_len > #calldata then errorf("insufficient calldata for bytes of length %d", len) end
-        local bytes_data = calldata:sub(new_offset + 1, new_offset + len)
-        if prefer ~= "raw" then bytes_data = tohex(bytes_data) end
-        return bytes_data, new_offset + padded_len
+    local bytes_data, new_offset
+    if size then
+        bytes_data, new_offset = read_padded(calldata, offset, size, "insufficient calldata for bytes%d", size)
+        if calldata:sub(offset + size + 1, new_offset):find("[^\0]") then
+            errorf("dirty padding in bytes%d value", size)
+        end
+    else
+        bytes_data, new_offset = read_dynamic(calldata, offset, "bytes")
     end
-    return decode_bytes_sized(calldata, offset, size, prefer)
+    if prefer ~= "raw" then bytes_data = tohex(bytes_data) end
+    return bytes_data, new_offset
 end
 
 -- reads an array value from 'calldata' at 'offset'
 local function decode_array(calldata, offset, parsed_type_spec, prefer)
     local element_type = parsed_type_spec.element_type
     local size = parsed_type_spec.size
-    local new_offset = offset
-    local array_data_start = offset -- Start of the array data section
     if not size then
         -- Dynamic array - read length first
         local size_val
-        size_val, new_offset = decode_uint(calldata, new_offset)
+        size_val, offset = decode_uint(calldata, offset)
         size = check_lua_uint(size_val, "array size")
-        array_data_start = new_offset -- Array data starts after the length field
     end
     local result = {}
-    local is_dynamic_element = is_dynamic_type(element_type)
-    if is_dynamic_element then
-        local last_offset
-        -- Dynamic elements: read offset and decode immediately
-        for i = 1, size do
-            local offset_val = decode_uint(calldata, new_offset + (i - 1) * 32)
-            -- Offsets are relative to the start of the array data section
-            local element_offset = array_data_start + check_lua_uint(offset_val, "array offset")
-            result[i], last_offset = decode_value(calldata, element_offset, element_type, prefer)
-        end
-        return result, last_offset
-    else
+    if not is_dynamic_type(element_type) then
         -- Static elements: read sequentially
         for i = 1, size do
-            result[i], new_offset = decode_value(calldata, new_offset, element_type, prefer)
+            result[i], offset = decode_value(calldata, offset, element_type, prefer)
         end
-        return result, new_offset
+        return result, offset
     end
+    -- Dynamic elements: one offset each, relative to the start of the offsets, then the data in any order
+    if size > (#calldata - offset) // 32 then errorf("insufficient calldata for array of size %d", size) end
+    local new_offset = offset + size * 32 -- Position to return (end of data), past the offsets if empty
+    for i = 1, size do
+        local element_offset = decode_offset(calldata, offset + (i - 1) * 32, offset, "array offset")
+        local element_new_offset
+        result[i], element_new_offset = decode_value(calldata, element_offset, element_type, prefer)
+        new_offset = math.max(new_offset, element_new_offset)
+    end
+    return result, new_offset
 end
 
 -- Reads a tuple value from 'calldata' at 'offset'
 local function decode_tuple(calldata, offset, parsed_type_spec, prefer)
-    local components = parsed_type_spec.components
     local result = {}
     local static_offset = offset -- Position within the static portion
-    local tuple_start = offset -- Start of the tuple data
-    local _, static_size = is_dynamic_type(parsed_type_spec)
-    local new_offset = tuple_start + static_size -- Position to return (end of data)
-    -- Process components
-    for i, comp_type in ipairs(components) do
-        local is_dynamic_component = is_dynamic_type(comp_type)
-        if is_dynamic_component then
-            local offset_val
-            offset_val, static_offset = decode_uint(calldata, static_offset)
-            -- Offsets are relative to the start of the tuple
-            local dynamic_offset = tuple_start + check_lua_uint(offset_val, "tuple offset")
-            result[i], new_offset = decode_value(calldata, dynamic_offset, comp_type, prefer)
+    local new_offset = offset -- Position to return (end of data)
+    for i, comp_type in ipairs(parsed_type_spec.components) do
+        if is_dynamic_type(comp_type) then
+            -- Offsets are relative to the start of the tuple, and the data can come in any order
+            local dynamic_offset = decode_offset(calldata, static_offset, offset, "tuple offset")
+            static_offset = static_offset + 32
+            local component_new_offset
+            result[i], component_new_offset = decode_value(calldata, dynamic_offset, comp_type, prefer)
+            new_offset = math.max(new_offset, component_new_offset)
         else
             result[i], static_offset = decode_value(calldata, static_offset, comp_type, prefer)
         end
         local name = comp_type.name
         if name then result[name] = result[i] end
     end
-    return result, new_offset
+    return result, math.max(new_offset, static_offset)
 end
 
 -- Reads a value of the specified type from 'calldata' at 'offset'
@@ -826,6 +869,15 @@ end
 function _M.decode_calldata_hex(func_sig_str, calldata_hex, prefer)
     local calldata_raw = assert(fromhex(calldata_hex))
     return _M.decode_calldata(func_sig_str, calldata_raw, prefer)
+end
+
+-- Decode a selectorless ABI tuple. Integer values retain all 256 bits.
+function _M.decode_abi(tuple_spec, data, prefer)
+    local parsed = _M.parse_type_spec(tuple_spec)
+    assert(parsed.type_name == "tuple", "expected tuple type")
+    local value, offset = decode_value(data, 0, parsed, prefer)
+    assert(offset == #data, "ABI data too long")
+    return value
 end
 
 return _M

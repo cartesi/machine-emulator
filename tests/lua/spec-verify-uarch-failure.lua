@@ -37,21 +37,12 @@ local uarch_default_program = {
     0x00000073, -- ecall
 }
 
-local function create_test_uarch_program(instructions)
-    local file_path = os.tmpname()
-    local f <close> = assert(io.open(file_path, "wb"))
-    for _, insn in pairs(instructions) do
-        f:write(string.pack("I4", insn))
-    end
-    return file_path
-end
-
 -- A hash guaranteed to be wrong for any valid proof
 local bad_hash = string.rep("\xba", cartesi.HASH_SIZE)
 
 -- Build a machine with the default uarch test program (li a0,123; halt ecall)
 local function build_default_machine()
-    local data_filename = create_test_uarch_program(uarch_default_program)
+    local _ <close>, data_filename = tests_util.create_test_uarch_program(uarch_default_program)
     local machine = cartesi.machine({
         ram = { length = 0x20000 },
         uarch = {
@@ -61,7 +52,6 @@ local function build_default_machine()
             },
         },
     }, {})
-    os.remove(data_filename)
     return machine
 end
 
@@ -765,12 +755,11 @@ describe("uarch TLB writes with an invalid set index", function()
         program[#program + 1] = (cartesi.UARCH_ECALL_FN_WRITE_TLB << 20) | 0x00893 -- li a7,write_tlb
         program[#program + 1] = 0x00000073 -- ecall
         local function build_machine()
-            local data_filename = create_test_uarch_program(program)
+            local _ <close>, data_filename = tests_util.create_test_uarch_program(program)
             local machine = cartesi.machine({
                 ram = { length = 0x20000 },
                 uarch = { ram = { length = 0x1000, backing_store = { data_filename = data_filename } } },
             }, {})
-            os.remove(data_filename)
             return machine
         end
         it("should fail cleanly when running, logging and collecting set index " .. name, function()
@@ -821,12 +810,11 @@ describe("uarch TLB writes with an out-of-range slot index", function()
     local slot_index = (cartesi.AR_RAM_START - cartesi.AR_SHADOW_TLB_START) // cartesi.SHADOW_TLB_SLOT_SIZE
     -- Machines stopped at the ecall, with the given TLB set and slot indices in a0 and a1
     local function build_machine(set_index, slot)
-        local data_filename = create_test_uarch_program(program)
+        local _ <close>, data_filename = tests_util.create_test_uarch_program(program)
         local machine = cartesi.machine({
             ram = { length = 0x20000 },
             uarch = { ram = { length = 0x1000, backing_store = { data_filename = data_filename } } },
         }, {})
-        os.remove(data_filename)
         machine:run_uarch(ECALL_CYCLE)
         machine:write_reg("uarch_x10", set_index)
         machine:write_reg("uarch_x11", slot)

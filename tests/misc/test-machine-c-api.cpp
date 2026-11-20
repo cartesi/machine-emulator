@@ -47,6 +47,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -57,6 +58,7 @@
 #include <keccak-256-hasher.hpp>
 #include <page-hash-tree-cache.hpp>
 #include <riscv-constants.hpp>
+#include <scope-exit.hpp>
 #include <uarch-constants.hpp>
 #include <uarch-pristine.hpp>
 
@@ -65,6 +67,7 @@
 
 // Returns a path (under a per-process temp directory created once via mkdtemp), so concurrent
 // runs of this binary (test-c-api and test-c-api-remote) do not collide on shared files.
+// The directory and everything in it are removed when the process exits.
 static std::string unique_temp_path(const std::string &name) {
     static const std::filesystem::path base = [] {
         std::string tmpl = (std::filesystem::temp_directory_path() / "cartesi-c-api-XXXXXX").string();
@@ -73,6 +76,10 @@ static std::string unique_temp_path(const std::string &name) {
         }
         return std::filesystem::path(tmpl);
     }();
+    static const auto remove_base = cartesi::scope_exit([] {
+        std::error_code ec;
+        std::filesystem::remove_all(base, ec);
+    });
     return (base / name).string();
 }
 

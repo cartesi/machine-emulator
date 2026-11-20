@@ -99,14 +99,14 @@ tests_util.uarch_programs.default = {
     table.unpack(tests_util.uarch_programs.halt),
 }
 
+-- Writes the program to a temporary file. Returns an owner that removes the file on close, and its path.
 function tests_util.create_test_uarch_program(instructions)
     assert(instructions, "missing instructions")
-    local file_path = os.tmpname()
-    local f <close> = assert(io.open(file_path, "wb"))
+    local words = {}
     for _, insn in pairs(instructions) do
-        f:write(string.pack("I4", insn))
+        words[#words + 1] = string.pack("I4", insn)
     end
-    return file_path
+    return filesystem.write_scope_temp_file(table.concat(words))
 end
 
 function tests_util.make_do_test(build_machine, type, config, runtime_config)
@@ -238,34 +238,6 @@ function tests_util.assert_error(expected_error_text_pattern, fn)
         actual_error_text:match(expected_error_text_pattern),
         string.format("Expected error to match '%s', but it was '%s'", expected_error_text_pattern, actual_error_text)
     )
-end
-
--- temporary file
-local temp_file_meta = { __index = {} }
-
-function temp_file_meta.__index:write(...)
-    self.file:write(...)
-end
-
-function temp_file_meta.__index:read_all()
-    self.file:seek("set", 0)
-    return self.file:read("*all")
-end
-
-function temp_file_meta.__index:close()
-    self.file:close()
-    os.remove(self.file_name)
-end
-
-function temp_file_meta:__close()
-    self:close()
-end
-
-function tests_util.new_temp_file()
-    local self = {}
-    self.file_name = os.tmpname()
-    self.file = io.open(self.file_name, "w+")
-    return setmetatable(self, temp_file_meta)
 end
 
 -- Executes a callback when the scope exits.

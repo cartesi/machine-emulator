@@ -1051,17 +1051,7 @@ local function run_host_and_uarch_machines(host_machine, uarch_machine, ctx, max
 end
 
 local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
-    local log_filename = os.tmpname()
-    local delete_temp = true
-    local deleter = {}
-    setmetatable(deleter, {
-        __gc = function()
-            if delete_temp then
-                os.remove(log_filename)
-            end
-        end,
-    })
-    os.remove(log_filename)
+    local _ <close>, log_filename = tests_util.scope_temp_pathname()
     local root_hash_before = machine:get_root_hash()
     local reference_hash = reference_machine:get_root_hash()
     if root_hash_before ~= reference_hash then

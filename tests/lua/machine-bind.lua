@@ -17,6 +17,7 @@
 --
 
 local cartesi = require("cartesi")
+local filesystem = require("cartesi.filesystem")
 local hash_tree = require("cartesi.hash-tree")
 local util = require("cartesi.util")
 local tests_util = require("cartesi.tests.util")
@@ -224,6 +225,10 @@ local function build_machine_config(config_options)
 
     -- Create new machine
     local initial_reg_values = get_cpu_reg_test_values()
+    local uarch_ram_owner, uarch_ram_filename
+    if not config_options.uarch then
+        uarch_ram_owner, uarch_ram_filename = tests_util.create_test_uarch_program(tests_util.uarch_programs.default)
+    end
     local config = {
         hash_tree = config_options.hash_tree or nil,
         processor = config_options.processor or {
@@ -231,38 +236,34 @@ local function build_machine_config(config_options)
         },
         ram = { length = 1 << 20 },
         cmio = config_options.cmio or nil,
-        uarch = config_options.uarch
-            or {
-                processor = {
-                    registers = get_uarch_cpu_reg_test_values(),
-                },
-                ram = {
-                    length = 0x1000,
-                    backing_store = {
-                        data_filename = tests_util.create_test_uarch_program(tests_util.uarch_programs.default),
-                    },
+        uarch = config_options.uarch or {
+            processor = {
+                registers = get_uarch_cpu_reg_test_values(),
+            },
+            ram = {
+                length = 0x1000,
+                backing_store = {
+                    data_filename = uarch_ram_filename,
                 },
             },
+        },
     }
     local runtime = {
         concurrency = {
             update_hash_tree = concurrency_update_hash_tree,
         },
     }
-    return config, runtime
+    return config, runtime, uarch_ram_owner
 end
 
 local function build_machine(type, config_options)
-    local config, runtime = build_machine_config(config_options)
+    local config, runtime, _ <close> = build_machine_config(config_options)
     local new_machine
     if type ~= "local" then
         local jsonrpc_machine <close> = assert(jsonrpc.connect_server(remote_address))
         new_machine = jsonrpc_machine:fork_server():set_cleanup_call(jsonrpc.SHUTDOWN):create(config, runtime)
     else
         new_machine = cartesi.machine(config, runtime)
-    end
-    if config.uarch.ram and config.uarch.ram.backing_store and config.uarch.ram.backing_store.data_filename then
-        os.remove(config.uarch.ram.backing_store.data_filename)
     end
     return new_machine
 end
@@ -810,9 +811,10 @@ end)
 print("\n\n dump step log to console")
 do_test("dumped step log content should match", function(machine)
     local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS | cartesi.ACCESS_LOG_TYPE_LARGE_DATA)
-    local temp_file <close> = tests_util.new_temp_file()
-    util.print_log(log, temp_file)
-    local log_output = temp_file:read_all()
+    local temp_file <close> = filesystem.new_temporary_file(os.getenv("TMPDIR") or "/tmp", "cartesi-test-")
+    util.print_log(log, temp_file.file)
+    temp_file.file:seek("set", 0)
+    local log_output = temp_file.file:read("a")
     -- luacheck: push no max line length
     local expected_output = "begin step\n"
         .. "  1: read uarch.cycle@0x400008(4194312): 0x0(0)\n"
@@ -894,10 +896,11 @@ local uarch_proof_step_program = {
     0x0072b023, -- sd	t2,0(t0) [0xfe]
     0x0062b023, -- sd	t1,0(t0) [0xca]
 }
+local _ <close>, uarch_proof_step_filename = tests_util.create_test_uarch_program(uarch_proof_step_program)
 
 tests_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { backing_store = { data_filename = tests_util.create_test_uarch_program(uarch_proof_step_program) } },
+        ram = { backing_store = { data_filename = uarch_proof_step_filename } },
     },
 })("hash tree must be consistent when stepping alternating with and without proofs", function(machine)
     local t0 = 5
@@ -930,7 +933,7 @@ end)
 
 tests_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { backing_store = { data_filename = tests_util.create_test_uarch_program(uarch_proof_step_program) } },
+        ram = { backing_store = { data_filename = uarch_proof_step_filename } },
     },
 })("It should load the uarch ram image from a file", function(machine)
     local expected_ram_image = ""
@@ -1191,17 +1194,10 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
             .. "  2: read iflags.Y@0x308%(776%): 0x0%(0%)\n"
             .. "end reset_uarch_state\n"
 
-        local tmpname = os.tmpname()
-        local deleter = {}
-        setmetatable(deleter, {
-            __gc = function()
-                os.remove(tmpname)
-            end,
-        })
-        local tmp <close> = assert(io.open(tmpname, "w+"))
-        util.print_log(log, tmp)
-        tmp:seek("set", 0)
-        local actual_dump = tmp:read("*all")
+        local tmp <close> = filesystem.new_temporary_file(os.getenv("TMPDIR") or "/tmp", "cartesi-test-")
+        util.print_log(log, tmp.file)
+        tmp.file:seek("set", 0)
+        local actual_dump = tmp.file:read("*all")
 
         print("Output of reset_uarch log dump:")
         print("--------------------------")
@@ -1343,10 +1339,11 @@ print("\n\n testing unsupported uarch instructions ")
 local uarch_illegal_insn_program = {
     0x00000000, -- some illegal instruction
 }
+local _ <close>, uarch_illegal_insn_filename = tests_util.create_test_uarch_program(uarch_illegal_insn_program)
 
 tests_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { backing_store = { data_filename = tests_util.create_test_uarch_program(uarch_illegal_insn_program) } },
+        ram = { backing_store = { data_filename = uarch_illegal_insn_filename } },
     },
 })("Detect illegal instruction", function(machine)
     local success, err = pcall(machine.run_uarch, machine)
@@ -1364,14 +1361,13 @@ do_test("uarch ecall putchar should print char to console", function()
                                     0x05800513, -- li a0,'X'
                                     0x00000073, -- ecall
                                  }
-                                 local uarch_ram_path = tests_util.create_test_uarch_program(program)
+                                 local _ <close>, uarch_ram_path = tests_util.create_test_uarch_program(program)
                                  local machine = cartesi.machine {
                                      ram = {length = 1 << 20},
                                      uarch = {
                                         ram = { backing_store = { data_filename = uarch_ram_path } }
                                      }
                                  }
-                                 os.remove(uarch_ram_path)
                                  machine:run_uarch(3) -- run 3 instructions
                                  " 2>&1]]
     local p <close> = assert(io.popen(lua_cmd .. lua_code))
@@ -1589,9 +1585,10 @@ do_test("Dump of log produced by send_cmio_response should match", function(mach
         .. "  3: write htif%.fromhost@0x338%(824%): 0x0%(0%) %-> 0x70000000a%(30064771082%)\n"
         .. "  4: write iflags%.Y@0x308%(776%): 0x1%(1%) %-> 0x0%(0%)\n"
         .. "end send_cmio_response\n"
-    local temp_file <close> = tests_util.new_temp_file()
-    util.print_log(log, temp_file)
-    local actual_dump = temp_file:read_all()
+    local temp_file <close> = filesystem.new_temporary_file(os.getenv("TMPDIR") or "/tmp", "cartesi-test-")
+    util.print_log(log, temp_file.file)
+    temp_file.file:seek("set", 0)
+    local actual_dump = temp_file.file:read("a")
     print("Output of log_send_cmio_response dump:")
     print("--------------------------")
     print(actual_dump)
@@ -1894,24 +1891,11 @@ do_test("send_cmio_response of zero bytes", function(machine)
 end)
 
 local function test_cmio_buffers_backed_by_files()
-    local rx_filename = os.tmpname()
-    local tx_filename = os.tmpname()
     local rx_init_data = string.rep("R", 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
     local tx_init_data = string.rep("T", 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE)
-    local deleter = {}
-    setmetatable(deleter, {
-        __gc = function()
-            os.remove(rx_filename)
-            os.remove(tx_filename)
-        end,
-    })
     -- initialize test cmio files
-    local rx = assert(io.open(rx_filename, "w+"))
-    rx:write(rx_init_data)
-    rx:close()
-    local tx = assert(io.open(tx_filename, "w+"))
-    tx:write(tx_init_data)
-    tx:close()
+    local _ <close>, rx_filename = filesystem.write_scope_temp_file(rx_init_data)
+    local _ <close>, tx_filename = filesystem.write_scope_temp_file(tx_init_data)
     local tx_new_data = string.rep("x", 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE)
     local rx_new_data = string.rep("y", 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
 
@@ -1962,10 +1946,11 @@ test_cmio_buffers_backed_by_files()
 local uarch_store_double_in_t0_to_t1 = {
     0x00533023, -- sd	t0,0(t1)
 }
+local _ <close>, uarch_store_double_filename = tests_util.create_test_uarch_program(uarch_store_double_in_t0_to_t1)
 tests_util.make_do_test(build_machine, machine_type, {
     uarch = {
         ram = {
-            backing_store = { data_filename = tests_util.create_test_uarch_program(uarch_store_double_in_t0_to_t1) },
+            backing_store = { data_filename = uarch_store_double_filename },
         },
     },
 })("Log of word access unaligned to hash tree leaf ", function(machine)
@@ -1989,9 +1974,10 @@ tests_util.make_do_test(build_machine, machine_type, {
     -- returns raw and formatted log
     local function log_step()
         local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
-        local temp_file <close> = tests_util.new_temp_file()
-        util.print_log(log, temp_file)
-        return log, temp_file:read_all()
+        local temp_file <close> = filesystem.new_temporary_file(os.getenv("TMPDIR") or "/tmp", "cartesi-test-")
+        util.print_log(log, temp_file.file)
+        temp_file.file:seek("set", 0)
+        return log, temp_file.file:read("a")
     end
 
     -- write to the first word
@@ -2137,16 +2123,10 @@ for _, hash_fn in pairs({ "keccak256", "sha256" }) do
     tests_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_function = hash_fn }, uarch = {} })(
         "log_step sanity check",
         function(machine)
+            local _ <close>, filename1 = tests_util.scope_temp_pathname()
+            local _ <close>, filename2 = tests_util.scope_temp_pathname()
+            filesystem.write_file("", filename1)
             local success, err, _
-            local filename1 = os.tmpname()
-            local filename2 = os.tmpname()
-            local deleter = {}
-            setmetatable(deleter, {
-                __gc = function()
-                    os.remove(filename1)
-                    os.remove(filename2)
-                end,
-            })
 
             machine:write_reg("mcycle", 0)
             assert(machine:read_reg("mcycle") == 0)
@@ -2328,14 +2308,7 @@ for _, hash_fn in pairs({ "keccak256", "sha256" }) do
 end
 
 do_test("log_step from a rejected input state verifies against the revert root hash", function(machine)
-    local filename = os.tmpname()
-    os.remove(filename) -- log_step requires the file to not exist
-    local deleter = {}
-    setmetatable(deleter, {
-        __gc = function()
-            os.remove(filename)
-        end,
-    })
+    local _ <close>, filename = tests_util.scope_temp_pathname()
     local revert_hash = string.rep("\x5a", cartesi.HASH_SIZE)
     set_rejected_input_state(machine, revert_hash)
     local mcycle_before = machine:read_reg("mcycle")

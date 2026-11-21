@@ -1249,7 +1249,9 @@ static int machine_obj_index_replace_memory_range(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_destroy(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    cm_destroy(m.get());
+    if (cm_destroy(m.get()) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     return 0;
 }
 

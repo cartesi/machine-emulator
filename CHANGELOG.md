@@ -59,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed `run` to report a microarchitecture that is not reset as a runtime error
 - Changed `collect_mcycle_root_hashes` to track dirty pages through the write TLB, as `get_root_hash` does
 - Changed `cm_destroy` to report a failure to save pending dirty-page marks
+- Changed `cm_destroy` to do nothing on an empty local machine, as it does on a remote one
+- Changed the Lua `destroy` method to raise the errors `cm_destroy` reports
 - Changed the tests to create temporary files in `TMPDIR` and remove them when done
 
 ### Removed

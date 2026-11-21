@@ -655,8 +655,9 @@ CM_API cm_error cm_remove_stored(const cm_machine *m, const char *dir, cm_remove
 CM_API cm_error cm_sync_stored(const cm_machine *m, const char *dir);
 
 /// \brief Destroy a machine instance and remove it from the object.
-/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param m Pointer to the existing machine object.
 /// \returns 0 for success, non zero code for error.
+/// \details Destroying an empty machine object does nothing and succeeds.
 /// \details cm_delete() may fail silently when implicitly calling cm_destroy().
 /// To make sure the machine was successfully destroyed, call cm_destroy() explicitly.
 /// \details This function does not delete the machine object.

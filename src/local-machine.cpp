@@ -217,8 +217,12 @@ void local_machine::do_set_runtime_config(const machine_runtime_config &r) {
 }
 
 void local_machine::do_destroy() {
+    // Destroying an empty machine does nothing
+    if (m_machine == nullptr) {
+        return;
+    }
     // The machine is deleted even if saving its pending dirty-page marks fails, and the failure is then reported
-    const std::unique_ptr<machine> m{get_machine()};
+    const std::unique_ptr<machine> m{m_machine};
     m_machine = nullptr;
     m->mark_write_tlb_dirty_pages();
 }

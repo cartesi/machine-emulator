@@ -331,6 +331,18 @@ for _, variant in ipairs(variants) do
             end)
         end)
 
+        describe("destroy", function()
+            it("should do nothing on an empty or destroyed machine", function()
+                local empty <close> = variant.new()
+                empty:destroy()
+                expect.truthy(empty:is_empty())
+                local destroyed <close> = variant.create({ ram = { length = 0x1000 } })
+                destroyed:destroy()
+                destroyed:destroy()
+                expect.truthy(destroyed:is_empty())
+            end)
+        end)
+
         describe("log_step", function()
             it("should reject an empty or destroyed machine", function()
                 local _ <close>, log_filename = tests_util.scope_temp_pathname()
@@ -1061,6 +1073,18 @@ describe("remote clone cleanup", function()
             end)
         end
     end
+end)
+
+describe("remote destroy", function()
+    it("should report a failure to reach the server", function()
+        local jsonrpc = require("cartesi.jsonrpc")
+        local server <close> = jsonrpc.spawn_server():create({ ram = { length = 0x1000 } })
+        server:set_cleanup_call(jsonrpc.NOTHING)
+        server:shutdown_server()
+        expect.fail(function()
+            server:destroy()
+        end)
+    end)
 end)
 
 describe("move remote cleanup", function()

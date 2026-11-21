@@ -129,6 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `collect_uarch_cycle_root_hashes` accepting a non-pristine microarchitecture, whose reset it computed wrongly
 - Fixed uarch steps reporting a uarch that halts on the step reaching `UARCH_CYCLE_MAX` as overflowed, which made `collect_uarch_cycle_root_hashes` fail
 - Fixed machine creation ignoring the configured `mvendorid`, `marchid` and `mimpid`, which the manual says are checked at instantiation
+- Fixed compile errors when targeting Windows with Clang and libc++
 
 ## [0.22.0] - 2026-10-15
 ### Added

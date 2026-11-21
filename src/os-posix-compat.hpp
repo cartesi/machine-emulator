@@ -16,6 +16,7 @@
 #include <io.h>     // _write/_close
 #include <sys/stat.h>
 
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>

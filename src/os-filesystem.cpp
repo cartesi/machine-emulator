@@ -836,17 +836,35 @@ void write_file(const std::string &filename, std::span<const uint8_t> data) {
 }
 
 void rename_file(const std::string &from, const std::string &to) {
+#ifdef _WIN32
+    // On Windows, rename() refuses to replace an existing file
+    if (MoveFileExA(from.c_str(), to.c_str(), MOVEFILE_REPLACE_EXISTING) == 0) {
+        const std::error_code ec{static_cast<int>(GetLastError()), std::system_category()};
+        throw make_copy_path_system_error(ec.default_error_condition().value(), "unable to rename file", from, to,
+            "MoveFileEx() failed");
+    }
+#else
     if (::rename(from.c_str(), to.c_str()) != 0) {
         throw make_copy_path_system_error(errno, "unable to rename file", from, to, "rename() failed");
     }
+#endif
 }
 
 std::string get_parent_directory(const std::string &path) {
-    const auto slash = path.find_last_of('/');
-    if (slash == std::string::npos) {
+    auto last = std::filesystem::path(path);
+    // A trailing separator leaves an empty last element, whose parent would be the path itself
+    while (!last.has_filename() && last.has_relative_path()) {
+        last = last.parent_path();
+    }
+    const auto parent = last.parent_path();
+    if (parent.empty()) {
         return ".";
     }
-    return slash == 0 ? "/" : path.substr(0, slash);
+    // On Windows, a drive letter alone names the current directory of that drive
+    if (parent.has_root_name() && !parent.has_root_directory() && !parent.has_relative_path()) {
+        return parent.string() + ".";
+    }
+    return parent.string();
 }
 
 void sync_file_stream(FILE *file, const std::string &filename) {
@@ -936,8 +954,7 @@ std::string write_temp_file(std::span<const uint8_t> data) {
 }
 
 void write_durable_file(const std::string &filename, std::span<const uint8_t> data) {
-    const auto slash = filename.find_last_of('/');
-    const auto basename = filename.substr(slash == std::string::npos ? 0 : slash + 1);
+    const auto basename = std::filesystem::path(filename).filename().string();
     temporary_file file(get_parent_directory(filename), basename + ".tmp.");
     file.write(data);
     sync_file_stream(file.get_file(), file.get_path());

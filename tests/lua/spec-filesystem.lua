@@ -261,11 +261,20 @@ describe("filesystem", function()
     end)
 
     it("returns the parent directory of a path", function()
-        expect.equal(filesystem.get_parent_directory("/name"), "/")
-        expect.equal(filesystem.get_parent_directory("//name"), "/")
-        expect.equal(filesystem.get_parent_directory("/a/name"), "/a")
-        expect.equal(filesystem.get_parent_directory("a/name"), "a")
-        expect.equal(filesystem.get_parent_directory("name"), ".")
+        -- The result names the parent directory and may keep redundant leading separators
+        local function get_parent_directory(path)
+            return (filesystem.get_parent_directory(path):gsub("^/+", "/"))
+        end
+        expect.equal(get_parent_directory("/name"), "/")
+        expect.equal(get_parent_directory("//name"), "/")
+        expect.equal(get_parent_directory("/////name"), "/")
+        expect.equal(get_parent_directory("/a/name"), "/a")
+        expect.equal(get_parent_directory("a/name"), "a")
+        expect.equal(get_parent_directory("a//name"), "a")
+        expect.equal(get_parent_directory("name"), ".")
+        -- Trailing separators do not make a path its own parent
+        expect.equal(get_parent_directory("a/name/"), "a")
+        expect.equal(get_parent_directory("name/"), ".")
     end)
 
     it("writes durable files through a temporary file", function()

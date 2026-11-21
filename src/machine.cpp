@@ -576,18 +576,14 @@ void machine::clone_stored(const std::string &from_dir, const std::string &to_di
 /// "." or "..". Call it before changing anything, so such a path is rejected first.
 static std::string parent_directory(const std::string &dir) {
     auto path = std::filesystem::path(dir);
-    // A trailing separator leaves an empty last element, whose parent would be the directory itself
+    // A trailing separator leaves an empty last element
     while (!path.has_filename() && path.has_relative_path()) {
         path = path.parent_path();
     }
     if (path.filename() == "." || path.filename() == "..") {
         throw std::invalid_argument{"directory name cannot end in '.' or '..'"};
     }
-    const auto parent = path.parent_path();
-    if (parent.empty()) {
-        return ".";
-    }
-    return parent.string();
+    return os::get_parent_directory(dir);
 }
 
 void machine::rename_stored(const std::string &from_dir, const std::string &to_dir) {

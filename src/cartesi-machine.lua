@@ -4006,6 +4006,8 @@ function revert_stored.__index:commit()
     -- A machine using the stored files changes them, so it is destroyed for the sync and loaded again
     m:destroy()
     m:sync_stored(self.machine_directory)
+    -- The machine directory now holds the committed state, so a later failure must not revert it
+    self.snapshot_taken = false
     -- The backup only ever appears by renaming a synced clone, so <directory>.revert is always a synced copy.
     -- While <directory>.revert.tmp exists, the synced machine directory holds the committed state.
     m:clone_stored(self.machine_directory, temporary_directory)
@@ -4023,7 +4025,6 @@ function revert_stored.__index:commit()
     -- Take ownership only after renaming succeeds, so cleanup leaves pre-existing backups untouched.
     self.backup_directory = backup_directory
     m:load(self.machine_directory, self.runtime_config, cartesi.SHARING_ALL)
-    self.snapshot_taken = false
 end
 
 function revert_stored.__index:revert()

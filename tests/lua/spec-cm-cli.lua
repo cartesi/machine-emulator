@@ -3009,6 +3009,81 @@ dofile(%q)
         expect.equal(backup:get_root_hash(), filesystem.read_file(prefix .. "-committed.bin"))
     end)
 
+    -- A commit that fails after syncing the machine directory has already removed the old backup,
+    -- so the cleanup must leave the machine directory alone.
+    it("stored revert keeps the committed state when a commit fails", function()
+        local _ <close>, template_dir = scope_stored_dirname()
+        local _ <close>, machine_dir = scope_stored_dirname()
+        local _ <close>, reference_dir = scope_stored_dirname()
+        local _ <close>, prefix = tests_util.scope_temp_pathname()
+        local _ <close>, tmp_err = scope_temp_pathname()
+        local _ <close> = tests_util.scope_exit(function()
+            for _, suffix in ipairs({ ".revert", ".revert.tmp" }) do
+                pcall(cartesi.machine.remove_stored, cartesi.machine, machine_dir .. suffix)
+            end
+            for _, suffix in ipairs({ "-input-0.bin", "-output-0-0.bin", "-committed.bin" }) do
+                os.remove(prefix .. suffix)
+            end
+        end)
+        run_ok({
+            "--store=" .. template_dir,
+            "--assert-rolling-template",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop --vouchers=0 --notices=1 --reports=0",
+        })
+        filesystem.write_file(encode_advance(0, "first"), prefix .. "-input-0.bin")
+        local function advance_flags(dir)
+            return {
+                "--load=" .. dir .. ",clone:" .. template_dir .. ",sharing:all",
+                "--revert-mode=stored",
+                "--cmio-advance-state=input:"
+                    .. prefix
+                    .. "-input-%i.bin,input_file_index_begin:0,input_file_index_end:1,output:"
+                    .. prefix
+                    .. "-output-%o-%i.bin,output_proof:,report:,outputs_merkle_root:",
+                "--max-mcycle=2000000000",
+                "--no-init-splash",
+                "--quiet",
+            }
+        end
+        local reference_flags = advance_flags(reference_dir)
+        reference_flags[#reference_flags + 1] = "--final-hash=" .. prefix .. "-committed.bin"
+        run_ok(reference_flags)
+        -- The first two renames belong to the commits at startup and at the start of the epoch.
+        -- The third one belongs to the commit of input 0.
+        local fail_third_rename = [[
+            local index = getmetatable(require("cartesi").new()).__index
+            local rename_stored, count = index.rename_stored, 0
+            index.rename_stored = function(...)
+                count = count + 1
+                if count == 3 then error("injected rename failure", 0) end
+                return rename_stored(...)
+            end
+        ]]
+        local args = {}
+        for _, flag in ipairs(advance_flags(machine_dir)) do
+            args[#args + 1] = shquote(flag)
+        end
+        local succeeded = os.execute(
+            string.format(
+                "CARTESI_IMAGES_PATH=%s %s -e %s %s %s >/dev/null 2>%s",
+                shquote(images_path),
+                CLI_LUA,
+                shquote(fail_third_rename),
+                CLI,
+                table.concat(args, " "),
+                tmp_err
+            )
+        )
+        expect.falsy(succeeded)
+        expect.truthy(filesystem.read_file(tmp_err):find("injected rename failure", 1, true))
+        local machine <close> = cartesi.machine(machine_dir)
+        expect.equal(machine:get_root_hash(), filesystem.read_file(prefix .. "-committed.bin"))
+    end)
+
     -- A cycle limit inside an input leaves the interrupted machine to the outputs requested at
     -- that cycle, the final hash and the exported machine, without padding the unfinished
     -- computation hash. Cleanup restores the boundary before any requested machine destruction.

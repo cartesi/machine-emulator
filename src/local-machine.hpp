@@ -18,6 +18,7 @@
 #define LOCAL_MACHINE_HPP
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -120,7 +121,7 @@ private:
     machine *get_machine();
     const machine *get_machine() const;
 
-    machine *m_machine = nullptr;
+    std::unique_ptr<machine> m_machine;
 };
 
 } // namespace cartesi

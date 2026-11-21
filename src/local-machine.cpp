@@ -20,6 +20,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "access-log.hpp"
 #include "address-range-description.hpp"
@@ -51,33 +52,30 @@ void local_machine::do_create(const machine_config &config, const machine_runtim
     if (m_machine != nullptr) {
         throw std::runtime_error{"machine exists"};
     }
-    m_machine = new machine(config, runtime, dir, sharing);
+    m_machine = std::make_unique<machine>(config, runtime, dir, sharing);
 }
 
 void local_machine::do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) {
     if (m_machine != nullptr) {
         throw std::runtime_error{"machine exists"};
     }
-    m_machine = new machine(directory, runtime, sharing);
+    m_machine = std::make_unique<machine>(directory, runtime, sharing);
 }
 
-local_machine::~local_machine() {
-    delete m_machine;
-    m_machine = nullptr;
-}
+local_machine::~local_machine() = default;
 
 machine *local_machine::get_machine() {
     if (m_machine == nullptr) {
         throw std::runtime_error{"no machine"};
     }
-    return m_machine;
+    return m_machine.get();
 }
 
 const machine *local_machine::get_machine() const {
     if (m_machine == nullptr) {
         throw std::runtime_error{"no machine"};
     }
-    return m_machine;
+    return m_machine.get();
 }
 
 void local_machine::do_store(const std::string &directory, sharing_mode sharing) const {
@@ -222,8 +220,7 @@ void local_machine::do_destroy() {
         return;
     }
     // The machine is deleted even if saving its pending dirty-page marks fails, and the failure is then reported
-    const std::unique_ptr<machine> m{m_machine};
-    m_machine = nullptr;
+    const auto m = std::move(m_machine);
     m->mark_write_tlb_dirty_pages();
 }
 

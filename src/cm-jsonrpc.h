@@ -53,6 +53,9 @@ typedef enum cm_jsonrpc_cleanup_call {
 /// Use cm_delete() to delete the object.
 /// \details The spawned process is in the process group of the caller.
 /// Use cm_jsonrpc_emancipate_server() to make it leader of its own process group.
+/// \details The spawned process inherits the standard input, output, and error streams of the caller,
+/// and writes its log to the standard error stream.
+/// The caller must have all three streams open.
 /// \details The machine object is configured to implicitly cleanup with a shutdown during cm_delete().
 /// Use cm_jsonrpc_set_cleanup_call() to change this setting.
 /// \details Unless the desired cartesi-jsonrpc-machine executable is in the path,

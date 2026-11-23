@@ -822,27 +822,39 @@ function methods:tick()
     local candidate = self.transactions:pending()
     if candidate then
         next_block = snapshot.tip + 1
+        -- A due job whose window ends outbids a pending action whose window does not. The outbid action is
+        -- still useful, so it is not cancelled if the replacement fails, and it is attempted again later.
+        local urgent = due[1]
+        urgent = urgent and urgent.last < math.maxinteger and urgent
         -- Every epoch's bridge shares the signer's nonce. Another epoch's pending transaction is left alone
-        -- until it is mined, so a settled epoch never cancels or outbids the live epoch's moves.
+        -- until it is mined, unless it has no window end and this epoch has a due job with one. Its window
+        -- end is the one stored with it. A job without an end stores math.maxinteger, which can read back
+        -- from JSON as 2^63. A settled epoch therefore never cancels or outbids the live epoch's moves.
         if candidate.context and candidate.context.epoch ~= tostring(self.epoch) then
-            return snapshot, false, next_block
-        end
-        local selected = due[1]
-        for _, job in ipairs(due) do
-            if job.key == candidate.job then
-                selected = job
-                break
+            if not urgent or (candidate.last and candidate.last < math.maxinteger) then
+                return snapshot, false, next_block
             end
-        end
-        if selected then
-            -- Keep working on a useful pending action. Do not oscillate
-            -- between two eligible actions belonging to the same account.
-            preferred = selected.key
-            if selected.key ~= candidate.job then
-                obsolete = true
+            preferred = urgent.key
+        else
+            local selected = due[1]
+            for _, job in ipairs(due) do
+                if job.key == candidate.job then
+                    selected = job
+                    break
+                end
             end
-        elseif self:cancel(snapshot).published then
-            return snapshot, true
+            if selected and urgent and selected.key == candidate.job and selected.last == math.maxinteger then
+                preferred = urgent.key
+            elseif selected then
+                -- Keep working on a useful pending action. Do not oscillate
+                -- between two eligible actions belonging to the same account.
+                preferred = selected.key
+                if selected.key ~= candidate.job then
+                    obsolete = true
+                end
+            elseif self:cancel(snapshot).published then
+                return snapshot, true
+            end
         end
     end
     for _, job in ipairs(jobs) do

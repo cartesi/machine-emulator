@@ -2362,7 +2362,7 @@ do
             return { waiting = true }
         end,
     }
-    local function new_client(epoch_number, keys)
+    local function new_client(epoch_number, keys, lasts)
         local client = bridge.new({
             geometry = geometry,
             chain = {
@@ -2393,7 +2393,7 @@ do
                     key = key,
                     kind = key,
                     first = 0,
-                    last = math.maxinteger,
+                    last = lasts and lasts[key] or math.maxinteger,
                     context = { address = "root" },
                     event = { log = { blockHash = "block4", logIndex = "0x0" } },
                 }
@@ -2411,6 +2411,25 @@ do
     assert(#calls == 0, "a settled epoch's recovery replaced the live epoch's transaction")
     new_client(1, { "join" }):tick()
     assert(table.concat(calls, ",") == "join", "the live epoch stopped working on its own transaction")
+    -- A live epoch's move outbids a pending recovery of a settled epoch or of its own epoch.
+    -- The submission only waits, so cancelling the recovery would add a cancel to calls.
+    calls = {}
+    pending = { job = "recover", context = { epoch = "0" } }
+    new_client(1, { "advance" }, { advance = 20 }):tick()
+    assert(table.concat(calls, ",") == "advance", "a settled epoch's recovery held back the live epoch's move")
+    calls = {}
+    pending = { job = "recover", context = { epoch = "1" } }
+    new_client(1, { "recover", "advance" }, { advance = 20 }):tick()
+    assert(table.concat(calls, ",") == "advance", "a pending recovery held back its own epoch's move")
+    -- A settled epoch's recovery does not outbid the live epoch's pending move. A move outbids a pending
+    -- recovery whose stored window end reads back as 2^63.
+    calls = {}
+    pending = { job = "advance", last = 20, context = { epoch = "1" } }
+    new_client(0, { "recover" }):tick()
+    assert(#calls == 0, "a settled epoch's recovery replaced the live epoch's move")
+    pending = { job = "recover", last = 2.0 ^ 63, context = { epoch = "0" } }
+    new_client(1, { "advance" }, { advance = 20 }):tick()
+    assert(table.concat(calls, ",") == "advance", "a recovery stored without a window end held back a move")
 end
 
 -- Missing sentry claims use the registry and epoch bitmap at the observed block,

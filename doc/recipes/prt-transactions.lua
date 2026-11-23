@@ -247,6 +247,7 @@ function methods:submit(intent, observation)
         max_fee = fee,
         priority_fee = priority,
         job = intent and intent.key,
+        last = intent and intent.last,
         action = intent and intent.kind or "cancel",
         context = intent and intent.context,
         block = tip,

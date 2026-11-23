@@ -35,6 +35,8 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -44,6 +46,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <new>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -82,6 +85,64 @@ static std::string unique_temp_path(const std::string &name) {
     });
     return (base / name).string();
 }
+
+// Number of allocations that succeed before one fails with std::bad_alloc, or a negative number if none fails.
+// The counter keeps decreasing past the failure, so it is negative after an allocation failed.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+static std::atomic<int64_t> g_allocations_before_failure{-1};
+
+static void *allocate(std::size_t size, std::size_t alignment) {
+    if (g_allocations_before_failure.load(std::memory_order_relaxed) >= 0 &&
+        g_allocations_before_failure.fetch_sub(1, std::memory_order_relaxed) == 0) {
+        throw std::bad_alloc{};
+    }
+    void *ptr = nullptr;
+    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc,hicpp-no-malloc)
+    if (posix_memalign(&ptr, std::max(alignment, sizeof(void *)), std::max<std::size_t>(size, 1)) != 0) {
+        throw std::bad_alloc{};
+    }
+    return ptr;
+}
+
+// The test binary links the emulator statically, so these replace the allocations of the emulator as well
+void *operator new(std::size_t size) {
+    return allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+}
+void *operator new[](std::size_t size) {
+    return allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+}
+void *operator new(std::size_t size, std::align_val_t alignment) {
+    return allocate(size, static_cast<std::size_t>(alignment));
+}
+void *operator new[](std::size_t size, std::align_val_t alignment) {
+    return allocate(size, static_cast<std::size_t>(alignment));
+}
+// NOLINTBEGIN(cppcoreguidelines-no-malloc,hicpp-no-malloc)
+void operator delete(void *ptr) noexcept {
+    std::free(ptr);
+}
+void operator delete[](void *ptr) noexcept {
+    std::free(ptr);
+}
+void operator delete(void *ptr, std::size_t /*size*/) noexcept {
+    std::free(ptr);
+}
+void operator delete[](void *ptr, std::size_t /*size*/) noexcept {
+    std::free(ptr);
+}
+void operator delete(void *ptr, std::align_val_t /*alignment*/) noexcept {
+    std::free(ptr);
+}
+void operator delete[](void *ptr, std::align_val_t /*alignment*/) noexcept {
+    std::free(ptr);
+}
+void operator delete(void *ptr, std::size_t /*size*/, std::align_val_t /*alignment*/) noexcept {
+    std::free(ptr);
+}
+void operator delete[](void *ptr, std::size_t /*size*/, std::align_val_t /*alignment*/) noexcept {
+    std::free(ptr);
+}
+// NOLINTEND(cppcoreguidelines-no-malloc,hicpp-no-malloc)
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-do-while,cppcoreguidelines-non-private-member-variables-in-classes)
 
@@ -1175,6 +1236,55 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_machine_hash_test, ordinary_machine
 
     auto verification = calculate_emulator_hash(_machine);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), result_hash, result_hash + sizeof(cm_hash));
+}
+
+// Makes each allocation of an operation fail in turn, on a new local machine whose hash tree was already updated,
+// and checks that the root hash obtained afterwards matches the machine contents
+template <typename OPERATION>
+static void check_root_hash_after_allocation_failures(const nlohmann::json &config, OPERATION operation) {
+    const auto dumped_config = config.dump();
+    // The hash tree keeps the memory of its earlier updates. Raising its concurrency after the first update enlarges
+    // its batches, so the next update needs new memory.
+    const auto *low_concurrency = R"({"concurrency": {"update_hash_tree": 1}})";
+    const auto *high_concurrency = R"({"concurrency": {"update_hash_tree": 0}})";
+    for (int64_t allocation = 0;; ++allocation) {
+        BOOST_TEST_CONTEXT("allocation " << allocation) {
+            cm_machine *machine{};
+            BOOST_REQUIRE_EQUAL(
+                cm_create_new(dumped_config.c_str(), low_concurrency, nullptr, CM_SHARING_ALL, &machine), CM_ERROR_OK);
+            auto delete_machine = cartesi::scope_exit([machine] { cm_delete(machine); });
+            cm_hash root_hash{};
+            BOOST_REQUIRE_EQUAL(cm_get_root_hash(machine, &root_hash), CM_ERROR_OK);
+            BOOST_REQUIRE_EQUAL(cm_set_runtime_config(machine, high_concurrency), CM_ERROR_OK);
+            g_allocations_before_failure = allocation;
+            const auto error_code = operation(machine);
+            const bool allocation_failed = g_allocations_before_failure.exchange(-1) < 0;
+            if (!allocation_failed) {
+                BOOST_REQUIRE_MESSAGE(error_code == CM_ERROR_OK, cm_get_last_error_message());
+            }
+            BOOST_REQUIRE_EQUAL(cm_get_root_hash(machine, &root_hash), CM_ERROR_OK);
+            const auto expected_root_hash = calculate_emulator_hash(machine);
+            BOOST_REQUIRE(std::ranges::equal(expected_root_hash, root_hash));
+            if (!allocation_failed) {
+                break;
+            }
+        }
+    }
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_after_allocation_failure_test, incomplete_machine_fixture) {
+    check_root_hash_after_allocation_failures(_machine_config, [](cm_machine *machine) {
+        // Dirty pages far enough apart to have different ancestors in the RAM hash tree
+        const std::array<uint8_t, 8> data{1, 2, 3, 4, 5, 6, 7, 8};
+        for (uint64_t offset = 0; offset < (1 << 20); offset += (1 << 18)) {
+            if (const auto error_code = cm_write_memory(machine, CM_AR_RAM_START + offset, data.data(), data.size());
+                error_code != CM_ERROR_OK) {
+                return error_code;
+            }
+        }
+        cm_hash root_hash{};
+        return cm_get_root_hash(machine, &root_hash);
+    });
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_revert_root_hash_null_machine_test) {

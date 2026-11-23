@@ -502,14 +502,13 @@ void hash_tree::update_and_clear_dense_node_entries(dense_node_entries &batch, i
     batch.clear();
 }
 
-bool hash_tree::update_dense_trees(address_ranges ars, const changed_address_ranges &changed_ars) {
+bool hash_tree::update_dense_trees(address_ranges ars, const changed_address_ranges &changed_ars,
+    dense_node_entries &batch) {
     if (changed_ars.empty()) {
         return true;
     }
-    // We can batch more if we have more concurrency, however we need to limit to not run out of memory.
-    const size_t batch_size = std::min(m_concurrency << 10, 16384);
-    dense_node_entries batch{&m_memory_pool};
-    batch.reserve(batch_size);
+    // The batch never grows past the capacity the caller reserved
+    const size_t batch_size = batch.capacity();
     // Get maximum log2_size of all address ranges
     const auto max_level_count = std::ranges::max(
         std::views::transform(changed_ars, [ars](auto ar_index) { return ars[ar_index].get_level_count(); }));
@@ -536,22 +535,19 @@ bool hash_tree::update_dense_trees(address_ranges ars, const changed_address_ran
     return true;
 }
 
-bool hash_tree::update_sparse_tree(address_ranges ars, const changed_address_ranges &changed_ars) {
-    // Allocate a fifo that holds at most one entry per changed address-range leaf-node
+bool hash_tree::update_sparse_tree(address_ranges ars, const changed_address_ranges &changed_ars,
+    sparse_node_entries &changed_backing, std::pmr::vector<uint8_t> &marked) {
+    // Use the caller's fifo, which holds at most one entry per address-range leaf-node
     // For each changed address-range leaf-node,
     //     Copy the hash from the root of the address-range dense hash tree to the leaf-node
     //     Enqueue its sparse node's parent for update
     // Until the queue is empty
     //     Update the hash of the node at the front from the hash of its children nodes
     //     If node is not the root, enqueue its parent for update
-    using E = std::pair<int, int>;
-    std::pmr::vector<E> changed_backing{&m_memory_pool};
-    changed_backing.reserve(std::ranges::size(changed_ars));
-    std::priority_queue<E, decltype(changed_backing), std::greater<>> changed(std::greater<>{},
+    std::priority_queue<sparse_node_entries::value_type, sparse_node_entries, std::greater<>> changed(std::greater<>{},
         std::move(changed_backing));
-    // Nodes already queued for update are marked here rather than in the stored nodes,
+    // Nodes already queued for update are marked in the caller's all-zero vector rather than in the stored nodes,
     // so a failed update cannot leave a node that is never queued again
-    std::pmr::vector<uint8_t> marked(m_sparse_nodes.size(), 0, &m_memory_pool);
     const auto mark_changed = [&](index_type node_index) {
         if (marked[node_index] == 0) {
             marked[node_index] = 1;
@@ -756,10 +752,17 @@ void hash_tree::clear(address_ranges ars) noexcept {
 }
 
 bool hash_tree::update(address_ranges ars) {
+    // Allocate before the first stage stores any hash, so an allocation failure leaves the hash tree untouched
     changed_address_ranges changed_ars{&m_memory_pool};
     changed_ars.reserve(ars.size());
-    auto update_succeeded = update_dirty_pages(ars, changed_ars) && update_dense_trees(ars, changed_ars) &&
-        update_sparse_tree(ars, changed_ars);
+    // We can batch more if we have more concurrency, however we need to limit to not run out of memory.
+    dense_node_entries dense_batch{&m_memory_pool};
+    dense_batch.reserve(std::min(m_concurrency << 10, 16384));
+    sparse_node_entries sparse_changed_backing{&m_memory_pool};
+    sparse_changed_backing.reserve(ars.size());
+    std::pmr::vector<uint8_t> sparse_marked(m_sparse_nodes.size(), 0, &m_memory_pool);
+    auto update_succeeded = update_dirty_pages(ars, changed_ars) && update_dense_trees(ars, changed_ars, dense_batch) &&
+        update_sparse_tree(ars, changed_ars, sparse_changed_backing, sparse_marked);
     if (update_succeeded) {
         for (auto ar_index : changed_ars) {
             ars[ar_index].get_dirty_page_tree().clean();
@@ -806,6 +809,9 @@ bool hash_tree::update_words(address_ranges ars, const dirty_words_type &dirty_w
     curr_dense_node.reserve(page_count);
     next_dense_node.reserve(page_count);
     changed_ars.reserve(ars.size());
+    sparse_node_entries sparse_changed_backing{&m_memory_pool};
+    sparse_changed_backing.reserve(ars.size());
+    std::pmr::vector<uint8_t> sparse_marked(m_sparse_nodes.size(), 0, &m_memory_pool);
     //??D I'll assume here that we do not have more threads than the cache size,
     // so we don't need to process in batches, and will fail if this assumption if false
     uint64_t update_failures{0}; // NOLINT(misc-const-correctness)
@@ -895,7 +901,8 @@ bool hash_tree::update_words(address_ranges ars, const dirty_words_type &dirty_w
         queue.flush();
         std::swap(curr_dense_node, next_dense_node);
     }
-    return !static_cast<bool>(update_failures > 0) && update_sparse_tree(ars, changed_ars);
+    return !static_cast<bool>(update_failures > 0) &&
+        update_sparse_tree(ars, changed_ars, sparse_changed_backing, sparse_marked);
 }
 
 bool hash_tree::update_page(address_ranges ars, uint64_t paddr_page) {

@@ -63,6 +63,7 @@ class hash_tree {
         }
     };
     using dense_node_entries = std::pmr::vector<dense_node_entry>;
+    using sparse_node_entries = std::pmr::vector<std::pair<int, int>>; ///< Log2 size and index of sparse nodes
     using pristine_hashes = std::array<machine_hash, HASH_TREE_LOG2_ROOT_SIZE + 1>;
 
     using index_type = int64_t;
@@ -232,11 +233,12 @@ private:
         page_hash_tree_cache::entry_metadata &entry, page_hash_tree_cache_stats &stats);
     bool return_updated_dirty_pages(address_ranges ars, dirty_pages &batch, changed_address_ranges &changed_ars);
 
-    bool update_dense_trees(address_ranges ars, const changed_address_ranges &changed_ars);
+    bool update_dense_trees(address_ranges ars, const changed_address_ranges &changed_ars, dense_node_entries &batch);
     void update_and_clear_dense_node_entries(dense_node_entries &batch, int log2_size);
 
     const_machine_hash_view get_sparse_node_hash_view(index_type node_index, int log2_size) const noexcept;
-    bool update_sparse_tree(address_ranges ars, const changed_address_ranges &changed_ars);
+    bool update_sparse_tree(address_ranges ars, const changed_address_ranges &changed_ars,
+        sparse_node_entries &changed_backing, std::pmr::vector<uint8_t> &marked);
 
     template <std::random_access_iterator Iter, std::sentinel_for<Iter> Sent>
         requires(std::same_as<std::remove_cvref_t<std::iter_reference_t<Iter>>, address_range> &&

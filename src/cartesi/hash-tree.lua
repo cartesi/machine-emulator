@@ -8,8 +8,10 @@ local WORD_LENGTH = 1 << WORD_LOG2_SIZE
 local function is_raw_hash(value) return type(value) == "string" and #value == cartesi.HASH_SIZE end
 
 -- docs:begin roll_hash_up_tree
+local hash_functions = { keccak256 = cartesi.keccak256, sha256 = cartesi.sha256 }
+
 local function roll_hash_up_tree(proof, target_hash, hash_type)
-    local hash_function = cartesi[hash_type or "keccak256"]
+    local hash_function = assert(hash_functions[hash_type or "keccak256"], "unsupported hash function")
     local hash = target_hash
     for log2_size = proof.log2_target_size, proof.log2_root_size - 1 do
         local sibling = assert(proof.sibling_hashes[log2_size - proof.log2_target_size + 1], "too few siblings")
@@ -34,6 +36,7 @@ local function verify_slice(proof, hash_type)
     assert(0 <= log2_target_size and log2_target_size <= log2_root_size and log2_root_size <= 64, "invalid proof sizes")
     assert(#proof.sibling_hashes == log2_root_size - log2_target_size, "wrong number of siblings")
     assert(proof.target_address & ((1 << log2_target_size) - 1) == 0, "target address not aligned")
+    assert(is_raw_hash(proof.target_hash) and is_raw_hash(proof.root_hash), "invalid proof hashes")
     assert(roll_hash_up_tree(proof, proof.target_hash, hash_type) == proof.root_hash, "target node not in tree")
 end
 -- docs:end verify_slice
@@ -52,7 +55,7 @@ end
 -- root of an all-zero subtree, which doubles each level climbed. Overflow is rejected.
 -- docs:begin get_data_root_hash
 local function get_data_root_hash(data, log2_root_size, hash_type)
-    local hash_function = cartesi[hash_type or "keccak256"]
+    local hash_function = assert(hash_functions[hash_type or "keccak256"], "unsupported hash function")
     assert(WORD_LOG2_SIZE <= log2_root_size and log2_root_size < 63, "invalid tree size")
     assert(#data <= (1 << log2_root_size), "data does not fit in the tree")
     -- Level zero is one hash per word, a trailing partial word zero-padded after the loop.
@@ -97,8 +100,6 @@ end
 -- The pristine leaf, the all-zero subtree of height 0, is literally HASH_SIZE zero bytes. Larger
 -- pristine subtrees double on demand inside each loop (keccak256(pristine, pristine)).
 local pristine_leaf = string.rep("\0", cartesi.HASH_SIZE)
-
-local hash_functions = { keccak256 = cartesi.keccak256, sha256 = cartesi.sha256 }
 
 -- Returns the value at index in values, whose first value has index base, or left before the
 -- values and right after them. Indices compare unsigned, since they reach 2^63 in a tree of height 64.

@@ -8482,8 +8482,10 @@ shown alongside the prose below.
 The workhorse is `roll_hash_up_tree(<proof>, <new_target_hash>)`:
 
 ``` lua
+local hash_functions = { keccak256 = cartesi.keccak256, sha256 = cartesi.sha256 }
+
 local function roll_hash_up_tree(proof, target_hash, hash_type)
-    local hash_function = cartesi[hash_type or "keccak256"]
+    local hash_function = assert(hash_functions[hash_type or "keccak256"], "unsupported hash function")
     local hash = target_hash
     for log2_size = proof.log2_target_size, proof.log2_root_size - 1 do
         local sibling = assert(proof.sibling_hashes[log2_size - proof.log2_target_size + 1], "too few siblings")
@@ -8514,8 +8516,9 @@ hash of the parent node (in the correct order) to obtain what must be
 the hash of the grandparent node. This process is repeated until the
 hash of what must be the root node is found and returned. Function
 `verify_slice(<proof>)` first checks that the shape of the proof matches
-its sizes, and then compares this hash to `proof.root_hash`. If they
-match, the proof passes. Otherwise, something is amiss.
+its sizes and that its target and root are hashes, and then compares
+this hash to `proof.root_hash`. If they match, the proof passes.
+Otherwise, something is amiss.
 
 The slicing check `verify_slice` wires this walk into the proof
 structure returned by `machine:get_proof()`:
@@ -8527,6 +8530,7 @@ local function verify_slice(proof, hash_type)
     assert(0 <= log2_target_size and log2_target_size <= log2_root_size and log2_root_size <= 64, "invalid proof sizes")
     assert(#proof.sibling_hashes == log2_root_size - log2_target_size, "wrong number of siblings")
     assert(proof.target_address & ((1 << log2_target_size) - 1) == 0, "target address not aligned")
+    assert(is_raw_hash(proof.target_hash) and is_raw_hash(proof.root_hash), "invalid proof hashes")
     assert(roll_hash_up_tree(proof, proof.target_hash, hash_type) == proof.root_hash, "target node not in tree")
 end
 ```
@@ -8624,7 +8628,7 @@ its root.
 
 ``` lua
 local function get_data_root_hash(data, log2_root_size, hash_type)
-    local hash_function = cartesi[hash_type or "keccak256"]
+    local hash_function = assert(hash_functions[hash_type or "keccak256"], "unsupported hash function")
     assert(WORD_LOG2_SIZE <= log2_root_size and log2_root_size < 63, "invalid tree size")
     assert(#data <= (1 << log2_root_size), "data does not fit in the tree")
     -- Level zero is one hash per word, a trailing partial word zero-padded after the loop.

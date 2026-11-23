@@ -2106,6 +2106,14 @@ describe("hash-tree.lua", function()
                 hash_tree.get_data_root_hash(string.rep("\0", (1 << log2_root_size) + 1), log2_root_size)
             end, "data does not fit in the tree")
         end)
+
+        it("rejects unsupported hash functions", function()
+            for _, hash_type in ipairs({ "unknown", "HASH_SIZE" }) do
+                expect.fail(function()
+                    hash_tree.get_data_root_hash("data", 12, hash_type)
+                end, "unsupported hash function")
+            end
+        end)
     end)
 
     describe("verify_slice", function()
@@ -2166,6 +2174,29 @@ describe("hash-tree.lua", function()
             local located = tabular.deep_copy(frontier_proof)
             located.target_address = located.target_address | (1 << H)
             hash_tree.verify_slice(located)
+        end)
+
+        it("rejects proofs whose target or root is not a hash, even without siblings", function()
+            local hash = cartesi.keccak256("leaf")
+            local proof = { target_address = 0, log2_target_size = 5, log2_root_size = 5, sibling_hashes = {} }
+            proof.target_hash, proof.root_hash = hash, hash
+            hash_tree.verify_slice(proof)
+            for _, hashes in ipairs({ { nil, nil }, { hash, nil }, { nil, hash }, { "short", "short" } }) do
+                local corrupted = tabular.deep_copy(proof)
+                corrupted.target_hash, corrupted.root_hash = hashes[1], hashes[2]
+                expect.fail(function()
+                    hash_tree.verify_slice(corrupted)
+                end, "invalid proof hashes")
+            end
+        end)
+
+        it("rejects unsupported hash functions", function()
+            local proof = hash_tree.frontier_next_proofs(hash_tree.frontier(H, "keccak256"), make_leaves(4))[2]
+            for _, hash_type in ipairs({ "unknown", "HASH_SIZE" }) do
+                expect.fail(function()
+                    hash_tree.verify_slice(proof, hash_type)
+                end, "unsupported hash function")
+            end
         end)
     end)
 end)

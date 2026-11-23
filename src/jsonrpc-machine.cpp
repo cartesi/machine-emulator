@@ -833,7 +833,9 @@ void jsonrpc_machine::do_read_memory(uint64_t address, unsigned char *data, uint
     if (bin.size() != length) {
         throw std::runtime_error("jsonrpc server error: invalid decoded base64 data length");
     }
-    std::memcpy(data, bin.data(), length);
+    if (length > 0) {
+        std::memcpy(data, bin.data(), length);
+    }
 }
 
 void jsonrpc_machine::do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) {
@@ -855,7 +857,9 @@ void jsonrpc_machine::do_read_virtual_memory(uint64_t address, unsigned char *da
     if (bin.size() != length) {
         throw std::runtime_error("jsonrpc server error: invalid decoded base64 data length");
     }
-    std::memcpy(data, bin.data(), length);
+    if (length > 0) {
+        std::memcpy(data, bin.data(), length);
+    }
 }
 
 void jsonrpc_machine::do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) {

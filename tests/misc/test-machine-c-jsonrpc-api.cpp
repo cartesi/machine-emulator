@@ -811,8 +811,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(rebind_server_test, spawned_server_fixture) {
 }
 
 // What: the client handles NULL data buffers as a local machine does.
-// How:  memory accesses and cmio responses that fit in the rx buffer fail on NULL data. An oversized cmio response
-//       with NULL data must log the same no-op a local machine logs from real data, and verify against that log.
+// How:  memory accesses and cmio responses that fit in the rx buffer fail on NULL data, except zero-length memory
+//       reads, which succeed. An oversized cmio response with NULL data must log the same no-op a local machine logs
+//       from real data, and verify against that log.
 BOOST_FIXTURE_TEST_CASE_NOLINT(null_data_buffer_test, spawned_server_fixture) {
     const auto config = minimal_machine_config();
     BOOST_REQUIRE_EQUAL(cm_create(m, config.c_str(), nullptr, nullptr, CM_SHARING_ALL), CM_ERROR_OK);
@@ -824,6 +825,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(null_data_buffer_test, spawned_server_fixture) {
     check_invalid_data_buffer(cm_write_memory(m, CM_AR_RAM_START, nullptr, 8));
     check_invalid_data_buffer(cm_read_virtual_memory(m, CM_AR_RAM_START, nullptr, 8));
     check_invalid_data_buffer(cm_write_virtual_memory(m, CM_AR_RAM_START, nullptr, 8));
+    BOOST_CHECK_EQUAL(cm_read_memory(m, CM_AR_RAM_START, nullptr, 0), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(cm_read_virtual_memory(m, CM_AR_RAM_START, nullptr, 0), CM_ERROR_OK);
 
     cm_machine *local = nullptr;
     BOOST_REQUIRE_EQUAL(cm_create_new(config.c_str(), nullptr, nullptr, CM_SHARING_ALL, &local), CM_ERROR_OK);

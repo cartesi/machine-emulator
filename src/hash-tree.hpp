@@ -58,6 +58,7 @@ class hash_tree {
         // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
         i_dense_hash_tree &dht;
         uint64_t offset;
+        int level_count; ///< Number of levels of the dense tree, so climbing stops at its root
         bool operator==(const dense_node_entry &other) const {
             return &dht == &other.dht && offset == other.offset;
         }

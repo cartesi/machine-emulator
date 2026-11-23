@@ -489,7 +489,7 @@ void hash_tree::update_and_clear_dense_node_entries(dense_node_entries &batch, i
         variant_hasher h{m_hash_function};
         simd_concat_hasher<variant_hasher, const_machine_hash_view> queue(h);
         for (int i = block_start; i < std::min(batch_size, block_start + block_size); ++i) {
-            auto &[dht, offset] = batch[i];
+            auto &[dht, offset, level_count] = batch[i];
             auto child_size = UINT64_C(1) << (log2_size - 1);
             auto parent = dht.node_hash_view(offset, log2_size);
             auto left = dht.node_hash_view(offset, log2_size - 1);
@@ -527,7 +527,7 @@ bool hash_tree::update_dense_trees(address_ranges ars, const changed_address_ran
                 if (batch.size() == batch_size) {
                     update_and_clear_dense_node_entries(batch, log2_size);
                 }
-                batch.emplace_back(dht, offset);
+                batch.push_back(dense_node_entry{.dht = dht, .offset = offset, .level_count = ar.get_level_count()});
             }
         }
         update_and_clear_dense_node_entries(batch, log2_size);
@@ -882,21 +882,29 @@ bool hash_tree::update_words(address_ranges ars, const dirty_words_type &dirty_w
         std::ranges::copy(entry_payload.root_hash_view(), node_hash_view.begin());
         page_hash_tree_cache::return_entry(cache_entry);
         try_push_back(curr_dense_node,
-            dense_node_entry{.dht = dht, .offset = get_aligned_address(page_offset, HASH_TREE_LOG2_PAGE_SIZE + 1)});
+            dense_node_entry{.dht = dht,
+                .offset = get_aligned_address(page_offset, HASH_TREE_LOG2_PAGE_SIZE + 1),
+                .level_count = ar.get_level_count()});
     }
     for (int level = 1; level < max_level_count; ++level) {
         auto log2_size = HASH_TREE_LOG2_PAGE_SIZE + level;
         next_dense_node.clear();
         variant_hasher h{m_hash_function};
         simd_concat_hasher<variant_hasher, const_machine_hash_view> queue(h);
-        for (auto &[dht, offset] : curr_dense_node) {
+        for (auto &[dht, offset, level_count] : curr_dense_node) {
+            // The root of this tree was updated at an earlier level
+            if (level >= level_count) {
+                continue;
+            }
             auto child_size = UINT64_C(1) << (log2_size - 1);
             auto parent = dht.node_hash_view(offset, log2_size);
             auto left = dht.node_hash_view(offset, log2_size - 1);
             auto right = dht.node_hash_view(offset + child_size, log2_size - 1);
             queue.enqueue(left, right, parent);
             try_push_back(next_dense_node,
-                dense_node_entry{.dht = dht, .offset = get_aligned_address(offset, log2_size + 1)});
+                dense_node_entry{.dht = dht,
+                    .offset = get_aligned_address(offset, log2_size + 1),
+                    .level_count = level_count});
         }
         queue.flush();
         std::swap(curr_dense_node, next_dense_node);

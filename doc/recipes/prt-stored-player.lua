@@ -5,6 +5,7 @@
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
 local fs = require("cartesi.filesystem")
+local util = require("cartesi.util")
 local prt = require("prt")
 
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
@@ -544,12 +545,12 @@ local function store_first_epoch_checkpoint(template_directory, geometry, direct
     local temporary_directory = directory .. ".tmp"
     remove_leftover_stored_machine(temporary_directory)
     cartesi.machine:clone_stored(template_directory, temporary_directory)
-    cartesi.machine:sync_stored(temporary_directory)
     local outputs_frontier = new_outputs_frontier()
     local outputs_merkle_root = hash_tree.frontier_get_root_hash(outputs_frontier)
     local template_hash
     do
-        local machine <close> = cartesi.machine(temporary_directory)
+        -- The template was not produced here, so its clone rebuilds its hash tree from its contents
+        local machine <close> = cartesi.machine(temporary_directory, { clear_hash_tree = true }, cartesi.SHARING_ALL)
         assert_rolling_template(machine)
         assert(
             machine:read_memory(CMIO_TX_BUFFER_ADDRESS, WORD_SIZE) == outputs_merkle_root,
@@ -557,6 +558,7 @@ local function store_first_epoch_checkpoint(template_directory, geometry, direct
         )
         template_hash = machine:get_root_hash()
     end
+    cartesi.machine:sync_stored(temporary_directory)
     hash_tree.frontier_store(outputs_frontier, temporary_directory .. "/outputs-frontier.json")
     fs.write_durable_file(cartesi.tojson({
         version = 2,
@@ -575,6 +577,7 @@ end
 local EPOCH_NAMES = {
     ["machine"] = true,
     ["machine.revert"] = true,
+    ["machine.tmp"] = true,
     ["pair"] = true,
     ["pair.revert"] = true,
     ["agreed"] = true,
@@ -599,6 +602,7 @@ local function clear_epoch_directory(directory)
         if
             name == "machine"
             or name == "machine.revert"
+            or name == "machine.tmp"
             or name == "pair"
             or name == "pair.revert"
             or name == "agreed"
@@ -655,35 +659,52 @@ local function create_epoch_directory(directory)
     fs.sync_directory(directory)
 end
 
--- The root hash of a stored machine, rehashed from its contents, or nil when there is none or it cannot
--- be loaded. A clone is durable only after its sync, so after a power loss its cached hash tree may not
--- match its contents.
-local function get_stored_root_hash(directory)
-    if not fs.exists(directory) then
-        return nil
-    end
-    local loaded, machine = pcall(cartesi.machine, directory, { clear_hash_tree = true })
-    if not loaded then
-        return nil
-    end
-    local stored <close> = machine
-    return stored:get_root_hash()
+-- The root hash of a stored machine, after rebuilding its hash tree from its contents into its directory.
+-- A stored machine that was not synced before a power loss may hold a cached hash tree that does not match
+-- its contents.
+local function rebuild_stored_hash_tree(directory)
+    local machine <close> = cartesi.machine(directory, { clear_hash_tree = true }, cartesi.SHARING_ALL)
+    return machine:get_root_hash()
 end
 
--- Brings the epoch machine and its backup to the recorded boundary. The backup holds it, unless a crash
--- came before the commit replaced it, when the epoch machine, synced at that boundary, holds it instead.
+-- The root hash of a clone of a stored machine, after rebuilding the clone's hash tree. The source is only read.
+local function rebuild_clone(from, to)
+    cartesi.machine:clone_stored(from, to)
+    return rebuild_stored_hash_tree(to)
+end
+-- Fails when the source is missing or cannot be cloned or loaded.
+local try_rebuild_clone = util.protect(rebuild_clone)
+
+-- Brings the epoch machine and its backup to the recorded boundary, with hash trees rebuilt from their
+-- contents. The backup holds the boundary, unless a crash came before the commit replaced it, when the
+-- epoch machine, synced at that boundary, holds it instead. Each copy is rebuilt in a clone, and a copy
+-- that holds the boundary stays until a synced clone replaces the other, so an interruption at any point
+-- leaves one to start from.
 local function revert_interrupted_input(directory, root_hash)
     local machine_directory = directory .. "/machine"
     local backup_directory = machine_directory .. ".revert"
-    if get_stored_root_hash(backup_directory) == root_hash then
+    local temporary_directory = machine_directory .. ".tmp"
+    remove_leftover_stored_machine(temporary_directory)
+    if try_rebuild_clone(backup_directory, temporary_directory) == root_hash then
+        -- The clone may have read pages of the backup that a killed process never synced
+        cartesi.machine:sync_stored(backup_directory)
+        cartesi.machine:sync_stored(temporary_directory)
         remove_leftover_stored_machine(machine_directory)
-        cartesi.machine:clone_stored(backup_directory, machine_directory)
+        cartesi.machine:rename_stored(temporary_directory, machine_directory)
         return
     end
-    assert(get_stored_root_hash(machine_directory) == root_hash, "the epoch machine does not match its state")
+    -- The backup stays until a synced copy of the epoch machine replaces it
+    remove_leftover_stored_machine(temporary_directory)
+    assert(
+        rebuild_clone(machine_directory, temporary_directory) == root_hash,
+        "the epoch machine does not match its state"
+    )
+    cartesi.machine:sync_stored(temporary_directory)
     remove_leftover_stored_machine(backup_directory)
-    cartesi.machine:clone_stored(machine_directory, backup_directory)
-    cartesi.machine:sync_stored(backup_directory)
+    cartesi.machine:rename_stored(temporary_directory, backup_directory)
+    remove_leftover_stored_machine(machine_directory)
+    cartesi.machine:clone_stored(backup_directory, machine_directory)
+    cartesi.machine:sync_stored(machine_directory)
 end
 
 -- The files a state.json names, keyed by the field that names them.

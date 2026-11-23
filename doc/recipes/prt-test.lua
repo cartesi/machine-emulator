@@ -2474,6 +2474,49 @@ if arg[1] then
         assert(synced and synced < renamed, "the template checkpoint was renamed before its clone was synced")
     end
 
+    -- The template was not produced by the player, so its checkpoint records the hash of its contents rather
+    -- than its cached hash tree. Changing a byte of a copy's RAM leaves a cached hash tree that still describes
+    -- the template.
+    do
+        local template_directory = temporary_directory .. "/stale-template"
+        local checkpoint_directory = temporary_directory .. "/stale-template-checkpoint"
+        local _ <close> = setmetatable({}, {
+            __close = function()
+                if fs.exists(checkpoint_directory) then
+                    fs.remove_file(checkpoint_directory .. "/epoch.json")
+                    fs.remove_file(checkpoint_directory .. "/outputs-frontier.json")
+                    cartesi.machine:remove_stored(checkpoint_directory)
+                end
+                if fs.exists(template_directory) then
+                    cartesi.machine:remove_stored(template_directory)
+                end
+            end,
+        })
+        cartesi.machine:clone_stored(cartesi.tohex(initial_state_hash), template_directory)
+        local ram_filename
+        do
+            local template <close> = cartesi.machine(template_directory)
+            ram_filename = template:get_initial_config().ram.backing_store.data_filename
+        end
+        local ram = assert(io.open(ram_filename, "r+b"))
+        local byte = assert(ram:read(1), "template RAM is empty")
+        assert(ram:seek("set", 0))
+        assert(ram:write(string.char(~string.byte(byte) & 0xff)))
+        assert(ram:close())
+        local contents_hash
+        do
+            local template <close> = cartesi.machine(template_directory, { clear_hash_tree = true })
+            contents_hash = template:get_root_hash()
+        end
+        assert(contents_hash ~= initial_state_hash, "changing the template RAM kept its hash")
+        stored_player.store_first_epoch_checkpoint(template_directory, dapp_contract.geometry, checkpoint_directory)
+        local checkpoint_dapp_contract = stored_player.load_epoch_checkpoint(checkpoint_directory)
+        assert(
+            checkpoint_dapp_contract.initial_state_hash == contents_hash,
+            "the template checkpoint recorded a cached hash tree"
+        )
+    end
+
     -- Positioning at offset zero keeps the input undelivered; the first uarch
     -- transition starts it once, using the same pair as mcycle proof positioning.
     do
@@ -2723,6 +2766,38 @@ if arg[1] then
                 epoch_machine:get_root_hash() == cartesi.fromhex(state.root_hash),
                 "reopening restored the epoch machine from a torn backup"
             )
+        end
+        -- A stored machine that was not synced before a power loss can keep a cached hash tree that does not
+        -- match its contents. Copying the cached hash tree of the epoch's first entry, a machine of the same
+        -- configuration in another state, simulates that. Reopening rebuilds the hash tree of the copy it
+        -- keeps: the backup when it holds the boundary, the epoch machine when the backup is gone.
+        for _, stale in ipairs({ "machine.revert", "machine" }) do
+            local _ <close>, epoch_directory = new_scope_epoch_directory()
+            do
+                local stored <close> = stored_player.new_stored_player(dapp_contract, "stored", nil, epoch_directory)
+                add_input(stored, 0, input_path)
+            end
+            local entry_directory = epoch_directory .. "/entries/0"
+            local stale_directory = epoch_directory .. "/" .. stale
+            for _, name in ipairs(fs.list_directory(stale_directory)) do
+                if name ~= "config.json" and not name:find("%.bin$") then
+                    fs.write_file(fs.read_file(entry_directory .. "/" .. name), stale_directory .. "/" .. name)
+                end
+            end
+            if stale == "machine" then
+                cartesi.machine:remove_stored(epoch_directory .. "/machine.revert")
+            end
+            local state = cartesi.fromjson(fs.read_file(epoch_directory .. "/state.json"))
+            do
+                local reopened <close> =
+                    stored_player.new_stored_player(dapp_contract, "reopened", nil, epoch_directory)
+                assert(
+                    reopened.epoch_pair.machine:get_root_hash() == cartesi.fromhex(state.root_hash),
+                    "reopening trusted the cached hash tree of " .. stale
+                )
+            end
+            local layout = list_epoch_directory(epoch_directory)
+            assert(layout == stored_layout(1, state.output_count), "reopening left " .. layout)
         end
         -- A temporary pair that fails to load removes its clone.
         local _ <close>, epoch_directory = new_scope_epoch_directory()

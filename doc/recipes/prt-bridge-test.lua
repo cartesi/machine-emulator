@@ -2362,9 +2362,11 @@ do
     local signer = { address = "alice" }
     local observed = { head = 4, hash = "block4", tip = 8, tip_hash = "block8", ready = true, order = {}, events = {} }
     local pending = { job = "join", context = { epoch = "1" } }
-    local calls = {}
+    local calls, receipts = {}, {}
     local publisher = {
-        receipt = function() end,
+        receipt = function(_, key)
+            return receipts[key]
+        end,
         pending = function()
             return pending
         end,
@@ -2441,6 +2443,22 @@ do
     pending = { job = "recover", last = 2.0 ^ 63, context = { epoch = "0" } }
     new_client(1, { "advance" }, { advance = 20 }):tick()
     assert(table.concat(calls, ",") == "advance", "a recovery stored without a window end held back a move")
+    -- A move mined after the observed head, or rejected at this tip, cannot be submitted, so it does not
+    -- keep a later move from outbidding a pending recovery of its own epoch or of a settled epoch.
+    receipts.mined = { blockNumber = "0x6" }
+    for _, epoch_number in ipairs({ "1", "0" }) do
+        calls = {}
+        pending = { job = "recover", context = { epoch = epoch_number } }
+        new_client(1, { "recover", "mined", "advance" }, { mined = 10, advance = 20 }):tick()
+        assert(table.concat(calls, ",") == "advance", "a move awaiting observation held back a later move")
+    end
+    receipts.mined = nil
+    calls = {}
+    pending = { job = "recover", context = { epoch = "1" } }
+    local client = new_client(1, { "recover", "mined", "advance" }, { mined = 10, advance = 20 })
+    client.rejected.mined = observed.tip_hash
+    client:tick()
+    assert(table.concat(calls, ",") == "advance", "a move rejected at this tip held back a later move")
 end
 
 -- Missing sentry claims use the registry and epoch bitmap at the observed block,

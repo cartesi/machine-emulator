@@ -814,12 +814,20 @@ function methods:tick()
     end
     table.sort(jobs, job_less)
     local due, preferred, obsolete = {}, nil, false
+    local candidate = self.transactions:pending()
     for _, job in ipairs(jobs) do
         if snapshot.tip + 1 >= job.first and snapshot.tip + 1 < job.last and not self.invalid[job.key] then
-            table.insert(due, job)
+            -- A job mined but not yet observed, or rejected at this tip, cannot be submitted now, so it must
+            -- not be preferred over one that can. The pending transaction's job stays even if it was mined
+            -- after pending() was read.
+            if
+                (candidate and job.key == candidate.job)
+                or not (self:awaiting_observation(job, snapshot) or self.rejected[job.key] == snapshot.tip_hash)
+            then
+                table.insert(due, job)
+            end
         end
     end
-    local candidate = self.transactions:pending()
     if candidate then
         next_block = snapshot.tip + 1
         -- A due job whose window ends outbids a pending action whose window does not. The outbid action is

@@ -2605,6 +2605,18 @@ if arg[1] then
         owner[1] = fs.create_temporary_directory(temporary_directory, "epoch-")
         return owner, owner[1]
     end
+    -- A directory that holds a name the layout does not create is rejected before anything is removed.
+    do
+        local _ <close>, epoch_directory = new_scope_epoch_directory()
+        local foreign_path = epoch_directory .. "/z-other"
+        fs.create_directory(epoch_directory .. "/inputs")
+        fs.write_file("ledger", epoch_directory .. "/inputs/ledger")
+        fs.write_file("other", foreign_path)
+        local removed, failure = pcall(stored_player.remove_epoch_directory, epoch_directory)
+        assert(not removed and tostring(failure):find("layout does not create: z-other", 1, true))
+        assert(fs.exists(epoch_directory .. "/inputs/ledger"), "a rejected directory lost a file")
+        fs.remove_file(foreign_path)
+    end
     -- An error while a stored machine is cloned or an input runs leaves the disk as a crash would.
     -- Reopening restores the boundary state.json records and removes what the error left.
     do

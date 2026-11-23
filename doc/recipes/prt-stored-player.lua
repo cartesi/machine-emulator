@@ -571,10 +571,30 @@ local function store_first_epoch_checkpoint(template_directory, geometry, direct
     cartesi.machine:rename_stored(temporary_directory, directory)
 end
 
--- Removes everything the layout creates from an epoch directory. Any other name raises an error, so a
--- wrong directory is never cleared.
+-- The fixed names the layout creates in an epoch directory, next to the files is_epoch_file matches.
+local EPOCH_NAMES = {
+    ["machine"] = true,
+    ["machine.revert"] = true,
+    ["pair"] = true,
+    ["pair.revert"] = true,
+    ["agreed"] = true,
+    ["agreed.revert"] = true,
+    ["entries"] = true,
+    ["forests"] = true,
+    ["inputs"] = true,
+    ["state.json"] = true,
+}
+
+-- Removes everything the layout creates from an epoch directory. Any other name raises an error before
+-- anything is removed, so a wrong directory is never cleared.
 local function clear_epoch_directory(directory)
-    for _, name in ipairs(fs.list_directory(directory)) do
+    local names = fs.list_directory(directory)
+    for _, name in ipairs(names) do
+        if not EPOCH_NAMES[name] and not is_epoch_file(name) then
+            error("epoch directory holds a file its layout does not create: " .. name)
+        end
+    end
+    for _, name in ipairs(names) do
         local path = directory .. "/" .. name
         if
             name == "machine"
@@ -600,10 +620,8 @@ local function clear_epoch_directory(directory)
                 fs.remove_file(path .. "/" .. file)
             end
             fs.remove_directory(path)
-        elseif name == "state.json" or is_epoch_file(name) then
-            fs.remove_file(path)
         else
-            error("epoch directory holds a file its layout does not create: " .. name)
+            fs.remove_file(path)
         end
     end
 end

@@ -875,11 +875,17 @@ local function reopen_epoch_directory(self)
             == hash_tree.frontier_get_root_hash(self.previous_outputs_frontier),
         "the epoch directory continues a different output history"
     )
-    local root_hash = cartesi.fromhex(state.root_hash)
-    revert_interrupted_input(directory, root_hash)
     local machine_directory = directory .. "/machine"
     self.machine_cache =
         load_stored_machine_cache(directory, machine_directory, directory .. "/" .. state.machine_cache)
+    -- The cache's first entry is the epoch's initial machine, which it never evicts. Checking it before
+    -- anything else leaves a mismatched directory untouched.
+    assert(
+        self.machine_cache.entries[1].root_hash == self.dapp_contract.initial_state_hash,
+        "the epoch directory starts from a different machine"
+    )
+    local root_hash = cartesi.fromhex(state.root_hash)
+    revert_interrupted_input(directory, root_hash)
     remove_epoch_leftovers(directory, state, self.machine_cache)
     self.state_files = get_state_files(state)
     self.input_count, self.output_count = state.input_count, state.output_count

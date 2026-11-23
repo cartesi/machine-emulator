@@ -3103,6 +3103,19 @@ if arg[1] then
             pcall(stored_player.new_stored_player, dapp_contract, "old layout", nil, epoch_directory)
         fs.write_file(state, state_path)
         assert(not loaded_old and tostring(failure):find("unsupported epoch state version", 1, true))
+        -- Reopening a directory for another initial machine fails and leaves the directory untouched.
+        local other_contract = {
+            initial_state_hash = cartesi.keccak256("other initial machine"),
+            inputs = dapp_contract.inputs,
+            geometry = dapp_contract.geometry,
+        }
+        local listing = table.concat(fs.list_directory(epoch_directory), ",")
+        local loaded_other
+        loaded_other, failure =
+            pcall(stored_player.new_stored_player, other_contract, "other machine", nil, epoch_directory)
+        assert(not loaded_other and tostring(failure):find("starts from a different machine", 1, true))
+        assert(table.concat(fs.list_directory(epoch_directory), ",") == listing, "a rejected directory changed")
+        assert(fs.read_file(state_path) == state, "a rejected directory changed its state")
     end
     -- A crash can stop the player between any two steps of an input. Each step clones the epoch
     -- directory as a crash there would leave it. Reopening every clone must recover the state of the

@@ -179,23 +179,25 @@ do
     assert(websocket.get_accept("dGhlIHNhbXBsZSBub25jZQ==") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")
 
     -- Frames cross every length encoding in both directions. A fragmented message is reassembled
-    -- around a ping, which is answered. A message that never starts times out.
+    -- around a ping, which is answered. A message that never starts times out, and one that has not
+    -- completed is kept until its last byte arrives.
     local incoming, sent = {}, {}
     local position = 1
+    -- Like luasocket, a short read times out with what arrived, and a prefix counts toward the size.
     local fake = {
         settimeout = function() end,
         send = function(_, data)
             sent[#sent + 1] = data
             return #data
         end,
-        receive = function(_, count)
-            local data = table.concat(incoming)
-            if position > #data then
-                return nil, "timeout"
+        receive = function(_, count, prefix)
+            prefix = prefix or ""
+            local available = table.concat(incoming):sub(position, position + count - #prefix - 1)
+            position = position + #available
+            if #prefix + #available < count then
+                return nil, "timeout", prefix .. available
             end
-            local result = data:sub(position, position + count - 1)
-            position = position + count
-            return result
+            return prefix .. available
         end,
     }
     local function server_frame(first, payload)
@@ -238,6 +240,15 @@ do
     local first, payload = unmask(sent[#sent])
     assert(first == 0x8a and payload == "ping", "a ping was not answered with its pong")
     assert(client:receive(0) == nil, "a message that never started did not time out")
+    local trickle = server_frame(0x01, "frag") .. server_frame(0x89, "ping") .. server_frame(0x80, string.rep("y", 200))
+    for i = 1, #trickle - 1 do
+        incoming[#incoming + 1] = trickle:sub(i, i)
+        assert(client:receive(0) == nil, "a message completed before its last byte arrived")
+    end
+    incoming[#incoming + 1] = trickle:sub(-1)
+    assert(client:receive(0) == "frag" .. string.rep("y", 200), "a message that arrived across calls was lost")
+    first, payload = unmask(sent[#sent])
+    assert(first == 0x8a and payload == "ping", "a ping that arrived across calls was not answered")
 end
 
 -- An RPC exchange reads a body given by length or in chunks, fails on a connection the node closed

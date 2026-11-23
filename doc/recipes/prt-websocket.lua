@@ -73,36 +73,57 @@ function methods:send(text)
     send_frame(self, 0x1, text)
 end
 
--- The next text message, or nil if none starts within the timeout. Once a message starts, the rest
--- is read without a timeout, so a slow frame never breaks the framing.
+-- Whether the frame being received has its first count bytes by the deadline, or nil to wait as long
+-- as it takes. What arrives before the deadline stays in the frame, so the next call continues it.
+local function fill(self, count, deadline)
+    if #self.frame >= count then
+        return true
+    end
+    self.tcp:settimeout(deadline and math.max(0, deadline - socket.gettime()) or nil)
+    local data, err, partial = self.tcp:receive(count, self.frame)
+    assert(data or err == "timeout", err)
+    self.frame = data or partial
+    return data ~= nil
+end
+
+-- The next text message, or nil if none completes within the timeout, or nil to wait as long as it
+-- takes. A message that has not completed by then is kept, and the next call continues it.
 function methods:receive(timeout)
-    local parts = {}
+    local deadline = timeout and socket.gettime() + timeout
     while true do
-        self.tcp:settimeout(#parts == 0 and timeout or nil)
-        local first, err = self.tcp:receive(1)
-        if not first then
-            assert(err == "timeout" and #parts == 0, err)
+        if not fill(self, 2, deadline) then
             return nil
         end
-        self.tcp:settimeout(nil)
-        local second = assert(self.tcp:receive(1)):byte()
+        local first, second = self.frame:byte(1, 2)
         assert(second & 0x80 == 0, "the server masked a frame")
-        local length = second & 0x7f
+        local length, header_length = second & 0x7f, 2
         if length == 126 then
-            length = string.unpack(">I2", assert(self.tcp:receive(2)))
+            if not fill(self, 4, deadline) then
+                return nil
+            end
+            length, header_length = string.unpack(">I2", self.frame, 3), 4
         elseif length == 127 then
-            length = string.unpack(">I8", assert(self.tcp:receive(8)))
+            if not fill(self, 10, deadline) then
+                return nil
+            end
+            length, header_length = string.unpack(">I8", self.frame, 3), 10
         end
-        local payload = length > 0 and assert(self.tcp:receive(length)) or ""
-        local final, opcode = first:byte() & 0x80 ~= 0, first:byte() & 0x0f
+        if not fill(self, header_length + length, deadline) then
+            return nil
+        end
+        local payload = self.frame:sub(header_length + 1)
+        self.frame = ""
+        local final, opcode = first & 0x80 ~= 0, first & 0x0f
         if opcode == 0x9 then
             send_frame(self, 0xa, payload)
         elseif opcode == 0x8 then
             error("the server closed the websocket")
         elseif opcode == 0x0 or opcode == 0x1 then
-            parts[#parts + 1] = payload
+            self.parts[#self.parts + 1] = payload
             if final then
-                return table.concat(parts)
+                local message = table.concat(self.parts)
+                self.parts = {}
+                return message
             end
         end
     end
@@ -110,7 +131,7 @@ end
 
 -- A WebSocket over a connected socket, after its handshake.
 function M.new(tcp)
-    return setmetatable({ tcp = tcp }, { __index = methods })
+    return setmetatable({ tcp = tcp, frame = "", parts = {} }, { __index = methods })
 end
 
 -- Opens a WebSocket to a ws:// URL.

@@ -541,8 +541,10 @@ CM_API void cm_delete(cm_machine *m);
 /// \param dir Directory to create an on-disk machine. If NULL or empty, the machine will be created in-memory.
 /// \param sharing Sharing mode of the on-disk machine with its directory (ignored when created in-memory).
 /// \returns 0 for success, non zero code for error.
-/// \details Creating an on-disk machine is equivalent to creating it in-memory,
-/// storing it to \p dir with cm_store(), and loading it back from \p dir with cm_load() using \p sharing.
+/// \details Creating an on-disk machine is equivalent to creating it in-memory, storing it to \p dir with cm_store(),
+/// and loading it back from \p dir with cm_load() using \p sharing. With CM_SHARING_ALL, the machine is instead built
+/// directly in \p dir. The machine is the same, but the backing stores of \p config are only read, so their create and
+/// truncate flags do not create or truncate files outside \p dir.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 CM_API cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config, const char *dir,
     cm_sharing_mode sharing);

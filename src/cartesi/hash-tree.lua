@@ -469,7 +469,9 @@ end
 -- root. At every level, its last stored entry implicitly repeats until the level is complete.
 -- A mixed tree joins two equal-height values without changing their internal representations.
 -- A value is a raw hash or a tree. Forest levels, mixed tree children, and fixed-point tree base
--- values all hold values.
+-- values all hold values. A raw hash appended at a declared height must be the root hash of a
+-- subtree of that height. A stored forest names its trees by hash alone, so the same hash
+-- appended at two heights fails when the forest is stored or queried.
 
 local function is_forest(value) return type(value) == "table" and value.kind == "forest" end
 local function is_tree(value)

@@ -5,6 +5,14 @@ and every rejected candidate are in `AUDIT_REPORT.md`. Run a test with `bugs/run
 present and 0 once it is fixed. IDs take the form `R<round>-<ANGLE>-<n>`: the round, the hunter's angle, and the
 candidate's number within that angle.
 
+Status at v0.23.0 (f5d2712e): every issue was retested against the v0.23.0 build. Each index row and entry
+carries the result. Of the 69 issues, 7 are fixed, 1 is partly fixed, 56 are present in this repository, and 5 are
+present only in external components (machine-guest-tools, Dave, machine-solidity-step). Several tests on the audit
+branch no longer run as written, because the PRT recipes changed since the audit: the stored player moved to
+`doc/recipes/prt-stored-player.lua`, transaction journals take their signer at creation, and the dishonest `quitter`
+role is now `vandal`. Those tests were rerun from adapted copies, which are not on the audit branch. Issues whose
+tests need the Dave or Solidity-step builds, or root, were checked by reading the code, as their status says.
+
 Flags required by `AUDIT.md` (fallback-only confirmations, issues without a proof of concept, tests that model a
 component instead of running it):
 
@@ -19,77 +27,77 @@ component instead of running it):
 
 Where the threat model can be read two ways, the severity column gives the reviewer's preferred reading first.
 
-| ID | Title | Component | Role | Cited rules | Severity |
-|---|---|---|---|---|---|
-| [R1-A2-1](#r1-a2-1) | PRT referee model (prt.lua new_dapp_contract/run_epoch) seals an epoch with its whole input record, no 2^24 cap, unlike DaveConsensus and vg.lua | doc/recipes/prt.lua new_dapp_contract, run_epoch (PRT referee model) | Referee model | A3, R4, section 3 (Referee model), section 5 (unlisted model/deployed disagreeme | Critical / Low |
-| [R1-A7-1](#r1-a7-1) | Released Dave COMMITMENT_BUDGET (120 min, 2^18-mcycle leaf) is sized for average uarch density; sfence.vma/fdiv.d-dense leaves need about 11-12 h and 3 h to build | Dave v3.0.0-alpha.7 ArbitrationConstants/ClockBudgets/Deployment.s.sol vs collect_uarch_cycle_root_hashes cost | Referee model (deployed referee); overrunning operation is H | A7, R12, R4, section 8 Critical (R12 cost beyond sizing), section 1 completeness | Critical (preferred) / Medium (if section 3's 'only changes how long a claim may take to respond' covers Dave's clock sizing) |
-| [R1-GUEST-2](#r1-guest-2) | rollup --utf8-payload accept/reject/finish consumes a non-UTF-8 input, then exits 1 with no request printed: the app halts or accepts an input it never saw | machine-guest-tools v0.18.1-test1 sys-utils/rollup/rollup.cpp (encode_payload, write_advance_state, finish_request_and_g | Guest software | Section 2 correctly designed application; section 3 Guest software (R7 rx buffer | Critical (reading A: --utf8-payload documented for rollup apps facing arbitrary senders) / Low (reading B: option scoped to UTF-8 text payloads) |
-| [R1-O1-1](#r1-o1-1) | clear_hash_tree load refuses intact-content directories with malformed or missing cached hash-tree files: a loud error, no wrong hash, and the rebuild is still possible another way | Loading stored machines in the emulator core: the machine::machine, hash_tree, page_hash_tree_cache and memory_address_r | Honest operator (AUDIT.md: "storing, loading, cloning and sy | O1, section 5 "must make them possible to follow", section 2 honest operator's p | Critical (preferred) / Low (if an undocumented config-edit workaround makes O1 'possible to follow') |
-| [R1-O1-2](#r1-o1-2) | Unhashed config.json hash_tree.phtc_size survives clear_hash_tree, so a template's distributor sets the honest operator's adoption memory without bound (12 kB/entry) | Emulator core: loading stored machines (machine_config::load, hash_tree / page_hash_tree_cache sized from stored phtc_si | Honest operator | Section 8 OOS snapshot clause, R12, R4, O1 (section 5), section 2 honest operato | Critical / Low (if the whole template directory, unhashed config included, is trusted input) |
-| [R1-O2-3](#r1-o2-3) | Failed collect_mcycle_root_hashes (non-console exception, e.g. bad_alloc) drops context-only dirty marks; hash tree, later roots and stored snapshots mismatch contents | collect_mcycle_root_hashes / collect_mcycle_hashes_state_access / hash tree dirty tracking | Honest operator | R9, section 4 (host faults), section 1 completeness | Critical (preferred: host fault turned into a wrong hash, R9 failed update) / Low (if memory exhaustion is not a covered host fault or continuing after an error |
-| [R1-R7-1](#r1-r7-1) | The LR/SC reservation is keyed by virtual address and survives satp writes and sfence.vma, so after a remap an SC succeeds on another physical page and writes it. | Interpreter (src/interpret.cpp execute_LR/execute_SC; ilrsc not cleared by write_csr_satp or execute_SFENCE_VMA), shared | Honest operator | R7 | Critical / Medium |
-| [R10-PERTEMPLATE-4](#r10-pertemplate-4) | Unknown members padded into an adopted template's config.json are parsed into a full JSON DOM. Peak memory grows about 21 bytes per padding byte, linear in the file the load reads. | src/machine-config.cpp machine_config::load (os::read_file + nlohmann::json::parse; unknown members ignored); src/machin | Honest operator (AUDIT.md row 1: loading and cloning machine | R12, section 8 snapshot clause, section 4 'Snapshots are trusted input', O1, R4 | Critical (preferred) / High (if a template from another party is declinable) / Low (if R12 'bytes it covers' includes unhashed config.json, or the whole directo |
-| [R3-VARDIRTY-1](#r3-vardirty-1) | An exception in hash_tree::update after page hashes are stored leaves m_bubble_up_unchanged_pages false, so ancestors are never recomputed: wrong roots, proofs and snapshots, while verify_hash_tree still passes | Hash tree: src/hash-tree.cpp hash_tree::update (758-771), update_dense_trees (503-535), return_updated_dirty_pages (380- | Honest operator | R9, section 4 host-fault clause, section 1 completeness | Critical (preferred: host fault turned into wrong hash, R9 failed update) / Low (if allocation failure is not a covered host fault or continuing after an error  |
-| [R3-VARREFMODEL-1](#r3-varrefmodel-1) | Referee model takes the unauthenticated phase-closer role (close admission, stop) from any TCP connection; real, but it is demo orchestration with no deployed-referee counterpart | PRT referee model: doc/recipes/game-transport.lua (announce/announce_phase_closer 501-544, deliver 473-497, close_phase  | Referee model (AUDIT.md: "The PRT referee model in doc/recip | Section 1 goal, A7, A5, A8, section 3 referee-model clauses, section 7, section  | Critical (close effect, as a deployed referee); stop effect alone support Medium; Low only if the closer counts as the trusted referee process |
-| [R5-INVSTORE-1](#r5-invstore-1) | After sync_stored fails on a host write error, a retried sync_stored of the same directory reports success though the pages were lost; the reload's cached root is wrong | machine::sync_stored (src/machine.cpp 712-721), os::sync_file/sync_fd (src/os-filesystem.cpp 628-644, 726+); cm.h cm_syn | Honest operator (AUDIT row 1: storing, loading, cloning and  | Section 4 host-fault clause, O2, R9, R4 (restart from O2 directory), section 8 m | Critical (preferred) / Low or Out of scope (if a failed sync_stored permanently voids the directory, so retrying is misuse) |
-| [R8-GOALEPOCH-2](#r8-goalepoch-2) | DaveConsensus never registers the valid template's outputs Merkle root, so Application refuses valid proofs of template-committed outputs until epoch 0 is accepted. | Dave v3.0.0-alpha.7 DaveConsensus with rollups-contracts 3.0.0-alpha.10 Application (output validation); the manual's PR | Referee model, as the deployed referee | A5, A1, section 2 valid template, section 3 referee model, section 8 Critical de | Critical (preferred: literal A5, valid template is a settled state) / Low (alternative: settled state means last leaf of a winning claim, delay only) |
-| [R8-GOALESCAPE-1](#r8-goalescape-1) | execute_AMO translates twice (read TLB/walk, then write TLB/walk): an AMO can load P1 and store P2, and an AMO on its own PTE clears D | Interpreter execute_AMO with read_virtual_memory/write_virtual_memory and translate_virtual_address (native and uarch pr | Honest operator (AUDIT.md: "Interpreter, ... uarch program,  | R7 (Atomics and fences; Address translation and memory permissions), section 8 C | Critical (R7 read as written) / Medium (narrower reading of the Medium case) |
-| [R9-SUBREFSTATE-1](#r9-subrefstate-1) | PRT referee model freezes output acceptance once the fixed audience of the latest prove_output request has answered. A later valid proof of a committed output is never accepted. | doc/recipes/prt.lua wait_for_outputs (l.774-802) over doc/recipes/game-transport.lua dispatch_request, accept_scheduled_ | Referee model (AUDIT.md: The PRT referee model in doc/recipe | A5 (converse clause), section 3 referee-model and support clauses, section 8 Cri | Critical (preferred: what the referee model accepts, A5) / Medium (alternative: read as a stall of the model, so rated as support) |
-| [R9-SUBREFSTATE-2](#r9-subrefstate-2) | The PRT referee model binds a claim to the connections that posted it, so a restarted honest player is never asked about its claim again and the claim loses by timeout. | PRT referee model, doc/recipes/prt.lua partition_claims and the claim-holder requests; doc/recipes/game-transport.lua su | Referee model (AUDIT.md: The PRT referee model in doc/recipe | A7, R4 (restart clause), section 1 completeness, section 3 referee-model clause | Critical (preferred, referee model rated as deployed referee, A7/R4) / Medium (if read as a support stall) |
-| [R9-SUBTLB-1](#r9-subtlb-1) | SRET from S to S clears mstatus.MPRV without flushing the read/write TLB, so S-mode with SUM=0 keeps accessing U pages through stale entries filled at effective privilege U | Interpreter execute_SRET (src/interpret.cpp ~2802-2828), shared by native, uarch, log producers and the regenerated step | Honest operator (AUDIT.md row 1: Interpreter, uarch program) | R7 (Address translation and memory permissions); section 2 valid template; secti | Critical (per-register reading of the valid-template register condition) / Medium (if S-mode with MPRV=1 cannot be a valid template) |
-| [R1-R10-1](#r1-r10-1) | Regenerated Solidity StepVerifier and C++ verify_step_uarch accept uarch stores to the PMA array, shadow TLB, HTIF and uarch_x0, which the native uarch refuses as traps | machine-solidity-step regenerated (EmulatorCompat.writeWord/AccessLogs.writeWord via UArchStep store helpers); C++ uarch | Referee verifier (regenerated machine-solidity-step); C++ ve | R3, R2, R10; section 8 High (verifier misbehaving on unreachable before-states) | High |
-| [R1-R10-2](#r1-r10-2) | Off-by-one in Memory.validateStrideLength makes the on-chain step verifier revert on uarch accesses to the top 32-byte leaf, which native uarch and C++ verifier accept | machine-solidity-step src/Memory.sol validateStrideLength (identical in released, regenerated and Dave machine/step) | Referee verifier | R2, R3, section 8 High (divergence at unreachable states) | High (preferred: divergence between paths at an unreachable state) / Low (if rejecting at an unreachable state is not a divergence) |
-| [R1-R12-2](#r1-r12-2) | The uarch issues a TLB flush's 768 write_tlb ecalls through an out-of-line 14-instruction wrapper: 17,492 uarch cycles (22 per slot) even with a full TLB, about 5-6x what is needed | uarch program TLB-flush path: src/interpret.cpp flush_tlb_slot/flush_tlb_set/flush_all_tlb/set_prv compiled into the uar | Honest operator (AUDIT.md: 'Interpreter, ..., uarch program, | R12, A7, section 8 High constant-factor case; fix implies R13/A6 version change | High (preferred reading); Low under the alternative reading that 'defect' excludes code-generation efficiency of a correct implementation |
-| [R1-R13-1](#r1-r13-1) | Regenerating machine-solidity-step v0.17.0-test1 from audit/prt2 fails to compile: UArchStep.sol uses undeclared TLB_NUM_SETS (added by afd5f9d), so the referee verifier cannot be rebuilt from audited source | machine-solidity-step v0.17.0-test1 regenerated from audit/prt2 (generate_UArchStep.sh, EmulatorConstants template/lua); | Referee verifier (AUDIT.md table); root cause in uarch progr | R13, A6 | High; Critical under the reading that every deployment must ship hand-edited or stale verifier code |
-| [R1-R4-1](#r1-r4-1) | Creation accepts a non-pristine uarch (custom uarch RAM image or uarch registers) in Keccak configs; uarch path then refuses or traps while native run proceeds | Machine creation from configuration (machine_address_ranges::push_back_uarch_ram, machine::init_uarch_processor); collec | Rest of the machine API (creation): honest operator only whe | R4 (configuration clause), R3, R13, section 2 valid template and reachable state | High (preferred: divergence only at demonstrably unreachable states) / Critical (creation-time acceptance as an R4 violation on the honest path) / Out of scope- |
-| [R1-R8-3](#r1-r8-3) | Each collect_mcycle_root_hashes call re-marks and word-compares all 256 write-TLB pages even when nothing changed. A guest that yields every 1-2 mcycles makes each yield cost about 6x more. | collect_mcycle_root_hashes / hash tree (src/machine.cpp update_hash_tree, mark_write_tlb_dirty_pages) | Honest operator | R12, A7, section 8 High (constant-factor cost) | High (preferred: guest-induced constant-factor increase of R12 'a part of a claim', sizing unknown) / Out of scope (literal reading of the yield-count exclusion |
-| [R10-PERGUEST-2](#r10-perguest-2) | collect_mcycle_root_hashes updates the hash tree over always-dirty shadow pages twice per non-sampling automatic yield, raising worst-case per-mcycle claim cost about 5x | src/machine.cpp machine::collect_mcycle_root_hashes (entry update_hash_tree, unconditional in-loop m_ht.update); src/col | Honest operator | R12, A7, section 8 High constant-factor case | High (preferred) / Out of scope (literal reading of the outputs-or-yields exclusion) |
-| [R3-VARSHADOW-1](#r3-varshadow-1) | The HTIF getchar guard runs only at create/load. After write_reg or a full-shadow write_memory sets iconsole GETCHAR, native diverges from uarch/collectors (5 vs 0) and store writes an unloadable directory | machine::init_console (create/load only), write_reg htif_iconsole, validate_processor_shadow (full-shadow write_memory), | Diverging paths: Honest operator (interpreter, state access, | R2, R1, R14, R9; section 8 High (divergence at unreachable states), Medium (off- | High (preferred: divergence between paths only at demonstrably unreachable states) / Medium (R1-R2-1 off-path API reading) / Out of scope or Low (broad delibera |
-| [R9-SUBCMIO-1](#r9-subcmio-1) | Creation accepts a reproducible Keccak config already at an rx-rejected manual yield with a zero revert root hash. Later canonical hashes are 0x00..00, so no uarch-level claim or step proof can follow. | Machine creation (machine::init_processor, validate_processor_shadow) with the rejection exception in collect_mcycle_roo | Honest operator (AUDIT rows 1 and 2) | R4 (configuration clause), R5, R6, A4, R8 (unreachability), section 8 High 'dive | High (preferred) / Critical / Low |
-| [R1-A3-1](#r1-a3-1) | PRT player opens epoch N+1's listener from epoch N's seal block, so it misses the inputs DaveConsensus defers past the 2^24 limit and crash-loops | doc/recipes/crisium.lua open_epochs (line 267) + doc/recipes/prt-epoch.lua poll (lines 37, 73, 96) | Support (PRT player, AUDIT.md table), standing in for the ho | R4 (last bullet), A3, section 8 Critical 'crash ... data the honest operator mus | Medium |
-| [R1-A6-2](#r1-a6-2) | PRT player and deployer check deployments only by pristine uarch hash, never CM_MARCHID, so they accept another version's verifier with an unchanged uarch image | doc/recipes/crisium.lua (start-up check, lines 128-132), doc/recipes/prt-deploy.lua (lines 44-48), doc/recipes/prt-lua-b | Support (PRT player/deployer in doc/recipes), standing in fo | R13, A6 | Medium (preferred: R13 check must hold against later releases); Low (if only versions already released count) |
-| [R1-A7-3](#r1-a7-3) | The stored PRT player runs a later epoch's whole input in one crisium idle step, so the sealed epoch's dispute is not observed or answered until that input finishes | PRT stored player and crisium main loop (doc/recipes/prt.lua, doc/recipes/crisium.lua) | Support, standing in for the honest operator | R4, A7, section 3 support rule, section 8 Medium case | Medium (reading A: Critical in the stood-in honest role, so Medium for support; reading B: High as a constant factor, still Medium for support) |
-| [R1-A8-3](#r1-a8-3) | PRT referee model: logical time needs every connected player's advance_time reply, so one claimant that goes silent with its socket open freezes every other match. | doc/recipes/prt.lua referee over doc/recipes/game-transport.lua (step_time, send_next_event) and game-clock.lua barrier_ | Referee model (AUDIT.md table), its stalls rated as support  | A8 (also A7 in the stood-in role); section 3 Referee model and Support clauses;  | Medium / Low |
-| [R1-A8-4](#r1-a8-4) | The PRT bridge keeps a pending cleanup with no deadline over the honest claim's newly due move, so the move waits for the cleanup's inclusion and can miss its clock | doc/recipes/prt-bridge.lua methods:tick (pending-job preference); prt-transactions.lua submit (bump_blocks) | Support (PRT bridge), standing in for the honest operator's  | R4, A7 (section 1 completeness) | Medium (support, stands in for an honest-operator R4 violation) / Low if the clocks are read as having slack for honest self-delay |
-| [R1-BOUNDARY-1](#r1-boundary-1) | PRT bridge observe() fetches, keeps, re-sorts and rescans every TournamentCreated log of the shared, permissionless tournament factory after the seal, so its chain observation grows with foreign chain activity | PRT bridge, doc/recipes/prt-bridge.lua methods:observe with prt-log-history.lua, started by prt-epoch.lua with first_blo | Support (AUDIT.md: PRT player and bridge in doc/recipes), st | R12, section 7 (raise foreign chain activity), section 3 Support, section 8 Medi | Medium |
-| [R1-BOUNDARY-3](#r1-boundary-3) | crisium get_seal fetches, retains and re-decodes every consensus log since deployment, so restart and per-epoch observation cost grow with past epochs | doc/recipes/crisium.lua get_seal/seal_history (lines 125, 207-219) with doc/recipes/prt-log-history.lua | Support (AUDIT.md: PRT player in doc/recipes), standing in f | R12 (operator-work clause), section 2 honest operator's path (observing the chai | Medium (preferred: literal R12, stand-in Critical) / Low (if R12 tolerates small per-epoch growth) |
-| [R1-O1-3](#r1-o1-3) | PRT player's store_first_epoch_checkpoint loads the template without clear_hash_tree and records a cached-tree root that crisium compares with the on-chain hash, so a valid template is refused | PRT player in doc/recipes: prt.lua store_first_epoch_checkpoint (2743-2776), assert_rolling_template; crisium.lua:236; p | Support (AUDIT.md: "The PRT player and bridge in doc/recipes | O1, section 5 binding clause, section 2 honest operator's path (obtaining the va | Medium (preferred reading); Out of scope under the literal-exclusion reading |
-| [R1-O2-1](#r1-o2-1) | PRT stored player, after a power loss, restarts from its unsynced machine.revert clone, deletes the synced epoch machine, trusts the stale cached hash tree, and records wrong roots. | doc/recipes/prt.lua stored player: stored_machine_pair_methods:commit, revert_interrupted_input, reopen_epoch_directory | Support (PRT player), standing in for the honest operator | O2, R4, section 5 (O1/O2 bind reference implementations), section 3 Support | Medium (Out of scope under a literal reading of the O2 reload exclusion) |
-| [R1-O2-2](#r1-o2-2) | Reopening a sealed epoch after a stop past the seal commit replaces the synced epoch machine with an unsynced clone and deletes machine.revert, leaving no O2-guaranteed copy | PRT stored player epoch directory, doc/recipes/prt.lua (seal_epoch_state, revert_interrupted_input, reopen_epoch_directo | Support (PRT player), standing in for the honest operator | O2, R4, section 5 (tools must follow O2), section 3 support rule | Medium (preferred); Out of scope under a broad reading of the host-fault exclusion |
-| [R1-R12-3](#r1-r12-3) | PRT epoch listener poll() and bridge observe() re-copy, re-sort and rescan every processed log on each per-block observation: per-input and per-match observation cost grows with logs already seen | doc/recipes/prt-epoch.lua poll(), doc/recipes/prt-bridge.lua observe() (with prt-log-history.lua; driven per block by cr | Support (PRT player and bridge), standing in for the honest  | R12 (honest operator's own work: bounded cost per input/match), R4, A7 | Medium (Critical, or High under the second reading, in the stood-in honest-operator role; support caps it at Medium) |
-| [R1-R2-1](#r1-r2-1) | write_reg("iunrep") changes the hashed unreproducible-mode register while every guard reads the config copy, so store writes a directory its own load refuses | machine::write_reg case reg::iunrep (src/machine.cpp ~1444); machine::is_unreproducible reading m_c config copy (src/mac | Rest of the machine API, off the honest operator's path (wri | R2, R14, R9 (section 8 Medium API-operation case), manual "creation-time mode" | Medium (preferred); Low under the trusted-caller-misuse reading; Out of scope if the deliberate-change exclusion is read to cover every consequence |
-| [R1-R3-3](#r1-r3-3) | prt.lua validate_state_transition_response accepts state-transition proofs with superfluous send_cmio/reset_uarch logs, ignoring them; Dave rejects them as trailing data | doc/recipes/prt.lua validate_state_transition_response (same code in doc/README.md lines 9465, 10874) | Referee model | R3 (log validity: trailing/duplicate data), section 3 referee-model clause, sect | Medium / Low (if unused named response fields are not part of the proof) |
-| [R1-R6-1](#r1-r6-1) | cartesi-machine --print-uarch-cycle-root-hashes passes a fake revert uarch tail {revert_root_hash, revert_root_hash}, printing wrong uarch hashes for the mcycle after a rejection | cartesi-machine CLI, src/cartesi-machine.lua uarch_cycle_root_hashes_runner_run | Support | R6, R4 (via section 3 support-Medium clause) | Medium (preferred: CLI printer counts as a tool that computes claims); Low (if read as a tool's diagnostics) |
-| [R1-R7-4](#r1-r7-4) | The PLIC claim register returns the highest pending source ID (ilog2), while the PLIC spec gives equal-priority ties to the lowest ID. The deviation is undocumented and is the same natively and through the uarch. | PLIC device, plic_read_claim_complete in src/plic-address-range.cpp | Honest operator (AUDIT.md: Interpreter, ... devices, uarch p | R7, R13 (device behavior) | Medium (alternative reading: Critical) |
-| [R1-R8-1](#r1-r8-1) | PRT player keeps one keccak per guest output for the whole input in the claim-computing run (pending_output_hashes), so claim-computation memory grows with the number of outputs | PRT player, doc/recipes/prt.lua run_to_input_mcycle_offset / flush_pending_outputs / run_next_input | Support (AUDIT.md: PRT player), standing in for the honest o | R12, section 8 outputs exclusion, section 3 support rule | Medium (preferred reading); Low (alternative reading) |
-| [R1-R8-2](#r1-r8-2) | vg.lua honest player asserts the tx-buffer outputs root equals its output frontier; a guest accepting with a mismatched root makes input_added raise, so no claim is computed | doc/recipes/vg.lua honest player (flush_pending_outputs line 429, via run_to_input_mcycle_offset and event_handler:input | Support (not named in the AUDIT.md table, falls under sectio | R4, section 8 (not-correctly-designed exclusion: 'must never stop the honest ope | Medium; Out of scope if vg.lua's player counts as a development tool |
-| [R2-DFGUESTSTATE-1](#r2-dfgueststate-1) | Manual and generated DTB declare Sv39 only, but every path accepts satp MODE=9 and performs four-level Sv48 walks | Interpreter (src/interpret.cpp write_csr_satp, src/riscv-warl.hpp WARL_satp, src/translate-virtual-address.hpp), src/dtb | Honest operator | R7, section 8 Medium deviation case, section 8 manual-contradiction clause, R13  | Medium / Critical (literal R7) / Low (manual read as non-exhaustive) |
-| [R2-DFINPUTCOUNT-1](#r2-dfinputcount-1) | PRT stored player keeps only 32 input boundaries per epoch, so per-match replay to reach a disputed input grows linearly with the epoch's input count (about n/16) | PRT stored player, doc/recipes/prt.lua (STORED_MACHINE_CACHE_CAPACITY=32 at 901, machine_cache_methods:consider 1217-124 | Support (AUDIT.md: PRT player in doc/recipes), standing in f | R12, A7, section 1 completeness, section 3 support clause, section 8 step 4 | Medium (support stand-in for a Critical R12 per-match cost in the honest-operator role) / Low (if 'nearest retained input boundary' leaves retention to the oper |
-| [R2-DFINPUTCOUNT-2](#r2-dfinputcount-2) | PRT player fetches epoch 0's InputAdded logs only from the DaveConsensus deployment block, but the constructor seals prior inputs into epoch 0, so crisium crash-loops | doc/recipes/crisium.lua (first_block line 125, open_epochs first_input_block line 267) with prt-epoch.lua poll (line 37, | Support (PRT player), standing in for the honest operator | R4, section 1 completeness, section 8 Critical (crash on data the operator must  | Medium / Low (if apps created before and apart from their DaveConsensus are unsupported) |
-| [R2-DFOUTPUT-1](#r2-dfoutput-1) | PRT stored player refuses every valid non-genesis template: store_first_epoch_checkpoint asserts the tx buffer holds the empty outputs root, so epoch 0 never starts | doc/recipes/prt.lua store_first_epoch_checkpoint (2741-2777), required by crisium.lua open_epochs and prt-demo.lua | Support (PRT player), standing in for the honest operator | R4, section 2 valid template and honest operator's path, section 3 support claus | Medium / Low |
-| [R2-DFSTORED-1](#r2-dfstored-1) | After an O1 adoption with clear_hash_tree, store with sharing none/config copies the template's stale .dht/.dpt files, so the synced snapshot reloads with the stale root | Emulator core: machine::store (src/machine.cpp, unshared branch) with hash_tree::clear (src/hash-tree.cpp:744) | Honest operator (AUDIT.md: 'storing, loading, cloning and sy | R9, R1, O1, O2, section 5 'O1 and O2 bind the emulator too' | Medium (preferred: store with sharing none/config is off the honest operator's path) / Critical (if a production node stores an adopted template with none/confi |
-| [R2-DFSTORED-2](#r2-dfstored-2) | clone_stored + SHARING_ALL load refuses a read-only or trimmed template loudly, as the manual documents; O1 unshared load works, so no rule is violated | machine::clone_stored / os::clone_file (src/machine.cpp 526-577, src/os-filesystem.cpp 577-622) and the shared-write che | Honest operator (AUDIT.md table: "storing, loading, cloning  | THREAT_MODEL s4 (snapshots trusted; report errors without terminating), s8 out-o | Medium (preferred: Support player standing in for the operator) / Critical (if production nodes adopt by clone plus shared load) / Low (variant B alone, or if h |
-| [R2-DFYIELD-1](#r2-dfyield-1) | PRT player's claim pass copies (and for TX_OUTPUT keccak-hashes) the guest-declared tx-buffer payload, up to 2 MiB, at every automatic yield, multiplying per-yield claim cost ~75-100x | PRT player, doc/recipes/prt.lua (run_next_input -> run_to_input_mcycle_offset on_yield_automatic -> run_to_stop/receive_ | Support (stands in for the honest operator computing claims) | R12 ('a part of a claim'), section 8 High constant-factor case, section 3 suppor | Medium (preferred: support stand-in for High constant-factor R12 case) / Out of scope (broad reading of outputs/yields exclusion) |
-| [R3-VARCACHE-1](#r3-varcache-1) | replace_memory_range on a SHARING_ALL machine is not recorded in its directory; after destroy and sync_stored the O2-guaranteed directory reloads to a spliced, unreachable state | machine::replace_memory_range / machine_address_ranges::replace (src/machine.cpp ~723-764, src/machine-address-ranges.cp | Rest of the machine API (AUDIT row 2), off the honest operat | R9, R2, section 4 (O2-guaranteed directory loads as different state), O2, sectio | Medium (preferred: off-path API operation) / Critical (if a production node replaces ranges of a shared machine on the honest path) |
-| [R3-VARGROWTH-1](#r3-vargrowth-1) | PRT forked player (prt.lua honest role without epoch directory) retains only 8 input boundaries, so per-match replay grows about n/5 with the epoch's input count | doc/recipes/prt.lua forked player: DEFAULT_MACHINE_CACHE_CAPACITY=8 (897-898), machine_cache_methods:consider (1217-1245 | Support (AUDIT.md: 'The PRT player and bridge in doc/recipes | R12, A7, section 3 support clause, section 8 Medium case 3 | Medium (preferred: support standing in for a Critical R12 honest-operator violation) / Low (if R12's 'nearest retained input boundary' leaves retention to the o |
-| [R3-VARREFMODEL-2](#r3-varrefmodel-2) | PRT referee model exits on any connection EOF without a "done" reply (game-transport.lua:567 assert rethrown by dispatcher), so one stray close or claimant crash stops all matches and output acceptance | doc/recipes/game-transport.lua (server adopt reader coroutine line 567, writer 557, accept 616, dispatcher step 121-142) | Referee model (AUDIT.md table); crash rated as support per s | A8, A5; section 3 Referee model and Support clauses; section 8 Medium case "A de | Medium (support rating of a referee-model crash that violates A8/A5) / Low (if the run_client comment's fail-stop on unannounced EOF is read as documented desig |
-| [R3-VARSCHED-1](#r3-varsched-1) | PRT bridge preflights jobs at the tip's block (block.number = tip) though they are due at tip+1, so a timeout or inner win valid from block `first` lands late, or never in a one-block window | doc/recipes/prt-transactions.lua methods:submit (window check at tip+1, eth_call at latest blockHash, eth_estimateGas at | Support (PRT bridge), standing in for the honest operator's  | R4, section 1 completeness, section 3 support rating, section 8 Medium support c | Medium (preferred reading) / Low (if one block of submission latency counts as slack the clocks absorb) |
-| [R3-VARSCHED-2](#r3-varsched-2) | PRT transaction journal stops re-pricing a pending move at --max-priority-fee, freezing its max fee below the base fee while --max-fee has room | doc/recipes/prt-transactions.lua methods:fees (140-154), methods:submit (192-211) | Support (PRT player/bridge in doc/recipes), standing in for  | R4, section 1 completeness, section 3 Support, section 7 chain activity | Medium (support standing in for Critical R4) / Low (if the operator's priority cap counts as a fee budget under the goal's inclusion premise) |
-| [R3-VARSPEC-1](#r3-varspec-1) | Manual's first-word PMA layout (E bit, DID 11-8, R/W/X/IR/IW at 3-7) contradicts the emulator's guest-readable encoding (M0 IO1 R2 W3 X4 IR5 IW6 DID 11-7, no E) | PMA array state layout: src/pmas-constants.hpp PMA_ISTART_shifts/masks, src/pmas.hpp pmas_pack_istart, vs doc/README.md  | Honest operator | R7, R13, section 8 manual-contradiction clause, Medium case 1 | Medium (preferred) / Critical (literal R7 'any deviation' in 'memory permissions') |
-| [R3-VARSPEC-2](#r3-varspec-2) | M-mode write to mcycle raises illegal-instruction (required by R8), but doc/README.md never documents this departure from the spec's MRW mcycle | Interpreter CSR file, src/interpret.cpp write_csr_mcycle (~2406), and doc/README.md "The main processor" | Honest operator (AUDIT.md: "Interpreter, state-access layers | R7, R8, section 8 Medium (undocumented deterministic deviation) | Medium (preferred) / Critical (if counter writability falls in R7's "Traps and interrupts" area) / Low (if implicit manual wording or R8 counts as documentation |
-| [R3-VARSPEC-3](#r3-varspec-3) | The CLINT implements an active msip register at 0x02000000 that sets mip.MSIP, but the manual says only mtime and mtimecmp are active. | CLINT device, src/clint-address-range.cpp, against doc/README.md '#### CLINT' | Honest operator (devices) | R7, R8, section 8 Medium case and manual-contradiction clause | Medium / Critical (literal R7 'Traps and interrupts') |
-| [R4-RGPLAYERGUEST-1](#r4-rgplayerguest-1) | cartesi-machine CLI aborts --mcycle-computation-hash (no claim) when a guest accepts with outputs-root length != 32, or by default with a root that differs from the host's frontier | cartesi-machine CLI, src/cartesi-machine.lua flush_pending_outputs (assert line 3689; root check 3691-3696), called from | Support (AUDIT.md: 'the cartesi-machine CLI ... Support'), s | R4, section 8 (not-correctly-designed exclusion), section 3 Support stand-in cla | Medium (preferred: CLI computation-hash run is a support tool that computes claims) / Out of scope (if the CLI is a development tool that may 'stop and report t |
-| [R5-INVHASH-1](#r5-invhash-1) | replace_memory_range after a hash-tree update keeps supplied .dht inner nodes despite mark_pages_dirty or missing .dpt; root, node hashes and synced snapshot disagree with contents | machine::replace_memory_range (src/machine.cpp 723-779), hash_tree::update / return_updated_dirty_pages (src/hash-tree.c | Rest of the machine API, off the honest path (preferred). Th | R9, manual backing_store (mark_pages_dirty), section 8 Medium off-path R9 case | Medium / Low |
-| [R5-INVSTORE-2](#r5-invstore-2) | cartesi-machine --revert-mode=stored removes machine.revert in place. After a stop mid-removal, the documented rule resumes from the partial backup and discards the synced copies. | cartesi-machine CLI stored revert mode (src/cartesi-machine.lua revert_stored commit/remove_backup) and its documented r | Support (AUDIT table: the cartesi-machine CLI), standing in  | O2, R4 (restart from an O2 directory), section 5 (tools must follow O1/O2), sect | Medium (preferred); Low if the 'cleaning up after a stop' Medium case caps the stand-in rating; Out of scope under a literal reading of the O2 reload exclusion |
-| [R6-DYNBRIDGE-1](#r6-dynbridge-1) | PRT bridge retires a settled epoch on the 'latest' nonce; a within-policy reorg resurrects its tx as an ownerless pending candidate that blocks every live epoch's moves | doc/recipes/prt-bridge.lua methods:tick (retirement 702-710, other-epoch early return 723-727), prt-transactions.lua non | Support (PRT bridge), standing in for the honest operator's  | R4 (submits within dispute clocks; defends every open epoch), section 3 support  | Medium (Support stand-in for Critical R4) / Out of scope (if section 4's pre-finality sentence covers shallow reorgs of own txs) |
-| [R6-DYNBRIDGE-2](#r6-dynbridge-2) | PRT epoch listener aborts crisium ("epoch log history was truncated") when a reorg shallower than a numeric input policy lowers the head over still-canonical, already-applied inputs | doc/recipes/prt-epoch.lua methods:poll with prt-log-history.lua observe (rewinds to min(common_ancestor, head)); run by  | Support (PRT player), standing in for the honest operator (O | R4, section 4 (chain trusted as far as input policy), section 3 stand-in rule, s | Medium (preferred: stand-in honest-operator crash on a within-policy reorg) / Low (if a crash that relaunch recovers violates no rule) |
-| [R7-MANARCH-1](#r7-manarch-1) | Manual's advance-state delivery lists four writes; every path also sets imcyclemax=mcycle+2^48-1 and zero-pads the rx buffer, so the documented delivery yields a different state hash | Input delivery (src/send-cmio-response.cpp, state-access do_write_memory_with_padding) vs doc/README.md delivery descrip | Honest operator (manual as specification; regenerated step a | THREAT_MODEL intro and section 2 (manual defines the transition function), R7, R | Medium (preferred) / Critical (literal section 2 or R7 rx-buffer 'contents') / Low (manual read as non-exhaustive) |
-| [R7-MANARCH-2](#r7-manarch-2) | Manual presents processor shadow 0x0-0xfff and shadow TLB 0x1000-0x6fff as main-processor-visible ranges with PMA entries; emulator registers them with .pmas=false and guest loads fault | Interpreter / state layout: PMA array registration (src/machine-address-ranges.cpp ~315) vs doc/README.md 'The main proc | Honest operator (AUDIT.md: 'Interpreter, state-access layers | R7, R8, R13; section 8 manual-contradiction clause; section 8 Medium case 1 | Medium (preferred) / Critical (literal R7 'any deviation' in 'memory permissions') / Low (loose reading of manual) |
-| [R7-MANCLIROLL-1](#r7-mancliroll-1) | cartesi-machine stored revert mode: SIGINT or I/O error inside a commit runs the error-path revert, which deletes the synced O2-guaranteed machine directory before checking the backup | cartesi-machine CLI --revert-mode=stored (src/cartesi-machine.lua revert_stored commit 3893-3918, revert 3920-3929, __cl | Support (AUDIT.md: the cartesi-machine CLI), standing in for | O2, section 5 (tools must follow O1/O2; damage to a guaranteed directory not exc | Medium (preferred) / Low (if deleting a guaranteed directory breaks no rule while the template remains a guaranteed restart point) / Out of scope for the host-I |
-| [R7-MANCLIROLL-2](#r7-mancliroll-2) | Manual's uarch computation-hash shortcut (begin_epoch:false,next_input_offset, no epoch files) aborts with outputs Merkle root mismatch and no claim after any earlier accepted output | cartesi-machine CLI --cmio-advance-state + --uarch-cycle-computation-hash (initialize_cmio_outputs, flush_pending_output | Support (stands in for the honest operator as a tool that co | R4, section 3 support stand-in rule, section 8 manual-contradiction clause, R12  | Medium / Low |
-| [R7-MANHASHCOMP-1](#r7-manhashcomp-1) | The manual's output verifier, verify-output-proof.lua, runs proof files as Lua code, so an 18-byte proof hangs it and a 46-byte proof allocates about 1 GiB before any check runs | doc/recipes/verify-output-proof.lua read_proof (also printed in doc/README.md 'Output verification'); the same pattern i | Support (manual demonstration and copy of the output verifie | THREAT_MODEL s4 'Logs and proofs are adversarial' and 'must be memory-safe and b | Medium (alternative reading: Low) |
-| [R7-MANTOURN-1](#r7-mantourn-1) | At divergence leaf 0, Dave's _requireAgreeState and prt.lua validate_seal_response accept any agreed-state proof, though only an empty one fits; one surplus sibling is refused past leaf 0. | Dave v3.0.0-alpha.7 Match._requireAgreeState (via sealLeafMatch / sealInnerMatchAndCreateInnerTournament); doc/recipes/p | Referee model (Dave as the deployed referee; doc/recipes mod | R3 (trailing data), section 4 (proofs adversarial), section 3 referee model, sec | Medium / Low |
-| [R9-SUBJOURNAL-2](#r9-subjournal-2) | PRT journal submit discards every signed attempt when any block arrives during it, even with window open and observation canonical; with blocks faster than one submit, nothing is ever published | doc/recipes/prt-transactions.lua methods:submit (lines 161, 266-270), used by prt-bridge.lua attempt and crisium.lua | Support (PRT player and bridge in doc/recipes), standing in  | R4 (submits within the dispute clocks), section 1 completeness, section 3 suppor | Medium (support stand-in for Critical R4) / Low (if the recipe supports only a quiet harness-mined Anvil and block-interval/latency is deployment sizing) |
+| ID | Title | Component | Role | Cited rules | Severity | Status (v0.23.0) |
+|---|---|---|---|---|---|---|
+| [R1-A2-1](#r1-a2-1) | PRT referee model (prt.lua new_dapp_contract/run_epoch) seals an epoch with its whole input record, no 2^24 cap, unlike DaveConsensus and vg.lua | doc/recipes/prt.lua new_dapp_contract, run_epoch (PRT referee model) | Referee model | A3, R4, section 3 (Referee model), section 5 (unlisted model/deployed disagreeme | Critical / Low | Present |
+| [R1-A7-1](#r1-a7-1) | Released Dave COMMITMENT_BUDGET (120 min, 2^18-mcycle leaf) is sized for average uarch density; sfence.vma/fdiv.d-dense leaves need about 11-12 h and 3 h to build | Dave v3.0.0-alpha.7 ArbitrationConstants/ClockBudgets/Deployment.s.sol vs collect_uarch_cycle_root_hashes cost | Referee model (deployed referee); overrunning operation is H | A7, R12, R4, section 8 Critical (R12 cost beyond sizing), section 1 completeness | Critical (preferred) / Medium (if section 3's 'only changes how long a claim may take to respond' covers Dave's clock sizing) | Present (external) |
+| [R1-GUEST-2](#r1-guest-2) | rollup --utf8-payload accept/reject/finish consumes a non-UTF-8 input, then exits 1 with no request printed: the app halts or accepts an input it never saw | machine-guest-tools v0.18.1-test1 sys-utils/rollup/rollup.cpp (encode_payload, write_advance_state, finish_request_and_g | Guest software | Section 2 correctly designed application; section 3 Guest software (R7 rx buffer | Critical (reading A: --utf8-payload documented for rollup apps facing arbitrary senders) / Low (reading B: option scoped to UTF-8 text payloads) | Present (external) |
+| [R1-O1-1](#r1-o1-1) | clear_hash_tree load refuses intact-content directories with malformed or missing cached hash-tree files: a loud error, no wrong hash, and the rebuild is still possible another way | Loading stored machines in the emulator core: the machine::machine, hash_tree, page_hash_tree_cache and memory_address_r | Honest operator (AUDIT.md: "storing, loading, cloning and sy | O1, section 5 "must make them possible to follow", section 2 honest operator's p | Critical (preferred) / Low (if an undocumented config-edit workaround makes O1 'possible to follow') | Present |
+| [R1-O1-2](#r1-o1-2) | Unhashed config.json hash_tree.phtc_size survives clear_hash_tree, so a template's distributor sets the honest operator's adoption memory without bound (12 kB/entry) | Emulator core: loading stored machines (machine_config::load, hash_tree / page_hash_tree_cache sized from stored phtc_si | Honest operator | Section 8 OOS snapshot clause, R12, R4, O1 (section 5), section 2 honest operato | Critical / Low (if the whole template directory, unhashed config included, is trusted input) | Present |
+| [R1-O2-3](#r1-o2-3) | Failed collect_mcycle_root_hashes (non-console exception, e.g. bad_alloc) drops context-only dirty marks; hash tree, later roots and stored snapshots mismatch contents | collect_mcycle_root_hashes / collect_mcycle_hashes_state_access / hash tree dirty tracking | Honest operator | R9, section 4 (host faults), section 1 completeness | Critical (preferred: host fault turned into a wrong hash, R9 failed update) / Low (if memory exhaustion is not a covered host fault or continuing after an error | Fixed |
+| [R1-R7-1](#r1-r7-1) | The LR/SC reservation is keyed by virtual address and survives satp writes and sfence.vma, so after a remap an SC succeeds on another physical page and writes it. | Interpreter (src/interpret.cpp execute_LR/execute_SC; ilrsc not cleared by write_csr_satp or execute_SFENCE_VMA), shared | Honest operator | R7 | Critical / Medium | Present |
+| [R10-PERTEMPLATE-4](#r10-pertemplate-4) | Unknown members padded into an adopted template's config.json are parsed into a full JSON DOM. Peak memory grows about 21 bytes per padding byte, linear in the file the load reads. | src/machine-config.cpp machine_config::load (os::read_file + nlohmann::json::parse; unknown members ignored); src/machin | Honest operator (AUDIT.md row 1: loading and cloning machine | R12, section 8 snapshot clause, section 4 'Snapshots are trusted input', O1, R4 | Critical (preferred) / High (if a template from another party is declinable) / Low (if R12 'bytes it covers' includes unhashed config.json, or the whole directo | Present |
+| [R3-VARDIRTY-1](#r3-vardirty-1) | An exception in hash_tree::update after page hashes are stored leaves m_bubble_up_unchanged_pages false, so ancestors are never recomputed: wrong roots, proofs and snapshots, while verify_hash_tree still passes | Hash tree: src/hash-tree.cpp hash_tree::update (758-771), update_dense_trees (503-535), return_updated_dirty_pages (380- | Honest operator | R9, section 4 host-fault clause, section 1 completeness | Critical (preferred: host fault turned into wrong hash, R9 failed update) / Low (if allocation failure is not a covered host fault or continuing after an error  | Fixed |
+| [R3-VARREFMODEL-1](#r3-varrefmodel-1) | Referee model takes the unauthenticated phase-closer role (close admission, stop) from any TCP connection; real, but it is demo orchestration with no deployed-referee counterpart | PRT referee model: doc/recipes/game-transport.lua (announce/announce_phase_closer 501-544, deliver 473-497, close_phase  | Referee model (AUDIT.md: "The PRT referee model in doc/recip | Section 1 goal, A7, A5, A8, section 3 referee-model clauses, section 7, section  | Critical (close effect, as a deployed referee); stop effect alone support Medium; Low only if the closer counts as the trusted referee process | Present |
+| [R5-INVSTORE-1](#r5-invstore-1) | After sync_stored fails on a host write error, a retried sync_stored of the same directory reports success though the pages were lost; the reload's cached root is wrong | machine::sync_stored (src/machine.cpp 712-721), os::sync_file/sync_fd (src/os-filesystem.cpp 628-644, 726+); cm.h cm_syn | Honest operator (AUDIT row 1: storing, loading, cloning and  | Section 4 host-fault clause, O2, R9, R4 (restart from O2 directory), section 8 m | Critical (preferred) / Low or Out of scope (if a failed sync_stored permanently voids the directory, so retrying is misuse) | Present |
+| [R8-GOALEPOCH-2](#r8-goalepoch-2) | DaveConsensus never registers the valid template's outputs Merkle root, so Application refuses valid proofs of template-committed outputs until epoch 0 is accepted. | Dave v3.0.0-alpha.7 DaveConsensus with rollups-contracts 3.0.0-alpha.10 Application (output validation); the manual's PR | Referee model, as the deployed referee | A5, A1, section 2 valid template, section 3 referee model, section 8 Critical de | Critical (preferred: literal A5, valid template is a settled state) / Low (alternative: settled state means last leaf of a winning claim, delay only) | Present (external) |
+| [R8-GOALESCAPE-1](#r8-goalescape-1) | execute_AMO translates twice (read TLB/walk, then write TLB/walk): an AMO can load P1 and store P2, and an AMO on its own PTE clears D | Interpreter execute_AMO with read_virtual_memory/write_virtual_memory and translate_virtual_address (native and uarch pr | Honest operator (AUDIT.md: "Interpreter, ... uarch program,  | R7 (Atomics and fences; Address translation and memory permissions), section 8 C | Critical (R7 read as written) / Medium (narrower reading of the Medium case) | Present |
+| [R9-SUBREFSTATE-1](#r9-subrefstate-1) | PRT referee model freezes output acceptance once the fixed audience of the latest prove_output request has answered. A later valid proof of a committed output is never accepted. | doc/recipes/prt.lua wait_for_outputs (l.774-802) over doc/recipes/game-transport.lua dispatch_request, accept_scheduled_ | Referee model (AUDIT.md: The PRT referee model in doc/recipe | A5 (converse clause), section 3 referee-model and support clauses, section 8 Cri | Critical (preferred: what the referee model accepts, A5) / Medium (alternative: read as a stall of the model, so rated as support) | Present |
+| [R9-SUBREFSTATE-2](#r9-subrefstate-2) | The PRT referee model binds a claim to the connections that posted it, so a restarted honest player is never asked about its claim again and the claim loses by timeout. | PRT referee model, doc/recipes/prt.lua partition_claims and the claim-holder requests; doc/recipes/game-transport.lua su | Referee model (AUDIT.md: The PRT referee model in doc/recipe | A7, R4 (restart clause), section 1 completeness, section 3 referee-model clause | Critical (preferred, referee model rated as deployed referee, A7/R4) / Medium (if read as a support stall) | Present |
+| [R9-SUBTLB-1](#r9-subtlb-1) | SRET from S to S clears mstatus.MPRV without flushing the read/write TLB, so S-mode with SUM=0 keeps accessing U pages through stale entries filled at effective privilege U | Interpreter execute_SRET (src/interpret.cpp ~2802-2828), shared by native, uarch, log producers and the regenerated step | Honest operator (AUDIT.md row 1: Interpreter, uarch program) | R7 (Address translation and memory permissions); section 2 valid template; secti | Critical (per-register reading of the valid-template register condition) / Medium (if S-mode with MPRV=1 cannot be a valid template) | Present |
+| [R1-R10-1](#r1-r10-1) | Regenerated Solidity StepVerifier and C++ verify_step_uarch accept uarch stores to the PMA array, shadow TLB, HTIF and uarch_x0, which the native uarch refuses as traps | machine-solidity-step regenerated (EmulatorCompat.writeWord/AccessLogs.writeWord via UArchStep store helpers); C++ uarch | Referee verifier (regenerated machine-solidity-step); C++ ve | R3, R2, R10; section 8 High (verifier misbehaving on unreachable before-states) | High | Present |
+| [R1-R10-2](#r1-r10-2) | Off-by-one in Memory.validateStrideLength makes the on-chain step verifier revert on uarch accesses to the top 32-byte leaf, which native uarch and C++ verifier accept | machine-solidity-step src/Memory.sol validateStrideLength (identical in released, regenerated and Dave machine/step) | Referee verifier | R2, R3, section 8 High (divergence at unreachable states) | High (preferred: divergence between paths at an unreachable state) / Low (if rejecting at an unreachable state is not a divergence) | Present (external) |
+| [R1-R12-2](#r1-r12-2) | The uarch issues a TLB flush's 768 write_tlb ecalls through an out-of-line 14-instruction wrapper: 17,492 uarch cycles (22 per slot) even with a full TLB, about 5-6x what is needed | uarch program TLB-flush path: src/interpret.cpp flush_tlb_slot/flush_tlb_set/flush_all_tlb/set_prv compiled into the uar | Honest operator (AUDIT.md: 'Interpreter, ..., uarch program, | R12, A7, section 8 High constant-factor case; fix implies R13/A6 version change | High (preferred reading); Low under the alternative reading that 'defect' excludes code-generation efficiency of a correct implementation | Present |
+| [R1-R13-1](#r1-r13-1) | Regenerating machine-solidity-step v0.17.0-test1 from audit/prt2 fails to compile: UArchStep.sol uses undeclared TLB_NUM_SETS (added by afd5f9d), so the referee verifier cannot be rebuilt from audited source | machine-solidity-step v0.17.0-test1 regenerated from audit/prt2 (generate_UArchStep.sh, EmulatorConstants template/lua); | Referee verifier (AUDIT.md table); root cause in uarch progr | R13, A6 | High; Critical under the reading that every deployment must ship hand-edited or stale verifier code | Present (external) |
+| [R1-R4-1](#r1-r4-1) | Creation accepts a non-pristine uarch (custom uarch RAM image or uarch registers) in Keccak configs; uarch path then refuses or traps while native run proceeds | Machine creation from configuration (machine_address_ranges::push_back_uarch_ram, machine::init_uarch_processor); collec | Rest of the machine API (creation): honest operator only whe | R4 (configuration clause), R3, R13, section 2 valid template and reachable state | High (preferred: divergence only at demonstrably unreachable states) / Critical (creation-time acceptance as an R4 violation on the honest path) / Out of scope- | Present |
+| [R1-R8-3](#r1-r8-3) | Each collect_mcycle_root_hashes call re-marks and word-compares all 256 write-TLB pages even when nothing changed. A guest that yields every 1-2 mcycles makes each yield cost about 6x more. | collect_mcycle_root_hashes / hash tree (src/machine.cpp update_hash_tree, mark_write_tlb_dirty_pages) | Honest operator | R12, A7, section 8 High (constant-factor cost) | High (preferred: guest-induced constant-factor increase of R12 'a part of a claim', sizing unknown) / Out of scope (literal reading of the yield-count exclusion | Present |
+| [R10-PERGUEST-2](#r10-perguest-2) | collect_mcycle_root_hashes updates the hash tree over always-dirty shadow pages twice per non-sampling automatic yield, raising worst-case per-mcycle claim cost about 5x | src/machine.cpp machine::collect_mcycle_root_hashes (entry update_hash_tree, unconditional in-loop m_ht.update); src/col | Honest operator | R12, A7, section 8 High constant-factor case | High (preferred) / Out of scope (literal reading of the outputs-or-yields exclusion) | Present |
+| [R3-VARSHADOW-1](#r3-varshadow-1) | The HTIF getchar guard runs only at create/load. After write_reg or a full-shadow write_memory sets iconsole GETCHAR, native diverges from uarch/collectors (5 vs 0) and store writes an unloadable directory | machine::init_console (create/load only), write_reg htif_iconsole, validate_processor_shadow (full-shadow write_memory), | Diverging paths: Honest operator (interpreter, state access, | R2, R1, R14, R9; section 8 High (divergence at unreachable states), Medium (off- | High (preferred: divergence between paths only at demonstrably unreachable states) / Medium (R1-R2-1 off-path API reading) / Out of scope or Low (broad delibera | Present |
+| [R9-SUBCMIO-1](#r9-subcmio-1) | Creation accepts a reproducible Keccak config already at an rx-rejected manual yield with a zero revert root hash. Later canonical hashes are 0x00..00, so no uarch-level claim or step proof can follow. | Machine creation (machine::init_processor, validate_processor_shadow) with the rejection exception in collect_mcycle_roo | Honest operator (AUDIT rows 1 and 2) | R4 (configuration clause), R5, R6, A4, R8 (unreachability), section 8 High 'dive | High (preferred) / Critical / Low | Present |
+| [R1-A3-1](#r1-a3-1) | PRT player opens epoch N+1's listener from epoch N's seal block, so it misses the inputs DaveConsensus defers past the 2^24 limit and crash-loops | doc/recipes/crisium.lua open_epochs (line 267) + doc/recipes/prt-epoch.lua poll (lines 37, 73, 96) | Support (PRT player, AUDIT.md table), standing in for the ho | R4 (last bullet), A3, section 8 Critical 'crash ... data the honest operator mus | Medium | Present |
+| [R1-A6-2](#r1-a6-2) | PRT player and deployer check deployments only by pristine uarch hash, never CM_MARCHID, so they accept another version's verifier with an unchanged uarch image | doc/recipes/crisium.lua (start-up check, lines 128-132), doc/recipes/prt-deploy.lua (lines 44-48), doc/recipes/prt-lua-b | Support (PRT player/deployer in doc/recipes), standing in fo | R13, A6 | Medium (preferred: R13 check must hold against later releases); Low (if only versions already released count) | Present |
+| [R1-A7-3](#r1-a7-3) | The stored PRT player runs a later epoch's whole input in one crisium idle step, so the sealed epoch's dispute is not observed or answered until that input finishes | PRT stored player and crisium main loop (doc/recipes/prt.lua, doc/recipes/crisium.lua) | Support, standing in for the honest operator | R4, A7, section 3 support rule, section 8 Medium case | Medium (reading A: Critical in the stood-in honest role, so Medium for support; reading B: High as a constant factor, still Medium for support) | Present |
+| [R1-A8-3](#r1-a8-3) | PRT referee model: logical time needs every connected player's advance_time reply, so one claimant that goes silent with its socket open freezes every other match. | doc/recipes/prt.lua referee over doc/recipes/game-transport.lua (step_time, send_next_event) and game-clock.lua barrier_ | Referee model (AUDIT.md table), its stalls rated as support  | A8 (also A7 in the stood-in role); section 3 Referee model and Support clauses;  | Medium / Low | Present |
+| [R1-A8-4](#r1-a8-4) | The PRT bridge keeps a pending cleanup with no deadline over the honest claim's newly due move, so the move waits for the cleanup's inclusion and can miss its clock | doc/recipes/prt-bridge.lua methods:tick (pending-job preference); prt-transactions.lua submit (bump_blocks) | Support (PRT bridge), standing in for the honest operator's  | R4, A7 (section 1 completeness) | Medium (support, stands in for an honest-operator R4 violation) / Low if the clocks are read as having slack for honest self-delay | Fixed |
+| [R1-BOUNDARY-1](#r1-boundary-1) | PRT bridge observe() fetches, keeps, re-sorts and rescans every TournamentCreated log of the shared, permissionless tournament factory after the seal, so its chain observation grows with foreign chain activity | PRT bridge, doc/recipes/prt-bridge.lua methods:observe with prt-log-history.lua, started by prt-epoch.lua with first_blo | Support (AUDIT.md: PRT player and bridge in doc/recipes), st | R12, section 7 (raise foreign chain activity), section 3 Support, section 8 Medi | Medium | Present |
+| [R1-BOUNDARY-3](#r1-boundary-3) | crisium get_seal fetches, retains and re-decodes every consensus log since deployment, so restart and per-epoch observation cost grow with past epochs | doc/recipes/crisium.lua get_seal/seal_history (lines 125, 207-219) with doc/recipes/prt-log-history.lua | Support (AUDIT.md: PRT player in doc/recipes), standing in f | R12 (operator-work clause), section 2 honest operator's path (observing the chai | Medium (preferred: literal R12, stand-in Critical) / Low (if R12 tolerates small per-epoch growth) | Present |
+| [R1-O1-3](#r1-o1-3) | PRT player's store_first_epoch_checkpoint loads the template without clear_hash_tree and records a cached-tree root that crisium compares with the on-chain hash, so a valid template is refused | PRT player in doc/recipes: prt.lua store_first_epoch_checkpoint (2743-2776), assert_rolling_template; crisium.lua:236; p | Support (AUDIT.md: "The PRT player and bridge in doc/recipes | O1, section 5 binding clause, section 2 honest operator's path (obtaining the va | Medium (preferred reading); Out of scope under the literal-exclusion reading | Fixed |
+| [R1-O2-1](#r1-o2-1) | PRT stored player, after a power loss, restarts from its unsynced machine.revert clone, deletes the synced epoch machine, trusts the stale cached hash tree, and records wrong roots. | doc/recipes/prt.lua stored player: stored_machine_pair_methods:commit, revert_interrupted_input, reopen_epoch_directory | Support (PRT player), standing in for the honest operator | O2, R4, section 5 (O1/O2 bind reference implementations), section 3 Support | Medium (Out of scope under a literal reading of the O2 reload exclusion) | Fixed |
+| [R1-O2-2](#r1-o2-2) | Reopening a sealed epoch after a stop past the seal commit replaces the synced epoch machine with an unsynced clone and deletes machine.revert, leaving no O2-guaranteed copy | PRT stored player epoch directory, doc/recipes/prt.lua (seal_epoch_state, revert_interrupted_input, reopen_epoch_directo | Support (PRT player), standing in for the honest operator | O2, R4, section 5 (tools must follow O2), section 3 support rule | Medium (preferred); Out of scope under a broad reading of the host-fault exclusion | Fixed |
+| [R1-R12-3](#r1-r12-3) | PRT epoch listener poll() and bridge observe() re-copy, re-sort and rescan every processed log on each per-block observation: per-input and per-match observation cost grows with logs already seen | doc/recipes/prt-epoch.lua poll(), doc/recipes/prt-bridge.lua observe() (with prt-log-history.lua; driven per block by cr | Support (PRT player and bridge), standing in for the honest  | R12 (honest operator's own work: bounded cost per input/match), R4, A7 | Medium (Critical, or High under the second reading, in the stood-in honest-operator role; support caps it at Medium) | Present |
+| [R1-R2-1](#r1-r2-1) | write_reg("iunrep") changes the hashed unreproducible-mode register while every guard reads the config copy, so store writes a directory its own load refuses | machine::write_reg case reg::iunrep (src/machine.cpp ~1444); machine::is_unreproducible reading m_c config copy (src/mac | Rest of the machine API, off the honest operator's path (wri | R2, R14, R9 (section 8 Medium API-operation case), manual "creation-time mode" | Medium (preferred); Low under the trusted-caller-misuse reading; Out of scope if the deliberate-change exclusion is read to cover every consequence | Present |
+| [R1-R3-3](#r1-r3-3) | prt.lua validate_state_transition_response accepts state-transition proofs with superfluous send_cmio/reset_uarch logs, ignoring them; Dave rejects them as trailing data | doc/recipes/prt.lua validate_state_transition_response (same code in doc/README.md lines 9465, 10874) | Referee model | R3 (log validity: trailing/duplicate data), section 3 referee-model clause, sect | Medium / Low (if unused named response fields are not part of the proof) | Present |
+| [R1-R6-1](#r1-r6-1) | cartesi-machine --print-uarch-cycle-root-hashes passes a fake revert uarch tail {revert_root_hash, revert_root_hash}, printing wrong uarch hashes for the mcycle after a rejection | cartesi-machine CLI, src/cartesi-machine.lua uarch_cycle_root_hashes_runner_run | Support | R6, R4 (via section 3 support-Medium clause) | Medium (preferred: CLI printer counts as a tool that computes claims); Low (if read as a tool's diagnostics) | Present |
+| [R1-R7-4](#r1-r7-4) | The PLIC claim register returns the highest pending source ID (ilog2), while the PLIC spec gives equal-priority ties to the lowest ID. The deviation is undocumented and is the same natively and through the uarch. | PLIC device, plic_read_claim_complete in src/plic-address-range.cpp | Honest operator (AUDIT.md: Interpreter, ... devices, uarch p | R7, R13 (device behavior) | Medium (alternative reading: Critical) | Present |
+| [R1-R8-1](#r1-r8-1) | PRT player keeps one keccak per guest output for the whole input in the claim-computing run (pending_output_hashes), so claim-computation memory grows with the number of outputs | PRT player, doc/recipes/prt.lua run_to_input_mcycle_offset / flush_pending_outputs / run_next_input | Support (AUDIT.md: PRT player), standing in for the honest o | R12, section 8 outputs exclusion, section 3 support rule | Medium (preferred reading); Low (alternative reading) | Present |
+| [R1-R8-2](#r1-r8-2) | vg.lua honest player asserts the tx-buffer outputs root equals its output frontier; a guest accepting with a mismatched root makes input_added raise, so no claim is computed | doc/recipes/vg.lua honest player (flush_pending_outputs line 429, via run_to_input_mcycle_offset and event_handler:input | Support (not named in the AUDIT.md table, falls under sectio | R4, section 8 (not-correctly-designed exclusion: 'must never stop the honest ope | Medium; Out of scope if vg.lua's player counts as a development tool | Present |
+| [R2-DFGUESTSTATE-1](#r2-dfgueststate-1) | Manual and generated DTB declare Sv39 only, but every path accepts satp MODE=9 and performs four-level Sv48 walks | Interpreter (src/interpret.cpp write_csr_satp, src/riscv-warl.hpp WARL_satp, src/translate-virtual-address.hpp), src/dtb | Honest operator | R7, section 8 Medium deviation case, section 8 manual-contradiction clause, R13  | Medium / Critical (literal R7) / Low (manual read as non-exhaustive) | Present |
+| [R2-DFINPUTCOUNT-1](#r2-dfinputcount-1) | PRT stored player keeps only 32 input boundaries per epoch, so per-match replay to reach a disputed input grows linearly with the epoch's input count (about n/16) | PRT stored player, doc/recipes/prt.lua (STORED_MACHINE_CACHE_CAPACITY=32 at 901, machine_cache_methods:consider 1217-124 | Support (AUDIT.md: PRT player in doc/recipes), standing in f | R12, A7, section 1 completeness, section 3 support clause, section 8 step 4 | Medium (support stand-in for a Critical R12 per-match cost in the honest-operator role) / Low (if 'nearest retained input boundary' leaves retention to the oper | Present |
+| [R2-DFINPUTCOUNT-2](#r2-dfinputcount-2) | PRT player fetches epoch 0's InputAdded logs only from the DaveConsensus deployment block, but the constructor seals prior inputs into epoch 0, so crisium crash-loops | doc/recipes/crisium.lua (first_block line 125, open_epochs first_input_block line 267) with prt-epoch.lua poll (line 37, | Support (PRT player), standing in for the honest operator | R4, section 1 completeness, section 8 Critical (crash on data the operator must  | Medium / Low (if apps created before and apart from their DaveConsensus are unsupported) | Present |
+| [R2-DFOUTPUT-1](#r2-dfoutput-1) | PRT stored player refuses every valid non-genesis template: store_first_epoch_checkpoint asserts the tx buffer holds the empty outputs root, so epoch 0 never starts | doc/recipes/prt.lua store_first_epoch_checkpoint (2741-2777), required by crisium.lua open_epochs and prt-demo.lua | Support (PRT player), standing in for the honest operator | R4, section 2 valid template and honest operator's path, section 3 support claus | Medium / Low | Present |
+| [R2-DFSTORED-1](#r2-dfstored-1) | After an O1 adoption with clear_hash_tree, store with sharing none/config copies the template's stale .dht/.dpt files, so the synced snapshot reloads with the stale root | Emulator core: machine::store (src/machine.cpp, unshared branch) with hash_tree::clear (src/hash-tree.cpp:744) | Honest operator (AUDIT.md: 'storing, loading, cloning and sy | R9, R1, O1, O2, section 5 'O1 and O2 bind the emulator too' | Medium (preferred: store with sharing none/config is off the honest operator's path) / Critical (if a production node stores an adopted template with none/confi | Present |
+| [R2-DFSTORED-2](#r2-dfstored-2) | clone_stored + SHARING_ALL load refuses a read-only or trimmed template loudly, as the manual documents; O1 unshared load works, so no rule is violated | machine::clone_stored / os::clone_file (src/machine.cpp 526-577, src/os-filesystem.cpp 577-622) and the shared-write che | Honest operator (AUDIT.md table: "storing, loading, cloning  | THREAT_MODEL s4 (snapshots trusted; report errors without terminating), s8 out-o | Medium (preferred: Support player standing in for the operator) / Critical (if production nodes adopt by clone plus shared load) / Low (variant B alone, or if h | Present |
+| [R2-DFYIELD-1](#r2-dfyield-1) | PRT player's claim pass copies (and for TX_OUTPUT keccak-hashes) the guest-declared tx-buffer payload, up to 2 MiB, at every automatic yield, multiplying per-yield claim cost ~75-100x | PRT player, doc/recipes/prt.lua (run_next_input -> run_to_input_mcycle_offset on_yield_automatic -> run_to_stop/receive_ | Support (stands in for the honest operator computing claims) | R12 ('a part of a claim'), section 8 High constant-factor case, section 3 suppor | Medium (preferred: support stand-in for High constant-factor R12 case) / Out of scope (broad reading of outputs/yields exclusion) | Present |
+| [R3-VARCACHE-1](#r3-varcache-1) | replace_memory_range on a SHARING_ALL machine is not recorded in its directory; after destroy and sync_stored the O2-guaranteed directory reloads to a spliced, unreachable state | machine::replace_memory_range / machine_address_ranges::replace (src/machine.cpp ~723-764, src/machine-address-ranges.cp | Rest of the machine API (AUDIT row 2), off the honest operat | R9, R2, section 4 (O2-guaranteed directory loads as different state), O2, sectio | Medium (preferred: off-path API operation) / Critical (if a production node replaces ranges of a shared machine on the honest path) | Present |
+| [R3-VARGROWTH-1](#r3-vargrowth-1) | PRT forked player (prt.lua honest role without epoch directory) retains only 8 input boundaries, so per-match replay grows about n/5 with the epoch's input count | doc/recipes/prt.lua forked player: DEFAULT_MACHINE_CACHE_CAPACITY=8 (897-898), machine_cache_methods:consider (1217-1245 | Support (AUDIT.md: 'The PRT player and bridge in doc/recipes | R12, A7, section 3 support clause, section 8 Medium case 3 | Medium (preferred: support standing in for a Critical R12 honest-operator violation) / Low (if R12's 'nearest retained input boundary' leaves retention to the o | Present |
+| [R3-VARREFMODEL-2](#r3-varrefmodel-2) | PRT referee model exits on any connection EOF without a "done" reply (game-transport.lua:567 assert rethrown by dispatcher), so one stray close or claimant crash stops all matches and output acceptance | doc/recipes/game-transport.lua (server adopt reader coroutine line 567, writer 557, accept 616, dispatcher step 121-142) | Referee model (AUDIT.md table); crash rated as support per s | A8, A5; section 3 Referee model and Support clauses; section 8 Medium case "A de | Medium (support rating of a referee-model crash that violates A8/A5) / Low (if the run_client comment's fail-stop on unannounced EOF is read as documented desig | Present |
+| [R3-VARSCHED-1](#r3-varsched-1) | PRT bridge preflights jobs at the tip's block (block.number = tip) though they are due at tip+1, so a timeout or inner win valid from block `first` lands late, or never in a one-block window | doc/recipes/prt-transactions.lua methods:submit (window check at tip+1, eth_call at latest blockHash, eth_estimateGas at | Support (PRT bridge), standing in for the honest operator's  | R4, section 1 completeness, section 3 support rating, section 8 Medium support c | Medium (preferred reading) / Low (if one block of submission latency counts as slack the clocks absorb) | Present |
+| [R3-VARSCHED-2](#r3-varsched-2) | PRT transaction journal stops re-pricing a pending move at --max-priority-fee, freezing its max fee below the base fee while --max-fee has room | doc/recipes/prt-transactions.lua methods:fees (140-154), methods:submit (192-211) | Support (PRT player/bridge in doc/recipes), standing in for  | R4, section 1 completeness, section 3 Support, section 7 chain activity | Medium (support standing in for Critical R4) / Low (if the operator's priority cap counts as a fee budget under the goal's inclusion premise) | Present |
+| [R3-VARSPEC-1](#r3-varspec-1) | Manual's first-word PMA layout (E bit, DID 11-8, R/W/X/IR/IW at 3-7) contradicts the emulator's guest-readable encoding (M0 IO1 R2 W3 X4 IR5 IW6 DID 11-7, no E) | PMA array state layout: src/pmas-constants.hpp PMA_ISTART_shifts/masks, src/pmas.hpp pmas_pack_istart, vs doc/README.md  | Honest operator | R7, R13, section 8 manual-contradiction clause, Medium case 1 | Medium (preferred) / Critical (literal R7 'any deviation' in 'memory permissions') | Present |
+| [R3-VARSPEC-2](#r3-varspec-2) | M-mode write to mcycle raises illegal-instruction (required by R8), but doc/README.md never documents this departure from the spec's MRW mcycle | Interpreter CSR file, src/interpret.cpp write_csr_mcycle (~2406), and doc/README.md "The main processor" | Honest operator (AUDIT.md: "Interpreter, state-access layers | R7, R8, section 8 Medium (undocumented deterministic deviation) | Medium (preferred) / Critical (if counter writability falls in R7's "Traps and interrupts" area) / Low (if implicit manual wording or R8 counts as documentation | Present |
+| [R3-VARSPEC-3](#r3-varspec-3) | The CLINT implements an active msip register at 0x02000000 that sets mip.MSIP, but the manual says only mtime and mtimecmp are active. | CLINT device, src/clint-address-range.cpp, against doc/README.md '#### CLINT' | Honest operator (devices) | R7, R8, section 8 Medium case and manual-contradiction clause | Medium / Critical (literal R7 'Traps and interrupts') | Present |
+| [R4-RGPLAYERGUEST-1](#r4-rgplayerguest-1) | cartesi-machine CLI aborts --mcycle-computation-hash (no claim) when a guest accepts with outputs-root length != 32, or by default with a root that differs from the host's frontier | cartesi-machine CLI, src/cartesi-machine.lua flush_pending_outputs (assert line 3689; root check 3691-3696), called from | Support (AUDIT.md: 'the cartesi-machine CLI ... Support'), s | R4, section 8 (not-correctly-designed exclusion), section 3 Support stand-in cla | Medium (preferred: CLI computation-hash run is a support tool that computes claims) / Out of scope (if the CLI is a development tool that may 'stop and report t | Present |
+| [R5-INVHASH-1](#r5-invhash-1) | replace_memory_range after a hash-tree update keeps supplied .dht inner nodes despite mark_pages_dirty or missing .dpt; root, node hashes and synced snapshot disagree with contents | machine::replace_memory_range (src/machine.cpp 723-779), hash_tree::update / return_updated_dirty_pages (src/hash-tree.c | Rest of the machine API, off the honest path (preferred). Th | R9, manual backing_store (mark_pages_dirty), section 8 Medium off-path R9 case | Medium / Low | Present |
+| [R5-INVSTORE-2](#r5-invstore-2) | cartesi-machine --revert-mode=stored removes machine.revert in place. After a stop mid-removal, the documented rule resumes from the partial backup and discards the synced copies. | cartesi-machine CLI stored revert mode (src/cartesi-machine.lua revert_stored commit/remove_backup) and its documented r | Support (AUDIT table: the cartesi-machine CLI), standing in  | O2, R4 (restart from an O2 directory), section 5 (tools must follow O1/O2), sect | Medium (preferred); Low if the 'cleaning up after a stop' Medium case caps the stand-in rating; Out of scope under a literal reading of the O2 reload exclusion | Present |
+| [R6-DYNBRIDGE-1](#r6-dynbridge-1) | PRT bridge retires a settled epoch on the 'latest' nonce; a within-policy reorg resurrects its tx as an ownerless pending candidate that blocks every live epoch's moves | doc/recipes/prt-bridge.lua methods:tick (retirement 702-710, other-epoch early return 723-727), prt-transactions.lua non | Support (PRT bridge), standing in for the honest operator's  | R4 (submits within dispute clocks; defends every open epoch), section 3 support  | Medium (Support stand-in for Critical R4) / Out of scope (if section 4's pre-finality sentence covers shallow reorgs of own txs) | Partly fixed |
+| [R6-DYNBRIDGE-2](#r6-dynbridge-2) | PRT epoch listener aborts crisium ("epoch log history was truncated") when a reorg shallower than a numeric input policy lowers the head over still-canonical, already-applied inputs | doc/recipes/prt-epoch.lua methods:poll with prt-log-history.lua observe (rewinds to min(common_ancestor, head)); run by  | Support (PRT player), standing in for the honest operator (O | R4, section 4 (chain trusted as far as input policy), section 3 stand-in rule, s | Medium (preferred: stand-in honest-operator crash on a within-policy reorg) / Low (if a crash that relaunch recovers violates no rule) | Present |
+| [R7-MANARCH-1](#r7-manarch-1) | Manual's advance-state delivery lists four writes; every path also sets imcyclemax=mcycle+2^48-1 and zero-pads the rx buffer, so the documented delivery yields a different state hash | Input delivery (src/send-cmio-response.cpp, state-access do_write_memory_with_padding) vs doc/README.md delivery descrip | Honest operator (manual as specification; regenerated step a | THREAT_MODEL intro and section 2 (manual defines the transition function), R7, R | Medium (preferred) / Critical (literal section 2 or R7 rx-buffer 'contents') / Low (manual read as non-exhaustive) | Present |
+| [R7-MANARCH-2](#r7-manarch-2) | Manual presents processor shadow 0x0-0xfff and shadow TLB 0x1000-0x6fff as main-processor-visible ranges with PMA entries; emulator registers them with .pmas=false and guest loads fault | Interpreter / state layout: PMA array registration (src/machine-address-ranges.cpp ~315) vs doc/README.md 'The main proc | Honest operator (AUDIT.md: 'Interpreter, state-access layers | R7, R8, R13; section 8 manual-contradiction clause; section 8 Medium case 1 | Medium (preferred) / Critical (literal R7 'any deviation' in 'memory permissions') / Low (loose reading of manual) | Present |
+| [R7-MANCLIROLL-1](#r7-mancliroll-1) | cartesi-machine stored revert mode: SIGINT or I/O error inside a commit runs the error-path revert, which deletes the synced O2-guaranteed machine directory before checking the backup | cartesi-machine CLI --revert-mode=stored (src/cartesi-machine.lua revert_stored commit 3893-3918, revert 3920-3929, __cl | Support (AUDIT.md: the cartesi-machine CLI), standing in for | O2, section 5 (tools must follow O1/O2; damage to a guaranteed directory not exc | Medium (preferred) / Low (if deleting a guaranteed directory breaks no rule while the template remains a guaranteed restart point) / Out of scope for the host-I | Fixed |
+| [R7-MANCLIROLL-2](#r7-mancliroll-2) | Manual's uarch computation-hash shortcut (begin_epoch:false,next_input_offset, no epoch files) aborts with outputs Merkle root mismatch and no claim after any earlier accepted output | cartesi-machine CLI --cmio-advance-state + --uarch-cycle-computation-hash (initialize_cmio_outputs, flush_pending_output | Support (stands in for the honest operator as a tool that co | R4, section 3 support stand-in rule, section 8 manual-contradiction clause, R12  | Medium / Low | Present |
+| [R7-MANHASHCOMP-1](#r7-manhashcomp-1) | The manual's output verifier, verify-output-proof.lua, runs proof files as Lua code, so an 18-byte proof hangs it and a 46-byte proof allocates about 1 GiB before any check runs | doc/recipes/verify-output-proof.lua read_proof (also printed in doc/README.md 'Output verification'); the same pattern i | Support (manual demonstration and copy of the output verifie | THREAT_MODEL s4 'Logs and proofs are adversarial' and 'must be memory-safe and b | Medium (alternative reading: Low) | Present |
+| [R7-MANTOURN-1](#r7-mantourn-1) | At divergence leaf 0, Dave's _requireAgreeState and prt.lua validate_seal_response accept any agreed-state proof, though only an empty one fits; one surplus sibling is refused past leaf 0. | Dave v3.0.0-alpha.7 Match._requireAgreeState (via sealLeafMatch / sealInnerMatchAndCreateInnerTournament); doc/recipes/p | Referee model (Dave as the deployed referee; doc/recipes mod | R3 (trailing data), section 4 (proofs adversarial), section 3 referee model, sec | Medium / Low | Present |
+| [R9-SUBJOURNAL-2](#r9-subjournal-2) | PRT journal submit discards every signed attempt when any block arrives during it, even with window open and observation canonical; with blocks faster than one submit, nothing is ever published | doc/recipes/prt-transactions.lua methods:submit (lines 161, 266-270), used by prt-bridge.lua attempt and crisium.lua | Support (PRT player and bridge in doc/recipes), standing in  | R4 (submits within the dispute clocks), section 1 completeness, section 3 suppor | Medium (support stand-in for Critical R4) / Low (if the recipe supports only a quiet harness-mined Anvil and block-interval/latency is deployment sizing) | Present |
 
 <!--
 Template for each issue. Copy it below the index, in the same order as the index.
@@ -144,6 +152,10 @@ run it, and what it prints on audit/prt2. Say which model found, proved and revi
 **Title.** The PRT referee model in `doc/recipes/prt.lua` seals an epoch with its whole input record and never caps it at the input limit per epoch (2^24), so inputs past the grid fall out of the verified history.
 
 **Severity.** Critical (preferred reading: rated as a deployed referee, per section 3). Low under the alternative reading in which the model's input files are the trusted referee operator's configuration.
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -278,6 +290,10 @@ Dave contracts already cap the epoch, which mitigates the risk for real deployme
 running dense heavy instructions makes the honest leaf build take 1.5 to 6 times `COMMITMENT_BUDGET`.
 
 **Severity.** Critical. Under an alternative reading of section 3 it is Medium (see Rating).
+
+### Status at v0.23.0
+
+**Present (external).** Not rerun (needs the Dave build). The defect is in Dave's released clock constants; nothing in this repository changed.
 
 ### Problem
 
@@ -493,6 +509,10 @@ manual shows halt, or accept an input it never saw.
 **Severity.** Critical (preferred reading). Low under the reading that `--utf8-payload` is documented only for
 payloads that are UTF-8 text (see Rating).
 
+### Status at v0.23.0
+
+**Present (external).** The test exits 1. The defect is in machine-guest-tools (rollup --utf8-payload).
+
 ### Problem
 
 `rollup accept` (and `reject` and `finish`) first calls `cmt_rollup_finish`. That call yields manually with the
@@ -658,6 +678,10 @@ encoding in the guest, or to treat every failure of `rollup accept/reject/finish
 
 **Severity.** Critical
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 O1 requires an operator that adopts a stored machine it did not produce to rebuild the cached hash-tree data from
@@ -811,6 +835,10 @@ the directory sets the memory the honest operator spends adopting it, without bo
 
 **Severity.** Critical (preferred reading). Low under the reading that the whole template directory, unhashed
 configuration included, is trusted input (see Rating).
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -968,6 +996,10 @@ directory.
 
 **Severity.** Critical (preferred reading: a host fault turned into a wrong hash, which R9 covers for failed updates). Low under the alternative reading that an allocation failure is not a host fault the model covers.
 
+### Status at v0.23.0
+
+**Fixed.** 823cedb0 and 8c234675 removed the context-only dirty set: collect_mcycle_root_hashes now runs with state_access and marks dirty pages in the machine directly. The test's fault injection no longer finds an allocation inside the collection.
+
 ### Problem
 
 During `collect_mcycle_root_hashes`, the interpreter runs with `collect_mcycle_hashes_state_access`. That state
@@ -1119,6 +1151,10 @@ again.
 **Title.** The LR/SC reservation is keyed by virtual address and survives `satp` writes and `sfence.vma`, so after a remap an SC succeeds on a physical word in another 4 KiB page that the LR never reserved.
 
 **Severity.** Critical (R7, "Atomics and fences" and "Address translation", read as written). Medium under a narrower reading. See Rating.
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -1298,6 +1334,10 @@ it, without bound (about 21 bytes of peak memory per byte of padding).
 **Severity.** Critical (preferred reading). Low under the reading that "the bytes it covers" in R12 includes the
 unhashed `config.json`, or that the whole template directory is trusted input (see Rating).
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 `config.json` of a stored machine is outside the hashed state. `machine_config::load` reads the whole file with
@@ -1464,6 +1504,10 @@ normalize it under a memory limit, or build the template from its configuration.
 
 **Severity.** Critical (preferred reading: a host fault turned into a wrong hash, which R9 covers for failed updates). Low under the alternative reading that an allocation failure is not a host fault the model covers, or that continuing after an API error is misuse.
 
+### Status at v0.23.0
+
+**Fixed.** 4ec69a8e allocates every hash_tree::update buffer before the first hash is stored. Its regression test get_root_hash_after_allocation_failure_test (tests/misc/test-machine-c-api.cpp) passes.
+
 ### Problem
 
 `hash_tree::update` runs three phases: `update_dirty_pages`, `update_dense_trees` and `update_sparse_tree`.
@@ -1628,6 +1672,10 @@ the machine again.
 
 The first reviewer refuted this candidate as Low. It read the closer as "trusted orchestration" with no deployed counterpart, and so outside section 3's "as if a deployed referee had it". A second-opinion reviewer overturned that. Section 3 says "A defect in what it accepts or derives is rated as if a deployed referee had it", with no limit to channels that have a deployed counterpart. The closer's trust came from a code comment (`game-transport.lua`: "The phase closer is trusted orchestration. Its announced role is not authenticated."), not from section 4 or the manual. The manual's simplification "The referee is one trusted process" covers the referee, not a separate connection. Section 5 makes that simplification non-normative. The closer's `done` also answers a referee request (`close_phase`). The manual says such wire responses "represent blockchain events and transactions" (verification-game section; "The referee uses the verification game's transport").
 
+### Status at v0.23.0
+
+**Present.** The test, adapted to the renamed vandal role (formerly quitter), exits 1.
+
 ### Problem
 
 In the PRT referee model, claimants are admitted through a wall-clock admission phase. `close_phase` fixes
@@ -1746,6 +1794,10 @@ abandons the model's adversarial setting.
 **Title.** After a `sync_stored` that failed on a host write error, a second `sync_stored` of the same directory reports success although the failed pages never reached the disk, and the directory then reloads with a wrong root hash
 
 **Severity.** Critical (preferred reading: a host fault turned into a directory that O2 guarantees but that later loads as a different state). Low or Out of scope under the alternative reading that a failed `sync_stored` ends the directory's guarantee for good, so syncing it again is misuse.
+
+### Status at v0.23.0
+
+**Present.** Not rerun (the test needs root). By reading: machine::sync_stored and os::sync_file still record nothing on failure, so a retry with fresh descriptors still reports success.
 
 ### Problem
 
@@ -1923,6 +1975,10 @@ Mitigations outside the code:
 **Title.** The deployed referee (`DaveConsensus` with `Application`) never registers the valid template's outputs Merkle root, so it refuses valid proofs of the outputs a non-genesis template commits to until epoch 0 is accepted.
 
 **Severity.** Critical (preferred reading: A5 makes the valid template a settled state whose outputs are accepted "whenever"). Low under the alternative reading, in which "settled state" means only the last leaf of a winning claim (see Rating).
+
+### Status at v0.23.0
+
+**Present (external).** Not rerun (needs the Dave build). The defect is in DaveConsensus; the manual's model has the same behavior (doc/recipes/prt.lua wait_for_outputs is called only with the winner's final state).
 
 ### Problem
 
@@ -2137,6 +2193,10 @@ templates, or wait for epoch 0 to settle (ideally with no inputs) before relying
 
 **Severity.** Critical (R7, "Atomics and fences" and "Address translation and memory permissions", read as written, as for R1-R7-1). Medium under the narrower reading of the Medium case. See Rating.
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 `execute_AMO` in `src/interpret.cpp` runs an AMO as two independent accesses. It first calls
@@ -2303,6 +2363,10 @@ running AMOs on self-mapped page-table entries.
 
 **Severity.** Critical (preferred: a defect in what the referee model accepts, rated as a deployed referee under A5). Medium under the alternative reading that this "only ... stalls the model" and is rated as support. See Rating.
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 After the tournament, `wait_for_outputs` (`doc/recipes/prt.lua`) settles the outputs Merkle root. It then loops: it
@@ -2457,6 +2521,10 @@ output acceptance.
 **Title.** The PRT referee model in `doc/recipes` binds a claim to the TCP connections that posted it. An honest player that stops and restarts comes back on a new connection, is never again asked about its claim, and the claim loses by timeout.
 
 **Severity.** Critical (preferred: a defect in which claim a timeout decides, rated as a deployed referee, A7 with R4's restart clause). Medium under the alternative reading that this "only ... stalls the model" and is rated as support. See Rating.
+
+### Status at v0.23.0
+
+**Present.** The test, adapted to doc/recipes/prt-stored-player.lua and the new forger role, exits 1.
 
 ### Problem
 
@@ -2642,6 +2710,10 @@ keeps accessing U pages through translations filled at effective privilege MPP=U
 **Severity.** Critical (preferred: per-register reading of the valid-template register condition) / Medium (if a
 template in S-mode with MPRV=1 is not a valid template).
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 `execute_SRET` follows the privileged specification and clears `mstatus.MPRV` when SPP < M ("An MRET or SRET
@@ -2774,6 +2846,10 @@ execute `sfence.vma` after such an SRET.
 the PMA array, the shadow TLB, HTIF and `uarch_x0`. The native uarch refuses these stores as uarch traps.
 
 **Severity.** High
+
+### Status at v0.23.0
+
+**Present.** The C++ half reruns with exit 1: verify_step_uarch accepts all four stores (PMA array, shadow TLB, HTIF, uarch_x0) that the native uarch traps on. The Solidity half was not rerun.
 
 ### Problem
 
@@ -2984,6 +3060,10 @@ the last 32-byte leaf of the address space, which the native uarch, the log prod
 
 **Severity.** High
 
+### Status at v0.23.0
+
+**Present (external).** Not rerun (needs the Solidity step build). The defect is in machine-solidity-step's hand-written src/Memory.sol; nothing in this repository is involved.
+
 ### Problem
 
 `Memory.validateStrideLength` in machine-solidity-step checks `stride * s < MAX_STRIDE`, where
@@ -3138,6 +3218,10 @@ keeps it unreachable.
 wrapper, so a flush costs 17,492 uarch cycles (22 per slot) where about 3 to 4 per slot would do, even with a full TLB.
 
 **Severity.** High (under the reading preferred here; Low under the alternative reading given at the end of Rating).
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -3294,6 +3378,10 @@ build fails.
 
 **Severity.** High (preferred reading). Critical under the reading that a deployment must ship hand-edited verifier
 code (see Rating).
+
+### Status at v0.23.0
+
+**Present (external).** Not rerun (needs the Solidity step checkout). src/uarch-step.cpp still uses TLB_NUM_SETS, which machine-solidity-step v0.17.0-test1 does not declare. A machine-solidity-step release regenerated from v0.23.0 (MARCHID 23, new pristine uarch hash) is needed.
 
 ### Problem
 
@@ -3490,6 +3578,10 @@ together with this emulator version and audit it.
 
 The first reviewer refuted this candidate as Out of scope. It applied the exclusion "The effect of a deliberate state change made through the machine API, when the API performs it as documented", because the manual documents `uarch.ram.backing_store.data_filename` ("typically left blank (other than in unit tests)"). It also read "this rule" in R4's configuration clause as met vacuously, since a non-pristine uarch is not a valid template. A second-opinion reviewer overturned that. R4 says "Every reproducible configuration that the emulator accepts, using the deployment's hash function and holding only register values that the RISC-V specification and the manual allow, yields a machine on which this rule holds. A configuration that would not is rejected when the machine is created." The clause names its own exemptions (unreproducible, another hash function, disallowed register values), and a uarch RAM image is not among them. Those three exemptions restate valid-template conditions; under the vacuous reading they would be redundant and the clause would have no content. The deliberate-change exclusion cannot excuse accepting a configuration that a specific rule says creation must reject, or "Every ... configuration that the emulator accepts" would never bind a documented configuration field. The valid-template definition also relies on creation-time checks ("created from a configuration, without disabling any of the emulator's consistency checks").
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 `cartesi.machine(config)` accepts reproducible Keccak-256 configurations whose uarch is not pristine:
@@ -3550,6 +3642,10 @@ A template whose configuration carries a stale or custom uarch image, or uarch r
 **Title.** Every `collect_mcycle_root_hashes` call re-marks and word-compares every page mapped by the write TLB, even when nothing was written since the last call. A guest that fills the write TLB and loops on automatic yields makes each yield about 6x more expensive than it needs to be.
 
 **Severity.** High under the preferred reading: a guest multiplies the worst-case cost of "a part of a claim" (R12) by a constant factor, with the deployment's sizing unknown. Out of scope under the alternative reading, which takes the section 8 exclusion for "the number of its outputs or yields" literally, because each yield still has a bounded cost.
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -3683,6 +3779,10 @@ this measured worst case, a guest yielding every one or two mcycles with a full 
 **Title.** `collect_mcycle_root_hashes` updates the hash tree over the always-dirty shadow pages twice at every automatic yield, even when no sample is due. A guest that loops on automatic yields multiplies the worst-case per-mcycle cost of the mcycle-level claim by about 5x.
 
 **Severity.** High under the preferred reading: a guest multiplies the worst-case cost of "a part of a claim" (R12) by a constant factor, and the deployment's sizing is unknown. Out of scope under the alternative reading, which takes the section 8 exclusion for "the number of its outputs or yields" literally, because each yield still has a bounded cost.
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -3849,6 +3949,10 @@ case, a guest that yields automatically every 2 mcycles, at about one sample's c
 **Title.** The guard that keeps HTIF getchar out of reproducible machines runs only at create and load. After `write_reg("htif_iconsole", ...)` or a full-shadow `write_memory`, native interpretation diverges from the uarch and `collect_mcycle_root_hashes`, and `store` writes a directory that `load` refuses
 
 **Severity.** High (preferred reading). Medium under the reading of the confirmed precedent R1-R2-1. Out of scope or Low under a broad reading of the deliberate-change exclusion (see Rating).
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -4071,6 +4175,10 @@ write `htif_iconsole` or the processor shadow on a reproducible machine.
 
 **Severity.** High (preferred: R4's configuration clause binds creation, and the effect is a divergence between paths only at demonstrably unreachable states, as for R1-R4-1). Critical under the reading that accepting the configuration is itself an R4 violation on the honest operator's path that no High case absorbs. Low under the reading that step 4 requires a reachable state or an honest-path operation, and that no honest operator ever creates a machine at a rejected yield.
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 `cartesi.machine(config)` writes `processor.registers.iflags.Y` and `processor.registers.htif.tohost` from the configuration without checking them. A reproducible Keccak-256 configuration with `iflags.Y = 1` and `htif.tohost = (HTIF_DEV_YIELD << 56) | (HTIF_YIELD_CMD_MANUAL << 48) | (HTIF_YIELD_MANUAL_REASON_RX_REJECTED << 32)` is accepted. No configuration field sets the revert root hash, so it stays 32 zero bytes.
@@ -4174,6 +4282,10 @@ Only the trusted creator of a machine can trigger it. A deployment template must
 **Title.** The PRT player never fetches the inputs DaveConsensus defers past an epoch's input limit, so it crash-loops and stops defending the next epoch.
 
 **Severity.** Medium
+
+### Status at v0.23.0
+
+**Present.** Not rerun (needs the Dave build). By reading: crisium.lua still starts epoch N+1's listener at epoch N's seal block.
 
 ### Problem
 
@@ -4318,6 +4430,10 @@ by hand with a `first_input_block` at or before the backlog, but the code expose
 **Severity.** Medium (preferred reading). Low under the reading that R13's check only has to refuse the versions
 released so far (see Rating).
 
+### Status at v0.23.0
+
+**Present.** Not rerun (needs the Dave build). By reading: crisium.lua and prt-deploy.lua still compare only the pristine uarch hash, never CM_MARCHID.
+
 ### Problem
 
 Before it plays, `doc/recipes/crisium.lua` (the PRT player) checks the deployed `CartesiStateTransition` against its
@@ -4454,6 +4570,10 @@ deployed verifier's `CM_MARCHID` with the emulator's `MARCHID` by hand before jo
 **Title.** The stored PRT player runs a later epoch's whole input in one idle step, so crisium cannot see or answer the sealed epoch's dispute until that input finishes (up to 2^48 mcycles).
 
 **Severity.** Medium
+
+### Status at v0.23.0
+
+**Present.** The test, adapted to doc/recipes/prt-stored-player.lua, exits 1.
 
 ### Problem
 
@@ -4628,6 +4748,10 @@ each input, or run the dispute of each sealed epoch in its own process.
 
 **Severity.** Medium (support rating of a referee-model stall that violates A8). Under a second reading it is Low; see Rating.
 
+### Status at v0.23.0
+
+**Present.** The test, adapted to the renamed vandal role (formerly quitter), exits 1.
+
 ### Problem
 
 The referee in `doc/recipes/prt.lua referee` runs in logical blocks over the `game-transport.lua` server. Before it
@@ -4796,6 +4920,10 @@ code, the mitigation is to run the model only with trusted players and an extern
 **Title.** The PRT bridge keeps working on a pending cleanup transaction of another match, which has no deadline, instead of sending the honest claim's newly due move, so that move can miss its clock.
 
 **Severity.** Medium
+
+### Status at v0.23.0
+
+**Fixed.** The test, adapted to the journal's new signer argument, exits 0. 884b0572 lets a move with a deadline outbid a pending action without one.
 
 ### Problem
 
@@ -4972,6 +5100,10 @@ application.
 
 **Severity.** Medium
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 `methods:observe` of the PRT bridge fetches the logs of `{factory, consensus, root}` from `first_block` (the seal block,
@@ -5105,6 +5237,10 @@ player's restart and each new epoch cost work and memory that grow with the numb
 **Severity.** Medium (preferred reading). Low under a reading that would excuse the growth because each past epoch
 adds only a few small logs (see Rating).
 
+### Status at v0.23.0
+
+**Present.** Not rerun (needs the Dave build). By reading: crisium.lua get_seal still fetches every consensus log with no topic filter.
+
 ### Problem
 
 `get_seal(number)` in `doc/recipes/crisium.lua` looks up the seal of one epoch by asking the process-wide
@@ -5231,6 +5367,10 @@ change where `get_seal` starts, which is always the deployment block.
 
 **Severity.** Medium
 
+### Status at v0.23.0
+
+**Fixed.** The test, adapted to doc/recipes/prt-stored-player.lua, exits 0. 82df23bf makes store_first_epoch_checkpoint load with clear_hash_tree.
+
 ### Problem
 
 `prt.store_first_epoch_checkpoint` is how the PRT player adopts the application's template. `prt-demo.lua` calls it before it launches the players, and once more for each sentinel. The function clones the template directory and loads the clone with `cartesi.machine(temporary_directory)`, which does not pass `{ clear_hash_tree = true }`. On the tree loaded from the cache, it runs `assert_rolling_template`, whose pristine-uarch check calls `get_node_hash`. It then writes `machine:get_root_hash()` into `epoch.json` as `initial_state_hash` and `final_state_hash`. The root it writes therefore comes from the cached hash-tree data, not from the contents.
@@ -5306,6 +5446,10 @@ An operator who runs the reference player on a template it did not produce, and 
 discards the synced epoch machine, and trusts the clone's cached hash tree, recording wrong root hashes.
 
 **Severity.** Medium
+
+### Status at v0.23.0
+
+**Fixed.** The test, adapted to doc/recipes/prt-stored-player.lua, exits 0. 82df23bf rebuilds and syncs the kept copy in revert_interrupted_input.
 
 ### Problem
 
@@ -5442,6 +5586,10 @@ unsynced clone and deletes `machine.revert`, so no O2-guaranteed copy is left an
 reopen.
 
 **Severity.** Medium
+
+### Status at v0.23.0
+
+**Fixed.** The test, adapted to doc/recipes/prt-stored-player.lua (and its strace check taught to follow renames), exits 0. Fixed by 82df23bf.
 
 ### Problem
 
@@ -5582,6 +5730,10 @@ grows with the number already seen, and the total over an epoch is quadratic.
 
 **Severity.** Medium
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 Both observers get their logs from `prt-log-history.lua`, which fetches only new blocks but keeps every fetched log.
@@ -5717,6 +5869,10 @@ not the per-observation O(n log n), and lengthen reaction times.
 **Title.** `write_reg("iunrep", ...)` changes the hashed unreproducible-mode register while every guard reads the config copy, and `store` then writes a directory that refuses to load
 
 **Severity.** Medium
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -5871,6 +6027,10 @@ trailing data.
 **Severity.** Medium (preferred reading). Low under the reading that the response's named fields are a message
 schema, so an unused field is not part of the proof (see Rating).
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 R3 makes the shape of a log a validity condition: "Conditions on the log are validity conditions. A log that fails
@@ -5998,6 +6158,10 @@ honest proof gives.
 rejection: it passes a fake revert uarch tail made of the revert root hash twice.
 
 **Severity.** Medium (Low under the reading that treats the printer as diagnostics; see Rating).
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -6136,6 +6300,10 @@ equal-priority sources in favor of the lowest ID.
 
 **Severity.** Medium
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 The emulator hardwires every PLIC source priority to the same value: reads of `priority1` to `priority31` return
@@ -6261,6 +6429,10 @@ without saying so, from the device the manual names.
 **Title.** The PRT player keeps one hash per guest output for a whole input, in the same run that computes its claim, so the memory it needs to compute the claim grows with the number of outputs.
 
 **Severity.** Medium
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -6410,6 +6582,10 @@ the worst-case number of outputs an input can emit within its mcycle limit.
 **Title.** The honest player in `vg.lua` stops computing its claim when an accepted input leaves an outputs root that does not match its outputs.
 
 **Severity.** Medium. Under a second reading, where `vg.lua`'s player counts as a development tool, it is Out of scope.
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -6562,6 +6738,10 @@ write with MODE = 9 and walks four-level Sv48 page tables
 
 **Severity.** Medium
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 The manual's section "The main processor" (doc/README.md, around line 7312) describes the processor's
@@ -6703,6 +6883,10 @@ mode.
 **Title.** The PRT stored player keeps only 32 input boundaries per epoch, so every per-match unit replays a number of inputs that grows linearly with the epoch's input count (up to about n/16).
 
 **Severity.** Medium
+
+### Status at v0.23.0
+
+**Present.** The test, adapted to doc/recipes/prt-stored-player.lua, exits 1.
 
 ### Problem
 
@@ -6862,6 +7046,10 @@ code: run it only on epochs with few inputs, or size the clocks for the replay o
 
 **Severity.** Medium
 
+### Status at v0.23.0
+
+**Present.** Not rerun (needs the Dave build). By reading: crisium.lua still fetches epoch 0's inputs from the consensus deployment block.
+
 ### Problem
 
 The pinned DaveConsensus seals epoch 0 in its constructor. It computes `inputIndexUpperBound =
@@ -7009,6 +7197,10 @@ runs the player, but a node that copies its epoch-0 logic inherits the failure.
 **Title.** The PRT stored player refuses every valid template whose tx buffer already commits to outputs, because `prt.store_first_epoch_checkpoint` requires the root of the empty outputs tree.
 
 **Severity.** Medium (preferred reading: a support component standing in for a Critical honest-operator failure). Low under the alternative reading that a PRT deployment always starts from a genesis template with no earlier outputs.
+
+### Status at v0.23.0
+
+**Present.** The test, adapted to doc/recipes/prt-stored-player.lua, exits 1.
 
 ### Problem
 
@@ -7170,6 +7362,10 @@ un-rebuilt `.dht`/`.dpt` files, so the operator's own synced snapshot reloads wi
 **Severity.** Medium (preferred reading: storing with sharing `none` or `config` is a machine API operation off the
 honest operator's path). Critical under the reading in which a production validator node stores an adopted template
 with sharing `none` or `config` and later reloads that snapshot without a rebuild; see Rating.
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -7341,6 +7537,10 @@ Mitigations outside the code:
 
 **Severity.** Medium
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 The PRT stored player adopts the application's template in `new_stored_player`. It calls
@@ -7497,6 +7697,10 @@ before cloning, or adopt the template unshared with `clear_hash_tree` and store 
 
 **Severity.** Medium (support component standing in for the honest operator, where it would rate High). Out of scope under a broad reading of the outputs/yields exclusion of section 8; see Rating.
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 While the PRT player computes its mcycle-level claim for an epoch, `run_next_input` calls
@@ -7650,6 +7854,10 @@ the clocks for 2 MiB of copying and hashing per few mcycles.
 **Title.** `replace_memory_range` on a machine loaded with sharing swaps the range only in memory, so after destroy and `sync_stored` the O2-guaranteed directory reloads to a spliced state (post-run registers, pre-replacement memory) that no execution reaches.
 
 **Severity.** Medium (preferred reading: `replace_memory_range` is off the honest operator's path). Critical under the reading that a production validator node replaces memory ranges of a machine that shares its stored directory (see Rating).
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -7819,6 +8027,10 @@ replace, run, and `store` to a new directory instead.
 **Title.** The PRT forked player (prt.lua `honest` role run without an epoch directory) keeps only 8 input boundaries per epoch, so every per-match unit replays a number of inputs that grows linearly with the epoch's input count (about n/5).
 
 **Severity.** Medium
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -7999,6 +8211,10 @@ stored player once R2-DFINPUTCOUNT-1 is fixed.
 **Title.** In the PRT referee model, any connection that reaches EOF without a `done` reply makes the referee process exit. One stray TCP close stops every match and all acceptance of outputs.
 
 **Severity.** Medium (support rating of a referee-model crash that violates A8 and A5). Under a second reading it is Low; see Rating.
+
+### Status at v0.23.0
+
+**Present.** The test, adapted to the renamed vandal role (formerly quitter), exits 1.
 
 ### Problem
 
@@ -8191,6 +8407,10 @@ never restart a player, which contradicts the permissionless model.
 
 **Severity.** Medium
 
+### Status at v0.23.0
+
+**Present.** The test, adapted to the journal's new signer argument, exits 1.
+
 ### Problem
 
 `methods:submit` of the PRT transaction journal treats a job as includable when the next block can include it
@@ -8350,6 +8570,10 @@ longer than one block.
 
 **Severity.** Medium (a support component standing in for a Critical R4 failure of the honest operator). On the
 alternative reading given under Rating, it is Low.
+
+### Status at v0.23.0
+
+**Present.** The test, adapted to the journal's new signer argument, exits 1.
 
 ### Problem
 
@@ -8531,6 +8755,10 @@ No production deployment runs this journal.
 
 **Severity.** Medium (preferred reading). Critical under a literal reading of R7's "any deviation" in "Address translation and memory permissions" (see Rating).
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 `doc/README.md`, section "PMAs", documents each PMA entry as two 64-bit words at `0x10000` that "are readable both
@@ -8654,6 +8882,10 @@ constants in `src/pmas-constants.hpp` instead of the manual's table.
 **Title.** An M-mode write to `mcycle` raises an illegal-instruction exception, a departure from the RISC-V privileged specification that the manual does not document
 
 **Severity.** Medium
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -8797,6 +9029,10 @@ that guest's own correctness. Until the manual is fixed, the only mitigation is 
 
 **Severity.** Medium (preferred reading). Critical under a literal reading of R7's "Traps and interrupts" area. See Rating.
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 The manual's `#### CLINT` section (`doc/README.md`, lines 7523-7536) reads: "The Core Local Interruptor (or CLINT)
@@ -8936,6 +9172,10 @@ firmware included, and would break A6 for such an implementation. Until the manu
 **Title.** The `cartesi-machine` CLI computes no mcycle computation hash when a guest accepts an input with an outputs-root length other than 32 bytes. It also stops by default when the root differs from the host's outputs tree.
 
 **Severity.** Medium. Under a second reading, where the CLI counts as a development tool that "may instead stop and report the violation", it is Out of scope.
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -9120,6 +9360,10 @@ snapshots disagree with the contents.
 documented, leaves the hash tree and a stored directory inconsistent with the contents, R9). Under the reading that a
 `.dht` whose inner nodes do not match its leaves is misuse by the trusted caller, it is Low.
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 The manual (doc/README.md, `backing_store`) says: "When both tree filenames are supplied and both files already exist,
@@ -9272,6 +9516,10 @@ copies of the committed state.
 
 **Severity.** Medium (preferred). Low if the Medium case "while cleaning up after a stop" caps the stand-in rating.
 Out of scope under a literal reading of the O2 reload exclusion.
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -9470,6 +9718,10 @@ the live dispute's moves are never sent.
 operator). Under the other reading, where section 4's pre-finality sentence covers a shallow reorg of the operator's
 own transaction, it is Out of scope.
 
+### Status at v0.23.0
+
+**Partly fixed.** The test, adapted to the new signer and retirement API, exits 0: 884b0572 and 78bb9b74 let the live epoch's move with a deadline outbid the resurrected transaction. The root cause remains: retirement still checks pending() at the 'latest' nonce, so a live epoch's jobs without a deadline still wait on it.
+
 ### Problem
 
 `methods:tick` in `doc/recipes/prt-bridge.lua` marks a settled epoch `finished` when three things hold: it has no jobs
@@ -9664,6 +9916,10 @@ canonical and whose inputs it already delivered.
 crash on a within-policy chain event) / Low (if a crash that a relaunch recovers violates no rule, because R4 provides
 for restarts after a stop).
 
+### Status at v0.23.0
+
+**Present.** The test, adapted to use a small InputBox ABI instead of the Dave artifacts, exits 1.
+
 ### Problem
 
 Under a numeric input policy `N` (crisium `--input-policy=N`, which `prt-rpc.lua` `M.policy` accepts as "a
@@ -9792,6 +10048,10 @@ and to always run the player under `prt-supervise.sh`.
 **Title.** The manual's specification of an advance-state delivery leaves out two hashed-state writes that every delivery path makes: `imcyclemax = mcycle + 2^48 - 1` (saturating) and zero padding of the rx buffer.
 
 **Severity.** Medium
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -9944,6 +10204,10 @@ outside the code is to treat `src/send-cmio-response.cpp` as normative.
 **Title.** The manual presents the processor and board shadow (`0x0-0xfff`) and the shadow TLB (`0x1000-0x6fff`) as address ranges visible to the main processor, each described by a PMA entry. The emulator gives them no PMA entry, and every guest load from them raises a load access fault.
 
 **Severity.** Medium (preferred reading). Critical under a literal reading of R7's "any deviation" in "Address translation and memory permissions". Low if the manual's wording is read loosely (see Rating).
+
+### Status at v0.23.0
+
+**Present.** The test exits 1.
 
 ### Problem
 
@@ -10100,6 +10364,10 @@ no intact committed state to resume from.
 **Severity.** Medium (preferred). Low if deleting a guaranteed directory breaks no rule while the epoch's template
 stays a guaranteed restart point. For the host-I/O-error triggers alone, the host-fault exclusion read literally makes
 them Out of scope. The SIGINT trigger is not a host fault.
+
+### Status at v0.23.0
+
+**Fixed.** The test exits 0. 4bb1c6e0 keeps the synced directory when a commit fails. Leftover: after a failed rename the documented recovery rule reads the state as "before the first commit", losing progress loudly but with no wrong hash.
 
 ### Problem
 
@@ -10320,6 +10588,10 @@ Mitigation until fixed:
 
 **Severity.** Medium (Low under the alternative reading below)
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 doc/README.md ("Computation hashes") documents how to compute a uarch cycle computation hash for a period in a later
@@ -10475,6 +10747,10 @@ chunk, so an 18-byte proof hangs it and a 46-byte proof makes it allocate gigaby
 
 **Severity.** Medium (alternative reading: Low)
 
+### Status at v0.23.0
+
+**Present.** The test exits 1.
+
 ### Problem
 
 The manual's "Output verification" section prints `doc/recipes/verify-output-proof.lua` as the script that verifies
@@ -10607,6 +10883,10 @@ never read the proof argument there. The same proof with a surplus sibling is re
 
 **Severity.** Medium (preferred reading). Low under the reading that the Medium trailing-data case and R3 cover only
 the verifiers of transition logs, not the tournament's computation-hash proof checks (see Rating).
+
+### Status at v0.23.0
+
+**Present.** The Lua half reruns: doc/recipes/prt.lua validate_seal_response still accepts junk agreed-state proofs at leaf 0. The Dave half was not rerun.
 
 ### Problem
 
@@ -10767,6 +11047,10 @@ mitigation outside the code. Off-chain tools should ignore the proof argument at
 **Title.** The PRT transaction journal throws away every signed attempt during which any new block arrives, even with the window open and the observation canonical. So when blocks come faster than one submit, the honest bridge never publishes.
 
 **Severity.** Medium (preferred reading: a Support component standing in for a Critical R4 violation of the honest operator). Low under the alternative reading, in which the recipe supports only a quiet local Anvil chain and the ratio of block interval to submit latency is deployment sizing.
+
+### Status at v0.23.0
+
+**Present.** The test, adapted to the journal's new signer argument, exits 1.
 
 ### Problem
 

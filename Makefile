@@ -275,8 +275,9 @@ clean-coverage:
 
 build-tests-misc-with-builder-image: build-emulator-builder-image
 
+# src lints the uarch it builds on
 lint:
-	@$(MAKE) $@-src $@-tests $@-uarch
+	@$(MAKE) $@-src $@-tests
 
 check-format format:
 	@$(MAKE) $@-src $@-tests

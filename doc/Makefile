@@ -423,7 +423,7 @@ template.d: README.md.template replace.lua $(DOCS_IMAGE_TRIGGER) | $(REPLACE_CAC
 	    -M docs_image_id="$(DOCS_IMAGE_ID)" \
 	    --lua-filter replace.lua README.md.template -o $@
 
-ifeq (,$(filter clean prt-demo-fixture build-prt-tools-image build-prt-calibration-image measure-prt-gas test-prt-contracts prt-contracts-exec test-prt-bridge test-prt-bridge-unit test-prt-transactions test-prt-proofs prt-container-exec build-prt-image run-prt-bridge test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat,$(MAKECMDGOALS)))
+ifeq (,$(filter clean prt-demo-fixture test-prt-bridge test-prt-bridge-unit test-prt-transactions test-prt-proofs prt-container-exec build-prt-image run-prt-bridge test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat,$(MAKECMDGOALS)))
 -include template.d
 endif
 
@@ -501,9 +501,12 @@ README.html: | prepare-readme
 	$(MAKE) docs-image-exec CONTAINER_COMMAND="rm -f template.d && make -j$$jobs README.html DEV_ENV_HAS_DOCGEN=yes"
 endif
 
+# Also removes what HOST=yes leaves behind: its images in build and the command links in the source tree
 clean:
 	rm -f README.html template.d
 	rm -f $(RECIPES_DIR)/rootfs-docs.tar
 	rm -f $(ROOTFS_DOCS_KEY) $(ROOTFS_DOCS_KEY)-have
 	rm -f $(RECIPES_DIR)/.rootfs-docs-*
 	rm -rf recipes/cache
+	rm -rf build
+	for f in ../src/cartesi-machine ../src/cartesi-machine-stored-hash; do if [ -L "$$f" ]; then rm -f "$$f"; fi; done

@@ -414,8 +414,10 @@ A tick is one pass of the bridge.
    one, earliest expiry first and then by key. A job without expiry comes last,
    and the key order puts staging before recovery.
 3. Reconcile the account's pending transaction (see [Transactions](#transactions)).
-   A pending transaction for a job that is still due keeps its nonce. One whose job
-   is gone is replaced by a due job, or cancelled.
+   A pending transaction for a job that is still due keeps its nonce, unless it has
+   no window end and a due job has one, which then replaces it. One whose job is
+   gone is replaced by a due job, or cancelled. A job mined but not yet observed, or
+   rejected at the tip, is never preferred over one that can be submitted.
 4. Ask the player for the selected job's missing data. Computation takes time,
    so observe again and derive the jobs again, and keep the result only if the
    same job is still due with the same claim. Otherwise end the tick, and keep the
@@ -474,9 +476,10 @@ treated as a disagreement.
 Each player signs with one exclusive account and keeps at most one pending
 transaction. Before each publication, `prt-transactions.lua` stores the player's
 `journal.json`. It holds every signed candidate of each nonce a reorg could
-still reopen (its hash, nonce, fee fields, job, and observation). The journal is
-written to a temporary file, synced, renamed into place, and its directory
-synced, and only then are the raw bytes published with `eth_sendRawTransaction`.
+still reopen (its hash, nonce, fee fields, job, window end, and observation).
+The journal is written to a temporary file, synced, renamed into place, and its
+directory synced, and only then are the raw bytes published with
+`eth_sendRawTransaction`.
 A crash therefore never leaves a broadcast transaction unrecorded, and a
 relaunched player reuses the recorded nonce instead of allocating another. A
 nonce leaves the journal once one of its candidates has a receipt at or below

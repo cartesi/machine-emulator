@@ -673,8 +673,7 @@ public:
     /// \param data Buffer that receives the yield data. If empty, only the data length is returned.
     /// \returns Yield command, reason, available data length, and a view into the portion of \p data that was
     /// filled.
-    /// \details May fail if the machine is not in a valid yield state, the yield data does not fit in the
-    /// CMIO TX buffer, or the data buffer is too small.
+    /// \details May fail if the machine is not in a valid yield state or the data buffer is too small.
     machine_cmio_request receive_cmio_request(std::span<uint8_t> data = {}) const;
 
     /// \brief Sends cmio response

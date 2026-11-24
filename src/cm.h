@@ -569,7 +569,6 @@ CM_API cm_error cm_create_new(const char *config, const char *runtime_config, co
 /// CM_SHARING_NONE: Machine state will be fully in-memory.
 /// CM_SHARING_CONFIG: Machine state will be on-disk for shared backing stores, but in-memory for everything else.
 /// CM_SHARING_ALL: Machine state will be fully on-disk.
-/// \param new_m Receives the pointer to the new machine object with a machine instance. Set to NULL on failure.
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \returns 0 for success, non zero code for error.
 /// \details With CM_SHARING_CONFIG or CM_SHARING_ALL, the machine changes the shared backing store files in \p dir.
@@ -585,6 +584,7 @@ CM_API cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_conf
 /// \param dir Directory where previous machine is stored.
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \param sharing Backing stores sharing mode.
+/// \param new_m Receives the pointer to the new machine object with a machine instance. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 /// \details Use cm_delete() to delete the object.
@@ -689,13 +689,13 @@ CM_API cm_error cm_get_runtime_config(const cm_machine *m, const char **runtime_
 /// For example:
 /// ```json
 /// {
-///     "start": 0x80000000000000,
-///     "length": 0x100000,
+///     "start": 36028797018963968, // 0x80000000000000
+///     "length": 1048576, // 0x100000
 ///     "read_only": false,
 ///     "backing_store": {
-///         "data_filename": "linux.bin"
-///         "dht_filename": "linux.dht"
-///         "dpt_filename": "linux.dpt"
+///         "data_filename": "linux.bin",
+///         "dht_filename": "linux.dht",
+///         "dpt_filename": "linux.dpt",
 ///         "shared": false
 ///     }
 /// }

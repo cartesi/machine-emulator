@@ -676,7 +676,7 @@ void machine_address_ranges::replace(const memory_range_config &config) {
                         .append(" with read-only memory range")};
             }
             // Replace range, preserving original flags.
-            // This will automatically start with all pages dirty.
+            // Its pages start dirty unless the backing store supplies both its dense hash tree and dirty-page tree.
             ar = std::make_unique<memory_address_range>(ar->get_description(), ar->get_start(), ar->get_length(),
                 ar->get_flags(), config.backing_store);
             return;

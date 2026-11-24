@@ -574,7 +574,7 @@ void machine::clone_stored(const std::string &from_dir, const std::string &to_di
 /// \param dir Path to the directory.
 /// \details Like rename() and rmdir(), it takes the parent to be everything but the last element, which cannot be
 /// "." or "..". Call it before changing anything, so such a path is rejected first.
-static std::string parent_directory(const std::string &dir) {
+static std::string get_parent_directory_to_sync(const std::string &dir) {
     auto path = std::filesystem::path(dir);
     // A trailing separator leaves an empty last element
     while (!path.has_filename() && path.has_relative_path()) {
@@ -607,8 +607,8 @@ void machine::rename_stored(const std::string &from_dir, const std::string &to_d
     if (from_dir.empty() || to_dir.empty()) {
         throw std::invalid_argument{"directory name cannot be empty"};
     }
-    const auto from_parent = parent_directory(from_dir);
-    const auto to_parent = parent_directory(to_dir);
+    const auto from_parent = get_parent_directory_to_sync(from_dir);
+    const auto to_parent = get_parent_directory_to_sync(to_dir);
     refuse_symbolic_link(from_dir, "rename stored machine");
     static_cast<void>(machine_config::load(from_dir));
 
@@ -670,7 +670,7 @@ void machine::remove_stored(const std::string &dir, remove_mode mode) {
     if (dir.empty()) {
         throw std::invalid_argument{"directory name cannot be empty"};
     }
-    const auto parent = parent_directory(dir);
+    const auto parent = get_parent_directory_to_sync(dir);
     // Listing would follow a symbolic link, removing the files of the stored machine it points to
     refuse_symbolic_link(dir, "remove stored machine");
     std::vector<std::string> filenames;

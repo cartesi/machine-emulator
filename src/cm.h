@@ -625,6 +625,7 @@ CM_API cm_error cm_clone_stored(const cm_machine *m, const char *from_dir, const
 /// \param to_dir Path to the destination directory, which must not exist.
 /// \returns 0 for success, non zero code for error.
 /// \details The stored machine must not be in use.
+/// The source directory cannot be a symbolic link.
 /// The operation fails if source and destination are on different filesystems.
 /// On success, the rename and the affected parent directory entries are durable on disk.
 CM_API cm_error cm_rename_stored(const cm_machine *m, const char *from_dir, const char *to_dir);
@@ -638,7 +639,8 @@ CM_API cm_error cm_rename_stored(const cm_machine *m, const char *from_dir, cons
 /// an interrupted cm_store() or cm_clone_stored().
 /// \returns 0 for success, non zero code for error.
 /// \details The stored machine must not be in use.
-/// In both modes, the directory must hold only regular files, and nothing is removed otherwise.
+/// In both modes, the directory cannot be a symbolic link and must hold only regular files, and nothing is removed
+/// otherwise.
 /// On success, the entire directory and all its files are deleted, and the
 /// removed parent directory entry is durable on disk.
 /// On failure, some files or the directory may remain.

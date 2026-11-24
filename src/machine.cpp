@@ -586,12 +586,30 @@ static std::string parent_directory(const std::string &dir) {
     return os::get_parent_directory(dir);
 }
 
+/// \brief Refuses a directory that is a symbolic link.
+/// \param dir Path to the directory.
+/// \param what Description of the operation, for the error message.
+/// \details Renaming or removing through a symbolic link acts on the link or on the directory it points to, depending
+/// on the platform and on a trailing separator, and the parent synced afterwards may not hold the changed entry.
+static void refuse_symbolic_link(const std::string &dir, const std::string &what) {
+    auto path = std::filesystem::path(dir);
+    // A trailing separator leaves an empty last element, and would make symlink_status follow the link
+    while (!path.has_filename() && path.has_relative_path()) {
+        path = path.parent_path();
+    }
+    std::error_code ec;
+    if (std::filesystem::is_symlink(std::filesystem::symlink_status(path, ec))) {
+        throw std::runtime_error{"unable to " + what + ": '" + dir + "' is a symbolic link"};
+    }
+}
+
 void machine::rename_stored(const std::string &from_dir, const std::string &to_dir) {
     if (from_dir.empty() || to_dir.empty()) {
         throw std::invalid_argument{"directory name cannot be empty"};
     }
     const auto from_parent = parent_directory(from_dir);
     const auto to_parent = parent_directory(to_dir);
+    refuse_symbolic_link(from_dir, "rename stored machine");
     static_cast<void>(machine_config::load(from_dir));
 
     os::rename_directory(from_dir, to_dir);
@@ -653,6 +671,8 @@ void machine::remove_stored(const std::string &dir, remove_mode mode) {
         throw std::invalid_argument{"directory name cannot be empty"};
     }
     const auto parent = parent_directory(dir);
+    // Listing would follow a symbolic link, removing the files of the stored machine it points to
+    refuse_symbolic_link(dir, "remove stored machine");
     std::vector<std::string> filenames;
     for (const auto &name : os::list_directory(dir)) {
         filenames.push_back(std::string{dir}.append("/").append(name));

@@ -1120,6 +1120,37 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(remove_stored_null_machine_test, ordinary_machine
     BOOST_CHECK(!std::filesystem::exists(_machine_dir_path));
 }
 
+#ifndef _WIN32
+// What: renaming or removing a symbolic link to a stored machine fails and leaves that machine in place.
+// How:  rename and remove through the link, with and without a trailing separator, then load the target and compare
+//       hashes.
+BOOST_FIXTURE_TEST_CASE_NOLINT(stored_symlink_test, ordinary_machine_fixture) {
+    BOOST_REQUIRE_EQUAL(cm_store(_machine, _machine_dir_path.c_str(), CM_SHARING_ALL), CM_ERROR_OK);
+    cm_hash root_hash{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &root_hash), CM_ERROR_OK);
+    const std::string link_path = _machine_dir_path + "-link";
+    const std::string renamed_path = _machine_dir_path + "-renamed";
+    std::filesystem::create_directory_symlink(_machine_dir_path, link_path);
+    for (const auto &dir : {link_path, link_path + "/"}) {
+        BOOST_CHECK_EQUAL(cm_rename_stored(nullptr, dir.c_str(), renamed_path.c_str()), CM_ERROR_RUNTIME_ERROR);
+        BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()),
+            "unable to rename stored machine: '" + dir + "' is a symbolic link");
+        BOOST_CHECK(!std::filesystem::exists(std::filesystem::symlink_status(renamed_path)));
+        BOOST_CHECK_EQUAL(cm_remove_stored(nullptr, dir.c_str(), CM_REMOVE_FORCED), CM_ERROR_RUNTIME_ERROR);
+        BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()),
+            "unable to remove stored machine: '" + dir + "' is a symbolic link");
+    }
+    BOOST_CHECK(std::filesystem::is_symlink(link_path));
+    std::filesystem::remove(link_path);
+    cm_machine *loaded = nullptr;
+    BOOST_REQUIRE_EQUAL(cm_load_new(_machine_dir_path.c_str(), nullptr, CM_SHARING_NONE, &loaded), CM_ERROR_OK);
+    cm_hash loaded_root_hash{};
+    BOOST_CHECK_EQUAL(cm_get_root_hash(loaded, &loaded_root_hash), CM_ERROR_OK);
+    cm_delete(loaded);
+    BOOST_CHECK(std::ranges::equal(root_hash, loaded_root_hash));
+}
+#endif
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(sync_stored_null_machine_test, ordinary_machine_fixture) {
     cm_error error_code = cm_store(_machine, _machine_dir_path.c_str(), CM_SHARING_ALL);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);

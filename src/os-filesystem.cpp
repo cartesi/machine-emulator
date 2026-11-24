@@ -159,7 +159,8 @@ std::vector<std::string> list_directory(const std::string &dirname) {
         names.push_back(it->path().filename().string());
     }
     if (ec) {
-        throw make_path_system_error(ec.value(), "unable to list directory"s, dirname);
+        // On Windows, ec holds a Win32 code, so map it to its generic errno value
+        throw make_path_system_error(ec.default_error_condition().value(), "unable to list directory"s, dirname);
     }
     std::ranges::sort(names);
     return names;
@@ -653,7 +654,8 @@ void sync_file_descriptor(int fd, const std::string &pathname) {
 }
 
 std::string create_temporary_directory(const std::string &dirname, const std::string &prefix) {
-    const auto template_path = dirname + "/"s + prefix + "XXXXXX"s;
+    // Joining adds no separator after a root such as "/" or "\", which Windows would read as a network path
+    const auto template_path = (std::filesystem::path(dirname) / (prefix + "XXXXXX"s)).string();
 #ifdef _WIN32
     // _mktemp_s only picks a name, so creation retries until an exclusive mkdir succeeds.
     for (int attempt = 0; attempt < 100; ++attempt) {
@@ -695,7 +697,8 @@ static std::pair<FILE *, std::string> open_temporary_file(int fd, std::string pa
 }
 
 std::pair<FILE *, std::string> create_temporary_file(const std::string &dirname, const std::string &prefix) {
-    const auto template_path = dirname + "/"s + prefix + "XXXXXX"s;
+    // Joining adds no separator after a root such as "/" or "\", which Windows would read as a network path
+    const auto template_path = (std::filesystem::path(dirname) / (prefix + "XXXXXX"s)).string();
 #ifdef _WIN32
     // _mktemp_s only picks a name, so creation retries until an exclusive open succeeds
     for (int attempt = 0; attempt < 100; ++attempt) {

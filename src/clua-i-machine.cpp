@@ -1026,7 +1026,7 @@ static int machine_obj_index_store(lua_State *L) {
     lua_settop(L, 3);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const char *dir = luaL_checkstring(L, 2);
-    const auto sharing = static_cast<cm_sharing_mode>(luaL_optinteger(L, 3, CM_SHARING_ALL));
+    const auto sharing = static_cast<cm_sharing_mode>(clua_opt_integer<int>(L, 3, CM_SHARING_ALL));
     if (cm_store(m.get(), dir, sharing) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -1062,7 +1062,7 @@ static int machine_obj_index_rename_stored(lua_State *L) {
 static int machine_obj_index_remove_stored(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const char *dir = luaL_checkstring(L, 2);
-    const auto mode = static_cast<cm_remove_mode>(luaL_optinteger(L, 3, CM_REMOVE_STORED));
+    const auto mode = static_cast<cm_remove_mode>(clua_opt_integer<int>(L, 3, CM_REMOVE_STORED));
     if (cm_remove_stored(m.get(), dir, mode) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -1355,7 +1355,7 @@ static int machine_obj_index_create(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const char *runtime_config = !lua_isnil(L, 3) ? clua_tojson(L, 3, -1, "MachineRuntimeConfig") : nullptr;
     const char *dir = luaL_optstring(L, 4, nullptr);
-    const auto sharing = static_cast<cm_sharing_mode>(luaL_optinteger(L, 5, CM_SHARING_ALL));
+    const auto sharing = static_cast<cm_sharing_mode>(clua_opt_integer<int>(L, 5, CM_SHARING_ALL));
     // Create or load a machine depending on the type of the first argument
     const char *config = clua_tojson(L, 2, -1, "MachineConfig");
     if (cm_create(m.get(), config, runtime_config, dir, sharing) != 0) {
@@ -1441,7 +1441,7 @@ static int machine_obj_index_load(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const char *runtime_config = !lua_isnil(L, 3) ? clua_tojson(L, 3, -1, "MachineRuntimeConfig") : nullptr;
     const char *dir = luaL_checkstring(L, 2);
-    const auto sharing = static_cast<cm_sharing_mode>(luaL_optinteger(L, 4, CM_SHARING_NONE));
+    const auto sharing = static_cast<cm_sharing_mode>(clua_opt_integer<int>(L, 4, CM_SHARING_NONE));
     if (cm_load(m.get(), dir, runtime_config, sharing) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -1668,13 +1668,13 @@ static int machine_meta_call(lua_State *L) {
     if (lua_isstring(L, 2) == 0) {
         const char *config = clua_tojson(L, 2, -1, "MachineConfig");
         const char *dir = luaL_optstring(L, 4, nullptr);
-        const auto sharing = static_cast<cm_sharing_mode>(luaL_optinteger(L, 5, CM_SHARING_ALL));
+        const auto sharing = static_cast<cm_sharing_mode>(clua_opt_integer<int>(L, 5, CM_SHARING_ALL));
         if (cm_create(new_m.get(), config, runtime_config, dir, sharing) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
         const char *dir = luaL_checkstring(L, 2);
-        const auto sharing = static_cast<cm_sharing_mode>(luaL_optinteger(L, 4, CM_SHARING_NONE));
+        const auto sharing = static_cast<cm_sharing_mode>(clua_opt_integer<int>(L, 4, CM_SHARING_NONE));
         if (cm_load(new_m.get(), dir, runtime_config, sharing) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }

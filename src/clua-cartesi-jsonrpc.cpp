@@ -58,7 +58,8 @@ static int jsonrpc_machine_obj_index_get_timeout(lua_State *L) {
 /// \param L Lua state.
 static int jsonrpc_machine_obj_index_set_cleanup_call(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    if (cm_jsonrpc_set_cleanup_call(m.get(), static_cast<cm_jsonrpc_cleanup_call>(luaL_checkinteger(L, 2))) != 0) {
+    const auto call = static_cast<cm_jsonrpc_cleanup_call>(clua_check_integer<int>(L, 2));
+    if (cm_jsonrpc_set_cleanup_call(m.get(), call) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     lua_settop(L, 1);

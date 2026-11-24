@@ -131,6 +131,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed the JSON-RPC server lingering after an accept error stops it from accepting connections
 - Fixed `spawn_server` hanging on failure when the calling thread blocks `SIGTERM`
 - Fixed JSON-RPC rejecting IPv6 addresses, now written `[<ipv6-address>]:<port>`
+- Fixed `rpc.discover` advertising an old protocol version
 - Fixed `verify_slice` and `verify_splice` accepting proofs whose shape does not match their sizes
 - Fixed hash-tree proofs accepting unsupported hash functions or missing hashes
 - Fixed frontiers rebuilt from proofs that do not authenticate a leaf

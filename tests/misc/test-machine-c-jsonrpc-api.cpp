@@ -1258,6 +1258,19 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_invalid_id_not_executed_test, spawned_ser
     BOOST_CHECK_EQUAL(batch[0]["error"]["code"].get<int>(), -32600);
 }
 
+// What: the version rpc.discover advertises is the protocol version get_version reports.
+// How:  POST both methods and compare info.version with major.minor.patch.
+BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_discover_version_test, spawned_server_fixture) {
+    const auto discover = jsonrpc_post(bound_address, R"({"jsonrpc":"2.0","method":"rpc.discover","id":1})");
+    BOOST_REQUIRE(discover.contains("result"));
+    const auto version = jsonrpc_post(bound_address, R"({"jsonrpc":"2.0","method":"get_version","id":2})");
+    BOOST_REQUIRE(version.contains("result"));
+    const auto &v = version["result"];
+    const auto expected = std::to_string(v["major"].get<uint32_t>()) + "." +
+        std::to_string(v["minor"].get<uint32_t>()) + "." + std::to_string(v["patch"].get<uint32_t>());
+    BOOST_CHECK_EQUAL(discover["result"]["info"]["version"].get<std::string>(), expected);
+}
+
 // What: an unrecognized method name yields method_not_found (-32601).
 // How:  POST a well-formed request with method "does.not.exist" and assert
 //       the reply carries code -32601.

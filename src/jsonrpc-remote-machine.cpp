@@ -890,6 +890,8 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
 #endif
     // Done initializing, so we fork
     const auto pid = fork();
+    // Capture errno before the OpenMP re-initialization below can change it
+    const int fork_errno = errno;
 #if defined(HAVE_OPENMP) && defined(_LIBCPP_VERSION)
     // omp_pause_hard deinitializes OpenMP but, on libc++, its atexit handler persists after fork.
     // Force re-initialization on both sides, so the atexit handler frees each process's own resources instead
@@ -915,7 +917,6 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
         session->handler->rebind(std::move(acceptor));
         SLOG(trace) << session->handler->local_endpoint << " fork child";
     } else { // Parent process, fork() may have succeeded or failed
-        const int fork_errno = errno;
         // Notify to ASIO that we are the parent
         session->handler->ioc.notify_fork(asio::io_context::fork_parent);
         // Note that the parent doesn't need the server that will be used by the child,

@@ -301,9 +301,7 @@ machine_address_ranges::machine_address_ranges(const machine_config &config,
         // Create backing store directory
         os::create_directory(dir);
         remover.add_directory(dir);
-        // Store config
-        remover.add_file(c.store(dir));
-        // Copy backing stores and mark them as shared
+        // Copy backing stores and mark them as shared. The machine stores the config once fully built.
         prepare_ar_backing_stores_for_share(config, c, remover);
     } else { // A machine that may be partially or fully in-memory
         // Create and truncate backing stores as necessary

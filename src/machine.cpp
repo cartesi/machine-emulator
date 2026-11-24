@@ -327,6 +327,9 @@ machine::machine(machine_config c, machine_runtime_config r, const std::string &
     // This can happen with the stdout console file descriptors or network file descriptors.
     os::disable_sigpipe();
     if (!dir.empty()) {
+        // Store the config after the backing files, as store() does, so an interrupted creation leaves no loadable
+        // directory. Durability requires a successful sync_stored().
+        remover.add_file(m_c.store(dir));
         // The address ranges copied the backing stores into the directory, and now map them from there
         m_c = m_initial_c;
     }

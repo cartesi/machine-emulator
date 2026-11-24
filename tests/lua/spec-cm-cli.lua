@@ -341,6 +341,9 @@ describe("cartesi-machine CLI", function()
         expect.truthy(stdout:find("bash completion for cartesi%-machine"))
         expect.truthy(stdout:find("_cm_flag_kind"))
         expect.truthy(stdout:find("_cm_positional_values%['%-%-revert%-mode'%]='fork none stored'"))
+        expect.truthy(stdout:find("_cm_flag_kind%['%-%-initial%-hash'%]='file'"))
+        expect.truthy(stdout:find("_cm_flag_kind%['%-%-final%-hash'%]='file'"))
+        expect.truthy(stdout:find("_cm_subkey_values%['%-%-remote%-address','filename'%]='__file__'"))
     end)
 
     -- -------------------------------------------------------------------------
@@ -5761,9 +5764,9 @@ dofile(%q)
     end)
 
     -- What: --remote-address=filename: carries the server address from one run to the next.
-    -- How:  expect a missing file to be refused without --remote-spawn. Spawn a server into the file, expect the
-    --       existing file to be refused alongside an explicit address, run again through the file, and shut the
-    --       server down, which removes the file.
+    -- How:  expect an empty filename to be refused, and a missing file without --remote-spawn. Spawn a server into
+    --       the file, expect the existing file to be refused alongside an explicit address, run again through the
+    --       file, and shut the server down, which removes the file.
     it("remote address file", function()
         local jsonrpc = require("cartesi.jsonrpc")
         local _ <close>, filename = scope_temp_pathname()
@@ -5774,6 +5777,7 @@ dofile(%q)
                 connection:shutdown_server()
             end)
         end)
+        run_fail({ "--remote-address=filename:", "--max-mcycle=0" }, "need filename in %-%-remote%-address=filename:")
         run_fail({ "--remote-address=filename:" .. filename, "--max-mcycle=0" }, "missing remote address file")
         run_ok({
             "--remote-spawn",

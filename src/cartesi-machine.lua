@@ -2477,17 +2477,21 @@ options = {
     },
     {
         "--remote-address=",
-        function(_, _, opts)
+        function(_, all, opts)
             if not opts or #opts < 1 then return false end
             -- An address starts with a digit or a bracket, so it cannot be mistaken for filename:
-            local filename = opts:match("^filename:(.+)")
+            local filename = opts:match("^filename:(.*)")
             if filename then
+                assertf(filename ~= "", "need filename in %s", all)
                 cmdline.remote_address_filename = filename
             else
                 cmdline.remote_address = opts
             end
             return true
         end,
+        {
+            filename = "file",
+        },
     },
     {
         "--remote-fork",
@@ -2563,7 +2567,7 @@ options = {
             cmdline.initial_hash = v
             return true
         end,
-        "filename",
+        "file",
     },
     {
         "--final-hash",
@@ -2578,7 +2582,7 @@ options = {
             cmdline.final_hash = v
             return true
         end,
-        "filename",
+        "file",
     },
     {
         "--print-mcycle-root-hashes=",

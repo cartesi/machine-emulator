@@ -603,7 +603,9 @@ local function falsify_bundle(forest, height, leaf, fake_hash)
     for i = 0, leaf_count - 1 do
         local hash = i == leaf and fake_hash or hash_tree.frontier_forest_get_node_hash(forest, i, 0)
         if hash ~= previous then
-            hash_tree.frontier_forest_pad_back(replacement, previous, count)
+            if count > 0 then
+                hash_tree.frontier_forest_pad_back(replacement, previous, count)
+            end
             previous, count = hash, 0
         end
         count = count + 1

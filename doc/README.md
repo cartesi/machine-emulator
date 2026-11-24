@@ -10426,7 +10426,6 @@ repetition of any length costs one pending value and one count.
 ``` lua
 local function frontier_forest_pad_back(forest, value, count, value_height)
     assert(count == nil or (math.type(count) == "integer" and count >= 0), "invalid pad count")
-    if count == 0 then return end
     value, value_height = normalize_forest_value(forest, value, value_height)
     assert_forest_can_append(forest, value_height, count or 0)
     count = count or (((1 << forest.height) - forest.leaf_count) >> value_height)

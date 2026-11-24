@@ -926,9 +926,9 @@ end
 local function frontier_forest_append(forest, hashes, begin_index, end_index, hash_height)
     begin_index, end_index = normalize_hash_range(hashes, begin_index, end_index)
     local count = end_index - begin_index
-    if count == 0 then return end
     hash_height = normalize_value_height(hash_height)
     assert_forest_can_append(forest, hash_height, count)
+    if count == 0 then return end
     if should_flush_pending_hashes(forest.pending, hash_height) then forest_flush(forest, hash_height) end
     table.move(hashes, begin_index, end_index - 1, #forest.pending.values + 1, forest.pending.values)
     forest.leaf_count = forest.leaf_count + (count << hash_height)
@@ -959,7 +959,6 @@ end
 -- docs:begin frontier_forest_pad_back
 local function frontier_forest_pad_back(forest, value, count, value_height)
     assert(count == nil or (math.type(count) == "integer" and count >= 0), "invalid pad count")
-    if count == 0 then return end
     value, value_height = normalize_forest_value(forest, value, value_height)
     assert_forest_can_append(forest, value_height, count or 0)
     count = count or (((1 << forest.height) - forest.leaf_count) >> value_height)

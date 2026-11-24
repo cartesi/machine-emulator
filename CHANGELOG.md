@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed `cm_destroy` to do nothing on an empty local machine, as it does on a remote one
 - Changed the Lua `destroy` method to raise the errors `cm_destroy` reports
 - Changed the tests to create temporary files in `TMPDIR` and remove them when done
+- Changed `frontier_forest_append` and `frontier_forest_pad_back` to validate their arguments even when the count is zero
 
 ### Removed
 - Removed `read_file` and `write_file` from `cartesi.util`, superseded by `cartesi.filesystem`

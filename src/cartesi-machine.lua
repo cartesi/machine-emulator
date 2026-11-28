@@ -5100,6 +5100,7 @@ elseif not cmdline.cmio_advance then
 end
 -- log step
 if cmdline.log_step_mcycle_count then
+    assert(initial_config.processor.registers.iunrep == 0, "step proof is meaningless in unreproducible mode")
     stderr(string.format("Logging step of %d cycles to %s\n", cmdline.log_step_mcycle_count, cmdline.log_step_filename))
     print_root_hash(machine, stderr_unsilenceable)
     machine:log_step(cmdline.log_step_mcycle_count, cmdline.log_step_filename)
@@ -5135,6 +5136,7 @@ if cmdline.log_step_uarch then
     util.print_log(machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
 if cmdline.log_reset_uarch then
+    assert(initial_config.processor.registers.iunrep == 0, "uarch reset proof is meaningless in unreproducible mode")
     stderr("Resetting microarchitecture state: please wait\n")
     util.print_log(machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end

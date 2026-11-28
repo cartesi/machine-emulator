@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- Fixed `log_step`, `log_send_cmio_response`, `log_reset_uarch`, and `reset_uarch` accepting unreproducible machines
+- Fixed `--log-step` and `--log-reset-uarch` accepting `--unreproducible`
 
 ## [0.23.0] - 2026-11-24
 ### Added

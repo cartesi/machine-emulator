@@ -4949,9 +4949,12 @@ Validation happens before delivery, including when the input exceeds the
 receive buffer; validation errors leave the machine unchanged. After
 validation, sending is a no-op if no manual yield is pending, the input
 exceeds the receive buffer, or an advance-state response finds a yield
-other than rx-accepted, matching the logged transition. Conversely, the
-*data* value returned by `machine:receive_cmio_request()` is the
-contents of `cmio.tx_buffer` at the yield.
+other than rx-accepted, matching the logged transition. An advance-state
+delivery that is not a no-op also sets register `imcyclemax` to `mcycle`
+plus `281474976710655`, saturating at the largest 64-bit value.
+Conversely, the *data* value returned by
+`machine:receive_cmio_request()` is the contents of `cmio.tx_buffer` at
+the yield.
 
 Advance-state inputs are passed as ABI-encoded
 `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)`
@@ -7988,6 +7991,7 @@ In the host, the loop is as follows:
         Save fresh fork of machine as a snapshot
         If advance-state request
             Write the current state hash to the state at AR_SHADOW_REVERT_ROOT_HASH_START
+            Set register `imcyclemax` to the last mcycle the input may reach
             Write ABI-encoded EvmAdvance(...) to CMIO RX buffer and its length to `length`
             Write HTIF_YIELD_REASON_ADVANCE_STATE to `REASON` and `length` as `DATA` in `fromhost`
             Reset register `iflags_Y` to 0

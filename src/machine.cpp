@@ -2126,6 +2126,9 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
     if (data == nullptr && length > 0 && length <= AR_CMIO_RX_BUFFER_LENGTH) {
         throw std::invalid_argument{"invalid data buffer"};
     }
+    if (is_unreproducible()) {
+        throw std::runtime_error{"cannot log state transitions of unreproducible machines"};
+    }
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
         throw std::runtime_error{
             "access logs can only be used with hash tree configured with Keccak-256 hash function"};
@@ -2156,6 +2159,9 @@ machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned 
 }
 
 void machine::reset_uarch() {
+    if (is_unreproducible()) {
+        throw std::runtime_error{"microarchitecture cannot be used with unreproducible machines"};
+    }
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
         throw std::runtime_error{
             "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
@@ -2175,6 +2181,9 @@ void machine::reset_uarch() {
 }
 
 access_log machine::log_reset_uarch(const access_log::type &log_type) {
+    if (is_unreproducible()) {
+        throw std::runtime_error{"microarchitecture cannot be used with unreproducible machines"};
+    }
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
         throw std::runtime_error{
             "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
@@ -2306,6 +2315,9 @@ interpreter_break_reason machine::get_state_break_reason(interpreter_break_reaso
 }
 
 interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::string &filename) {
+    if (is_unreproducible()) {
+        throw std::runtime_error{"cannot log state transitions of unreproducible machines"};
+    }
     check_uarch_reset();
     auto root_hash_before = get_root_hash();
     init_hot_tlb_contents();

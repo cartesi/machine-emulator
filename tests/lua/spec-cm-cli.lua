@@ -2253,6 +2253,7 @@ dofile(%q)
     --       a start: sub-key).
     -- How:  run_ok() each flag; for --log-step also open the output file and
     --       assert it is non-empty to confirm the log was written.
+    --       run_fail() each log flag with --unreproducible.
     -- -------------------------------------------------------------------------
     it("log step options", function()
         local _ <close>, log_file = scope_temp_pathname()
@@ -2294,6 +2295,17 @@ dofile(%q)
 
         -- --print-uarch-cycle-root-hashes=<count>,start:<n>
         run_ok({ "--print-uarch-cycle-root-hashes=1,start:0", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+
+        -- --unreproducible with each log flag
+        local _ <close>, unrep_log_file = scope_temp_pathname()
+        local log_flags = { "--log-step=" .. unrep_log_file .. ",count:1", "--log-step-uarch", "--log-reset-uarch" }
+        for _, flag in ipairs(log_flags) do
+            run_fail(
+                { "--unreproducible", flag, "--max-mcycle=0", "--no-init-splash", "--quiet" },
+                "proof is meaningless in unreproducible mode"
+            )
+        end
+        expect.falsy(filesystem.exists(unrep_log_file))
     end)
 
     -- -------------------------------------------------------------------------

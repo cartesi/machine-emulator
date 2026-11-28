@@ -359,6 +359,47 @@ for _, variant in ipairs(variants) do
             end)
         end)
 
+        describe("unreproducible machines", function()
+            it("should refuse to log, to use the microarchitecture and to store", function()
+                local unrep <close> =
+                    variant.create({ ram = { length = 0x1000 }, processor = { registers = { iunrep = 1 } } })
+                local _ <close>, pathname = tests_util.scope_temp_pathname()
+                local log_error = "cannot log state transitions of unreproducible machines"
+                local uarch_error = "microarchitecture cannot be used with unreproducible machines"
+                local function expect_refusal(call, message)
+                    local before = unrep:get_root_hash()
+                    expect.fail(call, message)
+                    expect.equal(unrep:get_root_hash(), before)
+                end
+                expect_refusal(function()
+                    unrep:log_step(1, pathname)
+                end, log_error)
+                -- a response only changes a machine that is yielded
+                unrep:write_reg("iflags_Y", 1)
+                expect_refusal(function()
+                    unrep:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_INSPECT_STATE, "", unrep:get_root_hash())
+                end, log_error)
+                -- a reset only changes a uarch that is not pristine
+                unrep:write_reg("uarch_x1", 123)
+                expect_refusal(function()
+                    unrep:reset_uarch()
+                end, uarch_error)
+                expect_refusal(function()
+                    unrep:log_reset_uarch()
+                end, uarch_error)
+                expect_refusal(function()
+                    unrep:log_step_uarch()
+                end, uarch_error)
+                expect_refusal(function()
+                    unrep:run_uarch()
+                end, uarch_error)
+                expect_refusal(function()
+                    unrep:store(pathname)
+                end, "cannot store unreproducible machines")
+                expect.falsy(filesystem.exists(pathname))
+            end)
+        end)
+
         describe("mark_pages_dirty backing-store config", function()
             it("should default to false and preserve an explicit true", function()
                 expect.equal(machine:get_initial_config().ram.backing_store.mark_pages_dirty, false)
